@@ -140,7 +140,7 @@ impl Interpreter {
                 if args.is_empty() {
                     return Ok(pulled.pop().unwrap_or(Value::Nil));
                 }
-                return Ok(Value::array(pulled));
+                return Ok(Value::Seq(std::sync::Arc::new(pulled)));
             }
         }
 
@@ -151,7 +151,7 @@ impl Interpreter {
 
         let tail_count = self.resolve_supply_tail_count(args.first(), items.len())?;
         let start = items.len().saturating_sub(tail_count);
-        Ok(Value::array(items[start..].to_vec()))
+        Ok(Value::Seq(std::sync::Arc::new(items[start..].to_vec())))
     }
 
     /// Handle `.head(&callable)` / `.head(*)` where the argument is a
@@ -183,7 +183,7 @@ impl Interpreter {
             _ => len,
         };
         let count = count.clamp(0, len) as usize;
-        Ok(Value::array(items[..count].to_vec()))
+        Ok(Value::Seq(std::sync::Arc::new(items[..count].to_vec())))
     }
 
     pub(in crate::runtime) fn callback_uses_supply_list(callback: &Value) -> bool {
@@ -245,7 +245,7 @@ impl Interpreter {
             }
         };
         if items.is_empty() {
-            return Ok(Value::array(Vec::new()));
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
         }
         let len = items.len() as i64;
         let by = match args.first() {
@@ -265,6 +265,6 @@ impl Interpreter {
             let dst = ((i as i64 + len - shift) % len) as usize;
             out[dst] = item;
         }
-        Ok(Value::array(out))
+        Ok(Value::Seq(std::sync::Arc::new(out)))
     }
 }

@@ -1276,20 +1276,22 @@ pub(crate) fn native_method_1arg(
                 _ => return None,
             };
             if n <= 0 {
-                return Some(Ok(Value::array(vec![])));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(vec![]))));
             }
             let n = n as usize;
             match target {
-                Value::Array(items, ..) => {
-                    Some(Ok(Value::array(items[..n.min(items.len())].to_vec())))
-                }
+                Value::Array(items, ..) => Some(Ok(Value::Seq(std::sync::Arc::new(
+                    items[..n.min(items.len())].to_vec(),
+                )))),
                 Value::Range(a, b) => {
                     let items: Vec<Value> = (*a..=*b).take(n).map(Value::Int).collect();
-                    Some(Ok(Value::array(items)))
+                    Some(Ok(Value::Seq(std::sync::Arc::new(items))))
                 }
                 _ => {
                     let items = runtime::value_to_list(target);
-                    Some(Ok(Value::array(items[..n.min(items.len())].to_vec())))
+                    Some(Ok(Value::Seq(std::sync::Arc::new(
+                        items[..n.min(items.len())].to_vec(),
+                    ))))
                 }
             }
         }
@@ -1300,7 +1302,7 @@ pub(crate) fn native_method_1arg(
                     _ => return None,
                 };
                 let start = items.len().saturating_sub(n);
-                Some(Ok(Value::array(items[start..].to_vec())))
+                Some(Ok(Value::Seq(std::sync::Arc::new(items[start..].to_vec()))))
             }
             Value::Instance { class_name, .. } if class_name == "Supply" => None,
             _ => {
@@ -1310,7 +1312,7 @@ pub(crate) fn native_method_1arg(
                 };
                 let items = runtime::value_to_list(target);
                 let start = items.len().saturating_sub(n);
-                Some(Ok(Value::array(items[start..].to_vec())))
+                Some(Ok(Value::Seq(std::sync::Arc::new(items[start..].to_vec()))))
             }
         },
         "combinations" => {
