@@ -109,7 +109,10 @@ impl Compiler {
         let opname = rest
             .strip_prefix('<')
             .and_then(|s| s.strip_suffix('>'))
-            .or_else(|| rest.strip_prefix('\u{ab}').and_then(|s| s.strip_suffix('\u{bb}')))?
+            .or_else(|| {
+                rest.strip_prefix('\u{ab}')
+                    .and_then(|s| s.strip_suffix('\u{bb}'))
+            })?
             .trim();
         let reserved = match category {
             "infix" => matches!(opname, "=" | ":=" | "::=" | "~~"),
