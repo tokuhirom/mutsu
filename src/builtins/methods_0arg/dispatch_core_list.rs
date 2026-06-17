@@ -73,7 +73,7 @@ pub(super) fn dispatch(
                     (**items).clone().items
                 };
                 sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                Some(Ok(Value::array(sorted)))
+                Some(Ok(Value::Seq(Arc::new(sorted))))
             }
             _ => None,
         }),
@@ -90,11 +90,8 @@ pub(super) fn dispatch(
                 }
                 let mut reversed = (**items).clone();
                 reversed.reverse();
-                // .reverse returns a List (Seq in Raku), not an Array
-                Some(Ok(Value::Array(
-                    std::sync::Arc::new(reversed),
-                    crate::value::ArrayKind::List,
-                )))
+                // .reverse returns a Seq in Raku, not an Array
+                Some(Ok(Value::Seq(std::sync::Arc::new(reversed.items))))
             }
             Value::Range(a, b)
             | Value::RangeExcl(a, b)
@@ -105,10 +102,7 @@ pub(super) fn dispatch(
                 } else {
                     let mut reversed = crate::runtime::utils::value_to_list(target);
                     reversed.reverse();
-                    Some(Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(reversed)),
-                        crate::value::ArrayKind::List,
-                    )))
+                    Some(Ok(Value::Seq(std::sync::Arc::new(reversed))))
                 }
             }
             Value::GenericRange { end, .. } => {
@@ -117,10 +111,7 @@ pub(super) fn dispatch(
                 let end_is_neg_inf = matches!(end.as_ref(), Value::Num(n) if n.is_infinite() && n.is_sign_negative());
                 if end_is_neg_inf {
                     // Empty range -- reverse is empty
-                    return Some(Some(Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
-                        crate::value::ArrayKind::List,
-                    ))));
+                    return Some(Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new())))));
                 }
                 // For finite generic ranges, expand and reverse
                 let items = crate::runtime::utils::value_to_list(target);
@@ -130,10 +121,7 @@ pub(super) fn dispatch(
                 } else {
                     let mut reversed = items;
                     reversed.reverse();
-                    Some(Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(reversed)),
-                        crate::value::ArrayKind::List,
-                    )))
+                    Some(Ok(Value::Seq(std::sync::Arc::new(reversed))))
                 }
             }
             Value::Str(s) => Some(Ok(Value::str(s.chars().rev().collect()))),
@@ -143,10 +131,7 @@ pub(super) fn dispatch(
                 // here, so `items` already holds the pulled values.)
                 let mut reversed = items.to_vec();
                 reversed.reverse();
-                Some(Ok(Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(reversed)),
-                    crate::value::ArrayKind::List,
-                )))
+                Some(Ok(Value::Seq(std::sync::Arc::new(reversed))))
             }
             Value::Instance {
                 class_name,

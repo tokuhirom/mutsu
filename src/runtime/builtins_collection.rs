@@ -1142,7 +1142,7 @@ impl Interpreter {
         if args.len() != 1 {
             let mut items: Vec<Value> = args.to_vec();
             items.reverse();
-            return Ok(Value::array(items));
+            return Ok(Value::Seq(Arc::new(items)));
         }
         // LazyIoLines must be materialized by the interpreter (native bails).
         if let Value::LazyIoLines { handle, .. } = &args[0] {
@@ -1151,10 +1151,7 @@ impl Interpreter {
                 lines.push(Value::str(line));
             }
             lines.reverse();
-            return Ok(Value::Array(
-                Arc::new(crate::value::ArrayData::new(lines)),
-                ArrayKind::List,
-            ));
+            return Ok(Value::Seq(Arc::new(lines)));
         }
         // Single arg: delegate to the single shared native `reverse` (Array / Seq
         // / Slip / Range / 1-D shaped / Str), instead of a drifting second copy
