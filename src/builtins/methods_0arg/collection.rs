@@ -378,7 +378,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         }
                     })
                     .collect();
-                return Some(Ok(Value::array(keys)));
+                return Some(Ok(Value::Seq(Arc::new(keys))));
             }
             match target {
                 Value::Hash(map) => {
@@ -399,35 +399,35 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     } else {
                         map.keys().map(|k| Value::hash_key_decode(k)).collect()
                     };
-                    Some(Ok(Value::array(keys)))
+                    Some(Ok(Value::Seq(Arc::new(keys))))
                 }
                 Value::Pair(key, _) => {
                     Some(Ok(Value::Seq(Arc::new(vec![Value::str(key.clone())]))))
                 }
                 Value::ValuePair(key, _) => Some(Ok(Value::Seq(Arc::new(vec![*key.clone()])))),
-                Value::Nil => Some(Ok(Value::array(Vec::new()))),
-                Value::Set(s, _) => {
-                    Some(Ok(Value::array(s.iter().map(|k| s.typed_key(k)).collect())))
-                }
-                Value::Bag(b, _) => {
-                    Some(Ok(Value::array(b.keys().map(|k| b.typed_key(k)).collect())))
-                }
-                Value::Mix(m, _) => {
-                    Some(Ok(Value::array(m.keys().map(|k| m.typed_key(k)).collect())))
-                }
+                Value::Nil => Some(Ok(Value::Seq(Arc::new(Vec::new())))),
+                Value::Set(s, _) => Some(Ok(Value::Seq(Arc::new(
+                    s.iter().map(|k| s.typed_key(k)).collect(),
+                )))),
+                Value::Bag(b, _) => Some(Ok(Value::Seq(Arc::new(
+                    b.keys().map(|k| b.typed_key(k)).collect(),
+                )))),
+                Value::Mix(m, _) => Some(Ok(Value::Seq(Arc::new(
+                    m.keys().map(|k| m.typed_key(k)).collect(),
+                )))),
                 Value::Package(_) => None, // let runtime handle (may be enum type)
-                v if v.is_range() => Some(Ok(Value::array(positional_keys(
+                v if v.is_range() => Some(Ok(Value::Seq(Arc::new(positional_keys(
                     &crate::runtime::utils::value_to_list(v),
-                )))),
-                other => Some(Ok(Value::array(positional_keys(
+                ))))),
+                other => Some(Ok(Value::Seq(Arc::new(positional_keys(
                     &crate::runtime::utils::value_to_list(other),
-                )))),
+                ))))),
             }
         }
         "values" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
-                return Some(Ok(Value::array(leaves)));
+                return Some(Ok(Value::Seq(Arc::new(leaves))));
             }
             match target {
                 Value::Hash(map) => {
@@ -435,30 +435,30 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     // hash element is a `ContainerRef`, and `.values` must yield
                     // the inner value, not the cell (else sort/compare leak).
                     let values: Vec<Value> = map.values().map(|v| v.deref_container()).collect();
-                    Some(Ok(Value::array(values)))
+                    Some(Ok(Value::Seq(Arc::new(values))))
                 }
                 Value::Pair(_, value) | Value::ValuePair(_, value) => {
                     Some(Ok(Value::Seq(Arc::new(vec![*value.clone()]))))
                 }
-                Value::Nil => Some(Ok(Value::array(Vec::new()))),
-                Value::Set(s, _) => Some(Ok(Value::array(
+                Value::Nil => Some(Ok(Value::Seq(Arc::new(Vec::new())))),
+                Value::Set(s, _) => Some(Ok(Value::Seq(Arc::new(
                     s.iter().map(|_| Value::Bool(true)).collect(),
-                ))),
-                Value::Bag(b, _) => Some(Ok(Value::array(
+                )))),
+                Value::Bag(b, _) => Some(Ok(Value::Seq(Arc::new(
                     b.values().map(|v| Value::from_bigint(v.clone())).collect(),
-                ))),
-                Value::Mix(m, _) => Some(Ok(Value::array(
+                )))),
+                Value::Mix(m, _) => Some(Ok(Value::Seq(Arc::new(
                     m.values()
                         .map(|v| crate::value::mix_weight_to_value(*v))
                         .collect(),
-                ))),
+                )))),
                 Value::Package(_) => None, // let runtime handle (may be enum type)
-                v if v.is_range() => {
-                    Some(Ok(Value::array(crate::runtime::utils::value_to_list(v))))
-                }
+                v if v.is_range() => Some(Ok(Value::Seq(Arc::new(
+                    crate::runtime::utils::value_to_list(v),
+                )))),
                 Value::LazyList(_) => None, // fall through to runtime to force
-                other => Some(Ok(Value::array(crate::runtime::utils::value_to_list(
-                    other,
+                other => Some(Ok(Value::Seq(Arc::new(
+                    crate::runtime::utils::value_to_list(other),
                 )))),
             }
         }
@@ -474,7 +474,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                     kv.push(val);
                 }
-                return Some(Ok(Value::array(kv)));
+                return Some(Ok(Value::Seq(Arc::new(kv))));
             }
             match target {
                 Value::Hash(items) => {
@@ -488,7 +488,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         }
                         kv.push(v.clone());
                     }
-                    Some(Ok(Value::array(kv)))
+                    Some(Ok(Value::Seq(Arc::new(kv))))
                 }
                 Value::Pair(key, value) => Some(Ok(Value::Seq(Arc::new(vec![
                     Value::str(key.clone()),
@@ -497,14 +497,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::ValuePair(key, value) => {
                     Some(Ok(Value::Seq(Arc::new(vec![*key.clone(), *value.clone()]))))
                 }
-                Value::Nil => Some(Ok(Value::array(Vec::new()))),
+                Value::Nil => Some(Ok(Value::Seq(Arc::new(Vec::new())))),
                 Value::Set(s, _) => {
                     let mut kv = Vec::new();
                     for k in s.iter() {
                         kv.push(Value::str(k.clone()));
                         kv.push(Value::Bool(true));
                     }
-                    Some(Ok(Value::array(kv)))
+                    Some(Ok(Value::Seq(Arc::new(kv))))
                 }
                 Value::Bag(b, _) => {
                     let mut kv = Vec::new();
@@ -512,7 +512,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         kv.push(Value::str(k.clone()));
                         kv.push(Value::from_bigint(v.clone()));
                     }
-                    Some(Ok(Value::array(kv)))
+                    Some(Ok(Value::Seq(Arc::new(kv))))
                 }
                 Value::Mix(m, _) => {
                     let mut kv = Vec::new();
@@ -520,7 +520,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         kv.push(Value::str(k.clone()));
                         kv.push(crate::value::mix_weight_to_value(*v));
                     }
-                    Some(Ok(Value::array(kv)))
+                    Some(Ok(Value::Seq(Arc::new(kv))))
                 }
                 Value::Enum { key, value, .. } => Some(Ok(Value::Seq(Arc::new(vec![
                     Value::str(key.resolve()),
@@ -536,12 +536,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         words: *words,
                     }))
                 }
-                v if v.is_range() => Some(Ok(Value::array(positional_kv(
+                v if v.is_range() => Some(Ok(Value::Seq(Arc::new(positional_kv(
                     &crate::runtime::utils::value_to_list(v),
-                )))),
-                other => Some(Ok(Value::array(positional_kv(
+                ))))),
+                other => Some(Ok(Value::Seq(Arc::new(positional_kv(
                     &crate::runtime::utils::value_to_list(other),
-                )))),
+                ))))),
             }
         }
         "pairs" => {
@@ -558,7 +558,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         Value::ValuePair(Box::new(key), Box::new(val))
                     })
                     .collect();
-                return Some(Ok(Value::array(pairs)));
+                return Some(Ok(Value::Seq(Arc::new(pairs))));
             }
             match target {
                 Value::Hash(items) => {
@@ -577,37 +577,37 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                             .collect()
                     };
-                    Some(Ok(Value::array(pairs)))
+                    Some(Ok(Value::Seq(Arc::new(pairs))))
                 }
-                Value::Set(s, _) => Some(Ok(Value::array(
+                Value::Set(s, _) => Some(Ok(Value::Seq(Arc::new(
                     s.iter()
                         .map(|k| Value::Pair(k.clone(), Box::new(Value::Bool(true))))
                         .collect(),
-                ))),
-                Value::Bag(b, _) => Some(Ok(Value::array(
+                )))),
+                Value::Bag(b, _) => Some(Ok(Value::Seq(Arc::new(
                     b.iter()
                         .map(|(k, v)| {
                             Value::Pair(k.clone(), Box::new(Value::from_bigint(v.clone())))
                         })
                         .collect(),
-                ))),
-                Value::Mix(m, _) => Some(Ok(Value::array(
+                )))),
+                Value::Mix(m, _) => Some(Ok(Value::Seq(Arc::new(
                     m.iter()
                         .map(|(k, v)| {
                             Value::Pair(k.clone(), Box::new(crate::value::mix_weight_to_value(*v)))
                         })
                         .collect(),
-                ))),
+                )))),
                 Value::Pair(_, _) | Value::ValuePair(_, _) => {
-                    Some(Ok(Value::array(vec![target.clone()])))
+                    Some(Ok(Value::Seq(Arc::new(vec![target.clone()]))))
                 }
                 Value::Package(_) => None, // let runtime handle (may be enum type)
-                v if v.is_range() => Some(Ok(Value::array(positional_pairs(
+                v if v.is_range() => Some(Ok(Value::Seq(Arc::new(positional_pairs(
                     &crate::runtime::utils::value_to_list(v),
-                )))),
-                other => Some(Ok(Value::array(positional_pairs(
+                ))))),
+                other => Some(Ok(Value::Seq(Arc::new(positional_pairs(
                     &crate::runtime::utils::value_to_list(other),
-                )))),
+                ))))),
             }
         }
         "pairup" => match target {
@@ -655,7 +655,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         make_inverted_pair(val, key)
                     })
                     .collect();
-                return Some(Ok(Value::array(pairs)));
+                return Some(Ok(Value::Seq(Arc::new(pairs))));
             }
             match target {
                 Value::Hash(items) => {
@@ -669,9 +669,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             }
                         })
                         .collect();
-                    Some(Ok(Value::array(pairs)))
+                    Some(Ok(Value::Seq(Arc::new(pairs))))
                 }
-                Value::Bag(items, _) => Some(Ok(Value::array(
+                Value::Bag(items, _) => Some(Ok(Value::Seq(Arc::new(
                     items
                         .iter()
                         .map(|(k, v)| {
@@ -681,8 +681,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             )
                         })
                         .collect(),
-                ))),
-                Value::Set(items, _) => Some(Ok(Value::array(
+                )))),
+                Value::Set(items, _) => Some(Ok(Value::Seq(Arc::new(
                     items
                         .iter()
                         .map(|k| {
@@ -692,8 +692,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             )
                         })
                         .collect(),
-                ))),
-                Value::Mix(items, _) => Some(Ok(Value::array(
+                )))),
+                Value::Mix(items, _) => Some(Ok(Value::Seq(Arc::new(
                     items
                         .iter()
                         .map(|(k, v)| {
@@ -703,7 +703,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             )
                         })
                         .collect(),
-                ))),
+                )))),
                 Value::Capture { positional, named } => {
                     let mut pairs: Vec<Value> = positional
                         .iter()
@@ -721,16 +721,16 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             Box::new(Value::str(k.clone())),
                         ));
                     }
-                    Some(Ok(Value::array(pairs)))
+                    Some(Ok(Value::Seq(Arc::new(pairs))))
                 }
                 Value::Package(_) => None, // let runtime handle (may be enum type)
                 v if v.is_range() => {
                     let values = crate::runtime::utils::value_to_list(v);
-                    Some(Ok(Value::array(positional_antipairs(&values))))
+                    Some(Ok(Value::Seq(Arc::new(positional_antipairs(&values)))))
                 }
                 other => {
                     let values = crate::runtime::utils::value_to_list(other);
-                    Some(Ok(Value::array(positional_antipairs(&values))))
+                    Some(Ok(Value::Seq(Arc::new(positional_antipairs(&values)))))
                 }
             }
         }

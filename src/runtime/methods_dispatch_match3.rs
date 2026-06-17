@@ -627,7 +627,7 @@ impl Interpreter {
                     }
                     _ => Vec::new(),
                 };
-                Some(Ok(Value::array(keys)))
+                Some(Ok(Value::Seq(Arc::new(keys))))
             }
             Value::Hash(ref map) => {
                 if let Some(info) = self.container_type_metadata(&target)
@@ -642,7 +642,7 @@ impl Interpreter {
                             .keys()
                             .map(|k| utils::hash_typed_key(&target, k))
                             .collect();
-                        return Some(Ok(Value::array(keys)));
+                        return Some(Ok(Value::Seq(Arc::new(keys))));
                     }
                     // Fallback: try coercion from string key
                     let key_constraint = info.key_type.unwrap();
@@ -654,10 +654,10 @@ impl Interpreter {
                             .unwrap_or_else(|_| Value::str(key.clone()));
                         keys.push(coerced);
                     }
-                    return Some(Ok(Value::array(keys)));
+                    return Some(Ok(Value::Seq(Arc::new(keys))));
                 }
                 let keys = map.keys().cloned().map(Value::str).collect::<Vec<Value>>();
-                Some(Ok(Value::array(keys)))
+                Some(Ok(Value::Seq(Arc::new(keys))))
             }
             Value::Mixin(inner, _) if matches!(inner.as_ref(), Value::Hash(_)) => {
                 Some(self.call_method_with_values(inner.as_ref().clone(), "keys", vec![]))
@@ -672,13 +672,13 @@ impl Interpreter {
             Value::Capture { positional, named } => {
                 let mut vals = *positional;
                 vals.extend(named.values().cloned());
-                Ok(Value::array(vals))
+                Ok(Value::Seq(Arc::new(vals)))
             }
-            Value::Array(items, ..) => Ok(Value::array(items.to_vec())),
-            Value::Hash(map) => Ok(Value::array(map.values().cloned().collect())),
-            Value::Pair(_, value) => Ok(Value::array(vec![*value.clone()])),
-            Value::ValuePair(_, value) => Ok(Value::array(vec![*value.clone()])),
-            _ => Ok(Value::array(Vec::new())),
+            Value::Array(items, ..) => Ok(Value::Seq(Arc::new(items.to_vec()))),
+            Value::Hash(map) => Ok(Value::Seq(Arc::new(map.values().cloned().collect()))),
+            Value::Pair(_, value) => Ok(Value::Seq(Arc::new(vec![*value.clone()]))),
+            Value::ValuePair(_, value) => Ok(Value::Seq(Arc::new(vec![*value.clone()]))),
+            _ => Ok(Value::Seq(Arc::new(Vec::new()))),
         }
     }
 

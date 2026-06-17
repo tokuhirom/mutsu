@@ -956,13 +956,27 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             if crate::runtime::utils::is_shaped_array(arg) {
                 let mut leaves = crate::runtime::utils::shaped_array_leaves(arg);
                 leaves.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                return Some(Ok(Value::array(leaves)));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(leaves))));
             }
             Some(Ok(match arg {
                 Value::Array(items, ..) => {
                     let mut sorted = (**items).clone();
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                    Value::array(sorted.items)
+                    Value::Seq(std::sync::Arc::new(sorted.items))
+                }
+                Value::Seq(items) | Value::Slip(items) => {
+                    let mut sorted = (**items).clone();
+                    sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
+                    Value::Seq(std::sync::Arc::new(sorted))
+                }
+                Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. } => {
+                    let mut sorted = crate::runtime::Interpreter::value_to_list(arg);
+                    sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
+                    Value::Seq(std::sync::Arc::new(sorted))
                 }
                 _ => Value::Nil,
             }))
