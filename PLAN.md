@@ -109,6 +109,20 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 
 > 内部に着手順序があり、前段が終わるまで後段に着手できないもの。
 
+### 二重ストア統合 — 単一権威ストア再設計（locals 権威化・env を derived view 化）
+
+ユーザー本命。設計＝[docs/vm-single-store.md](docs/vm-single-store.md)（履歴・撤回試行は [docs/vm-dual-store.md](docs/vm-dual-store.md)）。
+要旨: reverse sync を**削除せず**、per-`GetLocal` の coarse な `env_dirty`+全 locals スキャンから
+**carrier 境界での精密な書き込み名のみ writeback** へ再配置 → hot path から同期ロジックを消す。スライス順:
+
+- [ ] **Slice A** — invariant guard + 計測（`MUTSU_VM_STATS` で stale slot / 書き手を記録、挙動不変）。
+- [ ] **Slice B** — `EVAL` 精密 writeback（R2 旗艦・CP-2 ブロッカーが解けることの証明）。
+- [ ] **Slice C** — R1 reverse write-through（our/dynamic/`&sub` 登録等の by-name 書き手を slot 経由化）。
+- [ ] **Slice D** — R3 blanket-mark 撲滅（dispatch tier の精密 flag で冗長な post-dispatch mark を削除）。
+- [ ] **Slice E** — closure upvalue 化（prereq①・`compute_needs_env_sync` 撤去・最高リスク・最後）。
+- [ ] **Slice F** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
+- [ ] **Slice G**（後続・任意）— env の on-demand materialization（per-call `clone_env` を lazy overlay 化）。
+
 ### 第一級コンテナ Phase 2 → Phase 3（要素セル → 属性セル）
 
 最ホットな表現に触るので段階導入（big-bang 回帰を避ける）。設計の鍵・撤回した試行は [docs/container-identity.md](docs/container-identity.md)。
