@@ -1263,6 +1263,13 @@ impl Interpreter {
             // mirror the (possibly substitution-modified) topic into it so the
             // caller sees it without an O(locals) sync_locals_from_env pull.
             self.update_local_if_exists(code, var_name, &modified_topic);
+            // The env insert above bypasses `set_env_with_main_alias`, and
+            // `update_local_if_exists` only touches the *current* frame's slot —
+            // when `$x ~~ s///` runs inside an EVAL/carrier, `var_name` is an outer
+            // lexical with no current-frame slot, so flag it for the reverse sync
+            // (carrier log + env_dirty). Otherwise a carrier dropping its blanket
+            // net loses the `~~ s///` writeback (Slice C', open-question #2).
+            self.note_caller_env_write(var_name);
             // When the topic itself was modified (`$_ ~~ s///` inside a
             // `given $x` / `with $x` block), `$_` aliases the source scalar
             // variable, so the in-place substitution must propagate back to it —

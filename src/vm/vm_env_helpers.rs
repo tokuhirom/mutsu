@@ -364,6 +364,24 @@ impl Interpreter {
         }
     }
 
+    /// Record a by-name caller-lexical env write that did NOT flow through
+    /// `set_env_with_main_alias` (the single by-name writer that auto-logs). Some
+    /// ops mutate a caller lexical with a direct `env_mut().insert` — e.g. the
+    /// `$x ~~ s///` writeback to its LHS variable. For the reverse sync to stay
+    /// precise *and* complete (Slice C', open-question #2), every such write must
+    /// (a) log into the active carrier set so the carrier-return
+    /// `writeback_carrier_writes` reconciles the caller slot — without this, an
+    /// EVAL/carrier that dropped its blanket net (a fully-reconciled bareword
+    /// carrier, #3227/#3231) would silently lose the write — and (b) set
+    /// `env_dirty` so a non-carrier reader still pulls it. Call this right after
+    /// the direct insert, for each caller-visible name written.
+    pub(crate) fn note_caller_env_write(&mut self, name: &str) {
+        if let Some(set) = self.carrier_writes.as_mut() {
+            set.insert(name.to_string());
+        }
+        self.env_dirty = true;
+    }
+
     /// Begin a carrier region: start logging by-name env writes. Returns the
     /// previously-active log (if a carrier was already running, e.g. nested
     /// EVAL) so the caller can restore + merge on `end_carrier`. See Slice B.

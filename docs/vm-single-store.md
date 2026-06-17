@@ -364,6 +364,35 @@ for wall-clock.
   > declaration sites and implicit `:=`-bind reconcile dependencies it still
   > carries) cannot be deleted (Slice F).
 
+- **Slice C′ follow-up — close the `$x ~~ s///` writeback hole left by the
+  bareword-carrier drop. DONE (2026-06-18).**
+  The bareword-carrier generalization above (#3231) left a *latent* hole: a
+  `$x ~~ s///` writeback inserts the mutated value into `env` directly
+  (`vm_comparison_ops.rs`, bypassing `set_env_with_main_alias`) and only updates
+  the *current* frame's slot via `update_local_if_exists`. When the substitution
+  runs inside an EVAL, the current frame is the EVAL'd block (which has no `$x`
+  slot), so `$x` is written to env but never logged into the carrier set — and
+  the dropped net loses it (`EVAL '$x ~~ s/ab/xy/'` left `$x` unchanged). The
+  general helper `note_caller_env_write` (carrier log + `env_dirty`) is now
+  called at that writeback, so the carrier-return reconcile sees `$x`. Pinned by
+  `t/eval-subst-writeback.t` (6). (Found during the `pairs`/`slip` investigation
+  below: most EVAL'd mutations — `.=`, `.push`, `++`, plain `=` — already log via
+  `set_env_with_main_alias` or leave `fully` false; only the direct-`env`-insert
+  `~~ s///` writeback escaped.)
+
+  > **Deeper finding on `pairs`/`slip` (2026-06-18): it is the CP-2 wall, not
+  > merely incomplete write-logging.** Even after routing the direct-write paths
+  > (`s///` topic, regex `:let`, regex embedded code) through the carrier log,
+  > dropping the `pairs`/`slip` blanket still corrupts *deep `:=` bind-cell*
+  > coherence (`t/element-bind-cell.t` tests 9/28/41/44/46/47): writing through a
+  > bound scalar (`$abbrev := $struct[..]<..>[..]; $abbrev = 44`) mutates a shared
+  > cell whose aliased container (`$struct`) is not name-trackable, and the
+  > interaction of the carrier's reconcile/pull with the env↔locals
+  > representation divergence for cell-linked containers actively corrupts the
+  > container (it reads back `Nil`). This is the same divergence CP-2 hit. So
+  > `pairs`/`slip` generalization needs not just complete write-logging but a
+  > solution to deep-cell env↔locals coherence — deferred.
+
 - **Slice D — finish R3 blanket-mark removal.**
   Audit each remaining post-dispatch blanket against its tier's precise flag;
   delete the redundant ones. Gate: method/function/closure roast; the existing
