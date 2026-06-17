@@ -372,12 +372,31 @@ fn range_scale(range_val: &Value, factor: &Value) -> Option<Value> {
     };
     let new_start = scale_val(start);
     let new_end = scale_val(end);
-    Some(Value::GenericRange {
-        start: Arc::new(new_start),
-        end: Arc::new(new_end),
+    Some(canonical_int_range(
+        new_start, new_end, excl_start, excl_end,
+    ))
+}
+
+/// Build a Range value, collapsing to the canonical integer-range variant
+/// (`Range`/`RangeExcl`/`RangeExclStart`/`RangeExclBoth`) when both endpoints
+/// are `Int`, so the result is `eqv` to a literal range (e.g. `(2..^5) * 5`
+/// must equal `10..^25`). Falls back to `GenericRange` for non-Int endpoints.
+fn canonical_int_range(start: Value, end: Value, excl_start: bool, excl_end: bool) -> Value {
+    if let (Value::Int(a), Value::Int(b)) = (&start, &end) {
+        let (a, b) = (*a, *b);
+        return match (excl_start, excl_end) {
+            (false, false) => Value::Range(a, b),
+            (false, true) => Value::RangeExcl(a, b),
+            (true, false) => Value::RangeExclStart(a, b),
+            (true, true) => Value::RangeExclBoth(a, b),
+        };
+    }
+    Value::GenericRange {
+        start: Arc::new(start),
+        end: Arc::new(end),
         excl_start,
         excl_end,
-    })
+    }
 }
 
 /// Divide a Range by a numeric factor. Returns Some(range) if the left is a Range.
