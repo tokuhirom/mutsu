@@ -567,6 +567,14 @@ impl Interpreter {
             return Self::extend_sequence_cache(list, spec, needed);
         }
 
+        // For infinite closure-based sequences (`1, 1, * + * ... *`), re-invoke
+        // the generator closure over the growing history to produce elements on
+        // demand, so an unbounded sequence stays lazy instead of truncating to
+        // its eager prefix.
+        if list.closure_seq.is_some() {
+            return self.extend_closure_sequence(list, needed);
+        }
+
         // Lazy map/grep pipeline: pull from the source and apply the stage on
         // demand (one source element at a time), so an infinite source stays
         // lazy instead of materializing.
@@ -1353,6 +1361,63 @@ impl Interpreter {
         } else {
             val
         }
+    }
+
+    /// Extend an infinite closure-based sequence to at least `needed` elements
+    /// by re-invoking its generator closure over the growing element history.
+    /// Returns whatever is available (possibly fewer than `needed`) once the
+    /// generator signals termination.
+    fn extend_closure_sequence(
+        &mut self,
+        list: &LazyList,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        // Fast path: already cached enough.
+        {
+            let cache = list.cache.lock().unwrap();
+            if let Some(cached) = cache.as_ref()
+                && cached.len() >= needed
+            {
+                return Ok(cached[..needed].to_vec());
+            }
+        }
+
+        // Snapshot the current history without holding the cache lock across
+        // user-code execution.
+        let mut history = {
+            let cache = list.cache.lock().unwrap();
+            cache.as_ref().cloned().unwrap_or_default()
+        };
+
+        let state_mutex = list.closure_seq.as_ref().unwrap();
+        let mut guard = state_mutex.lock().unwrap();
+        let state = &mut *guard;
+        let generator = state.generator.clone();
+
+        while history.len() < needed && !state.finished {
+            let precompiled = state
+                .precompiled
+                .as_ref()
+                .map(|(c, f)| (c.as_ref(), f.as_ref()));
+            match self.sequence_closure_step(
+                &generator,
+                &history,
+                precompiled,
+                &mut state.closure_env,
+                false,
+            )? {
+                Some(v) => history.push(v),
+                None => {
+                    state.finished = true;
+                    break;
+                }
+            }
+        }
+
+        // Publish the extended history back to the cache.
+        *list.cache.lock().unwrap() = Some(history.clone());
+        let take = needed.min(history.len());
+        Ok(history[..take].to_vec())
     }
 
     /// Extend a sequence-spec lazy list's cache to at least `needed` elements.

@@ -532,6 +532,7 @@ impl Interpreter {
             sequence_spec: None,
             coroutine: None,
             lazy_pipe: None,
+            closure_seq: None,
         };
         Value::LazyList(std::sync::Arc::new(list))
     }

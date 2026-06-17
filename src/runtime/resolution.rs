@@ -1626,6 +1626,10 @@ impl Interpreter {
                             .lazy_pipe
                             .as_ref()
                             .map(|p| std::sync::Mutex::new(p.lock().unwrap().clone())),
+                        closure_seq: list
+                            .closure_seq
+                            .as_ref()
+                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
                     }))
                 } else {
                     v

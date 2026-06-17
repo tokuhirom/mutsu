@@ -27,8 +27,12 @@ The blockers, in rough order of how many files they gate:
   binding/`:=`-alias, `is rw`/take-rw, `.VAR`, typed-hash default survival,
   closure capture-by-container, object-hash `%{Mu}` keys, Arc-pointer typed-array
   flaky. This is PLAN.md's "🟣 第2優先" and the single largest lever.
-- **Real lazy infinite sequences** — `@a[0..*]`, `fib[100]`, `X::Cannot::Lazy`
-  on same-type lazy iterables; mutsu materializes `1…∞` to a finite list.
+- **Real lazy infinite sequences** — `@a[0..*]`, `X::Cannot::Lazy` on same-type
+  lazy iterables. Closure-based infinite sequences (`1, 1, *+* ... *`) now
+  generate on demand for scalar/`constant`/`.lazy` forms (`$s[100]`, `fib[100]`);
+  the remaining gap is **lazy arrays** — `my @a = 1..*` still materializes to a
+  finite prefix because Array mutation ops (clone/unshift/shift/:delete/elem-assign)
+  have no reify-on-demand path yet.
 - **Threading / concurrency primitives** — Semaphore, nonblocking await, lock
   contention, remaining Supply combinators (all of S17).
 - **RakuAST** — `Formatter.AST`, anything needing a reflectable AST.
@@ -289,9 +293,11 @@ Interpreter-removal / first-class-container tracks advance.
   set-operator mutability tracking. (12/17/36/37 also fail in rakudo.)
 - **S09-subscript/slice.t** — **Hard**, 9/39 then aborts at line 310: slices with
   infinite sequences (`@a[0..*]`).
-- **S04-declarations/constant.t** — **Medium**, 65/72. Remaining: lazy-seq `fib[100]`
-  (46), `G::c` qualified name via constant alias (44), multi-candidate sharing.
-  NOT whitelistable until the lazy-seq lands.
+- **S04-declarations/constant.t** — **Medium**. Lazy-seq `fib[100]` (46) now PASSES:
+  closure-based infinite sequences (`0, 1, *+* ... *`) generate elements on demand
+  via `LazyList.closure_seq` (re-invokes the generator over the growing history).
+  Remaining blocker: `G::c` qualified name via constant-aliased enum (44) — a
+  dispatch issue, NOT laziness. NOT whitelistable until that lands.
 
 **Dispatch / MOP / EVAL-in-class:**
 
