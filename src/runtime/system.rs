@@ -934,6 +934,17 @@ impl Interpreter {
     ) -> Option<String> {
         match stmt {
             Stmt::Expr(expr) => self.find_undeclared_name_in_expr(expr, local_classes, declared),
+            // A `constant NAME = <init>` whose initializer references an undeclared
+            // bareword (`constant foo = bar`) is X::Undeclared::Symbols. Scoped to
+            // `constant` only (custom trait `__constant`) to avoid false positives
+            // on ordinary `my $x = ...` initializers that resolve at runtime.
+            Stmt::VarDecl {
+                expr,
+                custom_traits,
+                ..
+            } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
+                self.find_undeclared_name_in_expr(expr, local_classes, declared)
+            }
             _ => None,
         }
     }
