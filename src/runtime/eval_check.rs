@@ -4,18 +4,37 @@ use crate::ast::{PhaserKind, Stmt};
 /// Collect the names of all types (class/role/enum/subset) declared anywhere in
 /// `stmts`, descending into block-like bodies. Used so a sub parameter type that
 /// names a type declared in the same compilation unit is not falsely rejected.
-fn collect_declared_type_names(stmts: &[Stmt], out: &mut std::collections::HashSet<String>) {
+fn collect_declared_type_names(
+    stmts: &[Stmt],
+    out: &mut std::collections::HashSet<String>,
+    packages: &mut std::collections::HashSet<String>,
+) {
     for stmt in stmts {
         match stmt {
             Stmt::ClassDecl { name, body, .. } | Stmt::RoleDecl { name, body, .. } => {
                 out.insert(name.resolve().to_string());
-                collect_declared_type_names(body, out);
+                collect_declared_type_names(body, out, packages);
             }
             Stmt::EnumDecl { name, .. } | Stmt::SubsetDecl { name, .. } => {
                 out.insert(name.resolve().to_string());
             }
-            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
-                collect_declared_type_names(body, out);
+            Stmt::Package {
+                name, kind, body, ..
+            } => {
+                // `module`/`package` are not type-like (a parameter typed by one
+                // is X::Parameter::BadType); `grammar` is a real type.
+                if matches!(
+                    kind,
+                    crate::ast::PackageKind::Module | crate::ast::PackageKind::Package
+                ) {
+                    packages.insert(name.resolve().to_string());
+                } else {
+                    out.insert(name.resolve().to_string());
+                }
+                collect_declared_type_names(body, out, packages);
+            }
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                collect_declared_type_names(body, out, packages);
             }
             _ => {}
         }
@@ -29,6 +48,7 @@ fn walk_validate_sub_param_types(
     interp: &Interpreter,
     stmts: &[Stmt],
     declared: &std::collections::HashSet<String>,
+    packages: &std::collections::HashSet<String>,
 ) -> Result<(), RuntimeError> {
     for stmt in stmts {
         match stmt {
@@ -38,16 +58,16 @@ fn walk_validate_sub_param_types(
                 return_type,
                 ..
             } => {
-                interp.validate_param_type_constraints(param_defs, declared)?;
+                interp.validate_param_type_constraints(param_defs, declared, packages)?;
                 interp.validate_return_type_constraint(
                     return_type.as_deref(),
                     param_defs,
                     declared,
                 )?;
-                walk_validate_sub_param_types(interp, body, declared)?;
+                walk_validate_sub_param_types(interp, body, declared, packages)?;
             }
             Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
-                walk_validate_sub_param_types(interp, body, declared)?;
+                walk_validate_sub_param_types(interp, body, declared, packages)?;
             }
             _ => {}
         }
@@ -63,8 +83,9 @@ impl Interpreter {
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
         let mut declared = std::collections::HashSet::new();
-        collect_declared_type_names(stmts, &mut declared);
-        walk_validate_sub_param_types(self, stmts, &declared)
+        let mut packages = std::collections::HashSet::new();
+        collect_declared_type_names(stmts, &mut declared, &mut packages);
+        walk_validate_sub_param_types(self, stmts, &declared, &packages)
     }
 
     /// Parse and run only BEGIN/CHECK phasers from EVAL'd code (`:check` mode).

@@ -122,6 +122,7 @@ impl Interpreter {
         &self,
         param_defs: &[ParamDef],
         declared_types: &std::collections::HashSet<String>,
+        declared_packages: &std::collections::HashSet<String>,
     ) -> Result<(), RuntimeError> {
         // Type-capture names declared in this signature (e.g. `::T`) are valid
         // type names for the rest of the signature.
@@ -156,6 +157,20 @@ impl Interpreter {
                 || self.has_type(tc)
             {
                 continue;
+            }
+            // A `package`/`module` named `tc` exists but is not type-like enough
+            // to qualify a parameter: throw X::Parameter::BadType, not the generic
+            // invalid-typename error. Packages are gathered statically because this
+            // pre-pass runs before the package is registered at runtime.
+            if declared_packages.contains(tc) || self.is_declared_package(tc) {
+                let msg = format!(
+                    "Package '{}' is insufficiently type-like to qualify a parameter.  Did you mean 'class'?",
+                    tc
+                );
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("type".to_string(), Value::str(tc.to_string()));
+                attrs.insert("message".to_string(), Value::str(msg));
+                return Err(RuntimeError::typed("X::Parameter::BadType", attrs));
             }
             let suggestions = self.suggest_type_names(tc);
             let mut attrs = std::collections::HashMap::new();

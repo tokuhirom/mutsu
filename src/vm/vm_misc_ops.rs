@@ -2672,6 +2672,20 @@ impl Interpreter {
         {
             // Check if this is a suppressed nested class name that can be resolved
             if self.resolve_suppressed_type(declared_constraint).is_none() {
+                // A `package`/`module` declared with this name exists but is not
+                // type-like enough to constrain a variable (only `class`/`role`/
+                // `enum`/`subset` are): throw X::Syntax::Variable::BadType, not the
+                // generic "not declared" error.
+                if self.is_declared_package(declared_constraint) {
+                    let msg = format!(
+                        "Package '{}' is insufficiently type-like to qualify a variable.  Did you mean 'class'?",
+                        constraint
+                    );
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("type".to_string(), Value::str(constraint.to_string()));
+                    attrs.insert("message".to_string(), Value::str(msg));
+                    return Err(RuntimeError::typed("X::Syntax::Variable::BadType", attrs));
+                }
                 // Unknown user-defined type — reject it.
                 // In Raku this is a compile-time failure grouped into an
                 // X::Comp::Group whose `.sorrows` holds the underlying

@@ -5325,6 +5325,16 @@ impl Interpreter {
         self.registry().classes.contains_key(name)
     }
 
+    /// True when `name` was declared via the `package`/`module` declarator (and
+    /// is therefore not type-like enough to constrain a variable/parameter).
+    /// Used to raise X::Syntax::Variable::BadType / X::Parameter::BadType instead
+    /// of a generic "not declared" error. A `class`/`role`/`enum`/`subset` is a
+    /// real type and is NOT recorded here (it goes through the class registry).
+    pub(crate) fn is_declared_package(&self, name: &str) -> bool {
+        self.chain_declared_packages.contains(name)
+            || matches!(self.env.get(name), Some(Value::Package(_)))
+    }
+
     /// Check if a class name refers to a user-defined class that inherits from
     /// a container type (Hash, Array, etc.). Used to skip element-level type
     /// checking for container subclasses.
