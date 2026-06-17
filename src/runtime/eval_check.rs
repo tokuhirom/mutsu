@@ -98,6 +98,56 @@ impl Interpreter {
         walk_validate_sub_param_types(self, stmts, &declared, &packages, &classes)
     }
 
+    /// Reject a `trusts T` declaration whose target type `T` is not declared
+    /// anywhere in this compilation unit (nor a known built-in type)
+    /// -> X::Undeclared (symbol => T, what => "Type"). Forward references are
+    /// honored because all declared type names are collected first.
+    pub(crate) fn check_eval_undeclared_trusts(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        let mut declared = std::collections::HashSet::new();
+        let mut packages = std::collections::HashSet::new();
+        let mut classes = std::collections::HashSet::new();
+        collect_declared_type_names(stmts, &mut declared, &mut packages, &mut classes);
+        self.walk_validate_trusts(stmts, &declared)
+    }
+
+    fn walk_validate_trusts(
+        &self,
+        stmts: &[Stmt],
+        declared: &std::collections::HashSet<String>,
+    ) -> Result<(), RuntimeError> {
+        for stmt in stmts {
+            match stmt {
+                Stmt::TrustsDecl { name } => {
+                    let target = name.resolve();
+                    // A bare identifier (e.g. `Bar`) that names no declared type and
+                    // is not a known built-in/resolvable type is undeclared.
+                    let known = declared.contains(target.as_str())
+                        || self.has_type(&target)
+                        || self.is_resolvable_type(&target);
+                    if !known {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("symbol".to_string(), Value::str(target.to_string()));
+                        attrs.insert("what".to_string(), Value::str("Type".to_string()));
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!("Type '{}' is not declared", target)),
+                        );
+                        return Err(RuntimeError::typed("X::Undeclared", attrs));
+                    }
+                }
+                Stmt::ClassDecl { body, .. }
+                | Stmt::RoleDecl { body, .. }
+                | Stmt::Package { body, .. }
+                | Stmt::Block(body)
+                | Stmt::SyntheticBlock(body) => {
+                    self.walk_validate_trusts(body, declared)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     /// Parse and run only BEGIN/CHECK phasers from EVAL'd code (`:check` mode).
     fn parse_and_check_only_with_operators(
         &mut self,
@@ -116,6 +166,7 @@ impl Interpreter {
         ) {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;
+                self.check_eval_undeclared_trusts(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
                 self.check_eval_undeclared_names(&stmts)?;
                 let mut stmts = self.inject_eval_methods_into_class(stmts);

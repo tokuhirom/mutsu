@@ -72,6 +72,7 @@ impl Interpreter {
                         Ok((stmts, _)) => nested
                             .check_eval_mainline_placeholders(&stmts)
                             .and_then(|()| nested.check_eval_class_redeclarations(&stmts))
+                            .and_then(|()| nested.check_eval_undeclared_trusts(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_vars(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_names(&stmts)),
                         Err(mut e) => {
@@ -421,6 +422,7 @@ impl Interpreter {
                         Ok((stmts, _)) => nested
                             .check_eval_mainline_placeholders(&stmts)
                             .and_then(|()| nested.check_eval_class_redeclarations(&stmts))
+                            .and_then(|()| nested.check_eval_undeclared_trusts(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_vars(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_names(&stmts)),
                         Err(mut e) => {
