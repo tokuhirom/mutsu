@@ -133,6 +133,190 @@ impl Interpreter {
         })
     }
 
+    /// Produce the next element of a closure-based sequence given the current
+    /// element `history`. Returns `Ok(Some(v))` for the next value, or
+    /// `Ok(None)` when the generator signalled termination (`last`, or a
+    /// suppressed error). Side effects in a fast-path generator are reflected
+    /// back into `closure_env` so subsequent calls observe them.
+    ///
+    /// This is the single per-element step shared by the initial generation
+    /// loop in `eval_sequence` and the on-demand extension of an infinite
+    /// closure sequence (`Interpreter::extend_closure_sequence`).
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn sequence_closure_step(
+        &mut self,
+        generator: &Value,
+        history: &[Value],
+        precompiled: Option<(
+            &crate::opcode::CompiledCode,
+            &std::collections::HashMap<String, crate::opcode::CompiledFunction>,
+        )>,
+        closure_env: &mut Option<crate::env::Env>,
+        suppress_generator_error: bool,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let genfn = generator;
+        let val = if let Value::Sub(data) = genfn {
+            if self.sequence_has_registered_routine(&data.package.resolve(), &data.name.resolve()) {
+                let args = match self
+                    .sequence_routine_param_mode(&data.package.resolve(), &data.name.resolve())
+                {
+                    SequenceRoutineParamMode::Fixed(arity) => {
+                        Self::collect_sequence_args_fixed(history, arity)?
+                    }
+                    SequenceRoutineParamMode::Slurpy { min_arity } => {
+                        Self::collect_sequence_args_slurpy(history, min_arity)
+                    }
+                };
+                let name_str = data.name.resolve();
+                let call_name = name_str.strip_prefix('&').unwrap_or(&name_str);
+                match self.call_function(call_name, args) {
+                    Ok(v) => v,
+                    Err(_e) if suppress_generator_error => return Ok(None),
+                    Err(e) => return Err(e),
+                }
+            } else {
+                let slurpy_index = data
+                    .params
+                    .iter()
+                    .position(|param| param.starts_with('@') || param.starts_with('%'));
+                let args: Vec<Value> = if data.params.is_empty() {
+                    // No declared params: sequence generators still receive history in @_.
+                    history.to_vec()
+                } else if let Some(min_arity) = slurpy_index {
+                    Self::collect_sequence_args_slurpy(history, min_arity)
+                } else {
+                    let arity = data.params.len();
+                    Self::collect_sequence_args_fixed(history, arity)?
+                };
+                let needs_full_binding = data.param_defs.iter().any(|pd| {
+                    pd.type_constraint.is_some()
+                        || pd.literal_value.is_some()
+                        || pd.shape_constraints.is_some()
+                        || pd.named
+                        || pd.slurpy
+                        || pd.double_slurpy
+                });
+                if needs_full_binding {
+                    match self.call_sub_value(Value::Sub(data.clone()), args, false) {
+                        Ok(v) => v,
+                        Err(_e) if suppress_generator_error => return Ok(None),
+                        Err(e) => return Err(e),
+                    }
+                } else {
+                    let saved = self.env.clone();
+                    // Pre-run snapshot of the generator's captured vars. After the
+                    // body runs we propagate back only the captures it GENUINELY
+                    // mutated (e.g. `++$i`, `++$sunk`); a capture that merely
+                    // shadows a caller variable without being written — notably
+                    // the very `$s` this sequence is bound to — is left untouched,
+                    // so the generator cannot clobber unrelated outer variables.
+                    let pre: Vec<(crate::symbol::Symbol, Value)> = closure_env
+                        .as_ref()
+                        .map(|e| e.iter().map(|(k, v)| (*k, v.clone())).collect())
+                        .unwrap_or_default();
+                    // Use the mutable closure env so side-effects persist across
+                    // iterations (e.g. `my $i = 0; { ++$i } ... *`).
+                    if let Some(env) = closure_env.as_ref() {
+                        for (k, v) in env.iter() {
+                            self.env.insert_sym(*k, v.clone());
+                        }
+                    }
+
+                    // Bind parameters
+                    for (i, param) in data.params.iter().enumerate() {
+                        if param.starts_with('@') {
+                            let rest = if i < args.len() {
+                                args[i..].to_vec()
+                            } else {
+                                Vec::new()
+                            };
+                            self.env.insert(param.clone(), Value::array(rest));
+                            break;
+                        }
+                        if param.starts_with('%') {
+                            let mut map = std::collections::HashMap::new();
+                            for item in args.iter().skip(i) {
+                                if let Value::Pair(k, v) = item {
+                                    map.insert(k.clone(), (**v).clone());
+                                }
+                            }
+                            self.env
+                                .insert(param.clone(), Value::Hash(Value::hash_arc(map)));
+                            break;
+                        }
+                        if let Some(arg) = args.get(i) {
+                            self.env.insert(param.clone(), arg.clone());
+                        }
+                    }
+
+                    // Bind $_ to last arg
+                    if let Some(last_arg) = args.last() {
+                        self.env.insert("_".to_string(), last_arg.clone());
+                    }
+                    // Bind @_ to the argument history window.
+                    self.env
+                        .insert("@_".to_string(), Value::array(args.clone()));
+
+                    let exec_result = if let Some((code, fns)) = precompiled {
+                        self.eval_precompiled_block_fast(code, fns)
+                    } else {
+                        self.eval_block_value(&data.body)
+                    };
+                    // Propagate genuinely-mutated captures into both the
+                    // persistent closure env (so the next pull sees them) and the
+                    // caller (so outer side effects like `++$sunk` are visible),
+                    // then restore the caller env. This runs on every exit path —
+                    // including `last` — so `{ ++$sunk; last }` still records its
+                    // side effect even though the body signals termination.
+                    let mut restored = saved;
+                    for (k, before) in &pre {
+                        if let Some(after) = self.env.get_sym(*k)
+                            && after != before
+                        {
+                            let after = after.clone();
+                            if let Some(gen_env) = closure_env.as_mut() {
+                                gen_env.insert_sym(*k, after.clone());
+                            }
+                            if restored.contains_key_sym(*k) {
+                                restored.insert_sym(*k, after);
+                            }
+                        }
+                    }
+                    self.env = restored;
+                    match exec_result {
+                        Ok(v) => v,
+                        Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
+                        Err(e) if e.is_last => return Ok(None),
+                        Err(_e) if suppress_generator_error => return Ok(None),
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
+        } else if let Value::Routine { name: rname, .. } = genfn {
+            let package = match genfn {
+                Value::Routine { package, .. } => package,
+                _ => unreachable!(),
+            };
+            let args = match self.sequence_routine_param_mode(&package.resolve(), &rname.resolve())
+            {
+                SequenceRoutineParamMode::Fixed(arity) => {
+                    Self::collect_sequence_args_fixed(history, arity)?
+                }
+                SequenceRoutineParamMode::Slurpy { min_arity } => {
+                    Self::collect_sequence_args_slurpy(history, min_arity)
+                }
+            };
+            match self.call_sub_value(genfn.clone(), args, false) {
+                Ok(v) => v,
+                Err(_e) if suppress_generator_error => return Ok(None),
+                Err(e) => return Err(e),
+            }
+        } else {
+            return Ok(None);
+        };
+        Ok(Some(val))
+    }
+
     pub(super) fn eval_sequence(
         &mut self,
         left: Value,
@@ -811,178 +995,28 @@ impl Interpreter {
                 None
             };
 
+        // Tracks whether a closure generator signalled termination (`last`)
+        // during initial generation. When it did, the sequence is finite and
+        // must NOT be left as a resumable infinite closure sequence.
+        let mut closure_generation_finished = false;
         'seq_gen: for _ in 0..max_gen {
             let next = match &mode {
                 SeqMode::Closure => {
                     let suppress_generator_error =
                         matches!(endpoint_kind, Some(EndpointKind::Value(_)));
                     let genfn = generator.as_ref().unwrap();
-                    if let Value::Sub(data) = genfn {
-                        if self.sequence_has_registered_routine(
-                            &data.package.resolve(),
-                            &data.name.resolve(),
-                        ) {
-                            let args = match self.sequence_routine_param_mode(
-                                &data.package.resolve(),
-                                &data.name.resolve(),
-                            ) {
-                                SequenceRoutineParamMode::Fixed(arity) => {
-                                    Self::collect_sequence_args_fixed(&result, arity)?
-                                }
-                                SequenceRoutineParamMode::Slurpy { min_arity } => {
-                                    Self::collect_sequence_args_slurpy(&result, min_arity)
-                                }
-                            };
-                            let name_str = data.name.resolve();
-                            let call_name = name_str.strip_prefix('&').unwrap_or(&name_str);
-                            match self.call_function(call_name, args) {
-                                Ok(v) => v,
-                                Err(_e) if suppress_generator_error => break 'seq_gen,
-                                Err(e) => return Err(e),
-                            }
-                        } else {
-                            let restore_env_with_side_effects =
-                                |saved: crate::env::Env,
-                                 current: &crate::env::Env|
-                                 -> crate::env::Env {
-                                    let mut merged = saved;
-                                    for (k, v) in current.iter() {
-                                        if merged.contains_key_sym(*k) {
-                                            merged.insert_sym(*k, v.clone());
-                                        }
-                                    }
-                                    merged
-                                };
-                            let slurpy_index = data
-                                .params
-                                .iter()
-                                .position(|param| param.starts_with('@') || param.starts_with('%'));
-                            let args: Vec<Value> = if data.params.is_empty() {
-                                // No declared params: sequence generators still receive history in @_.
-                                result.clone()
-                            } else if let Some(min_arity) = slurpy_index {
-                                Self::collect_sequence_args_slurpy(&result, min_arity)
-                            } else {
-                                let arity = data.params.len();
-                                Self::collect_sequence_args_fixed(&result, arity)?
-                            };
-                            let needs_full_binding = data.param_defs.iter().any(|pd| {
-                                pd.type_constraint.is_some()
-                                    || pd.literal_value.is_some()
-                                    || pd.shape_constraints.is_some()
-                                    || pd.named
-                                    || pd.slurpy
-                                    || pd.double_slurpy
-                            });
-                            if needs_full_binding {
-                                match self.call_sub_value(Value::Sub(data.clone()), args, false) {
-                                    Ok(v) => v,
-                                    Err(_e) if suppress_generator_error => break 'seq_gen,
-                                    Err(e) => return Err(e),
-                                }
-                            } else {
-                                let saved = self.env.clone();
-                                // Use the mutable closure env so side-effects persist
-                                // across iterations (e.g. `my $i = 0; { ++$i } ... *`).
-                                let closure_env = generator_closure_env.as_ref().unwrap();
-                                for (k, v) in closure_env.iter() {
-                                    self.env.insert_sym(*k, v.clone());
-                                }
-
-                                // Bind parameters
-                                for (i, param) in data.params.iter().enumerate() {
-                                    if param.starts_with('@') {
-                                        let rest = if i < args.len() {
-                                            args[i..].to_vec()
-                                        } else {
-                                            Vec::new()
-                                        };
-                                        self.env.insert(param.clone(), Value::array(rest));
-                                        break;
-                                    }
-                                    if param.starts_with('%') {
-                                        let mut map = std::collections::HashMap::new();
-                                        for item in args.iter().skip(i) {
-                                            if let Value::Pair(k, v) = item {
-                                                map.insert(k.clone(), (**v).clone());
-                                            }
-                                        }
-                                        self.env.insert(
-                                            param.clone(),
-                                            Value::Hash(Value::hash_arc(map)),
-                                        );
-                                        break;
-                                    }
-                                    if let Some(arg) = args.get(i) {
-                                        self.env.insert(param.clone(), arg.clone());
-                                    }
-                                }
-
-                                // Bind $_ to last arg
-                                if let Some(last_arg) = args.last() {
-                                    self.env.insert("_".to_string(), last_arg.clone());
-                                }
-                                // Bind @_ to the argument history window.
-                                self.env
-                                    .insert("@_".to_string(), Value::array(args.clone()));
-
-                                let exec_result =
-                                    if let Some((ref code, ref fns)) = precompiled_closure {
-                                        self.eval_precompiled_block_fast(code, fns)
-                                    } else {
-                                        self.eval_block_value(&data.body)
-                                    };
-                                let val = match exec_result {
-                                    Ok(v) => v,
-                                    Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
-                                    Err(e) if e.is_last => {
-                                        self.env = restore_env_with_side_effects(saved, &self.env);
-                                        break;
-                                    }
-                                    Err(_e) if suppress_generator_error => {
-                                        self.env = restore_env_with_side_effects(saved, &self.env);
-                                        break 'seq_gen;
-                                    }
-                                    Err(e) => {
-                                        self.env = restore_env_with_side_effects(saved, &self.env);
-                                        return Err(e);
-                                    }
-                                };
-                                // Propagate side-effects back to the mutable closure env
-                                // so the next iteration sees updated values.
-                                if let Some(ref mut gen_env) = generator_closure_env {
-                                    for (k, v) in self.env.iter() {
-                                        if gen_env.contains_key_sym(*k) {
-                                            gen_env.insert_sym(*k, v.clone());
-                                        }
-                                    }
-                                }
-                                self.env = restore_env_with_side_effects(saved, &self.env);
-                                val
-                            }
+                    match self.sequence_closure_step(
+                        genfn,
+                        &result,
+                        precompiled_closure.as_ref().map(|t| (&t.0, &t.1)),
+                        &mut generator_closure_env,
+                        suppress_generator_error,
+                    )? {
+                        Some(v) => v,
+                        None => {
+                            closure_generation_finished = true;
+                            break 'seq_gen;
                         }
-                    } else if let Value::Routine { name: rname, .. } = genfn {
-                        let package = match genfn {
-                            Value::Routine { package, .. } => package,
-                            _ => unreachable!(),
-                        };
-                        let args = match self
-                            .sequence_routine_param_mode(&package.resolve(), &rname.resolve())
-                        {
-                            SequenceRoutineParamMode::Fixed(arity) => {
-                                Self::collect_sequence_args_fixed(&result, arity)?
-                            }
-                            SequenceRoutineParamMode::Slurpy { min_arity } => {
-                                Self::collect_sequence_args_slurpy(&result, min_arity)
-                            }
-                        };
-                        match self.call_sub_value(genfn.clone(), args, false) {
-                            Ok(v) => v,
-                            Err(_e) if suppress_generator_error => break 'seq_gen,
-                            Err(e) => return Err(e),
-                        }
-                    } else {
-                        break;
                     }
                 }
                 SeqMode::Arithmetic(step) => {
@@ -1358,6 +1392,23 @@ impl Interpreter {
             if let Some(spec) = seq_spec {
                 Ok(Value::LazyList(std::sync::Arc::new(
                     crate::value::LazyList::new_sequence(result, spec),
+                )))
+            } else if matches!(mode, SeqMode::Closure)
+                && !closure_generation_finished
+                && let Some(gen_fn) = generator
+            {
+                // Infinite closure-based sequence (`1, 1, * + * ... *`): keep the
+                // generator so elements past the eager prefix are produced on
+                // demand instead of truncating to the initial cache.
+                let state = crate::value::ClosureSeqState {
+                    generator: gen_fn,
+                    closure_env: generator_closure_env,
+                    precompiled: precompiled_closure
+                        .map(|(c, f)| (std::sync::Arc::new(c), std::sync::Arc::new(f))),
+                    finished: false,
+                };
+                Ok(Value::LazyList(std::sync::Arc::new(
+                    crate::value::LazyList::new_closure_sequence(result, state),
                 )))
             } else {
                 Ok(Value::LazyList(std::sync::Arc::new(

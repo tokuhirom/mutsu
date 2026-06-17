@@ -1828,6 +1828,28 @@ pub(crate) enum ForLoopResumeState {
     CStyleLoop,
 }
 
+/// Pre-compiled fast-path body for a closure sequence generator: the compiled
+/// code plus its associated compiled functions.
+pub(crate) type CompiledClosureBody = (Arc<CompiledCode>, Arc<HashMap<String, CompiledFunction>>);
+
+/// State for an infinite closure-based sequence (`1, 1, * + * ... *`).
+///
+/// Unlike `SequenceSpec` (arithmetic/geometric, computed without VM context),
+/// a closure generator must re-invoke user code to produce each next element,
+/// so its state is kept here and extended on demand via the VM.
+#[derive(Clone)]
+pub(crate) struct ClosureSeqState {
+    /// The generator closure (`Value::Sub` or `Value::Routine`).
+    pub(crate) generator: Value,
+    /// Mutable captured env for side-effecting generators (e.g. `my $i = 0; { $i++ } ... *`).
+    /// Persisted across pulls so side effects accumulate.
+    pub(crate) closure_env: Option<Env>,
+    /// Pre-compiled fast-path body for the generator (when the fast path applies).
+    pub(crate) precompiled: Option<CompiledClosureBody>,
+    /// Set once the generator signals termination (`last`/error) so we stop pulling.
+    pub(crate) finished: bool,
+}
+
 /// Saved VM state for a suspended gather coroutine.
 /// When `take` is encountered during gather body execution, the VM state
 /// is captured here so execution can resume later for more elements.
@@ -1866,6 +1888,10 @@ pub(crate) struct LazyList {
     /// demand, so `(1..Inf).map(...)`/`.grep(...)` stay truly lazy instead of
     /// materializing the (possibly infinite) source.
     pub(crate) lazy_pipe: Option<Mutex<MapGrepSpec>>,
+    /// Infinite closure-based sequence generator (`1, 1, * + * ... *`).
+    /// When present, more elements are produced on demand by re-invoking the
+    /// generator closure over the growing element history.
+    pub(crate) closure_seq: Option<Mutex<ClosureSeqState>>,
 }
 
 impl std::fmt::Debug for LazyList {
@@ -1901,6 +1927,10 @@ impl Clone for LazyList {
                 .lazy_pipe
                 .as_ref()
                 .map(|p| Mutex::new(p.lock().unwrap().clone())),
+            closure_seq: self
+                .closure_seq
+                .as_ref()
+                .map(|c| Mutex::new(c.lock().unwrap().clone())),
         }
     }
 }
@@ -1919,6 +1949,7 @@ impl LazyList {
             sequence_spec: None,
             coroutine: None,
             lazy_pipe: None,
+            closure_seq: None,
         }
     }
 
@@ -1935,6 +1966,7 @@ impl LazyList {
             sequence_spec: Some(spec),
             coroutine: None,
             lazy_pipe: None,
+            closure_seq: None,
         }
     }
 
@@ -1951,6 +1983,7 @@ impl LazyList {
             sequence_spec: None,
             coroutine: None,
             lazy_pipe: None,
+            closure_seq: None,
         }
     }
 
@@ -1983,6 +2016,28 @@ impl LazyList {
                 source_idx: 0,
                 done: false,
             })),
+            closure_seq: None,
+        }
+    }
+
+    /// Create an infinite closure-based sequence (`1, 1, * + * ... *`).
+    ///
+    /// `seeds` is the initial element history (already includes any eagerly
+    /// generated prefix); `state` carries the generator closure so more
+    /// elements can be produced on demand via the VM.
+    pub(crate) fn new_closure_sequence(seeds: Vec<Value>, state: ClosureSeqState) -> Self {
+        Self {
+            body: Vec::new(),
+            env: crate::env::Env::new(),
+            cache: Mutex::new(Some(seeds)),
+            compiled_code: None,
+            compiled_fns: None,
+            elems_count: None,
+            scan_spec: None,
+            sequence_spec: None,
+            coroutine: None,
+            lazy_pipe: None,
+            closure_seq: Some(Mutex::new(state)),
         }
     }
 
