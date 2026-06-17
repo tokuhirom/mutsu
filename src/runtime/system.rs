@@ -994,6 +994,14 @@ impl Interpreter {
             } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
                 self.find_undeclared_name_in_expr(expr, local_classes, declared)
             }
+            // `given X { when SomeUndeclaredType {...} }`: a `when` whose condition
+            // is an undeclared (bare uppercase) type name is X::Undeclared.
+            Stmt::Given { body, .. } => body
+                .iter()
+                .find_map(|s| self.find_undeclared_name_in_stmt(s, local_classes, declared)),
+            Stmt::When { cond, .. } => {
+                self.find_undeclared_name_in_expr(cond, local_classes, declared)
+            }
             _ => None,
         }
     }
