@@ -2051,6 +2051,21 @@ impl Interpreter {
                     loan_env!(self, eval_sequence_values(right, left, exclude_end))?
                 } else if op == "~~" {
                     Value::Bool(self.vm_smart_match(&right, &left))
+                } else if matches!(op.as_str(), ".." | "..^" | "^.." | "^..^") {
+                    // `a R.. b` == `b .. a`: build the range with operands
+                    // reversed. Reuse the dedicated range builders (which pop
+                    // `left`/`right` off the stack) so endpoint coercion and
+                    // canonical Range-variant selection stay in one place.
+                    self.stack.push(right);
+                    self.stack.push(left);
+                    match op.as_str() {
+                        ".." => self.exec_make_range_op()?,
+                        "..^" => self.exec_make_range_excl_op()?,
+                        "^.." => self.exec_make_range_excl_start_op()?,
+                        "^..^" => self.exec_make_range_excl_both_op()?,
+                        _ => unreachable!(),
+                    }
+                    return Ok(());
                 } else {
                     self.eval_reduction_operator_values(&op, &right, &left)?
                 }

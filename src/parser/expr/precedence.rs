@@ -1218,7 +1218,7 @@ fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 fn list_infix_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = range_expr(input)?;
     let mut current_assoc_key = None;
-    rest = parse_list_infix_loop(rest, &mut left, &mut current_assoc_key)?;
+    rest = parse_list_infix_loop(rest, input, &mut left, &mut current_assoc_key)?;
     Ok((rest, left))
 }
 
@@ -1268,7 +1268,7 @@ fn sequence_expr(input: &str) -> PResult<'_, Expr> {
             continue;
         }
         // Try Z/X/meta/infix-func operators
-        let new_rest = parse_list_infix_loop(rest, &mut left, &mut current_assoc_key)?;
+        let new_rest = parse_list_infix_loop(rest, input, &mut left, &mut current_assoc_key)?;
         if new_rest.len() < rest.len() {
             rest = new_rest;
             continue;
@@ -1282,6 +1282,7 @@ fn sequence_expr(input: &str) -> PResult<'_, Expr> {
 /// Modifies `left` in place and returns the remaining input.
 fn parse_list_infix_loop<'a>(
     input: &'a str,
+    orig_input: &str,
     left: &mut Expr,
     current_assoc_key: &mut Option<String>,
 ) -> Result<&'a str, PError> {
@@ -1578,6 +1579,14 @@ fn parse_list_infix_loop<'a>(
             continue;
         }
         if let Some((meta, op, len)) = parse_meta_op(r) {
+            // A reversed range meta-op (`R..`, `R^..`, `R..^`, `R^..^`) carries the
+            // same precedence worry as a plain range: `|4 R.. 5` / `~4 R.. 5` mean
+            // `|(4 R.. 5)` / `~(4 R.. 5)`, not `(|4) R.. 5`. Fire the worry off the
+            // ORIGINAL input text (parentheses are transparent in the AST), matching
+            // the direct-range path in `range_expr`.
+            if matches!(op.as_str(), ".." | "..^" | "^.." | "^..^") {
+                check_range_precedence_worry(orig_input)?;
+            }
             let op_key = format!("{meta}{op}");
             if let Some(prev) = current_assoc_key.as_deref()
                 && prev != op_key
