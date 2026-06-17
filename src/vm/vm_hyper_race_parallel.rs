@@ -55,7 +55,18 @@ impl Interpreter {
                     if error.is_some() {
                         break;
                     }
-                    match vm.vm_call_on_value(block_clone.clone(), vec![item.clone()], None) {
+                    // Route the per-item user-code call through the same
+                    // panic->X::AdHoc boundary that `start{}`/Promise workers use
+                    // (`guard_worker_panic`). Without it, a Rust panic raised by
+                    // user code in this batch thread only surfaces as a generic
+                    // "Thread panicked in hyper/race" at `join()` and leaks the raw
+                    // Rust panic message to stderr; the guard converts it into a
+                    // catchable X::AdHoc and suppresses the default backtrace dump,
+                    // making worker panic handling uniform across all spawn sites.
+                    let call_result = crate::vm::guard_worker_panic(|| {
+                        vm.vm_call_on_value(block_clone.clone(), vec![item.clone()], None)
+                    });
+                    match call_result {
                         Ok(val) => {
                             if is_map_flag {
                                 if let Value::Slip(ref s) = val {
