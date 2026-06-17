@@ -132,7 +132,20 @@ impl Interpreter {
         if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
             return self.eval_reduction_op_with_junctions(op, left.clone(), right.clone());
         }
-        let normalized_op = if op == "\u{2218}" { "o" } else { op };
+        // Normalize Unicode operator aliases to their ASCII forms so they work
+        // in reduction / hyper / cross / zip meta-ops (`[×]`, `»×»`, `Z×`), just
+        // as they do as plain infixes: ∘→o, ×→*, ÷→/, −(U+2212)→-, ≤→<=, ≥→>=,
+        // ≠→!=.
+        let normalized_op = match op {
+            "\u{2218}" => "o",
+            "\u{00D7}" => "*",
+            "\u{00F7}" => "/",
+            "\u{2212}" => "-",
+            "\u{2264}" => "<=",
+            "\u{2265}" => ">=",
+            "\u{2260}" => "!=",
+            other => other,
+        };
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {
