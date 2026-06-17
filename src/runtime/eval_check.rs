@@ -130,8 +130,16 @@ impl Interpreter {
         }
         let inner = &tc[open + 1..close];
         for raw in inner.split(',') {
-            // Strip type smileys (`:D`/`:U`/`:_`) and surrounding whitespace.
-            let arg = raw.split(':').next().unwrap_or(raw).trim();
+            let mut arg = raw.trim();
+            // Strip a trailing type smiley (`:D`/`:U`/`:_`) ONLY — must not split a
+            // `::`-qualified name like `Ber::Meow` (which contains `:`).
+            for smiley in [":D", ":U", ":_"] {
+                if let Some(stripped) = arg.strip_suffix(smiley) {
+                    arg = stripped;
+                    break;
+                }
+            }
+            let arg = arg.trim();
             if arg.is_empty() || arg.starts_with("::") {
                 continue;
             }
