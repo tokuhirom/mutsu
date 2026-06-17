@@ -52,10 +52,17 @@ impl Interpreter {
                 } else {
                     "categorize"
                 };
+                // A mutable QuantHash invocant (BagHash/MixHash/SetHash) yields a
+                // result of the same mutable type; builtin_classify builds an
+                // immutable Bag/Mix, so re-overlay the invocant's mutability.
+                let result_mutable = set_result_mutability(&target);
                 let mut call_args = Vec::with_capacity(args.len() + 1);
                 call_args.extend(args.iter().cloned());
                 call_args.push(Value::Pair("into".to_string(), Box::new(target)));
-                Some(self.builtin_classify(classify_name, &call_args))
+                Some(
+                    self.builtin_classify(classify_name, &call_args)
+                        .map(|r| with_set_mutability(r, result_mutable)),
+                )
             }
             "from-loop" | "from_loop" if matches!(&target, Value::Package(name) if name == "Seq") => {
                 Some(self.dispatch_seq_from_loop(args))

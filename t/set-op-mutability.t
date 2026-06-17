@@ -3,7 +3,7 @@ use Test;
 # Set operators take their result mutability from the FIRST operand, and
 # `eqv` distinguishes Set from SetHash (and Bag from BagHash, Mix from MixHash).
 
-plan 25;
+plan 28;
 
 # eqv distinguishes mutability
 nok Set.new(42) eqv SetHash.new(42), 'Set does not eqv SetHash';
@@ -48,3 +48,12 @@ nok (Set.new(<a b>) (|) Set.new(<c>)) eqv SetHash.new(<a b c>),
     'Set union does not eqv SetHash';
 ok (Set.new(<a b>) (|) SetHash.new(<c>)) eqv Set.new(<a b c>),
     'mixed union (Set left) eqv Set';
+
+# classify-list / categorize-list keep the invocant's mutable QuantHash type
+my &m = { "cat" ~ ($_ %% 2 ?? 2 !! 1) };
+is BagHash.new.classify-list(&m, [1, 2, 3]).^name, 'BagHash',
+    'classify-list on BagHash -> BagHash';
+is MixHash.new.classify-list(&m, [1, 2, 3]).^name, 'MixHash',
+    'classify-list on MixHash -> MixHash';
+is %().classify-list(&m, [1, 2, 3]).^name, 'Hash',
+    'classify-list on Hash -> Hash';
