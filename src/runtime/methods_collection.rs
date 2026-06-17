@@ -56,6 +56,12 @@ impl Interpreter {
             | Value::RangeExcl(_, end)
             | Value::RangeExclStart(_, end)
             | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+            // An exclusive/whatever infinite range (`^Inf`, `0..^Inf`) is stored
+            // as a GenericRange with an infinite end — also a lazy pipe source.
+            Value::GenericRange { end, .. } => {
+                let end_f = end.to_f64();
+                end_f.is_infinite() && end_f.is_sign_positive()
+            }
             Value::LazyList(ll) => ll.lazy_pipe.is_some(),
             _ => false,
         }

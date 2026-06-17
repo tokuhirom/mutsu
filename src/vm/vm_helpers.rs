@@ -375,12 +375,25 @@ impl Interpreter {
             return self.force_scan_lazy_list(list, 200_000);
         }
 
-        // A lazy map/grep pipeline is rooted at an infinite source, so a full
-        // (strict) force can never terminate. Match raku and throw
-        // X::Cannot::Lazy rather than spinning forever. Methods that know their
-        // own name (e.g. `.elems`/`.sort`) raise a more specific message at the
-        // dispatch site before reaching here.
+        // A lazy map/grep pipeline is rooted at an infinite source. It can still
+        // be forced when the callback runs `last` (which ends the sequence) —
+        // e.g. `(^Inf).grep({ last if $_ > 5; True }).eager`. So attempt a
+        // bounded force: if the pipe terminates within the cap (via `last` or a
+        // finite source), return it; otherwise it is genuinely infinite and we
+        // throw X::Cannot::Lazy, matching raku. Methods that know their own name
+        // (e.g. `.elems`/`.sort`) raise a more specific message at the dispatch
+        // site before reaching here.
         if list.lazy_pipe.is_some() {
+            const EAGER_FORCE_CAP: usize = 1_000_000;
+            let forced = self.force_lazy_pipe(list, EAGER_FORCE_CAP)?;
+            let done = list
+                .lazy_pipe
+                .as_ref()
+                .map(|p| p.lock().unwrap().done)
+                .unwrap_or(true);
+            if done {
+                return Ok(forced);
+            }
             return Err(RuntimeError::typed_msg(
                 "X::Cannot::Lazy",
                 "Cannot coerce an infinite lazy list to a strict list",
@@ -812,7 +825,7 @@ impl Interpreter {
     /// list's cache. A `grep` stage filters (0 or 1 output per source element);
     /// a `map` stage transforms (a `Slip` result contributes multiple). The
     /// source itself may be another lazy pipeline, so chains nest.
-    pub(super) fn force_lazy_pipe(
+    pub(crate) fn force_lazy_pipe(
         &mut self,
         list: &LazyList,
         needed: usize,
@@ -863,17 +876,39 @@ impl Interpreter {
                     // side effects reach the enclosing scope). A `grep` keeps the
                     // element when the matcher is truthy; a `map` transforms it (a
                     // `Slip` result contributes multiple elements).
-                    let produced: Vec<Value> = if is_grep {
-                        if self.vm_grep_item_matches(&func, &elem)? {
-                            vec![elem]
-                        } else {
-                            Vec::new()
+                    //
+                    // Loop control inside the callback is honored: `last` ends the
+                    // sequence (excluding the current element), `next` skips the
+                    // current element. This makes `(^Inf).grep({last if …})`
+                    // terminate instead of running forever.
+                    let applied: Result<Vec<Value>, RuntimeError> = if is_grep {
+                        match self.vm_grep_item_matches(&func, &elem) {
+                            Ok(true) => Ok(vec![elem]),
+                            Ok(false) => Ok(Vec::new()),
+                            Err(e) => Err(e),
                         }
                     } else {
-                        match self.vm_call_on_value(func, vec![elem], None)? {
-                            Value::Slip(items) => items.as_ref().clone(),
-                            v => vec![v],
+                        self.vm_call_on_value(func, vec![elem], None)
+                            .map(|v| match v {
+                                Value::Slip(items) => items.as_ref().clone(),
+                                v => vec![v],
+                            })
+                    };
+                    let produced: Vec<Value> = match applied {
+                        Ok(p) => p,
+                        Err(e) if e.is_last => {
+                            // `last`: terminate the sequence, current element excluded.
+                            let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
+                            spec.done = true;
+                            drop(spec);
+                            let cache = list.cache.lock().unwrap();
+                            let c = cache.as_ref().cloned().unwrap_or_default();
+                            let n = needed.min(c.len());
+                            return Ok(c[..n].to_vec());
                         }
+                        // `next`: skip the current element and continue.
+                        Err(e) if e.is_next => Vec::new(),
+                        Err(e) => return Err(e),
                     };
                     {
                         let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
@@ -916,14 +951,45 @@ impl Interpreter {
                     Ok(None)
                 }
             }
+            // Integer-start GenericRange (e.g. `^Inf`, `0..^Inf`): pull the
+            // idx-th element directly so an infinite range stays lazy instead of
+            // being materialized.
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } if matches!(start.as_ref(), Value::Int(_)) => {
+                let s = match start.as_ref() {
+                    Value::Int(i) => *i,
+                    _ => unreachable!(),
+                };
+                let base = if *excl_start { s.saturating_add(1) } else { s };
+                let cur = match base.checked_add(idx as i64) {
+                    Some(v) => v,
+                    None => return Ok(None),
+                };
+                let end_f = end.to_f64();
+                let in_bounds = if end_f.is_infinite() && end_f.is_sign_positive() {
+                    true
+                } else {
+                    let cur_f = cur as f64;
+                    if *excl_end {
+                        cur_f < end_f
+                    } else {
+                        cur_f <= end_f
+                    }
+                };
+                Ok(in_bounds.then_some(Value::Int(cur)))
+            }
             Value::Seq(items) | Value::Slip(items) => Ok(items.get(idx).cloned()),
             Value::Array(items, _) => Ok(items.get(idx).cloned()),
             Value::LazyList(ll) => {
                 let items = self.force_lazy_list_vm_n(ll, idx + 1)?;
                 Ok(items.get(idx).cloned())
             }
-            // Other sources (GenericRange, etc.) are not gated into the lazy
-            // pipeline; materialize once and index.
+            // Other sources (non-integer GenericRange, etc.) are not gated into
+            // the lazy pipeline; materialize once and index.
             other => {
                 let items = crate::runtime::value_to_list(other);
                 Ok(items.get(idx).cloned())
