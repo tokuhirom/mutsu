@@ -2756,6 +2756,46 @@ fn to_bag_map(v: &Value) -> HashMap<String, i64> {
     }
 }
 
+/// Whether a set operator's left operand makes the result a mutable QuantHash.
+/// Raku's set operators (`(|)`/`(&)`/`(-)`/`(^)`/`(.)`/`(+)`) take their
+/// result's mutability from the FIRST operand only: an immutable operand
+/// (Set/Bag/Mix, a list, or a type object used as an element) yields an
+/// immutable result even when a later operand is a SetHash/BagHash/MixHash.
+pub(crate) fn set_result_mutability(v: &Value) -> bool {
+    matches!(
+        v,
+        Value::Set(_, true) | Value::Bag(_, true) | Value::Mix(_, true)
+    )
+}
+
+/// Whether a value is an actual QuantHash instance (Set/Bag/Mix, mutable or
+/// not) as opposed to a list, hash, or bare type object. Used by symmetric
+/// difference, whose result stays mutable only when BOTH operands are
+/// QuantHashes (`SetHash (^) Set` -> SetHash, but `SetHash (^) <a b>` -> Set).
+pub(crate) fn is_quanthash_instance(v: &Value) -> bool {
+    matches!(v, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _))
+}
+
+/// Result mutability for symmetric difference (`(^)`). Like the other set
+/// operators it follows the first operand, but at the Set level it additionally
+/// demotes to an immutable Set when the right operand is not a QuantHash
+/// (`SetHash (^) <a b>` -> Set). The demotion does NOT apply once the result is
+/// promoted to Bag/Mix level (`BagHash (^) <a b>` -> BagHash).
+pub(crate) fn set_sym_diff_mutability(left: &Value, right: &Value) -> bool {
+    set_result_mutability(left)
+        && (is_quanthash_instance(right) || matches!(left, Value::Bag(_, _) | Value::Mix(_, _)))
+}
+
+/// Overlay the given mutability onto a freshly-built set-operator result.
+pub(crate) fn with_set_mutability(result: Value, mutable: bool) -> Value {
+    match result {
+        Value::Set(d, _) => Value::Set(d, mutable),
+        Value::Bag(d, _) => Value::Bag(d, mutable),
+        Value::Mix(d, _) => Value::Mix(d, mutable),
+        other => other,
+    }
+}
+
 /// Standalone set difference: left (-) right
 /// Implements Raku type promotion: Mix > Bag > Set
 ///
