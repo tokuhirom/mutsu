@@ -2291,6 +2291,10 @@ impl Interpreter {
                 self.array_share_source = Some(Self::const_str(code, *name_idx).to_string());
                 *ip += 1;
             }
+            OpCode::MarkElementShare => {
+                self.element_share_pending = true;
+                *ip += 1;
+            }
             OpCode::MarkConstantContext => {
                 self.constant_context = true;
                 *ip += 1;

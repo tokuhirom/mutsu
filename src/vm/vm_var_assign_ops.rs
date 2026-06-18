@@ -2607,6 +2607,10 @@ impl Interpreter {
                 if let Some(existing) = hash_arc.get(&peek_key) {
                     let is_bound = match existing {
                         Value::HashSlotRef { .. } | Value::Scalar(..) => true,
+                        // Slice 2b: a `=`-shared (or `:=`-bound) element holds a
+                        // `ContainerRef` cell; reassignment needs the slow path's
+                        // replace-vs-write-through guard, not a blind insert.
+                        Value::ContainerRef(_) => true,
                         Value::Pair(name, _) if name.starts_with("__mutsu_bound") => true,
                         _ => false,
                     };
@@ -2693,6 +2697,23 @@ impl Interpreter {
         name_idx: u32,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        // Slice 2b: `@aoa[i] = @row` / `%h<k> = @row` was compiled as a `:=` bind
+        // (so the bind machinery installs a shared `ContainerRef` cell and
+        // promotes the source) plus a `MarkElementShare` flag. Capture which
+        // element to mark as a `=` value share — a simple Int/Str subscript — so
+        // a later non-share reassignment REPLACES the slot instead of writing
+        // through the shared cell. Complex subscripts keep pure `:=` semantics.
+        let elem_share_mark: Option<(String, String)> = if self.element_share_pending {
+            self.element_share_pending = false;
+            let var_name = Self::const_str(code, name_idx).to_string();
+            self.stack.last().and_then(|idx| match idx {
+                Value::Int(n) if *n >= 0 => Some((var_name, idx.to_string_value())),
+                Value::Str(_) => Some((var_name, idx.to_string_value())),
+                _ => None,
+            })
+        } else {
+            None
+        };
         // --- Track C: shared hash/array element assignment across threads ---
         // `%h{$k} = $v` / `@a[$i] = $v` inside a `start` block must write through
         // the shared cell so concurrent threads all land (snapshot semantics
@@ -2766,6 +2787,13 @@ impl Interpreter {
         }
         // Object-hash original keys are embedded in `HashData` and travel with
         // the hash across copy-on-write, so no pointer migration is needed.
+        // Slice 2b: now that the shared cell is installed in the element, record
+        // it as a `=` value share so a later non-share reassignment replaces it.
+        if result.is_ok()
+            && let Some((var_name, encoded)) = elem_share_mark
+        {
+            self.mark_element_share(&var_name, encoded);
+        }
         result
     }
 
@@ -3017,6 +3045,13 @@ impl Interpreter {
             }
         }
         let encoded_idx = Self::encode_bound_index(&idx);
+        // Slice 2b: is the existing element a `=` value share (`@aoa[i] = @row`)?
+        // A non-bind reassignment to such an element REPLACES the shared cell
+        // (raku value semantics) instead of writing through it. Precomputed here
+        // because the element-write chokepoints below hold a `&mut` borrow of the
+        // container and cannot call `self`; the marker is cleared after the store.
+        let elem_is_value_share =
+            !bind_mode && self.array_share_active && self.is_element_share(&var_name, &encoded_idx);
         // Native typed arrays store unboxed scalars and cannot bind containers to
         // their elements: `my num @a; @a[0] := $x` is illegal.
         if bind_mode
@@ -3741,6 +3776,10 @@ impl Interpreter {
                                 }
                             } else if is_self_hash_ref {
                                 hd.map.insert(key.clone(), Self::self_hash_ref_marker());
+                            } else if elem_is_value_share {
+                                // Slice 2b: replace the `=`-shared cell rather than
+                                // write through it, so the source stays unaffected.
+                                hd.map.insert(key.clone(), val.clone());
                             } else {
                                 Value::hash_insert_through(&mut hd.map, key.clone(), val.clone());
                             }
@@ -3834,10 +3873,19 @@ impl Interpreter {
                                             source_index,
                                         );
                                     } else if let Value::ContainerRef(cell) = &arr[i] {
-                                        // Phase 2: the element is a `:=`-bound
-                                        // shared cell — write through it so the
-                                        // alias observes the new value.
-                                        *cell.lock().unwrap() = native_store_val.clone();
+                                        if elem_is_value_share {
+                                            // Slice 2b: a `=`-shared element
+                                            // reassigned with a non-share value
+                                            // REPLACES the slot (raku value
+                                            // semantics) — drop the shared cell so
+                                            // the source stays unaffected.
+                                            arr[i] = native_store_val.clone();
+                                        } else {
+                                            // Phase 2: the element is a `:=`-bound
+                                            // shared cell — write through it so the
+                                            // alias observes the new value.
+                                            *cell.lock().unwrap() = native_store_val.clone();
+                                        }
                                     } else {
                                         arr[i] = if is_self_array_ref {
                                             Self::self_array_ref_marker()
@@ -3997,6 +4045,13 @@ impl Interpreter {
                 }
                 for encoded in range_initialized_marks {
                     self.mark_initialized_index(&var_name, encoded);
+                }
+                // Slice 2b: a `=`-shared element just reassigned with a non-share
+                // value has been replaced by a plain value — drop the share
+                // marker so a later `:=` bind of the same element is not mistaken
+                // for a value share.
+                if elem_is_value_share {
+                    self.clear_element_share(&var_name, &encoded_idx);
                 }
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]

@@ -613,6 +613,40 @@ impl Interpreter {
         self.env_mut().insert(key, Value::hash(map));
     }
 
+    /// Slice 2b (`docs/scalar-array-sharing.md`): mark element `encoded` of
+    /// `var_name` as a `=`-reference share (`@aoa[i] = @row`). Such an element
+    /// holds a shared `ContainerRef` cell, but unlike a `:=` bind a later
+    /// non-share reassignment (`@aoa[i] = 42`) must REPLACE the slot rather than
+    /// write through the cell. The guards at the element-write chokepoints
+    /// consult this marker to choose replace vs write-through.
+    pub(super) fn mark_element_share(&mut self, var_name: &str, encoded: String) {
+        let key = format!("__mutsu_elem_share::{}", var_name);
+        if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
+            Arc::make_mut(map).insert(encoded, Value::Bool(true));
+            return;
+        }
+        let mut map = std::collections::HashMap::new();
+        map.insert(encoded, Value::Bool(true));
+        self.env_mut().insert(key, Value::hash(map));
+        self.array_share_active = true;
+    }
+
+    pub(super) fn is_element_share(&self, var_name: &str, encoded: &str) -> bool {
+        let key = format!("__mutsu_elem_share::{}", var_name);
+        if let Some(Value::Hash(map)) = self.env().get(&key) {
+            map.contains_key(encoded)
+        } else {
+            false
+        }
+    }
+
+    pub(super) fn clear_element_share(&mut self, var_name: &str, encoded: &str) {
+        let key = format!("__mutsu_elem_share::{}", var_name);
+        if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
+            Arc::make_mut(map).remove(encoded);
+        }
+    }
+
     /// Remove a bound-index marker (e.g. after splice breaks the binding).
     pub(super) fn remove_bound_index(&mut self, var_name: &str, encoded: &str) {
         let key = format!("__mutsu_bound_index::{}", var_name);

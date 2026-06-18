@@ -1204,6 +1204,11 @@ pub struct Interpreter {
     /// been set, so the `SetLocal` write-through fast path only pays the marker
     /// lookup when at least one `=`-array-shared scalar exists.
     pub(crate) array_share_active: bool,
+    /// Slice 2b: set by `MarkElementShare` to flag the upcoming
+    /// `IndexAssignExprNamed` as a `=`-reference share of an array/hash element
+    /// (vs a true `:=` bind). Consumed by `exec_index_assign_expr_named_op`,
+    /// which marks the written element `__mutsu_elem_share::` after the store.
+    pub(crate) element_share_pending: bool,
     pub(crate) explicit_initializer_context: bool,
     pub(crate) vardecl_context: bool,
     pub(crate) local_bind_pairs: Vec<(usize, usize)>,
@@ -3359,6 +3364,7 @@ impl Interpreter {
             array_share_context: false,
             array_share_source: None,
             array_share_active: false,
+            element_share_pending: false,
             explicit_initializer_context: false,
             vardecl_context: false,
             local_bind_pairs: Vec::new(),
@@ -5903,6 +5909,7 @@ impl Interpreter {
             array_share_context: false,
             array_share_source: None,
             array_share_active: false,
+            element_share_pending: false,
             explicit_initializer_context: false,
             vardecl_context: false,
             local_bind_pairs: Vec::new(),
