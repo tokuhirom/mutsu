@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 14;
 
 # Slice 2c (docs/scalar-array-sharing.md): a value-alias scalar (`my $n = @z`,
 # Slice 2a) holds the source array by reference through a shared ContainerRef
@@ -22,11 +22,44 @@ plan 6;
     is @a.elems, 3, '@a itself observes the push';
 }
 
-# NOTE: the hash deref-bind form (`my %m := %$h`) is NOT covered here. The
-# parser desugars `%$h` to a `$h.hash` method call (not a simple `HashVar`, the
-# way `@$n` becomes `ArrayVar("n")`), so it takes a different bind path. Sharing
-# through a hash deref-bind is tracked as remaining work in
-# docs/scalar-array-sharing.md.
+# Element assignment through the array deref-bind (not just `.push`) must also
+# write through the shared cell. (The element-assign path resolves its target
+# through the sigilless alias, which previously pointed at the non-existent
+# `@n` container instead of the scalar's shared cell.)
+{
+    my @z = (1, 2);
+    my $n = @z;
+    my @a := @$n;
+    @a[0] = 99;
+    is @z[0], 99, 'element assignment through @a reaches the original @z';
+    is $n[0], 99, 'element assignment through @a is visible via $n';
+}
+
+# Slice 2c, hash form: `my %h := %$m` shares the cell the value-alias scalar
+# `$m` (`my $m = %z`) holds. The parser desugars `%$m` to a `$m.hash` method
+# call; in a `:=` bind we rewrite the plain-scalar form to a `HashVar` so it
+# takes the same deref-bind path the array form (`@$n`) already uses.
+{
+    my %z = (a => 1);
+    my $m = %z;
+    my %h := %$m;
+    is %h<a>, 1, '%h binds the deref of $m with the right initial contents';
+    %h<x> = 99;
+    is %z<x>, 99, 'element assignment through %h reaches the original %z';
+    is $m<x>, 99, 'element assignment through %h is visible via $m';
+    %z<y> = 2;
+    is %h<y>, 2, 'a write to %z is visible through %h (bidirectional)';
+}
+
+# A real %n hash variable still takes precedence over the scalar fallback.
+{
+    my %n = (k => 10);
+    my $n = { other => 1 };
+    my %h := %n;
+    %h<m> = 20;
+    is %n<m>, 20, 'bind to the real %n hash variable, not the scalar $n';
+    is $n<other>, 1, '$n scalar is untouched by the %n bind';
+}
 
 # A real @n array variable still takes precedence over the scalar fallback.
 {
