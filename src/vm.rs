@@ -1574,6 +1574,7 @@ impl Interpreter {
             }
             OpCode::SetGlobalRaw(name_idx) | OpCode::SetGlobal(name_idx) => {
                 let raw_mode = matches!(code.ops[*ip], OpCode::SetGlobalRaw(_));
+                let is_bind_ctx = self.bind_context;
                 let is_rebind = self.rebind_context;
                 self.bind_context = false;
                 // Only clear rebind_context if this is actually a binding operation
@@ -1641,9 +1642,11 @@ impl Interpreter {
                 // Check readonly variables (e.g., $*USAGE).
                 // Skip readonly check for SetGlobalRaw which is used for constant
                 // declarations — the constant will be re-marked readonly after this.
-                if !raw_mode {
+                // Also skip during a `:=` bind: an `our` container bind (`our %g := %h`)
+                // marks the var readonly as a bind signal, not a true RO restriction.
+                if !raw_mode && !is_bind_ctx {
                     self.check_readonly_for_modify(&name)?;
-                } else {
+                } else if raw_mode {
                     // Clear any previous readonly marking so this constant
                     // redeclaration can proceed (e.g., `constant sym` followed
                     // by `constant $sym` which share the same env name).
