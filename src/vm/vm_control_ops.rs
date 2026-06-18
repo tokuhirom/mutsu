@@ -2035,6 +2035,26 @@ impl Interpreter {
         None
     }
 
+    /// Write a rebuilt container value back to a for-loop `source` variable.
+    /// When the source holds a shared `ContainerRef` cell (a `:=`-bound array /
+    /// hash that env↔locals share — Stage 1), write THROUGH the cell so the
+    /// bound source observes the mutation without rebinding either variable.
+    /// Otherwise fall back to the plain env + local-slot update.
+    fn write_back_container_source(
+        &mut self,
+        code: &CompiledCode,
+        source: &str,
+        raw_source: &Option<Value>,
+        updated_value: Value,
+    ) {
+        if let Some(Value::ContainerRef(arc)) = raw_source {
+            arc.lock().unwrap().clone_from(&updated_value);
+        } else {
+            self.set_env_with_main_alias(source, updated_value.clone());
+            self.update_local_if_exists(code, source, &updated_value);
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn write_back_for_topic_item(
         &mut self,
@@ -2075,7 +2095,16 @@ impl Interpreter {
         let Some(current_topic) = self.env().get(loop_var).cloned() else {
             return;
         };
-        let Some(Value::Array(items, kind)) = self.get_env_with_main_alias(source) else {
+        // The source may hold a shared `ContainerRef` cell rather than a bare
+        // Array — a `:=`-bound array (`my @a := @b`) cell-izes both vars so they
+        // share one outer cell (Stage 1 / env-locals coherence). Deref to inspect
+        // the inner Array; when present, the rebuilt array must be written THROUGH
+        // the cell so the bound source (`@b`) observes the topic mutation.
+        let raw_source = self.get_env_with_main_alias(source);
+        let Some((items, kind)) = raw_source.as_ref().and_then(|v| match v.deref_container() {
+            Value::Array(items, kind) => Some((items, kind)),
+            _ => None,
+        }) else {
             return;
         };
         let actual_idx = if reversed && total_items > 0 {
@@ -2101,8 +2130,7 @@ impl Interpreter {
             std::sync::Arc::new(crate::value::ArrayData::new(updated)),
             kind,
         );
-        self.set_env_with_main_alias(source, updated_value.clone());
-        self.update_local_if_exists(code, source, &updated_value);
+        self.write_back_container_source(code, source, &raw_source, updated_value);
     }
 
     /// Set a single weight on a mutable QuantHash bound to a scalar `source`,
@@ -2308,13 +2336,14 @@ impl Interpreter {
             return;
         };
         if source.starts_with('@') || source.starts_with('%') {
-            // For hash sources, read as array for writeback
+            // For hash sources, read as array for writeback. The source may hold
+            // a shared `ContainerRef` cell (a `:=`-bound array) — deref to read
+            // the inner Array and write back THROUGH the cell (Stage 1).
             let source_val = self.get_env_with_main_alias(source);
             let (items, kind) = if source.starts_with('@') {
-                if let Some(Value::Array(items, kind)) = source_val {
-                    (items, kind)
-                } else {
-                    return;
+                match source_val.as_ref().map(|v| v.deref_container()) {
+                    Some(Value::Array(items, kind)) => (items, kind),
+                    _ => return,
                 }
             } else {
                 // Hash: can't do positional writeback easily; use hash-specific logic
@@ -2362,8 +2391,7 @@ impl Interpreter {
                         std::sync::Arc::new(crate::value::ArrayData::new(updated)),
                         kind,
                     );
-                    self.set_env_with_main_alias(source, updated_value.clone());
-                    self.update_local_if_exists(code, source, &updated_value);
+                    self.write_back_container_source(code, source, &source_val, updated_value);
                 }
             } else if arity > 1 && !rw_param_names.is_empty() {
                 // Multi-param rw: read each named param and write back to the array
@@ -2380,8 +2408,7 @@ impl Interpreter {
                     std::sync::Arc::new(crate::value::ArrayData::new(updated)),
                     kind,
                 );
-                self.set_env_with_main_alias(source, updated_value.clone());
-                self.update_local_if_exists(code, source, &updated_value);
+                self.write_back_container_source(code, source, &source_val, updated_value);
             } else {
                 // Single-param rw: read the named param (or $_) and write back
                 let var_name = param_name.as_deref().unwrap_or("_");
@@ -2403,8 +2430,7 @@ impl Interpreter {
                     std::sync::Arc::new(crate::value::ArrayData::new(updated)),
                     kind,
                 );
-                self.set_env_with_main_alias(source, updated_value.clone());
-                self.update_local_if_exists(code, source, &updated_value);
+                self.write_back_container_source(code, source, &source_val, updated_value);
             }
         } else if source.starts_with('%') {
             // Hash writeback: not straightforward by index; skip for now
