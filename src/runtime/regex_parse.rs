@@ -4909,6 +4909,7 @@ impl Interpreter {
                                 .cloned()
                                 .or_else(|| self.env.get(&bare_name).cloned())
                                 .unwrap_or(Value::Nil);
+                            let value = value.into_deref();
                             let entries: Vec<String> = match value {
                                 Value::Array(items, ..) => items
                                     .iter()
@@ -5001,6 +5002,7 @@ impl Interpreter {
                             .cloned()
                             .or_else(|| self.env.get(&format!("${name}")).cloned())
                             .unwrap_or(Value::Nil);
+                        let value = value.into_deref();
                         Self::check_hash_in_regex(&value)?;
                         Self::push_value_as_regex_pattern(&value, &mut out);
                         i = j + 1;
@@ -5034,6 +5036,7 @@ impl Interpreter {
                         .cloned()
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                         .unwrap_or(Value::Nil);
+                    let value = value.into_deref();
                     Self::check_hash_in_regex(&value)?;
                     Self::push_value_as_regex_pattern(&value, &mut out);
                     i = j;
@@ -5093,6 +5096,7 @@ impl Interpreter {
                             .cloned()
                             .or_else(|| self.env.get(&format!("${bare_name}")).cloned())
                             .unwrap_or(Value::Nil);
+                        let value = value.into_deref();
                         let elements = match &value {
                             Value::Array(arr, _) => arr.as_ref().clone(),
                             Value::Seq(items) | Value::Slip(items) => {
@@ -5130,6 +5134,10 @@ impl Interpreter {
                         .cloned()
                         .or_else(|| self.env.get(&bare_name).cloned())
                         .unwrap_or(Value::Nil);
+                    // Slice 2a: a `=`-array-shared source (`my $r = @var`) promotes
+                    // `@var` to a `ContainerRef` cell; deref it so the array
+                    // interpolates as alternation instead of stringifying the cell.
+                    let value = value.into_deref();
                     let elements = match &value {
                         Value::Array(arr, _) => arr.as_ref().clone(),
                         Value::Seq(items) | Value::Slip(items) => {

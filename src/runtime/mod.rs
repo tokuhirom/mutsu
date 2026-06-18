@@ -1189,6 +1189,15 @@ pub struct Interpreter {
     pub(crate) bound_decont_active: bool,
     pub(crate) rebind_context: bool,
     pub(crate) constant_context: bool,
+    /// Slice 2a (`docs/scalar-array-sharing.md`): set by `MarkArrayShareContext`
+    /// just before a `SetLocal` for `$scalar = @arr` / `$scalar = %hash`. Tells
+    /// the assignment to promote the source container to a shared `ContainerRef`
+    /// cell (raku reference semantics) rather than snapshotting it.
+    pub(crate) array_share_context: bool,
+    /// Slice 2a: cheap gate — `true` once any `__mutsu_array_share::` marker has
+    /// been set, so the `SetLocal` write-through fast path only pays the marker
+    /// lookup when at least one `=`-array-shared scalar exists.
+    pub(crate) array_share_active: bool,
     pub(crate) explicit_initializer_context: bool,
     pub(crate) vardecl_context: bool,
     pub(crate) local_bind_pairs: Vec<(usize, usize)>,
@@ -3341,6 +3350,8 @@ impl Interpreter {
             bound_decont_active: false,
             rebind_context: false,
             constant_context: false,
+            array_share_context: false,
+            array_share_active: false,
             explicit_initializer_context: false,
             vardecl_context: false,
             local_bind_pairs: Vec::new(),
@@ -5882,6 +5893,8 @@ impl Interpreter {
             bound_decont_active: false,
             rebind_context: false,
             constant_context: false,
+            array_share_context: false,
+            array_share_active: false,
             explicit_initializer_context: false,
             vardecl_context: false,
             local_bind_pairs: Vec::new(),

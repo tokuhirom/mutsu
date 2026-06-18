@@ -568,11 +568,30 @@ impl Interpreter {
         if !is_simple_array {
             let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
             // Phase 2 Stage 2: a `:=`-cell-bound variable (`@x[0] := @b` /
-            // `%h<k> := @b`) holds a shared `ContainerRef` cell. Decont for
-            // the dispatch and write the mutated container back through the
-            // cell so every alias observes the push.
+            // `%h<k> := @b`) or a Slice 2a `=`-array-shared scalar (`$n = @z`)
+            // holds a shared `ContainerRef` cell. Mutate the array INSIDE the
+            // cell with COW (`Arc::make_mut`) — mirroring the simple-array path
+            // below — so a copy made out of this cell (`my @copy = @z`), which
+            // shares the inner Arc, is detached rather than mutated in place.
+            // The shared cell itself keeps every alias coherent.
             if let Value::ContainerRef(cell) = target {
-                let inner = cell.lock().unwrap().clone();
+                let mut guard = cell.lock().unwrap();
+                if let Value::Array(arr, kind) = &mut *guard {
+                    let kind = *kind;
+                    let items = Arc::make_mut(arr);
+                    match &val {
+                        Value::Slip(slip_items) => items.extend(slip_items.iter().cloned()),
+                        _ => items.push(val),
+                    }
+                    let result = Value::Array(arr.clone(), kind);
+                    drop(guard);
+                    self.stack.push(result);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                // Non-array inner (e.g. Hash): generic clone-and-write-back.
+                let inner = guard.clone();
+                drop(guard);
                 let result = loan_env!(self, call_method_with_values(inner, "push", vec![val]))?;
                 *cell.lock().unwrap() = result.clone();
                 self.stack.push(result);

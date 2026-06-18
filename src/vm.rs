@@ -555,6 +555,7 @@ impl Interpreter {
         let saved_bound_decont_active = self.bound_decont_active;
         let saved_rebind_context = self.rebind_context;
         let saved_constant_context = self.constant_context;
+        let saved_array_share_context = self.array_share_context;
         let saved_explicit_initializer_context = self.explicit_initializer_context;
         let saved_vardecl_context = self.vardecl_context;
         let saved_loop_cond_active = self.loop_cond_active;
@@ -572,6 +573,7 @@ impl Interpreter {
         self.bound_decont_active = false;
         self.rebind_context = false;
         self.constant_context = false;
+        self.array_share_context = false;
         self.explicit_initializer_context = false;
         self.vardecl_context = false;
         self.loop_cond_active = false;
@@ -607,6 +609,7 @@ impl Interpreter {
         self.bound_decont_active = saved_bound_decont_active;
         self.rebind_context = saved_rebind_context;
         self.constant_context = saved_constant_context;
+        self.array_share_context = saved_array_share_context;
         self.explicit_initializer_context = saved_explicit_initializer_context;
         self.vardecl_context = saved_vardecl_context;
         self.loop_cond_active = saved_loop_cond_active;
@@ -1577,6 +1580,11 @@ impl Interpreter {
                 let is_bind_ctx = self.bind_context;
                 let is_rebind = self.rebind_context;
                 self.bind_context = false;
+                // Slice 2a: `our $n = @z` / a global scalar target reaches SetGlobal,
+                // not SetLocal/AssignExpr. Consume the array-share flag here (the
+                // global copies for now — reference sharing for globals is Slice 2d)
+                // so it cannot leak into the next SetLocal.
+                self.array_share_context = false;
                 // Only clear rebind_context if this is actually a binding operation
                 if is_rebind {
                     self.rebind_context = false;
@@ -2272,6 +2280,10 @@ impl Interpreter {
             }
             OpCode::MarkRebindContext => {
                 self.rebind_context = true;
+                *ip += 1;
+            }
+            OpCode::MarkArrayShareContext => {
+                self.array_share_context = true;
                 *ip += 1;
             }
             OpCode::MarkConstantContext => {
@@ -3413,6 +3425,10 @@ impl Interpreter {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
                             unsafe { crate::value::arc_contents_mut(arc).map.clear() };
                         }
+                        // Slice 2a: a `=`-array-shared source (`my $r = @ary`) holds
+                        // the aggregate inside a shared `ContainerRef` cell; clear it
+                        // through the cell so every alias (`$r`) observes the empty.
+                        Value::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
                         _ => {}
                     }
                 }
@@ -3427,6 +3443,7 @@ impl Interpreter {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
                             unsafe { crate::value::arc_contents_mut(arc).map.clear() };
                         }
+                        Value::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
                         _ => {
                             self.locals[slot] = Value::Nil;
                             self.flush_local_to_env(code, slot);

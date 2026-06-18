@@ -1,6 +1,19 @@
 use super::*;
 
 impl Interpreter {
+    /// Slice 2a: clear the aggregate held inside a shared `ContainerRef` cell
+    /// (`undefine @ary` where `my $r = @ary` promoted `@ary` to a cell). Uses
+    /// `Arc::make_mut` so a copy taken out of the cell (`my @copy = @ary`) is
+    /// detached rather than emptied; every alias of the cell observes the clear.
+    pub(super) fn clear_aggregate_cell(cell: &std::sync::Arc<std::sync::Mutex<Value>>) {
+        let mut guard = cell.lock().unwrap();
+        match &mut *guard {
+            Value::Array(arc, _) => std::sync::Arc::make_mut(arc).items.clear(),
+            Value::Hash(arc) => std::sync::Arc::make_mut(arc).map.clear(),
+            other => *other = Value::Nil,
+        }
+    }
+
     /// Build a backtrace string from the interpreter's routine stack.
     /// Each frame is formatted as "  in sub <name> at <file> line <N>".
     ///
