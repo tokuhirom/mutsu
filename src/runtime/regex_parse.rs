@@ -2182,6 +2182,12 @@ impl Interpreter {
         let mut anchor_start = false;
         let mut anchor_end = false;
         let mut pending_named_capture: Option<String> = None;
+        // Set when `pending_named_capture` came from an angle-bracket alias of a
+        // char class / Unicode property (`<foo=[bao]>`, `<bar=:Letter>`) rather
+        // than a sigil-prefix alias (`$<foo>=...`). The angle form quantifies
+        // per-iteration (Raku yields a List of Matches for `<foo=[bao]>+`), like
+        // a builtin subrule; the sigil form captures the whole quantified span.
+        let mut pending_named_capture_is_angle_alias = false;
         let mut pending_builtin_named_capture: Option<String> = None;
         let mut pending_hash_capture: Option<String> = None;
         while let Some(c) = chars.next() {
@@ -3510,6 +3516,7 @@ impl Interpreter {
                                             || rhs.starts_with("!:");
                                         if lhs_is_ident && rhs_is_class_or_prop {
                                             pending_named_capture = Some(lhs.to_string());
+                                            pending_named_capture_is_angle_alias = true;
                                             name = rhs.to_string();
                                         }
                                     }
@@ -4610,6 +4617,8 @@ impl Interpreter {
             // When both a user alias ($<name>=) and a builtin class name are pending,
             // the alias becomes the primary capture and the builtin name becomes secondary.
             let user_alias = pending_named_capture.take();
+            let user_alias_is_angle = pending_named_capture_is_angle_alias;
+            pending_named_capture_is_angle_alias = false;
             let primary_is_user_alias = user_alias.is_some();
             let secondary_named = if primary_is_user_alias {
                 // Alias takes precedence; builtin name (if any) becomes secondary capture.
@@ -4631,7 +4640,13 @@ impl Interpreter {
             // quantifies the subrule itself, producing a LIST with one Match per
             // repetition. So only wrap when the primary name is a user alias; a
             // bare builtin keeps its per-iteration captures via the quantifier loop.
+            //
+            // An *angle-bracket* alias of a char class / property (`<foo=[bao]>+`,
+            // `<bar=:Letter>+`) is the builtin case, not the sigil case: Raku
+            // quantifies the class per-iteration and yields a List, so it must NOT
+            // be wrapped (only the sigil-prefix alias `$<foo>=...` wraps).
             let wrap_named_quant = primary_is_user_alias
+                && !user_alias_is_angle
                 && hash_capture.is_none()
                 && token_separator.is_none()
                 && matches!(
