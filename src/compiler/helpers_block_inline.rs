@@ -23,6 +23,19 @@ impl Compiler {
             )
         });
         let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
+        // Names marked readonly by a preceding `MarkReadonly` statement. A `:=`
+        // scalar bind to a readonly RHS (`my $x := 42`) is lowered to
+        // `[MarkReadonly(x), VarDecl{__scalar_bind}]`; when that VarDecl is in
+        // block-final (value) position, its store must use the declaration path
+        // (SetLocal + MarkVarDeclContext) rather than the assignment path, which
+        // would wrongly trip the readonly check just set by MarkReadonly.
+        let readonly_marked_names: Vec<&str> = stmts
+            .iter()
+            .filter_map(|s| match s {
+                Stmt::MarkReadonly(n) => Some(n.as_str()),
+                _ => None,
+            })
+            .collect();
         // Hoist sub declarations
         self.hoist_sub_decls(stmts, true);
         for (i, stmt) in stmts.iter().enumerate() {
@@ -165,7 +178,21 @@ impl Compiler {
                                 }
                             }
                             self.code.emit(OpCode::Dup);
-                            self.emit_set_named_var(name);
+                            if readonly_marked_names.contains(&name.as_str()) {
+                                // The var was just marked readonly (a `:=` scalar
+                                // bind to a readonly RHS). Store via the
+                                // declaration path so the readonly check is
+                                // bypassed for this declaration's own initializer,
+                                // mirroring the @/% bind path above.
+                                if custom_traits.iter().any(|(t, _)| t == "__scalar_bind") {
+                                    self.code.emit(OpCode::MarkScalarBindContext);
+                                }
+                                self.code.emit(OpCode::MarkVarDeclContext);
+                                let slot = self.alloc_local(name);
+                                self.code.emit(OpCode::SetLocal(slot));
+                            } else {
+                                self.emit_set_named_var(name);
+                            }
                         }
                         self.pop_dynamic_scope_lexical(saved);
                         return;
