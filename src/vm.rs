@@ -1300,6 +1300,23 @@ impl Interpreter {
                     // Anonymous state variable (`$`): fall back to persisted
                     // state so the value survives across closure calls.
                     .or_else(|| self.anon_state_value(name))
+                    // `$0`/`$1`/... are `$/[0]`/`$/[1]`/...  A successful match
+                    // exports each positional capture as its own digit env key,
+                    // but a directly bound/assigned `$/` (`my $/ := "foobar"`)
+                    // has none — derive the value by indexing the current `$/`,
+                    // matching Raku's `$0 == $/[0]` for any object (a non-Match
+                    // scalar self-indexes: `.[0]` is the value, `.[N>0]` is Nil).
+                    .or_else(|| {
+                        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_digit()) {
+                            return None;
+                        }
+                        let slash = self.get_env_with_main_alias("/")?;
+                        if matches!(slash, Value::Nil) {
+                            return None;
+                        }
+                        let i: usize = name.parse().ok()?;
+                        Some(Self::bound_slash_positional(&slash, i))
+                    })
                     .map(Ok)
                     .unwrap_or_else(|| {
                         if name.starts_with('^') {

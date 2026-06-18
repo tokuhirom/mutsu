@@ -21,6 +21,26 @@ impl Interpreter {
         }
     }
 
+    /// Index the current `$/` for a positional capture variable (`$0`, `$1`, ...)
+    /// when no digit env key exists (i.e. `$/` was bound/assigned directly rather
+    /// than set by a match). Mirrors Raku's `$N == $/[N]`: an Array indexes
+    /// positionally, and any non-Match scalar self-indexes (`.[0]` is the value,
+    /// `.[N>0]` is Nil). A real Match exports its captures as digit keys, so this
+    /// is only reached for a non-Match `$/`; Instances/Match fall through to Nil.
+    pub(super) fn bound_slash_positional(slash: &Value, i: usize) -> Value {
+        slash.with_deref(|v| match v {
+            Value::Array(data, _) => data.get(i).cloned().unwrap_or(Value::Nil),
+            Value::Instance { .. } => Value::Nil,
+            _ => {
+                if i == 0 {
+                    v.clone()
+                } else {
+                    Value::Nil
+                }
+            }
+        })
+    }
+
     fn superscript_digit_value(c: char) -> Option<u32> {
         match c {
             '\u{2070}' => Some(0), // ⁰
