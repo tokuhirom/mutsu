@@ -1,0 +1,10 @@
+# config file for the tagpr in git config format
+# The tagpr generates the initial tag and release.
+[tagpr]
+	vPrefix = true
+	releaseBranch = main
+	versionFile = Cargo.toml
+	# After bumping the version in Cargo.toml, sync the `mutsu` entry in
+	# Cargo.lock so the release PR carries a coherent lockfile (release.yml
+	# builds without --locked, but a matched lock keeps `git status` clean).
+	command = "cargo update -p mutsu"
