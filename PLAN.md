@@ -157,10 +157,18 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
         - [~] **Stage 1**（escape-aware outer cell 化）着手 = audit（#3258）で blast radius を ~14 write サイトに特定。
               **for-rw writeback "site A" を array（#3259）/ hash（#3260）とも ContainerRef-aware 化**（`my @a:=@b`/`my %h:=%g` は
               既に同一 cell なのに writeback が deref せず取りこぼしていた＝`deref_container()`+共有 cell write-through で解決）。
-        - [ ] **bug ②（`$x = @arr` 参照共有）= 設計済（#3263・[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md)）・実装は次セッション**:
+        - [~] **bug ②（`$x = @arr` 参照共有）= 設計済（#3263・[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md)）・実装試行で順序確定（#3265）**:
               array を scalar スロットに代入するとコピーする（raku は同一 Array 参照共有）。`$n=@z` は既に同 Arc 共有だが `.push`
               構造変異が COW detach するのが真因。正準解＝source/target を共有 cell に昇格（escape-aware）。難所＝rebind（`$n=5`）vs
               mutate-through（`@z=(9)`）の区別で `:=` scalar を壊さないこと。Slice 2a（scalar var）→2b（要素/hash 値）→2c（bug②）→2d（args）。
+              - **[2026-06-18 実装試行で判明＝順序が逆だった]** Slice 2a（value-alias）を実装すると **core は全て動く**
+                （`MarkValueAliasSource` opcode + 共有 cell + detach、18-case pin 全 PASS・cargo 466/0・実装は
+                [docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §8）が、**`$a` を `ContainerRef` 化すると
+                source を Arc identity で追跡する既存 write-through が壊れる**（`t/pair-value-element-writethrough.t` #2943 が回帰）。
+                ∴ **2a の前に「Arc-identity write-through サイトの ContainerRef-aware 化」を完了させる必要**＝下記 Stage 1 の
+                残りはまさにこれ。**次セッションの正しい着手順序: (1) Arc-identity write-through サイト（pair-value #2943 を起点に
+                棚卸し）を decont 化 → (2) value-alias を §8 のまま再適用 → 2b/2c/2d。** Stage 0 が `[x]` でも write 側の
+                Arc-identity 機構が未網羅だったのが盲点。
       - Phase 0.5 第2段（任意・実挙動変化）: `GetArrayVar`/`Index` の auto-decont + 新 lvalue opcode の本配線。
       - Phase 3 機会的残: 属性束縛（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits 5-8）。
 - [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
