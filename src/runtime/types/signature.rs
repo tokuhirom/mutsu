@@ -511,7 +511,15 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 .or_else(|| sub_pd.name.strip_prefix('@'))
                 .or_else(|| sub_pd.name.strip_prefix('%'))
                 .unwrap_or(sub_pd.name.as_str());
-            if sub_pd.named || bind_name == key {
+            // Only unwrap a positional `key => val` pair whose key matches this
+            // positional parameter's name. A NAMED sub-param's candidate already
+            // came from `extract_named_from_unpack_target` (the source pair's
+            // `.value`), so unwrapping it again would wrongly strip a value that
+            // is itself a `Value::Pair` — e.g. `Pair :value((...))` nested
+            // destructuring or `:value($v)` where the value is a Pair (the
+            // `ValuePair` form already skips this unwrap; this aligns the
+            // string-key `Value::Pair` form with it).
+            if !sub_pd.named && bind_name == key {
                 candidate = *inner.clone();
             }
         }
