@@ -95,11 +95,9 @@ impl Interpreter {
                 body: body.clone(),
                 is_rw: false,
                 is_raw: false,
-                // Flatten: a closure stored in a Value::Sub is dispatched later,
-                // possibly from a different scope, and its captured env is seeded
-                // overlay-only at dispatch -- so it must hold the full lexical view
-                // now, not a scoped overlay whose parent tier would be lost.
-                env: self.clone_env(),
+                // Upvalue snapshot (single-store Slice E): capture only free vars,
+                // shadow-meta, and system names; see `capture_closure_env`.
+                env: self.capture_closure_env(&compiled_code),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
@@ -139,9 +137,8 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
-            // Flatten: closure env captured into a Value::Sub for later (possibly
-            // cross-scope) dispatch must hold the full lexical view (see above).
-            let mut env = self.clone_env();
+            // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
+            let mut env = self.capture_closure_env(&compiled_code);
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }
@@ -203,6 +200,53 @@ impl Interpreter {
             .filter(|sym| sym.with_str(|s| self.loop_local_vars.iter().any(|set| set.contains(s))))
             .copied()
             .collect()
+    }
+
+    /// Capture the closure's environment as an *upvalue snapshot* (single-store
+    /// Slice E): instead of flattening the whole lexical env into the closure
+    /// (`clone_env`), capture only the names the closure body (and its nested
+    /// closures) can actually observe.
+    ///
+    /// The invariant that makes this safe: a closure body references an outer
+    /// **user lexical** only through a `GetGlobal`-family opcode, so the compiler's
+    /// `free_var_syms` set already lists every such name. The *other* names a body
+    /// can read — `self` (attribute access), special vars (`$_`, `$/`, `$!`,
+    /// `$?FILE`, …), dynamic vars (`$*…`), match captures, `&?ROUTINE`/`&?BLOCK`,
+    /// and type names — go through dedicated opcodes the free-var scan cannot see,
+    /// but they are all *system* names rather than plain user lexicals. So the
+    /// capture keeps: free variables, the `__mutsu_*` shadow-meta, and every name
+    /// that is not a plain user lexical ([`crate::env::is_plain_user_lexical`]). It
+    /// drops only the bulk non-free plain user lexicals, which the body provably
+    /// cannot reference.
+    ///
+    /// Two cases keep the whole-env snapshot (`clone_env`) because `free_var_syms`
+    /// is *not* a complete account of the names the body reads:
+    /// - **reflective** programs (`EVAL` / `CALLER::` / symbolic deref) can read a
+    ///   caller lexical under any name (process-global flag, set at finalize);
+    /// - **`captures_env_by_name`** frames run an inline body that reads lexicals
+    ///   by name through a path the op-scan misses (`whenever`/`gather` bodies
+    ///   stashed in the `stmt_pool`, loop/block control temps) — see the field on
+    ///   [`CompiledCode`].
+    fn capture_closure_env(&self, cc: &Option<std::sync::Arc<CompiledCode>>) -> Env {
+        let Some(cc) = cc else {
+            return self.clone_env();
+        };
+        if cc.captures_env_by_name || crate::opcode::reflective_name_access_possible() {
+            return self.clone_env();
+        }
+        let free: std::collections::HashSet<Symbol> = cc.free_var_syms.iter().copied().collect();
+        // Flatten once (same as `clone_env`), then keep only the upvalue set,
+        // shadow-meta, and system names. The base tier (GLOBAL_BASE) is never in
+        // the overlay and stays reachable through the flat env's tail lookup.
+        let flat = self.clone_env();
+        let mut map: std::collections::HashMap<Symbol, Value> = std::collections::HashMap::new();
+        for (k, v) in flat.iter() {
+            let keep = free.contains(k) || k.with_str(|s| !crate::env::is_plain_user_lexical(s));
+            if keep {
+                map.insert(*k, v.clone());
+            }
+        }
+        crate::env::Env::from_symbol_map(map)
     }
 
     /// Box-on-capture (lever C Slice 2): a closure captures the *container* of a
@@ -345,9 +389,8 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
-            // Flatten: closure env captured into a Value::Sub for later (possibly
-            // cross-scope) dispatch must hold the full lexical view (see above).
-            let mut env = self.clone_env();
+            // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
+            let mut env = self.capture_closure_env(&compiled_code);
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }
@@ -413,8 +456,8 @@ impl Interpreter {
                 body: body.clone(),
                 is_rw: false,
                 is_raw: false,
-                // Flatten: long-lived closure capture (see above).
-                env: self.clone_env(),
+                // Upvalue snapshot (single-store Slice E); see capture_closure_env.
+                env: self.capture_closure_env(&compiled_code),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),

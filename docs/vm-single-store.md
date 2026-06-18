@@ -423,12 +423,43 @@ for wall-clock.
   (`t/method-env-dirty.t` / `t/named-call-env-dirty.t` / `t/zeroarg-env-dirty.t`)
   remain the regression guard for the precise gates.
 
-- **Slice E — closure upvalues (prereq #1).**
-  Capture free vars as indexed upvalue cells; remove `compute_needs_env_sync`
-  whole-frame writeback and the per-call captured-env loops. Highest risk; lands
-  only after A–D. Gate: 193 closure/block/routine/sort/gather/sigilless roast
-  files (vm-dual-store.md Slice 3 set), `t/closure-captured-state.t`,
-  `bench-array`/`array-ops` `env_deep_copies` → target 0.
+- **Slice E — closure upvalue snapshot. PART 1 DONE (2026-06-18, #3245).**
+  A closure no longer flattens the *whole* lexical env into its captured
+  `data.env` (`clone_env`); `capture_closure_env` snapshots only an **upvalue
+  set**: the body's free variables (`free_var_syms`), the `__mutsu_*` shadow-meta,
+  and the *system names* a body reads through a dedicated opcode (`self`,
+  `$_`/`$/`/`$!`, `$?FILE`/`$?LINE`/`$?CLASS`, dynamic `$*…`, match captures,
+  `&?ROUTINE`/`&?BLOCK`, type names — everything `env::is_plain_user_lexical`
+  rejects). The bulk non-free plain user lexicals are dropped: a user lexical is
+  reached only through a `GetGlobal`-family opcode, which `free_var_syms` already
+  lists, so the body provably cannot reference a dropped name. `env` is now a
+  *derived view* for the common closure.
+
+  > **Two whole-env fallbacks, because `free_var_syms` is not complete.** The
+  > GetGlobal-scan misses names read by other means, so these keep `clone_env`:
+  > (1) **reflective** programs (`EVAL`/`CALLER::`/symbolic deref), and (2)
+  > **`captures_env_by_name`** frames — an inline body that reads lexicals by name
+  > through a path the op-scan can't see: `whenever`/`gather` bodies stashed in the
+  > `stmt_pool` and compiled/run at runtime against the live env, plus loop/block
+  > control temps. This is now a stored `CompiledCode` flag (was a local in
+  > `compute_needs_env_sync`), **extended to include `WheneverScope`**, reused by
+  > both the dual-store flush blanket and the capture path.
+
+  > **Measurement reframed the slice (2026-06-18).** Slice E was assumed to cut
+  > `env_deep_copies`; measurement showed those are *already* ~1–2 entries each
+  > (GLOBAL_BASE hoists ~70 entries; chain-aware `entry_or_insert` no-ops the
+  > co-scoped merge), so the slice is **perf-neutral**. Its value is
+  > architectural — closures stop capturing the whole env. The naive "free vars
+  > only" capture was found unsafe (dropped `self`/attributes and `whenever`/
+  > `gather` outer refs); Part 1 is the correct form (system-name keep-rule +
+  > whole-env fallback for provably-incomplete frames). Pinned by
+  > `t/single-store-slice-e.t` (13).
+
+  **PART 2 (next, after #3245 merges — touches the same files):** remove the
+  `compute_needs_env_sync` closure flush (branch #2) by reading free-var values
+  from the slot store in `capture_closure_env` instead of from the
+  (branch-#2-flushed) env. This is the actual machinery deletion §3 wants; Part 1
+  deliberately kept branch #2 so the capture reads correct values from env.
 
 - **Slice F — delete the coarse machinery. THE CONVERGENCE POINT (2026-06-18).**
   With every setter precise (A–E), remove `env_dirty`, `saved_env_dirty`,
