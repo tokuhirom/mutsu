@@ -511,6 +511,11 @@ pub(crate) enum Stmt {
     },
     /// Mark a variable as readonly (used for `:=` binding desugaring).
     MarkReadonly(String),
+    /// Mark a container variable as `:=`-bound via `__mutsu_bound::NAME` env key.
+    /// Distinguishes a bound container (writable as a whole, propagating to the
+    /// bound source) from a genuinely readonly `constant` container — both end
+    /// up in `readonly_vars`, so a separate marker is needed.
+    MarkBoundContainer(String),
     /// Flag that the next VarDecl in this SyntheticBlock uses `:=` binding.
     MarkBind,
     /// Mark a sigilless variable as readonly via `__mutsu_sigilless_readonly::NAME` env key.

@@ -4410,6 +4410,15 @@ impl Interpreter {
             }
             OpCode::CheckReadOnly(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
+                // A `:=`-bound container (`my %a := %b`) is marked readonly as a
+                // bind signal, but a whole reassignment (`%a = (...)`) is allowed
+                // — it writes through to the bound source. The `__mutsu_bound::`
+                // marker distinguishes it from a genuinely immutable `constant`.
+                let bound_key = format!("__mutsu_bound::{}", name);
+                if matches!(self.env().get(&bound_key), Some(Value::Bool(true))) {
+                    *ip += 1;
+                    return Ok(());
+                }
                 self.check_readonly_for_modify(name)?;
                 // Also check env-based readonly status set by cross-scope
                 // `:=` binding (e.g. binding to a readonly sub parameter
