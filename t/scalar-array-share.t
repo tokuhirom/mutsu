@@ -3,7 +3,7 @@ use Test;
 # Slice 2a (docs/scalar-array-sharing.md): `$scalar = @arr` shares the source
 # Array by reference (raku semantics), not a snapshotting copy.
 
-plan 24;
+plan 33;
 
 # --- whole-container structural mutation propagates both ways ---
 {
@@ -124,4 +124,60 @@ plan 24;
     @z.push(2);
     is-deeply $a.Array, [1, 2], 'first scalar shares';
     is-deeply $b.Array, [1, 2], 'second scalar shares';
+}
+
+# --- Slice 2b: chained scalar share `$r = $q` (scalar RHS holding an array) ---
+{
+    my @y = (1, 2);
+    my $q = @y;
+    my $r = $q;
+    @y.push(7);
+    is-deeply $r.Array, [1, 2, 7], 'chained $r = $q follows @y';
+    $r.push(8);
+    is-deeply @y.Array, [1, 2, 7, 8], '@y follows chained $r.push';
+}
+
+# --- chained share from a scalar holding an anonymous array ---
+{
+    my $a = [1, 2, 3];
+    my $b = $a;
+    $a.push(4);
+    is-deeply $b.Array, [1, 2, 3, 4], '$b = $a (anon array) shares';
+}
+
+# --- plain scalar-to-scalar assignment stays a copy (no spurious share) ---
+{
+    my $x = 5;
+    my $y = $x;
+    $x = 9;
+    is $y, 5, 'plain $y = $x is a copy';
+}
+
+# --- chained scalar reassigned to non-array drops the share ---
+{
+    my @z = (1, 2);
+    my $p = @z;
+    my $q = $p;
+    $q = 99;
+    is-deeply @z.Array, [1, 2], 'chained $q reassign does not touch @z';
+    is-deeply $p.Array, [1, 2], '$p still intact';
+    is $q, 99, '$q holds the new scalar';
+}
+
+# --- a `:=`-bound scalar holding a non-array, chained `=`, stays a copy ---
+{
+    my $b = 5;
+    my $a := $b;
+    my $c = $a;
+    $b = 9;
+    is $c, 5, 'chained = from a bound Int scalar copies the value';
+}
+
+# --- chained hash share ---
+{
+    my %h = (x => 1);
+    my $hr = %h;
+    my $hr2 = $hr;
+    %h<y> = 2;
+    is $hr2<y>, 2, 'chained hash share follows %h';
 }

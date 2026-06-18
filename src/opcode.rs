@@ -188,12 +188,15 @@ pub(crate) enum OpCode {
     /// Signal that the next SetLocal is a `:=` rebind (not a VarDecl).
     /// Triggers cleanup of old bind pairs and reverse aliases.
     MarkRebindContext,
-    /// Slice 2a (`docs/scalar-array-sharing.md`): signal that the next SetLocal
-    /// assigns a whole `@arr`/`%hash` to a `$` scalar via plain `=`. The source
-    /// container is promoted to a shared `ContainerRef` cell so structural
-    /// mutations (`.push`) through either name are seen by both (raku reference
-    /// semantics), unlike a snapshotting copy.
-    MarkArrayShareContext,
+    /// Slice 2a/2b (`docs/scalar-array-sharing.md`): signal that the next
+    /// SetLocal/AssignExpr assigns to a `$` scalar via plain `=` and that the
+    /// named source variable's container should be shared by reference. The
+    /// operand is a constant-pool index for the source name (`@z`/`%h` for a
+    /// whole-container RHS, or a scalar name for a chained `$r = $q`). The source
+    /// is promoted to a shared `ContainerRef` cell so structural mutations
+    /// (`.push`) through either name are seen by both. A no-op when the source
+    /// does not hold a container (so a plain `$x = $y` stays a copy).
+    MarkArrayShareSource(u32),
 
     // -- String --
     Concat,

@@ -222,12 +222,14 @@ impl Compiler {
         }
     }
 
-    /// Slice 2a (`docs/scalar-array-sharing.md`): `$scalar = @arr` / `$scalar =
-    /// %hash` shares the source container by reference (raku semantics) rather
-    /// than snapshotting it. The source variable name is known at compile time
-    /// (the RHS is a whole `ArrayVar`/`HashVar`), so wrap the RHS value with the
-    /// source name and flag the upcoming `SetLocal` to promote both to a shared
-    /// `ContainerRef` cell. `@`/`%`/`&` targets (copy/bind elsewhere) are skipped.
+    /// Slice 2a/2b (`docs/scalar-array-sharing.md`): `$scalar = @arr` / `$scalar
+    /// = %hash` (and the chained `$scalar = $other`) shares the source container
+    /// by reference (raku semantics) rather than snapshotting it. The source
+    /// variable name is known at compile time, so flag the upcoming
+    /// `SetLocal`/`AssignExpr` with `MarkArrayShareSource` to promote both to a
+    /// shared `ContainerRef` cell. For a scalar source the runtime only shares
+    /// when it actually holds a container (a plain `$x = $y` stays a copy).
+    /// `@`/`%`/`&` targets (copy/bind elsewhere) are skipped.
     fn try_emit_array_share(&mut self, name: &str, expr: &Expr) -> bool {
         if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
             return false;
@@ -235,12 +237,14 @@ impl Compiler {
         let source = match expr {
             Expr::ArrayVar(n) => format!("@{}", n),
             Expr::HashVar(n) => format!("%{}", n),
+            // Chained share: `$r = $q` where `$q` may hold a container. The
+            // runtime no-ops when `$q` is a plain scalar, so this stays a copy.
+            Expr::Var(n) => n.clone(),
             _ => return false,
         };
         self.with_escape(true, |c| c.compile_expr(expr));
         let name_idx = self.code.add_constant(Value::str(source));
-        self.code.emit(OpCode::WrapVarRef(name_idx));
-        self.code.emit(OpCode::MarkArrayShareContext);
+        self.code.emit(OpCode::MarkArrayShareSource(name_idx));
         true
     }
 
