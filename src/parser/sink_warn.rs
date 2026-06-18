@@ -301,6 +301,13 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         Expr::Grouped(inner) => describe_useless(inner),
         Expr::PositionalPair(inner) => describe_useless(inner),
         Expr::Literal(v) => describe_literal(v),
+        // A `Var` node whose name already carries a sigil (`@a`, `%h`) is a
+        // synthetic artifact of `:=` bind desugaring — the trailing result
+        // expression a container bind leaves in its SyntheticBlock — not a
+        // user-written bare scalar. A real bare `@a` parses to `ArrayVar("a")`,
+        // so this never suppresses a genuine sink warning; it only stops the
+        // spurious "Useless use of $@a in sink context" on `my @a := @b`.
+        Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => None,
         Expr::Var(n) => Some(format!("${}", n)),
         Expr::ArrayVar(n) => Some(format!("@{}", n)),
         Expr::HashVar(n) => Some(format!("%{}", n)),
