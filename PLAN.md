@@ -132,17 +132,25 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 - [x] **Slice D** — R3 blanket-mark 撲滅 = **監査で完了確認（#3238）**。安全に削除できる冗長 blanket は無し（残る ≈140 の
       `env_dirty=true` は精密ゲート本体／正当 mutation／carrier-block net のいずれか・spurious は全ベンチ 1〜8 pull）。
 
-**ここから先（収束点へ向かう 2 本柱・順序あり）**:
-- [ ] **Slice E — closure upvalue 化（次の独立前進）**: free-var を indexed upvalue cell 化し `compute_needs_env_sync`
-      whole-frame writeback + per-call captured-env loop を撤去。**container 壁に当たらない唯一の独立 single-store 前進**。
-      env サイズ自体を削減 → method-call/bench-class の env deep-clone（残 perf ボトルネック・~9μs/call）にも効く。最高リスクなので
-      Slice A の invariant guard + 193 closure/block/sort/gather roast で固める。
-- [ ] **第一級コンテナ Phase 2 残 → Phase 3（Slice F の substrate）**: env↔locals がコンテナ Arc を共有する終状態へ。
-      - Phase 0.5 第2段（実挙動変化）: `GetArrayVar`/`Index` の auto-decont + 新 lvalue opcode の本配線（**Phase 2 と同一 PR**）。
-      - Phase 2 残: hash 要素 edge / LHS bind（nested.t 11-12）/ element-element bind（32-37）/ take-rw（gather.t 38）/
-        深い `>>++`・`deepmap(++*)`（hyper.t 330-333）/ object-hash / S12 accessors。`HashSlotRef`/`ArraySlotRef` の場当たり +
-        name-based writeback reconcile を削除。
-      - Phase 3: 属性コンテナ + 属性束縛（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits 5-8）。
+**ここから先（収束点へ向かう・残り 1 本柱）**:
+- [x] **Slice E — closure upvalue 化 = 完遂（Part1 #3245 + Part2 #3247, 2026-06-18）**: closure を whole-env でなく
+      **upvalue snapshot**（free vars + `__mutsu_*` meta + system 名）で捕捉し、`compute_needs_env_sync` の closure flush
+      （branch #2）を撤去＝closure を forward-flush 機構から完全分離。**実測で判明: Slice E は perf 中立**（closure 毎の
+      env deep copy は GLOBAL_BASE 退避 + chain-aware `entry_or_insert` で既に ~1–2 entries）＝目的はアーキ/保守性。
+      **素朴な「free-var だけ捕捉」は不可と実証**: `free_var_syms`（GetGlobal scan）が ①専用 op の system 名（`self`/属性・
+      `$_`・`$?FILE`・dynamic var）②`stmt_pool` に隠れる nested body（`whenever`/`gather`）を取りこぼす → system 名 keep-rule
+      （`env::is_plain_user_lexical`）+ 不完全フレーム whole-env fallback（`captures_env_by_name` cc flag・`WheneverScope` 追加）
+      が正攻法。pin=`t/single-store-slice-e.t`。詳細＝docs/vm-single-store.md Slice E 節。
+- [ ] **第一級コンテナ Phase 2 残 → Phase 3（Slice F の substrate・残る唯一の前提）**: env↔locals がコンテナ Arc を共有する終状態へ。
+      Phase 3（instance cell）は registry 撤去・CAS まで完遂、Phase 2（要素 cell）も element-element/LHS/cyclic 束縛まで landed
+      （nested.t 43/43・#2922/#2925）。**残る具体作業**（実装台帳 docs/container-identity.md「残スライス」＋ docs/slotref-removal-plan.md）:
+      - **残 `HashSlotRef` 生成サイトの cell 化**: `hash_autovivify`（junction-key bind / `is raw` reduce lvalue-read / autoviv-op
+        fallback）— 呼び出し後に entry が存在＝phantom 不要なので cell 化可（hot path 非該当）。deferred-token 用途以外の `HashSlotRef` を枯らす。
+      - **grep-rw-view 撤去**: 最後の ptr-keyed グローバルの一つ。matched 要素を cell 昇格し view registry を全廃（for-loop rw topic が消費者）。
+      - **env↔locals コンテナ coherence の本丸（Slice F の真の前提）**: cell-linked container が env と locals で別 Arc を持つ
+        dual-store 乖離を解消（pairs/slip carrier-drop が `element-bind-cell.t` を壊すのが証左）。**未着手・要設計**。
+      - Phase 0.5 第2段（任意・実挙動変化）: `GetArrayVar`/`Index` の auto-decont + 新 lvalue opcode の本配線。
+      - Phase 3 機会的残: 属性束縛（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits 5-8）。
 - [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
       **前提 = Slice E（upvalue）+ 第一級コンテナ Phase 2/3（env↔locals コンテナ coherence）の両方。** ここで初めて pairs/slip
       carrier-drop も安全化し、`locals` が単一権威・`env` は派生ビューになる。
