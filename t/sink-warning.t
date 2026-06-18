@@ -2,7 +2,7 @@ use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test;
 use Test::Util;
 
-plan 16;
+plan 19;
 
 # A pure value evaluated in sink (void) context warns.
 is_run 'say "hi"; 42', { :0status, :out("hi\n"), :err(/"Useless use" .* 42/) },
@@ -47,3 +47,11 @@ is_run 'my $y; $y = 10', { :0status, :err('') },
     'assignment in sink does not warn';
 is_run 'say 1+2', { :0status, :out("3\n"), :err('') },
     'value consumed by say does not warn';
+
+# A `gather` body is in sink context wherever the gather appears.
+is_run 'my @x = gather 43', { :0status, :err(/"Useless use" .* 43/) },
+    'gather body as initializer warns its useless statements';
+is_run 'sub f { my @x = gather 43 }; f()', { :0status, :err(/"Useless use" .* 43/) },
+    'gather body inside a sub warns';
+is_run 'my @x = gather { take 1 }; say @x.elems', { :0status, :out("1\n"), :err('') },
+    'gather body with only a take does not warn';
