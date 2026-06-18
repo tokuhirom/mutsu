@@ -1644,7 +1644,25 @@ impl Interpreter {
                 // declarations — the constant will be re-marked readonly after this.
                 // Also skip during a `:=` bind: an `our` container bind (`our %g := %h`)
                 // marks the var readonly as a bind signal, not a true RO restriction.
-                if !raw_mode && !is_bind_ctx {
+                // Likewise skip for a `:=`-bound container reached by name (e.g. a
+                // captured `%b` whole-reassigned inside a closure): it carries the
+                // `__mutsu_bound::` marker and writes through to the bound source,
+                // unlike a genuinely immutable `constant`. The slot-based path uses
+                // CheckReadOnly for the same exemption (vm.rs CheckReadOnly).
+                // Note: an immutable Set/Bag/Mix bound via `:=` (`my %m := mix <a b>`)
+                // is genuinely read-only — whole-reassignment must still throw
+                // X::Assignment::RO — so the exemption applies only to mutable
+                // Hash/Array bound containers.
+                let is_bound_container = name.starts_with(['@', '%'])
+                    && matches!(
+                        self.env().get(&format!("__mutsu_bound::{}", name)),
+                        Some(Value::Bool(true))
+                    )
+                    && !matches!(
+                        self.env().get(&name),
+                        Some(Value::Mix(_, false) | Value::Set(_, false) | Value::Bag(_, false))
+                    );
+                if !raw_mode && !is_bind_ctx && !is_bound_container {
                     self.check_readonly_for_modify(&name)?;
                 } else if raw_mode {
                     // Clear any previous readonly marking so this constant
