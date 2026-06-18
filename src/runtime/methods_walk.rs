@@ -46,29 +46,32 @@ impl Interpreter {
         // Parse arguments.
         let mut method_name: Option<String> = None;
         let mut want_roles = false;
-        let mut want_super = true; // default: walk class MRO
+        let mut order = WalkOrder::Canonical; // default ordering
         for arg in args {
-            match arg {
-                Value::Pair(k, v) => match k.as_str() {
-                    "name" => method_name = Some(v.to_string_value()),
-                    "roles" => want_roles = v.truthy(),
-                    "super" => want_super = v.truthy(),
-                    "method" | "submethod" | "omit" => { /* accepted; default behaviour */ }
-                    _ => {}
-                },
-                Value::ValuePair(k, v) => {
-                    let key = k.to_string_value();
-                    match key.as_str() {
-                        "name" => method_name = Some(v.to_string_value()),
-                        "roles" => want_roles = v.truthy(),
-                        "super" => want_super = v.truthy(),
-                        "method" | "submethod" | "omit" => {}
-                        _ => {}
-                    }
-                }
+            let named: Option<(String, &Value)> = match arg {
+                Value::Pair(k, v) => Some((k.clone(), v.as_ref())),
+                Value::ValuePair(k, v) => Some((k.to_string_value(), v.as_ref())),
                 other => {
                     if method_name.is_none() {
                         method_name = Some(other.to_string_value());
+                    }
+                    None
+                }
+            };
+            if let Some((key, v)) = named {
+                match key.as_str() {
+                    "name" => method_name = Some(v.to_string_value()),
+                    "roles" => want_roles = v.truthy(),
+                    _ => {
+                        // `:canonical`/`:super`/`:breadth`/`:ascendant`/`:descendant`
+                        // /`:preorder`/`:postorder` select the ordering.
+                        // `:method`/`:submethod`/`:omit`/`:include` accepted; handled
+                        // elsewhere or defaulted.
+                        if let Some(o) = WalkOrder::from_adverb(&key)
+                            && v.truthy()
+                        {
+                            order = o;
+                        }
                     }
                 }
             }
@@ -77,9 +80,9 @@ impl Interpreter {
             return Ok(None);
         };
 
-        // Build the walk order: BFS over class MRO, optionally including
-        // composed roles via `class_composed_roles` and `role_parents`.
-        let walk_targets = self.build_walk_targets(&receiver_class_name, want_super, want_roles);
+        // Build the walk order over the class hierarchy in the requested order,
+        // optionally including composed roles.
+        let walk_targets = self.build_walk_targets(&receiver_class_name, order, want_roles);
 
         // For each (kind, owner-name), look up an "own" MethodDef for the
         // named method and invoke it on the original invocant.
@@ -123,23 +126,16 @@ impl Interpreter {
     fn build_walk_targets(
         &self,
         class_name: &str,
-        want_super: bool,
+        order: WalkOrder,
         want_roles: bool,
     ) -> Vec<(WalkKind, String)> {
         let mut out: Vec<(WalkKind, String)> = Vec::new();
         let mut visited_classes: HashSet<String> = HashSet::new();
         let mut visited_roles: HashSet<String> = HashSet::new();
 
-        // Walk classes in MRO order. For each class, add the class itself
-        // and (if `:roles`) BFS over its composed roles.
-        let mro = self
-            .class_mro_readonly(class_name)
-            .unwrap_or_else(|| vec![class_name.to_string()]);
-        let class_chain: Vec<String> = if want_super {
-            mro
-        } else {
-            vec![class_name.to_string()]
-        };
+        // Walk classes in the requested order. For each class, add the class
+        // itself and (if `:roles`) BFS over its composed roles.
+        let class_chain: Vec<String> = self.walk_class_order(class_name, order);
 
         for cn in &class_chain {
             if cn == "Mu" || cn == "Any" || cn == "Cool" {
@@ -187,6 +183,96 @@ impl Interpreter {
     /// Read-only variant of class_mro for use from non-mut helpers.
     fn class_mro_readonly(&self, class_name: &str) -> Option<Vec<String>> {
         self.registry().class_mro_cached(class_name)
+    }
+
+    /// Direct (declared) parent classes of `class_name`, in declaration order,
+    /// restricted to user/builtin class definitions and excluding the implicit
+    /// `Any`/`Mu`/`Cool` roots (which never carry WALKable methods here).
+    fn walk_direct_parents(&self, class_name: &str) -> Vec<String> {
+        let registry = self.registry();
+        let Some(def) = registry.classes.get(class_name) else {
+            return Vec::new();
+        };
+        def.parents
+            .iter()
+            .filter(|p| !matches!(p.as_str(), "Any" | "Mu" | "Cool"))
+            .filter(|p| registry.classes.contains_key(*p))
+            .cloned()
+            .collect()
+    }
+
+    /// Compute the ordered list of class names to walk for the requested
+    /// ordering. All walks dedup keeping the FIRST occurrence. `Any`/`Mu`/`Cool`
+    /// are excluded. Reverse-engineered from S12-introspection/walk.t:
+    /// for `E is C is D`, `C is A is B`, `D is A` the receiver `E` yields
+    /// canonical=ECDAB, super=CD, breadth=ECDAB, ascendant/preorder=ECABD,
+    /// descendant=ABCDE.
+    fn walk_class_order(&self, receiver: &str, ordering: WalkOrder) -> Vec<String> {
+        let exclude = |n: &str| matches!(n, "Any" | "Mu" | "Cool");
+        match ordering {
+            WalkOrder::Canonical => self
+                .class_mro_readonly(receiver)
+                .unwrap_or_else(|| vec![receiver.to_string()])
+                .into_iter()
+                .filter(|n| !exclude(n))
+                .collect(),
+            WalkOrder::Super => self.walk_direct_parents(receiver),
+            WalkOrder::Breadth => {
+                let mut out = Vec::new();
+                let mut seen = HashSet::new();
+                let mut queue: std::collections::VecDeque<String> =
+                    std::collections::VecDeque::new();
+                queue.push_back(receiver.to_string());
+                while let Some(c) = queue.pop_front() {
+                    if exclude(&c) || !seen.insert(c.clone()) {
+                        continue;
+                    }
+                    out.push(c.clone());
+                    for p in self.walk_direct_parents(&c) {
+                        queue.push_back(p);
+                    }
+                }
+                out
+            }
+            WalkOrder::Ascendant => {
+                // DFS preorder, dedup keeping first.
+                let mut out = Vec::new();
+                let mut seen = HashSet::new();
+                self.walk_preorder(receiver, &mut out, &mut seen);
+                out
+            }
+            WalkOrder::Descendant => {
+                // DFS postorder, dedup keeping first.
+                let mut out = Vec::new();
+                let mut seen = HashSet::new();
+                self.walk_postorder(receiver, &mut out, &mut seen);
+                out
+            }
+        }
+    }
+
+    fn walk_preorder(&self, class_name: &str, out: &mut Vec<String>, seen: &mut HashSet<String>) {
+        if matches!(class_name, "Any" | "Mu" | "Cool") {
+            return;
+        }
+        if seen.insert(class_name.to_string()) {
+            out.push(class_name.to_string());
+        }
+        for p in self.walk_direct_parents(class_name) {
+            self.walk_preorder(&p, out, seen);
+        }
+    }
+
+    fn walk_postorder(&self, class_name: &str, out: &mut Vec<String>, seen: &mut HashSet<String>) {
+        if matches!(class_name, "Any" | "Mu" | "Cool") {
+            return;
+        }
+        for p in self.walk_direct_parents(class_name) {
+            self.walk_postorder(&p, out, seen);
+        }
+        if seen.insert(class_name.to_string()) {
+            out.push(class_name.to_string());
+        }
     }
 
     /// Look up the "own" MethodDef for `method_name` on the given class or role.
@@ -248,4 +334,27 @@ impl Interpreter {
 enum WalkKind {
     Class,
     Role,
+}
+
+/// Traversal ordering for `WALK`. `:preorder` is an alias for `:ascendant`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WalkOrder {
+    Canonical,
+    Super,
+    Breadth,
+    Ascendant,
+    Descendant,
+}
+
+impl WalkOrder {
+    fn from_adverb(name: &str) -> Option<WalkOrder> {
+        match name {
+            "canonical" => Some(WalkOrder::Canonical),
+            "super" => Some(WalkOrder::Super),
+            "breadth" => Some(WalkOrder::Breadth),
+            "ascendant" | "preorder" => Some(WalkOrder::Ascendant),
+            "descendant" | "postorder" => Some(WalkOrder::Descendant),
+            _ => None,
+        }
+    }
 }
