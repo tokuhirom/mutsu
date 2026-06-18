@@ -1445,20 +1445,15 @@ impl CompiledCode {
             .enumerate()
             .map(|(i, name)| (name.as_str(), i))
             .collect();
-        // A nested closure created in this frame captures the env at creation
-        // time and later reads its free variables from that snapshot by name.
-        // Any local of *this* frame that is a free variable of some nested
-        // closure must therefore be flushed to env before the capture. This
-        // replaces the old conservative `fill(true)` (which mirrored *every*
-        // local to env whenever any closure existed) with the exact set of
-        // locals a closure can actually observe.
-        for nested in &self.closure_compiled_codes {
-            for sym in &nested.free_var_syms {
-                if let Some(slot) = sym.with_str(|s| locals_map.get(s).copied()) {
-                    self.needs_env_sync[slot] = true;
-                }
-            }
-        }
+        // Single-store Slice E Part 2: a nested closure no longer reads its free
+        // variables from this frame's flushed env — `capture_closure_env` reads
+        // this frame's own locals straight from the slot store (the live upvalue).
+        // So a local being a closure free variable no longer forces an env flush
+        // here. (Mutation propagation back to the parent still flows through the
+        // reverse env_dirty path, and a captured-and-mutated local is boxed into a
+        // shared `ContainerRef` cell by `box_captured_lexicals`, so the closure and
+        // parent share one cell.) Only a local genuinely read/written *by name* in
+        // this frame (below) still needs the slot mirrored into env.
         for op in &self.ops {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)

@@ -455,11 +455,18 @@ for wall-clock.
   > whole-env fallback for provably-incomplete frames). Pinned by
   > `t/single-store-slice-e.t` (13).
 
-  **PART 2 (next, after #3245 merges — touches the same files):** remove the
-  `compute_needs_env_sync` closure flush (branch #2) by reading free-var values
-  from the slot store in `capture_closure_env` instead of from the
-  (branch-#2-flushed) env. This is the actual machinery deletion §3 wants; Part 1
-  deliberately kept branch #2 so the capture reads correct values from env.
+  **PART 2 DONE (2026-06-18).** `compute_needs_env_sync`'s closure flush (branch
+  #2 — the `for nested in closure_compiled_codes { needs_env_sync[slot] = true }`
+  loop) is removed: `capture_closure_env` now reads a free variable that is one of
+  this frame's own locals straight from the slot store (`self.locals[slot]`, the
+  live upvalue) instead of from the (formerly flushed) env. A slot-only local is
+  no longer mirrored into env for closure visibility — the closure is fully
+  decoupled from the forward-flush machinery. Mutation propagation is unchanged
+  (reverse `env_dirty` path + the `box_captured_lexicals` `ContainerRef` cell).
+  `make test` green; closure/phaser/state/pointy/gather/supply roast PASS.
+  `compute_needs_env_sync` now only marks slots that are read/written *by name in
+  this frame* (own-local GetGlobal-family) — plus the `captures_env_by_name`
+  whole-frame blanket for inline-body frames.
 
 - **Slice F — delete the coarse machinery. THE CONVERGENCE POINT (2026-06-18).**
   With every setter precise (A–E), remove `env_dirty`, `saved_env_dirty`,
