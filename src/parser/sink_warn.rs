@@ -12,13 +12,206 @@
 //! Anything that may have a side effect (calls, method calls, assignments,
 //! declarations, `say`/`print`, regex matches, ...) is never flagged.
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::{CallArg, Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 /// Entry point: emit sink-context warnings for the mainline statement list.
 pub(super) fn add_sink_warnings(stmts: &[Stmt]) {
     walk_stmts(stmts, false);
+    // A `gather { ... }` block evaluates its body in sink context regardless of
+    // where the `gather` appears (mainline, an initializer, inside a sub, an
+    // argument, ...). Scan the whole tree for gather blocks and warn their
+    // bodies, independently of the enclosing statement's own context.
+    scan_gathers_stmts(stmts);
+}
+
+/// Walk the entire program looking for `gather` blocks. For each one, emit sink
+/// warnings for its body. Only `Gather` nodes trigger a warning; every other
+/// node is traversed purely to reach nested gathers, so an unhandled variant can
+/// at worst miss a warning (a false negative), never produce a spurious one.
+fn scan_gathers_stmts(stmts: &[Stmt]) {
+    for stmt in stmts {
+        scan_gathers_stmt(stmt);
+    }
+}
+
+fn scan_gathers_stmt(stmt: &Stmt) {
+    match stmt {
+        Stmt::Expr(e)
+        | Stmt::Return(e)
+        | Stmt::Die(e)
+        | Stmt::Fail(e)
+        | Stmt::Take(e, _)
+        | Stmt::Goto(e) => scan_gathers_expr(e),
+        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => scan_gathers_expr(expr),
+        Stmt::Call { args, .. } => {
+            for arg in args {
+                match arg {
+                    CallArg::Positional(e) | CallArg::Invocant(e) | CallArg::Slip(e) => {
+                        scan_gathers_expr(e)
+                    }
+                    CallArg::Named { value: Some(e), .. } => scan_gathers_expr(e),
+                    CallArg::Named { value: None, .. } => {}
+                }
+            }
+        }
+        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
+            for e in es {
+                scan_gathers_expr(e);
+            }
+        }
+        Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            scan_gathers_expr(cond);
+            scan_gathers_stmts(then_branch);
+            scan_gathers_stmts(else_branch);
+        }
+        Stmt::While { cond, body, .. } => {
+            scan_gathers_expr(cond);
+            scan_gathers_stmts(body);
+        }
+        Stmt::For { iterable, body, .. } => {
+            scan_gathers_expr(iterable);
+            scan_gathers_stmts(body);
+        }
+        Stmt::Given { topic, body } => {
+            scan_gathers_expr(topic);
+            scan_gathers_stmts(body);
+        }
+        Stmt::When { cond, body } => {
+            scan_gathers_expr(cond);
+            scan_gathers_stmts(body);
+        }
+        Stmt::Whenever { supply, body, .. } => {
+            scan_gathers_expr(supply);
+            scan_gathers_stmts(body);
+        }
+        Stmt::Loop { body, .. }
+        | Stmt::React { body }
+        | Stmt::Block(body)
+        | Stmt::SyntheticBlock(body)
+        | Stmt::Default(body)
+        | Stmt::Catch(body)
+        | Stmt::Control(body)
+        | Stmt::Phaser { body, .. }
+        | Stmt::SubDecl { body, .. }
+        | Stmt::MethodDecl { body, .. }
+        | Stmt::ClassDecl { body, .. }
+        | Stmt::RoleDecl { body, .. }
+        | Stmt::Package { body, .. } => scan_gathers_stmts(body),
+        Stmt::Label { stmt, .. } => scan_gathers_stmt(stmt),
+        _ => {}
+    }
+}
+
+fn scan_gathers_expr(expr: &Expr) {
+    match expr {
+        Expr::Gather(body) => {
+            // The gather body is in sink context. Warn its useless statements,
+            // then keep scanning for gathers nested inside it.
+            walk_stmts(body, false);
+            scan_gathers_stmts(body);
+        }
+        Expr::Grouped(e)
+        | Expr::PositionalPair(e)
+        | Expr::ZenSlice(e)
+        | Expr::Itemize(e)
+        | Expr::Eager(e)
+        | Expr::Unary { expr: e, .. }
+        | Expr::PostfixOp { expr: e, .. }
+        | Expr::AssignExpr { expr: e, .. }
+        | Expr::Reduction { expr: e, .. }
+        | Expr::IndirectTypeLookup(e)
+        | Expr::SymbolicDeref { expr: e, .. } => scan_gathers_expr(e),
+        Expr::Binary { left, right, .. }
+        | Expr::HyperOp { left, right, .. }
+        | Expr::HyperFuncOp { left, right, .. }
+        | Expr::MetaOp { left, right, .. } => {
+            scan_gathers_expr(left);
+            scan_gathers_expr(right);
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            scan_gathers_expr(cond);
+            scan_gathers_expr(then_expr);
+            scan_gathers_expr(else_expr);
+        }
+        Expr::Index { target, index, .. } => {
+            scan_gathers_expr(target);
+            scan_gathers_expr(index);
+        }
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+            ..
+        } => {
+            scan_gathers_expr(target);
+            scan_gathers_expr(index);
+            scan_gathers_expr(value);
+        }
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+            scan_gathers_expr(target);
+            for a in args {
+                scan_gathers_expr(a);
+            }
+        }
+        Expr::CallOn { target, args } => {
+            scan_gathers_expr(target);
+            for a in args {
+                scan_gathers_expr(a);
+            }
+        }
+        Expr::Call { args, .. } => {
+            for a in args {
+                scan_gathers_expr(a);
+            }
+        }
+        Expr::ArrayLiteral(es)
+        | Expr::BracketArray(es, _)
+        | Expr::CaptureLiteral(es)
+        | Expr::StringInterpolation(es) => {
+            for e in es {
+                scan_gathers_expr(e);
+            }
+        }
+        Expr::Hash(pairs) => {
+            for (_, v) in pairs {
+                if let Some(e) = v {
+                    scan_gathers_expr(e);
+                }
+            }
+        }
+        Expr::InfixFunc { left, right, .. } => {
+            scan_gathers_expr(left);
+            for e in right {
+                scan_gathers_expr(e);
+            }
+        }
+        Expr::Block(body)
+        | Expr::AnonSub { body, .. }
+        | Expr::AnonSubParams { body, .. }
+        | Expr::Lambda { body, .. }
+        | Expr::DoBlock { body, .. }
+        | Expr::PhaserExpr { body, .. }
+        | Expr::Once { body } => scan_gathers_stmts(body),
+        Expr::Try { body, catch } => {
+            scan_gathers_stmts(body);
+            if let Some(c) = catch {
+                scan_gathers_stmts(c);
+            }
+        }
+        Expr::DoStmt(stmt) => scan_gathers_stmt(stmt),
+        _ => {}
+    }
 }
 
 /// Walk a sink-context statement list. `nil_hint` is true when these statements
