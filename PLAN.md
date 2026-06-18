@@ -168,7 +168,7 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 
 | 指標 | 現在 | 目標 |
 |------|------|------|
-| Whitelist | **1270** | 1280+ |
+| Whitelist | **1282** | 1300+ |
 | fib(25) vs raku | **1.0x** | <10x |
 | method-call vs raku | **2.7x** | <1.5x |
 | bench-class vs raku | **2.3x** | <1.5x |
