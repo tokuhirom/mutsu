@@ -97,7 +97,7 @@ impl Interpreter {
                 is_raw: false,
                 // Upvalue snapshot (single-store Slice E): capture only free vars,
                 // shadow-meta, and system names; see `capture_closure_env`.
-                env: self.capture_closure_env(&compiled_code),
+                env: self.capture_closure_env(code, &compiled_code),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
@@ -138,7 +138,7 @@ impl Interpreter {
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
-            let mut env = self.capture_closure_env(&compiled_code);
+            let mut env = self.capture_closure_env(code, &compiled_code);
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }
@@ -227,7 +227,23 @@ impl Interpreter {
     ///   by name through a path the op-scan misses (`whenever`/`gather` bodies
     ///   stashed in the `stmt_pool`, loop/block control temps) — see the field on
     ///   [`CompiledCode`].
-    fn capture_closure_env(&self, cc: &Option<std::sync::Arc<CompiledCode>>) -> Env {
+    ///
+    /// **Slice E Part 2 (the upvalue read):** a free variable that is one of *this*
+    /// frame's own locals is read straight from the slot store
+    /// (`self.locals[slot]`, the live upvalue), not from `env`. This is what lets
+    /// `compute_needs_env_sync` drop its closure-driven flush (branch #2): the
+    /// closure no longer depends on the parent frame mirroring that local into
+    /// `env` before capture. Ancestor free variables (no slot here) and the system
+    /// names still come from the flattened env, where they always live. Mutation
+    /// *propagation* back to the parent is unchanged — it flows through the reverse
+    /// `env_dirty` path and, for captured-and-mutated locals, the shared
+    /// `ContainerRef` cell that `box_captured_lexicals` installs in both the slot
+    /// and `env`.
+    fn capture_closure_env(
+        &self,
+        code: &CompiledCode,
+        cc: &Option<std::sync::Arc<CompiledCode>>,
+    ) -> Env {
         let Some(cc) = cc else {
             return self.clone_env();
         };
@@ -244,6 +260,16 @@ impl Interpreter {
             let keep = free.contains(k) || k.with_str(|s| !crate::env::is_plain_user_lexical(s));
             if keep {
                 map.insert(*k, v.clone());
+            }
+        }
+        // Upvalue read: override this frame's own free-var slots with the live
+        // local value. Authoritative even after the closure-driven env flush is
+        // gone (a slot-only local is no longer mirrored into `env`).
+        for sym in &cc.free_var_syms {
+            if let Some(slot) = sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
+                && let Some(val) = self.locals.get(slot)
+            {
+                map.insert(*sym, val.clone());
             }
         }
         crate::env::Env::from_symbol_map(map)
@@ -390,7 +416,7 @@ impl Interpreter {
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
-            let mut env = self.capture_closure_env(&compiled_code);
+            let mut env = self.capture_closure_env(code, &compiled_code);
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }
@@ -457,7 +483,7 @@ impl Interpreter {
                 is_rw: false,
                 is_raw: false,
                 // Upvalue snapshot (single-store Slice E); see capture_closure_env.
-                env: self.capture_closure_env(&compiled_code),
+                env: self.capture_closure_env(code, &compiled_code),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
