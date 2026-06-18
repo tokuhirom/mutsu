@@ -6310,6 +6310,30 @@ impl Interpreter {
                 .iter()
                 .any(|f| f.saved_env.contains_key(&resolved_source));
             let source_in_same_scope = code.locals.iter().any(|n| n == &resolved_source);
+            // `my @a := @$n` deref-bind (Slice 2c): the parser conflates `@$n`
+            // (deref of a scalar `$n` that holds an array by reference) with the
+            // array variable `@n`. When no `@n`/`%n` container value exists at
+            // runtime but a same-named scalar holds a shared `ContainerRef` cell
+            // (a value-alias `my $n = @z` — Slice 2a), bind to THAT cell so `@a`
+            // shares the very container `$n`/`@z` references, not a fresh copy.
+            // Gate on the runtime value of `@n` (not its presence in the
+            // function-wide `code.locals`, which a `my @n` in a *sibling* block
+            // would spuriously satisfy via `source_in_same_scope`).
+            let source_resolves_to_container = matches!(
+                self.env().get(&resolved_source),
+                Some(Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_))
+            );
+            let scalar_source: Option<String> = if source_resolves_to_container {
+                None
+            } else {
+                resolved_source
+                    .strip_prefix(['@', '%'])
+                    .filter(|bare| matches!(self.env().get(bare), Some(Value::ContainerRef(_))))
+                    .map(str::to_string)
+            };
+            let effective_source = scalar_source
+                .clone()
+                .unwrap_or_else(|| resolved_source.clone());
             // Whole-container `:=` bind (`my @b := @a`, `my %h2 := %h`,
             // `my $ref := @a`): share a single `ContainerRef` cell between the
             // source and target so mutations through either alias (push,
@@ -6323,7 +6347,7 @@ impl Interpreter {
                 Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_)
             );
             if val_is_container
-                && (source_in_same_scope || source_in_outer_frame)
+                && (source_in_same_scope || source_in_outer_frame || scalar_source.is_some())
                 && !name.starts_with('&')
             {
                 // Reuse the source's existing cell if it already has one (so a
@@ -6331,7 +6355,7 @@ impl Interpreter {
                 // the bound value in a fresh cell.
                 let cell = match &val {
                     Value::ContainerRef(arc) => arc.clone(),
-                    _ => match self.env().get(&resolved_source) {
+                    _ => match self.env().get(&effective_source) {
                         Some(Value::ContainerRef(arc)) => arc.clone(),
                         _ => std::sync::Arc::new(std::sync::Mutex::new(val.clone())),
                     },
@@ -6366,22 +6390,22 @@ impl Interpreter {
                 }
                 let container = Value::ContainerRef(cell);
                 self.locals[idx] = container.clone();
-                if let Some(source_idx) = code.locals.iter().rposition(|n| n == &resolved_source) {
+                if let Some(source_idx) = code.locals.iter().rposition(|n| n == &effective_source) {
                     self.locals[source_idx] = container.clone();
                     self.flush_local_to_env(code, source_idx);
                 }
-                self.set_env_with_main_alias(&resolved_source, container.clone());
+                self.set_env_with_main_alias(&effective_source, container.clone());
                 // Propagate the shared cell into saved call frames so the
                 // binding survives method returns (env restore) without
                 // reverting to a stale value (same as the scalar path below).
                 for frame in self.call_frames.iter_mut().rev() {
-                    if frame.saved_env.contains_key(&resolved_source) {
+                    if frame.saved_env.contains_key(&effective_source) {
                         frame
                             .saved_env
-                            .insert(resolved_source.clone(), container.clone());
+                            .insert(effective_source.clone(), container.clone());
                     }
                     for (i, local_name) in code.locals.iter().enumerate() {
-                        if local_name == &resolved_source && i < frame.saved_locals.len() {
+                        if local_name == &effective_source && i < frame.saved_locals.len() {
                             frame.saved_locals[i] = container.clone();
                         }
                     }
