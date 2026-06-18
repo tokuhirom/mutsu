@@ -6389,6 +6389,17 @@ impl Interpreter {
             let effective_source = scalar_source
                 .clone()
                 .unwrap_or_else(|| resolved_source.clone());
+            // For a deref-bind via a promoted scalar (`my @a := @$n` / `my %h :=
+            // %$m`, Slice 2c), the sigilless alias set above points at the
+            // sigil'd source (`@n`/`%m`) which has no container value — only the
+            // bare scalar (`n`/`m`) holds the shared cell. Redirect the alias to
+            // that effective source so a later element write (`@a[0]=`, `%h<k>=`,
+            // which resolves the target *through* the alias) reaches the shared
+            // cell rather than autovivifying a fresh, detached container.
+            if scalar_source.is_some() {
+                self.env_mut()
+                    .insert(alias_key.clone(), Value::str(effective_source.clone()));
+            }
             // Whole-container `:=` bind (`my @b := @a`, `my %h2 := %h`,
             // `my $ref := @a`): share a single `ContainerRef` cell between the
             // source and target so mutations through either alias (push,

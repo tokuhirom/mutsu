@@ -548,6 +548,28 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         rest = r_after;
     }
     let bound_name = s.name.clone();
+    // `my %h := %$m` (Slice 2c, hash form): the parser desugars `%$m` (hash-context
+    // deref of a scalar `$m` holding a hash by reference) into a `.hash` MethodCall,
+    // which materializes a *copy* and so loses the binding's sharing semantics. When
+    // the bind target is a hash and the source is a plain `%$var` deref, rewrite it
+    // to `HashVar(var)` so it takes the same `:=` cell-sharing path the array form
+    // (`@a := @$n`, parsed as `ArrayVar`) already uses (mirrors #3268). Only the
+    // plain-scalar case is rewritten; `%$/`, `%$_`, etc. keep their `.hash`
+    // coercion since they are not value-aliases of a user container.
+    if bound_name.starts_with('%')
+        && let Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: None,
+            ..
+        } = &expr
+        && name.resolve() == "hash"
+        && args.is_empty()
+        && let Expr::Var(var_name) = target.as_ref()
+    {
+        expr = Expr::HashVar(var_name.clone());
+    }
     let mark_scalar_readonly =
         !s.is_array && !bound_name.starts_with('%') && super::scalar_binding_rhs_is_readonly(&expr);
     let bind_to_var = matches!(expr, Expr::Var(_));
