@@ -681,7 +681,13 @@ impl Interpreter {
         let hash_keys_for_writeback: Option<Vec<String>> =
             if rw_writeback || (writes_back_loop_var && spec.values_mode) {
                 container_binding.as_ref().and_then(|source| {
-                    match self.get_env_with_main_alias(source) {
+                    // Deref a `ContainerRef` cell (a `:=`-bound hash) so the key
+                    // order is captured from the inner Hash (Stage 1).
+                    match self
+                        .get_env_with_main_alias(source)
+                        .as_ref()
+                        .map(|v| v.deref_container())
+                    {
                         Some(Value::Hash(hash_items)) if source.starts_with('%') => {
                             Some(hash_items.keys().cloned().collect())
                         }
@@ -2282,7 +2288,14 @@ impl Interpreter {
         let Some(key) = keys.get(idx) else {
             return;
         };
-        let Some(Value::Hash(hash_items)) = self.get_env_with_main_alias(source) else {
+        // The source may hold a shared `ContainerRef` cell (a `:=`-bound hash —
+        // `my %h := %g`); deref to read the inner Hash and write back THROUGH the
+        // cell so the bound source observes the value mutation (Stage 1).
+        let raw_source = self.get_env_with_main_alias(source);
+        let Some(hash_items) = raw_source.as_ref().and_then(|v| match v.deref_container() {
+            Value::Hash(hash_items) => Some(hash_items),
+            _ => None,
+        }) else {
             return;
         };
         if hash_items
@@ -2294,8 +2307,7 @@ impl Interpreter {
         let mut updated = hash_items.as_ref().clone();
         updated.insert(key.clone(), current);
         let updated_value = Value::Hash(Value::hash_arc(updated));
-        self.set_env_with_main_alias(source, updated_value.clone());
-        self.update_local_if_exists(code, source, &updated_value);
+        self.write_back_container_source(code, source, &raw_source, updated_value);
     }
 
     /// Write back modified loop variable to the original scalar variable.
@@ -2347,34 +2359,37 @@ impl Interpreter {
                 }
             } else {
                 // Hash: can't do positional writeback easily; use hash-specific logic
+                // The hash source may be a shared `ContainerRef` cell (a
+                // `:=`-bound hash); deref to read the inner Hash and write back
+                // THROUGH the cell so the bound source observes the mutation.
                 if kv_mode && arity > 1 && rw_param_names.len() >= 2 {
                     // For %hash.kv -> $key, $val is rw: read $key and $val, update hash
                     let key_name = &rw_param_names[0];
                     let val_name = &rw_param_names[1];
                     if let Some(key) = self.env().get(key_name).cloned()
                         && let Some(val) = self.env().get(val_name).cloned()
-                        && let Some(Value::Hash(hash_items)) = self.get_env_with_main_alias(source)
+                        && let Some(Value::Hash(hash_items)) =
+                            source_val.as_ref().map(|v| v.deref_container())
                     {
                         let mut updated = hash_items.as_ref().clone();
                         let key_str = key.to_string_value();
                         updated.insert(key_str, val);
                         let updated_value = Value::Hash(Value::hash_arc(updated));
-                        self.set_env_with_main_alias(source, updated_value.clone());
-                        self.update_local_if_exists(code, source, &updated_value);
+                        self.write_back_container_source(code, source, &source_val, updated_value);
                     }
                 } else if !kv_mode {
                     // %hash.values -> $val is rw: positional writeback using pre-captured key order
                     let var_name = param_name.as_deref().unwrap_or("_");
                     if let Some(keys) = hash_keys
                         && let Some(val) = self.env().get(var_name).cloned()
-                        && let Some(Value::Hash(hash_items)) = self.get_env_with_main_alias(source)
+                        && let Some(Value::Hash(hash_items)) =
+                            source_val.as_ref().map(|v| v.deref_container())
                         && idx < keys.len()
                     {
                         let mut updated = hash_items.as_ref().clone();
                         updated.insert(keys[idx].clone(), val);
                         let updated_value = Value::Hash(Value::hash_arc(updated));
-                        self.set_env_with_main_alias(source, updated_value.clone());
-                        self.update_local_if_exists(code, source, &updated_value);
+                        self.write_back_container_source(code, source, &source_val, updated_value);
                     }
                 }
                 return;
