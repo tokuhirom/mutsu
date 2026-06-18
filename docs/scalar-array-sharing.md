@@ -306,17 +306,24 @@ value-alias 単独 PR は Arc-identity 機構を壊すので不可。
 ### 10.4 ★最大の設計課題: 要素 cell には name marker が無い(`=`-share と `:=`-bind の区別)
 
 2a は `__mutsu_array_share::<name>` marker で「`=`-share の whole-reassign は cell write-through せず
-slot 置換」を実現したが、**要素には変数名が無いので同じ marker を貼れない**。`@aoa[0]=5` の再代入は
-`assign_element_slot`(`value/mod.rs:3009`)を通り、それは**既存 cell を見ると write-through する**
-(`:=` 意味論)。`=`-share では replace したい。区別案(次セッションで決める):
-- **案A(採用確定・最小)**: 要素 write 時に**新値の型で分岐**=新値が array(かつ array_share_source 有)
-  → re-share(別 cell へ張り替え) / 新値が非-array → 要素 slot を replace(cell を捨てる)。name 不要。
-  **★probe で確定(2026-06-18)**: raku では `@aoa[0]:=@row; @aoa[0]=5` は **"Cannot assign to an
-  immutable value" エラー**(write-through ではない)。∴ `=`-share でも `:=` でも「要素 cell に非-array を
-  write-through する」正しい挙動は存在しない → **案A は `:=` の正当挙動を一切壊さない**(現 mutsu の
-  `:=` write-through=`5` 返しは元々非準拠の別バグ・スコープ外)。要素 write の `assign_element_slot`
-  分岐で「新値が非-array なら cell を貼らず slot replace」で安全に閉じる。
-- **案B(不要)**: cell に "value-share" フラグを持たせ per-cell 区別。案A で足りるので不要。
+slot 置換」を実現したが、**要素には変数名が無いので同じ marker を貼れない**。**★具体的 BLOCKER 箇所
+(#3268 でユーザーが特定)**: 単一要素 array store `exec_index_assign_expr_named_op_inner`
+(`vm_var_assign_ops.rs` ~3836 行)の `else if let Value::ContainerRef(cell) = &arr[i] { *cell.lock()=val }`
+が **ContainerRef 要素を再代入時に無条件 write-through**。`=`-share では replace したいが bind-cell は
+write-through。`assign_element_slot`(`value/mod.rs:3009`)も同型。
+- **★probe で確定(2026-06-18)**: raku では `@aoa[0]:=@row; @aoa[0]=5` **も** `@aoa[0]=(7,7)` **も**
+  "Cannot assign to an immutable value" **エラー**(非-array でも別 array でも write-through ではない)。
+  ∴ **「要素 cell へ値を write-through する」正しい raku 経路は存在しない**(現 mutsu の write-through は
+  元々非準拠)。
+- **方向=案A(新値型で分岐)**: 要素 write 時、新値が array(かつ array_share_source 有)→ re-share
+  (別 cell 張り替え) / 新値が非-array → 要素 slot replace(cell 捨て)。name 不要。**ただし前提**:
+  既存 `t/element-bind-cell.t`(`:=` bound 要素)が ~3836 の write-through に依存しているケースがある
+  (ユーザー指摘「per-element の share-vs-bind 区別が要る」)→ **着手時に element-bind-cell.t が要求する
+  write-through を洗い出し、`=`-share だけ replace に分岐**する(bound-index マーカー有=write-through
+  維持 / array_share_source 起源の cell=replace)。「値側で ContainerRef を push して通常 store に任せる」
+  ショートカットはこの write-through で破綻するので不可。
+- **案B(代替)**: cell に "value-share" フラグ(新 field/wrapper)を持たせ per-cell 区別。案A が
+  element-bind-cell.t と両立しない場合のフォールバック。
 
 ### 10.5 leak 評価: **2b は 2a より低リスク**
 
