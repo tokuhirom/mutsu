@@ -1940,6 +1940,50 @@ mod tests {
     }
 
     #[test]
+    fn assign_stmt_scalar_item_assignment_stops_at_comma() {
+        // `$x = 1, 2` is `($x = 1), 2`: only the first element is assigned, and
+        // the rest become a sink-context comma list.
+        let (rest, stmt) = assign::assign_stmt("$x = 1, 2;").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Expr(Expr::ArrayLiteral(items)) => {
+                assert_eq!(items.len(), 2);
+                assert!(matches!(
+                    &items[0],
+                    Expr::AssignExpr { name, expr, .. }
+                        if name == "x" && matches!(expr.as_ref(), Expr::Literal(Value::Int(1)))
+                ));
+                assert!(matches!(&items[1], Expr::Literal(Value::Int(2))));
+            }
+            other => panic!("expected comma-list expr statement, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn assign_stmt_scalar_plain_assignment_has_no_comma() {
+        // Without a trailing comma the assignment is a plain `Stmt::Assign`.
+        let (rest, stmt) = assign::assign_stmt("$x = 1;").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            stmt,
+            Stmt::Assign { name, expr, .. }
+                if name == "x" && matches!(expr, Expr::Literal(Value::Int(1)))
+        ));
+    }
+
+    #[test]
+    fn assign_stmt_array_list_assignment_absorbs_comma() {
+        // `@a = 1, 2` keeps the comma-absorbing RHS (list assignment).
+        let (rest, stmt) = assign::assign_stmt("@a = 1, 2;").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            stmt,
+            Stmt::Assign { name, expr, .. }
+                if name == "@a" && matches!(&expr, Expr::ArrayLiteral(items) if items.len() == 2)
+        ));
+    }
+
+    #[test]
     fn assign_expr_parses_reverse_bracket_metaop_assign() {
         let (rest, expr) = assign::try_parse_assign_expr("$y [R/]= 1").unwrap();
         assert_eq!(rest, "");
