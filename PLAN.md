@@ -147,10 +147,20 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
       - **残 `HashSlotRef` 生成サイトの cell 化**: `hash_autovivify`（junction-key bind / `is raw` reduce lvalue-read / autoviv-op
         fallback）— 呼び出し後に entry が存在＝phantom 不要なので cell 化可（hot path 非該当）。deferred-token 用途以外の `HashSlotRef` を枯らす。
       - **grep-rw-view 撤去**: 最後の ptr-keyed グローバルの一つ。matched 要素を cell 昇格し view registry を全廃（for-loop rw topic が消費者）。
-      - **env↔locals コンテナ coherence の本丸（Slice F の真の前提）**: cell-linked container が env と locals で別 Arc を持つ
+      - [~] **env↔locals コンテナ coherence の本丸（Slice F の真の前提）**: cell-linked container が env と locals で別 Arc を持つ
         dual-store 乖離を解消（pairs/slip carrier-drop が `element-bind-cell.t` を壊すのが証左）。**設計済＝[docs/env-locals-coherence.md](docs/env-locals-coherence.md)**
         （推奨＝outer コンテナを env でも `ContainerRef` cell として持ち env↔locals が同 cell 共有＝instance attr Phase 3 と同型。
         escape-aware で perf 崖回避。Stage 0 チョークポイント→Stage 1 昇格→Stage 2 計測→Stage 3 Slice F+pairs/slip 一般化）。
+        進捗（2026-06-18）:
+        - [x] **Stage 0**（read/write チョークポイント棚卸し）= read は `into_deref` で単一化済みと確認、write gap の bind バグ
+              （`our %g:=%h` #3252・bound hash whole-reassign #3255・constant 要素書込 + closure whole-reassign #3256）を補完。
+        - [~] **Stage 1**（escape-aware outer cell 化）着手 = audit（#3258）で blast radius を ~14 write サイトに特定。
+              **for-rw writeback "site A" を array（#3259）/ hash（#3260）とも ContainerRef-aware 化**（`my @a:=@b`/`my %h:=%g` は
+              既に同一 cell なのに writeback が deref せず取りこぼしていた＝`deref_container()`+共有 cell write-through で解決）。
+        - [ ] **bug ②（`$x = @arr` 参照共有）= 設計済（#3263・[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md)）・実装は次セッション**:
+              array を scalar スロットに代入するとコピーする（raku は同一 Array 参照共有）。`$n=@z` は既に同 Arc 共有だが `.push`
+              構造変異が COW detach するのが真因。正準解＝source/target を共有 cell に昇格（escape-aware）。難所＝rebind（`$n=5`）vs
+              mutate-through（`@z=(9)`）の区別で `:=` scalar を壊さないこと。Slice 2a（scalar var）→2b（要素/hash 値）→2c（bug②）→2d（args）。
       - Phase 0.5 第2段（任意・実挙動変化）: `GetArrayVar`/`Index` の auto-decont + 新 lvalue opcode の本配線。
       - Phase 3 機会的残: 属性束縛（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits 5-8）。
 - [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
