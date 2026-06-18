@@ -1453,6 +1453,13 @@ impl Interpreter {
                 {
                     list_items.extend(items.iter().cloned());
                 }
+                // A Seq (e.g. the result of `@a.sort`) is an iterable sequence and
+                // is flattened into grep's list, mirroring `map` (which already
+                // handles `Value::Seq`). Without this, `grep { ... }, @a.sort`
+                // greps over a single one-element list.
+                Value::Seq(items) => {
+                    list_items.extend(items.iter().cloned());
+                }
                 v if v.is_range() => {
                     // Route ranges through the unified pull iterator so an
                     // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is
