@@ -2472,6 +2472,62 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             &rest[1..]
         };
         let (rest, _) = ws(rest)?;
+
+        // Item assignment (`=`) to a scalar variable binds TIGHTER than the comma
+        // operator: `$x = 1, 2` parses as `($x = 1), 2`, so only the first element
+        // is assigned and the remaining elements form a (sink-context) list. The
+        // parenthesized form `$x = (1, 2)` is a single grouped operand and is
+        // assigned whole — and that distinction is *only* available here at parse
+        // time, since both collapse to the same `ArrayLiteral` in the AST. List
+        // assignment to an `@`/`%` container keeps the comma-absorbing RHS so
+        // `@x = 1, 2, 3` assigns the whole list. Atomic `⚛=` is always a scalar
+        // store and is handled below.
+        if sigil == b'$' && !is_atomic {
+            let (after_rhs, rhs) = expression(rest).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected right-hand expression after '='",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(rest.len())),
+                exception: None,
+            })?;
+            let (after_ws, _) = ws(after_rhs)?;
+            if after_ws.starts_with(',') && !after_ws.starts_with(",,") {
+                // `($x = rhs), <rest...>` — assign the first element, sink the rest.
+                let assign_expr = Expr::AssignExpr {
+                    name,
+                    expr: Box::new(rhs),
+                    is_bind: false,
+                };
+                let mut items = vec![assign_expr];
+                let mut r = after_ws;
+                while r.starts_with(',') && !r.starts_with(",,") {
+                    let (r2, _) = parse_char(r, ',')?;
+                    let (r2, _) = ws(r2)?;
+                    if r2.is_empty()
+                        || r2.starts_with(';')
+                        || r2.starts_with('}')
+                        || r2.starts_with(')')
+                    {
+                        r = r2;
+                        break;
+                    }
+                    let (r2, next) = expression(r2)?;
+                    items.push(next);
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                }
+                let stmt = Stmt::Expr(Expr::ArrayLiteral(items));
+                return parse_statement_modifier(r, stmt);
+            }
+            let stmt = Stmt::Assign {
+                name,
+                expr: rhs,
+                op: AssignOp::Assign,
+            };
+            return parse_statement_modifier(after_rhs, stmt);
+        }
+
         let (rest, expr) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected right-hand expression after '='",
