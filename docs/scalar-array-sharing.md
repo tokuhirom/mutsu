@@ -146,9 +146,53 @@ method-call wall-clock**(#2746 教訓: perf 回帰は roast timeout でしか出
 
 ---
 
-## 7. 参照
+## 8. 実装試行の結果(2026-06-18) — Slice 2a は動くが Arc-identity ripple で revert
+
+Slice 2a(scalar `$n = @z` の cell 共有 = "value-alias")を実装し検証した。**設計は正しく、§5 の
+スライス順序を裏付けた。** 結論: **value-alias は Sub-slice 1a(write-chokepoint decont)を先に landing
+しないと既存の Arc-identity 機構を壊す。** revert 済み。
+
+### 動いた実装(次回そのまま再利用可)
+
+- 新 opcode `MarkValueAliasSource(name_idx)`(`opcode.rs`)を compiler が `my $n = @z`/`$n = @z`
+  (scalar = whole `@`/`%` var)で SetLocal 直前に emit(`compiler/stmt.rs` VarDecl else 分岐 ＋
+  Stmt::Assign plain-assign 分岐、**local scalar 限定**＝SetLocal が flag を消費するため・SetGlobal だと
+  flag が dangling)。**gotcha**: `Expr::ArrayVar(s)` の `s` は **sigil 無し**("z")。src は
+  `format!("@{}", s)` で sigil 付与しないと local slot "@z" にマッチしない(これで最初 share せず空振り)。
+- VM: `value_alias_source: Option<String>` field(`runtime/mod.rs`)。SetLocal 冒頭で take し
+  `setup_scalar_value_alias` を呼ぶ: src を共有 `ContainerRef` cell 化(bind path
+  `vm_var_assign_ops.rs:6192` と同型 — slot+env+saved frames へ書き戻し)、$n に同 cell、
+  `__mutsu_value_alias::$n` marker を env へ。snapshot(GetArrayVar の deref 値)は cell 不在時の初期値。
+- detach(§5 Slice 2a の「scalar への非-array 代入 = slot 置換」): value-alias marker 持ち ContainerRef
+  scalar への再代入は **cell write-through せず slot 置換**(`$n = 5` が @z を壊さない)。**gotcha**:
+  value-alias scalar は `simple_locals=false` になり read が env 経由になるため、detach は
+  `flush_local_to_env`(simple 限定で no-op)ではなく `env_mut().insert(name, v)` で env を直接上書き
+  しないと stale な ContainerRef が残り `say $n` が旧 array を読む。
+
+### 検証結果
+
+- **core 全 PASS**(`t/scalar-array-ref-sharing.t` 18 ケース): `my $n=@z; $n.push(99)` → @z 3 件、
+  element/push 両方向伝播、detach(push 後含む)、hash 版、itemized copy(`my @c=$n` → `[[1 2] 3]` raku 一致)。
+- `cargo test` 466/0、array/binding/list/signature roast spread clean。
+
+### revert 理由 — open-q#1/#2 が現実の壁
+
+`my $a = @src` が $a を **ContainerRef にすると、source を Arc identity で追跡する既存機構が壊れる**:
+**`t/pair-value-element-writethrough.t`(#2943)が回帰** — `$p = (k => $a); $p.value[3] = "x"` の
+write-through は @src/$a の **plain Array Arc を identity で照合**するが、cell 化で `Value::ContainerRef`
+になると照合に失敗し空書き込みになる。これは §5 が「2a の前に Stage 0 チョークポイント先行」と書いた
+依存そのもの＝**全 mutation/write-through サイトを ContainerRef-aware(decont)化する Sub-slice 1a が前提**。
+open-q#1(scalar-value-method dispatch の decont)も同根: cell が漏れない監査が要る。
+
+**∴ 次回の正しい順序: (1) Sub-slice 1a を behavior-invariant に landing(全 write-chokepoint で
+ContainerRef を decont、roast byte 一致が合格) → (2) その上に value-alias(本実装を再適用)。**
+value-alias 単独 PR は Arc-identity 機構を壊すので不可。
+
+---
+
+## 9. 参照
 
 - `docs/env-locals-coherence.md` — Stage 1 outer cell 化(for-rw site A 完了)。本書はその格納側の延長。
 - `docs/container-identity.md` — 第一級コンテナ台帳(Phase 1 scalar cell / Phase 2 要素 cell)。
 - `docs/vm-single-store.md` — 二重ストア統合(Slice F)。scalar-array 共有も env↔locals 同一 cell が前提。
-- 実証 probe: §1 の表(2026-06-18)。
+- 実証 probe: §1 の表(2026-06-18)。実装試行: §8(2026-06-18)。
