@@ -950,6 +950,83 @@ impl Interpreter {
         }
     }
 
+    /// Slice 2a (`docs/scalar-array-sharing.md`): is `name` a `$` scalar that
+    /// currently shares an array/hash by reference (`$n = @z`)? Such a scalar's
+    /// whole reassignment REPLACES its slot instead of writing through the cell.
+    pub(super) fn is_array_share_scalar(&self, name: &str) -> bool {
+        self.env()
+            .get(&format!("__mutsu_array_share::{}", name))
+            .is_some()
+    }
+
+    fn clear_array_share_marker(&mut self, name: &str) {
+        self.env_mut()
+            .remove(&format!("__mutsu_array_share::{}", name));
+    }
+
+    /// Slice 2a: `$n = @z` / `$n = %h`. Promote the source container variable to
+    /// a shared `ContainerRef` cell and store that same cell in the scalar
+    /// target, so structural mutations (`.push`) through either name are seen by
+    /// both (raku reference semantics) — a snapshotting copy would COW-detach on
+    /// the first `.push`. Marks the scalar `__mutsu_array_share::` so a later
+    /// whole reassignment (`$n = 5`) replaces the slot instead of mutating the
+    /// shared cell. Does NOT set the bound-decont marker: the scalar stays
+    /// itemized (`@a = $n` itemizes, unlike a `:=` bind which flattens).
+    fn array_share_assign(
+        &mut self,
+        code: &CompiledCode,
+        idx: usize,
+        val: Value,
+        source_name: String,
+    ) -> Result<(), RuntimeError> {
+        let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
+        let name = code.locals[idx].clone();
+        // Build (or reuse) the shared cell: reuse an existing cell carried by the
+        // value or already held by the source variable, else wrap the snapshot.
+        let cell = match &val {
+            Value::ContainerRef(arc) => arc.clone(),
+            _ => match self.env().get(&resolved_source) {
+                Some(Value::ContainerRef(arc)) => arc.clone(),
+                _ => std::sync::Arc::new(std::sync::Mutex::new(val.clone())),
+            },
+        };
+        let container = Value::ContainerRef(cell);
+        // Promote the SOURCE container variable to the same cell so its own
+        // `.push` / whole-reassign (`@z = (...)`) mutate through and stay visible
+        // via the scalar.
+        if let Some(source_idx) = code.locals.iter().rposition(|n| n == &resolved_source) {
+            self.locals[source_idx] = container.clone();
+            self.flush_local_to_env(code, source_idx);
+        }
+        self.set_env_with_main_alias(&resolved_source, container.clone());
+        // Propagate the shared cell into saved call frames so the sharing
+        // survives method returns (env restore).
+        for frame in self.call_frames.iter_mut().rev() {
+            if frame.saved_env.contains_key(&resolved_source) {
+                frame
+                    .saved_env
+                    .insert(resolved_source.clone(), container.clone());
+            }
+            for (i, local_name) in code.locals.iter().enumerate() {
+                if local_name == &resolved_source && i < frame.saved_locals.len() {
+                    frame.saved_locals[i] = container.clone();
+                }
+            }
+        }
+        // Store the shared cell in the scalar target (itemized scalar).
+        self.locals[idx] = container.clone();
+        // Clear any stale bound-decont marker inherited from an earlier bind of
+        // the same name (this `=` share is itemized, not a `:=` decont alias).
+        self.update_bound_decont_marker(&name, false, &val);
+        // Mark the scalar so a later whole reassignment replaces the slot.
+        self.env_mut()
+            .insert(format!("__mutsu_array_share::{}", name), Value::Bool(true));
+        self.array_share_active = true;
+        self.set_env_with_main_alias(&name, container.clone());
+        self.flush_local_to_env(code, idx);
+        Ok(())
+    }
+
     pub(super) fn normalize_scalar_assignment_value(val: Value) -> Value {
         let is_nilish = |v: &Value| match v {
             Value::Nil => true,
@@ -5501,12 +5578,32 @@ impl Interpreter {
         let has_explicit_initializer = self.explicit_initializer_context;
         let is_vardecl = self.vardecl_context;
         let scalar_bind = self.scalar_bind_context;
+        let array_share = self.array_share_context;
         self.bind_context = false;
         self.scalar_bind_context = false;
         self.rebind_context = false;
         self.constant_context = false;
+        self.array_share_context = false;
         self.explicit_initializer_context = false;
         self.vardecl_context = false;
+        // Slice 2a: `$scalar = @arr` / `$scalar = %hash` promotes the source
+        // container to a shared `ContainerRef` cell (raku reference semantics).
+        // Handled before the decont marker and fast/slow split because the
+        // scalar is itemized (NOT a `:=` decont alias) and needs replace-on-
+        // reassign semantics distinct from `:=` write-through.
+        if array_share
+            && let Some(src) = bind_source.as_ref()
+            && matches!(
+                raw_popped,
+                Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_)
+            )
+        {
+            let name = &code.locals[idx];
+            if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+                let src = src.clone();
+                return self.array_share_assign(code, idx, raw_popped, src);
+            }
+        }
         // Record/clear the decontainerize marker for `$` scalars. A scalar bound
         // (`:=`) to a Positional is not a Scalar container, so `@a = $bound` must
         // flatten (the `ItemizeVar` opcode reads this marker). Plain assignment
@@ -5570,13 +5667,24 @@ impl Interpreter {
             }
             // Write through ContainerRef: update inner value without breaking sharing
             if !is_rebind && let Value::ContainerRef(arc) = &self.locals[idx] {
-                let arc = arc.clone();
-                if !name.starts_with('@') && !name.starts_with('%') {
-                    val = Self::normalize_scalar_assignment_value(val);
+                // Slice 2a: a `=`-array-shared scalar (`$n = @z`) reassigned as a
+                // whole (`$n = 5`, `$n = @other` via a fresh share) REPLACES the
+                // slot — raku value semantics — instead of writing through the
+                // cell shared with the source. Drop the share marker and fall
+                // through to the plain-replace path below. (`:=`-bound scalars and
+                // `@`/`%` vars keep write-through.)
+                let scalar = !name.starts_with('@') && !name.starts_with('%');
+                if scalar && self.array_share_active && self.is_array_share_scalar(name) {
+                    self.clear_array_share_marker(name);
+                } else {
+                    let arc = arc.clone();
+                    if scalar {
+                        val = Self::normalize_scalar_assignment_value(val);
+                    }
+                    arc.lock().unwrap().clone_from(&val);
+                    self.flush_local_to_env(code, idx);
+                    return Ok(());
                 }
-                arc.lock().unwrap().clone_from(&val);
-                self.flush_local_to_env(code, idx);
-                return Ok(());
             }
             // If the current value is a Proxy, invoke STORE instead of overwriting
             if let Value::Proxy { storer, .. } = &self.locals[idx]
@@ -6385,13 +6493,21 @@ impl Interpreter {
             && !is_rebind
             && let Value::ContainerRef(arc) = &self.locals[idx]
         {
-            let arc = arc.clone();
-            if !name.starts_with('@') && !name.starts_with('%') {
-                val = Self::normalize_scalar_assignment_value(val);
+            // Slice 2a: a `=`-array-shared scalar reassigned as a whole REPLACES
+            // the slot (raku value semantics); drop the share and fall through to
+            // the plain-replace path below instead of writing through the cell.
+            let scalar = !name.starts_with('@') && !name.starts_with('%');
+            if scalar && self.array_share_active && self.is_array_share_scalar(name) {
+                self.clear_array_share_marker(name);
+            } else {
+                let arc = arc.clone();
+                if scalar {
+                    val = Self::normalize_scalar_assignment_value(val);
+                }
+                arc.lock().unwrap().clone_from(&val);
+                self.flush_local_to_env(code, idx);
+                return Ok(());
             }
-            arc.lock().unwrap().clone_from(&val);
-            self.flush_local_to_env(code, idx);
-            return Ok(());
         }
         // If the current value is a Proxy, invoke STORE instead of overwriting
         if let Value::Proxy { storer, .. } = &self.locals[idx]
@@ -6709,6 +6825,32 @@ impl Interpreter {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        // Slice 2a: `$scalar = @arr` reassignment (the VarDecl form goes through
+        // `exec_set_local_op`). Promote the source container to a shared
+        // `ContainerRef` cell so structural mutation through either name is seen
+        // by both (raku reference semantics), then leave the value on the stack
+        // (assignment is an expression).
+        if self.array_share_context {
+            self.array_share_context = false;
+            let raw = self.stack.pop().unwrap_or(Value::Nil);
+            let (val, src) = Self::extract_varref_binding(raw);
+            if let Some(src) = src
+                && matches!(
+                    val,
+                    Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_)
+                )
+                && {
+                    let name = &code.locals[idx];
+                    !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
+                }
+            {
+                self.array_share_assign(code, idx, val.clone(), src)?;
+                self.stack.push(val);
+                return Ok(());
+            }
+            // Not an array-share after all (e.g. `@`/`%` target): push back.
+            self.stack.push(val);
+        }
         // If the current local is a Proxy, invoke STORE instead of overwriting
         if let Value::Proxy { storer, .. } = &self.locals[idx]
             && !matches!(storer.as_ref(), Value::Nil)
@@ -6741,14 +6883,22 @@ impl Interpreter {
                 self.locals[idx] = Value::ContainerRef(arc);
             }
             if let Value::ContainerRef(arc) = &self.locals[idx] {
-                let arc = arc.clone();
-                if !name.starts_with('@') && !name.starts_with('%') {
-                    val = Self::normalize_scalar_assignment_value(val);
+                // Slice 2a: a `=`-array-shared scalar reassigned as a whole
+                // REPLACES the slot (raku value semantics); drop the share and
+                // fall through to the plain-replace path below.
+                let scalar = !name.starts_with('@') && !name.starts_with('%');
+                if scalar && self.array_share_active && self.is_array_share_scalar(name) {
+                    self.clear_array_share_marker(name);
+                } else {
+                    let arc = arc.clone();
+                    if scalar {
+                        val = Self::normalize_scalar_assignment_value(val);
+                    }
+                    arc.lock().unwrap().clone_from(&val);
+                    self.stack.push(val);
+                    self.flush_local_to_env(code, idx);
+                    return Ok(());
                 }
-                arc.lock().unwrap().clone_from(&val);
-                self.stack.push(val);
-                self.flush_local_to_env(code, idx);
-                return Ok(());
             }
             if !name.starts_with('@') && !name.starts_with('%') {
                 val = Self::normalize_scalar_assignment_value(val);

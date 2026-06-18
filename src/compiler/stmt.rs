@@ -222,7 +222,32 @@ impl Compiler {
         }
     }
 
+    /// Slice 2a (`docs/scalar-array-sharing.md`): `$scalar = @arr` / `$scalar =
+    /// %hash` shares the source container by reference (raku semantics) rather
+    /// than snapshotting it. The source variable name is known at compile time
+    /// (the RHS is a whole `ArrayVar`/`HashVar`), so wrap the RHS value with the
+    /// source name and flag the upcoming `SetLocal` to promote both to a shared
+    /// `ContainerRef` cell. `@`/`%`/`&` targets (copy/bind elsewhere) are skipped.
+    fn try_emit_array_share(&mut self, name: &str, expr: &Expr) -> bool {
+        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+            return false;
+        }
+        let source = match expr {
+            Expr::ArrayVar(n) => format!("@{}", n),
+            Expr::HashVar(n) => format!("%{}", n),
+            _ => return false,
+        };
+        self.with_escape(true, |c| c.compile_expr(expr));
+        let name_idx = self.code.add_constant(Value::str(source));
+        self.code.emit(OpCode::WrapVarRef(name_idx));
+        self.code.emit(OpCode::MarkArrayShareContext);
+        true
+    }
+
     fn compile_assignment_rhs_for_target(&mut self, name: &str, expr: &Expr) {
+        if self.try_emit_array_share(name, expr) {
+            return;
+        }
         // The RHS value is stored into the target, so a closure literal here
         // escapes the creating frame (escape analysis): force a shared cell for
         // the captured-and-mutated locals it closes over.

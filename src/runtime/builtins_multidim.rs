@@ -252,6 +252,15 @@ impl Interpreter {
 
         // Get the current container via the accessor
         let current = self.call_method_with_values(target.clone(), &method, Vec::new())?;
+        // Slice 2a: the accessor may return a shared `ContainerRef` cell (e.g. a
+        // Pair value aliasing a `=`-array-shared scalar `my $a = @src`). Deref it
+        // for the element modify; the shared-Arc propagation below
+        // (`overwrite_array_bindings_by_identity`, now cell-aware) reaches every
+        // alias through the cell's inner Arc.
+        let current = match &current {
+            Value::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            _ => current,
+        };
 
         // Save Arc pointers before modifying (for shared container propagation)
         let old_array_arc = match &current {

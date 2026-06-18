@@ -275,18 +275,33 @@ impl Interpreter {
         needle: &std::sync::Arc<crate::value::ArrayData>,
         replacement: Value,
     ) {
-        let keys: Vec<Symbol> = self
-            .env
-            .iter()
-            .filter_map(|(name, value)| match value {
+        let mut keys: Vec<Symbol> = Vec::new();
+        // Slice 2a: a `=`-array-shared scalar (`my $n = @z`) holds the array
+        // inside a shared `ContainerRef` cell, so its inner Arc — not the
+        // variable's own value — matches `needle`. Write the replacement THROUGH
+        // the cell (never replace the var's value, which would sever the share)
+        // so every alias of the cell observes the element write.
+        let mut cells: Vec<std::sync::Arc<std::sync::Mutex<Value>>> = Vec::new();
+        for (name, value) in self.env.iter() {
+            match value {
                 Value::Array(existing, ..) if std::sync::Arc::ptr_eq(existing, needle) => {
-                    Some(*name)
+                    keys.push(*name);
                 }
-                _ => None,
-            })
-            .collect();
+                Value::ContainerRef(cell) => {
+                    if let Value::Array(existing, ..) = &*cell.lock().unwrap()
+                        && std::sync::Arc::ptr_eq(existing, needle)
+                    {
+                        cells.push(cell.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
         for key in keys {
             self.env.insert_sym(key, replacement.clone());
+        }
+        for cell in cells {
+            *cell.lock().unwrap() = replacement.clone();
         }
     }
 
@@ -295,16 +310,28 @@ impl Interpreter {
         needle: &std::sync::Arc<crate::value::HashData>,
         replacement: Value,
     ) {
-        let keys: Vec<Symbol> = self
-            .env
-            .iter()
-            .filter_map(|(name, value)| match value {
-                Value::Hash(existing) if std::sync::Arc::ptr_eq(existing, needle) => Some(*name),
-                _ => None,
-            })
-            .collect();
+        let mut keys: Vec<Symbol> = Vec::new();
+        let mut cells: Vec<std::sync::Arc<std::sync::Mutex<Value>>> = Vec::new();
+        for (name, value) in self.env.iter() {
+            match value {
+                Value::Hash(existing) if std::sync::Arc::ptr_eq(existing, needle) => {
+                    keys.push(*name);
+                }
+                Value::ContainerRef(cell) => {
+                    if let Value::Hash(existing) = &*cell.lock().unwrap()
+                        && std::sync::Arc::ptr_eq(existing, needle)
+                    {
+                        cells.push(cell.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
         for key in keys {
             self.env.insert_sym(key, replacement.clone());
+        }
+        for cell in cells {
+            *cell.lock().unwrap() = replacement.clone();
         }
     }
 
