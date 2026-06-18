@@ -1258,25 +1258,34 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     // Collect &-sigil parameter names so they can be registered as user subs
     // inside the block scope — this prevents `m()` from being misread as `m//`
     // (a regex match) when `m` is bound via `-> &m { m() }`.
-    let code_param_names: Vec<String> = {
-        let mut names = Vec::new();
-        if let Some(ref p) = param
-            && let Some(bare) = p.strip_prefix('&')
-        {
-            names.push(bare.to_string());
+    // Also collect sigilless `\name` params (stored with a leading `\`) so they
+    // can be registered as term symbols, shadowing any outer `&name` sub — keeps
+    // `my &mapper = {...}; for ... -> \mapper { mapper.WHAT }` reading `mapper` as
+    // the loop variable, not as a call to the outer `&mapper`.
+    let mut code_param_names: Vec<String> = Vec::new();
+    let mut sigilless_param_names: Vec<String> = Vec::new();
+    for p in param.iter().chain(params.iter()) {
+        if let Some(bare) = p.strip_prefix('&') {
+            code_param_names.push(bare.to_string());
+        } else if let Some(bare) = p.strip_prefix('\\') {
+            sigilless_param_names.push(bare.to_string());
         }
-        for p in &params {
-            if let Some(bare) = p.strip_prefix('&') {
-                names.push(bare.to_string());
-            }
+    }
+    // The single-param form stores a sigilless `\name` without the leading `\`
+    // (multi-param form keeps it), so consult the ParamDef sigilless flags too.
+    for pd in param_def.iter().chain(params_def.iter()) {
+        if pd.sigilless && !sigilless_param_names.contains(&pd.name) {
+            sigilless_param_names.push(pd.name.clone());
         }
-        names
-    };
-    let (rest, body) = if !code_param_names.is_empty() {
+    }
+    let (rest, body) = if !code_param_names.is_empty() || !sigilless_param_names.is_empty() {
         let (r, _) = parse_char(rest, '{')?;
         super::simple::push_scope();
         for name in &code_param_names {
             super::simple::register_user_sub(name);
+        }
+        for name in &sigilless_param_names {
+            super::simple::register_user_term_symbol(name);
         }
         let result = block_inner(r);
         super::simple::pop_scope();
