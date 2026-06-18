@@ -867,6 +867,16 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
                 })
                 .collect(),
         ),
+        // A WalkList assigned to an `@` variable flattens to its candidate
+        // closures, so `my @cands = $x.WALK(...)` yields the per-level candidates.
+        Value::Instance {
+            ref class_name,
+            ref attributes,
+            ..
+        } if class_name.resolve() == "WalkList" => match walk_list_candidates(attributes) {
+            Some(cands) => Value::real_array(cands),
+            None => Value::real_array(vec![value.clone()]),
+        },
         other => Value::real_array(vec![other]),
     }
 }
@@ -1910,6 +1920,21 @@ pub(crate) fn pair_as_positional(val: &Value) -> Value {
     }
 }
 
+/// Extract the candidate closures from a `WalkList` instance's attributes,
+/// honoring its `reversed` flag. Returns `None` if the attributes are not
+/// shaped like a WalkList.
+pub(crate) fn walk_list_candidates(attributes: &crate::value::InstanceAttrs) -> Option<Vec<Value>> {
+    let map = attributes.as_map();
+    let Some(Value::Array(items, ..)) = map.get("candidates") else {
+        return None;
+    };
+    let mut cands = items.to_vec();
+    if matches!(map.get("reversed"), Some(Value::Bool(true))) {
+        cands.reverse();
+    }
+    Some(cands)
+}
+
 pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     match val {
         Value::Array(items, kind) if kind.is_itemized() => vec![val.clone()],
@@ -2233,7 +2258,18 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(crate::value::mix_weight_to_value(*v))))
             .collect(),
         Value::Slip(items) => items.to_vec(),
-        Value::Instance { attributes, .. } => {
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } => {
+            // A WalkList flattens to its candidate closures in list context, so
+            // `my @cands = $x.WALK(...)` yields the per-level candidates.
+            if class_name.resolve() == "WalkList"
+                && let Some(items) = walk_list_candidates(attributes)
+            {
+                return items;
+            }
             if let Some(Value::Array(items, ..)) = attributes.as_map().get("__array_items") {
                 return items.to_vec();
             }

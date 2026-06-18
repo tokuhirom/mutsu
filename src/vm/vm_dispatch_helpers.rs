@@ -327,6 +327,14 @@ impl Interpreter {
             target
         };
 
+        // A WalkList is invoked (`$x.WALK(...)()`) by calling each candidate on
+        // the original invocant, forwarding any arguments.
+        if let Value::Instance { class_name, .. } = &target
+            && class_name.resolve() == "WalkList"
+        {
+            return self.walk_list_invoke_direct(&target, args);
+        }
+
         // Fast path: Sub with compiled_code
         if let Value::Sub(ref data) = target
             && let Some(ref cc) = data.compiled_code

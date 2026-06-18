@@ -1598,6 +1598,15 @@ impl Interpreter {
                 })
                 .collect(),
             Value::Slip(items) => items.to_vec(),
+            // A WalkList flattens to its candidate closures in list context.
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name.resolve() == "WalkList" => {
+                crate::runtime::utils::walk_list_candidates(attributes)
+                    .unwrap_or_else(|| vec![val.clone()])
+            }
             // Nil is a single scalar item in list context (e.g. `for Nil { }`
             // does one iteration); it is not an empty list.
             other => vec![other.clone()],
