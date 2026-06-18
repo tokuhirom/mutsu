@@ -638,6 +638,16 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::MarkVarReadonly(idx));
             }
+            Stmt::MarkBoundContainer(name) => {
+                // Record `__mutsu_bound::NAME` = true in env so the whole-var
+                // readonly check (`CheckReadOnly`) can tell a `:=`-bound
+                // container (writable) apart from a `constant` one (immutable).
+                let key = format!("__mutsu_bound::{}", name);
+                let key_idx = self.code.add_constant(Value::str(key));
+                let true_idx = self.code.add_constant(Value::Bool(true));
+                self.code.emit(OpCode::LoadConst(true_idx));
+                self.code.emit(OpCode::SetGlobal(key_idx));
+            }
             Stmt::MarkBind => {
                 // Handled by SyntheticBlock detection; no-op when compiled standalone.
             }

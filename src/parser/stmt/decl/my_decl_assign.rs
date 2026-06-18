@@ -596,6 +596,10 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         let mut stmts = Vec::new();
         if bound_name.starts_with('%') {
             stmts.push(Stmt::MarkReadonly(bound_name.clone()));
+            // Also record a dedicated bound-container marker so a later whole
+            // reassignment (`%a = (...)`) is allowed (it propagates to the bound
+            // source), while a `constant %M` — also readonly — stays immutable.
+            stmts.push(Stmt::MarkBoundContainer(bound_name.clone()));
             stmts.push(Stmt::MarkBind);
         }
         stmts.push(stmt);
