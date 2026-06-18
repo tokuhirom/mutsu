@@ -177,6 +177,16 @@ method-call wall-clock**(#2746 教訓: perf 回帰は roast timeout でしか出
 
 ## 8. 実装試行の結果(2026-06-18) — Slice 2a は動くが Arc-identity ripple で revert
 
+> **★SUPERSEDED (2026-06-18, PR #3264 MERGED)**: この §8 は `MarkValueAliasSource` を使った
+> 並行試行が Pair-value 回帰で revert された記録。その後の **PR #3264 で Slice 2a は実際に landing
+> 済み**(別 opcode `MarkArrayShareContext`)。§8 が「不可」とした Arc-identity ripple は、**blanket な
+> Sub-slice 1a(全 write-chokepoint の behavior-invariant decont)を先行させずに**、cell が壊した
+> identity 機構を**個別に cell-aware 化**することで解消した: ①`overwrite_array/hash_bindings_by_identity`
+> (needle Arc を inner に持つ ContainerRef cell の中身を write-through)②`builtin_index_assign_method_lvalue`
+> の `current` を deref ③regex `interpolate_regex_scalars` の var-read を `into_deref` ④`UndefineAggregate`
+> を cell-aware(`clear_aggregate_cell`)。**∴ "leak を見つけ次第 deref で塞ぐ" 漸進アプローチで十分**で、
+> blanket Stage 0 1a 先行は不要だった。§5 Slice 2a の DONE 注記が最新の実装真実。以下の §8 本文は歴史的記録。
+
 Slice 2a(scalar `$n = @z` の cell 共有 = "value-alias")を実装し検証した。**設計は正しく、§5 の
 スライス順序を裏付けた。** 結論: **value-alias は Sub-slice 1a(write-chokepoint decont)を先に landing
 しないと既存の Arc-identity 機構を壊す。** revert 済み。
