@@ -265,6 +265,57 @@ impl Compiler {
     /// element shares a `ContainerRef` cell with the source. That makes
     /// element-to-element binds propagate writes bidirectionally (nested.t
     /// 32-37). For a plain (non-bind) value, this is just `compile_expr`.
+    /// Slice 2b (`docs/scalar-array-sharing.md`): detect `@aoa[i] = @row` /
+    /// `%h<k> = @row` where the RHS is a whole array/hash variable. Such a plain
+    /// `=` shares the source container by reference (raku stores the same Array
+    /// object in the element's scalar). Returns a `:=`-bind-wrapped value so the
+    /// existing index-bind machinery installs a shared `ContainerRef` cell and
+    /// promotes the source; the caller additionally emits `MarkElementShare` so
+    /// the runtime records the element as a value share (replace-on-reassign),
+    /// not a true bind. Only `@`/`%` element targets and direct container-var
+    /// RHS are handled here; a scalar source (`@aoa[i] = $x`) stays a copy.
+    fn element_share_bind_value(target_name: &str, index: &Expr, value: &Expr) -> Option<Expr> {
+        if !target_name.starts_with('@') && !target_name.starts_with('%') {
+            return None;
+        }
+        // Only a single scalar subscript shares by reference. A slice / range /
+        // multi-index (`@b[1,2,3] = @x`, `@b[*-3,*-2] = @x`) is a distributing
+        // slice assignment, not an element reference share, so it must keep its
+        // normal value-assignment path (whitelist the known single-element index
+        // shapes; anything else stays a plain copy).
+        let single_subscript = match index {
+            Expr::Literal(v) => matches!(
+                v,
+                Value::Int(_) | Value::Str(_) | Value::Num(_) | Value::Bool(_)
+            ),
+            Expr::Var(_) | Expr::Binary { .. } | Expr::Unary { .. } => true,
+            _ => false,
+        };
+        if !single_subscript {
+            return None;
+        }
+        let source = match value {
+            Expr::ArrayVar(n) => format!("@{n}"),
+            Expr::HashVar(n) => format!("%{n}"),
+            _ => return None,
+        };
+        // A self-reference (`%h<k> = %h`, `@a[0] = @a`) must keep the existing
+        // self-ref-marker path (infinite HoH / AoA). Promoting the source to a
+        // shared cell here would replace the whole container with a
+        // `ContainerRef`, breaking type checks (`isa-ok %h, Hash`) and the
+        // cyclic-structure reads.
+        if source == target_name {
+            return None;
+        }
+        Some(Expr::Call {
+            name: Symbol::intern("__mutsu_bind_index_value"),
+            args: vec![
+                value.clone(),
+                Expr::ArrayLiteral(vec![Expr::Literal(Value::str(source))]),
+            ],
+        })
+    }
+
     fn compile_bind_index_value(&mut self, value: &Expr) {
         let is_bind = matches!(
             value,
@@ -335,7 +386,14 @@ impl Compiler {
                 self.compile_expr(target);
                 self.code.emit(OpCode::Pop);
             }
-            self.compile_bind_index_value(value);
+            let share_value = Self::element_share_bind_value(&name, index, value);
+            match &share_value {
+                Some(bind_value) => self.compile_bind_index_value(bind_value),
+                None => self.compile_bind_index_value(value),
+            }
+            if share_value.is_some() {
+                self.code.emit(OpCode::MarkElementShare);
+            }
             self.compile_expr(index);
             let name_idx = self.code.add_constant(Value::str(name));
             self.code.emit(OpCode::IndexAssignExprNamed {
