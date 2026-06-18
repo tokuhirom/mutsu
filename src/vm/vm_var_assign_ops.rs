@@ -5586,21 +5586,20 @@ impl Interpreter {
         self.array_share_context = false;
         self.explicit_initializer_context = false;
         self.vardecl_context = false;
-        // Slice 2a: `$scalar = @arr` / `$scalar = %hash` promotes the source
-        // container to a shared `ContainerRef` cell (raku reference semantics).
-        // Handled before the decont marker and fast/slow split because the
-        // scalar is itemized (NOT a `:=` decont alias) and needs replace-on-
-        // reassign semantics distinct from `:=` write-through.
+        // Slice 2a/2b: `$scalar = @arr` / `$scalar = %hash` / chained `$r = $q`
+        // promotes the source container to a shared `ContainerRef` cell (raku
+        // reference semantics). Handled before the decont marker and fast/slow
+        // split because the scalar is itemized (NOT a `:=` decont alias) and needs
+        // replace-on-reassign semantics distinct from `:=` write-through. Only
+        // shares when the source value deref's to an Array/Hash, so a plain
+        // `$x = $y` (scalar source) stays a copy.
+        let array_share_source = self.array_share_source.take();
         if array_share
-            && let Some(src) = bind_source.as_ref()
-            && matches!(
-                raw_popped,
-                Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_)
-            )
+            && let Some(src) = array_share_source
+            && raw_popped.with_deref(|v| matches!(v, Value::Array(..) | Value::Hash(_)))
         {
             let name = &code.locals[idx];
             if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
-                let src = src.clone();
                 return self.array_share_assign(code, idx, raw_popped, src);
             }
         }
@@ -6825,31 +6824,28 @@ impl Interpreter {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
-        // Slice 2a: `$scalar = @arr` reassignment (the VarDecl form goes through
-        // `exec_set_local_op`). Promote the source container to a shared
-        // `ContainerRef` cell so structural mutation through either name is seen
-        // by both (raku reference semantics), then leave the value on the stack
-        // (assignment is an expression).
+        // Slice 2a/2b: `$scalar = @arr` / chained `$r = $q` reassignment (the
+        // VarDecl form goes through `exec_set_local_op`). Promote the source
+        // container to a shared `ContainerRef` cell so structural mutation through
+        // either name is seen by both (raku reference semantics), then leave the
+        // value on the stack (assignment is an expression). No-op when the source
+        // does not deref to an Array/Hash (a plain `$x = $y` stays a copy).
+        let array_share_source = self.array_share_source.take();
         if self.array_share_context {
             self.array_share_context = false;
-            let raw = self.stack.pop().unwrap_or(Value::Nil);
-            let (val, src) = Self::extract_varref_binding(raw);
-            if let Some(src) = src
-                && matches!(
-                    val,
-                    Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_)
-                )
-                && {
+            if let Some(src) = array_share_source {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                if val.with_deref(|v| matches!(v, Value::Array(..) | Value::Hash(_))) && {
                     let name = &code.locals[idx];
                     !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
+                } {
+                    self.array_share_assign(code, idx, val.clone(), src)?;
+                    self.stack.push(val);
+                    return Ok(());
                 }
-            {
-                self.array_share_assign(code, idx, val.clone(), src)?;
+                // Not an array-share (plain scalar source / `@`/`%` target): push back.
                 self.stack.push(val);
-                return Ok(());
             }
-            // Not an array-share after all (e.g. `@`/`%` target): push back.
-            self.stack.push(val);
         }
         // If the current local is a Proxy, invoke STORE instead of overwriting
         if let Value::Proxy { storer, .. } = &self.locals[idx]

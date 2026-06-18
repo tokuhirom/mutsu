@@ -1194,6 +1194,12 @@ pub struct Interpreter {
     /// the assignment to promote the source container to a shared `ContainerRef`
     /// cell (raku reference semantics) rather than snapshotting it.
     pub(crate) array_share_context: bool,
+    /// Slice 2a/2b: the source variable name whose container the upcoming
+    /// `SetLocal`/`AssignExpr` should share (set by `MarkArrayShareSource`).
+    /// `@z`/`%h` for a whole-container RHS (`$n = @z`), or a scalar name for a
+    /// chained share (`$r = $q`); the runtime only shares when that source holds
+    /// a container/`ContainerRef` (so a plain `$x = $y` stays a copy).
+    pub(crate) array_share_source: Option<String>,
     /// Slice 2a: cheap gate — `true` once any `__mutsu_array_share::` marker has
     /// been set, so the `SetLocal` write-through fast path only pays the marker
     /// lookup when at least one `=`-array-shared scalar exists.
@@ -3351,6 +3357,7 @@ impl Interpreter {
             rebind_context: false,
             constant_context: false,
             array_share_context: false,
+            array_share_source: None,
             array_share_active: false,
             explicit_initializer_context: false,
             vardecl_context: false,
@@ -5894,6 +5901,7 @@ impl Interpreter {
             rebind_context: false,
             constant_context: false,
             array_share_context: false,
+            array_share_source: None,
             array_share_active: false,
             explicit_initializer_context: false,
             vardecl_context: false,

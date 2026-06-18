@@ -556,6 +556,7 @@ impl Interpreter {
         let saved_rebind_context = self.rebind_context;
         let saved_constant_context = self.constant_context;
         let saved_array_share_context = self.array_share_context;
+        let saved_array_share_source = self.array_share_source.take();
         let saved_explicit_initializer_context = self.explicit_initializer_context;
         let saved_vardecl_context = self.vardecl_context;
         let saved_loop_cond_active = self.loop_cond_active;
@@ -574,6 +575,7 @@ impl Interpreter {
         self.rebind_context = false;
         self.constant_context = false;
         self.array_share_context = false;
+        self.array_share_source = None;
         self.explicit_initializer_context = false;
         self.vardecl_context = false;
         self.loop_cond_active = false;
@@ -610,6 +612,7 @@ impl Interpreter {
         self.rebind_context = saved_rebind_context;
         self.constant_context = saved_constant_context;
         self.array_share_context = saved_array_share_context;
+        self.array_share_source = saved_array_share_source;
         self.explicit_initializer_context = saved_explicit_initializer_context;
         self.vardecl_context = saved_vardecl_context;
         self.loop_cond_active = saved_loop_cond_active;
@@ -1585,6 +1588,7 @@ impl Interpreter {
                 // global copies for now — reference sharing for globals is Slice 2d)
                 // so it cannot leak into the next SetLocal.
                 self.array_share_context = false;
+                self.array_share_source = None;
                 // Only clear rebind_context if this is actually a binding operation
                 if is_rebind {
                     self.rebind_context = false;
@@ -2282,8 +2286,9 @@ impl Interpreter {
                 self.rebind_context = true;
                 *ip += 1;
             }
-            OpCode::MarkArrayShareContext => {
+            OpCode::MarkArrayShareSource(name_idx) => {
                 self.array_share_context = true;
+                self.array_share_source = Some(Self::const_str(code, *name_idx).to_string());
                 *ip += 1;
             }
             OpCode::MarkConstantContext => {
