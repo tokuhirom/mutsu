@@ -491,7 +491,18 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 
     let r = &r[1..];
     let (r, _) = ws(r)?;
-    let (r, rhs) = parse_assignment_rhs_mode(r, mode)?;
+    // Item assignment (`=`) to a bare scalar variable binds TIGHTER than the
+    // comma operator, so an embedded `$x = 1, 2` parses as `($x = 1), 2`. List
+    // assignment to an `@`/`%` container — and the parenthesized list-lvalue form
+    // `($x) = 1, 2` — keeps the comma-absorbing RHS. We test the pre-unwrap
+    // expression so a grouped `($x)` stays on the list-assignment path. (The
+    // statement-level counterpart lives in `stmt/assign.rs::assign_stmt`.)
+    let scalar_item_assign = matches!(&expr, Expr::Var(_));
+    let (r, rhs) = if scalar_item_assign {
+        ternary_mode(r, mode)?
+    } else {
+        parse_assignment_rhs_mode(r, mode)?
+    };
 
     let expr = unwrap_grouped_lvalue(expr);
     match expr {
