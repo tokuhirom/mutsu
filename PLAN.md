@@ -148,7 +148,9 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
         fallback）— 呼び出し後に entry が存在＝phantom 不要なので cell 化可（hot path 非該当）。deferred-token 用途以外の `HashSlotRef` を枯らす。
       - **grep-rw-view 撤去**: 最後の ptr-keyed グローバルの一つ。matched 要素を cell 昇格し view registry を全廃（for-loop rw topic が消費者）。
       - **env↔locals コンテナ coherence の本丸（Slice F の真の前提）**: cell-linked container が env と locals で別 Arc を持つ
-        dual-store 乖離を解消（pairs/slip carrier-drop が `element-bind-cell.t` を壊すのが証左）。**未着手・要設計**。
+        dual-store 乖離を解消（pairs/slip carrier-drop が `element-bind-cell.t` を壊すのが証左）。**設計済＝[docs/env-locals-coherence.md](docs/env-locals-coherence.md)**
+        （推奨＝outer コンテナを env でも `ContainerRef` cell として持ち env↔locals が同 cell 共有＝instance attr Phase 3 と同型。
+        escape-aware で perf 崖回避。Stage 0 チョークポイント→Stage 1 昇格→Stage 2 計測→Stage 3 Slice F+pairs/slip 一般化）。
       - Phase 0.5 第2段（任意・実挙動変化）: `GetArrayVar`/`Index` の auto-decont + 新 lvalue opcode の本配線。
       - Phase 3 機会的残: 属性束縛（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits 5-8）。
 - [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。

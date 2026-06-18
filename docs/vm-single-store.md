@@ -485,9 +485,20 @@ for wall-clock.
   > *within one store*; the **dual-store env↔locals divergence** is the remaining
   > layer (it is why dropping the `pairs`/`slip` carrier blanket corrupts
   > `t/element-bind-cell.t` even with the cell mechanism present). So Slice F's
-  > real prerequisite is **Slice E (upvalues) + container-identity Phase 2/3
-  > (env↔locals container-Arc sharing)**, not more blanket/carrier surgery. The
-  > `pairs`/`slip` carrier-drop becomes safe at the *same* moment Slice F does.
+  > real prerequisite is **Slice E (upvalues, DONE #3245/#3247) + container-identity
+  > Phase 2/3 (env↔locals container-Arc sharing)**, not more blanket/carrier
+  > surgery. The `pairs`/`slip` carrier-drop becomes safe at the *same* moment
+  > Slice F does.
+  >
+  > **The env↔locals container-coherence prerequisite is now designed:**
+  > [docs/env-locals-coherence.md](env-locals-coherence.md) maps where the two
+  > stores diverge (one-sided `Arc::make_mut`; carrier-built fresh env; only leaf
+  > cells survive, not the outer structure), why the cell mechanism alone does not
+  > close it, and the recommended design — hold a slotted container as a
+  > `ContainerRef` cell in *both* stores so they share one outer cell (the
+  > instance-attr Phase 3 shape), escape-aware to avoid the perf cliff, staged
+  > chokepoint→promote→measure→delete. Slice E was the last *independent* prereq;
+  > this coherence work is the only remaining one before Slice F.
 
 - **Slice G (follow-on, optional) — env materialization on demand.**
   Replace the per-call `clone_env()` snapshot with a frame-local overlay built
