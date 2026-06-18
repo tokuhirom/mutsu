@@ -84,43 +84,176 @@ impl Interpreter {
         // optionally including composed roles.
         let walk_targets = self.build_walk_targets(&receiver_class_name, order, want_roles);
 
-        // For each (kind, owner-name), look up an "own" MethodDef for the
-        // named method and invoke it on the original invocant.
-        let mut results: Vec<Value> = Vec::new();
+        // For each (kind, owner-name) that has an "own" candidate for the named
+        // method, build a candidate closure `-> $inst, *@a { $inst.OWNER::name(|@a) }`.
+        // Reusing qualified method-call dispatch (which already handles
+        // submethods) means `$cand($instance)` and the batch-invoke share one
+        // code path.
+        let mut candidates: Vec<Value> = Vec::new();
+        let mut matched: Vec<(WalkKind, String)> = Vec::new();
         for (kind, owner) in &walk_targets {
-            if let Some(method_def) =
-                self.lookup_own_walk_method(kind, owner, &receiver_class_name, &method_name)
+            if self
+                .lookup_own_walk_method(kind, owner, &receiver_class_name, &method_name)
+                .is_some()
             {
-                let attributes = match target {
-                    Value::Instance { attributes, .. } => attributes.to_map(),
-                    _ => std::collections::HashMap::new(),
-                };
-                let result = self.run_instance_method_resolved(
-                    &receiver_class_name,
-                    owner,
-                    method_def,
-                    attributes,
-                    Vec::new(),
-                    Some(target.clone()),
-                )?;
-                results.push(result.0);
+                candidates.push(Self::make_walk_candidate(owner, &method_name));
+                matched.push((kind.clone(), owner.clone()));
             }
         }
 
-        // Wrap the precomputed results in a no-arg Sub whose body is the
-        // list literal `(v1, v2, ..., vN)`.
-        let body_exprs: Vec<Expr> = results.into_iter().map(Expr::Literal).collect();
-        let body = vec![Stmt::Expr(Expr::ArrayLiteral(body_exprs))];
-        let sub = Value::make_sub(
+        Ok(Some(self.make_walk_list(
+            candidates,
+            target.clone(),
+            &receiver_class_name,
+            &method_name,
+            &matched,
+        )))
+    }
+
+    /// Build a candidate closure that invokes `owner::method_name` on its first
+    /// argument, forwarding any additional arguments: `-> $inst, *@a { $inst.OWNER::name(|@a) }`.
+    fn make_walk_candidate(owner: &str, method_name: &str) -> Value {
+        let qualified = Symbol::intern(&format!("{owner}::{method_name}"));
+        let body = vec![Stmt::Expr(Expr::MethodCall {
+            target: Box::new(Expr::Var("__walk_inst".to_string())),
+            name: qualified,
+            args: vec![Expr::Unary {
+                op: crate::token_kind::TokenKind::Pipe,
+                expr: Box::new(Expr::ArrayVar("__walk_args".to_string())),
+            }],
+            modifier: None,
+            quoted: false,
+        })];
+        let inst_param = walk_param("__walk_inst", false);
+        let slurpy_param = walk_param("@__walk_args", true);
+        Value::make_sub(
             Symbol::intern(""),
-            Symbol::intern("WALK"),
-            Vec::new(),
-            Vec::new(),
+            Symbol::intern("WALK-candidate"),
+            vec!["__walk_inst".to_string(), "@__walk_args".to_string()],
+            vec![inst_param, slurpy_param],
             body,
             false,
             Env::new(),
+        )
+    }
+
+    /// Construct a `WalkList` instance. Stored as a built-in `WalkList` class
+    /// instance so it can be both list-iterated (its candidate closures, for
+    /// `my @cands = $x.WALK(...)`) and invoked (`()`/`.invoke`). The matched
+    /// targets (`kind|owner` pairs) plus the receiver class and method name are
+    /// stored so the invoke path can resolve and call each method DIRECTLY —
+    /// which is correct for role submethods, where a qualified-call closure would
+    /// not resolve.
+    fn make_walk_list(
+        &self,
+        candidates: Vec<Value>,
+        invocant: Value,
+        receiver_class: &str,
+        method_name: &str,
+        matched: &[(WalkKind, String)],
+    ) -> Value {
+        let targets: Vec<Value> = matched
+            .iter()
+            .map(|(kind, owner)| {
+                let tag = match kind {
+                    WalkKind::Class => "C",
+                    WalkKind::Role => "R",
+                };
+                Value::str(format!("{tag}|{owner}"))
+            })
+            .collect();
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("candidates".to_string(), Value::real_array(candidates));
+        attrs.insert("invocant".to_string(), invocant);
+        attrs.insert("reversed".to_string(), Value::Bool(false));
+        attrs.insert("quiet".to_string(), Value::Bool(false));
+        attrs.insert("targets".to_string(), Value::real_array(targets));
+        attrs.insert(
+            "receiver_class".to_string(),
+            Value::str(receiver_class.to_string()),
         );
-        Ok(Some(sub))
+        attrs.insert(
+            "method_name".to_string(),
+            Value::str(method_name.to_string()),
+        );
+        Value::make_instance(Symbol::intern("WalkList"), attrs)
+    }
+
+    /// Invoke a WalkList: resolve and call each matched method DIRECTLY on the
+    /// original invocant (correct for both class methods/submethods and role
+    /// submethods), forwarding `args`. In quiet mode a thrown exception becomes a
+    /// `Failure` in that slot. Slips are returned as-is.
+    pub(crate) fn walk_list_invoke_direct(
+        &mut self,
+        walk_list: &Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let Value::Instance { attributes, .. } = walk_list else {
+            return Ok(Value::real_array(Vec::new()));
+        };
+        let (targets, invocant, receiver_class, method_name, reversed, quiet) = {
+            let map = attributes.as_map();
+            let targets: Vec<String> = match map.get("targets") {
+                Some(Value::Array(items, ..)) => {
+                    items.iter().map(|v| v.to_string_value()).collect()
+                }
+                _ => Vec::new(),
+            };
+            let invocant = map.get("invocant").cloned().unwrap_or(Value::Nil);
+            let receiver_class = map
+                .get("receiver_class")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let method_name = map
+                .get("method_name")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let reversed = matches!(map.get("reversed"), Some(Value::Bool(true)));
+            let quiet = matches!(map.get("quiet"), Some(Value::Bool(true)));
+            (
+                targets,
+                invocant,
+                receiver_class,
+                method_name,
+                reversed,
+                quiet,
+            )
+        };
+        let attributes_map = match &invocant {
+            Value::Instance { attributes, .. } => attributes.to_map(),
+            _ => std::collections::HashMap::new(),
+        };
+        let mut order: Vec<String> = targets;
+        if reversed {
+            order.reverse();
+        }
+        let mut results: Vec<Value> = Vec::with_capacity(order.len());
+        for tag in &order {
+            let (kind, owner) = match tag.split_once('|') {
+                Some(("C", o)) => (WalkKind::Class, o.to_string()),
+                Some(("R", o)) => (WalkKind::Role, o.to_string()),
+                _ => continue,
+            };
+            let Some(method_def) =
+                self.lookup_own_walk_method(&kind, &owner, &receiver_class, &method_name)
+            else {
+                continue;
+            };
+            let call = self.run_instance_method_resolved(
+                &receiver_class,
+                &owner,
+                method_def,
+                attributes_map.clone(),
+                args.clone(),
+                Some(invocant.clone()),
+            );
+            match call {
+                Ok((v, _)) => results.push(v),
+                Err(e) if quiet => results.push(self.fail_error_to_failure_value(&e)),
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(Value::real_array(results))
     }
 
     fn build_walk_targets(
@@ -297,9 +430,14 @@ impl Interpreter {
                         .find(|m| m.role_origin.is_none() && !m.is_private)
                         .cloned()
                 } else {
+                    // Submethods are not inherited (often flagged `is_my` so normal
+                    // dispatch skips them on subclasses), but WALK explicitly visits
+                    // each level's OWN submethods, so they must not be filtered here.
                     overloads
                         .iter()
-                        .find(|m| m.role_origin.is_none() && !m.is_private && !m.is_my)
+                        .find(|m| {
+                            m.role_origin.is_none() && !m.is_private && (!m.is_my || m.is_submethod)
+                        })
                         .cloned()
                 }
             }
@@ -327,6 +465,32 @@ impl Interpreter {
                     .cloned()
             }
         }
+    }
+}
+
+/// Build a minimal `ParamDef` for a WALK candidate closure: a single positional
+/// `$name`, or a slurpy `*@name` when `slurpy` is true.
+fn walk_param(name: &str, slurpy: bool) -> crate::ast::ParamDef {
+    crate::ast::ParamDef {
+        name: name.to_string(),
+        default: None,
+        multi_invocant: true,
+        required: false,
+        named: false,
+        slurpy,
+        double_slurpy: false,
+        onearg: false,
+        sigilless: false,
+        type_constraint: None,
+        literal_value: None,
+        sub_signature: None,
+        where_constraint: None,
+        traits: Vec::new(),
+        optional_marker: false,
+        outer_sub_signature: None,
+        code_signature: None,
+        is_invocant: false,
+        shape_constraints: None,
     }
 }
 
