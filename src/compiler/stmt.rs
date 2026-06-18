@@ -833,6 +833,12 @@ impl Compiler {
                 // The parser tags such binds with the internal `__scalar_bind`
                 // trait.
                 let scalar_bind_decont = custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                // Capture whether this is a `:=` bind of an `@`/`%` container var
+                // *before* the RHS-compilation branches below consume `bind_vardecl`.
+                // Used by the `our` global store to skip the readonly check (the
+                // var was marked readonly purely as a bind signal).
+                let is_bound_container_vardecl =
+                    self.bind_vardecl && (name.starts_with('@') || name.starts_with('%'));
                 if is_our_redecl_nil {
                     let qualified = self.qualify_variable_name(name);
                     let idx = self.code.add_constant(Value::str(qualified));
@@ -1005,6 +1011,13 @@ impl Compiler {
                             self.code.emit(OpCode::GetLocal(slot));
                             self.code.emit(OpCode::SetGlobalRaw(idx));
                         } else {
+                            // A `:=` bind of an `our` container var (`our %g := %h`)
+                            // marks the var readonly as the bind signal; re-mark the
+                            // bind context so the global store skips the readonly
+                            // check (the mark is a bind signal, not a real RO).
+                            if is_bound_container_vardecl {
+                                self.code.emit(OpCode::MarkBindContext);
+                            }
                             self.code.emit(OpCode::SetGlobal(idx));
                         }
                     }
