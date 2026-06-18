@@ -3425,6 +3425,10 @@ impl Interpreter {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
                             unsafe { crate::value::arc_contents_mut(arc).map.clear() };
                         }
+                        // Slice 2a: a `=`-array-shared source (`my $r = @ary`) holds
+                        // the aggregate inside a shared `ContainerRef` cell; clear it
+                        // through the cell so every alias (`$r`) observes the empty.
+                        Value::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
                         _ => {}
                     }
                 }
@@ -3439,6 +3443,7 @@ impl Interpreter {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
                             unsafe { crate::value::arc_contents_mut(arc).map.clear() };
                         }
+                        Value::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
                         _ => {
                             self.locals[slot] = Value::Nil;
                             self.flush_local_to_env(code, slot);
