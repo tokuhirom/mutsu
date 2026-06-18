@@ -1109,6 +1109,7 @@ roast/S32-list/reverse.t
 roast/S32-list/roll.t
 roast/S32-list/rotor.t
 roast/S32-list/seq.t
+roast/S32-list/skip.t
 roast/S32-list/snip.t
 roast/S32-list/sort.t
 roast/S32-list/squish.t

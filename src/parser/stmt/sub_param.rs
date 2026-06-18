@@ -1809,7 +1809,23 @@ fn method_decl_body_with_my(
 
     let (rest, traits) = parse_sub_traits(rest)?;
     let return_type = traits.return_type.or(param_return_type);
-    let (rest, body) = block(rest)?;
+    let (rest, body) = if param_defs.iter().any(|p| p.sigilless) {
+        // When there are sigilless params, register them as term symbols in the
+        // block scope so bare references resolve to the parameter rather than to
+        // a builtin/keyword of the same name (e.g. `method m(\times) { times }`).
+        let (r, _) = parse_char(rest, '{')?;
+        super::simple::push_scope();
+        for pd in &param_defs {
+            if pd.sigilless {
+                super::simple::register_user_term_symbol(&pd.name);
+            }
+        }
+        let result = super::block_inner(r);
+        super::simple::pop_scope();
+        result?
+    } else {
+        block(rest)?
+    };
     // When no explicit signature is given, collect placeholder variables
     // (@_, $^a, $^b, etc.) from the body as implicit parameters.
     let (params, param_defs) = if params.is_empty() && param_defs.is_empty() {

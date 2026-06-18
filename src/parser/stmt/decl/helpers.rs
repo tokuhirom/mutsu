@@ -189,6 +189,11 @@ pub(super) fn register_term_symbol_from_decl_name(name: &str) {
             || callable_name.starts_with("postcircumfix:")
         {
             super::super::simple::register_user_sub(callable_name);
+        } else if is_plain_sub_name(callable_name) {
+            // A plain `&name` declaration (e.g. `my &plan = ...`) makes a bare
+            // `name` callable as a list-op, so `name +EXPR` parses the `+` as a
+            // prefix on the argument rather than as a binary operator term.
+            super::super::simple::register_user_sub(callable_name);
         }
     } else {
         // Don't register keywords as term symbols — they must be handled
@@ -199,6 +204,15 @@ pub(super) fn register_term_symbol_from_decl_name(name: &str) {
             super::super::simple::register_user_term_symbol(name);
         }
     }
+}
+
+/// Whether `name` is a plain sub identifier (letter/underscore start, no `:<...>`
+/// operator-category marker), as opposed to an operator declaration.
+fn is_plain_sub_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_alphabetic() || c == '_')
+        && !name.contains(':')
+        && !is_parser_keyword(name)
 }
 
 pub(super) fn normalize_language_version(version_token: &str) -> String {

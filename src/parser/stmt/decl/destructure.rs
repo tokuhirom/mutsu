@@ -152,6 +152,11 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
             };
             let (r2, n) = var_name(r)?;
             let full_name = format!("{}{}", prefix, n);
+            if sigil == b'&' {
+                // A `&name` destructure target (e.g. `my (&plan, &is) = ...`)
+                // makes a bare `name` callable as a list-op afterwards.
+                register_term_symbol_from_decl_name(&full_name);
+            }
             let (r2, _) = ws(r2)?;
 
             // Check for optional suffix '?'

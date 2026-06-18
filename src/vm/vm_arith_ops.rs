@@ -443,8 +443,43 @@ impl Interpreter {
         self.stack.push(new_val);
     }
 
+    /// Pull every element from a deferred-iterator `Seq` (as stored by
+    /// `Seq.new($iterator)`), driving the iterator's `pull-one` until
+    /// `IterationEnd`. Works for both built-in and user-defined `Iterator`
+    /// classes. The deferred iterator is removed and the Seq is marked consumed.
+    pub(super) fn materialize_deferred_seq(&mut self, items_arc: &Arc<Vec<Value>>) -> Vec<Value> {
+        let Some(iterator) = crate::value::seq_take_deferred_iter(items_arc) else {
+            return (**items_arc).clone();
+        };
+        crate::value::seq_consume(items_arc).ok();
+        let mut pulled = Vec::new();
+        while let Ok(val) = self.call_method_with_values(iterator.clone(), "pull-one", vec![]) {
+            if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
+                || matches!(&val, Value::Package(name) if *name == crate::symbol::Symbol::intern("IterationEnd"))
+            {
+                break;
+            }
+            pulled.push(val);
+        }
+        pulled
+    }
+
     pub(super) fn exec_make_slip_op(&mut self) {
         let val = self.stack.pop().unwrap();
+        // Slipping (`|EXPR`) always flattens through containers/itemization, e.g.
+        // `|$_` where the topic is an itemized Seq element must expand the Seq's
+        // values (`($seq,).map(|*)`), not wrap the Seq as a single slip item.
+        let val = val.into_deref().into_descalarized();
+        // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
+        // Slipping such a Seq must first pull all elements from the iterator
+        // (including user-defined `Iterator` classes), else `|$seq` yields nothing.
+        if let Value::Seq(items_arc) = &val
+            && crate::value::seq_has_deferred_iter(items_arc)
+        {
+            let pulled = self.materialize_deferred_seq(items_arc);
+            self.stack.push(Value::slip(pulled));
+            return;
+        }
         let items = match &val {
             Value::Array(items, ..) => (*items).to_vec(),
             Value::Slip(items) => (*items).to_vec(),
