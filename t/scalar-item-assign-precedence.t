@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 13;
 
 # Item assignment (`=`) to a bare scalar variable binds TIGHTER than the comma
 # operator: `$x = 1, 2` parses as `($x = 1), 2`, so only the first element is
@@ -67,4 +67,22 @@ plan 10;
     my $x;
     $x = 1 + 2, 99;
     is $x, 3, 'scalar item assignment evaluates the first operand expression';
+}
+
+# Embedded scalar assignment (inside an expression / argument list) also binds
+# item assignment tighter than comma.
+{
+    my ($x, $y);
+    $x = $y = 1, 2;
+    is $x, 1, 'nested scalar assignment assigns the outer the first element';
+    is $y, 1, 'nested scalar assignment assigns the inner the first element';
+}
+
+# A scalar item assignment inside a call's argument list contributes one
+# argument; the trailing comma starts the next argument.
+{
+    sub two-args($a, $b) { "$a|$b" }
+    my $x;
+    is two-args($x = 1, 2), "1|2",
+        'embedded scalar assignment in an argument list yields two arguments';
 }
