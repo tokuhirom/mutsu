@@ -32,6 +32,48 @@ fn global_base() -> Option<&'static HashMap<Symbol, Value>> {
     GLOBAL_BASE.get()
 }
 
+/// True if `name` is a *plain user lexical* env key — a `my`/`our`-declared
+/// scalar/array/hash/sub whose name is an ordinary lowercase identifier (stored
+/// scalar-sigilless, e.g. `$x` → `"x"`, `@a` → `"@a"`). These are the only env
+/// keys a closure body reaches exclusively through a `GetGlobal`-family opcode,
+/// so the compiler's `free_var_syms` set already lists every one a closure can
+/// reference. The closure-capture upvalue path
+/// ([`crate::runtime::Interpreter::capture_closure_env`], single-store Slice E)
+/// uses this to drop the *non-free* plain lexicals from a closure's captured env
+/// while keeping everything else.
+///
+/// Everything that is NOT a plain user lexical is kept by the capture, because a
+/// closure body may read it through a dedicated opcode the free-var scan cannot
+/// see: `self` (attribute access), special vars (`$_`→`"_"`, `$/`→`"/"`,
+/// `$!`→`"!"`, `$?FILE`→`"?FILE"`, …), dynamic vars (`$*x`→`"*x"`/`"$*x"`), match
+/// captures (`$0`→`"0"`, `$<n>`→`"<n>"`), `&?ROUTINE`/`&?BLOCK`, the `__mutsu_*`
+/// shadow-meta, and type names (uppercase-initial). The classification is
+/// therefore deliberately conservative: it returns `true` (droppable) only for a
+/// lowercase-identifier-shaped name (optionally `@`/`%`/`&`-sigiled), and `self`
+/// — the one lowercase system name read via a dedicated opcode — is excluded.
+#[inline]
+pub(crate) fn is_plain_user_lexical(name: &str) -> bool {
+    if name == "self" {
+        return false;
+    }
+    let b = name.as_bytes();
+    let Some(&first) = b.first() else {
+        return false;
+    };
+    // The character that decides the name's "kind": for a sigiled array/hash/sub
+    // key it is the char after the sigil; otherwise the first char (scalars are
+    // stored sigil-less). A plain user lexical starts there with a lowercase
+    // ASCII letter. Anything else — uppercase (types), `?`/`*`/`/`/`!`/`<`
+    // (specials/dynamics/captures), a digit (positional captures), `_` (`$_`,
+    // `@_`), or `__mutsu_*` — is a system name the capture must keep.
+    let decider = if matches!(first, b'@' | b'%' | b'&') {
+        b.get(1).copied()
+    } else {
+        Some(first)
+    };
+    matches!(decider, Some(c) if c.is_ascii_lowercase())
+}
+
 /// Monotonic, process-global flag: set the first time any closure-writeback
 /// metadata key is inserted into *any* env. These keys --
 /// `__mutsu_sigilless_readonly::*`, `__mutsu_sigilless_alias::*`,
@@ -140,6 +182,22 @@ impl Env {
     pub(crate) fn new() -> Self {
         Self {
             inner: Arc::new(HashMap::new()),
+            parent: None,
+            tombstones: None,
+            depth: 0,
+        }
+    }
+
+    /// Build a flat (`parent=None`) env directly from a pre-built overlay map.
+    /// Name lookups still fall through to [`GLOBAL_BASE`] at the tail, so the
+    /// built-in enum constants remain reachable without copying them in. Used by
+    /// the closure-capture upvalue path (single-store Slice E) to materialize a
+    /// snapshot holding only a closure's free variables, the shadow-meta, and the
+    /// system names a body may read through a dedicated opcode — not a flatten of
+    /// every plain user lexical in scope.
+    pub(crate) fn from_symbol_map(map: HashMap<Symbol, Value>) -> Self {
+        Self {
+            inner: Arc::new(map),
             parent: None,
             tombstones: None,
             depth: 0,
@@ -522,6 +580,49 @@ mod tests {
 
     fn s(name: &str) -> Symbol {
         Symbol::intern(name)
+    }
+
+    #[test]
+    fn plain_user_lexical_classification() {
+        // Plain user lexicals (droppable by the closure upvalue capture): a
+        // lowercase-identifier scalar (stored sigil-less) or @/%/&-sigiled var.
+        for k in ["x", "c", "count", "@arr", "%h", "&helper", "longname"] {
+            assert!(
+                is_plain_user_lexical(k),
+                "{k} should be a plain user lexical"
+            );
+        }
+        // System names the capture must keep: self, topic/match/error, compile-time
+        // `?` vars, dynamic `*` vars, match captures, &?ROUTINE, types, meta.
+        for k in [
+            "self",
+            "_",
+            "/",
+            "!",
+            "?FILE",
+            "?LINE",
+            "?CLASS",
+            "*REPO",
+            "@*ARGS",
+            "%*ENV",
+            "$*HOME",
+            "0",
+            "1",
+            "<name>",
+            "&?ROUTINE",
+            "&?BLOCK",
+            "@_",
+            "Cache",
+            "Any",
+            "__mutsu_type::x",
+        ] {
+            assert!(
+                !is_plain_user_lexical(k),
+                "{k} should be kept (not a plain user lexical)"
+            );
+        }
+        // Empty string is not a plain user lexical.
+        assert!(!is_plain_user_lexical(""));
     }
 
     fn scoped_with(parent: Env, writes: &[(&str, i64)]) -> Env {

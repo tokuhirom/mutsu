@@ -1289,6 +1289,18 @@ pub(crate) struct CompiledCode {
     /// the caller writeback even when its own free variables are unchanged.
     /// Distinct from `has_env_writes`, which lists only *some* call opcodes.
     pub(crate) has_calls: bool,
+    /// True if this code runs an inline body that reads the frame's lexicals *by
+    /// name* through a path the `free_var_syms` op-scan cannot see: loop/block
+    /// bodies that thread control temps through `env` by name (`ForLoop`,
+    /// `BlockScope`, `BlockLocalScope`), and the two ops that stash a body in the
+    /// `stmt_pool` and compile/run it at runtime against the live env
+    /// (`MakeGather`, `WheneverScope`). For such a frame `free_var_syms` is
+    /// *incomplete*, so two consumers fall back to the whole env: the dual-store
+    /// flush blanket (`compute_needs_env_sync`) marks every local env-synced, and
+    /// the closure upvalue capture (`capture_closure_env`, single-store Slice E)
+    /// snapshots the whole env instead of just the free vars. Set during
+    /// `compute_needs_env_sync`.
+    pub(crate) captures_env_by_name: bool,
 }
 
 impl CompiledCode {
@@ -1316,6 +1328,7 @@ impl CompiledCode {
             needs_cell_locals: Vec::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
+            captures_env_by_name: false,
         }
     }
 
@@ -1389,35 +1402,40 @@ impl CompiledCode {
         // needs_env_sync early returns below), so the global flag is set even for
         // loop/block or zero-local frames.
         self.scan_reflective_name_access();
-        let n = self.locals.len();
-        self.needs_env_sync = vec![false; n];
-        if n == 0 {
-            return;
-        }
         // Conservative fallback: code that runs inline control-flow bodies with
         // their own env/locals juggling (for/while/loop bodies, which the
         // loop-phaser desugaring threads state through by name via `env`, e.g.
         // the `__mutsu_loop_first_`/`__mutsu_loop_ran_` control temps) cannot
         // safely treat any local as slot-only -- a slot value may not survive the
-        // loop's per-iteration env round-trips. The same applies to `MakeGather`:
-        // a gather block compiles its body inline and snapshots the *whole*
-        // interpreter env by name (vm_register_ops::exec_make_gather_op), but the
-        // body is not registered in `closure_compiled_codes`, so the nested-closure
-        // free-var scan below cannot see which locals it reads. Mark every local
-        // env-synced so the dual-store flush gate (vm_env_helpers) keeps the full
-        // flush for such frames. Recursion-heavy code without loops/gather (e.g.
-        // `fib`) is unaffected and still skips the per-call flush for its slot-only
-        // params.
-        let captures_env_by_name = self.ops.iter().any(|op| {
+        // loop's per-iteration env round-trips. The same applies to the two ops
+        // that stash a body in the `stmt_pool` and compile/run it at runtime
+        // against the live env by name -- `MakeGather` (a gather block,
+        // vm_register_ops::exec_make_gather_op) and `WheneverScope` (a
+        // `whenever`/`supply` body, exec_whenever_scope_op): the body is not in
+        // `closure_compiled_codes`, so the nested-closure free-var scan below
+        // cannot see which lexicals it reads. For such a frame `free_var_syms` is
+        // incomplete, so this flag drives the whole-env fallback in two places:
+        // the dual-store flush blanket here, and the closure upvalue capture
+        // (`capture_closure_env`). Computed unconditionally (before the n==0
+        // early return) so zero-local closures wrapping a `whenever`/`gather` are
+        // covered too. Recursion-heavy code without these (e.g. `fib`) is
+        // unaffected and still skips the per-call flush for its slot-only params.
+        self.captures_env_by_name = self.ops.iter().any(|op| {
             matches!(
                 op,
                 OpCode::ForLoop { .. }
                     | OpCode::BlockScope { .. }
                     | OpCode::BlockLocalScope { .. }
                     | OpCode::MakeGather(_)
+                    | OpCode::WheneverScope { .. }
             )
         });
-        if captures_env_by_name {
+        let n = self.locals.len();
+        self.needs_env_sync = vec![false; n];
+        if n == 0 {
+            return;
+        }
+        if self.captures_env_by_name {
             self.needs_env_sync.iter_mut().for_each(|b| *b = true);
             return;
         }
