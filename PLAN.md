@@ -175,8 +175,19 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
                 （rebind 許可と cell 共有の両立）。
       - Phase 0.5 第2段（任意・実挙動変化）: `GetArrayVar`/`Index` の auto-decont + 新 lvalue opcode の本配線。
       - Phase 3 機会的残: 属性束縛（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits 5-8）。
+- [~] **Slice F coherence — write-through ファミリー（#3300–#3311, 2026-06-19）= `t/` が reverse-sync 非依存に到達**:
+      reverse-sync（`sync_locals_from_env`）が backstop していた by-name writer を、call-site op（caller `code` 保有）で
+      caller local slot へ直接 write-through する共通機構 `pending_rw_writeback_sources` + `apply_pending_rw_writeback(code)` に
+      畳んだ。スライス: lvalue-method（#3300）・for-loop QuantHash topic（#3302）・**sub `is rw`/`is raw` param（#3304）**・
+      **method `is rw`/`is raw` param + `is raw` 脱落バグ（#3305）**・**closure 捕捉変数（#3307）**・**`is rw` sub lvalue 返り（#3309）**・
+      **mut-method receiver（Array/Hash-backed instance・#3311）**。診断トグル `MUTSU_NO_REVERSE_SYNC=1`。
+      **★全 `t/`(~950) を ON/OFF 差分スキャン2通り（`onf==0&&offf>0` / `offf>onf`）で 0 件＝`t/` は reverse-sync 非依存。**
+      pin: `t/{rw-param,method-rw-param,closure-captured-var,rw-sub-lvalue,mut-method-receiver}-writeback-coherence.t`。
+      **残る依存は roast レベルのみ（carrier=EVAL/regex/`s///`・supply/concurrent）= NEXT SESSION**（手順・スクリプト・機構リファレンス
+      ＝memory `project_dual_store_unification_next` の「NEXT SESSION 準備」節）。DEFERRED=range map/grep（lazy-eval・ブロックが
+      sink forcing 時に走る）・pair-value hash（§4-A container-identity deep wall）。
 - [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
-      **前提 = Slice E（upvalue）+ 第一級コンテナ Phase 2/3（env↔locals コンテナ coherence）の両方。** ここで初めて pairs/slip
+      **前提 = roast-level reverse-sync 依存（carrier/supply）も write-through 化 or cell 共有で解消。** ここで初めて pairs/slip
       carrier-drop も安全化し、`locals` が単一権威・`env` は派生ビューになる。
 - [ ] **Slice G**（後続・任意）— env の on-demand materialization（per-call `clone_env` を lazy overlay 化）。
 
