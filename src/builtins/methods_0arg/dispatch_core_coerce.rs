@@ -45,6 +45,17 @@ pub(super) fn dispatch(
     if target.is_range() && matches!(method, "Int" | "Numeric" | "Real" | "Num") {
         return Some(Some(range_numeric_coercion(target, method)));
     }
+    // A lazy (infinite-backed) array numerifies to its element count, which it
+    // cannot report: raku throws `X::Cannot::Lazy` (`Cannot .elems a lazy list`)
+    // for every numeric coercion (`.Int`/`.Numeric`/`.Real`/`.Num`/prefix `+`).
+    // Guard before the per-method arms, which would return the capped backing
+    // length. (`.elems` itself is handled in `dispatch_core_numeric`.)
+    if let Value::Array(_, kind) = target
+        && kind.is_lazy()
+        && matches!(method, "Int" | "Numeric" | "Real" | "Num")
+    {
+        return Some(super::range_elems_lazy_failure("elems"));
+    }
     match method {
         "self" => {
             // For unhandled Failures, .self throws the exception

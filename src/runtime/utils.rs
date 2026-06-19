@@ -10,6 +10,23 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Maximum number of elements when expanding an infinite range to a list.
 pub(crate) const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+/// Build the `Failure` value raku yields when a count/numeric coercion is
+/// attempted on a lazy iterable (e.g. `(1..*).elems` / `.Int` / `+@a`):
+/// `X::Cannot::Lazy` with the message `Cannot .<action> a lazy list`.
+pub(crate) fn cannot_lazy_failure(action: &str) -> Value {
+    let mut ex_attrs = HashMap::new();
+    ex_attrs.insert(
+        "message".to_string(),
+        Value::str(format!("Cannot .{} a lazy list", action)),
+    );
+    ex_attrs.insert("action".to_string(), Value::str(format!(".{}", action)));
+    let exception = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
+    let mut failure_attrs = HashMap::new();
+    failure_attrs.insert("exception".to_string(), exception);
+    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
+
 /// Saturating conversion of an arbitrary-precision BigInt to i64.
 /// Bag/Set arithmetic helpers operate on i64 maps (min/max/diff semantics
 /// don't need arbitrary precision); a count that overflows i64 saturates.

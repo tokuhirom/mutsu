@@ -725,6 +725,16 @@ impl Interpreter {
             self.stack.push(Value::junction(kind, results));
             return Ok(());
         }
+        // A lazy (infinite-backed) array numerifies to its element count, which
+        // it cannot report: raku yields an `X::Cannot::Lazy` Failure for
+        // prefix `+` (`Cannot .elems a lazy list`).
+        if let Value::Array(_, kind) = &val
+            && kind.is_lazy()
+        {
+            self.stack
+                .push(crate::runtime::utils::cannot_lazy_failure("elems"));
+            return Ok(());
+        }
         // Type objects (Mu, Any, etc.) cannot be numerically coerced
         if let Value::Package(name) = &val
             && matches!(name.resolve().as_str(), "Mu" | "Any")
