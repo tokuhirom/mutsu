@@ -1404,6 +1404,15 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
         (Value::Str(a), Value::Str(b)) => Arc::ptr_eq(a, b),
         (Value::Array(a, _), Value::Array(b, _)) => Arc::ptr_eq(a, b),
         (Value::Hash(a), Value::Hash(b)) => Arc::ptr_eq(a, b),
+        // A `ContainerRef` cell is the shared-identity primitive of the
+        // single-store design: `my @a := @b` installs the *same* cell into both
+        // the env entry and the local slot for both names. Without this arm the
+        // generic `_ => false` reported every same-cell pair as "changed", so the
+        // reverse-sync survey over-counted bound containers as effective stale
+        // (and `merge_method_env` over-signalled env_dirty for a method that
+        // returned the same cell). Same Arc => genuinely unchanged; distinct Arcs
+        // stay "changed" (conservative).
+        (Value::ContainerRef(a), Value::ContainerRef(b)) => Arc::ptr_eq(a, b),
         (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
         _ => false,
     }
@@ -1477,4 +1486,33 @@ fn merge_method_env(
         saved.insert_sym(k, v);
     }
     (saved, wrote)
+}
+
+#[cfg(test)]
+mod cheaply_unchanged_tests {
+    use super::cheaply_unchanged;
+    use crate::value::Value;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn container_ref_same_cell_is_unchanged() {
+        // The single-store identity primitive: `my @a := @b` installs one shared
+        // cell into both the env entry and the local slot. Comparing those two
+        // (same Arc) must report "unchanged" so the reverse-sync survey does not
+        // count a bound container as effective stale, and `merge_method_env` does
+        // not over-signal env_dirty for a method returning the same cell.
+        let cell = Arc::new(Mutex::new(Value::array(vec![Value::Int(1)])));
+        let a = Value::ContainerRef(cell.clone());
+        let b = Value::ContainerRef(cell);
+        assert!(cheaply_unchanged(&a, &b));
+    }
+
+    #[test]
+    fn container_ref_distinct_cells_are_changed() {
+        // Distinct cells (even with equal contents) stay "changed" — the test is
+        // conservative Arc identity, never deep value equality.
+        let a = Value::ContainerRef(Arc::new(Mutex::new(Value::array(vec![Value::Int(1)]))));
+        let b = Value::ContainerRef(Arc::new(Mutex::new(Value::array(vec![Value::Int(1)]))));
+        assert!(!cheaply_unchanged(&a, &b));
+    }
 }
