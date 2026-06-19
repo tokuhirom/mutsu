@@ -385,6 +385,10 @@ impl Interpreter {
                 }
                 let result = self.call_compiled_function_fast(cf, compiled_fns)?;
                 self.stack.push(result);
+                // Slice F: write any captured-outer variables the callee mutated
+                // straight through to this caller's local slots, so they stay
+                // coherent without the reverse `sync_locals_from_env` pull.
+                self.apply_pending_rw_writeback(code);
                 // Slice 6.3 step 2: no blanket env_dirty here. call_compiled_function_fast
                 // now signals env_dirty precisely: for a function WITH locals via its
                 // scoped-overlay / clone merge (captured-outer write only), and for a

@@ -694,6 +694,31 @@ impl Interpreter {
             }
         }
 
+        // Slice F (env<->locals coherence): record the captured-outer variables
+        // this body writes so the fast-call site writes their new env values
+        // straight through to the caller's local slots (`apply_pending_rw_writeback`),
+        // dropping the dependency on the reverse `sync_locals_from_env` pull. This
+        // is the 0-arg-function analog of the closure free-var writeback (#3307):
+        // `sub bump { $acc = $acc + 5 }` mutates the enclosing `$acc` by name, and
+        // without this the caller's `$acc` slot stays stale when the reverse pull
+        // is disabled. `free_var_writes` is the compile-time set of free vars this
+        // body (or a nested closure) writes, so a pure body (`sub f { 42 }`) records
+        // nothing and pays no cost. The fast-call site drains this immediately on
+        // return, placing each source in the directly-enclosing caller's slot.
+        // The topic (`_`/`@_`/`%_`) is excluded: it is the per-call loop/topic
+        // alias, never a caller lexical to write back. (Cross-frame propagation —
+        // a write a nested callee performed against a grand-ancestor's variable, as
+        // in `note-twice`->`note-x`->`$log` or 0-arg recursion — still relies on the
+        // reverse pull: a single-level call-site drain cannot reach it, and carrying
+        // sources up the stack collides with lazy-iteration topics.)
+        for sym in &cf.code.free_var_writes {
+            sym.with_str(|name| {
+                if name != "_" && name != "@_" && name != "%_" {
+                    self.pending_rw_writeback_sources.push(name.to_string());
+                }
+            });
+        }
+
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {

@@ -590,12 +590,14 @@ impl Interpreter {
     }
 
     /// Slice F (env<->locals coherence): drain the `is rw` / aliased-container
-    /// parameter writeback sources recorded by `call_compiled_function_named`
-    /// and write each caller variable's new `env` value straight through to its
-    /// local slot in the caller's frame (`code`). This keeps the slot coherent
-    /// at the call site, removing the dependency on the reverse
-    /// `sync_locals_from_env` pull for rw-parameter writebacks. Mirrors the
-    /// reverse pull's invariant: never clobber a live `HashSlotRef` binding slot.
+    /// parameter (and captured-outer-write) sources recorded by the call
+    /// dispatch paths and write each caller variable's new `env` value straight
+    /// through to its local slot in the caller's frame (`code`). This keeps the
+    /// slot coherent at the call site, removing the dependency on the reverse
+    /// `sync_locals_from_env` pull. Mirrors the reverse pull's invariant: never
+    /// clobber a live `HashSlotRef` binding slot. Sources whose name is not a
+    /// local of this frame are simply dropped (the reverse pull is the backstop
+    /// for any cross-frame propagation that this single-level drain misses).
     pub(super) fn apply_pending_rw_writeback(&mut self, code: &CompiledCode) {
         if self.pending_rw_writeback_sources.is_empty() {
             return;
