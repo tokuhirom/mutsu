@@ -153,6 +153,7 @@ roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
 roast/S02-types/resolved-in-setting.t
 roast/S02-types/set-iterator.t
+roast/S02-types/set.t
 roast/S02-types/sigils-and-types.t
 roast/S02-types/signed-unsigned-native.t
 roast/S02-types/stash.t
