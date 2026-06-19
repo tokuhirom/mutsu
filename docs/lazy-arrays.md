@@ -1,12 +1,47 @@
 # Lazy infinite arrays — `my @a = 1..*` reify-on-demand (design)
 
-> **Status:** DESIGN (2026-06-19). Captures the analysis behind the "lazy
+> **Status:** IN PROGRESS (2026-06-19). Captures the analysis behind the "lazy
 > infinite sequence" track (PLAN.md §C / BLOCKERS "Real lazy infinite
 > sequences"). The reify-on-demand machinery already works for **scalar-held**
 > and **gather-coroutine** lazy values; the gap is that infinite **ranges and
 > `...` sequences assigned to an `@` array are materialized (capped at 100k)**
 > at assignment, losing laziness. Closing it is a multi-slice campaign because
 > array *mutation* ops assume a materialized backing.
+
+## Progress log
+
+- **L1 — lazy `.gist`/`.Str`/`.raku` (DONE, #3306).** A
+  `Value::Array(_, ArrayKind::Lazy)` now renders `[...]` (gist/raku/say) /
+  `...` (Str/print/interp) instead of dumping its capped 100k backing. Four
+  sites: `dispatch_core_repr` gist arm + both nested `gist_item` closures,
+  `dispatch_core_coerce` Str, `runtime::utils::gist_value` (say path),
+  `value::display::to_string_value`. **Finding:** Rakudo's lazy-array gist is a
+  flat `[...]`/`(...)`, NOT the bounded-prefix `(1 2 3 … )` this doc originally
+  assumed — much simpler.
+- **L5 — lazy `.elems` → X::Cannot::Lazy (DONE, #3310).** A lazy
+  `ArrayKind::Lazy` array's `.elems` now throws (was returning the 100k cap).
+  Guard added before `as_list_items` in `dispatch_core_numeric`, reusing
+  `range_elems_lazy_failure`. **Still capped (follow-up):** `.Numeric`/`.Int`/
+  `.end`/prefix-`+` on a lazy array return the cap (separate dispatch paths).
+
+## Open findings / blockers discovered this session
+
+- **L1b — `Value::LazyList` gist still HANGS for the coroutine case.** L1 fixed
+  `ArrayKind::Lazy` *arrays*; but `my @a = lazy gather { … }` stores a preserved
+  `Value::LazyList` (mutsu reports its `.WHAT` as `Seq`), and `@a.gist` /
+  `@a.map(…)` on it forces → **hangs**. A `sequence_spec` LazyList held in a
+  scalar already gists `(...)` without forcing, so the gap is specifically the
+  *coroutine* LazyList gist path. **Dual-representation wart:** a lazy
+  `Value::LazyList` carries no `[`-vs-`(` context, so it cannot know whether to
+  render `[...]` (held in `@a`) or `(...)` (a bare `$s` Seq). This must be
+  resolved before **L2** (preserving an infinite Range as a reify `LazyList` at
+  `@`-assign) is viable — else `my @a = 1..*; @a.gist` would hang.
+- **slurpy-params.t is NOT just a lazy problem.** Its remaining 6 fails
+  (70-71, 74-77) need real **Seq single-pass consumption** (`X::Seq::Consumed`
+  on second iteration) + Seq pass-through (`+a`→Seq, `+@a`→List). mutsu
+  materializes every Seq so a Seq is silently re-iterable; implementing true
+  single-pass consumption is a broad-blast-radius feature. (Tests 80-81
+  X::Parameter::TypedSlurpy DONE #3308; the slurpy `1..*` hang DONE #3303.)
 
 ---
 
