@@ -1246,6 +1246,23 @@ impl Interpreter {
             self.for_param_restore_stack.push(entry);
         }
         self.pop_loop_local_scope(code);
+        // Slice F (env<->locals coherence, docs/env-locals-coherence.md): a
+        // `.value = X` / `.value--` in the body of `for $b.pairs` over a mutable
+        // QuantHash writes the new weight back to the source `$b` *by name*
+        // (`quanthash_set_weight`, reached via `topic_source_var` from the lvalue
+        // builtin, called with an empty `CompiledCode` because that path lacks
+        // the bytecode — see methods_mut.rs). With the real loop `code` in hand,
+        // write the final env value of the source straight through to its local
+        // slot so the post-loop read sees the mutation without the reverse pull
+        // (skipping a live `HashSlotRef` binding slot, as the reverse pull does).
+        if source_mutable_quant
+            && let Some(ref source) = container_binding
+            && let Some(slot) = self.find_local_slot(code, source)
+            && !matches!(self.locals[slot], Value::HashSlotRef { .. })
+            && let Some(val) = self.env().get(source).cloned()
+        {
+            self.locals[slot] = val;
+        }
         self.topic_source_var = saved_topic_source;
         self.quanthash_bind_params = saved_quanthash_bind.clone();
         if spec.restore_topic {

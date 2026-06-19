@@ -10,7 +10,7 @@ use Test;
 # backstop. These cases must keep working (and, verified manually with
 # `MUTSU_NO_REVERSE_SYNC=1`, work *without* the reverse pull).
 
-plan 12;
+plan 14;
 
 # --- Pair .value lvalue ---
 {
@@ -72,4 +72,20 @@ plan 12;
     my @grid = [1, 2], [3, 4];
     @grid.head[1] = 88;
     is @grid[0][1], 88, '@grid.head[i] = v writes through and reads back';
+}
+
+# --- for-loop topic `.value` writeback over a mutable QuantHash ---
+# `.value = X for $b.pairs` mutates the source BagHash by name (via
+# `quanthash_set_weight` with an empty CompiledCode); the for-loop writes the
+# final env value of `$b` through to its local slot at loop end, so the
+# post-loop read sees the new weight without the reverse pull.
+{
+    my $b = (a => 5).BagHash;
+    .value = 999 for $b.pairs;
+    is $b<a>, 999, '.value = N for $b.pairs writes the source weight back';
+}
+{
+    my $bh = <a a b b b>.BagHash;
+    for $bh.pairs { .value-- }
+    is "$bh<a> $bh<b>", "1 2", '.value-- for $bh.pairs decrements each source weight';
 }
