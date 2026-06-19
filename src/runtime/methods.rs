@@ -563,6 +563,15 @@ impl Interpreter {
                 return Err(err);
             }
         }
+        // Methods on the WalkList result of `.WALK(...)`: batch-invoke the
+        // matched candidates, reverse the order, switch on quiet mode, or
+        // flatten the results to a List.
+        if let Value::Instance { class_name, .. } = &target
+            && class_name.resolve() == "WalkList"
+            && let Some(value) = self.try_walk_list_method(&target, method, args.clone())?
+        {
+            return Ok(value);
+        }
         // .WALK(name, :roles) — walk class+role chain calling the named
         // submethod once per "own" definition. Returns a no-arg Sub that,
         // when invoked, yields the list of results.
