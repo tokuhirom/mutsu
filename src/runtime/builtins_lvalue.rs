@@ -172,6 +172,14 @@ impl Interpreter {
         match target {
             Expr::Var(name) => {
                 self.env.insert(name.clone(), value.clone());
+                // Slice F (env<->locals coherence): an `is rw` sub returning an
+                // lvalue (`sub () is rw { $value }; f() = 9`) writes the target
+                // variable in env by name and relied on the reverse
+                // `sync_locals_from_env` pull to refresh the caller's local slot.
+                // Record the name so the call-site op (the ExecCall for
+                // `__mutsu_assign_callable_lvalue`) writes it straight through to
+                // the caller's slot via `apply_pending_rw_writeback`.
+                self.pending_rw_writeback_sources.push(name.clone());
                 Ok(value)
             }
             Expr::Call { name, args } => {
@@ -194,6 +202,9 @@ impl Interpreter {
             } if name == "return-rw" && args.is_empty() => {
                 if let Expr::Var(var_name) = target.as_ref() {
                     self.env.insert(var_name.clone(), value.clone());
+                    // Slice F: write the `return-rw` target through to the
+                    // caller's slot (see the Expr::Var arm above).
+                    self.pending_rw_writeback_sources.push(var_name.clone());
                     return Ok(value);
                 }
                 Err(RuntimeError::new(
