@@ -1517,6 +1517,7 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "X::Parameter::Placeholder"
             | "X::Parameter::RW"
             | "X::Parameter::Twigil"
+            | "X::Parameter::TypedSlurpy"
             | "X::Parameter::WrongOrder"
             | "X::Phaser::Multiple"
             | "X::Phaser::PrePost"

@@ -198,13 +198,20 @@ files occasionally).
 
 - **S04-statements/for.t** — **Medium**, 22/111. No exception on bad loop-var
   binding (`for 1,2 -> $a, $b, $c`) + topic-aliasing edge cases (VM control ops).
-- **S06-signature/slurpy-params.t** — **78/86** (was aborting at 51 on a slurpy
+- **S06-signature/slurpy-params.t** — **80/86** (was aborting at 51 on a slurpy
   `1..*` hang; the infinite-range expansion is now capped in `flatten_into_slurpy`,
-  so tests 52–69 run). Remaining 8: `+@`/`*@` passing a **Seq through unscathed**
-  (70-71, 76-77) + **Seq single-pass consumption** dies-on-second-iteration (74-75)
-  + **X::Parameter::TypedSlurpy** for `Int *@a` / `Int *%h` (80-81). The lazy tests
-  (52 etc.) pass within the 100k cap; a truly lazy slurpy (`.is-lazy` True, `.gist`
-  no-hang) is the lazy-array campaign — see `docs/lazy-arrays.md` Slice L4.
+  so tests 52–69 run; **tests 80-81 X::Parameter::TypedSlurpy now pass**, a
+  parse-time check on `*@`/`*%`/`+@`/`+%` slurpies with a type constraint). The
+  remaining 6 all need the **Seq single-pass-consumption** feature: `+@`/`*@`
+  passing a **Seq through unscathed** (70-71, 76-77) + dies-on-second-iteration
+  with `X::Seq::Consumed` (74-75). mutsu currently materializes every Seq so a
+  Seq is silently re-iterable — implementing real single-pass Seq consumption is
+  the blocker (broad blast radius). The lazy tests (52 etc.) pass within the 100k
+  cap; a truly lazy slurpy (`.is-lazy` True, `.gist` no-hang) is the lazy-array
+  campaign — see `docs/lazy-arrays.md` Slice L4. NOTE: `Type **@a` / `Type +@a`
+  (typed double/onearg slurpy) still fail to *parse* (a separate pre-existing
+  limitation; even `Array **@AoA` does not parse), so the TypedSlurpy check only
+  fires on the single-star `*@`/`*%` forms today.
 - **S04-declarations/my-6e.t** — **Medium**. EVAL scope visibility (EVAL'd code must
   see the enclosing lexical scope).
 - **Parser operators** — `ff`/`fff` flipflop, `==>`/`<==` feed precedence, hyper
