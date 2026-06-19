@@ -843,7 +843,7 @@ impl Interpreter {
     /// and a non-variable literal (`f([1,2])`) has no caller to share with — both
     /// must keep the fast path. A variable arg reaches the binder as a
     /// `__mutsu_varref_*` capture, so peek inside without cloning.
-    fn arg_is_container_value(arg: &Value) -> bool {
+    pub(super) fn arg_is_container_value(arg: &Value) -> bool {
         let Value::Capture { positional, named } = arg else {
             return false;
         };
@@ -856,6 +856,60 @@ impl Interpreter {
                 named.get("__mutsu_varref_value"),
                 Some(Value::Array(..)) | Some(Value::Hash(..))
             )
+    }
+
+    /// Method analogue of `call_shares_container_into_scalar_param`: true when
+    /// an array/hash *variable* argument is passed into a plain readonly scalar
+    /// `$` param of a method. Raku binds the same mutable container, so such a
+    /// call must take the slow `bind_function_args_values` path (which promotes
+    /// the param to a shared cell and writes it back) instead of the slot-only
+    /// fast path that detaches a copy. The alignment differs from the sub case:
+    /// a method's `param_defs` include the invocant, but `args` do not — so we
+    /// skip invocant (and named) params and align positional params to `args`
+    /// by an independent counter.
+    pub(super) fn method_shares_container_into_scalar_param(
+        &self,
+        method_def: &crate::runtime::MethodDef,
+        args: &[Value],
+    ) -> bool {
+        // Unlike the sub path, method-call arguments are NOT wrapped in varref
+        // captures — the source variable name lives in the separate
+        // `arg_sources` table (`set_pending_call_arg_sources`). So a plain
+        // `Array`/`Hash` value paired with an `@`/`%` source name in that table
+        // is the method-call equivalent of the sub path's varref container arg.
+        let arg_sources = self.pending_call_arg_sources();
+        let mut arg_idx = 0usize;
+        for pd in &method_def.param_defs {
+            if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || pd.named {
+                continue;
+            }
+            let Some(arg) = args.get(arg_idx) else {
+                break;
+            };
+            let src = arg_sources
+                .and_then(|s| s.get(arg_idx))
+                .and_then(|n| n.as_ref());
+            arg_idx += 1;
+            let eligible_scalar_param = Self::is_plain_scalar_param_name(&pd.name)
+                && !pd.slurpy
+                && !pd.double_slurpy
+                && !pd.sigilless
+                && pd.traits.is_empty()
+                && pd.sub_signature.is_none();
+            if !eligible_scalar_param {
+                continue;
+            }
+            // A varref capture carries its own `@`/`%` source name; a plain
+            // container value needs the source name from `arg_sources`. Either
+            // way the binder promotes the bound value to a shared cell.
+            let varref_container = Self::arg_is_container_value(arg);
+            let plain_container_with_source = matches!(arg, Value::Array(..) | Value::Hash(..))
+                && src.is_some_and(|n| n.starts_with('@') || n.starts_with('%'));
+            if varref_container || plain_container_with_source {
+                return true;
+            }
+        }
+        false
     }
 
     /// A plain readonly scalar (`$`) parameter is stored sigil-less in

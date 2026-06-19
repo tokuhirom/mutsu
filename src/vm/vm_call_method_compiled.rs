@@ -322,7 +322,14 @@ impl Interpreter {
                         .any(|k| k.starts_with(super::vm_method_dispatch::ATTR_ALIAS_META_PREFIX)),
                     _ => false,
                 };
-                if !needs_default_eval && !has_attr_aliases {
+                // Slice 2d (method follow-up): a container variable passed into a
+                // plain scalar `$` param must share the caller's container, which
+                // only the slow `bind_function_args_values` path realizes. Skip
+                // the cached fast path so it falls through to the full resolve
+                // (which dispatches with `None` -> `call_compiled_method`).
+                let shares_scalar_container =
+                    self.method_shares_container_into_scalar_param(&entry.method_def, &args);
+                if !needs_default_eval && !has_attr_aliases && !shares_scalar_container {
                     let owner_class = entry.owner_class.resolve();
                     let method_def = entry.method_def.clone();
                     let cc = entry.compiled_code.clone();

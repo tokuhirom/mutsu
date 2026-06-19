@@ -12,6 +12,13 @@ impl Interpreter {
         self.pending_call_arg_sources.take()
     }
 
+    /// Non-consuming peek at the pending call arg-source names, used by the
+    /// method dispatch gate to decide whether a container argument shares the
+    /// caller's container with a plain scalar `$` param (Slice 2d).
+    pub(crate) fn pending_call_arg_sources(&self) -> Option<&Vec<Option<String>>> {
+        self.pending_call_arg_sources.as_ref()
+    }
+
     pub(crate) fn exec_call_values(
         &mut self,
         name: &str,
