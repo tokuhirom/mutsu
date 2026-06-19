@@ -438,11 +438,20 @@ pub(super) fn dispatch(
         Value::Seq(_) if method == "raku" || method == "perl" => {
             Some(Ok(Value::str(raku_value(target))))
         }
+        Value::Array(_, kind) if method == "gist" && *kind == crate::value::ArrayKind::Lazy => {
+            // A lazy (infinite-backed) array renders a bounded placeholder
+            // rather than materializing its (possibly capped 100k) backing,
+            // matching Rakudo's `[...]`.
+            Some(Ok(Value::str_from("[...]")))
+        }
         Value::Array(items, kind) if method == "gist" => {
             fn gist_item(v: &Value) -> String {
                 match v {
                     Value::Nil => "Nil".to_string(),
                     Value::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
+                    Value::Array(_, k) if *k == crate::value::ArrayKind::Lazy => {
+                        "[...]".to_string()
+                    }
                     Value::Array(inner, kind) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         gist_array_wrap(&elems, *kind)
@@ -509,6 +518,9 @@ pub(super) fn dispatch(
                 match v {
                     Value::Nil => "Nil".to_string(),
                     Value::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
+                    Value::Array(_, k) if *k == crate::value::ArrayKind::Lazy => {
+                        "[...]".to_string()
+                    }
                     Value::Array(inner, kind) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         gist_array_wrap(&elems, *kind)

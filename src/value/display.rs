@@ -418,6 +418,7 @@ impl Value {
                     end.to_string_value()
                 )
             }
+            Value::Array(_, crate::value::ArrayKind::Lazy) => "...".to_string(),
             Value::Array(items, ..) => {
                 // Cycle detection for recursive array structures
                 thread_local! {
