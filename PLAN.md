@@ -154,21 +154,20 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
         進捗（2026-06-18）:
         - [x] **Stage 0**（read/write チョークポイント棚卸し）= read は `into_deref` で単一化済みと確認、write gap の bind バグ
               （`our %g:=%h` #3252・bound hash whole-reassign #3255・constant 要素書込 + closure whole-reassign #3256）を補完。
-        - [~] **Stage 1**（escape-aware outer cell 化）着手 = audit（#3258）で blast radius を ~14 write サイトに特定。
-              **for-rw writeback "site A" を array（#3259）/ hash（#3260）とも ContainerRef-aware 化**（`my @a:=@b`/`my %h:=%g` は
-              既に同一 cell なのに writeback が deref せず取りこぼしていた＝`deref_container()`+共有 cell write-through で解決）。
-        - [~] **bug ②（`$x = @arr` 参照共有）= 設計済（#3263・[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md)）・実装試行で順序確定（#3265）**:
-              array を scalar スロットに代入するとコピーする（raku は同一 Array 参照共有）。`$n=@z` は既に同 Arc 共有だが `.push`
-              構造変異が COW detach するのが真因。正準解＝source/target を共有 cell に昇格（escape-aware）。難所＝rebind（`$n=5`）vs
-              mutate-through（`@z=(9)`）の区別で `:=` scalar を壊さないこと。Slice 2a（scalar var）→2b（要素/hash 値）→2c（bug②）→2d（args）。
-              - **[2026-06-18 実装試行で判明＝順序が逆だった]** Slice 2a（value-alias）を実装すると **core は全て動く**
-                （`MarkValueAliasSource` opcode + 共有 cell + detach、18-case pin 全 PASS・cargo 466/0・実装は
-                [docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §8）が、**`$a` を `ContainerRef` 化すると
-                source を Arc identity で追跡する既存 write-through が壊れる**（`t/pair-value-element-writethrough.t` #2943 が回帰）。
-                ∴ **2a の前に「Arc-identity write-through サイトの ContainerRef-aware 化」を完了させる必要**＝下記 Stage 1 の
-                残りはまさにこれ。**次セッションの正しい着手順序: (1) Arc-identity write-through サイト（pair-value #2943 を起点に
-                棚卸し）を decont 化 → (2) value-alias を §8 のまま再適用 → 2b/2c/2d。** Stage 0 が `[x]` でも write 側の
-                Arc-identity 機構が未網羅だったのが盲点。
+        - [x] **Stage 1**（escape-aware outer cell 化・bound container write チョークポイント）= 完了。audit（#3258）で
+              blast radius を ~14 write サイトに特定 → **for-rw writeback "site A" を array（#3259）/ hash（#3260）化** →
+              監査で「残る生 match の write ギャップは junction だけ」と確定 → **junction + from-end `@a[*-1]` 代入（#3279）/
+              `%h.push`・`.append`（#3281）を bound-cell-aware 化**。bound-container 操作（nested/deep/reference push・splice・
+              whole-slice）は全 raku 一致。
+        - [x] **bug ②（scalar-array 参照共有）= 完了（Slice 2a–2d 全着地）**: `my $n=@z` の push/要素伝播（2a #3264 +
+              chained #3267）→ `@aoa[i]=@row`/`%h<k>=@row`（2b #3274）→ `my @a:=@$n`/`my %h:=%$m`（2c #3268/#3277）→
+              **headline `sub f($n){ my @a:=@$n; @a.push }; f(@z)`（2d #3283）**。2d は call 境界で **`@`/`%` 変数を `$`-param に
+              渡すとき共有 `ContainerRef` cell へ昇格**（binding.rs）+ slot-only fast path を gate で slow path へ迂回
+              （詳細・follow-up = [docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §5 Slice 2d）。
+              - **残 follow-up（pre-existing・2d では未カバー）**: ① **method param**（`method m($n){ $n.push }`）=
+                `vm_method_dispatch.rs:79` の fast-path gate に scalar-container-share 条件を追加（slow path は同 :424 で
+                bind_function_args_values を使う→promotion 適用。注意=invocant の index alignment）。② **`is copy` $-param**
+                （rebind 許可と cell 共有の両立）。
       - Phase 0.5 第2段（任意・実挙動変化）: `GetArrayVar`/`Index` の auto-decont + 新 lvalue opcode の本配線。
       - Phase 3 機会的残: 属性束縛（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits 5-8）。
 - [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
