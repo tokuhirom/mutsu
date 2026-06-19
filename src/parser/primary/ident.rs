@@ -1830,7 +1830,24 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             match super::super::stmt::my_decl_expr_pub(input) {
                 Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
                 Err(err) if err.is_fatal() => return Err(err),
-                Err(_) => {}
+                Err(_) => {
+                    // `my grammar { ... }` / `my class { ... }` / `my role { ... }`:
+                    // an *anonymous* lexical package declarator used as an
+                    // expression (e.g. `my grammar { ... }.parse: $s`). The named
+                    // declarator parser above can't parse the no-name form, so
+                    // delegate to the anonymous-package expression parsers on the
+                    // text after the `my`/`our`/`state` keyword.
+                    if let Some(after_kw) = keyword("my", input)
+                        .or_else(|| keyword("our", input))
+                        .or_else(|| keyword("state", input))
+                        && let Ok((after_kw, _)) = ws1(after_kw)
+                        && let Ok(res) = super::misc::anon_grammar_expr(after_kw)
+                            .or_else(|_| super::misc::anon_class_expr(after_kw))
+                            .or_else(|_| super::misc::anon_role_expr(after_kw))
+                    {
+                        return Ok(res);
+                    }
+                }
             }
         }
         "constant" => {
