@@ -1030,7 +1030,7 @@ impl Interpreter {
                 &captures.named_subcaps,
                 &captures.positional_subcaps,
                 &captures.positional_quantified,
-                        &captures.positional_nil,
+                &captures.positional_nil,
                 orig_text,
             );
             self.env.insert("/".to_string(), match_obj.clone());
