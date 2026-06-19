@@ -171,9 +171,24 @@ impl Interpreter {
         match method {
             "Str" => Ok(Value::str(p.clone())),
             "gist" => {
-                // IO::Path.gist returns "path".IO with the path quoted
-                // Only escape double quotes, not backslashes
-                Ok(Value::str(format!("\"{}\".IO", p.replace('"', "\\\""))))
+                // IO::Path.gist returns `"<str>".IO`, where <str> is the
+                // absolute path (SPEC-normalized separators) when the path is
+                // absolute, else the path string verbatim. So an absolute Win32
+                // path gists with backslashes: `IO::Path::Win32.new('/foo')` →
+                // `"\foo".IO` (Cygwin normalizes to forward slashes).
+                let shown = if Self::io_path_is_absolute_spec(attributes, &p, original) {
+                    if Self::is_win32_spec(attributes) {
+                        Self::canonpath_win32(&p, false)
+                    } else if Self::is_cygwin_spec(attributes) {
+                        Self::canonpath_cygwin(&p.replace('\\', "/"), false)
+                    } else {
+                        p.clone()
+                    }
+                } else {
+                    p.clone()
+                };
+                // Only escape double quotes, not backslashes.
+                Ok(Value::str(format!("\"{}\".IO", shown.replace('"', "\\\""))))
             }
             "raku" | "perl" => {
                 let escape = |s: &str| {
@@ -589,26 +604,12 @@ impl Interpreter {
                 let (volume, _, _) = Self::io_path_parts_spec(&p, attributes);
                 Ok(Value::str(volume))
             }
-            "is-absolute" => {
-                let abs = if Self::is_win32_spec(attributes) {
-                    Self::io_path_is_absolute_win32(&p)
-                } else if Self::is_cygwin_spec(attributes) {
-                    Self::io_path_is_absolute_win32(&p.replace('\\', "/"))
-                } else {
-                    original.is_absolute()
-                };
-                Ok(Value::Bool(abs))
-            }
-            "is-relative" => {
-                let abs = if Self::is_win32_spec(attributes) {
-                    Self::io_path_is_absolute_win32(&p)
-                } else if Self::is_cygwin_spec(attributes) {
-                    Self::io_path_is_absolute_win32(&p.replace('\\', "/"))
-                } else {
-                    original.is_absolute()
-                };
-                Ok(Value::Bool(!abs))
-            }
+            "is-absolute" => Ok(Value::Bool(Self::io_path_is_absolute_spec(
+                attributes, &p, original,
+            ))),
+            "is-relative" => Ok(Value::Bool(!Self::io_path_is_absolute_spec(
+                attributes, &p, original,
+            ))),
             "succ" => {
                 let (volume, dirname, basename) = Self::io_path_parts(&p);
                 let new_basename = crate::builtins::str_increment::string_succ(&basename);
@@ -1335,6 +1336,23 @@ impl Interpreter {
                 name == "IO::Spec::Cygwin" || name.ends_with("Cygwin")
             })
             .unwrap_or(false)
+    }
+
+    /// Whether `p` is absolute under the receiver's SPEC. Win32/Cygwin use
+    /// drive-letter / UNC / leading-separator rules; other SPECs defer to the
+    /// platform's `Path::is_absolute`.
+    fn io_path_is_absolute_spec(
+        attributes: &HashMap<String, Value>,
+        p: &str,
+        original: &Path,
+    ) -> bool {
+        if Self::is_win32_spec(attributes) {
+            Self::io_path_is_absolute_win32(p)
+        } else if Self::is_cygwin_spec(attributes) {
+            Self::io_path_is_absolute_win32(&p.replace('\\', "/"))
+        } else {
+            original.is_absolute()
+        }
     }
 
     /// Split a path into (volume, dirname, basename), honoring the Cygwin SPEC
