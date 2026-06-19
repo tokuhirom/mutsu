@@ -2064,6 +2064,64 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // `$n[0]++` / `$h<k>++` where `$n`/`$h` is itself a shared `ContainerRef`
+        // cell (a scalar-bound container param, `my $s = @a`, etc.): increment the
+        // element *through* the cell so the caller's container observes it. The
+        // generic Array/Hash read/writeback paths below only match plain
+        // containers, so a `ContainerRef` would otherwise read `Nil` and discard
+        // the write (unlike `$n[0] = …` / `$n[0] += …`, which descend the cell).
+        // `$n[0]++` / `$h<k>++` where the variable resolves to a raw `ContainerRef`
+        // cell (a positional scalar-bound container param, `my $s := @a`, etc.):
+        // increment the element *through* the cell so the caller observes it. The
+        // generic Array/Hash read/writeback paths below match plain containers
+        // only, so a raw cell would read `Nil` and discard the write. (Named
+        // params resolve to a deref'd-but-Arc-shared plain container instead, which
+        // the strong_count>1 in-place writeback below handles.)
+        if let Some(Value::ContainerRef(arc)) = container.as_ref() {
+            let inner = arc.lock().unwrap().clone();
+            let current = match &inner {
+                Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
+                Value::Array(arr, ..) => key
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|i| arr.get(i).cloned())
+                    .unwrap_or(Value::Nil),
+                _ => Value::Nil,
+            };
+            let effective = Self::normalize_incdec_source(match current {
+                Value::Nil => Value::Int(0),
+                other => other,
+            });
+            let new_val = if increment {
+                self.increment_value_smart(&effective)?
+            } else {
+                self.decrement_value_smart(&effective)?
+            };
+            let mut updated = inner;
+            match &mut updated {
+                Value::Hash(h) => {
+                    Value::hash_insert_through(
+                        &mut Arc::make_mut(h).map,
+                        key.clone(),
+                        new_val.clone(),
+                    );
+                }
+                Value::Array(arr, ..) => {
+                    if let Ok(i) = key.parse::<usize>() {
+                        let a = Arc::make_mut(arr);
+                        while a.len() <= i {
+                            a.push(Value::Nil);
+                        }
+                        a[i] = new_val.clone();
+                    }
+                }
+                _ => {}
+            }
+            *arc.lock().unwrap() = updated;
+            self.stack
+                .push(if return_new { new_val } else { effective });
+            return Ok(());
+        }
         let current = if let Some(container_value) = container.as_ref() {
             match container_value {
                 Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
@@ -2171,11 +2229,26 @@ impl Interpreter {
         let modified_in_place = if let Some(container_value) = self.env_mut().get_mut(&name) {
             match container_value {
                 Value::Hash(h) => {
-                    Value::hash_insert_through(
-                        &mut Arc::make_mut(h).map,
-                        key.clone(),
-                        new_val.clone(),
-                    );
+                    // Mirror the array arm below: when the hash Arc is shared
+                    // (strong_count > 1) via a scalar-bound `ContainerRef` cell
+                    // (`sub f($h){ $h<k>++ }` / `my $s = %h; $s<k>++`), mutate it
+                    // in place so the caller observes the change. `Arc::make_mut`
+                    // would COW-detach and silently drop the write (the array
+                    // path already special-cased this; the hash path did not).
+                    let use_inplace = Arc::strong_count(h) > 1 && !name.starts_with('%');
+                    if use_inplace {
+                        // SAFETY: aliased in-place mutation of a shared hash
+                        // (strong_count > 1, the shared-cell case); mirrors the
+                        // array arm's `arc_contents_mut` usage.
+                        let h = unsafe { crate::value::arc_contents_mut(h) };
+                        Value::hash_insert_through(&mut h.map, key.clone(), new_val.clone());
+                    } else {
+                        Value::hash_insert_through(
+                            &mut Arc::make_mut(h).map,
+                            key.clone(),
+                            new_val.clone(),
+                        );
+                    }
                     true
                 }
                 Value::Array(arr, ..) => {
