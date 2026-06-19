@@ -70,13 +70,23 @@ impl Interpreter {
                 && (pd.name.starts_with('@') || pd.name.starts_with('%'))
                 && !pd.name[1..].starts_with(['!', '.'])
         });
-        let can_skip_merge =
-            !has_rw_params && !has_aliasable_container_params && !cc.has_env_writes;
+        // Slice 2d (method follow-up): an array/hash variable passed into a
+        // plain readonly scalar `$` param shares the caller's container in Raku
+        // (`method m($n) { $n.push }` mutates the caller's `@z`). The promotion
+        // + rw-writeback lives only on the slow `bind_function_args_values`
+        // path, so such a call must avoid the fast path and the merge skip —
+        // mirroring how `has_aliasable_container_params` handles `@`/`%` params.
+        let shares_scalar_container =
+            self.method_shares_container_into_scalar_param(method_def, &args);
+        let can_skip_merge = !has_rw_params
+            && !has_aliasable_container_params
+            && !shares_scalar_container
+            && !cc.has_env_writes;
 
         // Fast path: bypass env entirely and populate locals directly from
         // source data. Avoids the ~12μs Arc::make_mut deep clone that the
         // first env_mut() call triggers.
-        if !has_rw_params && !has_aliasable_container_params {
+        if !has_rw_params && !has_aliasable_container_params && !shares_scalar_container {
             let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
                 (pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
                     && pd.type_constraint.is_some()
