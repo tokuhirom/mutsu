@@ -3178,6 +3178,9 @@ impl Interpreter {
                         return Err(e);
                     }
                 }
+                // Slice F: write any `is rw` method-param writeback through to the
+                // caller's local slot (no-op unless the dispatch recorded one).
+                self.apply_pending_rw_writeback(code);
                 *ip += 1;
             }
             OpCode::CallMethodDynamic {
@@ -3196,6 +3199,8 @@ impl Interpreter {
                         return Err(e);
                     }
                 }
+                // Slice F: drain any `is rw` method-param writeback into the caller's slots.
+                self.apply_pending_rw_writeback(code);
                 *ip += 1;
             }
             OpCode::CallMethodDynamicMut {
@@ -3218,6 +3223,7 @@ impl Interpreter {
                         return Err(e);
                     }
                 }
+                self.apply_pending_rw_writeback(code);
                 self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
@@ -3256,6 +3262,7 @@ impl Interpreter {
                         return Err(e);
                     }
                 }
+                self.apply_pending_rw_writeback(code);
                 self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
