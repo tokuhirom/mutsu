@@ -648,6 +648,18 @@ fn range_elems_lazy_failure(action: &str) -> Option<Result<Value, RuntimeError>>
     Some(Ok(crate::runtime::utils::cannot_lazy_failure(action)))
 }
 
+/// True for a value whose element count cannot be reported, so numeric/count
+/// coercions (`.elems`/`.Int`/`.Numeric`/`.end`/prefix `+`) throw
+/// `X::Cannot::Lazy`: a lazy-backed Array or a genuinely-lazy `LazyList`
+/// (infinite sequence/closure/pipe or a `lazy`-marked gather).
+pub(crate) fn is_lazy_count_source(target: &Value) -> bool {
+    match target {
+        Value::Array(_, kind) => kind.is_lazy(),
+        Value::LazyList(ll) => ll.is_genuinely_lazy(),
+        _ => false,
+    }
+}
+
 fn is_infinite_endpoint(v: &Value) -> bool {
     match v {
         Value::Whatever | Value::HyperWhatever => true,

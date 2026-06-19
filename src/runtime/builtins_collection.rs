@@ -1059,7 +1059,14 @@ impl Interpreter {
         // list args doesn't panic on an empty slice.
         for v in args.get(1..).unwrap_or(&[]) {
             if let Value::LazyList(list) = v {
-                rest.push(Value::array(self.force_lazy_list(list)?));
+                // A genuinely-lazy `@`-array stays opaque (rendered `...` by
+                // `flat_val`) rather than forcing its capped prefix — this is the
+                // `"@a[]"` interpolation path (`join " ", @a`). (L2)
+                if list.in_array_context() && list.is_genuinely_lazy() {
+                    rest.push(v.clone());
+                } else {
+                    rest.push(Value::array(self.force_lazy_list(list)?));
+                }
             } else {
                 rest.push(v.clone());
             }

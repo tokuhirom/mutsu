@@ -473,6 +473,16 @@ impl Interpreter {
         value_source_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let target_name = Self::const_str(code, target_name_idx);
+        // A lazy `@`-array (infinite source) cannot be pushed to: there is no
+        // end to append after. raku throws `X::Cannot::Lazy`
+        // ("Cannot push to a lazy list onto a Array"). (L2)
+        if let Some(Value::LazyList(ll)) = self.env().get(target_name)
+            && ll.in_array_context()
+            && ll.is_genuinely_lazy()
+        {
+            let _ = self.stack.pop();
+            return Err(RuntimeError::cannot_lazy_with_action("push to", "Array"));
+        }
         // Shared (threaded) context: route an Array push through the atomic
         // shared store so concurrent `@a.push` from multiple threads serialize
         // under the shared_vars write lock instead of clobbering each other's

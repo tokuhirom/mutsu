@@ -507,6 +507,27 @@ impl Interpreter {
             (target, idxs)
         };
 
+        // A lazy `@`-array (infinite source) is conceptually unbounded: any
+        // non-negative index exists, without forcing the list (raku). Only the
+        // plain `:exists` form (no :kv/:p adverbs) is special-cased here. (L2)
+        if let Value::LazyList(ll) = &target
+            && ll.in_array_context()
+            && ll.is_genuinely_lazy()
+            && matches!(adverb_bits, 0 | 5)
+            && !is_zen
+        {
+            let vals: Vec<Value> = indices
+                .iter()
+                .map(|&i| Value::Bool((i >= 0) ^ effective_negated))
+                .collect();
+            self.stack.push(if vals.len() == 1 {
+                vals.into_iter().next().unwrap()
+            } else {
+                Value::array(vals)
+            });
+            return Ok(());
+        }
+
         // Uni: check exists based on codepoint count
         if let Value::Uni(u) = &target {
             let len = u.text.chars().count() as i64;

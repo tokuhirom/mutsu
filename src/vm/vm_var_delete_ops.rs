@@ -160,6 +160,9 @@ impl Interpreter {
         // back through the cell (so every alias observes the delete) and restore
         // the cell in env and the local slot.
         let var_name = Self::const_str(code, name_idx).to_string();
+        // A lazy `@`-array reifies its prefix before an element delete
+        // (`@a[i]:delete`) — delete needs a materialized backing. (L2)
+        self.reify_lazy_array_slot(&var_name)?;
         let bound_cell = match self.env().get(&var_name) {
             Some(Value::ContainerRef(cell)) => Some(cell.clone()),
             _ => None,

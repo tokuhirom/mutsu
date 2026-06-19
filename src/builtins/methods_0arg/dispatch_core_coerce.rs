@@ -50,10 +50,7 @@ pub(super) fn dispatch(
     // for every numeric coercion (`.Int`/`.Numeric`/`.Real`/`.Num`/prefix `+`).
     // Guard before the per-method arms, which would return the capped backing
     // length. (`.elems` itself is handled in `dispatch_core_numeric`.)
-    if let Value::Array(_, kind) = target
-        && kind.is_lazy()
-        && matches!(method, "Int" | "Numeric" | "Real" | "Num")
-    {
+    if matches!(method, "Int" | "Numeric" | "Real" | "Num") && super::is_lazy_count_source(target) {
         return Some(super::range_elems_lazy_failure("elems"));
     }
     match method {
