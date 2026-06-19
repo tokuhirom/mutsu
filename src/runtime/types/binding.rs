@@ -884,6 +884,38 @@ impl Interpreter {
                     if alias_plain_container && let Some(source_name) = &source_name {
                         rw_bindings.push((pd.name.clone(), source_name.clone()));
                     }
+                    // Slice 2d: a readonly scalar `$` param receiving an array/hash
+                    // *variable* argument binds the same (mutable) container in
+                    // Raku — `$n.push` / `$n[0]=` / `my @a := @$n` all mutate one
+                    // container shared with the caller's `@z` (only `$n = …`
+                    // rebinding is forbidden). Promote the bound value to a shared
+                    // `ContainerRef` cell (below, after type coercion) and register
+                    // the writeback so the final value reaches the caller. This
+                    // replaces the statement-order-fragile env_dirty copy-back that
+                    // previously made `$n.push` propagate only by luck.
+                    let scalar_container_share = !is_rw
+                        && !is_raw
+                        && !is_copy
+                        && !pd.slurpy
+                        && !pd.double_slurpy
+                        && !pd.onearg
+                        && !pd.is_invocant
+                        && !pd.sigilless
+                        && pd.sub_signature.is_none()
+                        // Plain `$` scalar param: stored sigil-less (`$n` -> "n"),
+                        // unlike `@`/`%`/`&` which keep their sigil. Exclude the
+                        // twigil/dynamic forms (`!x`/`.x`/`*x`) and `$_`.
+                        && pd.name != "_"
+                        && pd
+                            .name
+                            .as_bytes()
+                            .first()
+                            .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+                        && source_name.is_some()
+                        && matches!(
+                            unwrap_varref_value(raw_arg.clone()),
+                            Value::Array(..) | Value::Hash(..)
+                        );
                     let source_type_constraint = source_name.as_deref().and_then(|source_name| {
                         self.var_type_constraint(source_name).or_else(|| {
                             self.var_type_constraint(
@@ -1343,6 +1375,24 @@ impl Interpreter {
                         // Shape constraint check for array parameters
                         if let Some(shape_exprs) = &pd.shape_constraints {
                             self.check_shape_constraint(&pd.name, &value, shape_exprs, args)?;
+                        }
+                        // Slice 2d: wrap a scalar-param array/hash in a shared cell
+                        // so in-sub mutations (incl. `my @a := @$n`) propagate to
+                        // the caller via the rw-writeback at return. Only an `@`/`%`
+                        // source variable needs this: the fast paths copy the array
+                        // out of the `@`-variable and detach it. A `$`-scalar source
+                        // (`my $aref = [0]; f($aref)`) already shares the array by
+                        // reference, so promoting it would wrongly turn `$aref` into
+                        // a cell and break `$aref[0]++` (S06 named-parameters 68-69).
+                        if scalar_container_share
+                            && matches!(value, Value::Array(..) | Value::Hash(..))
+                            && let Some(source_name) = &source_name
+                            && (source_name.starts_with('@') || source_name.starts_with('%'))
+                        {
+                            value = Value::ContainerRef(std::sync::Arc::new(
+                                std::sync::Mutex::new(value),
+                            ));
+                            rw_bindings.push((pd.name.clone(), source_name.clone()));
                         }
                         self.bind_param_value(&pd.name, value);
                         self.set_var_type_constraint(&pd.name, bound_type_constraint.clone());

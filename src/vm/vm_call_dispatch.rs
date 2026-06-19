@@ -806,6 +806,71 @@ impl Interpreter {
             })
     }
 
+    /// Slice 2d: detect a call that passes an array/hash *value* to a plain
+    /// readonly scalar `$` param. Raku binds the same mutable container in that
+    /// case (`$n.push` / `$n[0]=` / `my @a := @$n` all mutate the caller's
+    /// container), which the slot-only fast paths (light / positional_light)
+    /// cannot express — they bind a detached copy into a local slot. Such calls
+    /// must take the slow `bind_function_args_values` path, which promotes the
+    /// param to a shared cell and registers the rw writeback. The common case
+    /// (scalar args to `$` params, e.g. `fib($n)`) returns false cheaply, so the
+    /// fast paths are preserved.
+    pub(super) fn call_shares_container_into_scalar_param(
+        cf: &CompiledFunction,
+        args: &[Value],
+    ) -> bool {
+        // Cheapest rejection first: most calls pass non-container args (e.g.
+        // `fib($n-1)`), so check the arg value before touching the param meta.
+        args.iter().enumerate().any(|(i, arg)| {
+            Self::arg_is_container_value(arg)
+                && cf.param_defs.get(i).is_some_and(|pd| {
+                    Self::is_plain_scalar_param_name(&pd.name)
+                        && !pd.slurpy
+                        && !pd.double_slurpy
+                        && !pd.is_invocant
+                        && !pd.sigilless
+                        && pd.traits.is_empty()
+                        && pd.sub_signature.is_none()
+                })
+        })
+    }
+
+    /// True when `arg` is a varref-capture for an `@`/`%` *array/hash variable*
+    /// holding an `Array`/`Hash`. Only an `@`/`%` source needs the cell-promotion:
+    /// the fast paths copy the array out of the `@`-variable into the param slot
+    /// and detach it. A `$`-scalar source (`my $aref = [0]; f($aref)`) already
+    /// shares the array by reference (`$aref[0]++` propagates without promotion),
+    /// and a non-variable literal (`f([1,2])`) has no caller to share with — both
+    /// must keep the fast path. A variable arg reaches the binder as a
+    /// `__mutsu_varref_*` capture, so peek inside without cloning.
+    fn arg_is_container_value(arg: &Value) -> bool {
+        let Value::Capture { positional, named } = arg else {
+            return false;
+        };
+        positional.is_empty()
+            && matches!(
+                named.get("__mutsu_varref_name"),
+                Some(Value::Str(name)) if name.starts_with('@') || name.starts_with('%')
+            )
+            && matches!(
+                named.get("__mutsu_varref_value"),
+                Some(Value::Array(..)) | Some(Value::Hash(..))
+            )
+    }
+
+    /// A plain readonly scalar (`$`) parameter is stored sigil-less in
+    /// `ParamDef::name` (e.g. `$n` -> `"n"`), unlike `@`/`%`/`&` params which
+    /// keep their sigil. Detect it by a leading identifier char, excluding the
+    /// twigil/dynamic forms (`$!x` -> `"!x"`, `$*x` -> `"*x"`, `$.x` -> `".x"`)
+    /// and the `$_` topic.
+    pub(super) fn is_plain_scalar_param_name(name: &str) -> bool {
+        name != "_"
+            && name
+                .as_bytes()
+                .first()
+                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+    }
+
     /// Ultra-fast call for simple positional-only functions (e.g. `sub fib($n)`).
     /// Avoids push_call_frame, Sub value creation, block/routine push,
     /// callable_id lookup, and full bind_function_args_values. Parameters are

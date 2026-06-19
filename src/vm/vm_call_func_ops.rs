@@ -141,10 +141,15 @@ impl Interpreter {
                     if self.stack.len() >= arity_usize {
                         // Check if any arg is a Junction -- if so, skip the fast path
                         // to allow junction auto-threading.
-                        let has_junction = self.stack[self.stack.len() - arity_usize..]
+                        let stack_args = &self.stack[self.stack.len() - arity_usize..];
+                        let has_junction = stack_args
                             .iter()
                             .any(|v| matches!(v, Value::Junction { .. }));
-                        if !has_junction {
+                        // Slice 2d: array/hash into a plain `$` param must share the
+                        // caller's container -> fall through to the slow path.
+                        let share_into_scalar =
+                            Self::call_shares_container_into_scalar_param(cf, stack_args);
+                        if !has_junction && !share_into_scalar {
                             let start = self.stack.len() - arity_usize;
                             let args: Vec<Value> = self.stack.drain(start..).collect();
                             // Extract callsite line for deprecation tracking
@@ -183,7 +188,12 @@ impl Interpreter {
                     && cf.fingerprint == *cached_fp
                 {
                     let arity_usize = arity as usize;
-                    if self.stack.len() >= arity_usize {
+                    if self.stack.len() >= arity_usize
+                        && !Self::call_shares_container_into_scalar_param(
+                            cf,
+                            &self.stack[self.stack.len() - arity_usize..],
+                        )
+                    {
                         let start = self.stack.len() - arity_usize;
                         let args: Vec<Value> = self.stack.drain(start..).collect();
                         // Extract callsite line for deprecation tracking
@@ -233,33 +243,41 @@ impl Interpreter {
                             loan_env!(self, set_pending_callsite_line(cl));
                         }
 
-                        let result = if Self::is_light_call_eligible(&cf, name_str) {
-                            self.call_compiled_function_light(&cf, args, compiled_fns)
-                        } else if Self::is_positional_light_call_eligible(&cf, name_str) {
-                            self.call_compiled_function_positional_light(
-                                &cf,
-                                &args,
-                                compiled_fns,
-                                name_str,
-                            )
-                        } else {
-                            let pkg = self.current_package().to_string();
-                            self.push_samewith_context(name_str, None);
-                            let pushed_dispatch =
-                                loan_env!(self, push_multi_dispatch_frame(name_str, &args));
-                            let r = self.call_compiled_function_named(
-                                &cf,
-                                args,
-                                compiled_fns,
-                                &pkg,
-                                name_str,
-                            );
-                            self.pop_samewith_context();
-                            if pushed_dispatch {
-                                self.pop_multi_dispatch();
-                            }
-                            r
-                        };
+                        // Slice 2d: array/hash passed to a plain `$` param must
+                        // share the caller's container -> force the slow binding
+                        // path (the slot-only fast paths bind a detached copy).
+                        let share_into_scalar =
+                            Self::call_shares_container_into_scalar_param(&cf, &args);
+                        let result =
+                            if !share_into_scalar && Self::is_light_call_eligible(&cf, name_str) {
+                                self.call_compiled_function_light(&cf, args, compiled_fns)
+                            } else if !share_into_scalar
+                                && Self::is_positional_light_call_eligible(&cf, name_str)
+                            {
+                                self.call_compiled_function_positional_light(
+                                    &cf,
+                                    &args,
+                                    compiled_fns,
+                                    name_str,
+                                )
+                            } else {
+                                let pkg = self.current_package().to_string();
+                                self.push_samewith_context(name_str, None);
+                                let pushed_dispatch =
+                                    loan_env!(self, push_multi_dispatch_frame(name_str, &args));
+                                let r = self.call_compiled_function_named(
+                                    &cf,
+                                    args,
+                                    compiled_fns,
+                                    &pkg,
+                                    name_str,
+                                );
+                                self.pop_samewith_context();
+                                if pushed_dispatch {
+                                    self.pop_multi_dispatch();
+                                }
+                                r
+                            };
                         // Put CF back in cache
                         self.otf_call_cache.insert(name_sym, cf);
                         self.stack.push(result?);
@@ -762,6 +780,7 @@ impl Interpreter {
                 // Try positional light call path first (ultra-fast, no env clone).
                 // Skip for multi functions since the cache doesn't differentiate by arg types.
                 if Self::is_positional_light_call_eligible(cf, name)
+                    && !Self::call_shares_container_into_scalar_param(cf, &args)
                     && !self.has_multi_candidates_cached(name)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
@@ -784,6 +803,7 @@ impl Interpreter {
                 // Try light call path for simple functions in tight loops.
                 // This avoids the expensive env clone/restore cycle.
                 if Self::is_light_call_eligible(cf, name)
+                    && !Self::call_shares_container_into_scalar_param(cf, &args)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
                 {
