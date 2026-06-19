@@ -980,6 +980,11 @@ pub(crate) fn gist_value(value: &Value) -> String {
             // rather than materializing its capped backing (Rakudo: `[...]`).
             "[...]".to_string()
         }
+        Value::LazyList(ll) if ll.is_genuinely_lazy() => {
+            // A genuinely-lazy list renders raku's placeholder without forcing:
+            // `[...]` held in `@` array context, `(...)` for a bare Seq.
+            crate::value::lazy_list_placeholder("gist", ll.in_array_context())
+        }
         Value::Array(items, kind) => {
             let ptr = std::sync::Arc::as_ptr(items) as usize;
             let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));

@@ -6254,8 +6254,10 @@ impl Interpreter {
                 }
                 match raw_popped {
                     Value::LazyList(ref list) if list.coroutine.is_some() => {
-                        // Gather-based lazy list with coroutine: preserve laziness
-                        raw_popped
+                        // Gather-based lazy list with coroutine: preserve laziness,
+                        // tagging it as living in `@` array context so gist/`.WHAT`
+                        // render `[...]`/`Array` rather than `(...)`/`Seq`.
+                        Value::LazyList(std::sync::Arc::new(list.with_array_context()))
                     }
                     Value::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
                     Value::LazyIoLines { .. } => {
@@ -6268,7 +6270,11 @@ impl Interpreter {
                 match raw_popped {
                     Value::LazyList(list) => {
                         match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
-                            Some(Value::Bool(true)) => Value::LazyList(list),
+                            // Preserved into an `@` array: keep it lazy but tag
+                            // array context so gist/`.WHAT` render `[...]`/`Array`.
+                            Some(Value::Bool(true)) => {
+                                Value::LazyList(std::sync::Arc::new(list.with_array_context()))
+                            }
                             _ => Value::real_array(self.force_lazy_list_vm(&list)?),
                         }
                     }

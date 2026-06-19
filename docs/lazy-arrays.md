@@ -23,6 +23,27 @@
   Guard added before `as_list_items` in `dispatch_core_numeric`, reusing
   `range_elems_lazy_failure`. **Still capped (follow-up):** `.Numeric`/`.Int`/
   `.end`/prefix-`+` on a lazy array return the cap (separate dispatch paths).
+- **L1b — coroutine `Value::LazyList` gist + dual-rep wart (DONE).** A genuinely
+  lazy `Value::LazyList` (gather coroutine with the `lazy` marker, infinite
+  sequence/closure/scan spec, lazy map/grep pipeline) now renders raku's
+  placeholder under gist/Str/raku/perl/say/print/`~`/interpolation instead of
+  forcing (which hung for an infinite gather held in a variable) or returning
+  empty. **Dual-rep wart resolved:** the `@`-assign preserve sites tag the
+  LazyList with an `ARRAY_CONTEXT_MARKER` env flag, so gist renders `[...]`
+  (held in `@a`) vs `(...)` (bare `$s` Seq) and `.WHAT` reports `Array` vs `Seq`.
+  Key helpers: `LazyList::is_genuinely_lazy()` (gates on the `lazy` marker for
+  the gather family — a *plain* `gather` is `.is-lazy` `False` and must
+  materialize, the regression that gated this), `with_array_context()`,
+  `in_array_context()`, and the shared `value::lazy_list_placeholder()`. Guards
+  added to BOTH method-dispatch paths (`vm_call_method_ops` for direct calls,
+  `vm_call_method_mut_ops` for variable-target calls — the latter was the hang,
+  since `@a.gist`/`$s.gist` route through CallMethodMut) plus the runtime slow
+  path, `runtime::utils::gist_value`, and `value::display::to_string_value`.
+  t/lazy-list-gist-context.t. **Known follow-up:** `@a[]` zen-slice
+  interpolation of a lazy array still renders empty (the list-flatten interp
+  path, separate from `.Str`); no hang. With the dual-rep wart resolved, **L2**
+  (preserve infinite Range / closure_seq / lazy_pipe as a reify `LazyList` on
+  `@`-assign instead of capping to an Array) is now unblocked.
 
 ## Open findings / blockers discovered this session
 

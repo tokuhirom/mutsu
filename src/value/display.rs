@@ -446,7 +446,26 @@ impl Value {
                 });
                 result
             }
-            Value::LazyList(_) => "LazyList".to_string(),
+            Value::LazyList(ll) => {
+                if ll.is_genuinely_lazy() {
+                    // Str/interpolation of a genuinely-lazy list renders `...`
+                    // (Rakudo) rather than materializing the sequence.
+                    "...".to_string()
+                } else {
+                    // A fully-realized cached lazy list stringifies like a list.
+                    ll.cache
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .map_or_else(String::new, |items| {
+                            items
+                                .iter()
+                                .map(|v| v.to_string_value())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        })
+                }
+            }
             Value::LazyIoLines { .. } => "(...)".to_string(),
             Value::Uni(u) => u.text.clone(),
             Value::Hash(items) => {
