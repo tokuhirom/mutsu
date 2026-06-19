@@ -57,11 +57,16 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 
 - [ ] **残りの型付き例外**（X::Str::Numeric / X::Method::NotFound / X::Undeclared / X::Cannot::Lazy /
       X::EXPORTHOW::InvalidDirective 等）。詳細は BLOCKERS.md "throws-like / Exception Types"。
-- [ ] **真の lazy 無限配列**（`my @a = 1..*` の reify-on-demand）。設計＝[docs/lazy-arrays.md](docs/lazy-arrays.md)。
-      reify 基盤（scalar/gather coroutine 経由の index pull）は既存。残＝① 無限 Range/`...` 列を `@` 代入時に
-      capped Array へ潰さず reify LazyList のまま保持（L2）② mutation chokepoint で reify-on-write（L3・~10箇所・回帰注意）
-      ③ lazy `.gist`/`.is-lazy`（L1/L5）④ slurpy 真 lazy 化（L4）。**slurpy `*@`/`+@` 無限 Range ハングは cap で解消済**
-      （#3302 予定・docs L4 の暫定）。unblock: slurpy-params.t / slice.t / eqv.t lazy。
+- [ ] **真の lazy 無限配列**（`my @a = 1..*` の reify-on-demand）。設計＋次の一手＝[docs/lazy-arrays.md](docs/lazy-arrays.md)。
+      **DONE（→ news/2026-06）**: L1/L1b（lazy `.gist`/`.Str`/dual-rep `[`vs`(`・#3306/#3313）、
+      L5/L5b（lazy `.elems`/`.Int`/`.Numeric`/`.end`/`+@a`→X::Cannot::Lazy・#3310/#3314）、
+      **L2a**（`my @a = 1..*` を reify LazyList で保持し `@a[200000]`→200001。整数レンジのみ。
+      mutation: push/pop/append→throw、front-mut→reify-prefix・#3315）。
+      **NEXT = L2b**（真のメモリ遅延化: seed `[1]`・docs/lazy-arrays.md「L2b」節に実行プラン確定済。
+      拡張機構は全て既存＝`from_gather` ゲートを `is_genuinely_lazy` に拡張するだけ。落とし穴=
+      `reify_lazy_array_slot` を `force_lazy_list_vm_n(MAX_ARRAY_EXPAND)` に。whitelist payoff なし）。
+      残＝L2b → `(1...*)`/closure 配列も変換 → L4 slurpy 真 lazy 化。**slurpy 無限 Range ハングは cap 解消済**。
+      whitelist payoff（slurpy-params.t/slice.t）は別軸＝Seq single-pass consumption（`X::Seq::Consumed`）。
 - [ ] **Match キャプチャ番号付け / コンテナ kind**: (1) `$<x>=(...)` が positional スロットにも重複格納され番号がずれる
       （`/$<x>=(\w)(\d)/`）、(2) `m:g//` を `my @m` 代入後 `@m.gist` が `(…)` を返す（receiver の List-kind dual-store ナンス）。
 - [ ] Lookbehind assertions (`<!after>`) / `:Perl5` modifier edge cases。

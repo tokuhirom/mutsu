@@ -71,7 +71,77 @@
   too would regress S32-array/create.t's partial-reify, which the capped Array
   fakes). True memory-laziness (seed `[1]` instead of the 100k prefix, requires
   `.head`/`.first`/`.map`/`.grep` to extend a `sequence_spec` `LazyList`) is the
-  L2b follow-up.
+  L2b follow-up (planned below).
+
+## L2b — true memory-laziness (READY TO EXECUTE, scoped 2026-06-20)
+
+**Goal:** seed `infinite_int_range_to_lazy_array` with `[start]` instead of the
+100k prefix, so `my @a = 1..*` is O(1) memory. This requires `.head`/`.first`/
+`.map`/`.grep` (and any cache-reading mutation reify) to *extend* a
+`sequence_spec`/`closure_seq` `LazyList` on demand instead of reading its (now
+tiny) cache.
+
+**Feasibility CONFIRMED — all extension machinery already exists; L2b is mostly
+broadening `__mutsu_lazylist_from_gather` gates to `is_genuinely_lazy()`:**
+- `force_lazy_list_vm_n(list, n)` (`vm_helpers.rs:604`) already extends EVERY lazy
+  kind to `n` elements: cache → `sequence_spec` (`extend_sequence_cache`) →
+  `closure_seq` (`extend_closure_sequence`) → `lazy_pipe` (`force_lazy_pipe`) →
+  coroutine. This is the universal bounded pull. (Proven: `@a[200000]`→200001.)
+- `pull_source_element` (`vm_helpers.rs:1028`) already has a `Value::LazyList`
+  arm that calls `force_lazy_list_vm_n(ll, idx+1)` — so a `lazy_pipe` whose
+  *source* is a `sequence_spec` LazyList pulls correctly.
+- `try_lazy_gather_first` (`vm_native_first.rs:97`) already pulls one element at a
+  time via `force_lazy_list_vm_n` and tests the matcher — generic over ANY
+  LazyList, only the *call site* is gated on `from_gather`.
+
+**The catch (don't miss):** `reify_lazy_array_slot` (`vm_helpers.rs`) currently
+calls `force_lazy_list_vm` (returns the CACHE). With seed `[1]` the cache is
+`[1]`, so a front-mutation (`@a.shift`/`@a[2]=99`) would reify to `[1]`, losing
+the prefix. **Change it to `force_lazy_list_vm_n(ll, MAX_ARRAY_EXPAND)`** so the
+reify materializes a 100k prefix (matching today's reify-to-cap). Same for any
+other site that read the cache assuming it held the prefix.
+
+**Concrete edits:**
+1. `runtime::utils::infinite_int_range_to_lazy_array` — seed `vec![Value::Int(start)]`.
+2. `.head`: broaden the force-block gate in BOTH `vm_call_method_ops.rs` (the
+   `lazy_list_needs_forcing` block, ~line 619 on main 2026-06-20) and
+   `vm_call_method_mut_ops.rs` (~line 430) from the `__mutsu_lazylist_from_gather`
+   marker to `ll.is_genuinely_lazy()`. `gather_head_bound`→`Some(n)`→
+   `force_lazy_list_vm_n` already does the right thing. The `None =>`
+   unbounded-force arm must throw `cannot_lazy` for an infinite list
+   (`sequence_spec`/`closure_seq`/`lazy_pipe`) instead of `force_lazy_list_vm`
+   (which returns the small cache → wrong for `.sort`/`.reverse`/...).
+3. `.first`: broaden the `.first` gate in BOTH `vm_call_method_ops.rs` (~line 608,
+   the block guarding `try_lazy_gather_first`) and `vm_call_method_mut_ops.rs`
+   (~line 419) from `from_gather` to `is_genuinely_lazy()`. Handler is already
+   generic. (Infinite + unsatisfiable predicate loops forever — raku hangs too;
+   acceptable.)  [verify the 4 `__mutsu_lazylist_from_gather` sites with
+   `grep -n __mutsu_lazylist_from_gather src/vm/vm_call_method*.rs`.]
+4. `.map`/`.grep`: `Interpreter::is_lazy_pipe_source` (`methods_collection.rs:53`)
+   — add `Value::LazyList(ll) if ll.sequence_spec.is_some() || ll.closure_seq.is_some()`.
+   `force_lazy_pipe`+`pull_source_element` then pull from the sequence on demand.
+5. `reify_lazy_array_slot` — switch `force_lazy_list_vm` → `force_lazy_list_vm_n(ll,
+   MAX_ARRAY_EXPAND)` (see "the catch" above).
+6. Once steps 1–5 land for integer ranges, **also convert `(1...*)`/closure-seq
+   arrays** in the `@`-assign LazyList arm (re-add the `is_genuinely_lazy()`
+   preserve that L2a reverted) — but ONLY after confirming S32-array/create.t's
+   partial-reify still passes (the create.t `1,{rand}…*` closure array does
+   `@a[^20]` then unshift/shift/`@b[5]=42`; the reify-prefix fix in step 5 should
+   make it pass since reify now materializes a real prefix).
+
+**Validation (expect the L2a 6-wave tail to re-surface — re-run ALL of these):**
+`make test` + `t/lazy-array-reify.t` + `t/lazy-array-gist.t` +
+`t/lazy-array-numeric.t`, then targeted roast S32-array/create.t,
+delete-adverb*.t, S09-subscript/{array,slice}.t, S32-list/{flat,join,grep,map,
+first,head-tail}.t, S03-sequence/misc.t, S07-iterators/range-iterator.t. The
+high-blast-radius rendering/interp paths (`flat_val`, `builtin_join`, nested
+`gist_item`) already handle a genuinely-lazy LazyList regardless of cache size,
+so they should NOT regress — but `make test` is the net; let CI's full roast be
+the comprehensive one (L2a passed CI with no 7th wave).
+
+**No whitelist payoff** (memory optimization). The slurpy-params.t (6 fails) /
+slice.t (9 fails) payoff needs a *different* track (Seq single-pass consumption /
+`X::Seq::Consumed`), not lazy arrays.
 
 ## Open findings / blockers discovered this session
 
