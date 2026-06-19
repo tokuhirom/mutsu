@@ -498,11 +498,20 @@ impl Interpreter {
                 .as_deref()
                 .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
             if let Some(capture_name) = capture_name {
-                let captured: String = chars[pos..end].iter().collect();
+                // Apply the subrule's own capture markers (`<(` / `)>`): a token
+                // like `token foo { 12345 <( 67890 }` restricts its `<foo>`
+                // submatch to `67890`. The subrule body is matched against the
+                // tail starting at `pos`, so its `capture_start`/`capture_end` are
+                // tail-relative (0-based); rebase them by `pos`. They are `None`
+                // when the subrule used no markers, so this is a no-op otherwise.
+                let inner_len = end - pos;
+                let cs = (pos + inner_caps.capture_start.unwrap_or(0)).clamp(pos, end);
+                let ce = (pos + inner_caps.capture_end.unwrap_or(inner_len)).clamp(cs, end);
+                let captured: String = chars[cs..ce].iter().collect();
                 let mut subcap = inner_caps;
                 subcap.matched = captured.clone();
-                subcap.from = pos;
-                subcap.to = end;
+                subcap.from = cs;
+                subcap.to = ce;
                 // sym is already set on subcap from raw_out collection loop.
                 // Fall back to sym_key parameter for the is_active (seed) path.
                 if subcap.sym.is_none() && sym_key.is_some() {
