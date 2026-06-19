@@ -589,6 +589,28 @@ impl Interpreter {
         }
     }
 
+    /// Slice F (env<->locals coherence): drain the `is rw` / aliased-container
+    /// parameter writeback sources recorded by `call_compiled_function_named`
+    /// and write each caller variable's new `env` value straight through to its
+    /// local slot in the caller's frame (`code`). This keeps the slot coherent
+    /// at the call site, removing the dependency on the reverse
+    /// `sync_locals_from_env` pull for rw-parameter writebacks. Mirrors the
+    /// reverse pull's invariant: never clobber a live `HashSlotRef` binding slot.
+    pub(super) fn apply_pending_rw_writeback(&mut self, code: &CompiledCode) {
+        if self.pending_rw_writeback_sources.is_empty() {
+            return;
+        }
+        let sources = std::mem::take(&mut self.pending_rw_writeback_sources);
+        for source in sources {
+            if let Some(slot) = self.find_local_slot(code, &source)
+                && !matches!(self.locals[slot], Value::HashSlotRef { .. })
+                && let Some(val) = self.env().get(&source).cloned()
+            {
+                self.locals[slot] = val;
+            }
+        }
+    }
+
     pub(super) fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
         code.locals.iter().position(|n| n == name)
     }

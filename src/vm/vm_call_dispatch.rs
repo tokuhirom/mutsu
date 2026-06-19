@@ -1641,6 +1641,13 @@ impl Interpreter {
         // below), so it is reset before the body and recomputed from what the
         // merge actually wrote back to the caller env.
         let saved_env_dirty = self.env_dirty;
+        // Slice F: the rw-writeback list is drained by the call-site op right
+        // after each dispatch returns, so it must hold *only* this call's
+        // sources on return. Clear any leftover from a sibling whose call site
+        // did not drain (a non-rw path), so it can never be written into the
+        // wrong slot. Nested calls in the body self-drain via their own ExecCall
+        // ops, leaving the list empty before this frame records its own sources.
+        self.pending_rw_writeback_sources.clear();
         let (args, callsite_line) = self.sanitize_call_args(&args);
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
@@ -1952,6 +1959,29 @@ impl Interpreter {
             loan_env!(self, set_state_var(key.clone(), val));
         }
 
+        // A scalar `is rw` / `is raw` parameter (`$a is rw`, stored sigil-less as
+        // `a`) is bound to a slot-only local in the body (read/written via
+        // GetLocal/SetLocal), so a `$a = …` write never reaches env
+        // (`flush_local_to_env` skips it: needs_env_sync is false).
+        // `apply_rw_bindings_to_env` (below) reads the param's value from env to
+        // write it back to the caller's variable, so flush the scalar rw-param
+        // slots into env now — while `self.locals` is still the callee's array,
+        // before `pop_call_frame` restores the caller's locals. `@`/`%` container
+        // params are intentionally excluded: their in-place mutations (`@x.push`,
+        // `@x.splice`, ...) go *through* env by name already, so the local slot
+        // holds a stale copy and flushing it would clobber the live container.
+        if !rw_bindings.is_empty() {
+            for (param_name, _source) in &rw_bindings {
+                if param_name.starts_with(['@', '%', '&']) {
+                    continue;
+                }
+                if let Some(slot) = cf.code.locals.iter().position(|n| n == param_name) {
+                    let final_val = self.locals[slot].clone();
+                    self.env_mut().insert(param_name.clone(), final_val);
+                }
+            }
+        }
+
         self.set_current_package(saved_package);
         self.pop_routine();
         self.pop_test_assertion_context(pushed_assertion);
@@ -1989,6 +2019,14 @@ impl Interpreter {
                 .iter()
                 .map(|(_, source)| source.clone())
                 .collect();
+            // Slice F: record the caller-source names just written back so the
+            // call-site op (which holds the caller's `code`) can write each value
+            // straight through to the caller's local slot, keeping it coherent
+            // without relying on the reverse `sync_locals_from_env` pull.
+            if !rw_sources.is_empty() {
+                self.pending_rw_writeback_sources
+                    .extend(rw_sources.iter().cloned());
+            }
             // Use declared_locals (vars declared via `my` or as params) instead
             // of all locals. Captured outer variables should propagate their
             // modifications back to the caller.

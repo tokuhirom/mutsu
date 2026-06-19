@@ -1218,6 +1218,14 @@ pub struct Interpreter {
     pub(crate) element_share_pending: bool,
     pub(crate) explicit_initializer_context: bool,
     pub(crate) vardecl_context: bool,
+    /// Slice F (env<->locals coherence): the caller-variable *source* names that
+    /// the most recent compiled-function return wrote back via an `is rw` /
+    /// `is raw` / aliased-container parameter (`apply_rw_bindings_to_env`). The
+    /// writeback mutates the caller's variable in `env` by name; the call-site op
+    /// (which holds the caller's `code`) drains this list and writes each value
+    /// straight through to the caller's local slot, so the slot stays coherent
+    /// without the reverse `sync_locals_from_env` pull.
+    pub(crate) pending_rw_writeback_sources: Vec<String>,
     pub(crate) local_bind_pairs: Vec<(usize, usize)>,
     pub(crate) otf_compile_cache: HashMap<u64, CompiledFunction>,
     pub(crate) state_scope_id: Option<u64>,
@@ -3374,6 +3382,7 @@ impl Interpreter {
             element_share_pending: false,
             explicit_initializer_context: false,
             vardecl_context: false,
+            pending_rw_writeback_sources: Vec::new(),
             local_bind_pairs: Vec::new(),
             otf_compile_cache: HashMap::new(),
             state_scope_id: None,
@@ -5919,6 +5928,7 @@ impl Interpreter {
             element_share_pending: false,
             explicit_initializer_context: false,
             vardecl_context: false,
+            pending_rw_writeback_sources: Vec::new(),
             local_bind_pairs: Vec::new(),
             otf_compile_cache: HashMap::new(),
             state_scope_id: None,

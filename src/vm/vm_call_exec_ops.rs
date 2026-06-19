@@ -69,6 +69,10 @@ impl Interpreter {
                 self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.set_pending_call_arg_sources(None);
             call_result?;
+            // Slice F: write any `is rw` param writeback through to the caller's
+            // local slot (and clear the pending list so it never leaks to the
+            // next call site).
+            self.apply_pending_rw_writeback(code);
             // No blanket mark: call_compiled_function_named already signals
             // env_dirty precisely from its return merge (matches the hot
             // vm_call_func_ops path). A blanket `= true` here would defeat that
@@ -143,6 +147,8 @@ impl Interpreter {
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             let pkg = self.current_package().to_string();
             self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            // Slice F: drain any `is rw` param writeback into the caller's slots.
+            self.apply_pending_rw_writeback(code);
             // call_compiled_function_named signals env_dirty precisely; no blanket.
             return Ok(());
         }
@@ -205,6 +211,8 @@ impl Interpreter {
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             let pkg = self.current_package().to_string();
             self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            // Slice F: drain any `is rw` param writeback into the caller's slots.
+            self.apply_pending_rw_writeback(code);
             // call_compiled_function_named signals env_dirty precisely; no blanket.
             return Ok(());
         }
