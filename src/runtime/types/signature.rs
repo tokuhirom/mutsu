@@ -101,6 +101,13 @@ pub(crate) fn unwrap_varref_value(value: Value) -> Value {
     }
 }
 
+/// Upper bound on how many elements an infinite range contributes to a slurpy.
+/// Mirrors `coerce_to_array`'s `MAX_ARRAY_EXPAND`: binding `1..*` to a `*@`/`+@`
+/// slurpy must not loop forever (`for i in a..=i64::MAX`). This caps it to a
+/// finite prefix instead of hanging. (A truly lazy slurpy binding is the goal of
+/// the lazy-array campaign — see `docs/lazy-arrays.md` Slice L4.)
+const MAX_SLURPY_RANGE_EXPAND: i64 = 100_000;
+
 /// Recursively flatten a list of values for `*@` (flattening slurpy) parameter binding.
 /// Non-itemized Array/List elements are flattened recursively; itemized containers
 /// (`$(...)`, `$[...]`) are preserved as single elements.
@@ -114,31 +121,35 @@ pub(in crate::runtime) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Va
                 flatten_into_slurpy(items, out);
             }
             Value::Range(a, b) => {
-                if *b >= *a {
-                    for i in *a..=*b {
+                let end = (*b).min(a.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                if end >= *a {
+                    for i in *a..=end {
                         out.push(Value::Int(i));
                     }
                 }
             }
             Value::RangeExcl(a, b) => {
-                if *b > *a {
-                    for i in *a..*b {
+                let end = (*b).min(a.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                if end > *a {
+                    for i in *a..end {
                         out.push(Value::Int(i));
                     }
                 }
             }
             Value::RangeExclStart(a, b) => {
                 let start = a.saturating_add(1);
-                if *b >= start {
-                    for i in start..=*b {
+                let end = (*b).min(start.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                if end >= start {
+                    for i in start..=end {
                         out.push(Value::Int(i));
                     }
                 }
             }
             Value::RangeExclBoth(a, b) => {
                 let start = a.saturating_add(1);
-                if *b > start {
-                    for i in start..*b {
+                let end = (*b).min(start.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                if end > start {
+                    for i in start..end {
                         out.push(Value::Int(i));
                     }
                 }
@@ -152,7 +163,8 @@ pub(in crate::runtime) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Va
                 let a = crate::runtime::to_int(start);
                 let b = crate::runtime::to_int(end);
                 let s = if *excl_start { a + 1 } else { a };
-                let e = if *excl_end { b } else { b + 1 };
+                let raw_e = if *excl_end { b } else { b + 1 };
+                let e = raw_e.min(s.saturating_add(MAX_SLURPY_RANGE_EXPAND));
                 for i in s..e {
                     out.push(Value::Int(i));
                 }

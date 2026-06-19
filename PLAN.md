@@ -57,6 +57,11 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 
 - [ ] **残りの型付き例外**（X::Str::Numeric / X::Method::NotFound / X::Undeclared / X::Cannot::Lazy /
       X::EXPORTHOW::InvalidDirective 等）。詳細は BLOCKERS.md "throws-like / Exception Types"。
+- [ ] **真の lazy 無限配列**（`my @a = 1..*` の reify-on-demand）。設計＝[docs/lazy-arrays.md](docs/lazy-arrays.md)。
+      reify 基盤（scalar/gather coroutine 経由の index pull）は既存。残＝① 無限 Range/`...` 列を `@` 代入時に
+      capped Array へ潰さず reify LazyList のまま保持（L2）② mutation chokepoint で reify-on-write（L3・~10箇所・回帰注意）
+      ③ lazy `.gist`/`.is-lazy`（L1/L5）④ slurpy 真 lazy 化（L4）。**slurpy `*@`/`+@` 無限 Range ハングは cap で解消済**
+      （#3302 予定・docs L4 の暫定）。unblock: slurpy-params.t / slice.t / eqv.t lazy。
 - [ ] **Match キャプチャ番号付け / コンテナ kind**: (1) `$<x>=(...)` が positional スロットにも重複格納され番号がずれる
       （`/$<x>=(\w)(\d)/`）、(2) `m:g//` を `my @m` 代入後 `@m.gist` が `(…)` を返す（receiver の List-kind dual-store ナンス）。
 - [ ] Lookbehind assertions (`<!after>`) / `:Perl5` modifier edge cases。
