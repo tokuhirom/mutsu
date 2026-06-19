@@ -121,7 +121,10 @@ impl Interpreter {
             .filter(|&idx| {
                 // Check if the arg is a named arg (Pair) — find matching named param
                 if let Value::Pair(key, _) = &args[idx] {
-                    if let Some(pd) = pds.iter().find(|pd| pd.named && pd.name == *key) {
+                    if let Some(pd) = pds
+                        .iter()
+                        .find(|pd| pd.named && !pd.slurpy && !pd.double_slurpy && pd.name == *key)
+                    {
                         if let Some(tc) = &pd.type_constraint {
                             if matches!(tc.as_str(), "Mu" | "Junction") {
                                 return false;
@@ -131,7 +134,17 @@ impl Interpreter {
                         }
                         return true; // No type constraint = default Any
                     }
-                    return true; // No matching named param found, auto-thread
+                    // No explicit named param matched. A slurpy hash (`*%h`, the
+                    // implicit `%_`, `+%h`) captures the named argument as a raw
+                    // value, so a Junction is stored as-is rather than threaded.
+                    // A slurpy hash is a slurpy param whose sigil is `%` (a
+                    // slurpy `*@a` only collects positionals, not named args).
+                    if pds.iter().any(|pd| {
+                        (pd.slurpy || pd.double_slurpy || pd.onearg) && pd.name.starts_with('%')
+                    }) {
+                        return false;
+                    }
+                    return true; // No slurpy hash to collect it — auto-thread
                 }
 
                 // Positional arg — find corresponding positional param
