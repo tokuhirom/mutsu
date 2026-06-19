@@ -1,7 +1,7 @@
 use super::super::*;
 use super::regex_helpers::{
-    count_capture_groups, fold_quantified_captures, is_named_atom_no_args, is_silent_named_atom,
-    is_simple_atom, reserve_nil_capture_slots,
+    atom_contains_alternation, count_capture_groups, fold_quantified_captures,
+    is_named_atom_no_args, is_silent_named_atom, is_simple_atom, reserve_nil_capture_slots,
 };
 use std::collections::HashSet;
 
@@ -50,6 +50,77 @@ impl Interpreter {
         }
         Self::collect_named_captures_in_atom(&token.atom, &mut names);
         names
+    }
+
+    /// Greedy backtracking expansion of a `*`/`+` quantified atom. Unlike the
+    /// fast greedy *chain* (which commits to a single highest-priority match per
+    /// iteration), this explores every per-iteration alternative so a later
+    /// constraint can force a shorter choice (`(a|b|bc|cde)+»` → `a,b,cde`).
+    ///
+    /// Results are appended to `out` in HIGHEST-priority-first order: at each
+    /// position the highest-priority atom match is tried first, and within a match
+    /// *more* iterations (deeper) outrank stopping there — matching Rakudo's
+    /// greedy semantics. Only used when the atom contains a variable-length
+    /// alternation (see `atom_contains_alternation`), so simple atoms keep the
+    /// cheap chain. Bounded to avoid catastrophic backtracking.
+    #[allow(clippy::too_many_arguments)]
+    fn quant_expand_greedy<FN, FH>(
+        &self,
+        token: &RegexToken,
+        chars: &[char],
+        pos: usize,
+        caps: &RegexCaptures,
+        pos_base: usize,
+        pkg: &str,
+        ignore_case: bool,
+        apply_named: &FN,
+        apply_hash: &FH,
+        out: &mut Vec<(usize, RegexCaptures)>,
+    ) where
+        FN: Fn(&RegexToken, usize, usize, usize, RegexCaptures) -> RegexCaptures,
+        FH: Fn(&RegexToken, usize, usize, usize, RegexCaptures) -> RegexCaptures,
+    {
+        if out.len() > 20_000 {
+            return;
+        }
+        // All atom matches at `pos`. `_all_` returns LOWEST-priority first; we
+        // want HIGHEST first so reverse.
+        let mut matches = self.regex_match_atom_all_with_capture_in_pkg(
+            &token.atom,
+            chars,
+            pos,
+            caps,
+            pkg,
+            ignore_case,
+        );
+        matches.reverse();
+        for (next, new_caps) in matches {
+            if next == pos {
+                continue; // zero-width: would loop forever
+            }
+            let iter_pos_base = caps.positional.len();
+            let new_caps = apply_hash(
+                token,
+                pos,
+                next,
+                iter_pos_base,
+                apply_named(token, pos, next, pos_base, new_caps),
+            );
+            // Greedy: prefer extending with more iterations before stopping here.
+            self.quant_expand_greedy(
+                token,
+                chars,
+                next,
+                &new_caps,
+                pos_base,
+                pkg,
+                ignore_case,
+                apply_named,
+                apply_hash,
+                out,
+            );
+            out.push((next, new_caps));
+        }
     }
     /// Match a separator quantifier (`atom +% sep`, `atom **N..M %% sep`, ...).
     /// The atom is matched repeatedly with `sep` interleaved between iterations.
@@ -742,33 +813,57 @@ impl Interpreter {
                         caps.named_quantified
                             .extend(Self::collect_quantified_names_for_token(token));
                         let mut positions = Vec::new();
+                        // Zero-match candidate (lowest priority for greedy `*`).
                         positions.push((pos, caps.clone()));
-                        let mut current = pos;
-                        let mut current_caps = caps.clone();
-                        while let Some((next, new_caps)) = self
-                            .regex_match_atom_with_capture_in_pkg(
-                                &token.atom,
+                        if atom_contains_alternation(&token.atom) {
+                            // Full greedy backtracking so a later constraint can
+                            // force a shorter per-iteration alternative.
+                            let mut hi_first = Vec::new();
+                            self.quant_expand_greedy(
+                                token,
                                 chars,
-                                current,
-                                &current_caps,
+                                pos,
+                                &caps,
+                                pos_base,
                                 pkg,
                                 pattern.ignore_case,
-                            )
-                        {
-                            if next == current {
-                                break;
-                            }
-                            let iter_pos_base = current_caps.positional.len();
-                            let new_caps = apply_hash_capture(
-                                token,
-                                current,
-                                next,
-                                iter_pos_base,
-                                apply_named_capture(token, current, next, pos_base, new_caps),
+                                &apply_named_capture,
+                                &apply_hash_capture,
+                                &mut hi_first,
                             );
-                            current_caps = new_caps.clone();
-                            positions.push((next, new_caps));
-                            current = next;
+                            // hi_first is HIGHEST-first; `positions` is LOWEST-first
+                            // (greediest last, pushed to the LIFO stack last → tried
+                            // first), so reverse before appending after the zero entry.
+                            hi_first.reverse();
+                            positions.extend(hi_first);
+                        } else {
+                            let mut current = pos;
+                            let mut current_caps = caps.clone();
+                            while let Some((next, new_caps)) = self
+                                .regex_match_atom_with_capture_in_pkg(
+                                    &token.atom,
+                                    chars,
+                                    current,
+                                    &current_caps,
+                                    pkg,
+                                    pattern.ignore_case,
+                                )
+                            {
+                                if next == current {
+                                    break;
+                                }
+                                let iter_pos_base = current_caps.positional.len();
+                                let new_caps = apply_hash_capture(
+                                    token,
+                                    current,
+                                    next,
+                                    iter_pos_base,
+                                    apply_named_capture(token, current, next, pos_base, new_caps),
+                                );
+                                current_caps = new_caps.clone();
+                                positions.push((next, new_caps));
+                                current = next;
+                            }
                         }
                         if token.ratchet
                             && let Some(last) = positions.last().cloned()
@@ -928,53 +1023,78 @@ impl Interpreter {
                         let mut caps = caps;
                         caps.named_quantified
                             .extend(Self::collect_quantified_names_for_token(token));
-                        let (mut current, mut current_caps) = match self
-                            .regex_match_atom_with_capture_in_pkg(
-                                &token.atom,
+                        let mut positions = Vec::new();
+                        if atom_contains_alternation(&token.atom) {
+                            // Full greedy backtracking (`+` of a variable-length
+                            // alternation): explore every per-iteration choice so a
+                            // later constraint can force a shorter one.
+                            let mut hi_first = Vec::new();
+                            self.quant_expand_greedy(
+                                token,
                                 chars,
                                 pos,
                                 &caps,
+                                pos_base,
                                 pkg,
                                 pattern.ignore_case,
-                            ) {
-                            Some((next, new_caps)) => {
+                                &apply_named_capture,
+                                &apply_hash_capture,
+                                &mut hi_first,
+                            );
+                            if hi_first.is_empty() {
+                                continue; // no match → `+` fails here
+                            }
+                            // HIGHEST-first → LOWEST-first (greediest last for LIFO).
+                            hi_first.reverse();
+                            positions = hi_first;
+                        } else {
+                            let (mut current, mut current_caps) = match self
+                                .regex_match_atom_with_capture_in_pkg(
+                                    &token.atom,
+                                    chars,
+                                    pos,
+                                    &caps,
+                                    pkg,
+                                    pattern.ignore_case,
+                                ) {
+                                Some((next, new_caps)) => {
+                                    let new_caps = apply_hash_capture(
+                                        token,
+                                        pos,
+                                        next,
+                                        pos_base,
+                                        apply_named_capture(token, pos, next, pos_base, new_caps),
+                                    );
+                                    (next, new_caps)
+                                }
+                                None => continue,
+                            };
+                            positions.push((current, current_caps.clone()));
+                            while let Some((next, new_caps)) = self
+                                .regex_match_atom_with_capture_in_pkg(
+                                    &token.atom,
+                                    chars,
+                                    current,
+                                    &current_caps,
+                                    pkg,
+                                    pattern.ignore_case,
+                                )
+                            {
+                                if next == current {
+                                    break;
+                                }
+                                let iter_pos_base = current_caps.positional.len();
                                 let new_caps = apply_hash_capture(
                                     token,
-                                    pos,
+                                    current,
                                     next,
-                                    pos_base,
-                                    apply_named_capture(token, pos, next, pos_base, new_caps),
+                                    iter_pos_base,
+                                    apply_named_capture(token, current, next, pos_base, new_caps),
                                 );
-                                (next, new_caps)
+                                current_caps = new_caps.clone();
+                                positions.push((next, new_caps));
+                                current = next;
                             }
-                            None => continue,
-                        };
-                        let mut positions = Vec::new();
-                        positions.push((current, current_caps.clone()));
-                        while let Some((next, new_caps)) = self
-                            .regex_match_atom_with_capture_in_pkg(
-                                &token.atom,
-                                chars,
-                                current,
-                                &current_caps,
-                                pkg,
-                                pattern.ignore_case,
-                            )
-                        {
-                            if next == current {
-                                break;
-                            }
-                            let iter_pos_base = current_caps.positional.len();
-                            let new_caps = apply_hash_capture(
-                                token,
-                                current,
-                                next,
-                                iter_pos_base,
-                                apply_named_capture(token, current, next, pos_base, new_caps),
-                            );
-                            current_caps = new_caps.clone();
-                            positions.push((next, new_caps));
-                            current = next;
                         }
                         if token.ratchet
                             && let Some(last) = positions.last().cloned()
