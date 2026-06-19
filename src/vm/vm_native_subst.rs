@@ -172,6 +172,7 @@ impl Interpreter {
                 &HashMap::new(),
                 &[],
                 &[],
+                &[],
                 Some(text),
             )
         };

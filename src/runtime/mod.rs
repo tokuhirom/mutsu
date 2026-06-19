@@ -617,6 +617,13 @@ pub(crate) struct RegexCaptures {
     pub(crate) positional_quantified: Vec<Option<Vec<QuantifiedCaptureEntry>>>,
     /// Character offsets (start, end) for each entry in `positional`.
     pub(crate) positional_offsets: Vec<(usize, usize)>,
+    /// Marks a positional slot as an *unmatched optional* capture (`(x)?` that
+    /// matched zero times) which must render as `Nil` (not an empty Match). Only
+    /// the zero-match reservation arms set entries here; they pad with `false` up
+    /// to the current `positional` length before pushing `true`, so matched
+    /// captures (which never touch this vec) stay aligned. The Match builder reads
+    /// it via `.get(i)` — a missing/`false` entry renders normally.
+    pub(crate) positional_nil: Vec<bool>,
     /// Unnamed capture slots by capture index (for $0, $1, ...), where `None`
     /// represents an unmatched capture.
     pub(crate) positional_slots: Vec<Option<(String, usize, usize)>>,

@@ -414,16 +414,24 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
         return;
     }
     let new_entries = caps.positional.len() - base_len;
+    if new_entries == 0 {
+        // A zero-iteration `*` / `**0..` quantified capture group reserves an
+        // empty-list slot per inner capture (Raku: `(z)*` matching 0 times yields
+        // `[]`). Index stability is preserved because an earlier unmatched `(...)?`
+        // reserves its own Nil slot (see `reserve_nil_capture_slots`), so both
+        // `(y)?`→Nil and `(z)*`→[] coexist at their correct positions.
+        for _ in 0..stride {
+            caps.positional.push(String::new());
+            caps.positional_subcaps.push(None);
+            caps.positional_quantified.push(Some(Vec::new()));
+            caps.positional_offsets.push((0, 0));
+        }
+        return;
+    }
     if new_entries <= stride {
-        // Only one iteration or fewer — nothing to fold.
-        //
-        // NOTE: a zero-iteration `*`/`+` quantified capture group should ideally
-        // reserve an empty-list slot (Raku: `(z)*` matching 0 times yields `[]`),
-        // but mutsu does not yet reserve index-stable positional capture slots
-        // for unmatched optional captures, so emitting an empty slot here would
-        // misalign indices when an earlier `(...)?` also matched zero times.
-        // TODO: reserve index-stable positional slots for all capture groups so
-        // both `(y)?`→Nil and `(z)*`→[] can coexist.
+        // Exactly one iteration — mutsu keeps the single capture un-folded.
+        // TODO: Raku makes `*`/`+` always a List even for one match (`(z)*`
+        // matching once yields `List(1)`); folding here has wider blast radius.
         return;
     }
     let iterations = new_entries / stride;
@@ -476,6 +484,30 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
     // Also truncate offsets if present
     if caps.positional_offsets.len() > base_len {
         caps.positional_offsets.truncate(base_len);
+    }
+}
+
+/// Reserve `stride` index-stable Nil slots for an unmatched optional capture
+/// group (`(x)?` that matched zero times). The slots render as `Nil` in the
+/// resulting Match (Raku: `(a)?(b)` on "b" yields `$0 = Nil`, `$1 = b`).
+///
+/// `positional_nil` is padded with `false` up to the current `positional` length
+/// before the `true` entries are pushed, so the matched captures that precede
+/// this group (which never touch `positional_nil`) stay index-aligned.
+pub(super) fn reserve_nil_capture_slots(caps: &mut RegexCaptures, stride: usize) {
+    if stride == 0 {
+        return;
+    }
+    while caps.positional_nil.len() < caps.positional.len() {
+        caps.positional_nil.push(false);
+    }
+    let at = caps.to;
+    for _ in 0..stride {
+        caps.positional.push(String::new());
+        caps.positional_subcaps.push(None);
+        caps.positional_quantified.push(None);
+        caps.positional_offsets.push((at, at));
+        caps.positional_nil.push(true);
     }
 }
 
