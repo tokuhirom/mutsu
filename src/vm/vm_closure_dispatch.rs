@@ -107,6 +107,10 @@ impl Interpreter {
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
         }
+        // Slice F: clear any rw-writeback sources left undrained by a sibling
+        // call so this dispatch's call site only sees this call's own sources
+        // (see call_compiled_function_named for the full rationale).
+        self.pending_rw_writeback_sources.clear();
 
         // Apply assumed args from .assuming() (same logic as tree-walker call_sub_value)
         if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
@@ -665,6 +669,15 @@ impl Interpreter {
             self,
             apply_rw_bindings_to_env(&rw_bindings, &mut restored_env)
         );
+        // Slice F: record the caller-source names this `is rw` writeback touched
+        // so the call-site op (which holds the caller's `code`) writes each new
+        // value straight through to the caller's local slot, keeping it coherent
+        // without the reverse `sync_locals_from_env` pull. The values land in
+        // `restored_env`, which becomes `self.env` before this function returns.
+        if !rw_bindings.is_empty() {
+            self.pending_rw_writeback_sources
+                .extend(rw_bindings.iter().map(|(_, source)| source.clone()));
+        }
         // Build set of parameter names — these are strictly local to the
         // function call and must never leak back to the caller's env, even
         // when they share a name with a captured outer variable.

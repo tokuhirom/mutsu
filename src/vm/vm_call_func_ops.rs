@@ -310,7 +310,9 @@ impl Interpreter {
                         };
                         // Put CF back in cache
                         self.otf_call_cache.insert(name_sym, cf);
-                        self.stack.push(result?);
+                        let result = result?;
+                        self.apply_pending_rw_writeback(code);
+                        self.stack.push(result);
                         // Slice 6.3 step 2: all three sub-cases now signal env_dirty
                         // precisely — light / positional_light via their scoped-overlay
                         // merge, and the named sub-case via call_compiled_function_named's
@@ -530,6 +532,9 @@ impl Interpreter {
         {
             self.locals[slot] = val;
         }
+        // Slice F: write any `is rw` parameter writeback through to the caller's
+        // local slot (see `apply_pending_rw_writeback`).
+        self.apply_pending_rw_writeback(code);
         self.stack.push(result);
         // env_dirty is now managed inside dispatch_func_call_inner: the
         // interpreter / native fallback branches set it (they mutate env by
@@ -718,6 +723,7 @@ impl Interpreter {
         self.set_pending_call_arg_sources(None);
         let result = result?;
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?;
+        self.apply_pending_rw_writeback(code);
         self.stack.push(result);
         self.env_dirty = true;
         Ok(())
@@ -801,6 +807,7 @@ impl Interpreter {
             result?
         };
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
+        self.apply_pending_rw_writeback(code);
         self.stack.push(result);
         self.env_dirty = true;
         Ok(())
