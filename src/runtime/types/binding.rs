@@ -27,6 +27,27 @@ fn legacy_has_plain_positional_param(params: &[String]) -> bool {
 }
 
 impl Interpreter {
+    /// Whether a named parameter is a plain readonly scalar `$` param eligible
+    /// for container sharing (Slice 2d named follow-up). A scalar named param is
+    /// stored sigil-less in `ParamDef::name` (`:$n` -> "n"), unlike `:@l`/`:%h`
+    /// which keep their sigil; exclude attribute twigils (`:$!x` -> "!x"), `$_`,
+    /// `is copy`/`is rw`/`is raw`, slurpy, and sub-signature params.
+    fn named_scalar_container_share_eligible(&self, pd: &crate::ast::ParamDef) -> bool {
+        !pd.traits
+            .iter()
+            .any(|t| t == "copy" || t == "rw" || t == "raw")
+            && !pd.slurpy
+            && !pd.double_slurpy
+            && pd.sub_signature.is_none()
+            && pd.name != "_"
+            && !pd.name.starts_with(['@', '%', '&', '!', '.'])
+            && pd
+                .name
+                .as_bytes()
+                .first()
+                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+    }
+
     fn parameter_binding_error(message: String) -> RuntimeError {
         let mut err = RuntimeError::new(message);
         let mut ex_attrs = std::collections::HashMap::new();
@@ -631,8 +652,8 @@ impl Interpreter {
                 let mut found = false;
                 // Iterate in reverse so that the rightmost named argument wins
                 // when the same key is provided multiple times.
-                for arg in args.iter().rev() {
-                    let arg = unwrap_varref_value(arg.clone());
+                for (arg_idx, raw_arg) in args.iter().enumerate().rev() {
+                    let arg = unwrap_varref_value(raw_arg.clone());
                     if let Value::Pair(key, val) = arg
                         && key == match_key
                     {
@@ -653,7 +674,35 @@ impl Interpreter {
                             err.exception = Some(Box::new(exception));
                             return Err(err);
                         }
-                        self.bind_param_value(&pd.name, *val.clone());
+                        // Slice 2d (named follow-up): an `@`/`%` *variable* passed by
+                        // name to a plain readonly scalar `$` named param binds the
+                        // same mutable container in Raku (`sub f(:$n){ $n.push }`
+                        // mutates the caller's `@a`), exactly like the positional
+                        // case. The source variable name is encoded "key=source" in
+                        // `arg_sources` (`positional_arg_source_name`). Promote the
+                        // bound value to a shared `ContainerRef` cell and register the
+                        // exit-time rw writeback. Only `=` rebinding stays forbidden
+                        // (named scalar params are readonly). A `$`-scalar source
+                        // (`:$n` shorthand over `my $n = @a`) is excluded — it shares
+                        // by reference already, like the positional scalar source.
+                        let mut bound_value = *val.clone();
+                        if self.named_scalar_container_share_eligible(pd)
+                            && matches!(bound_value, Value::Array(..) | Value::Hash(..))
+                            && let Some(source_name) = arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(arg_idx))
+                                .and_then(|n| n.as_ref())
+                                .and_then(|encoded| {
+                                    encoded.split_once('=').map(|(_, s)| s.to_string())
+                                })
+                                .filter(|s| s.starts_with('@') || s.starts_with('%'))
+                        {
+                            bound_value = Value::ContainerRef(std::sync::Arc::new(
+                                std::sync::Mutex::new(bound_value),
+                            ));
+                            rw_bindings.push((pd.name.clone(), source_name));
+                        }
+                        self.bind_param_value(&pd.name, bound_value);
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                         if let Some(sub_params) = &pd.sub_signature {
                             bind_named_rename_sub_signature(self, sub_params, &val)?;
