@@ -2777,6 +2777,9 @@ impl Interpreter {
         name_idx: u32,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        // A lazy `@`-array must reify its prefix before an element assignment
+        // (`@a[i] = v`) — the assign machinery needs a materialized backing. (L2)
+        self.reify_lazy_array_slot(Self::const_str(code, name_idx))?;
         // Slice 2b: `@aoa[i] = @row` / `%h<k> = @row` was compiled as a `:=` bind
         // (so the bind machinery installs a shared `ContainerRef` cell and
         // promotes the source) plus a `MarkElementShare` flag. Capture which
@@ -6281,6 +6284,11 @@ impl Interpreter {
                     Value::LazyIoLines { .. } => {
                         let forced = self.force_if_lazy_io_lines(raw_popped)?;
                         runtime::coerce_to_array(forced)
+                    }
+                    // An infinite integer range (`1..*`) stays a reify LazyList
+                    // instead of being capped to a 100k `ArrayKind::Lazy` Array. (L2)
+                    other if runtime::utils::infinite_int_range_to_lazy_array(&other).is_some() => {
+                        runtime::utils::infinite_int_range_to_lazy_array(&other).unwrap()
                     }
                     other => {
                         // Resolve bound-element sentinels before coercing to

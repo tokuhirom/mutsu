@@ -27,6 +27,47 @@ pub(crate) fn cannot_lazy_failure(action: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
+/// If `value` is an infinite *integer* range (`1..*`, `^Inf`, `0..^*`, …),
+/// return a reify-on-demand `LazyList` (arithmetic sequence, step 1) tagged as
+/// living in `@` array context, so `my @a = 1..*` stays lazy (`@a[200000]`
+/// reifies, `@a.gist` is `[...]`, `.elems` throws) instead of being capped to a
+/// 100k `ArrayKind::Lazy` Array. Returns `None` for finite or non-integer
+/// ranges (the caller falls back to `coerce_to_array`).
+pub(crate) fn infinite_int_range_to_lazy_array(value: &Value) -> Option<Value> {
+    use crate::value::{LazyList, SequenceSpec};
+    let start = match value {
+        Value::Range(a, b) | Value::RangeExcl(a, b) if *b == i64::MAX => *a,
+        Value::RangeExclStart(a, b) | Value::RangeExclBoth(a, b) if *b == i64::MAX => *a + 1,
+        Value::GenericRange { start, end, .. } => {
+            let end_f = end.to_f64();
+            if !(end_f.is_infinite() && end_f.is_sign_positive()) {
+                return None;
+            }
+            match start.as_ref() {
+                Value::Int(a) => *a,
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    // Seed the cache with the same bounded prefix `coerce_to_array` would have
+    // materialized, so eager read operations that consume the cache (`.head`,
+    // `.first`, `.map`, `.grep`, ...) behave exactly as today. The
+    // `SequenceSpec` lets `@a[N]` for `N` past the prefix reify on demand
+    // (`force_lazy_list_vm_n`), which a capped `ArrayKind::Lazy` Array could not.
+    let end = start.saturating_add(MAX_ARRAY_EXPAND);
+    let seeds: Vec<Value> = (start..=end).map(Value::Int).collect();
+    let ll = LazyList::new_sequence(
+        seeds,
+        SequenceSpec::Arithmetic {
+            step: 1,
+            all_int: true,
+        },
+    )
+    .with_array_context();
+    Some(Value::LazyList(Arc::new(ll)))
+}
+
 /// Saturating conversion of an arbitrary-precision BigInt to i64.
 /// Bag/Set arithmetic helpers operate on i64 maps (min/max/diff semantics
 /// don't need arbitrary precision); a count that overflows i64 saturates.

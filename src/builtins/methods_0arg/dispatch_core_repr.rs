@@ -452,6 +452,9 @@ pub(super) fn dispatch(
                     Value::Array(_, k) if *k == crate::value::ArrayKind::Lazy => {
                         "[...]".to_string()
                     }
+                    Value::LazyList(ll) if ll.is_genuinely_lazy() => {
+                        crate::value::lazy_list_placeholder("gist", ll.in_array_context())
+                    }
                     Value::Array(inner, kind) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         gist_array_wrap(&elems, *kind)
@@ -520,6 +523,9 @@ pub(super) fn dispatch(
                     Value::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
                     Value::Array(_, k) if *k == crate::value::ArrayKind::Lazy => {
                         "[...]".to_string()
+                    }
+                    Value::LazyList(ll) if ll.is_genuinely_lazy() => {
+                        crate::value::lazy_list_placeholder("gist", ll.in_array_context())
                     }
                     Value::Array(inner, kind) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");

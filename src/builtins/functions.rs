@@ -134,10 +134,14 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
         }
         // Itemized containers — don't descend
         Value::Array(_, kind) if kind.is_itemized() => out.push(v.clone()),
-        // Already-realized lazy lists flatten their cached items; an un-forced
-        // lazy list stays opaque (we don't force here).
+        // A genuinely-lazy `@`-array (`my @a = 1..*`) stays opaque so it renders
+        // as `...`/`[...]` (e.g. in `"@a[]"` interpolation) rather than spilling
+        // its capped backing prefix. Already-realized lazy lists flatten their
+        // cached items; an un-forced lazy list stays opaque (we don't force here).
         Value::LazyList(ll) => {
-            if let Some(cached) = ll.cache.lock().unwrap().clone() {
+            if ll.in_array_context() && ll.is_genuinely_lazy() {
+                out.push(v.clone());
+            } else if let Some(cached) = ll.cache.lock().unwrap().clone() {
                 for item in &cached {
                     flat_val(item, out, flatten_arrays);
                 }

@@ -50,6 +50,28 @@
   path, separate from `.Str`); no hang. With the dual-rep wart resolved, **L2**
   (preserve infinite Range / closure_seq / lazy_pipe as a reify `LazyList` on
   `@`-assign instead of capping to an Array) is now unblocked.
+- **L2a — `my @a = 1..*` stays a reify `LazyList` (DONE).** An infinite *integer*
+  range assigned to `@a` is converted to a `SequenceSpec::Arithmetic` `LazyList`
+  (array-context tagged) by `runtime::utils::infinite_int_range_to_lazy_array`,
+  seeded with the same 100k prefix `coerce_to_array` would have produced — so
+  eager reads that consume the cache (`.head`/`.first`/`.map`/`.grep`) behave
+  exactly as before, while `@a[N]` past the prefix reifies on demand
+  (`@a[200000]` → 200001, was `Nil`). `.is-lazy`/`.gist`/`.WHAT` and the
+  X::Cannot::Lazy numeric guards (extended to `LazyList` via `is_lazy_count_source`)
+  all stay correct. **Mutation:** end-mutations raku rejects (push/pop/append)
+  throw `X::Cannot::Lazy`; front mutations (unshift/prepend/shift/splice,
+  `@a[i]=v`, `@a[i]:delete`) reify the cached prefix to a real Array first via
+  `reify_lazy_array_slot` (no worse than the pre-L2 capped Array). `@a[i]:exists`
+  answers from the index (any non-negative index exists) without forcing.
+  Chokepoints: `vm_call_method_mut_ops` (method mutators), `vm_data_ops`
+  (ArrayPush opcode), `vm_var_assign_ops` (`@a[i]=v`), `vm_var_delete_ops`
+  (`:delete`), `vm_var_exists_ops` (`:exists`). t/lazy-array-reify.t.
+  **Scope:** only the integer-range case is converted; `(1...*)`/closure-seq/
+  gather arrays are still forced to a capped Array on `@`-assign (converting them
+  too would regress S32-array/create.t's partial-reify, which the capped Array
+  fakes). True memory-laziness (seed `[1]` instead of the 100k prefix, requires
+  `.head`/`.first`/`.map`/`.grep` to extend a `sequence_spec` `LazyList`) is the
+  L2b follow-up.
 
 ## Open findings / blockers discovered this session
 

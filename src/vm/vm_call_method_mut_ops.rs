@@ -366,6 +366,37 @@ impl Interpreter {
         } else {
             target
         };
+        // Mutating a lazy `@`-array (infinite source). raku rejects operations
+        // that touch the (non-existent) end — push/pop/append — with
+        // `X::Cannot::Lazy`, but allows front operations (unshift/prepend/shift/
+        // splice), which reify the cached prefix to a real Array first
+        // (no worse than the pre-L2 capped Array). Restricted to cache-backed
+        // specs so the reify never runs user code or hangs. (L2)
+        if let Value::LazyList(ref ll) = target
+            && ll.in_array_context()
+            && ll.is_genuinely_lazy()
+            && let Some(action) = match method.as_str() {
+                "push" => Some("push to"),
+                "pop" => Some("pop from"),
+                "append" => Some("append to"),
+                _ => None,
+            }
+        {
+            return Err(RuntimeError::cannot_lazy_with_action(action, "Array"));
+        }
+        let target = if let Value::LazyList(ref ll) = target
+            && ll.in_array_context()
+            && (ll.sequence_spec.is_some() || ll.closure_seq.is_some() || ll.scan_spec.is_some())
+            && matches!(method.as_str(), "shift" | "unshift" | "prepend" | "splice")
+        {
+            let items = self.force_lazy_list_vm(ll)?;
+            let reified = Value::real_array(items);
+            self.env_mut().insert(target_name.clone(), reified.clone());
+            self.env_dirty = true;
+            reified
+        } else {
+            target
+        };
         // gist/Str/raku/perl of a genuinely-lazy list renders raku's placeholder
         // (`[...]` in `@` array context, `(...)` for a bare Seq, `...` for Str)
         // rather than forcing the (possibly infinite) sequence. Must run before

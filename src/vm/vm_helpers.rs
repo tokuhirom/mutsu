@@ -307,6 +307,34 @@ impl Interpreter {
         )
     }
 
+    /// If the variable `name` holds a lazy `@`-array backed by a cache-bearing
+    /// spec (infinite sequence/closure/scan), reify its cached prefix into a
+    /// real Array and write it back, so a subsequent element mutation
+    /// (`@a[i] = v`, `:delete`) operates on a materialized backing. Front
+    /// mutations collapse the list to its prefix (no worse than the pre-L2
+    /// capped Array); reads keep it lazy. Reifies only cache-backed specs, so it
+    /// never runs user code or hangs. (L2)
+    pub(super) fn reify_lazy_array_slot(&mut self, name: &str) -> Result<(), RuntimeError> {
+        let lazy = match self.env().get(name) {
+            Some(Value::LazyList(ll))
+                if ll.in_array_context()
+                    && (ll.sequence_spec.is_some()
+                        || ll.closure_seq.is_some()
+                        || ll.scan_spec.is_some()) =>
+            {
+                Some(ll.clone())
+            }
+            _ => None,
+        };
+        if let Some(ll) = lazy {
+            let items = self.force_lazy_list_vm(&ll)?;
+            self.env_mut()
+                .insert(name.to_string(), Value::real_array(items));
+            self.env_dirty = true;
+        }
+        Ok(())
+    }
+
     pub(super) fn lazy_list_needs_forcing(method: &str) -> bool {
         matches!(
             method,
