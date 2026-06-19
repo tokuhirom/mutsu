@@ -82,6 +82,18 @@ pub(crate) fn enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var_os("MUTSU_VM_STATS").is_some())
 }
 
+/// Campaign diagnostic (docs/env-locals-coherence.md, Slice F): when
+/// `MUTSU_NO_REVERSE_SYNC` is set, `sync_locals_from_env` skips its write-back
+/// body so the reverse pull no longer backstops by-name env writes. Used to
+/// verify that a coherence slice has made a given test no longer *depend* on the
+/// reverse pull (the precondition for eventually deleting `env_dirty`). Cached
+/// once; a single bool load when unset (zero release-build cost).
+#[inline]
+pub(crate) fn reverse_sync_disabled() -> bool {
+    static OFF: OnceLock<bool> = OnceLock::new();
+    *OFF.get_or_init(|| std::env::var_os("MUTSU_NO_REVERSE_SYNC").is_some())
+}
+
 /// Record that an explicit method-call opcode (`.foo(...)`) was executed.
 #[inline]
 pub(crate) fn record_method_dispatch() {

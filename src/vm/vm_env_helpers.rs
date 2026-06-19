@@ -310,6 +310,11 @@ impl Interpreter {
 
     pub(super) fn sync_locals_from_env(&mut self, code: &CompiledCode) {
         crate::vm::vm_stats::record_locals_pull();
+        // Campaign diagnostic (Slice F): skip the actual reverse pull so a slice
+        // can verify a test no longer depends on it. See `reverse_sync_disabled`.
+        if crate::vm::vm_stats::reverse_sync_disabled() {
+            return;
+        }
         // Slice A (docs/vm-single-store.md): when stats are on, measure the
         // *precision* of the reverse sync — how many of the slots this pull
         // overwrites were genuinely stale (env differed from local) vs already

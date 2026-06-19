@@ -498,6 +498,21 @@ impl Interpreter {
             self.env_dirty = true;
             return Ok(());
         }
+        // Slice F (env<->locals coherence, docs/env-locals-coherence.md): the
+        // lvalue-method writeback builtins (`$p.value = X` / `.value--`,
+        // `@a.head = v`, `%h.AT-KEY(k) = v`, `@a.first(...) = v`, ...) mutate
+        // their target variable in `env` *by name* (`self.env.insert(var, ...)`)
+        // and rely on the reverse pull to refresh the caller's local slot. The
+        // target variable name is the 5th argument. Capture it so we can write
+        // the new env value straight through to the local slot after dispatch,
+        // keeping locals coherent without depending on the `env_dirty` backstop.
+        let lvalue_writeback_target = match name.as_str() {
+            "__mutsu_assign_method_lvalue" | "__mutsu_index_assign_method_lvalue" => args
+                .get(4)
+                .map(|v| v.to_string_value())
+                .filter(|s| !s.is_empty()),
+            _ => None,
+        };
         let result = self.dispatch_func_call_inner(
             code,
             &name,
@@ -506,6 +521,15 @@ impl Interpreter {
             call_me_override,
             compiled_fns,
         )?;
+        if let Some(target) = lvalue_writeback_target
+            && let Some(slot) = self.find_local_slot(code, &target)
+            // Mirror the reverse pull's invariant: never clobber a live
+            // `HashSlotRef` binding slot with a plain env copy.
+            && !matches!(self.locals[slot], Value::HashSlotRef { .. })
+            && let Some(val) = self.env().get(&target).cloned()
+        {
+            self.locals[slot] = val;
+        }
         self.stack.push(result);
         // env_dirty is now managed inside dispatch_func_call_inner: the
         // interpreter / native fallback branches set it (they mutate env by
