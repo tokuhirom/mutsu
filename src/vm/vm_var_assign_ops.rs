@@ -213,6 +213,13 @@ impl Interpreter {
     fn resolve_whatever_index_for_target(&mut self, idx: Value, target: Option<&Value>) -> Value {
         let len = match target {
             Some(Value::Array(items, ..)) => items.len() as i64,
+            // A `:=`-bound array is held in a `ContainerRef` cell; descend it so
+            // a from-end index (`@a[*-1]`) resolves the real length instead of 0
+            // (which would yield a negative effective index and X::OutOfRange).
+            Some(Value::ContainerRef(cell)) => match &*cell.lock().unwrap() {
+                Value::Array(items, ..) => items.len() as i64,
+                _ => 0,
+            },
             _ => 0,
         };
         // Bare Whatever (*) in array subscript means all indices: 0, 1, ..., len-1
@@ -3103,19 +3110,24 @@ impl Interpreter {
                 let v = junc_vals.get(i).cloned().unwrap_or(Value::Nil);
                 let k = key.to_string_value();
                 if var_name.starts_with('%') {
-                    if !matches!(self.env().get(&var_name), Some(Value::Hash(_))) {
+                    // Descend through any `:=`-bound `ContainerRef` cell so the
+                    // junction write reaches the shared container (otherwise it
+                    // would detach the bind by overwriting the cell with a fresh
+                    // hash — see `my %h := %g; %h{'x'|'y'} = v`).
+                    if !matches!(self.env_root_descended_mut(&var_name), Some(Value::Hash(_))) {
                         self.env_mut().insert(
                             var_name.clone(),
                             Value::hash(std::collections::HashMap::new()),
                         );
                     }
-                    if let Some(Value::Hash(hash)) = self.env_mut().get_mut(&var_name) {
+                    if let Some(Value::Hash(hash)) = self.env_root_descended_mut(&var_name) {
                         let h = Arc::make_mut(hash);
                         h.insert(k, v);
                     }
                 } else if let Some(idx_usize) = Self::index_to_usize(key) {
                     // For array variables with junction index, use numeric indices
-                    if let Some(Value::Array(items, ..)) = self.env_mut().get_mut(&var_name) {
+                    // (descend through any `:=`-bound cell, same as the hash arm).
+                    if let Some(Value::Array(items, ..)) = self.env_root_descended_mut(&var_name) {
                         let arr = Arc::make_mut(items);
                         if idx_usize >= arr.len() {
                             let fill = native_fill.clone();
