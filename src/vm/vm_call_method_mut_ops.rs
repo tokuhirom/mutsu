@@ -1259,6 +1259,20 @@ impl Interpreter {
                     self.env_dirty = true;
                     return Ok(());
                 }
+                // Symmetric bound-cell fast path for hash mutators (`%h.push` /
+                // `.append`) where `%h := %g` holds a shared `ContainerRef` cell.
+                // The array mutator above descends the cell via
+                // `env_root_descended_mut`; hashes need the same so the mutation
+                // propagates to the bind source instead of detaching into the
+                // receiver's own slot.
+                if modifier.is_none()
+                    && let Some(result) =
+                        self.try_native_hash_mut_bound(&target_name, &method, &args)
+                {
+                    self.stack.push(result?);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
                 // Native fast path for the simple (non-erroring) forms of `splice`
                 // on a plain, untyped `@`-array (ledger §1: native receiver
                 // dispatch -> Interpreter-native).
@@ -1510,6 +1524,39 @@ impl Interpreter {
         let mut bytes = name.bytes();
         matches!(bytes.next(), Some(b'@') | Some(b'%'))
             && matches!(bytes.next(), Some(c) if c.is_ascii_alphabetic() || c == b'_')
+    }
+
+    /// Bound-hash twin of `try_native_array_mut`: `%h.push((k => v))` /
+    /// `%h.append(...)` where `%h := %g` holds a shared `ContainerRef` cell.
+    /// Only the bound case is intercepted — a plain hash has no cell to detach,
+    /// so its existing interpreter writeback (into the receiver's slot) is
+    /// already correct. Hash push/append semantics (existing-key value becomes a
+    /// list) are non-trivial, so we delegate to the interpreter on the *inner*
+    /// hash and write the result back through the cell, keeping every alias
+    /// coherent.
+    fn try_native_hash_mut_bound(
+        &mut self,
+        target_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "push" | "append") {
+            return None;
+        }
+        let cell = match self.env().get(target_name) {
+            Some(Value::ContainerRef(cell)) => cell.clone(),
+            _ => return None,
+        };
+        let inner = cell.lock().unwrap().clone();
+        if !matches!(inner, Value::Hash(_)) {
+            return None;
+        }
+        let result = match loan_env!(self, call_method_with_values(inner, method, args.to_vec())) {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
+        *cell.lock().unwrap() = result.clone();
+        Some(Ok(result))
     }
 
     fn try_native_array_mut(
