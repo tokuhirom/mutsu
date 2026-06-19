@@ -18,6 +18,12 @@ impl Interpreter {
         invocant: Option<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(Value, HashMap<String, Value>, bool), RuntimeError> {
+        // Slice F: the rw-writeback source list is drained by the CallMethod /
+        // CallMethodMut op right after this dispatch returns, so it must hold
+        // only this call's sources. Clear any leftover from a sibling whose call
+        // site did not drain; nested calls in the body self-drain via their own
+        // call-site ops before this frame records its own sources.
+        self.pending_rw_writeback_sources.clear();
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
             let cl = self.env().get("?LINE").and_then(|v| match v {
@@ -42,10 +48,15 @@ impl Interpreter {
         };
 
         // Pre-compute whether we can skip the expensive env merge on exit.
+        // `is raw` is included alongside `is rw`: an `is raw` param bound to an
+        // lvalue argument also writes back to the caller (`bind_function_args_values`
+        // adds it to `rw_bindings`), and that writeback lives only on the merge
+        // path — so a raw-param method must not take the fast path / skip the merge
+        // (mirrors how the sub dispatch treats rw and raw alike).
         let has_rw_params = method_def
             .param_defs
             .iter()
-            .any(|pd| pd.traits.iter().any(|t| t == "rw"));
+            .any(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
         // A plain (non-`is copy`) `@`/`%` positional param binds the caller's
         // container by alias (Raku readonly-container semantics): `.push`,
         // element assign, and whole-container `=` all propagate to the caller.
@@ -663,6 +674,16 @@ impl Interpreter {
 
             for (source_name, val) in &rw_writeback {
                 merged_env.insert(source_name.clone(), val.clone());
+            }
+            // Slice F: record the caller-source names this `is rw` method writeback
+            // touched (the value now lives in `merged_env`, which becomes
+            // `self.env` below) so the CallMethod / CallMethodMut op — which holds
+            // the caller's `code` — can write each value straight through to the
+            // caller's local slot, dropping the dependency on the reverse
+            // `sync_locals_from_env` pull. See `apply_pending_rw_writeback`.
+            if !rw_writeback.is_empty() {
+                self.pending_rw_writeback_sources
+                    .extend(rw_writeback.iter().map(|(source, _)| source.clone()));
             }
 
             let method_var_bindings = self.take_var_bindings();
