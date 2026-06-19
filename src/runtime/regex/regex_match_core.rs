@@ -156,103 +156,167 @@ impl Interpreter {
             .sum();
         let names = Self::collect_quantified_names_for_token(token);
 
-        // Build the greedy chain of iterations. Each iteration records the atom
-        // match end and the captures produced by the atom (and, for iterations
-        // after the first, the preceding separator's captures).
-        // `atom_ends[i]` = end position after the i-th atom (0-indexed).
-        let mut atom_caps: Vec<RegexCaptures> = Vec::new();
-        let mut sep_caps: Vec<RegexCaptures> = Vec::new();
-        let mut atom_ends: Vec<usize> = Vec::new();
+        // Enumerate every valid `atom (sep atom)*` chain via DFS, backtracking
+        // the separator. A purely greedy linear scan (match the first atom, then
+        // repeatedly take the separator's single highest-priority match followed
+        // by an atom) cannot admit more atoms when a frugal separator's minimal
+        // match blocks the next atom: e.g. `( 'a' || 'b' )* %% (.+?)` on "a x b"
+        // would stop after "a" because the frugal `(.+?)` matched just " " and
+        // "x b" is not an atom. Real backtracking expands the separator (" x ")
+        // so the following atom ("b") can match. `enumerate_separated_chains`
+        // performs that backtracking, returning chains highest-priority first
+        // (most atoms first for a greedy quantifier; within a step, the
+        // separator's own priority order from `regex_match_ends_from_caps_in_pkg`).
+        let chains = self.enumerate_separated_chains(token, chars, start, pkg, pattern, max);
 
-        let empty = RegexCaptures::default();
-        // First atom.
-        let mut cur = start;
-        if let Some((end, caps)) = self.regex_match_atom_with_capture_in_pkg(
-            &token.atom,
-            chars,
-            cur,
-            &empty,
-            pkg,
-            pattern.ignore_case,
-        ) && end != cur
-        {
-            atom_caps.push(caps);
-            atom_ends.push(end);
-            cur = end;
-            // Subsequent: sep then atom.
-            loop {
-                if let Some(m) = max
-                    && atom_ends.len() >= m
-                {
-                    break;
-                }
-                let Some((sep_end, scaps)) =
-                    self.regex_match_end_from_caps_in_pkg(&sep.pattern, chars, cur, pkg)
-                else {
-                    break;
-                };
-                let Some((atom_end, acaps)) = self.regex_match_atom_with_capture_in_pkg(
-                    &token.atom,
-                    chars,
-                    sep_end,
-                    &empty,
-                    pkg,
-                    pattern.ignore_case,
-                ) else {
-                    break;
-                };
-                if atom_end == cur {
-                    break; // zero-width progress guard
-                }
-                sep_caps.push(scaps);
-                atom_caps.push(acaps);
-                atom_ends.push(atom_end);
-                cur = atom_end;
-            }
-        }
-
-        // Produce results for each valid iteration count (>= min, <= max),
-        // shortest first. Count 0 (when min==0) ends at `start`.
-        let mut results: Vec<(usize, RegexCaptures)> = Vec::new();
-        if min == 0 {
-            results.push((start, base_caps.clone()));
-        }
-        for count in 1..=atom_ends.len() {
+        // Turn each chain into result candidates (with optional trailing
+        // separator for `%%`), highest-priority first, then reverse so the
+        // caller's LIFO stack pops the highest-priority candidate first.
+        let mut out: Vec<(usize, RegexCaptures)> = Vec::new();
+        for (atom_caps, sep_caps, end) in &chains {
+            let count = atom_caps.len();
             if count < min {
                 continue;
             }
             if let Some(m) = max
                 && count > m
             {
-                break;
+                continue;
             }
-            let mut end = atom_ends[count - 1];
-            let mut caps = base_caps.clone();
-            // Optional trailing separator for `%%`. A zero-width trailing
-            // separator (e.g. `delim*` matching empty) is still a valid trailing
-            // match, so accept `sep_end >= end`.
-            let mut trailing_sep: Option<RegexCaptures> = None;
-            if sep.allow_trailing
-                && let Some((sep_end, scaps)) =
-                    self.regex_match_end_from_caps_in_pkg(&sep.pattern, chars, end, pkg)
-                && sep_end >= end
-            {
-                trailing_sep = Some(scaps);
-                end = sep_end;
+            let assemble = |trailing: Option<&RegexCaptures>, end: usize| {
+                let mut caps = base_caps.clone();
+                caps.named_quantified.extend(names.iter().cloned());
+                Self::append_separated_captures(
+                    &mut caps,
+                    atom_caps,
+                    sep_caps,
+                    trailing,
+                    atom_stride,
+                    sep_stride,
+                );
+                (end, caps)
+            };
+            // Optional trailing separator for `%%`: prefer "with trailing" over
+            // "without" (Rakudo greedily consumes a trailing separator). Each
+            // trailing length is a separate candidate so an outer anchor can pick
+            // the length that lets the whole pattern match (`... %% (.+?) $`).
+            if sep.allow_trailing {
+                for (ts_end, ts_caps) in
+                    self.regex_match_ends_from_caps_in_pkg(&sep.pattern, chars, *end, pkg)
+                {
+                    if ts_end >= *end {
+                        out.push(assemble(Some(&ts_caps), ts_end));
+                    }
+                }
             }
-            // Assemble folded captures: atom groups first, then sep groups.
-            caps.named_quantified.extend(names.iter().cloned());
-            Self::append_separated_captures(
-                &mut caps,
-                &atom_caps[..count],
-                &sep_caps[..count.saturating_sub(1)],
-                trailing_sep.as_ref(),
-                atom_stride,
-                sep_stride,
-            );
-            results.push((end, caps));
+            out.push(assemble(None, *end));
         }
-        results
+        // Zero iterations (when `min == 0`) is the lowest-priority outcome for a
+        // greedy quantifier, so it goes last in highest-priority-first order.
+        if min == 0 {
+            out.push((start, base_caps.clone()));
+        }
+        out.reverse();
+        out
+    }
+
+    /// Enumerate every `atom (sep atom)*` chain rooted at `start`, backtracking
+    /// the separator at each step. Each chain is `(atom_caps, sep_caps, end)`
+    /// with `sep_caps.len() == atom_caps.len() - 1`. Chains are returned
+    /// highest-priority first: for a greedy quantifier the longest chains come
+    /// first, and within a step separator matches follow their own priority
+    /// order. `max` bounds the atom count (atom count never exceeds `max`).
+    fn enumerate_separated_chains(
+        &self,
+        token: &RegexToken,
+        chars: &[char],
+        start: usize,
+        pkg: &str,
+        pattern: &RegexPattern,
+        max: Option<usize>,
+    ) -> Vec<(Vec<RegexCaptures>, Vec<RegexCaptures>, usize)> {
+        let mut chains: Vec<(Vec<RegexCaptures>, Vec<RegexCaptures>, usize)> = Vec::new();
+        let empty = RegexCaptures::default();
+        // First atom (single highest-priority match, matching the non-separator
+        // atom-matching policy elsewhere).
+        if let Some((end, caps)) = self.regex_match_atom_with_capture_in_pkg(
+            &token.atom,
+            chars,
+            start,
+            &empty,
+            pkg,
+            pattern.ignore_case,
+        ) && end != start
+        {
+            let mut atom_caps = vec![caps];
+            let mut sep_caps: Vec<RegexCaptures> = Vec::new();
+            self.extend_separated_chain(
+                token,
+                chars,
+                end,
+                pkg,
+                pattern,
+                max,
+                &mut atom_caps,
+                &mut sep_caps,
+                &mut chains,
+            );
+        }
+        chains
+    }
+
+    /// Recursive worker for `enumerate_separated_chains`. Extends the chain at
+    /// `cur` by trying every separator match (in priority order) followed by an
+    /// atom, recursing greedily first, then records the chain that stops at
+    /// `cur`. Pushing the deeper (longer) chains before the shorter one yields a
+    /// highest-priority-first ordering for a greedy quantifier.
+    #[allow(clippy::too_many_arguments)]
+    fn extend_separated_chain(
+        &self,
+        token: &RegexToken,
+        chars: &[char],
+        cur: usize,
+        pkg: &str,
+        pattern: &RegexPattern,
+        max: Option<usize>,
+        atom_caps: &mut Vec<RegexCaptures>,
+        sep_caps: &mut Vec<RegexCaptures>,
+        out: &mut Vec<(Vec<RegexCaptures>, Vec<RegexCaptures>, usize)>,
+    ) {
+        // Bound the chain count to avoid catastrophic backtracking on a frugal
+        // separator over a long string (mirrors `quant_expand_greedy`).
+        if out.len() > 20_000 {
+            return;
+        }
+        let empty = RegexCaptures::default();
+        let can_extend = max.is_none_or(|m| atom_caps.len() < m);
+        if can_extend {
+            for (sep_end, scaps) in self.regex_match_ends_from_caps_in_pkg(
+                &token.separator.as_ref().unwrap().pattern,
+                chars,
+                cur,
+                pkg,
+            ) {
+                if let Some((atom_end, acaps)) = self.regex_match_atom_with_capture_in_pkg(
+                    &token.atom,
+                    chars,
+                    sep_end,
+                    &empty,
+                    pkg,
+                    pattern.ignore_case,
+                ) && atom_end > cur
+                {
+                    atom_caps.push(acaps);
+                    sep_caps.push(scaps);
+                    self.extend_separated_chain(
+                        token, chars, atom_end, pkg, pattern, max, atom_caps, sep_caps, out,
+                    );
+                    atom_caps.pop();
+                    sep_caps.pop();
+                }
+            }
+        }
+        out.push((atom_caps.clone(), sep_caps.clone(), cur));
     }
 
     /// Append captures from a separated quantifier into `caps`, folding each

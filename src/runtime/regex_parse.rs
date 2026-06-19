@@ -1559,18 +1559,14 @@ impl Interpreter {
             // separator-quantifier path does not yet handle. So only defer to the
             // native path when sigspace is NOT active.
             //
-            // The native path also uses a greedy chain without full backtracking
-            // coordination, so it cannot correctly handle separators/atoms that
-            // require backtracking against an outer anchor — namely sequential
-            // alternation (`||`) or frugal quantifiers (`+?`/`*?`/`??`). For those
-            // we keep the string expansion (which backtracks correctly, at the
-            // cost of capture renumbering).
-            let needs_backtracking = |s: &str| -> bool {
-                s.contains("||") || s.contains("+?") || s.contains("*?") || s.contains("??")
-            };
+            // The native separator-quantifier path now backtracks the separator
+            // and an optional trailing separator against an outer anchor (see
+            // `match_separated_quantifier`), so it correctly handles sequential
+            // alternation (`||`) atoms and frugal separators (`(.+?)`) too — and
+            // unlike the string expansion it preserves the per-iteration capture
+            // structure. So whenever a capture is present (and sigspace is off),
+            // defer to the native path regardless of backtracking shape.
             if !sigspace
-                && !needs_backtracking(&atom)
-                && !needs_backtracking(&sep_atom)
                 && (Self::atom_contains_capture(&atom)
                     || Self::atom_contains_named_capture(&atom)
                     || Self::atom_contains_capture(&sep_atom)
