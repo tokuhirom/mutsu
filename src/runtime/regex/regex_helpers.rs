@@ -397,6 +397,28 @@ pub(super) fn count_capture_groups(atom: &RegexAtom) -> usize {
     }
 }
 
+/// Whether matching `atom` involves an alternation whose branches can have
+/// different lengths — the case where a greedy quantifier (`*`/`+`/`**`) must be
+/// able to backtrack into a *shorter* per-iteration choice to satisfy a later
+/// constraint (e.g. `(a | b | bc | cde)+»`). Used to gate the (more expensive)
+/// full backtracking quantifier expansion so simple atoms keep the fast greedy
+/// chain.
+pub(super) fn atom_contains_alternation(atom: &RegexAtom) -> bool {
+    match atom {
+        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
+            alts.len() > 1 || alts.iter().any(pattern_contains_alternation)
+        }
+        RegexAtom::Group(pat) | RegexAtom::CaptureGroup(pat) => pattern_contains_alternation(pat),
+        _ => false,
+    }
+}
+
+fn pattern_contains_alternation(pat: &RegexPattern) -> bool {
+    pat.tokens
+        .iter()
+        .any(|t| atom_contains_alternation(&t.atom))
+}
+
 /// Count positional capture groups in a pattern (non-recursive into nested groups).
 fn count_pattern_capture_groups(pat: &RegexPattern) -> usize {
     let mut count = 0;
