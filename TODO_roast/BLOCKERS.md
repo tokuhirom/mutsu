@@ -198,9 +198,13 @@ files occasionally).
 
 - **S04-statements/for.t** — **Medium**, 22/111. No exception on bad loop-var
   binding (`for 1,2 -> $a, $b, $c`) + topic-aliasing edge cases (VM control ops).
-- **S06-signature/slurpy-params.t** — **Medium (multi-feature)**. Aborts at test 43:
-  `+@`/`+foo` single-argument rule over ranges/lists + a Junction `*@a` slurpy that
-  must not autothread (34/35).
+- **S06-signature/slurpy-params.t** — **78/86** (was aborting at 51 on a slurpy
+  `1..*` hang; the infinite-range expansion is now capped in `flatten_into_slurpy`,
+  so tests 52–69 run). Remaining 8: `+@`/`*@` passing a **Seq through unscathed**
+  (70-71, 76-77) + **Seq single-pass consumption** dies-on-second-iteration (74-75)
+  + **X::Parameter::TypedSlurpy** for `Int *@a` / `Int *%h` (80-81). The lazy tests
+  (52 etc.) pass within the 100k cap; a truly lazy slurpy (`.is-lazy` True, `.gist`
+  no-hang) is the lazy-array campaign — see `docs/lazy-arrays.md` Slice L4.
 - **S04-declarations/my-6e.t** — **Medium**. EVAL scope visibility (EVAL'd code must
   see the enclosing lexical scope).
 - **Parser operators** — `ff`/`fff` flipflop, `==>`/`<==` feed precedence, hyper
