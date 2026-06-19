@@ -1492,6 +1492,7 @@ impl Interpreter {
                             .unwrap_or_default();
                         let dir = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
                         let file = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                        let dir_nonempty = !dir.is_empty();
                         if is_win32 {
                             let path_part = if file.is_empty() {
                                 if dir.is_empty() { String::new() } else { dir }
@@ -1518,7 +1519,23 @@ impl Interpreter {
                                         format!("{}{}", vol, path_part)
                                     }
                                 } else {
-                                    format!("{}{}", vol, path_part)
+                                    // Insert a separator between a bare volume and
+                                    // the directory when the directory is non-empty
+                                    // and neither side already carries a boundary
+                                    // separator. A drive volume (`C:`) joins
+                                    // directly (`C:` + `bar` => `C:bar`), but a bare
+                                    // volume gets a separator (`foo` + `bar` =>
+                                    // `foo\bar`).
+                                    let vol_has_boundary = vol.ends_with(':')
+                                        || vol.ends_with('/')
+                                        || vol.ends_with('\\');
+                                    let path_has_boundary =
+                                        path_part.starts_with('/') || path_part.starts_with('\\');
+                                    if dir_nonempty && !vol_has_boundary && !path_has_boundary {
+                                        format!("{}\\{}", vol, path_part)
+                                    } else {
+                                        format!("{}{}", vol, path_part)
+                                    }
                                 }
                             } else {
                                 path_part
