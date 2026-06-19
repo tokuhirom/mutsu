@@ -12,6 +12,14 @@ pub(super) fn dispatch(
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
         "end" => {
+            // A lazy (infinite-backed) array has no last index; raku throws
+            // `X::Cannot::Lazy` (`Cannot .elems a lazy list`) rather than
+            // returning the capped backing's last index.
+            if let Value::Array(_, kind) = target
+                && kind.is_lazy()
+            {
+                return Some(super::range_elems_lazy_failure("elems"));
+            }
             if let Some(items) = target.as_list_items() {
                 return Some(Some(Ok(Value::Int(items.len() as i64 - 1))));
             }

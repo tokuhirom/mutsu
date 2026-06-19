@@ -21,8 +21,14 @@
 - **L5 — lazy `.elems` → X::Cannot::Lazy (DONE, #3310).** A lazy
   `ArrayKind::Lazy` array's `.elems` now throws (was returning the 100k cap).
   Guard added before `as_list_items` in `dispatch_core_numeric`, reusing
-  `range_elems_lazy_failure`. **Still capped (follow-up):** `.Numeric`/`.Int`/
-  `.end`/prefix-`+` on a lazy array return the cap (separate dispatch paths).
+  `range_elems_lazy_failure`. **L5b (DONE):** `.Numeric`/`.Int`/`.Real`/`.end`
+  and prefix-`+` on a lazy array now also throw `X::Cannot::Lazy` (action
+  `.elems`, matching raku). Shared `runtime::utils::cannot_lazy_failure(action)`
+  builds the Failure value; guards in `dispatch_core_coerce` (numeric coercions),
+  `dispatch_core_list` (`.end`), and `vm_misc_ops::exec_num_coerce_op` (prefix
+  `+`). t/lazy-array-numeric.t. **Still capped:** `.elems` on a *finite* `lazy
+  gather` LazyList returns the realized count (raku throws — is-lazy True); the
+  gather `.elems` path special-cases `__mutsu_lazylist_from_gather`, left alone.
 - **L1b — coroutine `Value::LazyList` gist + dual-rep wart (DONE).** A genuinely
   lazy `Value::LazyList` (gather coroutine with the `lazy` marker, infinite
   sequence/closure/scan spec, lazy map/grep pipeline) now renders raku's

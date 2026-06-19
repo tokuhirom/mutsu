@@ -645,20 +645,7 @@ fn dispatch_capture(
 
 /// Create a X::Cannot::Lazy Failure for .elems on an infinite range.
 fn range_elems_lazy_failure(action: &str) -> Option<Result<Value, RuntimeError>> {
-    let mut ex_attrs = std::collections::HashMap::new();
-    ex_attrs.insert(
-        "message".to_string(),
-        Value::str(format!("Cannot .{} a lazy list", action)),
-    );
-    ex_attrs.insert("action".to_string(), Value::str(format!(".{}", action)));
-    let exception = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
-    let mut failure_attrs = std::collections::HashMap::new();
-    failure_attrs.insert("exception".to_string(), exception);
-    failure_attrs.insert("handled".to_string(), Value::Bool(false));
-    Some(Ok(Value::make_instance(
-        Symbol::intern("Failure"),
-        failure_attrs,
-    )))
+    Some(Ok(crate::runtime::utils::cannot_lazy_failure(action)))
 }
 
 fn is_infinite_endpoint(v: &Value) -> bool {
