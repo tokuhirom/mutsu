@@ -1378,10 +1378,16 @@ impl Interpreter {
                         }
                         // Slice 2d: wrap a scalar-param array/hash in a shared cell
                         // so in-sub mutations (incl. `my @a := @$n`) propagate to
-                        // the caller via the rw-writeback at return.
+                        // the caller via the rw-writeback at return. Only an `@`/`%`
+                        // source variable needs this: the fast paths copy the array
+                        // out of the `@`-variable and detach it. A `$`-scalar source
+                        // (`my $aref = [0]; f($aref)`) already shares the array by
+                        // reference, so promoting it would wrongly turn `$aref` into
+                        // a cell and break `$aref[0]++` (S06 named-parameters 68-69).
                         if scalar_container_share
                             && matches!(value, Value::Array(..) | Value::Hash(..))
                             && let Some(source_name) = &source_name
+                            && (source_name.starts_with('@') || source_name.starts_with('%'))
                         {
                             value = Value::ContainerRef(std::sync::Arc::new(
                                 std::sync::Mutex::new(value),

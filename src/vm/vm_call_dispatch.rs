@@ -835,18 +835,27 @@ impl Interpreter {
         })
     }
 
-    /// True when `arg` is (or is a varref-capture wrapping) an `Array`/`Hash`.
-    /// A variable argument reaches the binder as a `__mutsu_varref_*` capture,
-    /// so peek inside without cloning.
+    /// True when `arg` is a varref-capture for an `@`/`%` *array/hash variable*
+    /// holding an `Array`/`Hash`. Only an `@`/`%` source needs the cell-promotion:
+    /// the fast paths copy the array out of the `@`-variable into the param slot
+    /// and detach it. A `$`-scalar source (`my $aref = [0]; f($aref)`) already
+    /// shares the array by reference (`$aref[0]++` propagates without promotion),
+    /// and a non-variable literal (`f([1,2])`) has no caller to share with — both
+    /// must keep the fast path. A variable arg reaches the binder as a
+    /// `__mutsu_varref_*` capture, so peek inside without cloning.
     fn arg_is_container_value(arg: &Value) -> bool {
-        match arg {
-            Value::Array(..) | Value::Hash(..) => true,
-            Value::Capture { positional, named } if positional.is_empty() => matches!(
+        let Value::Capture { positional, named } = arg else {
+            return false;
+        };
+        positional.is_empty()
+            && matches!(
+                named.get("__mutsu_varref_name"),
+                Some(Value::Str(name)) if name.starts_with('@') || name.starts_with('%')
+            )
+            && matches!(
                 named.get("__mutsu_varref_value"),
                 Some(Value::Array(..)) | Some(Value::Hash(..))
-            ),
-            _ => false,
-        }
+            )
     }
 
     /// A plain readonly scalar (`$`) parameter is stored sigil-less in

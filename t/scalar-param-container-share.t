@@ -6,7 +6,7 @@ use Test;
 # rebinding is forbidden. Previously the deref-bind form lost the mutation and
 # `$n.push` propagated only by statement-order luck.
 
-plan 19;
+plan 21;
 
 # --- canonical deref-bind (the bug) ---
 {
@@ -103,4 +103,16 @@ plan 19;
     my @p = (1, 2);
     is mix(@p, 5), 6, 'scalar non-container param still works alongside';
     is @p.gist, '[1 2 9]', 'container param shares with mixed signature';
+}
+
+# --- a `$`-scalar source holding an array must NOT be promoted (it already
+#     shares by reference; promoting it would break `$aref[0]++`). ---
+{
+    my $ref;
+    sub setref($refin) { $ref = $refin }
+    my $aref = [0];
+    setref($aref);
+    $aref[0]++;
+    is $aref[0], 1, 'scalar holding array: element mutation works after passing';
+    is $ref[0], 1, 'scalar holding array: stored ref sees the same array';
 }
