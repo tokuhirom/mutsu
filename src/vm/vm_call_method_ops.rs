@@ -586,11 +586,13 @@ impl Interpreter {
         // `lazy_pipe` and is forced & rendered normally below.
         if let Value::LazyList(ref ll) = target
             && matches!(method, "gist" | "Str" | "raku" | "perl")
-            && (ll.lazy_pipe.is_some() || ll.sequence_spec.is_some())
+            && ll.is_genuinely_lazy()
         {
-            self.stack.push(Value::str(
-                if method == "Str" { "..." } else { "(...)" }.to_string(),
-            ));
+            self.stack
+                .push(Value::str(crate::value::lazy_list_placeholder(
+                    method,
+                    ll.in_array_context(),
+                )));
             return Ok(());
         }
         // Force gather-sourced LazyList before method dispatch for methods that need

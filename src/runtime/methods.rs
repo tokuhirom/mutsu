@@ -3124,13 +3124,12 @@ impl Interpreter {
         // which materializes its elements.)
         if let Value::LazyList(ll) = &target
             && matches!(method, "gist" | "Str" | "raku" | "perl")
-            && (ll.lazy_pipe.is_some() || ll.sequence_spec.is_some())
+            && ll.is_genuinely_lazy()
         {
-            return Ok(Value::str(if method == "Str" {
-                "...".to_string()
-            } else {
-                "(...)".to_string()
-            }));
+            return Ok(Value::str(crate::value::lazy_list_placeholder(
+                method,
+                ll.in_array_context(),
+            )));
         }
         // Force LazyList and re-dispatch as Seq
         if let Value::LazyList(ll) = &target

@@ -1936,7 +1936,73 @@ impl Clone for LazyList {
     }
 }
 
+/// Placeholder string rendered for a genuinely-lazy list under
+/// gist/Str/raku/perl, matching Rakudo: `...` for `.Str`, `[...]` for a list
+/// held in `@` array context, `(...)` for a bare Seq.
+pub(crate) fn lazy_list_placeholder(method: &str, array_context: bool) -> String {
+    if method == "Str" {
+        "...".to_string()
+    } else if array_context {
+        "[...]".to_string()
+    } else {
+        "(...)".to_string()
+    }
+}
+
 impl LazyList {
+    /// Marker key inserted into `env` when a lazy list is bound/assigned into
+    /// an `@` array slot. A `Value::LazyList` carries no `[`-vs-`(` context on
+    /// its own, so this flag lets gist/`.WHAT` render `[...]`/`Array` (held in
+    /// `@a`) instead of `(...)`/`Seq` (a bare `$s` Seq).
+    pub(crate) const ARRAY_CONTEXT_MARKER: &'static str = "__mutsu_lazylist_array_context";
+
+    /// Whether this lazy list was assigned into an `@` array (see marker above).
+    pub(crate) fn in_array_context(&self) -> bool {
+        matches!(
+            self.env.get(Self::ARRAY_CONTEXT_MARKER),
+            Some(Value::Bool(true))
+        )
+    }
+
+    /// True when this list is genuinely lazy (`.is-lazy`), so gist/Str/raku
+    /// render a placeholder instead of materializing it.
+    ///
+    /// An infinite sequence/closure/scan/map-grep generator is only ever stored
+    /// as a *live* `LazyList` when actually infinite (finite ones materialize to
+    /// a `Seq`), so those specs are unconditionally lazy. A gather coroutine (or
+    /// unevaluated body), however, is lazy **only** when explicitly marked
+    /// `lazy` — a plain `gather` is `.is-lazy` `False` in Rakudo and must
+    /// materialize on gist/Str rather than render a placeholder.
+    pub(crate) fn is_genuinely_lazy(&self) -> bool {
+        if self.sequence_spec.is_some()
+            || self.lazy_pipe.is_some()
+            || self.closure_seq.is_some()
+            || self.scan_spec.is_some()
+        {
+            return true;
+        }
+        (self.coroutine.is_some() || !self.body.is_empty() || self.compiled_code.is_some())
+            && self.is_lazy_marked()
+    }
+
+    /// Whether this list carries the `lazy` prefix marker (set by the `lazy`
+    /// statement prefix / `.lazy` method).
+    fn is_lazy_marked(&self) -> bool {
+        matches!(
+            self.env.get("__mutsu_preserve_lazy_on_array_assign"),
+            Some(Value::Bool(true))
+        )
+    }
+
+    /// Return a clone of this list tagged as living in `@` array context.
+    pub(crate) fn with_array_context(&self) -> Self {
+        let mut cloned = self.clone();
+        cloned
+            .env
+            .insert(Self::ARRAY_CONTEXT_MARKER.to_string(), Value::Bool(true));
+        cloned
+    }
+
     /// Create a pre-cached lazy list (no body to evaluate).
     pub(crate) fn new_cached(items: Vec<Value>) -> Self {
         Self {

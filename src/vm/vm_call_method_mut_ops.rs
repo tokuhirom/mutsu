@@ -366,6 +366,21 @@ impl Interpreter {
         } else {
             target
         };
+        // gist/Str/raku/perl of a genuinely-lazy list renders raku's placeholder
+        // (`[...]` in `@` array context, `(...)` for a bare Seq, `...` for Str)
+        // rather than forcing the (possibly infinite) sequence. Must run before
+        // the gather-coroutine force below, which would hang on an infinite list.
+        if let Value::LazyList(ref ll) = target
+            && matches!(method.as_str(), "gist" | "Str" | "raku" | "perl")
+            && ll.is_genuinely_lazy()
+        {
+            self.stack
+                .push(Value::str(crate::value::lazy_list_placeholder(
+                    method.as_str(),
+                    ll.in_array_context(),
+                )));
+            return Ok(());
+        }
         // Lazy `.first` over a gather coroutine: pull incrementally instead of
         // forcing the (possibly infinite) list to completion.
         if let Value::LazyList(ref ll) = target
