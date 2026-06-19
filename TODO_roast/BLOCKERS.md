@@ -94,10 +94,9 @@ without colliding, pick from the **top**:
   primary-ignorable; UCA-17/MoarVM assign implicit primary weights by codepoint.
   Needs sort-key-level weight injection (`icu_collator::write_sort_key_to`) or a
   partial UCA reimplementation. 2-test payoff.
-- **S15-nfg/GraphemeBreakTest-3.t** — **Hard**, 157/166. 9 failures are GB9c (Indic
-  conjunct: Myanmar/Balinese/Khmer virama) and GB11 (emoji-ZWJ). The
-  `unicode-segmentation` crate's bundled Unicode version lacks these UAX-29 rules
-  for Unicode 17.0. Needs GB9c/GB11 post-processing or a crate upgrade.
+  - *(DONE: S15-nfg/GraphemeBreakTest-3.t whitelisted #3294 — the 9 GB9c/GB11
+    failures were the `unicode-segmentation` 1.12.0 GCB tables predating Unicode
+    17.0; bumping the crate to 1.13.3 fixed all of them.)*
 
 ### IO (`runtime/io*`, IO builtins)
 
