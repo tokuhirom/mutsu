@@ -196,6 +196,36 @@ pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
                 "X::Trait::Invalid: Cannot make an 'is rw' parameter optional".to_string(),
             ));
         }
+        // X::Parameter::TypedSlurpy: a slurpy *array* (`*@`, `**@`, `+@`) or
+        // *hash* (`*%`, `+%`) parameter may not carry an explicit type
+        // constraint -- even `Mu`/`Any`. (A slurpy *scalar* `*$x` / `*&f` IS
+        // allowed to be typed, so this is gated on the `@`/`%` sigil.) The
+        // implicit slurpy type is recorded as `None`, so any `Some` is explicit.
+        if (pd.slurpy || pd.double_slurpy || pd.onearg)
+            && pd.type_constraint.is_some()
+            && (pd.name.starts_with('@') || pd.name.starts_with('%'))
+        {
+            let kind = if pd.name.starts_with('%') {
+                "named"
+            } else {
+                "positional"
+            };
+            let msg = format!(
+                "Slurpy {} parameters with type constraints are not supported",
+                kind
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "kind".to_string(),
+                crate::value::Value::str(kind.to_string()),
+            );
+            attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Parameter::TypedSlurpy"),
+                attrs,
+            );
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        }
         // X::Parameter::Default: a default value is illegal on a slurpy parameter
         // (`*@a = 2`, `*@ = 2`) or a required parameter (`$x! = 3`, `:$x! = 3`).
         if pd.default.is_some() {
