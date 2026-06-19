@@ -213,6 +213,13 @@ impl Interpreter {
     fn resolve_whatever_index_for_target(&mut self, idx: Value, target: Option<&Value>) -> Value {
         let len = match target {
             Some(Value::Array(items, ..)) => items.len() as i64,
+            // A `:=`-bound array is held in a `ContainerRef` cell; descend it so
+            // a from-end index (`@a[*-1]`) resolves the real length instead of 0
+            // (which would yield a negative effective index and X::OutOfRange).
+            Some(Value::ContainerRef(cell)) => match &*cell.lock().unwrap() {
+                Value::Array(items, ..) => items.len() as i64,
+                _ => 0,
+            },
             _ => 0,
         };
         // Bare Whatever (*) in array subscript means all indices: 0, 1, ..., len-1
