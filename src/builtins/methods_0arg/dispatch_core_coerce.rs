@@ -338,6 +338,11 @@ pub(super) fn dispatch(
             }
             Value::Package(_) | Value::Instance { .. } => None,
             Value::LazyList(_) => None, // fall through to runtime to force the list
+            // A lazy (infinite-backed) array stringifies to a bounded `...`
+            // placeholder rather than materializing its capped backing.
+            Value::Array(_, kind) if *kind == crate::value::ArrayKind::Lazy => {
+                Some(Ok(Value::str_from("...")))
+            }
             Value::Enum { .. } => None, // fall through to enum dispatch for string enum support
             Value::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
             Value::Rat(_, 0) | Value::FatRat(_, 0) => {

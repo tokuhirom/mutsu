@@ -975,6 +975,11 @@ pub(crate) fn gist_value(value: &Value) -> String {
             // Rat.gist is identical to Rat.Str in Raku
             value.to_string_value()
         }
+        Value::Array(_, crate::value::ArrayKind::Lazy) => {
+            // A lazy (infinite-backed) array renders a bounded placeholder
+            // rather than materializing its capped backing (Rakudo: `[...]`).
+            "[...]".to_string()
+        }
         Value::Array(items, kind) => {
             let ptr = std::sync::Arc::as_ptr(items) as usize;
             let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));
