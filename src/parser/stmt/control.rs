@@ -465,7 +465,9 @@ pub(super) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Other statements are wrapped in `Stmt::Label`.
 pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, label) = ident(input)?;
-    let (rest, _) = ws(rest)?;
+    // A statement label requires the colon immediately after the identifier
+    // (`LABEL:`). Whitespace before the colon means this is not a label but a
+    // call with a colonpair/object-hash argument (e.g. `is-deeply :{...}, ...`).
     if !rest.starts_with(':') || rest.starts_with("::") {
         return Err(PError::expected("labeled loop"));
     }
