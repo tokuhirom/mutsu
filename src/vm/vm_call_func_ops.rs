@@ -188,7 +188,21 @@ impl Interpreter {
                     && cf.fingerprint == *cached_fp
                 {
                     let arity_usize = arity as usize;
+                    // Slice 2d (named follow-up): an `@`/`%` variable passed by
+                    // name to a plain `$` named param must share the caller's
+                    // container; the named light path binds a copy. Decode the
+                    // arg sources lazily (only on a named-cache hit) so the
+                    // common path pays nothing.
+                    let named_share = self.stack.len() >= arity_usize && {
+                        let decoded = self.decode_arg_sources(code, arg_sources_idx);
+                        Self::call_shares_container_into_named_scalar_param(
+                            cf,
+                            &self.stack[self.stack.len() - arity_usize..],
+                            decoded.as_deref(),
+                        )
+                    };
                     if self.stack.len() >= arity_usize
+                        && !named_share
                         && !Self::call_shares_container_into_scalar_param(
                             cf,
                             &self.stack[self.stack.len() - arity_usize..],
@@ -246,38 +260,54 @@ impl Interpreter {
                         // Slice 2d: array/hash passed to a plain `$` param must
                         // share the caller's container -> force the slow binding
                         // path (the slot-only fast paths bind a detached copy).
+                        // The named variant (`f(n => @a)` into `:$n`) needs the
+                        // arg-source table to find the caller variable, so decode
+                        // it here (only on an otf-cache hit).
+                        let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
                         let share_into_scalar =
                             Self::call_shares_container_into_scalar_param(&cf, &args);
-                        let result =
-                            if !share_into_scalar && Self::is_light_call_eligible(&cf, name_str) {
-                                self.call_compiled_function_light(&cf, args, compiled_fns)
-                            } else if !share_into_scalar
-                                && Self::is_positional_light_call_eligible(&cf, name_str)
-                            {
-                                self.call_compiled_function_positional_light(
-                                    &cf,
-                                    &args,
-                                    compiled_fns,
-                                    name_str,
-                                )
-                            } else {
-                                let pkg = self.current_package().to_string();
-                                self.push_samewith_context(name_str, None);
-                                let pushed_dispatch =
-                                    loan_env!(self, push_multi_dispatch_frame(name_str, &args));
-                                let r = self.call_compiled_function_named(
-                                    &cf,
-                                    args,
-                                    compiled_fns,
-                                    &pkg,
-                                    name_str,
-                                );
-                                self.pop_samewith_context();
-                                if pushed_dispatch {
-                                    self.pop_multi_dispatch();
-                                }
-                                r
-                            };
+                        let named_share = Self::call_shares_container_into_named_scalar_param(
+                            &cf,
+                            &args,
+                            decoded_sources.as_deref(),
+                        );
+                        let result = if !share_into_scalar
+                            && !named_share
+                            && Self::is_light_call_eligible(&cf, name_str)
+                        {
+                            self.call_compiled_function_light(&cf, args, compiled_fns)
+                        } else if !share_into_scalar
+                            && !named_share
+                            && Self::is_positional_light_call_eligible(&cf, name_str)
+                        {
+                            self.call_compiled_function_positional_light(
+                                &cf,
+                                &args,
+                                compiled_fns,
+                                name_str,
+                            )
+                        } else {
+                            let pkg = self.current_package().to_string();
+                            self.push_samewith_context(name_str, None);
+                            let pushed_dispatch =
+                                loan_env!(self, push_multi_dispatch_frame(name_str, &args));
+                            // The named-share writeback reads the arg sources;
+                            // make them available to bind_function_args_values.
+                            self.set_pending_call_arg_sources(decoded_sources);
+                            let r = self.call_compiled_function_named(
+                                &cf,
+                                args,
+                                compiled_fns,
+                                &pkg,
+                                name_str,
+                            );
+                            self.set_pending_call_arg_sources(None);
+                            self.pop_samewith_context();
+                            if pushed_dispatch {
+                                self.pop_multi_dispatch();
+                            }
+                            r
+                        };
                         // Put CF back in cache
                         self.otf_call_cache.insert(name_sym, cf);
                         self.stack.push(result?);
@@ -804,6 +834,11 @@ impl Interpreter {
                 // This avoids the expensive env clone/restore cycle.
                 if Self::is_light_call_eligible(cf, name)
                     && !Self::call_shares_container_into_scalar_param(cf, &args)
+                    && !Self::call_shares_container_into_named_scalar_param(
+                        cf,
+                        &args,
+                        arg_sources.as_deref(),
+                    )
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
                 {

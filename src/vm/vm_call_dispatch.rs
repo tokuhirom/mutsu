@@ -925,6 +925,73 @@ impl Interpreter {
                 .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
     }
 
+    /// True when an `@`/`%` *variable* is passed by name to a plain readonly
+    /// scalar `$` *named* param (`sub f(:$n) { $n.push }` called as
+    /// `f(n => @a)`). Raku binds the same mutable container; the slot-only
+    /// named light-call path binds a copy whose `.push` COW-detaches, so such a
+    /// call must take the slow `bind_function_args_values` path (which promotes
+    /// the bound value to a shared cell and registers the rw writeback — see the
+    /// named branch in binding.rs). The source variable name is encoded
+    /// "key=source" in `arg_sources` (`positional_arg_source_name`); a
+    /// `$`-scalar source (`:$n` over `my $n = @a`) is excluded (it shares by
+    /// reference already, like the positional scalar source).
+    pub(super) fn call_shares_container_into_named_scalar_param(
+        cf: &CompiledFunction,
+        args: &[Value],
+        arg_sources: Option<&[Option<String>]>,
+    ) -> bool {
+        let Some(sources) = arg_sources else {
+            return false;
+        };
+        args.iter().enumerate().any(|(i, arg)| {
+            let unwrapped = unwrap_varref_value(arg.clone());
+            let Value::Pair(key, val) = &unwrapped else {
+                return false;
+            };
+            if !matches!(**val, Value::Array(..) | Value::Hash(..)) {
+                return false;
+            }
+            let has_container_source = sources
+                .get(i)
+                .and_then(|s| s.as_ref())
+                .and_then(|enc| enc.split_once('='))
+                .is_some_and(|(_, src)| src.starts_with('@') || src.starts_with('%'));
+            if !has_container_source {
+                return false;
+            }
+            cf.param_defs.iter().any(|pd| {
+                pd.named
+                    && Self::named_param_share_match_key(pd) == key.as_str()
+                    && Self::is_eligible_named_scalar_share_param(pd)
+            })
+        })
+    }
+
+    /// The Pair key a named param matches (`:$n` -> "n", `:foo($x)` -> "foo").
+    /// Scalar named params are stored sigil-less, so this strips a leading `:`.
+    fn named_param_share_match_key(pd: &crate::ast::ParamDef) -> &str {
+        pd.name.strip_prefix(':').unwrap_or(&pd.name)
+    }
+
+    /// Eligibility mirror of binding.rs `named_scalar_container_share_eligible`:
+    /// a plain readonly scalar named param (not `@`/`%`/`&`, no attr twigil, not
+    /// `$_`, no `is copy`/`is rw`/`is raw`, not slurpy, no sub-signature).
+    fn is_eligible_named_scalar_share_param(pd: &crate::ast::ParamDef) -> bool {
+        let bare = Self::named_param_share_match_key(pd);
+        !pd.traits
+            .iter()
+            .any(|t| t == "copy" || t == "rw" || t == "raw")
+            && !pd.slurpy
+            && !pd.double_slurpy
+            && pd.sub_signature.is_none()
+            && bare != "_"
+            && !bare.starts_with(['@', '%', '&', '!', '.'])
+            && bare
+                .as_bytes()
+                .first()
+                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+    }
+
     /// Ultra-fast call for simple positional-only functions (e.g. `sub fib($n)`).
     /// Avoids push_call_frame, Sub value creation, block/routine push,
     /// callable_id lookup, and full bind_function_args_values. Parameters are
