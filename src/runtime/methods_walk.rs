@@ -40,13 +40,20 @@ impl Interpreter {
             _ => return Ok(None),
         };
         if !self.registry().classes.contains_key(&receiver_class_name) {
-            return Ok(None);
+            // A built-in type (e.g. `Grammar`) has no user `class_def`, but WALK
+            // must still find its native methods. Resolve the method name from a
+            // small table of WALKable built-in methods and return a single
+            // candidate so `Grammar.WALK(:name<parse>)` yields a `.name`-able
+            // candidate.
+            return Ok(self.try_walk_builtin_type(target, &receiver_class_name, args));
         }
 
         // Parse arguments.
         let mut method_name: Option<String> = None;
         let mut want_roles = false;
         let mut order = WalkOrder::Canonical; // default ordering
+        let mut omit_cb: Option<Value> = None;
+        let mut include_cb: Option<Value> = None;
         for arg in args {
             let named: Option<(String, &Value)> = match arg {
                 Value::Pair(k, v) => Some((k.clone(), v.as_ref())),
@@ -62,11 +69,12 @@ impl Interpreter {
                 match key.as_str() {
                     "name" => method_name = Some(v.to_string_value()),
                     "roles" => want_roles = v.truthy(),
+                    "omit" => omit_cb = Some(v.clone()),
+                    "include" => include_cb = Some(v.clone()),
                     _ => {
                         // `:canonical`/`:super`/`:breadth`/`:ascendant`/`:descendant`
                         // /`:preorder`/`:postorder` select the ordering.
-                        // `:method`/`:submethod`/`:omit`/`:include` accepted; handled
-                        // elsewhere or defaulted.
+                        // `:method`/`:submethod` accepted; handled elsewhere or defaulted.
                         if let Some(o) = WalkOrder::from_adverb(&key)
                             && v.truthy()
                         {
@@ -96,6 +104,28 @@ impl Interpreter {
                 .lookup_own_walk_method(kind, owner, &receiver_class_name, &method_name)
                 .is_some()
             {
+                // `:include(&cb)` / `:omit(&cb)` filter by calling the callback
+                // with the OWNER type object: keep the candidate only when
+                // include (if given) returns truthy AND omit (if given) does not.
+                if include_cb.is_some() || omit_cb.is_some() {
+                    let owner_type = Value::Package(Symbol::intern(owner));
+                    if let Some(inc) = &include_cb {
+                        let keep = self
+                            .call_sub_value(inc.clone(), vec![owner_type.clone()], false)?
+                            .truthy();
+                        if !keep {
+                            continue;
+                        }
+                    }
+                    if let Some(om) = &omit_cb {
+                        let drop = self
+                            .call_sub_value(om.clone(), vec![owner_type.clone()], false)?
+                            .truthy();
+                        if drop {
+                            continue;
+                        }
+                    }
+                }
                 candidates.push(Self::make_walk_candidate(owner, &method_name));
                 matched.push((kind.clone(), owner.clone()));
             }
@@ -108,6 +138,45 @@ impl Interpreter {
             &method_name,
             &matched,
         )))
+    }
+
+    /// WALK over a built-in type that has no user `class_def`. Built-in types
+    /// dispatch their methods natively (not through a `ClassDef.methods` table),
+    /// so we consult a small table of well-known WALKable built-in methods. If
+    /// the named method is one of them, return a `WalkList` with a single
+    /// candidate named after the method; otherwise `None` (so dispatch reports
+    /// "no such method").
+    fn try_walk_builtin_type(
+        &self,
+        target: &Value,
+        type_name: &str,
+        args: &[Value],
+    ) -> Option<Value> {
+        // Parse the method name (named `:name<...>` or first positional).
+        let mut method_name: Option<String> = None;
+        for arg in args {
+            match arg {
+                Value::Pair(k, v) if k == "name" => method_name = Some(v.to_string_value()),
+                Value::ValuePair(k, v) if k.to_string_value() == "name" => {
+                    method_name = Some(v.to_string_value())
+                }
+                Value::Pair(..) | Value::ValuePair(..) => {}
+                other if method_name.is_none() => method_name = Some(other.to_string_value()),
+                _ => {}
+            }
+        }
+        let method_name = method_name?;
+        if !builtin_type_has_method(type_name, &method_name) {
+            return None;
+        }
+        let candidate = Self::make_walk_candidate(type_name, &method_name);
+        Some(self.make_walk_list(
+            vec![candidate],
+            target.clone(),
+            type_name,
+            &method_name,
+            &[(WalkKind::Class, type_name.to_string())],
+        ))
     }
 
     /// Build a candidate closure that invokes `owner::method_name` on its first
@@ -128,7 +197,10 @@ impl Interpreter {
         let slurpy_param = walk_param("@__walk_args", true);
         Value::make_sub(
             Symbol::intern(""),
-            Symbol::intern("WALK-candidate"),
+            // Each candidate behaves like the named method: `.name` returns the
+            // method name (e.g. `Grammar.WALK(:name<parse>)` → candidate `.name`
+            // is `parse`).
+            Symbol::intern(method_name),
             vec!["__walk_inst".to_string(), "@__walk_args".to_string()],
             vec![inst_param, slurpy_param],
             body,
@@ -254,6 +326,42 @@ impl Interpreter {
             }
         }
         Ok(Value::real_array(results))
+    }
+
+    /// Dispatch a method call on a `WalkList` instance. Returns `Ok(None)` for
+    /// methods this type does not handle (so normal dispatch can take over, e.g.
+    /// `gist`/`isa`). `invoke`/`()` batch-call the matched candidates;
+    /// `reverse`/`quiet` return a derived WalkList with the corresponding flag
+    /// changed.
+    pub(crate) fn try_walk_list_method(
+        &mut self,
+        walk_list: &Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        match method {
+            "invoke" => Ok(Some(self.walk_list_invoke_direct(walk_list, args)?)),
+            "reverse" => Ok(Some(Self::walk_list_with_flag(walk_list, "reversed", true))),
+            "quiet" => Ok(Some(Self::walk_list_with_flag(walk_list, "quiet", true))),
+            _ => Ok(None),
+        }
+    }
+
+    /// Return a copy of a `WalkList` instance with one boolean flag set. For
+    /// `reversed` the flag is toggled relative to the current value so chained
+    /// `.reverse` calls compose correctly.
+    fn walk_list_with_flag(walk_list: &Value, flag: &str, value: bool) -> Value {
+        let Value::Instance { attributes, .. } = walk_list else {
+            return walk_list.clone();
+        };
+        let mut attrs = attributes.to_map();
+        let new_val = if flag == "reversed" {
+            !matches!(attrs.get("reversed"), Some(Value::Bool(true)))
+        } else {
+            value
+        };
+        attrs.insert(flag.to_string(), Value::Bool(new_val));
+        Value::make_instance(Symbol::intern("WalkList"), attrs)
     }
 
     fn build_walk_targets(
@@ -442,16 +550,19 @@ impl Interpreter {
                 }
             }
             WalkKind::Role => {
-                // Submethods on roles are not composed into the consuming
-                // class's method table, so look them up on the role's own
-                // method table first.
+                // Only role SUBMETHODS are WALKed: regular role methods are
+                // composed into the consuming class's method table and are
+                // already visited via the class chain, so including them again
+                // as role candidates would duplicate them ("WALK doesn't use
+                // methods in roles"). Submethods are not composed, so look them
+                // up on the role's own method table.
                 if let Some(role_def) = self.registry().roles.get(owner)
                     && let Some(overloads) = role_def.methods.get(method_name)
-                    && let Some(m) = overloads.iter().find(|m| !m.is_private)
+                    && let Some(m) = overloads.iter().find(|m| !m.is_private && m.is_submethod)
                 {
                     return Some(m.clone());
                 }
-                // Fall back to a method composed into the receiver's class
+                // Fall back to a submethod composed into the receiver's class
                 // table whose role origin matches this role.
                 let registry = self.registry();
                 let class_def = registry.classes.get(receiver_class)?;
@@ -460,12 +571,23 @@ impl Interpreter {
                     .iter()
                     .find(|m| {
                         let from_role = m.original_role.as_deref().or(m.role_origin.as_deref());
-                        from_role == Some(owner) && !m.is_private
+                        from_role == Some(owner) && !m.is_private && m.is_submethod
                     })
                     .cloned()
             }
         }
     }
+}
+
+/// Whether a built-in type (one with no user `class_def`) responds to a method
+/// that WALK should surface. Built-in methods are dispatched natively in mutsu,
+/// so there is no `ClassDef.methods` table to consult; this records the
+/// well-known WALKable methods per built-in type.
+fn builtin_type_has_method(type_name: &str, method: &str) -> bool {
+    matches!(
+        (type_name, method),
+        ("Grammar", "parse" | "subparse" | "parsefile")
+    )
 }
 
 /// Build a minimal `ParamDef` for a WALK candidate closure: a single positional

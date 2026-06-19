@@ -1,6 +1,6 @@
 use Test;
 
-plan 11;
+plan 18;
 
 # Mu.WALK walks the class hierarchy in a requested order and returns a WalkList
 # that is both list-iterable (the per-level candidate closures) and invocable
@@ -40,3 +40,25 @@ class N is A { method only-here {'N!'} }
 my $n = N.new;
 is $n.WALK(:name<only-here>).elems, 1, 'a single-level method yields one candidate';
 is $n.WALK(:name<only-here>)().join, 'N!', 'and invokes to that one result';
+
+# :omit / :include filter candidates by calling the callback with the OWNER
+# type object.
+class P is A { method m {'P'}; method only {'O'} }     # P can .only; A cannot
+my $p = P.new;
+@cands = $p.WALK(:name<m>, :omit({ .^can('only') }));
+is cand_order(@cands, $p), 'A', ':omit drops levels for which the callback is truthy';
+@cands = $p.WALK(:name<m>, :include({ $^c.gist ~~ /P/ }));
+is cand_order(@cands, $p), 'P', ':include keeps only levels for which the callback is truthy';
+
+# WalkList batch-invoke / reverse / quiet methods.
+is-deeply $x.WALK(:name<m>).invoke.List, <E C D A B>, '.invoke returns the result list';
+is-deeply $x.WALK(:name<m>).reverse.invoke.List, <B A D C E>, '.reverse flips the order';
+isa-ok $x.WALK(:name<m>), WalkList, 'WALK returns a WalkList';
+
+# A WalkList candidate reports the walked method name via .name.
+my ($cand) = $x.WALK(:name<m>);
+is $cand.name, 'm', 'a candidate .name is the method name';
+
+# WALK over a built-in type (Grammar) finds its native methods.
+my ($g) = Grammar.WALK(:name<parse>);
+is $g.name, 'parse', 'Grammar.WALK finds the native parse method';

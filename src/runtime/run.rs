@@ -979,6 +979,17 @@ impl Interpreter {
         // ($^x, @_, ...) appearing here are outside any sub or block.
         compiler.is_mainline = self.routine_stack.is_empty();
         compiler.set_current_package(self.current_package());
+        // `$?PACKAGE`/`$?MODULE` resolve to the *lexical* package the routine was
+        // declared in, not `current_package` (which is reset to GLOBAL during a
+        // method body re-compile to avoid falsely qualifying class-level `my`
+        // vars). Seed `enclosing_package` from the active routine frame's clean
+        // package name — matching `compile_block_value` — so a re-compiled method
+        // body (e.g. a role submethod invoked via WALK) keeps the correct
+        // `$?PACKAGE`. `enclosing_package` only feeds `$?PACKAGE`/`$?MODULE`, so
+        // this does not affect call/variable qualification.
+        if let Some(frame) = self.routine_stack.last() {
+            compiler.enclosing_package = Some(frame.package.clone());
+        }
         // Resolve distribution context: prefer the current one, then look up
         // by the current package name in case we're running a function body
         // from a module that had a distribution.
