@@ -143,9 +143,17 @@ impl Interpreter {
     pub(super) fn native_io_path(
         &mut self,
         attributes: &HashMap<String, Value>,
+        class_name: &str,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // The concrete class of the receiver (`IO::Path` or a SPEC-variant
+        // subclass `IO::Path::Unix`/`::Win32`/`::Cygwin`/`::QNX`). Path-deriving
+        // methods (`.parent`, `.sibling`, `.child`, ...) must round-trip this
+        // class so e.g. `IO::Path::Win32.new("x").parent(0)` stays an
+        // `IO::Path::Win32` (Rakudo preserves the subclass; `is-deeply`/`eqv`
+        // compares it).
+        let io_path_class = Symbol::intern(class_name);
         let p = attributes
             .get("path")
             .map(|v| v.to_string_value())
@@ -198,10 +206,7 @@ impl Interpreter {
                     escape(&cwd)
                 )))
             }
-            "IO" => Ok(Value::make_instance(
-                Symbol::intern("IO::Path"),
-                attributes.clone(),
-            )),
+            "IO" => Ok(Value::make_instance(io_path_class, attributes.clone())),
             "CWD" => {
                 let cwd = instance_cwd.unwrap_or_else(|| Self::stringify_path(&cwd_path));
                 Ok(Value::str(cwd))
@@ -267,7 +272,11 @@ impl Interpreter {
                 } else {
                     Self::cleanup_io_path_lexical(&p)
                 };
-                Ok(Self::clone_io_path_with_path(attributes, normalized))
+                Ok(Self::clone_io_path_with_path(
+                    attributes,
+                    io_path_class,
+                    normalized,
+                ))
             }
             "parts" => {
                 let (volume, dirname, basename) = Self::io_path_parts_spec(&p, attributes);
@@ -288,10 +297,7 @@ impl Interpreter {
                     levels = *i;
                 }
                 if levels == 0 {
-                    return Ok(Value::make_instance(
-                        Symbol::intern("IO::Path"),
-                        attributes.clone(),
-                    ));
+                    return Ok(Value::make_instance(io_path_class, attributes.clone()));
                 }
                 let sep = Self::io_path_sep(attributes);
                 let mut path = if Self::is_cygwin_spec(attributes) {
@@ -325,7 +331,7 @@ impl Interpreter {
                 }
                 let mut new_attrs = attributes.clone();
                 new_attrs.insert("path".to_string(), Value::str(path));
-                Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
+                Ok(Value::make_instance(io_path_class, new_attrs))
             }
             "sibling" => {
                 let sibling_name = args
@@ -344,7 +350,11 @@ impl Interpreter {
                 } else {
                     format!("{}/{}", dir_with_volume, sibling_name)
                 };
-                Ok(Self::clone_io_path_with_path(attributes, sibling_path))
+                Ok(Self::clone_io_path_with_path(
+                    attributes,
+                    io_path_class,
+                    sibling_path,
+                ))
             }
             "child" | "add" => {
                 let child_name = args
@@ -373,7 +383,7 @@ impl Interpreter {
                 };
                 let mut new_attrs = attributes.clone();
                 new_attrs.insert("path".to_string(), Value::str(joined.clone()));
-                let child = Value::make_instance(Symbol::intern("IO::Path"), new_attrs);
+                let child = Value::make_instance(io_path_class, new_attrs);
                 // `.child($name, :secure)` verifies that the resulting path is a
                 // real child of the (completely resolved) parent. It fails with
                 // X::IO::Resolve when the parent or the child path cannot be
@@ -419,10 +429,7 @@ impl Interpreter {
 
                 if let Some(subst) = subst {
                     let Some(parts_to_replace) = selected_parts else {
-                        return Ok(Value::make_instance(
-                            Symbol::intern("IO::Path"),
-                            attributes.clone(),
-                        ));
+                        return Ok(Value::make_instance(io_path_class, attributes.clone()));
                     };
                     let joiner = Self::named_value(&args, "joiner")
                         .map(|v| v.to_string_value())
@@ -437,10 +444,7 @@ impl Interpreter {
                     let Some(base_without_ext) =
                         Self::io_path_extension_strip_n_parts(basename, parts_to_replace)
                     else {
-                        return Ok(Value::make_instance(
-                            Symbol::intern("IO::Path"),
-                            attributes.clone(),
-                        ));
+                        return Ok(Value::make_instance(io_path_class, attributes.clone()));
                     };
                     let mut new_basename = format!("{base_without_ext}{joiner}{subst}");
                     // Raku: empty basename after replacement becomes "."
@@ -452,7 +456,7 @@ impl Interpreter {
                         "path".to_string(),
                         Value::str(format!("{dir_prefix}{new_basename}")),
                     );
-                    Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
+                    Ok(Value::make_instance(io_path_class, new_attrs))
                 } else {
                     let Some(parts) = selected_parts else {
                         return Ok(Value::str(String::new()));
@@ -579,7 +583,7 @@ impl Interpreter {
                 new_attrs.insert("path".to_string(), Value::str(resolved));
                 let sep = Self::io_path_sep(attributes).to_string();
                 new_attrs.insert("cwd".to_string(), Value::str(sep));
-                Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
+                Ok(Value::make_instance(io_path_class, new_attrs))
             }
             "volume" => {
                 let (volume, _, _) = Self::io_path_parts_spec(&p, attributes);
@@ -612,7 +616,7 @@ impl Interpreter {
                 let new_path = Self::join_io_path_parts(&volume, &dirname, &new_basename, sep);
                 let mut new_attrs = attributes.clone();
                 new_attrs.insert("path".to_string(), Value::str(new_path));
-                Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
+                Ok(Value::make_instance(io_path_class, new_attrs))
             }
             "pred" => {
                 let (volume, dirname, basename) = Self::io_path_parts(&p);
@@ -621,7 +625,7 @@ impl Interpreter {
                 let new_path = Self::join_io_path_parts(&volume, &dirname, &new_basename, sep);
                 let mut new_attrs = attributes.clone();
                 new_attrs.insert("path".to_string(), Value::str(new_path));
-                Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
+                Ok(Value::make_instance(io_path_class, new_attrs))
             }
             "e" => Ok(Value::Bool(path_buf.exists())),
             "f" => match fs::metadata(&path_buf) {
@@ -1000,10 +1004,7 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             "mkdir" => match fs::create_dir_all(&path_buf) {
-                Ok(()) => Ok(Value::make_instance(
-                    Symbol::intern("IO::Path"),
-                    attributes.clone(),
-                )),
+                Ok(()) => Ok(Value::make_instance(io_path_class, attributes.clone())),
                 Err(err) => {
                     let msg = format!(
                         "Failed to create directory '{}' with mode '0o777': Failed to mkdir: {}",
@@ -1052,7 +1053,7 @@ impl Interpreter {
                     {
                         attrs.insert("cwd".to_string(), Value::str(cwd.clone()));
                     }
-                    Value::make_instance(Symbol::intern("IO::Path"), attrs)
+                    Value::make_instance(io_path_class, attrs)
                 };
                 for entry in fs::read_dir(&path_buf).map_err(|err| {
                     RuntimeError::new(format!("Failed to read dir '{}': {}", p, err))
@@ -1294,10 +1295,14 @@ impl Interpreter {
         }
     }
 
-    fn clone_io_path_with_path(attributes: &HashMap<String, Value>, path: String) -> Value {
+    fn clone_io_path_with_path(
+        attributes: &HashMap<String, Value>,
+        class: Symbol,
+        path: String,
+    ) -> Value {
         let mut new_attrs = attributes.clone();
         new_attrs.insert("path".to_string(), Value::str(path));
-        Value::make_instance(Symbol::intern("IO::Path"), new_attrs)
+        Value::make_instance(class, new_attrs)
     }
 
     /// Check if the IO::Path instance has a Win32 SPEC attribute.

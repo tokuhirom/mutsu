@@ -391,7 +391,7 @@ impl Interpreter {
             })
         };
         match dispatch_class.as_deref().unwrap_or(class_name) {
-            "IO::Path" => self.native_io_path(attributes, method, args),
+            "IO::Path" => self.native_io_path(attributes, class_name, method, args),
             "IO::Handle" => self.native_io_handle(attributes, method, args),
             "IO::Special" => self.native_io_special(attributes, method, args),
             "IO::Socket::INET" => self.native_socket_inet(attributes, method, args),
