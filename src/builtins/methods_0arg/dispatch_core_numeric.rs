@@ -94,6 +94,14 @@ pub(super) fn dispatch(
                     failure_attrs,
                 ))));
             }
+            // A lazy (infinite-backed) array cannot report its element count;
+            // raku throws X::Cannot::Lazy. Check before `as_list_items`, which
+            // would otherwise return the capped backing length.
+            if let Value::Array(_, kind) = target
+                && kind.is_lazy()
+            {
+                return Some(range_elems_lazy_failure("elems"));
+            }
             if let Some(items) = target.as_list_items() {
                 return Some(Some(Ok(Value::Int(items.len() as i64))));
             }
