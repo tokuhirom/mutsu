@@ -794,6 +794,29 @@ impl Interpreter {
                     restored_env.insert_sym(*k, v.clone());
                 }
             }
+            // Slice F (env<->locals coherence): a closure that mutated a captured
+            // outer variable (`@a.map({ $sum += $_ })`, `$blk()` closing over a
+            // lexical) has just written the new value into `restored_env` (which
+            // becomes `self.env` below). Record the changed free-var names that
+            // are genuine caller lexicals so the call-site op — which holds the
+            // caller's `code` — writes each value straight through to the caller's
+            // local slot (`apply_pending_rw_writeback`), dropping the dependency on
+            // the reverse `sync_locals_from_env` pull. Only changed free vars that
+            // the caller actually has are recorded (a slot-less name is a harmless
+            // no-op in the drain; a captured-only var is filtered out).
+            if free_changed {
+                for (k, old) in cc.free_var_syms.iter().zip(free_at_entry.iter()) {
+                    if *k != underscore_sym
+                        && *k != at_underscore_sym
+                        && !param_names.contains(k)
+                        && restored_env.contains_key_sym(*k)
+                        && self.env().get_sym(*k) != old.as_ref()
+                    {
+                        self.pending_rw_writeback_sources
+                            .push(k.resolve().to_string());
+                    }
+                }
+            }
         }
         // Write back readonly/alias metadata for captured variables that were
         // modified inside the closure (e.g. `$a := $arg` where `$a` is captured).
