@@ -668,6 +668,7 @@ impl Interpreter {
                         &captures.named_subcaps,
                         &captures.positional_subcaps,
                         &captures.positional_quantified,
+                        &captures.positional_nil,
                         Some(&text),
                         &captures.named_quantified,
                     );

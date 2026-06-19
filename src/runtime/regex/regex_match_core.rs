@@ -1,7 +1,7 @@
 use super::super::*;
 use super::regex_helpers::{
     count_capture_groups, fold_quantified_captures, is_named_atom_no_args, is_silent_named_atom,
-    is_simple_atom,
+    is_simple_atom, reserve_nil_capture_slots,
 };
 use std::collections::HashSet;
 
@@ -569,6 +569,14 @@ impl Interpreter {
                     }
                 }
                 RegexQuant::ZeroOrOne => {
+                    // An unmatched `(x)?` reserves `zo_stride` Nil positional slots
+                    // so following captures keep their index (`(a)?(b)` → $0=Nil,$1=b).
+                    let zo_stride = count_capture_groups(&token.atom);
+                    let zero_caps = || {
+                        let mut zc = caps.clone();
+                        reserve_nil_capture_slots(&mut zc, zo_stride);
+                        zc
+                    };
                     let mut candidates = self.regex_match_atom_all_with_capture_in_pkg(
                         &token.atom,
                         chars,
@@ -585,7 +593,7 @@ impl Interpreter {
                             candidates = vec![best];
                         } else {
                             // Atom didn't match — commit to "zero" (no match)
-                            stack.push((idx + 1, pos, caps.clone()));
+                            stack.push((idx + 1, pos, zero_caps()));
                             candidates.clear();
                         }
                     } else if token.frugal {
@@ -610,10 +618,10 @@ impl Interpreter {
                                 ),
                             ));
                         }
-                        stack.push((idx + 1, pos, caps.clone()));
+                        stack.push((idx + 1, pos, zero_caps()));
                         candidates.clear();
                     } else {
-                        stack.push((idx + 1, pos, caps.clone()));
+                        stack.push((idx + 1, pos, zero_caps()));
                     }
                     for (next, new_caps) in candidates {
                         stack.push((

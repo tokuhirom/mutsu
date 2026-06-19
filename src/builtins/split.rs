@@ -322,6 +322,7 @@ fn separator_value(m: &SplitMatch) -> Value {
             &HashMap::new(),
             &[],
             &[],
+            &[],
             orig,
         )
     } else {

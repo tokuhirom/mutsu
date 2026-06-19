@@ -439,6 +439,7 @@ impl Interpreter {
             &std::collections::HashMap::new(),
             &[],
             &[],
+            &[],
             Some(text),
         )
     }
@@ -1127,6 +1128,7 @@ impl Interpreter {
                 caps,
                 &std::collections::HashMap::new(),
                 &std::collections::HashMap::new(),
+                &[],
                 &[],
                 &[],
                 Some(text),

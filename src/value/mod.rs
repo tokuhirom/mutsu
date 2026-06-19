@@ -3687,6 +3687,7 @@ impl Value {
             &HashMap::new(),
             &[],
             &[],
+            &[],
             None,
         )
     }
@@ -3702,6 +3703,7 @@ impl Value {
         named_subcaps: &HashMap<String, Vec<crate::runtime::RegexCaptures>>,
         positional_subcaps: &[Option<crate::runtime::RegexCaptures>],
         positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
+        positional_nil: &[bool],
         orig: Option<&str>,
     ) -> Self {
         Self::make_match_object_full_q(
@@ -3713,6 +3715,7 @@ impl Value {
             named_subcaps,
             positional_subcaps,
             positional_quantified,
+            positional_nil,
             orig,
             &HashSet::new(),
         )
@@ -3729,6 +3732,7 @@ impl Value {
         named_subcaps: &HashMap<String, Vec<crate::runtime::RegexCaptures>>,
         positional_subcaps: &[Option<crate::runtime::RegexCaptures>],
         positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
+        positional_nil: &[bool],
         orig: Option<&str>,
         named_quantified: &HashSet<String>,
     ) -> Self {
@@ -3775,6 +3779,10 @@ impl Value {
                 .iter()
                 .enumerate()
                 .map(|(i, s)| {
+                    // An unmatched optional capture (`(x)?` zero match) renders as Nil.
+                    if caps.positional_nil.get(i) == Some(&true) {
+                        return Value::Nil;
+                    }
                     // Check if this positional entry is a quantified list
                     if let Some(Some(qlist)) = caps.positional_quantified.get(i) {
                         let arr: Vec<Value> = qlist
@@ -3870,6 +3878,10 @@ impl Value {
             .iter()
             .enumerate()
             .map(|(i, s)| {
+                // An unmatched optional capture (`(x)?` zero match) renders as Nil.
+                if positional_nil.get(i) == Some(&true) {
+                    return Value::Nil;
+                }
                 // Check if this positional entry is a quantified list
                 if let Some(Some(qlist)) = positional_quantified.get(i) {
                     let arr: Vec<Value> = qlist

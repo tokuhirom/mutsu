@@ -373,6 +373,7 @@ impl Interpreter {
             &std::collections::HashMap::new(),
             &[],
             &[],
+            &[],
             Some(text),
         )
     }
