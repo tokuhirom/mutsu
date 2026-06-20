@@ -454,3 +454,64 @@ OFF で動作**＝LHS（element := scalar）だけが乖離。
 - `docs/container-identity.md` — 第一級コンテナ実装台帳（Phase 0/1/2/3）。outer cell 化は Phase 2 の延長。
 - `docs/slotref-removal-plan.md` — SlotRef 撤去（leaf cell 化の周辺）。
 - 失敗の実証: `t/element-bind-cell.t`（pairs/slip carrier-drop で 9/28/41/44/46/47 が壊れる）。
+
+---
+
+## 6. Multi-frame captured-outer 伝播 — 次の substrate handoff（2026-06-20・第36セッション偵察完了）
+
+第36セッションで single-frame + deep-cell の OFF 依存を一掃（36→13）した後の残る最大の壁。
+**即着手用に canonical case・実験結果・次の調査点を固める。**
+
+### 6.1 Canonical case（残 OFF 依存の代表）
+
+```raku
+my $acc = 0;
+sub bump-outer() { $acc = $acc + 10 }   # writer（最内フレーム・$acc は free var）
+sub via()        { bump-outer() }        # mid フレーム（$acc を持たない）
+via();                                    # ← 単独なら raku=10・OFF でも 10（既に正しい！）
+via();
+say $acc;                                 # raku=20・OFF=10（accumulation 失敗）
+```
+
+対象 OFF 依存ファイル（13 のうち6）: `closure-nested-writeback`(2) `multitier-overlay-env`(1)
+`scoped-overlay-env-dirty`(1) `wrap-closure-capture`(3) `zeroarg-env-dirty`(1) `slurpy-is-raw`(1)。
+いずれも "nested ... propagate captured mutation" 系。
+
+### 6.2 ★最重要の切り分け（第36セッション probe）
+
+- **単一 `via()` は OFF でも正しい**（`acc=10`）。∴ caller→mid→writer の **1 回の伝播は既存機構で動く**
+  （#3317 の 0-arg fast-call captured-write drain 等）。
+- **壊れるのは `via(); via()` の cross-call ACCUMULATION**（10 のまま・20 にならない）。
+  = 第34セッションの「method-invocant autothread の `our`-var cross-call 蓄積」壁（memory 第34節）と**同類**。
+  問題は「伝播が無い」のではなく「2 回目の呼び出しが 1 回目の書込を踏まえて累積できない」こと。
+
+### 6.3 ★retention 実験の結論（第36セッション・revert 済）
+
+`apply_pending_rw_writeback`（`vm_env_helpers.rs`）に **guarded retention** を試した:
+現フレームに無い source 名を `retained` に re-push（`call_frames` 非空 + topic/match 名除外 +
+`env.contains_key` のときのみ）→親フレーム drain が拾う。結果:
+
+1. **canonical case を直さない**（依然 `acc=10`）。∴ retention（reverse propagation の補強）は **的外れ**。
+   壁は forward 側（accumulation）にある。
+2. **#3317 の lazy ハングを再現しない**（`grep-lazy-range.t` exit 0）。
+   ∴ topic/match 除外 + `call_frames` ガードで **lazy-eval 衝突は回避可能**（#3317 の壁は de-risk 済）。
+   ——将来 retention が必要になったときの安全弁設計はこのガードで OK。
+
+### 6.4 次の調査点（forward accumulation 仮説）
+
+2 回目の `via()`→`bump-outer` が `$acc` を読むとき **stale な値（10 でなく 0、or env でなく locals）を読んで
+いる**疑いが濃厚。候補:
+- **call 入口の forward sync（locals→env）が env `$acc` を stale locals 値で上書き**してから writer が読む
+  → 1 回目で locals `$acc` が更新されない（reverse drain は `via` フレームに `$acc` local が無く no-op、
+  top-level drain は呼ばれるが…）→ 2 回目入口で stale locals が env に flush → writer が 0+10=10 を再書込。
+- ∴ 次セッションは **bump-outer の `$acc` read 値**と **via 入口/bump-outer 入口の env↔locals `$acc`** を
+  trace（`MUTSU_TRACE` or 一時 eprintln 1 パス）で確定 → forward sync の stale 上書きを塞ぐ筋。
+- 関連既存解析: session 34 の `our`-var cross-call（method-autothread・部分修正不可で revert）。同じ
+  accumulation 機構なら共通解の可能性。
+
+### 6.5 残り 13 の内訳（第36末・参考）
+
+- **multi-frame accumulation（本節・6 files）** ← 次の substrate。
+- **regex carrier（2）**: `regex-m-s` の `s///`-topic `$_` writeback・`regex-declarative-modifiers` の `:let`。
+- **並行 cell（5）**: `done-paren-stmt-modifier`/`gather-infinite-coroutine`/`react-whenever-last-next`/
+  `supply-on-demand-closing`/`supply-sync-infinite-emit`（別スレッド→caller slot 到達不可・§4-A cell 共有前提）。
