@@ -1,18 +1,17 @@
 use Test;
 
-# Slice F (env<->locals coherence): a callee assigning to a dynamic variable
-# (`$*foo`) declared in the caller writes the value into `env` by name, but the
-# caller's local slot was kept coherent only by the reverse `sync_locals_from_env`
-# pull. This pins that the call-site drains the dynamic write through to the
-# caller's local slot, so the behavior no longer depends on the reverse pull.
-# Run with `MUTSU_NO_REVERSE_SYNC=1` to confirm coherence without the reverse pull.
+# Slice F (env<->locals coherence): a dynamic variable (`$*foo`) is dynamic-scope.
+# Reads of a `my $*foo`-declared dynamic var now go straight to `env` by name
+# (the compiler emits GetGlobal, not GetLocal — `compile_expr_var`), and dynamic
+# writes always reach env, so a callee's `$*foo = …` is visible to the declaring
+# scope WITHOUT the reverse `sync_locals_from_env` pull. Run with
+# `MUTSU_NO_REVERSE_SYNC=1` to confirm coherence without the reverse pull.
 #
-# NOTE: only single-level (the writer's immediate caller declared the dynamic) is
-# covered. Multi-frame propagation (caller -> mid -> writer) still relies on the
-# reverse pull; folding it in needs cross-frame retention, which conflicts with
-# lazy iteration (the same wall as the 0-arg captured-write slice, PR #3317).
+# Reading dynamic vars from env (vs the single-level call-site drain of PR #3320)
+# also makes MULTI-FRAME propagation (caller -> mid -> writer) work, since env is
+# the one dynamic-scope store — see the multi-frame case below.
 
-plan 10;
+plan 11;
 
 # Plain assignment to a caller-declared dynamic var.
 sub setter() { $*shared = 5 }
@@ -67,3 +66,11 @@ is outer-rmw(), 42, 'callee read-modify-write of caller dynamic var is visible';
 sub set-base() { $*base = 40 }
 sub outer-expr() { my $*base = 0; set-base(); $*base + 2 }
 is outer-expr(), 42, 'caller dynamic var slot is coherent in a later expression';
+
+# Multi-frame propagation: the writer is two frames below the declaring scope.
+# (The earlier single-level call-site drain could not do this; reading from env
+# does, because env is the one dynamic-scope store.)
+sub deep-writer() { $*md = 99 }
+sub middle() { deep-writer() }
+sub outer-multiframe() { my $*md = 0; middle(); $*md }
+is outer-multiframe(), 99, 'multi-frame callee write to caller dynamic var is visible';
