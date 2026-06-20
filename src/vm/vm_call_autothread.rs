@@ -195,6 +195,19 @@ impl Interpreter {
 
         // Thread over the chosen junction: call the function for each eigenstate
         let mut results = Vec::with_capacity(values.len());
+        // Slice F (env<->locals coherence): each eigenstate call dispatches the
+        // function afresh, and each dispatch *clears* `pending_rw_writeback_sources`
+        // on entry, so only the final iteration's captured-outer writes would
+        // survive to the call site. Accumulate the union across all iterations
+        // here so the call site's `apply_pending_rw_writeback` writes every
+        // captured-outer variable the threaded calls mutated (e.g. `$count++` in
+        // `sub j($x) { $count++ }; j(3|4|5)`) straight through to the caller's
+        // local slot, keeping it coherent without the reverse `sync_locals_from_env`
+        // pull. The forward env merge already accumulates the running value in env
+        // across the N calls; this just ensures the final value is pulled into the
+        // caller's slot.
+        let mut accumulated_writeback: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         for eigenstate in values.iter() {
             let mut threaded_args = args.to_vec();
             if let Some(ref pair_key) = is_pair {
@@ -227,7 +240,14 @@ impl Interpreter {
                 )?;
                 results.push(result);
             }
+            // Capture this iteration's recorded captured-outer writes before the
+            // next iteration's dispatch clears the list.
+            accumulated_writeback.extend(std::mem::take(&mut self.pending_rw_writeback_sources));
         }
+
+        // Re-publish the accumulated sources so the call site drains them.
+        self.pending_rw_writeback_sources
+            .extend(accumulated_writeback);
 
         Ok(Some(Value::junction(kind, results)))
     }

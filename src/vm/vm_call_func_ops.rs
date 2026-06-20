@@ -496,6 +496,11 @@ impl Interpreter {
             self.maybe_autothread_func_call(code, &name, &args, &arg_sources, compiled_fns)?
         {
             self.stack.push(autothread_result);
+            // Slice F: the threaded eigenstate calls may have mutated captured-outer
+            // variables (`sub j($x) { $count++ }`); write their accumulated final
+            // env values through to this caller's local slots so they stay coherent
+            // without the reverse `sync_locals_from_env` pull.
+            self.apply_pending_rw_writeback(code);
             self.env_dirty = true;
             return Ok(());
         }
