@@ -654,7 +654,12 @@ Stage 3（reverse-sync デフォルト無効化→機構削除）が初めて射
 | 13 | S03-operators/notandthen | `andthen`/`notandthen` の `OpCode::CallDefined` が **user `method defined`** を dispatch→captured `$calls++` | CallDefined の user-method 枝のみ reconcile（native check は pure 維持） |
 | **14** | **S32-str/val.t（解決済・第39セッション）** | **内側 `for (...) -> $string, \value` の multi-param 復元が env のみで local slot を復元せず**。当初「subtest closure の read-coherence 壁」と診断したが、最小化すると closure 不在の `for ... -> \value` 本体での bare read 自体が既に stale（`outer-read: 4_2 => -42`）＝診断は誤り。真因＝内側 for の sigilless `\value` 多パラメタが**外側 `\value` と同名＝同一 local slot を共有**し、ループ末の `saved_multi_params` 復元が env binding だけ戻して local slot を最終イテレーション値（-42）のまま残す→reverse pull OFF で次の外側イテレーションが element list を stale な `value` で再評価 | 多パラメタ復元ループ（`exec_for_loop_body`, vm_control_ops.rs:1218）に **local slot への write-through** を追加（`find_local_slot(code, name)` があれば `locals[slot] = v`）。ON で byte-identical。pin=`t/multiframe-sigilless-for-rebind-coherence.t`（4） |
 
-make test PASS（986 files / 9626 tests）。**Stage 3 の roast OFF 依存 14/14 全解決**。**val.t は当初 multi-frame
+| **15** | **S03-junctions/autothreading.t（解決済・第39セッション・CI surface）** | **invocant junction の method autothread が captured-outer / `our` 変異を最後の eigenstate しか伝播しない**。`$junc.a`（`method a { $cnt++ }`）で各 eigenstate は env に正しく累積する（threaded 戻り値 `any(0,1,0)` が証明）が、per-call の pending writeback は**最後の eigenstate の source しか運ばない**→eigenstate が**異なる変数**を書くと（earlier=$cnt1・last=$cnt2）earlier の $cnt1 が caller local slot に届かず stale（0）。当初「method-invocant autothread `our`-var 蓄積壁」（第34節 deferred）と認識されローカル survey で「junctions flaky」と誤分類 | CallMethod / CallMethodMut **両** junction loop（vm_call_method_ops.rs / vm_call_method_mut_ops.rs）は normal post-dispatch reconcile の前に early-return するため、threading 後に `reconcile_locals_from_env_at_site(code)` を 1 回追加（env は全 eigenstate の累積値を保持済）。ON で byte-identical。pin=`t/junction-invocant-autothread-writeback-coherence.t`（6） |
+
+make test PASS（987 files / 9632 tests）。**Stage 3 の roast OFF 依存 15/15 全解決**（CI が val.t commit 後に
+14 の survey から漏れていた autothreading.t を surface＝junctions は flaky でなく実依存だった。flaky 除外していた
+set/baghash/mix は OFF 全 PASS を再確認・sethash.t は ON/OFF 両方 exit255 の非 whitelist plan-abort でスコープ外）。
+**val.t は当初 multi-frame
 read-coherence 壁と思われたが、実態は #13 までと同じ単一パターン（interpreter-run/loop path が caller lexical
 を共有 slot に書くが復元/reconcile で slot を戻さない）の一発現**で、多パラメタ復元の env-only 復元に local
 write-through を足すだけで解けた（read-direction の独立 substrate ではなかった）。**Stage 3（reverse-sync
