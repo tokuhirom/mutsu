@@ -240,6 +240,21 @@ impl Interpreter {
         }
     }
 
+    /// True if any class in `cn`'s MRO declares a `BUILD` or `TWEAK` submethod.
+    /// The native construction path (`build_native_default_instance`) runs those
+    /// phases via `run_build_phase`/`run_tweak_phase`, and such a submethod body
+    /// can mutate a *captured-outer* caller lexical (`my $n; submethod TWEAK {
+    /// $n++ }`). So a construction of such a class is NOT env-pure — the caller's
+    /// slot must be reconciled at the call site (Slice F). Used by the VM `.new`
+    /// dispatch to set `method_dispatch_pure` correctly.
+    pub(crate) fn mro_has_build_or_tweak(&self, cn: &str) -> bool {
+        self.mro_readonly(cn).iter().any(|cls| {
+            self.registry().classes.get(cls).is_some_and(|cd| {
+                cd.methods.contains_key("BUILD") || cd.methods.contains_key("TWEAK")
+            })
+        })
+    }
+
     /// Default-construct `class_name` natively when it is eligible (see
     /// `is_native_default_constructible`). Returns `None` for ineligible
     /// classes so callers fall through to the full constructor dispatch.

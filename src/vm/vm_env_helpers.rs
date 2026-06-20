@@ -369,6 +369,42 @@ impl Interpreter {
         }
     }
 
+    /// Slice F write-through for an interpreter-dispatched construction
+    /// (`.new`/`.bless` that runs a `submethod BUILD`/`TWEAK` via the
+    /// interpreter's `run_build_phase`). Those submethods can mutate a
+    /// captured-outer lexical by name (`my $n; submethod BUILD { $n++ }`), but —
+    /// unlike a compiled method (whose `merge_method_env` records
+    /// `pending_rw_writeback_sources`) — the interpreter build path never reaches
+    /// that machinery, so the caller's slot is only reconciled by the blanket
+    /// `sync_locals_from_env` barrier pull (`env_dirty`). This mirrors that pull
+    /// *at the construction call site* and unconditionally (not gated by the
+    /// campaign toggle), so the slot stays coherent without the reverse pull. The
+    /// per-slot skips match `sync_locals_from_env` exactly (HashSlotRef binding
+    /// cells / `!attr` locals), so under reverse-sync ON it is byte-identical to
+    /// the barrier pull it duplicates. Only called on the impure path
+    /// (`!method_dispatch_pure`), i.e. exactly when ON would have pulled.
+    pub(super) fn reconcile_locals_from_env_at_site(&mut self, code: &CompiledCode) {
+        for (i, name) in code.locals.iter().enumerate() {
+            if matches!(self.locals[i], Value::HashSlotRef { .. }) {
+                continue;
+            }
+            if name.starts_with('!') {
+                continue;
+            }
+            if let Some(val) = self.env().get(name).cloned() {
+                self.locals[i] = val;
+            } else if let Some(bare) = name
+                .strip_prefix('$')
+                .or_else(|| name.strip_prefix('@'))
+                .or_else(|| name.strip_prefix('%'))
+                .or_else(|| name.strip_prefix('&'))
+                && let Some(val) = self.env().get(bare).cloned()
+            {
+                self.locals[i] = val;
+            }
+        }
+    }
+
     /// Record a by-name caller-lexical env write that did NOT flow through
     /// `set_env_with_main_alias` (the single by-name writer that auto-logs). Some
     /// ops mutate a caller lexical with a direct `env_mut().insert` — e.g. the

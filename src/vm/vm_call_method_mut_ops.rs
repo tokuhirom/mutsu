@@ -1528,6 +1528,14 @@ impl Interpreter {
                         }
                     }
                 }
+                // Slice F: reconcile a captured-outer lexical mutated by an
+                // interpreter-dispatched construction (`.new`/`.bless` running a
+                // `submethod BUILD`/`TWEAK`) at the call site, since that path
+                // bypasses the compiled-method writeback. See the CallMethod twin
+                // and `reconcile_locals_from_env_at_site`.
+                if mark_dirty && matches!(method.as_str(), "new" | "bless") {
+                    self.reconcile_locals_from_env_at_site(code);
+                }
             }
         }
         Ok(())
