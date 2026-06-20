@@ -191,10 +191,11 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
         regex `~~` match（#3321）・method 捕捉（#3322）・qualified/our sub 捕捉（#3323）・dynamic var env-read（#3324）・
         light/positional-light 捕捉（#3326）・**deferred role body 捕捉（#3327）**・**deferred class body 捕捉（#3328）**・
         **import された symbol/`constant`（#3329）**・sigilless param alias（#3318）・**例外脱出 UNDO/LEAVE 捕捉（#3332）**・
-        **junction autothread 捕捉（#3333）**・**eager `.map`/`.grep`（literal/Range/Seq）の捕捉（#3335）**。
+        **junction autothread 捕捉（#3333）**・**eager `.map`/`.grep`（literal/Range/Seq）の捕捉（#3335）**・
+        **deep `:=` element bind/write（`$s[1]<k>[2]=v` / `:=$src`・`IndexAssignDeepNested`）の locals write-through（#3340）**。
       pin: `t/{rw-param,method-rw-param,closure-captured-var,rw-sub-lvalue,mut-method-receiver,sigilless-alias,dynamic-var,
       qualified-sub-captured-var,method-captured-var,light-call-captured-var,run-nested-role-body,class-body-captured-var,
-      import-constant,undo-phaser,junction-autothread,eager-map-grep-captured}-writeback-coherence.t` 他。
+      import-constant,undo-phaser,junction-autothread,eager-map-grep-captured,deep-element-bind}-writeback-coherence.t` 他。
       **残る OFF 依存（roast/`t/` 共通）= 次セッション以降のグラインド対象**:
       - carrier（EVAL/regex/`s///`・require BEGIN EVAL・**`Xorelse`/`Zorelse` の `__mutsu_cross_shortcircuit` thunk**＝interpreter
         builtin が thunk を `call_function`→carrier 経路で呼ぶ・`writeback_carrier_writes` が outer-frame slot を reconcile しない）・
