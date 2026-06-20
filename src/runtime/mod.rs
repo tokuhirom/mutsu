@@ -4345,6 +4345,19 @@ impl Interpreter {
                 if !target.contains("::") {
                     self.unsuppress_name(&target);
                 }
+                // Slice F (env<->locals coherence): `import` writes the symbol
+                // into env by name, but a later bare reference (e.g. an imported
+                // `constant c`) may read a stale caller local slot when the
+                // reverse env->locals pull is disabled. Record the imported
+                // name (sigil stripped to match the local-slot key) so the
+                // ImportModule opcode writes it through to the caller slot.
+                if !target.contains("::") {
+                    let slot_name = match target.chars().next() {
+                        Some('$' | '@' | '%') => target[1..].to_string(),
+                        _ => target.clone(),
+                    };
+                    self.pending_rw_writeback_sources.push(slot_name);
+                }
                 self.env.insert(target, value);
             }
         }
