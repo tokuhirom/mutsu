@@ -1561,6 +1561,10 @@ impl Interpreter {
             }
             OpCode::GetBareWord(name_idx) => {
                 self.exec_get_bare_word_op(code, *name_idx, compiled_fns)?;
+                // Slice F: a bareword that resolved to a qualified/`our` sub call
+                // (`M::foo`) may have recorded captured-outer writes; drain them
+                // through to this caller frame's local slots.
+                self.apply_pending_rw_writeback(code);
                 *ip += 1;
             }
             OpCode::GetPseudoStash(name_idx) => {

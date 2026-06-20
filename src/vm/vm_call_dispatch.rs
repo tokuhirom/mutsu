@@ -2092,6 +2092,25 @@ impl Interpreter {
         }
         self.env_dirty = saved_env_dirty || changed;
 
+        // Slice F (env<->locals coherence): record the captured-outer variables
+        // this body writes so the call-site op writes their new env values
+        // straight through to the caller's local slots (`apply_pending_rw_writeback`),
+        // dropping the dependency on the reverse `sync_locals_from_env` pull. This
+        // mirrors the 0-arg fast-call path (#3317): a qualified/`our` sub reached by
+        // name (`module M { our sub foo() { $called = True } }`) goes through this
+        // path rather than the fast path, but writes its enclosing `$called` the
+        // same way. `free_var_writes` is the compile-time set of free vars this
+        // body writes, so a pure body records nothing and pays no cost. The topic
+        // (`_`/`@_`/`%_`) is excluded — it is a per-call alias, never a caller
+        // lexical. (Cross-frame propagation still relies on the reverse pull.)
+        for sym in &cf.code.free_var_writes {
+            sym.with_str(|fname| {
+                if fname != "_" && fname != "@_" && fname != "%_" {
+                    self.pending_rw_writeback_sources.push(fname.to_string());
+                }
+            });
+        }
+
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {
