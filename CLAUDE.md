@@ -33,13 +33,13 @@ The parser is in `src/parser/` and is used unconditionally.
 
 Parser implementation details (dispatch order, precedence, extension checklist) are documented in `docs/parser-overview.md`.
 
-This is a **bytecode VM** architecture. The VM should handle ALL operations natively via compiled bytecode. The tree-walking `Interpreter` (`runtime/`) exists as legacy code that is being eliminated.
+This is a **bytecode VM** architecture. The VM handles ALL operations natively via compiled bytecode. The standalone tree-walking interpreter has been eliminated (CP-1/CP-2/CP-3, #3075–#3104): there is now a single `struct Interpreter` that *is* the bytecode VM. `eval_block_value()` survives only as a carrier for re-entrant source evaluation (`EVAL`, embedded `{...}` blocks in regexes), delegating to the same native implementations — it is not a separate execution engine. The `runtime/methods.rs` slow path (see below) and the `env_dirty` dual store are the remaining tree-walk-era mechanisms still being paid down.
 
-**IMPORTANT: Do NOT add new interpreter fallbacks from the VM.** When implementing a new feature:
+**IMPORTANT: Do NOT add new slow-path / tree-walk fallbacks.** When implementing a new feature:
 - Implement it in the compiler (`compiler/`) to emit bytecode, and in the VM (`vm/`) to execute it.
-- Do NOT call `interpreter.call_method_with_values()`, `interpreter.run_instance_method()`, or similar interpreter methods from VM code for new features.
-- Existing interpreter fallbacks are technical debt to be eliminated, not a pattern to follow.
-- If you must use the interpreter as a temporary measure, leave a `// TODO: compile to bytecode` comment.
+- Do NOT route new features through `call_method_with_values()` → `run_instance_method()` or the other `runtime/methods.rs` slow-path handlers.
+- Existing slow-path fallbacks are technical debt to be eliminated, not a pattern to follow.
+- If you must use the slow path as a temporary measure, leave a `// TODO: compile to bytecode` comment.
 
 ### Core data types
 
@@ -67,7 +67,7 @@ Compiles AST into bytecode (`OpCode` instructions):
 
 ### VM (`src/vm/`)
 
-Executes compiled bytecode. `vm.rs` contains the VM struct, `run()`, and a thin `exec_one()` dispatch match that delegates to submodules:
+Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `run()`, and a thin `exec_one()` dispatch match that delegates to submodules:
 
 - `vm_arith_ops.rs`: Arithmetic, logic, bitwise, repetition, mixin, pair ops
 - `vm_comparison_ops.rs`: Numeric/string comparison, three-way, identity, divisibility
@@ -118,10 +118,9 @@ Executes compiled bytecode. `vm.rs` contains the VM struct, `run()`, and a thin 
   3. Push and open a PR with `gh pr create`.
   4. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
   5. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
-  6. After creating a PR, enable auto-merge — then **watch its CI in the background** (a `run_in_background` bash poll loop on `gh pr checks <pr-number>` that exits when no check is `pending`, so the harness notifies you on completion). Do NOT use a *foreground* `gh pr checks --watch` (it blocks ~13 min and wastes the session). If there is genuinely-independent, non-conflicting work to do (a different module/area), do it while the background watch runs; but when there isn't, the background watch is the productive thing — it surfaces a CI failure immediately so you can fix-forward, instead of leaving a red PR sitting unnoticed.
-  7. **Once the PR is out and the background CI watch is running, decide the next slice before going idle.** Do not stop and wait for the merge with nothing queued. Re-read the relevant ledger/PLAN (e.g. `docs/vm-interpreter-fallback-ledger.md`, `PLAN.md`) and pick the next concrete unit of work — either start it on a fresh branch off `main` (if it is independent of the open PR), or, when the next step is genuinely a strategic fork, lay out the options and confirm direction with the user. The merge of the current PR should never be the thing that "unblocks thinking about what's next" — that thinking happens now, in parallel with the watch.
-- **Watch the PR's CI in the background; don't *foreground-block* on it.** The old "fire-and-forget, just keep working" advice assumed there was always parallel non-conflicting work queued up. That era is over — in the final stretch there is usually little independent work left, so the most efficient thing after pushing + enabling auto-merge is to **background-watch the PR you just opened** (poll loop as above) rather than walking away from it. A red CI caught and fixed within minutes beats one discovered an hour later. Only skip the watch when you have a concrete, independent next task; even then, a background watch costs nothing and still notifies you. Auto-merge still lands the PR on its own when CI goes green.
-- If CI fails, fix the issue on the same branch and push again (the background watch will notify you; re-watch after pushing).
+  6. **Watch the new PR's CI in the background, never foreground-block on it.** Use a `run_in_background` bash poll loop on `gh pr checks <pr-number>` that exits when no check is `pending` (the harness notifies you on completion). Do NOT use foreground `gh pr checks --watch` — it blocks ~13 min and wastes the session. The background watch surfaces a red CI within minutes so you can fix-forward instead of leaving it unnoticed; auto-merge still lands the PR on its own once CI is green. If you have genuinely-independent, non-conflicting work, do it in parallel; in the final stretch there usually isn't any, so the watch itself is the productive thing.
+  7. **Before going idle, decide the next slice.** Don't wait on the merge with nothing queued. Re-read the relevant ledger/PLAN (`PLAN.md`, `TODO_roast/BLOCKERS.md`) and pick the next concrete unit of work — start it on a fresh branch off `main` if it's independent of the open PR, or lay out options and confirm with the user when the next step is a strategic fork.
+- If CI fails, fix on the same branch and push again (the background watch notifies you; re-watch after pushing).
   - **Known flaky:** `roast/S02-names-vars/perl.t` intermittently exits 255 with `Failed: 0` (plan incomplete) — the typed-container alloc/hash-order flaky documented in PLAN.md. Passes ~80% of runs. If CI fails *only* on this with `Failed: 0`, re-trigger CI (push an empty commit) rather than treating it as a regression; confirm locally with a release build a few times first.
 - **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
 - Write all documents, code comments, and commit messages in English.
@@ -206,9 +205,7 @@ Per-type method documentation — consult when implementing methods on specific 
 ## Roast (official Raku test suite)
 
 - The ultimate goal is to pass ALL roast tests.
-- **Task selection: PLAN.md and BLOCKERS.md driven.** Do NOT randomly pick roast tests. Instead:
-  1. Check **PLAN.md** for the current quarter's priorities and work on those first.
-  2. Check **TODO_roast/BLOCKERS.md** for feature-level blocker analysis — implement the highest-impact missing feature to unblock the most tests at once.
+- **Task selection is PLAN.md → BLOCKERS.md driven, not random** — see the "Roast test prioritization" section below for the full procedure.
 - `roast/` is read-only; never modify files under `roast/`.
 - `TODO_roast/` tracks per-file pass/fail status (split by synopsis number). Mark a test `[x]` only when **all** subtests pass.
 - When a test file has known partial failures, add indented notes under its entry describing the blockers.
@@ -246,8 +243,7 @@ The project is in its final stretch. Work should be driven by strategic prioriti
      - `tmp/roast-pass.txt` — fully passing
    - After making changes, run `roast-history.sh` to check for newly passing tests.
 
-- Do NOT skip a task because it looks hard. Tackle difficult features head-on.
-- Do NOT cherry-pick easy tests to game the pass count. The goal is implementing missing features that have broad impact.
+- Do NOT cherry-pick easy tests to game the pass count. The goal is implementing missing features that have broad impact. (See "Working on complex features" — don't skip a task because it looks hard.)
 
 ## Trust the main branch
 
