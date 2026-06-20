@@ -586,3 +586,60 @@ carrier boundaries — which is the correct, minimal shape for it.
 4. Is `compute_needs_env_sync` removable in stages (per closure-feature) or only
    atomically with Slice E? Determine whether read-only closures can drop it
    before upvalues land.
+
+---
+
+## 9. Slice F roast-level dependency map (2026-06-20 scan)
+
+`t/` is reverse-sync independent (#3300–#3311). The remaining `sync_locals_from_env`
+dependency is **roast-level only**. A full `MUTSU_NO_REVERSE_SYNC=1` scan of the
+whitelist (debug build, 60s timeout — a few entries are timeout false-positives,
+e.g. `S32-list/cross.t` passes on retry) found **~119 whitelisted tests** that
+fail with reverse-sync OFF but pass with it ON. The list is in
+`docs/slice-f-reverse-sync-deps.txt` (non-S05) plus S05 `modifier/my.t` and
+`grammar/action-stubs.t`. Each is a caller-lexical written by name that the
+write-site does not yet write through to the caller's local slot.
+
+### Mechanisms (root causes, by which the deps cluster)
+
+1. **regex `~~` match results — DONE (#3321).** `$/`, numbered captures, and
+   embedded `{ }`/`:my`/`:let` closure writes now write through at the smartmatch
+   site (`writeback_match_locals`). Removed 5 of 7 S05 deps.
+2. **dynamic variables `$*x` — LARGEST remaining class, the recommended NEXT
+   slice.** `my $*x` is allocated a local slot (`*x` in `local_map`), read via
+   `GetLocal` (compiler `compile_expr_var`), and `flush_local_to_env`
+   *deliberately skips* dynamic vars — so a callee's `$*x = …` (env write, dynamic
+   scope) reaches the caller only via the reverse pull. Root fix: **dynamic vars
+   should not be local-slot cached — read and write them through `env` by name**
+   (dynamic-scope semantics). Coordinated codegen change: `compile_expr_var` emit
+   `GetGlobal` (not `GetLocal`) for `*`-prefixed names, and the assignment path
+   emit the env writer; the slot becomes vestigial. Validate: `my $*x; sub f{$*x=42}; f(); say $*x` → 42 under OFF. Deps: S02-names/{is_dynamic,symbolic-deref,caller}, etc.
+3. **`our` variables.** `our $x` modified by a nested class/sub (S02-names/our.t
+   "class can modify our variable", autothreading.t). Package-scoped; same shape
+   as dynamic — write callee's env write through, or read `our` from the package
+   store directly.
+4. **`is rw` / `is copy` parameters — campaign already has the substrate**
+   (`apply_pending_rw_writeback`, #3304/#3305). Remaining edge cases: dynamic-var
+   args (is_dynamic.t 25/27/28), pointy-block rw (S04/pointy-rw.t), function-form
+   assignment operators (S03-operators/assign.t "assignment operator called as
+   function").
+5. **grammar `.parse` token closures.** `{ $*A = ~$/ }` inside tokens log into
+   `pending_local_updates`, but the `.parse` *method-call* return doesn't consume
+   that log (only the smartmatch site does). Fix: consume/write-through
+   `pending_local_updates` at the method-call return when non-empty (general),
+   OR fold into the dynamic-var env fix (the `$*A` are dynamic). action-stubs.t.
+6. **`:let` regex variables.** Subrule `:let $a = 5` persistence after a
+   successful match (S05/modifier/my.t 23) — the `:let` write isn't logged into
+   `pending_local_updates`, so the smartmatch write-through misses it.
+7. **stringification / topic-coherence residue.** Some data-type tests
+   (S02-types/{set,pair}, etc.) fail OFF on a `.gist`/stringification subtest —
+   likely a `$_`/loop-topic or `$/`-list slot left stale by a path not yet
+   write-through'd. Probe individually; several may share mechanism 2/5.
+
+### Order of attack (next sessions)
+dynamic-var env-read (2) → `our` (3) → method-call `pending_local_updates`
+consume (5) → rw-param edge cases (4) → `:let` (6) → stringification residue (7).
+Re-run the scan (release build + retries to drop timeout false-positives) after
+each slice to confirm the count drops. When the scan reaches 0, **Slice F** can
+delete `env_dirty` / `ensure_locals_synced` / `sync_locals_from_env` /
+`saved_env_dirty`.
