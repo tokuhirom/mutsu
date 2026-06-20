@@ -403,6 +403,14 @@ impl Interpreter {
             };
             self.stack.push(junction_result);
             self.env_dirty = true;
+            // Slice F (env<->locals coherence): see the matching CallMethodMut
+            // junction path. An invocant junction threading a user method that
+            // mutates a captured-outer / `our` variable accumulates into env, but
+            // only the last eigenstate's pending writeback reaches the caller's
+            // slots; this path returns before the normal post-dispatch reconcile,
+            // so reconcile the caller's local slots from env here (env already
+            // holds every eigenstate's value). Byte-identical with reverse-sync on.
+            self.reconcile_locals_from_env_at_site(code);
             return Ok(());
         }
 

@@ -559,6 +559,18 @@ impl Interpreter {
             };
             self.stack.push(junction_result);
             self.env_dirty = true;
+            // Slice F (env<->locals coherence): an invocant junction that threads
+            // a *user* method mutating a captured outer / `our` variable (e.g.
+            // `$junc.a` with `method a { $cnt++ }`) accumulates each eigenstate's
+            // write into env correctly, but the per-call pending writeback only
+            // carries the *last* eigenstate's source — so a different variable
+            // written by an earlier eigenstate (`$cnt1` vs the last `$cnt2`) never
+            // reaches the caller's local slot. This junction path returns before
+            // the normal post-dispatch reconcile, so with the reverse env->locals
+            // pull disabled reconcile the caller's slots from env once here; env
+            // already holds every eigenstate's accumulated value. Byte-identical
+            // with the reverse pull enabled (gated on the env_dirty just set).
+            self.reconcile_locals_from_env_at_site(code);
             return Ok(());
         }
 
