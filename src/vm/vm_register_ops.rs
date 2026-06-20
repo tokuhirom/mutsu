@@ -772,6 +772,10 @@ impl Interpreter {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        // Slice F: write imported symbols through to the caller's local slots
+        // (import_module recorded their names); keeps an imported `constant c`
+        // coherent without the reverse pull. This op holds the outer `code`.
+        self.apply_pending_rw_writeback(code);
         // A module load writes imported symbols into env by name; flag the env so
         // the next GetLocal barrier reconciles them into locals. (An eager
         // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
