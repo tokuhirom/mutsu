@@ -3413,10 +3413,18 @@ impl Interpreter {
                 let success = Self::is_let_success(&topic);
                 loan_env!(self, resolve_let_saves_on_success(mark, success));
                 self.env_dirty = true;
+                // `let`/`temp` restore writes the saved value back into `env`
+                // only; the matching local slot still holds the in-block value.
+                // Without reverse-sync a later read through the locals store would
+                // see the un-restored value, so reconcile the frame's slots from
+                // env here (byte-identical to the reverse pull the env_dirty net
+                // would trigger in reverse-sync ON mode).
+                self.reconcile_locals_from_env_at_site(code);
             }
             Err(e) => {
                 loan_env!(self, restore_let_saves(mark));
                 self.env_dirty = true;
+                self.reconcile_locals_from_env_at_site(code);
                 return Err(e);
             }
         }

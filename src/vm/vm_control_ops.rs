@@ -3293,6 +3293,11 @@ impl Interpreter {
                 // Exception — restore let saves
                 loan_env!(self, restore_let_saves(let_mark));
                 self.env_dirty = true;
+                // The restore wrote the saved values back into `env` only;
+                // reconcile this frame's local slots so a later read sees the
+                // restored value without relying on reverse-sync (byte-identical
+                // to the env_dirty barrier pull in reverse-sync ON mode).
+                self.reconcile_locals_from_env_at_site(code);
                 if catch_begin >= control_begin {
                     return Err(e);
                 }
