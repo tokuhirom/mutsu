@@ -652,12 +652,13 @@ Stage 3（reverse-sync デフォルト無効化→機構削除）が初めて射
 | 10-11 | S14-roles/{mixin-6e,submethods-6e} | `$obj does/but Role` の `submethod BUILD/TWEAK` が captured outer を名前書き。`exec_does_op`/`exec_does_var_op` は **toggle-gated** `sync_locals_from_env`、`exec_but_mixin_op` は **sync 皆無** | does×2 を toggle 非依存 reconcile に差替、but に reconcile 追加（`ButMixin` op に `code` 渡す） |
 | 12 | S32-str/substr-rw | `$r := substr-rw($s); $r = v` の **Proxy STORE** が referent `$s` を名前書き | scalar-assign の Proxy STORE 3 サイト（`assign_proxy_lvalue` 後）に reconcile |
 | 13 | S03-operators/notandthen | `andthen`/`notandthen` の `OpCode::CallDefined` が **user `method defined`** を dispatch→captured `$calls++` | CallDefined の user-method 枝のみ reconcile（native check は pure 維持） |
-| **14** | **S32-str/val.t（未解決）** | **多段 sigilless-alias chain**: `for @ok -> \value,@strings { ok-val(value,@strings) }` → `ok-val(\value)` param → 内側 `for ... -> $string,\value` → subtest closure が `value` を**読む**。OFF で深いフレーム跨ぎの sigilless `\value` が subtest closure 内で stale（661 subtest fail）。**= multi-frame retention 壁（read-coherence）**・write-back 系の reconcile では届かない | **未解決**。次セッションの focused 課題。sigilless for-rebind の env flush + nested-closure capture 同期 or shared-cell が要る |
+| **14** | **S32-str/val.t（解決済・第39セッション）** | **内側 `for (...) -> $string, \value` の multi-param 復元が env のみで local slot を復元せず**。当初「subtest closure の read-coherence 壁」と診断したが、最小化すると closure 不在の `for ... -> \value` 本体での bare read 自体が既に stale（`outer-read: 4_2 => -42`）＝診断は誤り。真因＝内側 for の sigilless `\value` 多パラメタが**外側 `\value` と同名＝同一 local slot を共有**し、ループ末の `saved_multi_params` 復元が env binding だけ戻して local slot を最終イテレーション値（-42）のまま残す→reverse pull OFF で次の外側イテレーションが element list を stale な `value` で再評価 | 多パラメタ復元ループ（`exec_for_loop_body`, vm_control_ops.rs:1218）に **local slot への write-through** を追加（`find_local_slot(code, name)` があれば `locals[slot] = v`）。ON で byte-identical。pin=`t/multiframe-sigilless-for-rebind-coherence.t`（4） |
 
-make test PASS（985 files / 9622 tests）。**Stage 3 は val.t 1 件で merge blocked**（whitelisted）。draft PR #3349
-に 13/14 着地。**val.t は multi-frame sigilless retention＝独立 substrate**（earlier memory の「multi-frame
-retention 壁」と同根）で、本セッションの「interpreter-run path が caller lexical を名前書き→call-site で
-toggle 非依存 reconcile」パターンとは別系。次セッション＝val.t（sigilless multi-frame）を focused に。
+make test PASS（986 files / 9626 tests）。**Stage 3 の roast OFF 依存 14/14 全解決**。**val.t は当初 multi-frame
+read-coherence 壁と思われたが、実態は #13 までと同じ単一パターン（interpreter-run/loop path が caller lexical
+を共有 slot に書くが復元/reconcile で slot を戻さない）の一発現**で、多パラメタ復元の env-only 復元に local
+write-through を足すだけで解けた（read-direction の独立 substrate ではなかった）。**Stage 3（reverse-sync
+デフォルト無効化）は全 t/ + roast OFF 依存クリアで merge 可能。**
 
 **教訓**: Stage 3 で surface した 14 件は t/ scan 非代表だったが、**13 件は単一パターン**（interpreter-run
 op が caller lexical を名前書きするが call-site で reconcile しない）の異なる発現で、各 op site に

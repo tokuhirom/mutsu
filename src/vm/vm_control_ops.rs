@@ -1217,6 +1217,17 @@ impl Interpreter {
         // Restore saved multi-param values and readonly state
         for (name, saved_val, was_readonly, sigilless_ro) in saved_multi_params {
             if let Some(v) = saved_val {
+                // Slice F (env<->locals coherence): a multi-param loop variable
+                // shares its name (and therefore its local slot) with an
+                // enclosing binding of the same name — e.g. an outer `\value`
+                // re-bound by an inner `for (...) -> $string, \value`. Restoring
+                // only the env binding leaves the local slot clobbered with the
+                // last iteration value, so a later read of the outer name (with
+                // the reverse env->locals pull disabled) sees stale data. Write
+                // the restored value straight through to the local slot too.
+                if let Some(slot) = self.find_local_slot(code, &name) {
+                    self.locals[slot] = v.clone();
+                }
                 self.env_mut().insert(name.clone(), v);
             } else {
                 self.env_mut().remove(&name);
