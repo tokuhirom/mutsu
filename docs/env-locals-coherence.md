@@ -624,3 +624,21 @@ multi-frame / carrier / 並行(=実は同期) の全カテゴリを `pending_rw_
 Stage 3（reverse-sync デフォルト無効化→機構削除）が初めて射程に入った。第32セッションで 65 ファイル
 回帰した壁は、本グラインドで全て write-through 化された。次の大物＝Stage 3 再挑戦
 （`sync_locals_from_env` デフォルト無効化を全 t/ + roast CI で検証）。
+
+## 7. Stage 3 — reverse-sync デフォルト無効化（第38セッション末・進行中）
+
+`reverse_sync_disabled()`（`vm_stats.rs`）の判定を反転＝**reverse pull はデフォルト OFF**。旧 escape hatch
+`MUTSU_NO_REVERSE_SYNC` は撤去し、opt-IN `MUTSU_REVERSE_SYNC=1`（旧挙動の再有効化＝A/B 診断用）に置換。
+
+- **make test（全 t/）= PASS**（985 files / 9622 tests・OFF scan が clean だった通り）。
+- **★roast 側に t/ scan 非代表の OFF 依存が残存**（ローカル sample で判明）。t/ は exercise しない
+  rw-aliasing / coroutine-rw / lvalue-method-rw を roast が突く:
+  - `roast/S04-statements/gather.t` test 36: `my $l = gather { take-rw my $ = 1 }; lives-ok { $l.AT-POS(0) = 42 }`
+    → **closure（`lives-ok {}`）内の take-rw gather 要素への rw 代入が OFF で外に伝播しない**。bare block
+    `{ }` / bare statement では伝播する（frame 跨ぎが壁）。coroutine が rw 取った匿名コンテナが
+    shared cell でなく coroutine env 経由＝reverse pull 前提。
+  - `roast/S04-blocks-and-statements/pointy-rw.t` test 8: `$pair.values should be rw (2)`＝lvalue-method
+    rw alias の frame 跨ぎ。
+- **方針（ユーザー選択: full Stage 3・CI を net に fix-forward）**: draft PR で full roast CI を回し、
+  roast-only OFF 依存の完全リストを取得→各々 write-through / shared-cell 化で fix-forward→green で ready。
+  これら rw-alias-through-frame は「first-class container / shared cell」substrate（§4-A 系）に接続。
