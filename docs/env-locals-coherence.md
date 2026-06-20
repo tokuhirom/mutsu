@@ -557,5 +557,70 @@ make test PASS（981 files/9587 tests）。OFF scan: **13→7**（残＝regex ca
 - **並行 cell（5）**: `done-paren-stmt-modifier`/`gather-infinite-coroutine`/`react-whenever-last-next`/
   `supply-on-demand-closing`/`supply-sync-infinite-emit`（別スレッド→caller slot 到達不可・§4-A cell 共有前提）。
 
-次の substrate＝ regex carrier（s///-topic / :let の caller-lexical 書込を carrier ログ化）か
-並行 cell 共有（§4-A）。multi-frame accumulation の壁は本セッションで消滅。
+### 6.7 ★第38セッション — regex carrier を解決（OFF 7→5・PR #3347）
+
+§6.6 の残 regex carrier 2 件を畳んだ。両者とも callee（substitution engine / declarative
+regex prefix）が caller lexical を `env` に**名前で**書き、VM の slot write-through を迂回していた。
+
+- **bare `s///` の `$_` topic（`regex-m-s`）**: `write_subst_topic_checked`（`vm_string_regex_ops.rs`）が
+  modified topic を `env["_"]` に insert するだけで、`my $_` が `_` を compiled local slot に
+  していると slot が stale。修正＝同関数に `code` を渡し、env insert の後で
+  `update_local_if_exists(code, "_", &result)` で slot へ write-through ＋ `note_caller_env_write("_")`
+  で carrier/env_dirty を立てる。`$_` が `given`/`for` の source scalar を alias している
+  （`topic_source_var`）場合は、その source 名にも mirror（`$x ~~ s///` smartmatch path と対称）。
+- **`:let $x = ...` declarative modifier（`regex-declarative-modifiers`）**: declarative-regex prefix
+  handler（`runtime/regex/regex_match_public.rs`）が `:let` 値を `self.env` に直書き。match 成功時は
+  `restore_on_fail` を適用しないので値が永続するが、caller slot は未更新。修正＝match 成功時に
+  `restore_on_fail` のキー（＝`:let` 名）を現 env 値とともに `pending_local_updates`（+ carrier）へ
+  log → smartmatch site の `writeback_match_locals` が caller slot を reverse pull 抜きで再収束。
+  - **★注**: `t/regex-declarative-modifiers.t` test 4（`:let` 不成功 match 後の変数 restore で
+    `$a==1` を期待）は **raku 自身が `$a==5` を返す**＝`:let` の restore-on-overall-fail セマンティクスが
+    mutsu と Rakudo で乖離（dual-store とは無関係の別件）。pin test ではこの contested な値検査を外し、
+    match 結果（nok）のみ assert。
+
+pin=`t/regex-carrier-writeback-coherence.t`（10・bare `s///`/`s:g///`/`$x ~~ s///`/`:let` 成功/`:let` 失敗・
+ON=OFF=raku）。make test PASS（984 files/9614 tests）。OFF scan: **7→5**。
+
+**残 5 内訳（第38末）— 全て並行 cell（§4-A cell 共有前提）**:
+`done-paren-stmt-modifier`/`gather-infinite-coroutine`/`react-whenever-last-next`/
+`supply-on-demand-closing`/`supply-sync-infinite-emit`。callee が別スレッドで走り、caller の
+local slot は別フレーム／別スタックにあるため write-through が物理的に届かない。唯一の解は
+captured outer を **shared cell（`Arc<Mutex<Value>>` 様）に昇格**し、両スレッドが同一 cell を
+参照する設計（§4-A）。これは single-frame write-through ファミリーとは別物の substrate 変更。
+
+次の substrate＝ 並行 cell 共有（§4-A）。single-frame / multi-frame / carrier の write-through 壁は
+これで全て消滅し、残るのはスレッド境界を跨ぐ cell 共有のみ。
+
+### 6.8 ★第38セッション後半 — 「並行 cell」は実は同期だった（OFF 5→0・PR #XXXX）
+
+§6.6/§6.7 が「並行 cell（別スレッド→caller slot 到達不可・§4-A 前提）」と分類していた残 5 件は、
+**実測で全て同一 VM 上の同期実行**と判明した（reverse-sync ON が pull で直すのが動かぬ証拠＝
+別スレッド・別 env なら ON でも直らない）。`Supply.from-list` / `supply { emit }` の whenever
+callback も `gather` coroutine body も `&mut self` 上で compiled bytecode として走り、captured-outer
+caller lexical を `env` に名前で書く。よって single-frame write-through ファミリーと同じ機構で畳めた。
+
+- **react/whenever（4 件: `done-paren-stmt-modifier` / `react-whenever-last-next` /
+  `supply-on-demand-closing` / `supply-sync-infinite-emit`）**: `exec_react_scope_op`
+  （`vm_register_ops.rs`）の event-loop 後 reconcile が `sync_locals_from_env`（toggle 対象＝OFF で no-op）
+  だった。これを **toggle 非依存の `reconcile_locals_from_env_at_site(code)`** に差し替え（ON で byte-identical・
+  同一 HashSlotRef/`!attr` skip）。1 行で 4 件解決。
+- **gather coroutine（1 件: `gather-infinite-coroutine` の `.first` captured-`$c`）**: `try_lazy_gather_first`
+  （`vm_native_first.rs`）の incremental-pull ループで、matcher closure（`* >= 3`）が `exec` 経由で
+  `self.current_code` を**自フレームに上書き**して戻さない。`force_lazy_list_vm_n` はこの `current_code` を
+  「captured-outer write を reconcile する caller フレーム」として捕捉する（`reconcile_caller_after_lazy_force`）ので、
+  2 回目以降の force が matcher のフレームを reconcile し caller の `$c` slot が OFF で stale（c=1 のまま）。
+  ON では post-method の barrier pull がマスクしていた。修正＝ループ入口で caller `current_code` を pin し
+  **各 force の直前に restore**。`.head(n)` 系の captured-`$c` は ON でも 0（別件の gather-head 副作用
+  可視性の制約・dual-store 無関係・test も未アサート）。
+
+pin=`t/concurrent-cell-writeback-coherence.t`（8・react `++`/`+=`/`done()` 境界・supply emit・gather
+`.first` captured accumulation・ON=OFF=raku）。OFF scan（全 t/）: 残失敗は #3347 が直す regex 2 件のみ＝
+**両 PR 合算で OFF surface 7→0**。
+
+**★結論: locals↔env coherence の write-through グラインドは完了**。第27〜38セッションで single-frame /
+multi-frame / carrier / 並行(=実は同期) の全カテゴリを `pending_rw_writeback_sources` /
+`reconcile_locals_from_env_at_site` / carrier ログの 3 機構へ畳み、OFF（`MUTSU_NO_REVERSE_SYNC=1`）で
+全 t/ が pass。`sync_locals_from_env`（reverse pull）は **もはや correctness に必要な箇所が無い**＝
+Stage 3（reverse-sync デフォルト無効化→機構削除）が初めて射程に入った。第32セッションで 65 ファイル
+回帰した壁は、本グラインドで全て write-through 化された。次の大物＝Stage 3 再挑戦
+（`sync_locals_from_env` デフォルト無効化を全 t/ + roast CI で検証）。

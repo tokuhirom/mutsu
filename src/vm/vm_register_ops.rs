@@ -1734,7 +1734,16 @@ impl Interpreter {
         } else {
             self.run_react_event_loop()
         };
-        self.sync_locals_from_env(code);
+        // Slice F (react/whenever coherence): the `whenever` callbacks ran as
+        // compiled bytecode on *this* VM (synchronous `from-list` emit) and
+        // mutated captured-outer caller lexicals (`my $i; whenever ... { $i++ }`)
+        // straight into `env` by name. Reconcile the caller's local slots from
+        // env unconditionally (not gated by the reverse-sync campaign toggle), so
+        // the slot stays coherent without relying on the speculative reverse
+        // `sync_locals_from_env` pull. Under reverse-sync ON this is byte-identical
+        // to the barrier pull it replaces (same HashSlotRef / `!attr` per-slot
+        // skips); under OFF it is what keeps `$i` correct.
+        self.reconcile_locals_from_env_at_site(code);
         self.env_dirty = true;
 
         *ip = end;
