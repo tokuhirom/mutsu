@@ -4893,6 +4893,20 @@ impl Interpreter {
             self.update_local_if_exists(code, &src, &cell_val);
         }
 
+        // Write the updated root container back into the local slot. The descent
+        // above mutated `env`'s root in place (possibly COW-detaching its outer
+        // `Arc` via `make_mut`), then the slot was invalidated to `Nil` (above)
+        // on the assumption reverse-sync would re-pull it. Without reverse-sync a
+        // later read through the locals store would see that stale `Nil` (or an
+        // outer `Arc` that no longer reaches the freshly bound cell). Refreshing
+        // the local from `env` here makes both stores share the same outer `Arc`
+        // spine, so deep `:=` binds and writes stay coherent without a pull.
+        if let Some(slot) = self.find_local_slot(code, &var_name)
+            && let Some(updated) = self.env().get(&var_name).cloned()
+        {
+            self.locals[slot] = updated;
+        }
+
         self.stack.push(val);
         Ok(())
     }
