@@ -116,6 +116,17 @@ impl Interpreter {
                 self.env_dirty = pre_dirty;
             } else {
                 self.env_dirty = true;
+                // Stage 3: the carrier writeback was not fully precise — an
+                // interpreter routine wrote a caller lexical by name through a
+                // path the carrier set does not log (e.g. an `is rw` for-loop
+                // alias mutated inside a `lives-ok { }` block, or a role/mixin
+                // composition). Reconcile the caller's slots from env here, at
+                // the call site, since the reverse `sync_locals_from_env` pull is
+                // no longer there to do it at the next sync point. Byte-identical
+                // to that pull under reverse-sync ON (same per-slot skips); only
+                // runs on the imprecise carrier path, never for a fully-reconciled
+                // EVAL (which restores `pre_dirty` above).
+                self.reconcile_locals_from_env_at_site(code);
             }
         }
         Ok(())
@@ -167,6 +178,15 @@ impl Interpreter {
         exec_result?;
         self.writeback_carrier_writes(code, &written);
         self.env_dirty = true;
+        // Stage 3: a block-taking Test function (`lives-ok { ... }`,
+        // `throws-like`, ...) routes here (its `__mutsu_test_callsite_line`
+        // named arg makes it a pairs call) and runs its block through the
+        // interpreter, which can mutate a caller lexical by name through a path
+        // the carrier set does not log (an `is rw` for-loop alias inside the
+        // block). Reconcile the caller's slots from env at the call site, since
+        // the reverse `sync_locals_from_env` pull is gone. Byte-identical to that
+        // pull under reverse-sync ON (same per-slot HashSlotRef/`!attr` skips).
+        self.reconcile_locals_from_env_at_site(code);
         Ok(())
     }
 
