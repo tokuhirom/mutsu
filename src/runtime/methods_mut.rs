@@ -3070,7 +3070,14 @@ impl Interpreter {
 
         // map with rw binding: mutations to $_ inside map should write back to the
         // source array elements (Raku semantics: $_ is rw-bound in map).
-        if method == "map" && target_var.starts_with('@') {
+        // The rw-map fast path materializes the source (for `$_`-mutating blocks
+        // like `@a.map({ $_++ })`). An infinite sequence/closure spec must stay
+        // lazy — fall through to the lazy `map` pipeline in `call_method_with_values`
+        // (L2b). Writeback is meaningless on an unbounded array anyway.
+        if method == "map"
+            && target_var.starts_with('@')
+            && !matches!(&target, Value::LazyList(ll) if ll.is_infinite_spec())
+        {
             let mut items = if crate::runtime::utils::is_shaped_array(&target) {
                 crate::runtime::utils::shaped_array_leaves(&target)
             } else {

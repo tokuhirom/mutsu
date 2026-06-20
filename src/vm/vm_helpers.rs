@@ -327,7 +327,12 @@ impl Interpreter {
             _ => None,
         };
         if let Some(ll) = lazy {
-            let items = self.force_lazy_list_vm(&ll)?;
+            // Reify a bounded prefix (matching the historical reify-to-cap of a
+            // capped `ArrayKind::Lazy` Array). With the L2b `[start]` seed the
+            // cache holds only one element, so `force_lazy_list_vm` (cache read)
+            // would lose the prefix on a front-mutation — extend to the cap.
+            const MAX_ARRAY_EXPAND: usize = 100_000;
+            let items = self.force_lazy_list_vm_n(&ll, MAX_ARRAY_EXPAND)?;
             self.env_mut()
                 .insert(name.to_string(), Value::real_array(items));
             self.env_dirty = true;
@@ -441,11 +446,15 @@ impl Interpreter {
             ));
         }
 
-        // For sequence-spec lazy lists, return current cache (infinite lists
-        // are never fully materialized)
-        if list.sequence_spec.is_some() {
-            let cache = list.cache.lock().unwrap();
-            return Ok(cache.as_ref().cloned().unwrap_or_default());
+        // For sequence-spec lazy lists, a strict force cannot materialize the
+        // infinite tail, so return a bounded prefix (the historical 100k cap).
+        // With the L2b `[start]` seed the cache is O(1), so extend it to the cap
+        // here — every strict-force caller (front mutation reify, eager coerce,
+        // ...) expects the prefix, not the seed. Lazy *read* paths (index, head,
+        // first, map/grep pipes) use `force_lazy_list_vm_n` / pull and stay O(1).
+        if let Some(ref spec) = list.sequence_spec {
+            const MAX_ARRAY_EXPAND: usize = 100_000;
+            return Self::extend_sequence_cache(list, spec, MAX_ARRAY_EXPAND);
         }
 
         // Check cache first

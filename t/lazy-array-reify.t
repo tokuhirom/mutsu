@@ -6,7 +6,7 @@ use Test;
 # while front mutations (unshift/prepend/shift/splice/elem-assign) reify the
 # prefix and operate on it.
 
-plan 22;
+plan 25;
 
 # --- reads past the old 100k cap reify on demand ------------------------
 {
@@ -19,6 +19,18 @@ plan 22;
     is @a.head(3).List, (1, 2, 3), 'head reifies the prefix';
     is @a.first(* > 3), 4, 'first pulls until the predicate matches';
     is @a.map(* * 2).head(3).List, (2, 4, 6), 'map keeps laziness';
+}
+
+# --- L2b: map/grep stay lazy even when the cache was NOT pre-extended -----
+# (A fresh `1..*` is seeded with `[1]` only; the lazy `map`/`grep` pipeline
+# must pull from the sequence on demand, not read the O(1) seed cache.)
+{
+    my @a = 1..*;
+    is @a.map(* * 2).head(5).List, (2, 4, 6, 8, 10), 'fresh map pulls past the seed';
+    my @b = 1..*;
+    is @b.grep(* %% 3).head(4).List, (3, 6, 9, 12), 'fresh grep pulls past the seed';
+    my @c = 1..*;
+    is @c.map(* * 2).grep(* > 5).head(3).List, (6, 8, 10), 'chained map/grep stays lazy';
 }
 
 # --- `.elems`/numeric coercions still throw X::Cannot::Lazy ------------

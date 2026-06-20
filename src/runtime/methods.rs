@@ -3134,11 +3134,12 @@ impl Interpreter {
         // Force LazyList and re-dispatch as Seq
         if let Value::LazyList(ll) = &target
             && Self::should_force_lazy_list(method)
-            // A chained `.map`/`.grep` on a lazy map/grep pipeline appends
-            // another lazy stage (`dispatch_map_method`/`dispatch_grep`); a
-            // laziness-preserving coercion returns the pipeline unchanged.
-            // Neither forces the (possibly infinite) pipeline.
-            && !(ll.lazy_pipe.is_some()
+            // A chained `.map`/`.grep` on a lazy map/grep pipeline OR an infinite
+            // sequence/closure spec appends another lazy stage
+            // (`dispatch_map_method`/`dispatch_grep` via `is_lazy_pipe_source`); a
+            // laziness-preserving coercion returns the list unchanged. Neither
+            // forces the (possibly infinite) sequence (L2b).
+            && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && (matches!(method, "map" | "grep")
                     || crate::runtime::Interpreter::lazy_pipe_preserving_coercion(method)))
         {
