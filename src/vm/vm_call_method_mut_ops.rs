@@ -295,6 +295,12 @@ impl Interpreter {
             }
             _ => {}
         }
+        // Preserve the caller's env `self` across the dispatch: a dynamic method
+        // call (`$obj."$name"()`) binds `self` to `$obj` for the callee, and the
+        // mut dispatch path does not restore it. Without this, a later `self` read
+        // in an enclosing nested sub (resolved from env via `GetSelfOrNoSelf`)
+        // would see `$obj` leaked in. See try_compiled_method_or_interpret.
+        let saved_self = self.get_env_with_main_alias("self");
         let call_result = if matches!(
             &name_val,
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
@@ -302,11 +308,18 @@ impl Interpreter {
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(target);
             call_args.extend(args);
-            self.vm_call_on_value(name_val, call_args, None)?
+            self.vm_call_on_value(name_val, call_args, None)
         } else {
             // TODO: compile to bytecode — generic mut method fork (ledger §1).
-            self.vm_call_method_mut_with_values(&target_name, target, &method, args)?
+            self.vm_call_method_mut_with_values(&target_name, target, &method, args)
         };
+        match saved_self {
+            Some(s) => self.set_env_with_main_alias("self", s),
+            None => {
+                self.env_mut().remove("self");
+            }
+        }
+        let call_result = call_result?;
         self.stack.push(call_result);
         self.env_dirty = true;
         Ok(())

@@ -89,7 +89,31 @@ impl Interpreter {
     }
 
     /// Try compiled method fast path; fall back to interpreter.
+    ///
+    /// Wrapper that preserves the caller's env `self`: the inner dispatch can run
+    /// an interpreted instance method, which binds `self` in env without the
+    /// save/restore that `call_method_with_values` performs. Without this, a bare
+    /// stringification (`"$obj"` → `StringConcat` → this) leaves the caller's
+    /// `self` pointing at `$obj`, breaking a later `self` read in an enclosing
+    /// nested sub (which resolves `self` from env via `GetSelfOrNoSelf`).
     pub(super) fn try_compiled_method_or_interpret(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let saved_self = self.get_env_with_main_alias("self");
+        let result = self.try_compiled_method_or_interpret_inner(target, method, args);
+        match saved_self {
+            Some(s) => self.set_env_with_main_alias("self", s),
+            None => {
+                self.env_mut().remove("self");
+            }
+        }
+        result
+    }
+
+    fn try_compiled_method_or_interpret_inner(
         &mut self,
         target: Value,
         method: &str,
