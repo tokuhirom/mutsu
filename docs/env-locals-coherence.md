@@ -656,9 +656,13 @@ Stage 3（reverse-sync デフォルト無効化→機構削除）が初めて射
 
 | **15** | **S03-junctions/autothreading.t（解決済・第39セッション・CI surface）** | **invocant junction の method autothread が captured-outer / `our` 変異を最後の eigenstate しか伝播しない**。`$junc.a`（`method a { $cnt++ }`）で各 eigenstate は env に正しく累積する（threaded 戻り値 `any(0,1,0)` が証明）が、per-call の pending writeback は**最後の eigenstate の source しか運ばない**→eigenstate が**異なる変数**を書くと（earlier=$cnt1・last=$cnt2）earlier の $cnt1 が caller local slot に届かず stale（0）。当初「method-invocant autothread `our`-var 蓄積壁」（第34節 deferred）と認識されローカル survey で「junctions flaky」と誤分類 | CallMethod / CallMethodMut **両** junction loop（vm_call_method_ops.rs / vm_call_method_mut_ops.rs）は normal post-dispatch reconcile の前に early-return するため、threading 後に `reconcile_locals_from_env_at_site(code)` を 1 回追加（env は全 eigenstate の累積値を保持済）。ON で byte-identical。pin=`t/junction-invocant-autothread-writeback-coherence.t`（6） |
 
-make test PASS（987 files / 9632 tests）。**Stage 3 の roast OFF 依存 15/15 全解決**（CI が val.t commit 後に
-14 の survey から漏れていた autothreading.t を surface＝junctions は flaky でなく実依存だった。flaky 除外していた
-set/baghash/mix は OFF 全 PASS を再確認・sethash.t は ON/OFF 両方 exit255 の非 whitelist plan-abort でスコープ外）。
+| **15.5** | **val.t 修正の過剰適用回帰（解決済・第39セッション・CI surface）** | #14 の local-slot write-through が `multi_param_names`（sigil 付き名も含む）全体に効き、**全 `for ... -> $a, $b` ループ**で実行→sigil 付き param の slot が保持していた **live rw/element alias を env-only 復元値で上書き**→文字列/ループ破損（`expected bc got c`/`expected abecd got abec`）。並列 CI ログが読めず（gh log 切り詰め）、**ローカル release `make roast` の Test Summary で特定** | write-through を **sigilless 名のみ**（`!name.starts_with(['$','@','%','&'])`）に制限。val.t バグは sigilless `\value` 固有なので保たれ、sigil 付きは（既に coherent な）env-only 復元へ戻る |
+| **16** | **S32-io/IO-Socket-Async.t（解決済・第39セッション）test 40 'listen tap is a Tap'** | `my $tap = do whenever $sup {…}` が tap を `env[target_var]` に直接書く（`run_whenever_with_value` 4 サイト）が caller local slot 未更新→**同 react block 内の後続 read**（`isa-ok $tap, Tap`）が stale slot（`do` block 自身の結果＝Supply）を読む。#3348 の react-scope-end reconcile は block 内 read に間に合わない。これも survey で「IO-Socket-Async flaky」と誤分類された決定論 OFF 依存 | `exec_whenever_scope_op`（env_dirty set 済）に `reconcile_locals_from_env_at_site(code)` 追加。ON で byte-identical。pin=`t/react-do-whenever-tap-coherence.t`（2） |
+
+make test PASS（988 files / 9634 tests）。**Stage 3 の roast OFF 依存 16/16 全解決**（CI が val.t commit 後に
+14 survey から漏れた autothreading.t を、その後ローカル release roast が IO-Socket-Async.t を surface＝junctions/
+IO-Socket-Async は flaky でなく実依存だった。教訓: 並列 CI ログは gh で切り詰められ失敗特定不能→**ローカル release
+`make roast` の末尾 Test Summary が権威的**。set/baghash/mix は OFF 全 PASS・sethash.t は非 whitelist plan-abort でスコープ外）。
 **val.t は当初 multi-frame
 read-coherence 壁と思われたが、実態は #13 までと同じ単一パターン（interpreter-run/loop path が caller lexical
 を共有 slot に書くが復元/reconcile で slot を戻さない）の一発現**で、多パラメタ復元の env-only 復元に local
