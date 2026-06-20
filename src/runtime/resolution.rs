@@ -1967,6 +1967,36 @@ impl Interpreter {
         result.map(|last_value| last_value.unwrap_or(value))
     }
 
+    /// Slice F (env<->locals coherence): record an eager block-iteration's
+    /// captured-outer free-var writes so the call-site method op drains each new
+    /// value straight through to the caller's local slot, keeping it coherent
+    /// without the reverse `sync_locals_from_env` pull.
+    ///
+    /// The eager `.map`/`.grep` loops (`(1,2,3).map({ $sum += $_ })`) run the
+    /// block body via `run_reuse` rather than `call_compiled_closure_with_topic`,
+    /// so they bypass the closure-dispatch recording (#3307): a mutated captured
+    /// lexical lands in `env` but is never recorded for write-through. Replay the
+    /// block's compile-time `free_var_writes` here. Topic/param names are
+    /// loop-local (restored by the caller) and excluded.
+    fn record_eager_block_free_var_writeback(
+        &mut self,
+        code: &crate::opcode::CompiledCode,
+        params: &[String],
+    ) {
+        for sym in &code.free_var_writes {
+            sym.with_str(|fname| {
+                if fname != "_"
+                    && fname != "$_"
+                    && fname != "@_"
+                    && fname != "%_"
+                    && !params.iter().any(|p| p == fname)
+                {
+                    self.pending_rw_writeback_sources.push(fname.to_string());
+                }
+            });
+        }
+    }
+
     pub(super) fn eval_map_over_items(
         &mut self,
         func: Option<Value>,
@@ -2206,6 +2236,9 @@ impl Interpreter {
                         self.env.remove(&k);
                     }
                 }
+            }
+            if loop_result.is_ok() {
+                self.record_eager_block_free_var_writeback(&code, &data.params);
             }
             return loop_result;
         }
@@ -2615,6 +2648,9 @@ impl Interpreter {
                         self.env.remove(&k);
                     }
                 }
+            }
+            if loop_result.is_ok() {
+                self.record_eager_block_free_var_writeback(&code, &data.params);
             }
             loop_result?;
             return Ok((Value::array(result), list_items));
