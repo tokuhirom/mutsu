@@ -630,10 +630,6 @@ impl Interpreter {
         self.pop_routine();
         self.pop_block();
 
-        if self.env_dirty {
-            self.sync_locals_from_env(cc);
-        }
-
         // Sync locals back to env so captured variable changes are visible.
         // Only captured variables that also occupy a local slot need this: a
         // non-captured local is strictly frame-local and is discarded when the
