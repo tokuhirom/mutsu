@@ -1011,6 +1011,40 @@ impl Interpreter {
         // `vm_run_block_raw`. `run_nested` saves/resets/restores the per-execution
         // registers and flags env_dirty so the outer locals re-sync from env.
         let result = self.run_nested(&code, &compiled_fns);
+        // Slice F (env<->locals coherence): a deferred class/role body that
+        // mutates an outer lexical (`class C { $tracker = 99 }`) writes it into
+        // `env` by name; record those names so the caller (the class/role
+        // registration opcode, which holds the outer `code`) writes them through
+        // to the outer frame's local slots, dropping the dependency on the
+        // reverse pull. The topic is excluded as a per-call alias. Mirrors the
+        // VM-side `vm_run_block_raw`.
+        // A class/role body runs with `current_package` set to the package name,
+        // so a write to an outer lexical `$tracker` is recorded in
+        // `free_var_writes` as the qualified `Pkg::tracker` even though the
+        // caller's local slot (and the copied-back env entry) is the bare
+        // `tracker`. Strip the active package prefix so the drain matches the
+        // caller slot.
+        let pkg_prefix = {
+            let pkg = self.current_package();
+            if pkg == "GLOBAL" {
+                String::new()
+            } else {
+                format!("{pkg}::")
+            }
+        };
+        for sym in &code.free_var_writes {
+            sym.with_str(|fname| {
+                let unqualified = if !pkg_prefix.is_empty() {
+                    fname.strip_prefix(&pkg_prefix).unwrap_or(fname)
+                } else {
+                    fname
+                };
+                if unqualified != "_" && unqualified != "@_" && unqualified != "%_" {
+                    self.pending_rw_writeback_sources
+                        .push(unqualified.to_string());
+                }
+            });
+        }
         self.run_pending_instance_destroys()?;
         result.map(|_| ())
     }
