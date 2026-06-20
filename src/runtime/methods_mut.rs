@@ -298,6 +298,14 @@ impl Interpreter {
             }
         }
         for key in keys {
+            // Slice F (env<->locals coherence): this writes the replacement into
+            // `env` by name, but the caller's local slot still holds the old Arc.
+            // Record the name so the call-site `apply_pending_rw_writeback` drains
+            // it into the local slot — otherwise a mutation through a Pair value
+            // (`$p = ($a => $a); $p.value[0] = x`) updates `env` `$a` but leaves
+            // the locals `$a` stale without the reverse pull.
+            self.pending_rw_writeback_sources
+                .push(key.resolve().to_string());
             self.env.insert_sym(key, replacement.clone());
         }
         for cell in cells {
@@ -328,6 +336,9 @@ impl Interpreter {
             }
         }
         for key in keys {
+            // Slice F (env<->locals coherence): see the array counterpart above.
+            self.pending_rw_writeback_sources
+                .push(key.resolve().to_string());
             self.env.insert_sym(key, replacement.clone());
         }
         for cell in cells {
