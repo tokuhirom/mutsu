@@ -881,9 +881,9 @@ impl Interpreter {
                 && !self.registry().roles.contains_key(base_parent)
                 && !self.registry().enum_types.contains_key(base_parent)
             {
-                // Use X::InvalidType for `does` parents, X::Inheritance::UnknownParent
-                // for `is` parents.
-                if does_parents.contains(parent) {
+                // Use X::InvalidType for `does`/`hides` parents,
+                // X::Inheritance::UnknownParent for `is` parents.
+                if does_parents.contains(parent) || hidden_parents.contains(parent) {
                     return Err(RuntimeError::new(format!(
                         "X::InvalidType: Invalid typename '{}'",
                         resolved_parent_name

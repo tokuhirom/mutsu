@@ -874,6 +874,9 @@ pub use raku_repr::raku_value;
 /// Re-export complex_trig for external use.
 pub(crate) use complex_math::complex_trig;
 
+/// Re-export the X::Str::Numeric Failure builder for the VM's prefix-`+` op.
+pub(crate) use dispatch_core_coerce::str_numeric_failure;
+
 /// Unicode case folding for `.fc` and `fc()`.
 pub(crate) fn unicode_foldcase(s: &str) -> String {
     let mut lowered = String::with_capacity(s.len());

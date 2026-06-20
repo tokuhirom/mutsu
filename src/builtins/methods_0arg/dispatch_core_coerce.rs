@@ -11,6 +11,26 @@ use super::parse_raku_int_from_str;
 /// Build a lazy `Failure` wrapping an `X::Str::Numeric` exception for a string
 /// that cannot be numified — the shape raku's `.Int`/`.Num` produce on a bad
 /// string (the exception only fires when the Failure is sunk/used).
+/// Escape control characters the way Raku renders them inside an
+/// `X::Str::Numeric.source-indicator` (backspace → `\b`, tab → `\t`, …),
+/// leaving printable characters untouched.
+fn escape_for_source_indicator(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '\u{8}' => out.push_str("\\b"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\u{c}' => out.push_str("\\f"),
+            '\0' => out.push_str("\\0"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\x[{:X}]", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 pub(crate) fn str_numeric_failure(s: &str) -> Value {
     let mut ex_attrs = std::collections::HashMap::new();
     ex_attrs.insert("source".to_string(), Value::str(s.to_string()));
@@ -19,6 +39,15 @@ pub(crate) fn str_numeric_failure(s: &str) -> Value {
         Value::str("base-10 number must begin with valid digits or '.'".to_string()),
     );
     ex_attrs.insert("pos".to_string(), Value::Int(0));
+    // The visual indicator marks where numification failed with `⏏` (U+23CF).
+    // The bad string follows the marker (pos 0), with control characters escaped.
+    ex_attrs.insert(
+        "source-indicator".to_string(),
+        Value::str(format!(
+            "in '\u{23CF}{}' (indicated by \u{23CF})",
+            escape_for_source_indicator(s)
+        )),
+    );
     ex_attrs.insert(
         "message".to_string(),
         Value::str(format!(
