@@ -97,6 +97,26 @@ fn is_literal_expr(expr: &Expr) -> bool {
     matches!(expr, Expr::Literal(_))
 }
 
+/// True when the LHS of an indexed `:=` bind targets an immutable container:
+/// a literal scalar (`10[0] := 1`, `"Hi"[0] := 1`) or an all-literal list
+/// (`(1,2)[0] := 3`). Binding into such a target is illegal → X::Bind.
+fn index_bind_target_is_immutable(target: &Expr) -> bool {
+    match target {
+        Expr::Literal(v) => matches!(
+            v,
+            crate::value::Value::Int(_)
+                | crate::value::Value::Str(_)
+                | crate::value::Value::Num(_)
+                | crate::value::Value::Rat(..)
+                | crate::value::Value::Bool(_)
+        ),
+        Expr::ArrayLiteral(elems) => {
+            !elems.is_empty() && elems.iter().all(|e| matches!(e, Expr::Literal(_)))
+        }
+        _ => false,
+    }
+}
+
 /// True for the Raku pseudo-package names (lexical/dynamic scope pseudo-stashes).
 /// Binding to one of these (`OUTER := 5`) is illegal → X::Bind.
 fn is_pseudo_package(name: &str) -> bool {
@@ -915,6 +935,21 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
     if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. }) && rest.starts_with(":=") {
+        // Binding into an immutable subscript target (`(1,2)[0] := 3`,
+        // `10[0] := 1`, `"Hi"[0] := 1`) is illegal — Raku raises X::Bind.
+        if let Expr::Index { target, .. } = &expr
+            && index_bind_target_is_immutable(target)
+        {
+            let message = "Cannot use bind operator with this left-hand side".to_string();
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Bind"),
+                std::collections::HashMap::from([(
+                    "message".to_string(),
+                    crate::value::Value::str(message.clone()),
+                )]),
+            );
+            return Err(PError::fatal_with_exception(message, Box::new(ex)));
+        }
         let rest = &rest[2..];
         let (rest, _) = ws(rest)?;
         let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {

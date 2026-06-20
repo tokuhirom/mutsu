@@ -787,22 +787,10 @@ impl Interpreter {
             if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(trimmed) {
                 self.stack.push(v);
             } else {
-                let mut ex_attrs = std::collections::HashMap::new();
-                ex_attrs.insert(
-                    "message".to_string(),
-                    Value::str(format!(
-                        "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
-                        s
-                    )),
-                );
-                let ex = Value::make_instance(Symbol::intern("X::Str::Numeric"), ex_attrs);
-                let mut failure_attrs = std::collections::HashMap::new();
-                failure_attrs.insert("exception".to_string(), ex);
-                failure_attrs.insert("handled".to_string(), Value::Bool(false));
-                self.stack.push(Value::make_instance(
-                    Symbol::intern("Failure"),
-                    failure_attrs,
-                ));
+                // A bad numeric string yields a lazy `X::Str::Numeric` Failure
+                // carrying `source`/`pos`/`reason`/`source-indicator` attributes.
+                self.stack
+                    .push(crate::builtins::methods_0arg::str_numeric_failure(s));
             }
             return Ok(());
         }
