@@ -32,3 +32,6 @@ _tmp-io-colon-invocant-*
 
 target-local/
 .claude/worktrees/
+
+# prove --state=save state file (CI roast failure-summary re-run; ephemeral)
+.prove

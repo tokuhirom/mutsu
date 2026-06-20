@@ -81,9 +81,51 @@ jobs:
         # Do not oversubscribe past the core count: the S17 scheduler/promise
         # tests assert on real wall-clock scheduling and flake under CPU
         # starvation.
-        run: prove -j4 -e 'scripts/run-roast-test.sh' $(cat roast-whitelist.txt)
+        #
+        # `--state=save` records pass/fail in `.prove` so the failure-summary
+        # step below can re-run only the failures, serially and verbosely.
+        # `--merge` folds each test's stderr into its stdout so a Rust panic or
+        # `expected/got` diagnostic stays attached to its own test under -j
+        # instead of scattering across the interleaved parallel output. The full
+        # output is tee'd to tmp/roast.log and uploaded as an artifact, because
+        # the GitHub web log viewer truncates this long step and hides prove's
+        # end-of-run "Test Summary Report" (the clean failed-files list).
+        run: |
+          set -o pipefail
+          mkdir -p tmp
+          prove -j4 --state=save --merge -e 'scripts/run-roast-test.sh' \
+            $(cat roast-whitelist.txt) 2>&1 | tee tmp/roast.log
         env:
           MUTSU_BIN: target/release/mutsu
+
+      - name: Roast failure summary
+        # Only runs when the roast step failed. Re-runs just the failed files
+        # (from `.prove`) serially and verbosely, so the actionable failure
+        # output is grouped at the end of the job log instead of buried in the
+        # truncated parallel run. A flaky concurrency test that passes here is
+        # itself a useful signal (intermittent, not a hard regression).
+        if: failure()
+        run: |
+          echo "::group::Failed roast files — Test Summary Report"
+          grep -E "Result:|Failed |Test Summary|Dubious|wstat|Files=" tmp/roast.log || true
+          echo "::endgroup::"
+          echo "::group::Failed roast files — serial verbose re-run"
+          prove --state=failed -v --merge -e 'scripts/run-roast-test.sh' || true
+          echo "::endgroup::"
+        env:
+          MUTSU_BIN: target/release/mutsu
+
+      - name: Upload roast log
+        # Always upload the full (untruncated) roast log so a failure can be
+        # diagnosed from the artifact even when the web log viewer truncates the
+        # step. Retained briefly; this is a debugging aid, not a release artifact.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roast-log
+          path: tmp/roast.log
+          retention-days: 7
+          if-no-files-found: ignore
 
   wasm-e2e:
     runs-on: ubuntu-latest
