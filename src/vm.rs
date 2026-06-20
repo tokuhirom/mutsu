@@ -2563,7 +2563,7 @@ impl Interpreter {
 
             // -- Mixin / Type check --
             OpCode::ButMixin => {
-                self.exec_but_mixin_op()?;
+                self.exec_but_mixin_op(code)?;
                 *ip += 1;
             }
             OpCode::ButMixinTupleElem => {
@@ -2833,6 +2833,15 @@ impl Interpreter {
                 } else {
                     Value::Bool(runtime::types::value_is_defined(&val))
                 };
+                // Stage 3: a user-defined `.defined` (dispatched above for
+                // `andthen`/`notandthen`) runs interpreter code that can mutate a
+                // captured-outer caller lexical by name (`my $calls; method
+                // defined { $calls++ }`). Reconcile the caller's slots so the
+                // write is visible without the reverse `sync_locals_from_env`
+                // pull (only on the user-method path; the native check is pure).
+                if has_user_defined {
+                    self.reconcile_locals_from_env_at_site(code);
+                }
                 self.stack.push(defined);
                 *ip += 1;
             }
