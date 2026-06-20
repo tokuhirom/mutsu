@@ -491,7 +491,7 @@ impl Interpreter {
                         samespace,
                     );
                     let result = Value::str(out);
-                    self.write_subst_topic_checked(result)?;
+                    self.write_subst_topic_checked(code, result)?;
                     // Create Match object and set $/
                     let match_obj = Self::make_subst_match(&text, start, end);
                     self.env_mut().insert("/".to_string(), match_obj.clone());
@@ -533,7 +533,7 @@ impl Interpreter {
                         )
                     };
                     let result = Value::str(out);
-                    self.write_subst_topic_checked(result)?;
+                    self.write_subst_topic_checked(code, result)?;
                     // Create Match object and set $/
                     let match_obj = Self::make_subst_match(&text, start, end);
                     self.env_mut().insert("/".to_string(), match_obj.clone());
@@ -654,7 +654,7 @@ impl Interpreter {
             )
         };
         let result = Value::str(out);
-        self.write_subst_topic_checked(result)?;
+        self.write_subst_topic_checked(code, result)?;
         // For :g / :x, $/ and the substitution result are a List of Match
         // objects; otherwise a single Match for the first (and only) range.
         if result_is_list {
@@ -682,7 +682,11 @@ impl Interpreter {
     /// `method ro($_) {...}` / `sub ($x is readonly) {...}` parameter). Only
     /// reached after a substitution actually occurred, so a non-matching
     /// `s///` against a read-only topic stays a no-op.
-    fn write_subst_topic_checked(&mut self, result: Value) -> Result<(), RuntimeError> {
+    fn write_subst_topic_checked(
+        &mut self,
+        code: &CompiledCode,
+        result: Value,
+    ) -> Result<(), RuntimeError> {
         if self.readonly_vars().contains("_") {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
@@ -695,7 +699,25 @@ impl Interpreter {
         self.env_mut().insert("_".to_string(), result.clone());
         self.env_mut().insert("$_".to_string(), result.clone());
         self.env_mut()
-            .insert("__mutsu_rw_map_topic__".to_string(), result);
+            .insert("__mutsu_rw_map_topic__".to_string(), result.clone());
+        // Slice F (regex carrier): a bare `s///` modifies the topic `$_` by name
+        // in `env`. When `my $_` makes `_` a compiled local slot, write the new
+        // value through to that slot so it stays coherent without the reverse
+        // `sync_locals_from_env` pull. If `$_` aliases a `given`/`for` source
+        // scalar (`topic_source_var`), mirror the modified topic back to it too,
+        // matching the `$x ~~ s///` smartmatch writeback path. Both `_` and the
+        // source name are flagged for the carrier (env_dirty) so an enclosing
+        // EVAL/carrier dropping its blanket net still reconciles the slot.
+        self.update_local_if_exists(code, "_", &result);
+        self.note_caller_env_write("_");
+        if let Some(source_var) = self.topic_source_var.clone()
+            && !source_var.starts_with('@')
+            && !source_var.starts_with('%')
+        {
+            self.set_env_with_main_alias(&source_var, result.clone());
+            self.update_local_if_exists(code, &source_var, &result);
+            self.note_caller_env_write(&source_var);
+        }
         Ok(())
     }
 

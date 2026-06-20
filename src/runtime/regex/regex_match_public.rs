@@ -454,6 +454,24 @@ impl Interpreter {
         self.restore_env_entries(restore_always);
         if !matched {
             self.restore_env_entries(restore_on_fail);
+        } else {
+            // Slice F (regex carrier): a `:let $x = ...` declarative modifier that
+            // survives a successful match wrote a caller lexical straight into
+            // `env` (the `restore_on_fail` keys are the `:let` names), bypassing
+            // `set_env_with_main_alias` and the VM's slot write-through. Log each
+            // persisted name (+ carrier) so the smartmatch site reconciles the
+            // caller's compiled local slot via `writeback_match_locals`, without
+            // relying on the reverse `sync_locals_from_env` pull. Logging a
+            // superset is safe — the writeback filters by the caller's slots.
+            let persisted: Vec<String> = restore_on_fail.keys().cloned().collect();
+            for name in persisted {
+                if let Some(v) = self.env.get(&name).cloned() {
+                    if let Some(set) = self.carrier_writes.as_mut() {
+                        set.insert(name.clone());
+                    }
+                    self.pending_local_updates.push((name, v));
+                }
+            }
         }
         result
     }
