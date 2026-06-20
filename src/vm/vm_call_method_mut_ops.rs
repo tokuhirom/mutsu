@@ -397,6 +397,12 @@ impl Interpreter {
         } else {
             target
         };
+        // `proto method` body dispatch (see try_proto_method_body).
+        if let Some(result) = self.try_proto_method_body(&target, &method, &args) {
+            let v = result?;
+            self.stack.push(v);
+            return Ok(());
+        }
         // gist/Str/raku/perl of a genuinely-lazy list renders raku's placeholder
         // (`[...]` in `@` array context, `(...)` for a bare Seq, `...` for Str)
         // rather than forcing the (possibly infinite) sequence. Must run before

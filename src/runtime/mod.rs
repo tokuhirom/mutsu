@@ -395,6 +395,12 @@ pub(crate) struct MethodDef {
     pub(crate) is_submethod: bool,
 }
 
+/// Invocant context for an active `proto method` `{*}` dispatch.
+#[derive(Debug, Clone)]
+pub(crate) struct ProtoMethodCtx {
+    pub(crate) invocant: Value,
+}
+
 #[derive(Debug, Clone)]
 struct MethodDispatchFrame {
     receiver_class: String,
@@ -906,7 +912,16 @@ pub struct Interpreter {
     /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
     /// Lock discipline: never hold a guard across user-code re-entry (deadlock).
     registry: Arc<RwLock<Registry>>,
-    proto_dispatch_stack: Vec<(String, Vec<Value>)>,
+    /// Active `{*}` proto dispatch frames: (proto_name, args, method_ctx).
+    /// `method_ctx` is `Some` when the active proto is a `proto method` body, so
+    /// `{*}` redispatches to a multi *method* candidate on the invocant rather
+    /// than a proto sub candidate.
+    proto_dispatch_stack: Vec<(String, Vec<Value>, Option<ProtoMethodCtx>)>,
+    /// One-shot guard set by a proto method's `{*}` redispatch: the next method
+    /// call of this name bypasses proto-body interception (so it reaches the
+    /// real multi candidate). Recursive calls from within the candidate, which
+    /// happen after this flag is consumed, run the proto body again (matching raku).
+    pub(crate) proto_method_skip: Option<String>,
     pending_dispatch_error: Option<RuntimeError>,
     end_phasers: Vec<(Vec<Stmt>, Env)>,
     /// Tracks END phaser site_ids to ensure each is registered only once.
@@ -3274,6 +3289,7 @@ impl Interpreter {
                 Arc::new(RwLock::new(registry))
             },
             proto_dispatch_stack: Vec::new(),
+            proto_method_skip: None,
             pending_dispatch_error: None,
             end_phasers: Vec::new(),
             end_phaser_sites: HashSet::new(),
@@ -5822,6 +5838,7 @@ impl Interpreter {
             // child sees parent declarations but its own new ones don't leak back).
             registry: Arc::new(RwLock::new(self.registry.read().unwrap().clone())),
             proto_dispatch_stack: Vec::new(),
+            proto_method_skip: None,
             pending_dispatch_error: None,
             end_phasers: Vec::new(),
             end_phaser_sites: HashSet::new(),

@@ -378,6 +378,10 @@ impl Interpreter {
             }
             return self.call_method_with_values(*inner, method, args);
         }
+        // `proto method` body dispatch (see try_proto_method_body).
+        if let Some(result) = self.try_proto_method_body(&target, method, &args) {
+            return result;
+        }
         // Operations that need the full (finite) list cannot run on a lazy or
         // infinite source: throw X::Cannot::Lazy instead of hanging while
         // materializing it, matching raku.

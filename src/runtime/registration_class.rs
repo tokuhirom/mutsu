@@ -2323,6 +2323,38 @@ impl Interpreter {
                         class_def = updated;
                     }
                 }
+                Stmt::ProtoDecl {
+                    name: proto_name,
+                    param_defs,
+                    body: proto_body,
+                    is_method: true,
+                    ..
+                } => {
+                    let method_name = proto_name.resolve();
+                    let effective_param_defs = Self::effective_method_param_defs(param_defs, false);
+                    let effective_params: Vec<String> = effective_param_defs
+                        .iter()
+                        .map(|p| p.name.clone())
+                        .collect();
+                    let fdef = FunctionDef {
+                        package: Symbol::intern(name),
+                        name: *proto_name,
+                        params: effective_params,
+                        param_defs: effective_param_defs,
+                        body: proto_body.clone(),
+                        is_test_assertion: false,
+                        is_rw: false,
+                        is_raw: false,
+                        is_method: true,
+                        empty_sig: false,
+                        return_type: None,
+                        is_default: false,
+                        deprecated_message: None,
+                    };
+                    self.registry_mut()
+                        .proto_methods
+                        .insert((name.to_string(), method_name), fdef);
+                }
                 _ => {
                     // BEGIN phasers and EVAL calls in class bodies may fail
                     // (e.g. `BEGIN EVAL q[has $.x]` or `EVAL q[has $.x]`).

@@ -2088,6 +2088,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     // proto token | proto rule | proto sub | proto method
     let _is_token = keyword("token", rest).is_some() || keyword("rule", rest).is_some();
+    let is_method = keyword("method", rest).is_some() || keyword("submethod", rest).is_some();
     let rest = if let Some(r) = keyword("token", rest)
         .or_else(|| keyword("rule", rest))
         .or_else(|| keyword("sub", rest))
@@ -2137,6 +2138,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
                     .iter()
                     .map(|(n, _)| n.clone())
                     .collect(),
+                is_method,
             },
         ));
     }
@@ -2154,6 +2156,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
                 .iter()
                 .map(|(n, _)| n.clone())
                 .collect(),
+            is_method,
         },
     ))
 }

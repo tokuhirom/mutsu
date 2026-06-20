@@ -161,9 +161,11 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 
 目標: **mutsu でウェブブログシステムが構築できる**。現状 **0% 稼働**。
 
-- [ ] **★grammar action dispatch（最大ブロッカー）**: proto regex in alternation の action 呼び出しが不正。
-      Template::Mustache だけでなく grammar 重用モジュール全般に波及。`.meta` 等を修正。
-- [ ] **Template::Mustache**（上記が前提）。
+- [~] **Template::Mustache** — 基本レンダリングは**動作**（`render('Hello {{name}}!', {name=>'World'})`→OK・セクション/
+      イテレーションも描画。旧記載「grammar action dispatch が最大ブロッカー」は陳腐化＝proto regex の action は基本動作）。
+      `proto method` 本体実行は landed（#3358）。残ギャップ: ① `handles` 委譲経由の proto method（ログフィルタ・stderr のみ・
+      非致命）、② デリミタ変更 `{{=..=}}`（`$*LEFT/$*RIGHT` 動的変数の finalizer 再代入が次パースに伝播しない）。
+      詳細＝メモリ `project-template-mustache-status`。ハーネス＝`tmp/mustache/`。
 - [ ] **HTTP::Server::Tiny** の依存（HTTP::Parser / IO::Blob / HTTP::Status）→ 本体。
 - [ ] DB アクセス — pure Raku 簡易実装 or qqx ベースの SQLite wrapper（NativeCall 不可）。
 - [ ] File::Temp / MIME::Base64 (pure Raku) / File::Directory::Tree。

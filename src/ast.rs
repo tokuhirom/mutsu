@@ -844,6 +844,11 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         is_export: bool,
         custom_traits: Vec<String>,
+        /// True when declared as `proto method`/`proto submethod` (inside a
+        /// class/role body). Such a proto registers a method-level proto body
+        /// whose `{*}` dispatches to the matching multi method candidate,
+        /// rather than a package-level proto sub.
+        is_method: bool,
     },
     Let {
         name: String,

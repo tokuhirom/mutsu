@@ -122,6 +122,11 @@ pub(crate) struct Registry {
     pub(crate) proto_subs: HashSet<String>,
     /// `proto token`/`proto rule` declaration markers (existence set).
     pub(crate) proto_tokens: HashSet<String>,
+    /// `proto method`/`proto submethod` bodies: (class_name, method_name) ->
+    /// proto `FunctionDef`. When a multi method is dispatched and its class (or
+    /// an ancestor in the MRO) has a proto body here, the body runs first and
+    /// its `{*}` dispatches to the matching multi candidate.
+    pub(crate) proto_methods: HashMap<(String, String), FunctionDef>,
 }
 
 /// Structural lookups over the declaration registry (PR-B: read-side migration).

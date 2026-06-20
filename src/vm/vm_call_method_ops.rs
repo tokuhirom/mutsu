@@ -241,6 +241,12 @@ impl Interpreter {
         } else {
             target
         };
+        // `proto method` body dispatch (see try_proto_method_body).
+        if let Some(result) = self.try_proto_method_body(&target, method, &args) {
+            let v = result?;
+            self.stack.push(v);
+            return Ok(());
+        }
         // .return method: triggers a return from the enclosing sub with the invocant
         // as the return value. Does NOT auto-thread over junctions.
         if method == "return" && args.is_empty() {
