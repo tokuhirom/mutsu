@@ -2001,6 +2001,16 @@ impl Interpreter {
                 } else {
                     self.set_env_with_main_alias(&name, val.clone());
                 }
+                // Slice F (env<->locals coherence): a callee assigning to a
+                // caller-declared dynamic variable (`$*foo = v`) reaches SetGlobal
+                // and writes only `env` by name; the caller's local slot was kept
+                // coherent solely by the reverse `sync_locals_from_env` pull.
+                // Record the dynamic name so the call-site drain writes it through
+                // to the caller frame's slot (no-op when the caller has no such
+                // slot, e.g. a built-in like `$*OUT` that lives only in `env`).
+                if name.starts_with('*') {
+                    self.pending_rw_writeback_sources.push(name.clone());
+                }
                 // Persist anonymous state variable (`$`) so it survives
                 // across closure calls (e.g. `$ ~= $_` in classify block).
                 self.sync_anon_state_value(&name, &val);
