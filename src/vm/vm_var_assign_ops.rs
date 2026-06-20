@@ -1652,6 +1652,12 @@ impl Interpreter {
             self.set_env_with_main_alias(&current_alias, val.clone());
             self.update_local_if_exists(code, &current_alias, val);
             self.write_self_attr_cell(&current_alias, val.clone());
+            // Slice F: an inc/dec through a sigilless param (`\target`) aliases a
+            // caller variable; record it so the call-site drain writes the env
+            // value through to the caller's local slot (without relying on the
+            // reverse `sync_locals_from_env` pull).
+            self.pending_rw_writeback_sources
+                .push(current_alias.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
             alias_name = self.env().get(&next_key).and_then(|v| {
                 if let Value::Str(n) = v {
@@ -6849,6 +6855,11 @@ impl Interpreter {
             // Sigilless attribute write: mirror an attr-twigil alias (`!x`) into
             // self's shared cell (no-op for non-attribute aliases). Stage 2c (ii).
             self.write_self_attr_cell(&current_alias, val.clone());
+            // Slice F: a sigilless param (`\target`) aliases a caller variable;
+            // record it so the call-site drain writes the env value through to the
+            // caller's local slot (without relying on the reverse pull).
+            self.pending_rw_writeback_sources
+                .push(current_alias.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
             alias_name = self.env().get(&next_key).and_then(|v| {
                 if let Value::Str(name) = v {
@@ -7260,7 +7271,12 @@ impl Interpreter {
             }
         }) {
             self.update_local_if_exists(code, &alias_name, &val);
-            self.env_mut().insert(alias_name, val.clone());
+            self.env_mut().insert(alias_name.clone(), val.clone());
+            // Slice F: a sigilless param (`\target`) aliases a caller variable;
+            // the env write above is the only thing that reaches it. Record the
+            // alias target so the call-site drain writes it through to the
+            // caller's local slot (no-op if it is not a caller local).
+            self.pending_rw_writeback_sources.push(alias_name);
         }
         if let Some(attr) = name.strip_prefix('.') {
             self.env_mut().insert(format!("!{}", attr), val.clone());
