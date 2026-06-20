@@ -688,6 +688,32 @@ impl Interpreter {
         }
     }
 
+    /// Slice F (multi-frame coherence): drain after a *cached fast-call* dispatch
+    /// (positional-light / light / 0-arg fast / OTF), mirroring the slow path's
+    /// post-`dispatch_func_call_inner` reconcile.
+    ///
+    /// `apply_pending_rw_writeback` is precise but single-frame: it writes only
+    /// the sources THIS caller frame recorded. A captured-outer write performed by
+    /// a *nested* callee (`via()` -> `bump-outer()` -> `$acc = $acc + 10`) is
+    /// recorded against the intermediate `via` frame, whose code has no `$acc`
+    /// slot, so the drain there discards it (`mem::take`) one frame too deep. The
+    /// write still lands in the shared env and propagates up, but the top-level
+    /// `$acc` slot stays stale across calls — so `via(); via()` fails to accumulate
+    /// (10, not 20) once the reverse `sync_locals_from_env` pull is gone.
+    ///
+    /// The slow `exec_call_func_op` path already handles this with an env_dirty-
+    /// gated `reconcile_locals_from_env_at_site`; the cached fast paths returned
+    /// early without it. Add the same gated reconcile here. It is gated on
+    /// `env_dirty` exactly like the slow path: the light merges set `env_dirty`
+    /// only when the callee wrote a captured-outer (non-local) name, so a pure
+    /// call (e.g. `fib`) never trips it and pays nothing.
+    pub(super) fn drain_and_reconcile_after_cached_call(&mut self, code: &CompiledCode) {
+        self.apply_pending_rw_writeback(code);
+        if self.env_dirty {
+            self.reconcile_locals_from_env_at_site(code);
+        }
+    }
+
     pub(super) fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
         code.locals.iter().position(|n| n == name)
     }

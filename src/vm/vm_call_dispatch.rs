@@ -2077,6 +2077,20 @@ impl Interpreter {
             if !rw_sources.is_empty() {
                 self.pending_rw_writeback_sources
                     .extend(rw_sources.iter().cloned());
+                // Slice F (carrier completeness, open-question #2): when this sub
+                // runs *inside a carrier* (an interpreter routine like
+                // `lives-ok { f(@a, $x) }` executing it), the rw writeback above
+                // mutated a caller lexical (`$x`) by name through a path the
+                // carrier does not otherwise log (`set_env_with_main_alias`). Log
+                // it into the active carrier set too, so the carrier's
+                // `writeback_carrier_writes` reconciles the carrier-caller's slot
+                // — otherwise the write is invisible to the carrier and the slot
+                // stays stale once the reverse pull is gone.
+                if self.carrier_writes.is_some() {
+                    for source in &rw_sources {
+                        self.note_caller_env_write(source);
+                    }
+                }
             }
             // Use declared_locals (vars declared via `my` or as params) instead
             // of all locals. Captured outer variables should propagate their
