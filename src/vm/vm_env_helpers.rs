@@ -460,6 +460,45 @@ impl Interpreter {
     /// the carrier did not itself write, e.g. a prior `:=` bind); Slice F removes
     /// it once those are explicit. Mirrors `sync_locals_from_env`'s per-slot
     /// skips (HashSlotRef / `!attr`).
+    /// Slice F write-through for a `~~` regex match: copy the env values the match
+    /// produced — the match variable `$/`, numbered captures (`$0`/`$1`/…), and
+    /// any embedded `{ }` / `:my` / `:let` block writes (`extra` = the
+    /// `pending_local_updates` names) — straight into the caller's local slots, so
+    /// the slots stay coherent without the reverse `sync_locals_from_env` pull.
+    ///
+    /// Unlike `writeback_carrier_writes` (conservative — never overwrites a
+    /// container slot, to protect live `:=` cells), a match RESULT is a freshly
+    /// produced value (Match / capture list) with no shared interior cell, so it
+    /// is always safe to overwrite the slot — mirroring exactly what the reverse
+    /// pull does (which copies unconditionally except for `HashSlotRef`/`!attr`).
+    pub(super) fn writeback_match_locals(
+        &mut self,
+        code: &CompiledCode,
+        extra: &std::collections::HashSet<String>,
+    ) {
+        for (i, name) in code.locals.iter().enumerate() {
+            let is_match_name =
+                name == "/" || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit()));
+            if !is_match_name && !extra.contains(name) {
+                continue;
+            }
+            // Mirror the reverse pull's invariants: never clobber a live `:=`
+            // binding cell or an attribute slot managed via GetLocal/SetLocal.
+            if matches!(self.locals[i], Value::HashSlotRef { .. }) || name.starts_with('!') {
+                continue;
+            }
+            if let Some(val) = self.env().get(name).cloned().or_else(|| {
+                name.strip_prefix('$')
+                    .or_else(|| name.strip_prefix('@'))
+                    .or_else(|| name.strip_prefix('%'))
+                    .or_else(|| name.strip_prefix('&'))
+                    .and_then(|b| self.env().get(b).cloned())
+            }) {
+                self.locals[i] = val;
+            }
+        }
+    }
+
     pub(super) fn writeback_carrier_writes(
         &mut self,
         code: &CompiledCode,

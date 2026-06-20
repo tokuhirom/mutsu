@@ -1365,6 +1365,21 @@ impl Interpreter {
             && !was_transliterate
             && !wrote_caller_via_code
             && !match_var_is_local;
+        // Slice F: a match writes caller lexicals straight into `env` — the match
+        // variable `$/`, numbered captures (`$0`/`$1`/…), and an embedded `{ }` /
+        // `:my` / `:let` block's writes (logged in `pending_local_updates`). Write
+        // those through to the caller's local slots here so the slot stays
+        // coherent without the reverse `sync_locals_from_env` pull. `env_dirty`
+        // below is kept as a net (reverse-sync ON behaves identically); with it
+        // OFF this write-through is what keeps the value correct.
+        if !pure {
+            let written: std::collections::HashSet<String> = self
+                .pending_local_updates
+                .iter()
+                .map(|(n, _)| n.clone())
+                .collect();
+            self.writeback_match_locals(code, &written);
+        }
         self.pending_local_updates.clear();
         if !pure {
             self.env_dirty = true;
