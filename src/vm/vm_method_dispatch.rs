@@ -662,7 +662,7 @@ impl Interpreter {
             // mutate the caller env in place without a deep copy.
             let frame = self.pop_call_frame();
             let current_env = self.take_env();
-            let (mut merged_env, wrote_caller) =
+            let (mut merged_env, wrote_caller, changed_caller_locals) =
                 merge_method_env(frame.saved_env, current_env, &method_local_keys);
             // Precise dirty signal (Slice 6.3): the caller only needs an
             // env->locals re-sync when this method actually merged a
@@ -671,6 +671,18 @@ impl Interpreter {
             // caller's slots coherent -> stays "pure" so the opcode skips the
             // env_dirty mark (no per-call locals pull).
             self.method_dispatch_pure = !wrote_caller && rw_writeback.is_empty();
+
+            // Slice F (env<->locals coherence): a method that mutated a captured
+            // outer lexical (`method bar { $Foo++ }` closing over an outer-block
+            // `$Foo`) merged the new value into `merged_env` (which becomes
+            // `self.env` below). Record those changed caller-visible names so the
+            // CallMethod / CallMethodMut op — which holds the caller's `code` —
+            // writes each value straight through to the caller's local slot,
+            // dropping the dependency on the reverse `sync_locals_from_env` pull.
+            for k in &changed_caller_locals {
+                self.pending_rw_writeback_sources
+                    .push(k.resolve().to_string());
+            }
 
             for (source_name, val) in &rw_writeback {
                 merged_env.insert(source_name.clone(), val.clone());
@@ -1336,11 +1348,17 @@ impl Interpreter {
                 // Own both envs (frame already popped above; take the live callee
                 // env) so the merge mutates the caller env in place, no deep copy.
                 let current_env = self.take_env();
-                let (merged, wrote_caller) =
+                let (merged, wrote_caller, changed_caller_locals) =
                     merge_method_env(frame.saved_env, current_env, &method_local_keys);
                 // Precise dirty signal (Slice 6.3): re-sync the caller's locals
                 // only when the method merged a caller-visible write.
                 self.method_dispatch_pure = !wrote_caller;
+                // Slice F: write captured-outer mutations straight through to the
+                // caller's local slot (see the primary merge path above).
+                for k in &changed_caller_locals {
+                    self.pending_rw_writeback_sources
+                        .push(k.resolve().to_string());
+                }
                 self.set_env(merged);
             }
         }
@@ -1459,7 +1477,7 @@ fn merge_method_env(
     mut saved: Env,
     current: Env,
     method_local_keys: &HashSet<String>,
-) -> (Env, bool) {
+) -> (Env, bool, Vec<Symbol>) {
     let writes: Vec<(Symbol, Value)> = current
         .overlay_iter()
         .filter_map(|(k, v)| {
@@ -1486,7 +1504,12 @@ fn merge_method_env(
     // equality in O(1) (Arc-ptr identity for containers/Str, scalar compare for
     // immutables); anything it cannot prove unchanged counts as dirty
     // (conservative -> at worst a redundant pull, never a stale read).
-    let wrote = writes.iter().any(|(k, v)| {
+    // Collect the keys whose merged value can name a caller compiled-local slot
+    // and actually changed. `wrote` (the precise env_dirty signal) is just
+    // "this list is non-empty"; the list itself drives the Slice F call-site
+    // write-through so the caller's slot stays coherent without the reverse pull.
+    let mut changed_caller_locals: Vec<Symbol> = Vec::new();
+    for (k, v) in &writes {
         // Only a key that can name a caller compiled-local slot obliges a pull:
         // `sync_locals_from_env` iterates exactly `code.locals`. Compile-time
         // location vars (`?LINE`/`?FILE`/`?CLASS`...), pod (`=...`), dynamic /
@@ -1496,17 +1519,21 @@ fn merge_method_env(
         // and the method-body line, which would otherwise flip env_dirty on every
         // multi-line nested method call.
         if !k.with_str(could_name_caller_local) {
-            return false;
+            continue;
         }
-        match saved.get_sym(*k) {
+        let changed = match saved.get_sym(*k) {
             Some(old) => !cheaply_unchanged(old, v),
             None => true,
+        };
+        if changed {
+            changed_caller_locals.push(*k);
         }
-    });
+    }
+    let wrote = !changed_caller_locals.is_empty();
     for (k, v) in writes {
         saved.insert_sym(k, v);
     }
-    (saved, wrote)
+    (saved, wrote, changed_caller_locals)
 }
 
 #[cfg(test)]
