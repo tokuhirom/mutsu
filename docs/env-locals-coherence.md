@@ -624,3 +624,52 @@ multi-frame / carrier / 並行(=実は同期) の全カテゴリを `pending_rw_
 Stage 3（reverse-sync デフォルト無効化→機構削除）が初めて射程に入った。第32セッションで 65 ファイル
 回帰した壁は、本グラインドで全て write-through 化された。次の大物＝Stage 3 再挑戦
 （`sync_locals_from_env` デフォルト無効化を全 t/ + roast CI で検証）。
+
+## 7. Stage 3 — reverse-sync デフォルト無効化（第38セッション末・進行中）
+
+`reverse_sync_disabled()`（`vm_stats.rs`）の判定を反転＝**reverse pull はデフォルト OFF**。旧 escape hatch
+`MUTSU_NO_REVERSE_SYNC` は撤去し、opt-IN `MUTSU_REVERSE_SYNC=1`（旧挙動の再有効化＝A/B 診断用）に置換。
+
+- **make test（全 t/）= PASS**（985 files / 9622 tests・OFF scan が clean だった通り）。
+- **★roast 側に t/ scan 非代表の OFF 依存が残存**（ローカル sample で判明）。t/ は exercise しない
+  rw-aliasing / coroutine-rw / lvalue-method-rw を roast が突く:
+  - `roast/S04-statements/gather.t` test 36: `my $l = gather { take-rw my $ = 1 }; lives-ok { $l.AT-POS(0) = 42 }`
+    → **closure（`lives-ok {}`）内の take-rw gather 要素への rw 代入が OFF で外に伝播しない**。bare block
+    `{ }` / bare statement では伝播する（frame 跨ぎが壁）。coroutine が rw 取った匿名コンテナが
+    shared cell でなく coroutine env 経由＝reverse pull 前提。
+  - `roast/S04-blocks-and-statements/pointy-rw.t` test 8: `$pair.values should be rw (2)`＝lvalue-method
+    rw alias の frame 跨ぎ。
+- **方針（ユーザー選択: full Stage 3・CI を net に fix-forward）**: draft PR #3349。local `make roast`
+  で roast-only OFF 依存の完全リストを取得（**14 件**・flaky 除外後）→各々 toggle 非依存 reconcile で fix-forward。
+
+### 7.1 roast OFF 依存 14 件の fix-forward（13/14 解決）
+
+完全リスト（OFF=fail ON=pass を `MUTSU_REVERSE_SYNC=1` で確認・flaky の set/baghash/junctions/IO-Socket-Async 除外）:
+
+| # | file | 真因 | 修正 |
+|---|------|------|------|
+| 1-9 | pointy-rw, gather(take-rw), S14-roles/{anonymous,parameterized-mixin,rw}, S12-meta/primitives, S04-terminator, S02-symbolic-deref, S32-hash/kv | **block-taking Test 関数**（`lives-ok{}`/`subtest`/`throws-like`）が `__mutsu_test_callsite_line` named arg のため `exec_exec_call_pairs_op` 経由→block を interpreter で実行→`is rw` for-alias 等を env に名前書き（carrier 未ログ）。pairs op の carrier fallback が env_dirty=true だけで reconcile せず | `exec_exec_call_pairs_op`（無条件）+ `exec_exec_call_op` の `!fully` 枝に `reconcile_locals_from_env_at_site` |
+| 10-11 | S14-roles/{mixin-6e,submethods-6e} | `$obj does/but Role` の `submethod BUILD/TWEAK` が captured outer を名前書き。`exec_does_op`/`exec_does_var_op` は **toggle-gated** `sync_locals_from_env`、`exec_but_mixin_op` は **sync 皆無** | does×2 を toggle 非依存 reconcile に差替、but に reconcile 追加（`ButMixin` op に `code` 渡す） |
+| 12 | S32-str/substr-rw | `$r := substr-rw($s); $r = v` の **Proxy STORE** が referent `$s` を名前書き | scalar-assign の Proxy STORE 3 サイト（`assign_proxy_lvalue` 後）に reconcile |
+| 13 | S03-operators/notandthen | `andthen`/`notandthen` の `OpCode::CallDefined` が **user `method defined`** を dispatch→captured `$calls++` | CallDefined の user-method 枝のみ reconcile（native check は pure 維持） |
+| **14** | **S32-str/val.t（解決済・第39セッション）** | **内側 `for (...) -> $string, \value` の multi-param 復元が env のみで local slot を復元せず**。当初「subtest closure の read-coherence 壁」と診断したが、最小化すると closure 不在の `for ... -> \value` 本体での bare read 自体が既に stale（`outer-read: 4_2 => -42`）＝診断は誤り。真因＝内側 for の sigilless `\value` 多パラメタが**外側 `\value` と同名＝同一 local slot を共有**し、ループ末の `saved_multi_params` 復元が env binding だけ戻して local slot を最終イテレーション値（-42）のまま残す→reverse pull OFF で次の外側イテレーションが element list を stale な `value` で再評価 | 多パラメタ復元ループ（`exec_for_loop_body`, vm_control_ops.rs:1218）に **local slot への write-through** を追加（`find_local_slot(code, name)` があれば `locals[slot] = v`）。ON で byte-identical。pin=`t/multiframe-sigilless-for-rebind-coherence.t`（4） |
+
+| **15** | **S03-junctions/autothreading.t（解決済・第39セッション・CI surface）** | **invocant junction の method autothread が captured-outer / `our` 変異を最後の eigenstate しか伝播しない**。`$junc.a`（`method a { $cnt++ }`）で各 eigenstate は env に正しく累積する（threaded 戻り値 `any(0,1,0)` が証明）が、per-call の pending writeback は**最後の eigenstate の source しか運ばない**→eigenstate が**異なる変数**を書くと（earlier=$cnt1・last=$cnt2）earlier の $cnt1 が caller local slot に届かず stale（0）。当初「method-invocant autothread `our`-var 蓄積壁」（第34節 deferred）と認識されローカル survey で「junctions flaky」と誤分類 | CallMethod / CallMethodMut **両** junction loop（vm_call_method_ops.rs / vm_call_method_mut_ops.rs）は normal post-dispatch reconcile の前に early-return するため、threading 後に `reconcile_locals_from_env_at_site(code)` を 1 回追加（env は全 eigenstate の累積値を保持済）。ON で byte-identical。pin=`t/junction-invocant-autothread-writeback-coherence.t`（6） |
+
+| **15.5** | **val.t 修正の過剰適用回帰（解決済・第39セッション・CI surface）** | #14 の local-slot write-through が `multi_param_names`（sigil 付き名も含む）全体に効き、**全 `for ... -> $a, $b` ループ**で実行→sigil 付き param の slot が保持していた **live rw/element alias を env-only 復元値で上書き**→文字列/ループ破損（`expected bc got c`/`expected abecd got abec`）。並列 CI ログが読めず（gh log 切り詰め）、**ローカル release `make roast` の Test Summary で特定** | write-through を **sigilless 名のみ**（`!name.starts_with(['$','@','%','&'])`）に制限。val.t バグは sigilless `\value` 固有なので保たれ、sigil 付きは（既に coherent な）env-only 復元へ戻る |
+| **16** | **S32-io/IO-Socket-Async.t（解決済・第39セッション）test 40 'listen tap is a Tap'** | `my $tap = do whenever $sup {…}` が tap を `env[target_var]` に直接書く（`run_whenever_with_value` 4 サイト）が caller local slot 未更新→**同 react block 内の後続 read**（`isa-ok $tap, Tap`）が stale slot（`do` block 自身の結果＝Supply）を読む。#3348 の react-scope-end reconcile は block 内 read に間に合わない。これも survey で「IO-Socket-Async flaky」と誤分類された決定論 OFF 依存 | `exec_whenever_scope_op`（env_dirty set 済）に `reconcile_locals_from_env_at_site(code)` 追加。ON で byte-identical。pin=`t/react-do-whenever-tap-coherence.t`（2） |
+
+make test PASS（988 files / 9634 tests）。**Stage 3 の roast OFF 依存 16/16 全解決**（CI が val.t commit 後に
+14 survey から漏れた autothreading.t を、その後ローカル release roast が IO-Socket-Async.t を surface＝junctions/
+IO-Socket-Async は flaky でなく実依存だった。教訓: 並列 CI ログは gh で切り詰められ失敗特定不能→**ローカル release
+`make roast` の末尾 Test Summary が権威的**。set/baghash/mix は OFF 全 PASS・sethash.t は非 whitelist plan-abort でスコープ外）。
+**val.t は当初 multi-frame
+read-coherence 壁と思われたが、実態は #13 までと同じ単一パターン（interpreter-run/loop path が caller lexical
+を共有 slot に書くが復元/reconcile で slot を戻さない）の一発現**で、多パラメタ復元の env-only 復元に local
+write-through を足すだけで解けた（read-direction の独立 substrate ではなかった）。**Stage 3（reverse-sync
+デフォルト無効化）は全 t/ + roast OFF 依存クリアで merge 可能。**
+
+**教訓**: Stage 3 で surface した 14 件は t/ scan 非代表だったが、**13 件は単一パターン**（interpreter-run
+op が caller lexical を名前書きするが call-site で reconcile しない）の異なる発現で、各 op site に
+`reconcile_locals_from_env_at_site(code)` を足すだけで解けた（ON で byte-identical）。残り val.t だけが
+read-direction の multi-frame retention で質的に異なる。

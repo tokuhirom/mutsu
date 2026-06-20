@@ -1778,6 +1778,16 @@ impl Interpreter {
                 run_whenever_with_value(supply_val, target_var, &param, body)
             )?;
             self.env_dirty = true;
+            // Slice F (env<->locals coherence): a `my $tap = do whenever $sup {…}`
+            // binds the tap handle by writing `env[target_var]` directly (see
+            // `run_whenever_with_value`), but never updates the caller's local
+            // slot. With the reverse env->locals pull disabled, a later read of
+            // that variable *within the same react block* (e.g.
+            // `isa-ok $tap, Tap`) sees the stale slot (the `do` block's own
+            // result) instead of the bound tap. Reconcile the caller's slots from
+            // env here so the binding is visible immediately. Byte-identical with
+            // the reverse pull enabled.
+            self.reconcile_locals_from_env_at_site(code);
             Ok(())
         } else {
             Err(RuntimeError::new("WheneverScope expects Block body"))

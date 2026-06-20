@@ -82,16 +82,20 @@ pub(crate) fn enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var_os("MUTSU_VM_STATS").is_some())
 }
 
-/// Campaign diagnostic (docs/env-locals-coherence.md, Slice F): when
-/// `MUTSU_NO_REVERSE_SYNC` is set, `sync_locals_from_env` skips its write-back
-/// body so the reverse pull no longer backstops by-name env writes. Used to
-/// verify that a coherence slice has made a given test no longer *depend* on the
-/// reverse pull (the precondition for eventually deleting `env_dirty`). Cached
-/// once; a single bool load when unset (zero release-build cost).
+/// Stage 3 (docs/env-locals-coherence.md §6.8): the reverse `sync_locals_from_env`
+/// pull is **disabled by default**. The Slice F write-through campaign reached an
+/// OFF surface of 0 across all `t/` — every by-name caller-lexical env write is
+/// now reconciled by a precise write-through (`pending_rw_writeback_sources` /
+/// `reconcile_locals_from_env_at_site` / carrier logging), so the blanket reverse
+/// pull is no longer load-bearing for correctness. It is retained only as an
+/// opt-in escape hatch (`MUTSU_REVERSE_SYNC=1`) for A/B diagnosis during the
+/// transition; once CI's full roast confirms no remaining dependence the pull and
+/// its `env_dirty` net will be deleted outright. Cached once; a single bool load
+/// (zero steady-state cost).
 #[inline]
 pub(crate) fn reverse_sync_disabled() -> bool {
     static OFF: OnceLock<bool> = OnceLock::new();
-    *OFF.get_or_init(|| std::env::var_os("MUTSU_NO_REVERSE_SYNC").is_some())
+    *OFF.get_or_init(|| std::env::var_os("MUTSU_REVERSE_SYNC").is_none())
 }
 
 /// Record that an explicit method-call opcode (`.foo(...)`) was executed.

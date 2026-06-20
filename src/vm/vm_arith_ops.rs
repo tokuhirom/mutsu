@@ -999,7 +999,7 @@ impl Interpreter {
         self.stack.push(composed);
     }
 
-    pub(super) fn exec_but_mixin_op(&mut self) -> Result<(), RuntimeError> {
+    pub(super) fn exec_but_mixin_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         // `but` composing a role or another type into a type-object invocant is
@@ -1029,7 +1029,14 @@ impl Interpreter {
             if let Some(tn) = &left_type_object {
                 return Err(Self::does_type_object_error("but", tn));
             }
-            self.stack.push(composed?);
+            let composed = composed?;
+            // Stage 3: `$obj but R` runs role R's `submethod TWEAK`/`BUILD` via the
+            // interpreter (`eval_does_values`), which can mutate a captured-outer
+            // caller lexical by name (`my $invoked; role R { submethod TWEAK {
+            // $invoked = True } }`). Reconcile the caller's slots from env so the
+            // write is visible without the reverse `sync_locals_from_env` pull.
+            self.reconcile_locals_from_env_at_site(code);
+            self.stack.push(composed);
             return Ok(());
         }
         // A type object / class (not a role) on the RHS: into a type-object
@@ -1259,7 +1266,10 @@ impl Interpreter {
         self.sync_env_from_locals(code);
         let result = self.vm_does_values(left, right)?;
         // Sync back: BUILD submethods may have modified closure variables.
-        self.sync_locals_from_env(code);
+        // Stage 3: use the toggle-independent reconcile so the BUILD submethod's
+        // captured-outer writes reach the caller's slots even with the reverse
+        // `sync_locals_from_env` pull disabled (byte-identical under ON).
+        self.reconcile_locals_from_env_at_site(code);
         // Capture Mixin value for trait_mod writeback (same as DoesVar path)
         if matches!(&result, Value::Mixin(..)) && self.trait_mod_writeback_key.is_some() {
             self.trait_mod_writeback_value = Some(result.clone());
@@ -1280,7 +1290,8 @@ impl Interpreter {
         self.sync_env_from_locals(code);
         let updated = self.vm_does_values(left, right)?;
         // Sync back: BUILD submethods may have modified closure variables.
-        self.sync_locals_from_env(code);
+        // Stage 3: toggle-independent reconcile (see exec_does_op).
+        self.reconcile_locals_from_env_at_site(code);
         let name = Self::const_str(code, name_idx).to_string();
         self.env_mut().insert(name.clone(), updated.clone());
         self.update_local_if_exists(code, &name, &updated);

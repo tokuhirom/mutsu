@@ -5860,6 +5860,12 @@ impl Interpreter {
             {
                 let proxy_val = self.locals[idx].clone();
                 loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
+                // Stage 3: a Proxy STORE (e.g. `$r := substr-rw($str, ...); $r = ...`)
+                // mutates the referent caller lexical (`$str`) by name in env via
+                // the interpreter STORE closure. Reconcile the caller's slots so
+                // the write is visible without the reverse `sync_locals_from_env`
+                // pull (byte-identical under ON).
+                self.reconcile_locals_from_env_at_site(code);
                 return Ok(());
             }
             // First write through a missing-key `:=` bind (a local holding a
@@ -6729,6 +6735,10 @@ impl Interpreter {
         {
             let proxy_val = self.locals[idx].clone();
             loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
+            // Stage 3: a Proxy STORE mutates the referent caller lexical by name
+            // (e.g. substr-rw); reconcile the caller's slots (see the other
+            // Proxy-STORE assign site).
+            self.reconcile_locals_from_env_at_site(code);
             return Ok(());
         }
         // First write through a missing-key `:=` bind: materialize the path into
@@ -7074,6 +7084,9 @@ impl Interpreter {
             let val = self.stack.pop().unwrap_or(Value::Nil);
             let proxy_val = self.locals[idx].clone();
             loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
+            // Stage 3: reconcile the referent caller lexical the Proxy STORE wrote
+            // by name (see the other Proxy-STORE assign site).
+            self.reconcile_locals_from_env_at_site(code);
             return Ok(());
         }
 
