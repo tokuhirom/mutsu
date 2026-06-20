@@ -1584,6 +1584,10 @@ impl Interpreter {
                 for stmt in &deferred {
                     self.vm_run_block_raw(std::slice::from_ref(stmt))?;
                 }
+                // Slice F: write the deferred body's outer-lexical mutations
+                // through to this caller frame's local slots (vm_run_block_raw
+                // recorded them); keeps `$side` coherent without the reverse pull.
+                self.apply_pending_rw_writeback(code);
             }
 
             // Gather deferred custom traits from role registration

@@ -851,6 +851,19 @@ impl Interpreter {
         // this Interpreter via `run_nested`, sharing the same interpreter + env directly.
         let (code, compiled_fns) = self.compile_block_raw(stmts);
         let result = self.run_nested(&code, &compiled_fns);
+        // Slice F (env<->locals coherence): a deferred role body that mutates an
+        // outer lexical (`role R { $side = @outer.elems * 100 }`) writes it into
+        // `env` by name; record those names so the caller (the role-registration
+        // opcode, which holds the outer `code`) writes them through to the outer
+        // frame's local slots, dropping the dependency on the reverse pull. The
+        // topic is excluded as a per-call alias.
+        for sym in &code.free_var_writes {
+            sym.with_str(|fname| {
+                if fname != "_" && fname != "@_" && fname != "%_" {
+                    self.pending_rw_writeback_sources.push(fname.to_string());
+                }
+            });
+        }
         // Mirror `run_block_raw`'s trailing DESTROY pass (may run user code, so
         // it needs the env loaned).
         self.loan_env_for(|i| i.run_pending_instance_destroys())?;
