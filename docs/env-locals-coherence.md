@@ -699,3 +699,26 @@ green で通過。これで旧 reverse pull は **default（＝唯一の shippin
 - **次の候補**: scattered な rationale コメント（~18 files の「without the reverse `sync_locals_from_env` pull」）は
   歴史的に正確（pull は今や存在しない）なので focus 維持のため未編集。今後 `env_dirty` 自体の単純化（`saved_env_dirty`
   の frame 保存が本当に必要か・deep-copy 経路の整理）は別 slice で評価。
+
+### 7.3 `env_dirty` 物理削除の壁 — multi-frame accumulation（第40セッション・実証＆revert）
+
+§7.2 で reverse pull を消した後、`env_dirty` 自体の削除を試み、**substrate 待ちと確定**した。
+
+- **`env_dirty` の現在の役割**: もはや correctness 機構ではなく、precise reconcile
+  （`reconcile_locals_from_env_at_site` / `drain_and_reconcile_after_cached_call`）の `if env_dirty { reconcile }`
+  ゲート＝pure call（fib）で O(locals) ループを回避する**安価な perf 最適化**に降格している。
+- **実証した壁**: `drain_and_reconcile_after_cached_call` の blanket reconcile を外すと
+  `t/multi-frame-accumulation-coherence.t` の 4 subtest が壊れる（`via(); via()` の cross-call 累積）。
+  この blanket reconcile が multi-frame accumulation を支える**唯一の機構**で、precise な single-frame
+  `apply_pending_rw_writeback` では届かない。
+- **retention 方式の失敗**: source を現フレームの local でないとき親フレームの drain へ持ち越す（re-push）retention を
+  `apply_pending_rw_writeback` に実装したが、**canonical を直せず**（実 trace で確認）。真因＝retention は**消費キュー**で
+  drain 順序に脆弱: 2 回目の `via()`（cached fast path）で、bump-outer の drain が `call_frames=0`・`code=via`（acc local 無し）
+  という中間点で走り、owner（top・acc local 有り）に到達する**前に source を drop**する。blanket reconcile は env を毎回
+  読んで該当 slot を直す**冪等な per-site pull**なので、この drain 順序問題が無く堅牢。retention（実験）は revert 済。
+  - §6.3 の「retention は canonical を直さない」を再確認した形（§6.6 の cached-path 修正後も同じ壁）。
+- **根本と次の一手**: 置き場が 2 つある限り「env を名前書きした→slot が stale かも」の目印は何らかの形で必要。
+  `env_dirty` を真に消すには **env を locals の派生ビュー化＝単一ストア化**が要り、それは **env↔locals が
+  同一コンテナ cell を共有する**こと（本書 §4-A outer cell 共有・`docs/container-identity.md` Phase 2 の延長・
+  Sub-slice 1b）が前提。∴ `env_dirty` 削除は単一の substrate（コンテナ cell 共有）にブロックされており、
+  「あと少しの掃除」ではなく substrate 着手が律速（PLAN.md §1-A / §2-C / §2-E に再編）。

@@ -3,6 +3,9 @@
 > このファイルは**これからやる作業だけ**を載せる。完了したものは [news/](news/)（月別）へ移す。
 > 過去の実装状況は [news/](news/)、パフォーマンス詳細は [PERFORMANCE.md](PERFORMANCE.md)、
 > roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) を参照。
+>
+> **最終更新 2026-06-21**: 全面再編。2大フラッグシップ（単一ストア化・tree-walking 撤去）が同一の
+> 構造的前提に収束したことを反映（§1）。完了済みの大型キャンペーン詳細は news/2026-06.md へ移動。
 
 ## 方針
 
@@ -12,213 +15,172 @@
 
 ### 🚫 標準ルール: 「1 操作 = 1 実装」を崩さない（ユーザー方針 2026-06-07）
 
-VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpreter`（＝ bytecode VM）に一本化された。
-今後も同じ Raku 操作（builtin 関数・メソッド・演算子・coercion）を**二度書かない**:
+実行エンジンは単一 struct `Interpreter`（＝ bytecode VM）に一本化済み。同じ Raku 操作を**二度書かない**:
 
 1. 新規実装・修正は VM/native 層（`src/vm/` ＋ pure native `src/builtins/`）に **1 回だけ**書く。
-2. carrier（EVAL / 正規表現の埋め込み `{}` ブロック等）が同じ処理を要するときは、単一 native 実装へ**委譲**する（再実装しない）。
+2. carrier（EVAL / 正規表現の埋め込み `{}` ブロック等）が同じ処理を要するときは単一 native 実装へ**委譲**する。
 3. 重複を見つけたら native を authoritative にして重複コピーを削除する。
-4. レビュー観点: PR が既存 native と重なるロジックを足していないか確認する。
-
-### ✅ 完了した大型キャンペーン（詳細は news/、ここには残さない）
-
-- **VM decoupling / tree-walking Interpreter 撤去（CP-1/CP-2/CP-3, #3075〜#3104）** — 完結。`struct VM` は
-  `Interpreter` へ溶け、単一 struct が bytecode VM そのもの。全状態 VM 所有、`env_dirty` dual-store のみ内部最適化として存続。
-- **重複実装カタログの消化（dedup A/B/C・レバー A/B/C）** — 完了。
-- **第一級コンテナ 戦略フェーズ**（escape 解析 #2758・Phase 0/1・型メタの Arc-ptr keying 全廃 #2952〜#2985）— 完了。
-- **無限 Range クラッシュ撲滅 + 遅延リスト pull モデル統一**、**panic→`X::` 変換境界**、**roast 90% 突破（1218）** — 完了。
 
 ---
 
-## 🟢 並列実装可能（独立・互いにブロックしない）
+## 1. 🎯 現在の戦略地図 — 2大フラッグシップは「第一級コンテナ＋状態所有」に収束する
 
-> 各項目は別ブランチで並行に進められる（critical path を共有しない）。着手時に該当 BLOCKERS/メモリを確認。
+2026-06-21 の棚卸しで判明した最重要の構造:
 
-### A. Track C — 並行（共有セル）
+> **残る2つの大型キャンペーン（A:単一ストア化／B:tree-walking 撤去）は、別々の課題ではなく、
+> 同じ2つの substrate 前提を共有している。**
+>
+> - **前提① 第一級コンテナ Phase 2 完了＋env↔locals がコンテナ cell を共有**（`docs/container-identity.md` /
+>   `docs/env-locals-coherence.md`）
+> - **前提② 状態所有（state ownership）＝レジストリ／IO ハンドル／型メタを Interpreter から VM が真に所有する**
+>   （`docs/vm-interpreter-fallback-ledger.md` の ②③）
 
-スライス 1〜5 landed（共有スカラ / state / compound-assign / hash-elem / array-elem index 代入 #3063）。
-スカラ `$counter`・`state $n` の `start` 間ライブ共有は **landed・実機確認済み**（mutsu 4/3＝raku 一致、ANALYSIS rev2 §2.2/§8.3）。残り:
+この収束を理解せずに各キャンペーンの「最後の一手」を急ぐと壁に当たる（本セッションで実証＝§A 参照）。
+∴ **優先すべきは前提①②の substrate であり、それが A・B 両方を同時に前進させる。**
 
-- [ ] **`state @`/`%`・lexical aggregate の真共有** — `start` 間で配列/ハッシュ集約変数を共有。Track B 要素セル基盤に依存。
-- [ ] **`unsafe` の single-thread 前提コメント是正**（ANALYSIS rev2 §2.3）— `Arc::as_ptr as *mut` のエイリアス書き換えは
-      11→4 箇所に減り `strong_count` ガード＋`Arc::make_mut` フォールバックで UB の実発生は回避済み。だが SAFETY コメントは
-      "mutsu is single-threaded" のまま陳腐化（`vm/vm_var_assign_ops.rs:2098,2559,2587,2908,3514`）。コメントを実態（strong_count
-      ガード前提）に是正し、最終的には配列/ハッシュ要素も `ContainerRef` 化して生ポインタ改竄を撤廃（Phase 2 依存）。
+### A. 単一ストア化（locals↔env 二重ストア統合）— **correctness 目標は達成・物理削除は substrate 待ち**
 
-### B. perf — 起動 / 実行速度（計測駆動・MUTSU_VM_STATS / timed roast）
+設計＝[docs/env-locals-coherence.md](docs/env-locals-coherence.md) / [docs/vm-single-store.md](docs/vm-single-store.md)。
 
-- [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減（コンパイルキャッシュ #3064 / 単一マッチ早期終了 #3065 は landed）。
-- [ ] closure captures as indexed slots（env サイズ自体の削減。method-call/​bench-class の env deep clone ~9μs/call が残ボトルネック）。
-- [ ] **NaN-boxing**: `Value` を 72→8 bytes に（Int/Num/Bool/Nil）。セルも安価化。
-- [ ] JIT compilation (Cranelift) の検討 / Cycle collector（循環参照）。
+- ✅ **reverse pull（`sync_locals_from_env`）撤去済み（#3354, 2026-06-21）**。第27〜40セッションの write-through
+  グラインド（約30 PR・roast OFF 依存 16/16 を precise 化）で「reverse pull なしで全 t/+roast green」を達成し、
+  危険な同期処理を削除。**二重ストアの correctness hazard は解消。**
+- 🔴 **残る `env_dirty` の物理削除はブロック中**。`env_dirty` はもはや correctness 機構ではなく、
+  precise reconcile（`reconcile_locals_from_env_at_site`）のゲート＝安価な perf 最適化に降格している。
+  だが完全削除には壁がある:
+  - **multi-frame accumulation の壁（2026-06-21 実証）**: `via(); via()`（A→B→外側変数書込を2回）の累積は
+    env_dirty-gated の blanket reconcile が支える唯一の機構。precise な単フレーム drain では届かず、source を
+    親へ持ち越す retention 方式も drain 順序に脆弱で**置換不可**（実験で確認・revert 済）。
+  - **根本**: 置き場が2つある限り「env を名前書きした→slot が stale かも」という目印は何らかの形で必要。
+    `env_dirty` を真に消すには **env を locals の派生ビュー化＝単一ストア化**が要り、それは
+    **env↔locals が同一コンテナ cell を共有する**こと（前提①）が前提。
+- **∴ 次の一手 = 前提① の env↔locals コンテナ cell 共有（下記 §C Sub-slice 1b）。** これが入って初めて
+  `env_dirty` 削除が射程に入る。それまで env_dirty は perf ゲートとして正当に残す。
+
+### B. tree-walking interpreter 撤去 — **struct 統合は完了・残フォークは状態所有待ち**
+
+台帳＝[docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md) / [docs/vm-decoupling.md](docs/vm-decoupling.md)。
+
+- ✅ **VM/Interpreter の struct 統合は完了**（CP-1/2/3・#3075〜#3104）。単一 struct が bytecode VM。
+- **現状のフォールバック残量**: 記録される tree-walk フォールバックは **16 サイト**（メソッド 10／関数 6）。
+  実測フォールバック率はメソッド ~1%／関数 ~18.6%（うち大半は EVAL **carrier**＝tree-walk ではない意図的委譲）。
+  - **4 サイトは意図的 carrier**（MOP リフレクション `.WHAT`/`.HOW`/`^methods` 等）＝**撤去対象外**。
+  - **残りは構造的ブロック**: 「easy/medium な個別フォールバック撲滅は枯渇済み」（台帳の結論）。残るのは
+    ③状態所有（Buf/Failure/IO native メソッドが `io_handles`／型メタ／レジストリに依存）と Phase 2 コンテナ
+    （hyper・array-backed instance メソッド）と multi-dispatch（proto/where 評価）。
+- `src/runtime/`（~100 ファイル・~11万行）の内訳: **~60% は共有インフラ**（regex エンジン・クラス登録・IO・
+  builtins＝VM も依存＝残す）、**~40% が純 tree-walk dispatch**（③ 完了後に削除可）。
+- **∴ tree-walking の大量削除も前提②（状態所有）が前提。** 個別フォールバックの easy win は終わっている。
+
+> **結論**: A も B も「地道なグラインドの続き」ではなく、**前提①②の substrate 着手**が律速。次章 §C がその substrate。
+
+---
+
+## 2. 🔴 順序依存・並列不可 — substrate（前提①②）
+
+> 内部に着手順序があり、前段が終わるまで後段に着手できない。A・B 両フラッグシップの律速。
+
+### C. 第一級コンテナ Phase 2 完了 → env↔locals コンテナ cell 共有（前提①）
+
+実装台帳＝[docs/container-identity.md](docs/container-identity.md)。Phase 0/1 完了、Phase 3（インスタンス属性 cell）も
+Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で deferred）。**残りは Phase 2 の最終キル＋coherence:**
+
+- [ ] **Phase 2 Stage 2 slice 5（最終 SlotRef キル）**: 残る `HashSlotRef`/`DeferredHashAccess` 生成サイト
+      （junction-bind / `is raw` reduce lvalue-read の autoviv）を cell 化し、variant を削除。
+- [ ] **grep-rw-view 撤去**: 最後の ptr-keyed グローバル。matched 要素を cell 昇格し view registry を全廃。
+- [ ] **★env↔locals コンテナ cell 共有 — Sub-slice 1b（A の律速・最重要）**: slot を持つ Array/Hash を
+      env と locals の両方で**同一 `ContainerRef` cell** にし、`my @a := @b` 等で outer 構造まで共有する
+      （escape-aware・裸ローカルは従来の Arc 共有で perf 崖回避）。audit＋Sub-slice 1a は完了済
+      （`docs/env-locals-coherence.md` §5）、bind desugar の `needs_cell` を outer array/hash へ拡張するのが次。
+      **これが入ると env↔locals が乖離しなくなり、§1-A の単一ストア化（env_dirty 削除）が解禁される。**
+- [ ] follow-up（pre-existing・小）: `$x = @arr` 共有の method param 版（`method m($n){ $n.push }`）・`is copy` $-param。
+      設計＝[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §5。
+
+### D. 状態所有（state ownership）— VM がレジストリ／IO／型メタを真に所有（前提②）
+
+台帳＝[docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md) ②③。**B の律速。**
+
+- [ ] **レジストリ所有（②）**: クラス／ロール／enum／sub の宣言登録を VM 側へ。
+- [ ] **IO ハンドル・型メタ所有（③）**: `io_handles` / `register_container_type_metadata` / regex キャッシュを VM が所有。
+      これで Buf/Failure/IO native メソッドの catch-all フォールバック（`vm_call_method_compiled.rs:175/507/1543/1794`）が
+      native 化でき、`runtime/` の ~40% 純 tree-walk dispatch を削除可能になる。
+- [ ] **multi-dispatch の VM 化**: proto multi / where 制約評価を VM 側で（`vm_call_func_ops.rs:1051/1084`）。
+
+### E. 単一ストア化の総仕上げ（C 完了後）
+
+- [ ] **`env_dirty` / `ensure_locals_synced` / `saved_env_dirty` 削除**（§1-A）。**前提 = §C Sub-slice 1b で
+      env↔locals がコンテナ cell 共有し乖離しなくなること。** ここで `pairs`/`slip` carrier-drop も安全化し、
+      `locals` が単一権威・`env` は派生ビューになる。`ensure_locals_synced` は既に1行（`env_dirty=false`）へ縮退済。
+
+---
+
+## 3. 🟢 並列実装可能（独立・互いにブロックしない）
+
+> substrate（§2）と critical path を共有しない。別ブランチで並行に進められる。着手時に該当 BLOCKERS/メモリを確認。
+
+### F. roast backlog（[TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 駆動・インパクト順）
+
+現状 whitelist **1285**。診断は `./scripts/roast-history.sh`（`tmp/roast-{panic,timeout,error,fail,pass}.txt`）。
+
+- [ ] **★型付き例外（最高インパクトの単一ファイル）**: `S32-exceptions/misc.t`（42/157）。X::NotParametric /
+      X::Undeclared / X::Redeclaration / X::Bind / X::TypeCheck 他 ~25 種の one-off 型実装。BLOCKERS.md §B。
+- [ ] **lazy 無限配列 L2b–L4**: L1/L1b/L5/L5b/L2a は landed（→ news/2026-06）。残＝L2b（真のメモリ遅延化・seed `[1]`・
+      `docs/lazy-arrays.md`「L2b」節に実行プラン確定済）→ `(1...*)`/closure 配列変換 → L4 slurpy 真 lazy 化。
+      whitelist payoff（slurpy-params.t/slice.t）は Seq single-pass consumption（`X::Seq::Consumed`）が別軸。
+- [ ] **Match キャプチャ番号付け / コンテナ kind**: (1) `$<x>=(...)` が positional スロットにも重複格納され番号がずれる、
+      (2) `m:g//` を `my @m` 代入後 `@m.gist` が `(…)` を返す（receiver の List-kind dual-store）。S05-capture/array-alias.t（30/37）。
+- [ ] 未実装演算子: `ff`/`fff`（flipflop 8 variants）/ `==>`・`<==`（feed precedence: `==>` が `=` より強く結合する差）/
+      `~<`・`~>`（string bitwise shift・優先度低）。
+- [ ] メタ演算子: generalized negation meta（`!op`）/ hyper assignment（`@a >>+=>> 1`）。
+- [ ] Phasers: rvalue caching（INIT/CHECK/BEGIN as rvalues）/ PRE/POST（contract programming）。
+- [ ] Signatures: type-check enforcement（X::TypeCheck）/ native int/uint overflow・bounds / 単一 sub の複数シグネチャ。
+- [ ] OOP: namespaced construction（`A::B.new`）/ `augment class` / parameterized role mixin。
+- [ ] Supply/Concurrency: backpressure / `supply`・`react` block scoping / Tap management（close, drain）。
+- [ ] IO/Process: IO::Handle read modes（binary/encodings）/ Proc・Proc::Async 完全化 / file test operators（`-e`/`-f`/`-d`）。
+- [ ] 孤立サブシステム（main-track 非衝突・BLOCKERS.md §A）: 残 regex（S05-substitution/match capturing-contexts）・
+      Unicode CollationTest・shaped arrays・Pod。
+
+### G. perf — 起動／実行速度（計測駆動・MUTSU_VM_STATS / timed roast）
+
+現状（要再計測・PERFORMANCE.md）: **9/12 ベンチで raku 超え**。起動 0.04x（28倍速）。
+**残ボトルネック**: method-call 2.7x / bench-class 2.3x / bench-fib（型制約付き）3.2x。
+真因＝メソッド呼び出しの **env deep clone ~9μs/call（全コストの29%）**＝~100 entry の `Arc::make_mut`。
+
+- [ ] **Lever 1: closure captures を indexed slot 化（高 payoff・設計済）**: closure 生成時の env deep clone を撤廃。
+      コンパイル時に closure が read/write する変数を解析し `Vec<Value>` に格納。method-call <2x 狙い。
+- [ ] **Lever 2: NaN-boxing（高 payoff・設計済）**: `Value` 48→8 bytes（Int/Num/Bool/Nil を NaN payload に）。
+      int-arith 2x・fib ~30% 狙い。`value_size_guard` テストでサイズ監視中。
+- [ ] **Lever 3: threaded dispatch（中 payoff・ラフ）**: opcode の `match` を関数ポインタテーブルに。命令律速ベンチ 10–30%。
+- [ ] **Lever 4: JIT（Cranelift）/ Lever 5: 型制約チェックの tight-loop 省略**（ラフ・大）。
+- [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
 - 目標: method-call <1.5x、bench-class <1.5x、bench-fib（型制約付き）<2x。
 
-### C. roast backlog（BLOCKERS.md 駆動・インパクト順）
+### H. モジュール互換（Q3 — ウェブブログスタック）
 
-- [ ] **残りの型付き例外**（X::Str::Numeric / X::Method::NotFound / X::Undeclared / X::Cannot::Lazy /
-      X::EXPORTHOW::InvalidDirective 等）。詳細は BLOCKERS.md "throws-like / Exception Types"。
-- [ ] **真の lazy 無限配列**（`my @a = 1..*` の reify-on-demand）。設計＋次の一手＝[docs/lazy-arrays.md](docs/lazy-arrays.md)。
-      **DONE（→ news/2026-06）**: L1/L1b（lazy `.gist`/`.Str`/dual-rep `[`vs`(`・#3306/#3313）、
-      L5/L5b（lazy `.elems`/`.Int`/`.Numeric`/`.end`/`+@a`→X::Cannot::Lazy・#3310/#3314）、
-      **L2a**（`my @a = 1..*` を reify LazyList で保持し `@a[200000]`→200001。整数レンジのみ。
-      mutation: push/pop/append→throw、front-mut→reify-prefix・#3315）。
-      **NEXT = L2b**（真のメモリ遅延化: seed `[1]`・docs/lazy-arrays.md「L2b」節に実行プラン確定済。
-      拡張機構は全て既存＝`from_gather` ゲートを `is_genuinely_lazy` に拡張するだけ。落とし穴=
-      `reify_lazy_array_slot` を `force_lazy_list_vm_n(MAX_ARRAY_EXPAND)` に。whitelist payoff なし）。
-      残＝L2b → `(1...*)`/closure 配列も変換 → L4 slurpy 真 lazy 化。**slurpy 無限 Range ハングは cap 解消済**。
-      whitelist payoff（slurpy-params.t/slice.t）は別軸＝Seq single-pass consumption（`X::Seq::Consumed`）。
-- [ ] **Match キャプチャ番号付け / コンテナ kind**: (1) `$<x>=(...)` が positional スロットにも重複格納され番号がずれる
-      （`/$<x>=(\w)(\d)/`）、(2) `m:g//` を `my @m` 代入後 `@m.gist` が `(…)` を返す（receiver の List-kind dual-store ナンス）。
-- [ ] Lookbehind assertions (`<!after>`) / `:Perl5` modifier edge cases。
-- [ ] 未実装演算子: `ff`/`fff`（flipflop 8 variants）/ `==>`・`<==`（feed の precedence 残: `==>` が `=` より強く結合する差）/
-      `~<`・`~>`（string bitwise shift・優先度低）。
-- [ ] メタ演算子: generalized negation meta (`!op`) / hyper assignment (`@a >>+=>> 1`)。
-- [ ] Phasers: rvalue caching (INIT/CHECK/BEGIN as rvalues) / PRE/POST (contract programming)。
-- [ ] Signatures: type-check enforcement (X::TypeCheck) / native int/uint overflow・bounds / 単一 sub の複数シグネチャ。
-- [ ] OOP: namespaced construction (`A::B.new`) / `augment class`（新規属性追加）/ parameterized role mixin。
-- [ ] Supply/Concurrency: backpressure / `supply`・`react` block scoping / Tap management (close, drain)。
-- [ ] IO/Process: IO::Handle read modes (binary/encodings) / Proc・Proc::Async 完全化 / file test operators (`-e`/`-f`/`-d`)。
+目標: **mutsu でウェブブログシステムが構築できる**。現状 **0% 稼働**。
 
-### D. 第一級コンテナ — 機会的バックログ（戦略フェーズ完了済・単発で直す）
-
-特定 whitelist 候補が残り 1–2 subtest でその原因がピンポイントで該当バグのときだけ着手。実装台帳 = [docs/container-identity.md](docs/container-identity.md)。
-
-- [ ] **Track B 残 niche**（詳細 = メモリ `project_track_b_phase2_element_cells`）: ① `for %h<k>.values{$_*=2}` の element-source
-      rw writeback（最ホット path・多機構絡み高リスク）、② `.push(@var)` 参照格納（COW detach するので cell 昇格が必要・hot push path）。
-- [~] **object-hash（`%h{KeyType}`）残**: `S09-hashes/objecthash.t`（非 whitelist）の ① `%h{Any}` の Mu キー拒否（根は
-      `Mu.new` が `Any` インスタンス生成→smartmatch 波及・高リスク）、② `Hash.push` 型チェック、③ list→hash flatten の itemization 追跡。
-- [ ] **属性セル + 属性束縛 = Phase 3 の機会的部分**（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits/attributes 5-8）。
-      ※ 本格 Phase 3 は下記「順序依存」参照。
-
-### E. モジュール互換（Q3 — ウェブブログスタック）
-
-目標: **mutsu でウェブブログシステムが構築できる**。
-
-- [ ] **Template::Mustache** — grammar action dispatch（proto regex in alternation の action 呼び出し）がブロッカー。`.meta` 等を修正。
+- [ ] **★grammar action dispatch（最大ブロッカー）**: proto regex in alternation の action 呼び出しが不正。
+      Template::Mustache だけでなく grammar 重用モジュール全般に波及。`.meta` 等を修正。
+- [ ] **Template::Mustache**（上記が前提）。
 - [ ] **HTTP::Server::Tiny** の依存（HTTP::Parser / IO::Blob / HTTP::Status）→ 本体。
 - [ ] DB アクセス — pure Raku 簡易実装 or qqx ベースの SQLite wrapper（NativeCall 不可）。
 - [ ] File::Temp / MIME::Base64 (pure Raku) / File::Directory::Tree。
 - [ ] バイナリ配布: mise GitHub バックエンドのインストール検証 / GitHub Releases 自動化。
 
-### F. 構造リファクタ（独立・中長期）
+### I. Track C — 並行（共有セル）残
 
-- [ ] 制御フロー（`return`/`last`/`next`/`take`/`emit`）を `RuntimeError` god-struct から `enum Control` へ分離
-      （ANALYSIS §2.4・`result_large_err` 負債の解消）。
-- [ ] `.^methods`/`.can` の型別メソッド一覧を実ディスパッチ表から導出（ANALYSIS §4）。
-- [ ] roast fudge ロジックを核から分離 / テスト一時ファイルを `tmp/` へ / 500 行超ファイルの分割（ANALYSIS §6）。
-- [ ] エラーメッセージの品質向上 / エッジケースの panic・crash を 0 に。
+スカラ／state の `start` 間ライブ共有・hash/array 要素 atomic は landed（→ news）。残:
 
-### G. Practicality（将来）
+- [ ] **`state @`/`%`・lexical aggregate の真共有**（Track B 要素 cell 基盤に依存）。
+- [ ] Semaphore / nonblocking await / lock 競合（S17・hard・別軸）。
+- [ ] `unsafe` の single-thread 前提コメント是正（`Arc::as_ptr as *mut` を strong_count ガード前提に・最終的に要素も cell 化）。
 
-- [ ] REPL / Debugger / `zef` package manager compatibility / native binary output。
-- [ ] 「mutsu でウェブブログを作る」チュートリアル / raku 互換性マトリクス公開 / WASM playground 公開。
+### J. 構造リファクタ・将来（独立・中長期）
 
----
-
-## 🔴 順序依存・並列不可（前提あり）
-
-> 内部に着手順序があり、前段が終わるまで後段に着手できないもの。
-
-### ★ 二重ストア統合 ＋ 第一級コンテナ — **Slice F で収束する 1 本のキャンペーン**（2026-06-18 再編）
-
-ユーザー本命。設計＝[docs/vm-single-store.md](docs/vm-single-store.md)（履歴・撤回試行は [docs/vm-dual-store.md](docs/vm-dual-store.md)）+
-[docs/container-identity.md](docs/container-identity.md)。
-
-**2026-06-18 の深掘りで判明した収束**: 当初は「二重ストア統合」と「第一級コンテナ」を別キャンペーンとして並べていたが、
-**両者は single-store の最終 Slice F（`env_dirty` 削除＝`locals` を真の単一権威化）で同一の壁に収束する**:
-
-> Slice F の真の前提は **`env` と `locals` がコンテナで乖離しないこと**（cell-linked container で env と locals が別 Arc を
-> 持たないこと）。これは第一級コンテナ campaign が解いている問題そのもの。ContainerRef cell（Phase 2・`:=` bind は大幅 landed・
-> `element-bind-cell.t` 31ケース）は **1 ストア内の COW 跨ぎ生存**を解決済みだが、**dual-store の env↔locals 乖離は別レイヤ**で残る。
-> pairs/slip carrier-drop が `element-bind-cell` を壊すのは正にこの dual-store 乖離（cell があっても carrier が env_dirty を
-> 落とすと locals 側コンテナが stale 経路で読まれる）。**∴ blanket 削除/carrier-drop の小細工では Slice F に到達不可。**
-
-**現状（blanket-removal / carrier-drop 路線は価値枯渇）**:
-- [x] **Slice A** — invariant guard + 計測（#3219）。
-- [x] **Slice B** — `EVAL` 精密 writeback（#3222）+ EVAL carrier env_dirty drop（#3227）。
-- [~] **Slice C** — R1 reverse write-through。**実測で SUPERSEDED**（our/dynamic/push/call は既に pull 1–2・effective=0）。
-- [~] **Slice C′** — open-q#2 の regex 経路 + bareword carrier 一般化（#3231）+ EVAL内 `$x ~~ s///` writeback 穴修正（#3237）。
-      `pairs`/`slip` 一般化は下記収束（env↔locals コンテナ coherence）が前提＝延期。
-- [x] **Slice D** — R3 blanket-mark 撲滅 = **監査で完了確認（#3238）**。安全に削除できる冗長 blanket は無し（残る ≈140 の
-      `env_dirty=true` は精密ゲート本体／正当 mutation／carrier-block net のいずれか・spurious は全ベンチ 1〜8 pull）。
-
-**ここから先（収束点へ向かう・残り 1 本柱）**:
-- [x] **Slice E — closure upvalue 化 = 完遂（Part1 #3245 + Part2 #3247, 2026-06-18）**: closure を whole-env でなく
-      **upvalue snapshot**（free vars + `__mutsu_*` meta + system 名）で捕捉し、`compute_needs_env_sync` の closure flush
-      （branch #2）を撤去＝closure を forward-flush 機構から完全分離。**実測で判明: Slice E は perf 中立**（closure 毎の
-      env deep copy は GLOBAL_BASE 退避 + chain-aware `entry_or_insert` で既に ~1–2 entries）＝目的はアーキ/保守性。
-      **素朴な「free-var だけ捕捉」は不可と実証**: `free_var_syms`（GetGlobal scan）が ①専用 op の system 名（`self`/属性・
-      `$_`・`$?FILE`・dynamic var）②`stmt_pool` に隠れる nested body（`whenever`/`gather`）を取りこぼす → system 名 keep-rule
-      （`env::is_plain_user_lexical`）+ 不完全フレーム whole-env fallback（`captures_env_by_name` cc flag・`WheneverScope` 追加）
-      が正攻法。pin=`t/single-store-slice-e.t`。詳細＝docs/vm-single-store.md Slice E 節。
-- [ ] **第一級コンテナ Phase 2 残 → Phase 3（Slice F の substrate・残る唯一の前提）**: env↔locals がコンテナ Arc を共有する終状態へ。
-      Phase 3（instance cell）は registry 撤去・CAS まで完遂、Phase 2（要素 cell）も element-element/LHS/cyclic 束縛まで landed
-      （nested.t 43/43・#2922/#2925）。**残る具体作業**（実装台帳 docs/container-identity.md「残スライス」＋ docs/slotref-removal-plan.md）:
-      - **残 `HashSlotRef` 生成サイトの cell 化**: `hash_autovivify`（junction-key bind / `is raw` reduce lvalue-read / autoviv-op
-        fallback）— 呼び出し後に entry が存在＝phantom 不要なので cell 化可（hot path 非該当）。deferred-token 用途以外の `HashSlotRef` を枯らす。
-      - **grep-rw-view 撤去**: 最後の ptr-keyed グローバルの一つ。matched 要素を cell 昇格し view registry を全廃（for-loop rw topic が消費者）。
-      - [~] **env↔locals コンテナ coherence の本丸（Slice F の真の前提）**: cell-linked container が env と locals で別 Arc を持つ
-        dual-store 乖離を解消（pairs/slip carrier-drop が `element-bind-cell.t` を壊すのが証左）。**設計済＝[docs/env-locals-coherence.md](docs/env-locals-coherence.md)**
-        （推奨＝outer コンテナを env でも `ContainerRef` cell として持ち env↔locals が同 cell 共有＝instance attr Phase 3 と同型。
-        escape-aware で perf 崖回避。Stage 0 チョークポイント→Stage 1 昇格→Stage 2 計測→Stage 3 Slice F+pairs/slip 一般化）。
-        進捗（2026-06-18）:
-        - [x] **Stage 0**（read/write チョークポイント棚卸し）= read は `into_deref` で単一化済みと確認、write gap の bind バグ
-              （`our %g:=%h` #3252・bound hash whole-reassign #3255・constant 要素書込 + closure whole-reassign #3256）を補完。
-        - [x] **Stage 1**（escape-aware outer cell 化・bound container write チョークポイント）= 完了。audit（#3258）で
-              blast radius を ~14 write サイトに特定 → **for-rw writeback "site A" を array（#3259）/ hash（#3260）化** →
-              監査で「残る生 match の write ギャップは junction だけ」と確定 → **junction + from-end `@a[*-1]` 代入（#3279）/
-              `%h.push`・`.append`（#3281）を bound-cell-aware 化**。bound-container 操作（nested/deep/reference push・splice・
-              whole-slice）は全 raku 一致。
-        - [x] **bug ②（scalar-array 参照共有）= 完了（Slice 2a–2d 全着地）**: `my $n=@z` の push/要素伝播（2a #3264 +
-              chained #3267）→ `@aoa[i]=@row`/`%h<k>=@row`（2b #3274）→ `my @a:=@$n`/`my %h:=%$m`（2c #3268/#3277）→
-              **headline `sub f($n){ my @a:=@$n; @a.push }; f(@z)`（2d #3283）**。2d は call 境界で **`@`/`%` 変数を `$`-param に
-              渡すとき共有 `ContainerRef` cell へ昇格**（binding.rs）+ slot-only fast path を gate で slow path へ迂回
-              （詳細・follow-up = [docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §5 Slice 2d）。
-              - **残 follow-up（pre-existing・2d では未カバー）**: ① **method param**（`method m($n){ $n.push }`）=
-                `vm_method_dispatch.rs:79` の fast-path gate に scalar-container-share 条件を追加（slow path は同 :424 で
-                bind_function_args_values を使う→promotion 適用。注意=invocant の index alignment）。② **`is copy` $-param**
-                （rebind 許可と cell 共有の両立）。
-      - Phase 0.5 第2段（任意・実挙動変化）: `GetArrayVar`/`Index` の auto-decont + 新 lvalue opcode の本配線。
-      - Phase 3 機会的残: 属性束縛（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits 5-8）。
-- [~] **Slice F coherence — write-through ファミリー（#3300–#3329, 2026-06-19〜20）= reverse-sync 依存を順次 write-through 化**:
-      reverse-sync（`sync_locals_from_env`）が backstop していた by-name writer を、call-site / registration op（caller `code` 保有）で
-      caller local slot へ直接 write-through する共通機構 `pending_rw_writeback_sources` + `apply_pending_rw_writeback(code)` に
-      畳む。診断トグル `MUTSU_NO_REVERSE_SYNC=1`（`MUTSU_NO_REVERSE_SYNC=0` でも OFF 扱い＝ON 測定は `env -u` で unset 必須）。
-      - 第1陣 #3300–#3311: lvalue-method（#3300）・for-loop QuantHash topic（#3302）・sub/method `is rw`/`is raw` param（#3304/#3305）・
-        closure 捕捉変数（#3307）・`is rw` sub lvalue 返り（#3309）・mut-method receiver（#3311）。
-      - **★第31セッションの「全 `t/` reverse-sync 非依存（差分スキャン0件）」は測定エラー（トグル未発火の偽陰性）と判明・取り下げ。**
-        第32–33セッションで実依存を多数発見・write-through 化: 0-arg fast-call 捕捉（#3317）・dynamic var callee write（#3320）・
-        regex `~~` match（#3321）・method 捕捉（#3322）・qualified/our sub 捕捉（#3323）・dynamic var env-read（#3324）・
-        light/positional-light 捕捉（#3326）・**deferred role body 捕捉（#3327）**・**deferred class body 捕捉（#3328）**・
-        **import された symbol/`constant`（#3329）**・sigilless param alias（#3318）・**例外脱出 UNDO/LEAVE 捕捉（#3332）**・
-        **junction autothread 捕捉（#3333）**・**eager `.map`/`.grep`（literal/Range/Seq）の捕捉（#3335）**・
-        **deep `:=` element bind/write（`$s[1]<k>[2]=v` / `:=$src`・`IndexAssignDeepNested`）の locals write-through（#3340）**・
-        **let/temp restore（`exec_let_block_op`/try restore 後の locals reconcile・#3341）**・
-        **pair-value 要素変異（`overwrite_{hash,array}_bindings_by_identity` の置換名を `pending_rw_writeback_sources` に記録・#3342）**。
-      pin: `t/{rw-param,method-rw-param,closure-captured-var,rw-sub-lvalue,mut-method-receiver,sigilless-alias,dynamic-var,
-      qualified-sub-captured-var,method-captured-var,light-call-captured-var,run-nested-role-body,class-body-captured-var,
-      import-constant,undo-phaser,junction-autothread,eager-map-grep-captured,deep-element-bind,let-temp-restore,
-      pair-value}-writeback*-coherence.t` 他。
-      **OFF 依存サーフェス（差分スキャン）= 第36セッションで 36→13 に激減**（#3342 の by-identity 記録が
-      eager-push 伝播/method 変異/grep-rw 等の全 shared-Arc by-name 変異を波及的に OFF-coherent 化＝
-      eval-carrier/attribute-trait-mod/methods-instance 等「multi-frame 壁」と見られていた多数を解消）。
-      **残る OFF 依存 13 = 真の壁（次セッション以降）**:
-      - **multi-frame retention**（closure-nested/multitier-overlay-env/scoped-overlay-env-dirty/slurpy-is-raw/
-        wrap-closure-capture/zeroarg-env-dirty＝caller→mid→writer の captured-outer 伝播・lazy-eval 衝突 #3317）。
-        **= 次の大物 substrate（lazy-force 境界で retention を抑止する設計が必要）。**
-      - **regex carrier**（regex-m-s の `s///`-topic `$_` writeback・regex-declarative-modifiers の `:let`）。
-      - **並行 cell**（done-paren-stmt-modifier/gather-infinite-coroutine/react-whenever-last-next/supply-* ＝
-        別スレッドが caller slot に到達不可・cell 共有 §4-A 前提）。
-      詳細・手順 = memory `project_dual_store_unification_next`。
-      別途 ON-mode 既存バグ（dual-store 無関係・別 PR）: class body 内で `@outer.elems` が 1（outer array visibility）。
-- [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
-      **前提 = roast-level reverse-sync 依存（carrier/supply）も write-through 化 or cell 共有で解消。** ここで初めて pairs/slip
-      carrier-drop も安全化し、`locals` が単一権威・`env` は派生ビューになる。
-- [ ] **Slice G**（後続・任意）— env の on-demand materialization（per-call `clone_env` を lazy overlay 化）。
-
-速度の担保（設計内蔵）: (a) escape 解析でセル省略（捕捉/エイリアス/`.VAR` されないローカルは裸値）、(b) 配列は COW、
-(c) decont は単一分岐、(d) 中期の NaN-boxing で payload 8byte 化。各 Phase は重量級 roast を timed 確認（#2746 の教訓: perf 回帰は
-`make test` で検出不能、CI release roast の timeout で初めて顕在化）。
+- [ ] 制御フロー（`return`/`last`/`next`/`take`/`emit`）を `RuntimeError` god-struct から `enum Control` へ分離（ANALYSIS §2.4）。
+- [ ] `.^methods`/`.can` を実ディスパッチ表から導出 / roast fudge ロジック分離 / 500 行超ファイル分割。
+- [ ] エラーメッセージ品質向上 / エッジケースの panic・crash を 0 に。
+- [ ] REPL / Debugger / `zef` 互換 / native binary output / WASM playground 公開。
 
 ---
 
@@ -226,11 +188,25 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
 
 | 指標 | 現在 | 目標 |
 |------|------|------|
-| Whitelist | **1282** | 1300+ |
+| Whitelist | **1285** | 1300+ |
 | fib(25) vs raku | **1.0x** | <10x |
 | method-call vs raku | **2.7x** | <1.5x |
 | bench-class vs raku | **2.3x** | <1.5x |
-| bench-fib（型制約付き）vs raku | — | <2x |
+| bench-fib（型制約付き）vs raku | **3.2x** | <2x |
 | 起動時間 vs raku | **0.04x** | 0.04x |
-| 動作モジュール数 | 1 | 5+（ウェブブログスタック） |
+| tree-walk フォールバック（メソッド/関数） | **~1% / ~18.6%（大半 carrier）** | 0%（carrier 除く） |
+| 動作モジュール数 | 0 | 5+（ウェブブログスタック） |
 | Template::Mustache / HTTP::Server::Tiny | ❌ | ✅ |
+
+---
+
+## ✅ 完了した大型キャンペーン（詳細は news/、ここには残さない）
+
+- **VM decoupling / tree-walking struct 統合（CP-1/2/3, #3075〜#3104）** — 単一 struct が bytecode VM。
+- **単一ストア化 write-through グラインド（#3219〜#3354, 第12〜40セッション）** — reverse pull 撤去まで完了
+  （env_dirty 物理削除は §1-A・§2-E で substrate 待ち）。詳細＝news/2026-06.md ＋ memory `project_dual_store_unification_next`。
+- **第一級コンテナ Phase 0/1・Phase 3 Stage 0〜2c** — escape 解析・スカラ cell・インスタンス属性 cell（CAS 含む）。
+- **React/Supply 統一ループ（Track C Stage 1〜3）** — whenever/LAST/QUIT/CLOSE 全 native。
+- **lazy 配列 L1/L1b/L5/L5b/L2a（#3306〜#3315）** — lazy `.gist`/`.elems`/reify-on-demand（整数レンジ）。
+- **panic→`X::` 境界 / 無限 Range クラッシュ撲滅 / roast 90% 突破** — 完了。
+- **重複実装カタログ消化（dedup A/B/C・レバー A/B/C）** — 完了。
