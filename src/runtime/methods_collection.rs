@@ -62,7 +62,11 @@ impl Interpreter {
                 let end_f = end.to_f64();
                 end_f.is_infinite() && end_f.is_sign_positive()
             }
-            Value::LazyList(ll) => ll.lazy_pipe.is_some(),
+            // A lazy pipe, or an infinite arithmetic/geometric/closure sequence
+            // (`1..*`, `1,2,3...*`, `1,1,*+*...*`): `.map`/`.grep` append another
+            // pipe stage that pulls from the sequence on demand (L2b), instead of
+            // materializing the (now O(1)-seeded) cache.
+            Value::LazyList(ll) => ll.lazy_pipe.is_some() || ll.is_infinite_spec(),
             _ => false,
         }
     }

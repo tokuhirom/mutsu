@@ -604,10 +604,7 @@ impl Interpreter {
         // Lazy `.first` over a gather coroutine: pull incrementally instead of
         // forcing the (possibly infinite) list to completion.
         if let Value::LazyList(ref ll) = target
-            && matches!(
-                ll.env.get("__mutsu_lazylist_from_gather"),
-                Some(crate::value::Value::Bool(true))
-            )
+            && ll.needs_vm_lazy_dispatch()
             && method == "first"
             && let Some(result) = self.try_lazy_gather_first(ll, &args)
         {
@@ -615,26 +612,29 @@ impl Interpreter {
             return Ok(());
         }
         let target = if let Value::LazyList(ref ll) = target
-            && matches!(
-                ll.env.get("__mutsu_lazylist_from_gather"),
-                Some(crate::value::Value::Bool(true))
-            )
+            && ll.needs_vm_lazy_dispatch()
             && Self::lazy_list_needs_forcing(method)
             && !(ll.coroutine.is_some() && matches!(method, "List" | "values"))
-            // A chained `.map`/`.grep` on a lazy pipeline appends another stage
-            // (interpreter dispatch); laziness-preserving coercions return the
-            // pipeline unchanged (native dispatch) — neither forces.
-            && !(ll.lazy_pipe.is_some()
+            // A chained `.map`/`.grep` on a lazy pipeline OR an infinite
+            // sequence/closure spec appends another stage (interpreter dispatch
+            // via `is_lazy_pipe_source`); laziness-preserving coercions return
+            // the list unchanged (native dispatch) — neither forces.
+            && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && (matches!(method, "map" | "grep") || Self::lazy_pipe_preserving_coercion(method)))
+            // On an infinite sequence/closure spec the count/numeric coercions
+            // produce a *soft* X::Cannot::Lazy Failure (recoverable with `//`),
+            // emitted by the 0-arg native dispatch — they must not be hard-forced.
+            && !(ll.is_infinite_spec() && matches!(method, "elems" | "Int" | "Numeric"))
         {
             let saved_env = self.env().clone();
             // `.head(n)` only needs the first `n` elements: pull them lazily so
             // an infinite gather does not hang.
             let items = match Self::gather_head_bound(method, &args) {
                 Some(n) => self.force_lazy_list_vm_n(ll, n)?,
-                // A strict force of an infinite lazy pipeline cannot terminate:
-                // raise X::Cannot::Lazy with this method's name.
-                None if ll.lazy_pipe.is_some() => {
+                // A strict force of an infinite list (lazy pipeline / infinite
+                // sequence / closure spec) cannot terminate: raise
+                // X::Cannot::Lazy with this method's name.
+                None if ll.lazy_pipe.is_some() || ll.is_infinite_spec() => {
                     return Err(RuntimeError::cannot_lazy(method));
                 }
                 None => self.force_lazy_list_vm(ll)?,

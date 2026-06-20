@@ -50,13 +50,12 @@ pub(crate) fn infinite_int_range_to_lazy_array(value: &Value) -> Option<Value> {
         }
         _ => return None,
     };
-    // Seed the cache with the same bounded prefix `coerce_to_array` would have
-    // materialized, so eager read operations that consume the cache (`.head`,
-    // `.first`, `.map`, `.grep`, ...) behave exactly as today. The
-    // `SequenceSpec` lets `@a[N]` for `N` past the prefix reify on demand
-    // (`force_lazy_list_vm_n`), which a capped `ArrayKind::Lazy` Array could not.
-    let end = start.saturating_add(MAX_ARRAY_EXPAND);
-    let seeds: Vec<Value> = (start..=end).map(Value::Int).collect();
+    // Seed the cache with just the start element — true memory-laziness (L2b).
+    // The `SequenceSpec` lets every read op extend the cache on demand:
+    // `@a[N]` (`force_lazy_list_vm_n`), `.head(n)`/`.first` (bounded pull),
+    // `.map`/`.grep` (lazy pipe over the sequence). This makes `my @a = 1..*`
+    // O(1) memory instead of materializing a 100k-element prefix.
+    let seeds: Vec<Value> = vec![Value::Int(start)];
     let ll = LazyList::new_sequence(
         seeds,
         SequenceSpec::Arithmetic {

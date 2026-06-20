@@ -1985,6 +1985,30 @@ impl LazyList {
             && self.is_lazy_marked()
     }
 
+    /// Whether this list was produced from a `gather` block (carries the
+    /// `__mutsu_lazylist_from_gather` env marker).
+    pub(crate) fn is_from_gather(&self) -> bool {
+        matches!(
+            self.env.get("__mutsu_lazylist_from_gather"),
+            Some(Value::Bool(true))
+        )
+    }
+
+    /// Whether this list is an infinite arithmetic/geometric sequence
+    /// (`1..*`, `1,2,3...*`) or an infinite closure sequence (`1,1,*+*...*`).
+    /// These reify on demand via `force_lazy_list_vm_n` (`extend_sequence_cache`
+    /// / `extend_closure_sequence`), so a method that needs the whole list must
+    /// raise `X::Cannot::Lazy` rather than read the (tiny) seed cache (L2b).
+    pub(crate) fn is_infinite_spec(&self) -> bool {
+        self.sequence_spec.is_some() || self.closure_seq.is_some()
+    }
+
+    /// Gate for the VM force/incremental-pull dispatch block: a gather-sourced
+    /// list (eager or `lazy`) or an infinite sequence/closure spec.
+    pub(crate) fn needs_vm_lazy_dispatch(&self) -> bool {
+        self.is_from_gather() || self.is_infinite_spec()
+    }
+
     /// Whether this list carries the `lazy` prefix marker (set by the `lazy`
     /// statement prefix / `.lazy` method).
     fn is_lazy_marked(&self) -> bool {
