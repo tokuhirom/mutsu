@@ -268,7 +268,22 @@ impl Interpreter {
 
             // Invoke action methods if :actions was provided
             let match_obj = if let Some(ref mut actions) = actions_obj {
-                let result = self.invoke_grammar_actions(match_obj, actions, &start_rule)?;
+                // Action methods run with `self` bound to the actions object.
+                // Restore the caller's `self` afterwards so a nested sub in the
+                // caller (which resolves `self` from env via `GetSelfOrNoSelf`)
+                // doesn't see the actions object leaked in. (Same hazard the
+                // stringify path fixes for `try_compiled_method_or_interpret`.)
+                let saved_self = self.env.get("self").cloned();
+                let result = self.invoke_grammar_actions(match_obj, actions, &start_rule);
+                match saved_self {
+                    Some(s) => {
+                        self.env.insert("self".to_string(), s);
+                    }
+                    None => {
+                        self.env.remove("self");
+                    }
+                }
+                let result = result?;
                 // Update the actions attribute on the final Match to reflect
                 // any mutations that occurred during action method dispatch.
                 if let Value::Instance {
