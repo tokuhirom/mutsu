@@ -68,6 +68,9 @@ per-slot 書き戻しは `flush_local_to_env` (`vm/vm_env_helpers.rs`) が `code
 これは「設計された register モデル」ではなく「同じデータを 2 箇所に持つのを糊付けしている」症状で、
 単一権威ストアにすれば丸ごと消える。CP-3 で `Interpreter` への統合は済んだので、次の論理ステップは
 この二重ストアの一本化である。書き込み集中点 `vm_var_assign_ops.rs` が最大肥大ファイル (§6) なのも同根。
+この一本化は現在「Slice F」キャンペーンとして進行中 — 設計は
+[docs/vm-single-store.md](docs/vm-single-store.md)、収束点の前提となる env↔locals コヒーレンスは
+[docs/env-locals-coherence.md](docs/env-locals-coherence.md) を参照（[docs/vm-dual-store.md](docs/vm-dual-store.md) は撤回試行の履歴）。
 
 ### 1.3 クロージャが env ベース (upvalue 不在)
 

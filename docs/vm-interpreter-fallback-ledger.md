@@ -3,7 +3,9 @@
 最終ゴール「tree-walking Interpreter 実行パスの撤去 → dual-store 削除」（[PLAN.md](../PLAN.md) ①〜⑤）の
 **進捗台帳**。VM (`src/vm/`) が今も Interpreter (`src/runtime/`) に委譲しているサイトを 1 箇所ずつ列挙し、
 撲滅のたびに行を消す。関連: [vm-interpreter-dedup.md](vm-interpreter-dedup.md)（重複削除）、
-[vm-dual-store.md](vm-dual-store.md)（locals↔env）、[vm-decoupling.md](vm-decoupling.md)（dispatch）。
+[vm-single-store.md](vm-single-store.md)（locals↔env 一本化の**現行設計** = Slice F）、
+[vm-dual-store.md](vm-dual-store.md)（同・撤回試行の履歴）、[vm-decoupling.md](vm-decoupling.md)（dispatch）。
+個々のフォールバック撲滅は今や Slice F（単一ストア収束）の前段ステップとして理解する。
 
 ## 用語
 
