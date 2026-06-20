@@ -122,8 +122,19 @@ impl Interpreter {
         // chunks) keeps the gather body's side effects in step with the match
         // position, matching Rakudo (`.first(* >= 3)` runs the body exactly as
         // far as the first match, no further).
+        //
+        // Slice F (gather coroutine coherence): the matcher closure (`* >= 3`)
+        // runs via `exec` and leaves `self.current_code` pointing at *its* frame.
+        // `force_lazy_list_vm_n` captures `self.current_code` as the frame to
+        // reconcile a captured-outer write into (`my $c; gather { loop { $c++ } }`),
+        // so without restoring it each iteration the second-and-later forces
+        // reconcile the matcher's frame instead of the caller's, leaving the
+        // caller's `$c` slot stale under reverse-sync OFF. Pin the caller frame
+        // captured at entry and restore it before every force.
+        let caller_code = self.current_code;
         let mut idx = 0usize;
         loop {
+            self.current_code = caller_code;
             let items = match self.force_lazy_list_vm_n(list, idx + 1) {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
