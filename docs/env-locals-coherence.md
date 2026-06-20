@@ -639,6 +639,27 @@ Stage 3（reverse-sync デフォルト無効化→機構削除）が初めて射
     shared cell でなく coroutine env 経由＝reverse pull 前提。
   - `roast/S04-blocks-and-statements/pointy-rw.t` test 8: `$pair.values should be rw (2)`＝lvalue-method
     rw alias の frame 跨ぎ。
-- **方針（ユーザー選択: full Stage 3・CI を net に fix-forward）**: draft PR で full roast CI を回し、
-  roast-only OFF 依存の完全リストを取得→各々 write-through / shared-cell 化で fix-forward→green で ready。
-  これら rw-alias-through-frame は「first-class container / shared cell」substrate（§4-A 系）に接続。
+- **方針（ユーザー選択: full Stage 3・CI を net に fix-forward）**: draft PR #3349。local `make roast`
+  で roast-only OFF 依存の完全リストを取得（**14 件**・flaky 除外後）→各々 toggle 非依存 reconcile で fix-forward。
+
+### 7.1 roast OFF 依存 14 件の fix-forward（13/14 解決）
+
+完全リスト（OFF=fail ON=pass を `MUTSU_REVERSE_SYNC=1` で確認・flaky の set/baghash/junctions/IO-Socket-Async 除外）:
+
+| # | file | 真因 | 修正 |
+|---|------|------|------|
+| 1-9 | pointy-rw, gather(take-rw), S14-roles/{anonymous,parameterized-mixin,rw}, S12-meta/primitives, S04-terminator, S02-symbolic-deref, S32-hash/kv | **block-taking Test 関数**（`lives-ok{}`/`subtest`/`throws-like`）が `__mutsu_test_callsite_line` named arg のため `exec_exec_call_pairs_op` 経由→block を interpreter で実行→`is rw` for-alias 等を env に名前書き（carrier 未ログ）。pairs op の carrier fallback が env_dirty=true だけで reconcile せず | `exec_exec_call_pairs_op`（無条件）+ `exec_exec_call_op` の `!fully` 枝に `reconcile_locals_from_env_at_site` |
+| 10-11 | S14-roles/{mixin-6e,submethods-6e} | `$obj does/but Role` の `submethod BUILD/TWEAK` が captured outer を名前書き。`exec_does_op`/`exec_does_var_op` は **toggle-gated** `sync_locals_from_env`、`exec_but_mixin_op` は **sync 皆無** | does×2 を toggle 非依存 reconcile に差替、but に reconcile 追加（`ButMixin` op に `code` 渡す） |
+| 12 | S32-str/substr-rw | `$r := substr-rw($s); $r = v` の **Proxy STORE** が referent `$s` を名前書き | scalar-assign の Proxy STORE 3 サイト（`assign_proxy_lvalue` 後）に reconcile |
+| 13 | S03-operators/notandthen | `andthen`/`notandthen` の `OpCode::CallDefined` が **user `method defined`** を dispatch→captured `$calls++` | CallDefined の user-method 枝のみ reconcile（native check は pure 維持） |
+| **14** | **S32-str/val.t（未解決）** | **多段 sigilless-alias chain**: `for @ok -> \value,@strings { ok-val(value,@strings) }` → `ok-val(\value)` param → 内側 `for ... -> $string,\value` → subtest closure が `value` を**読む**。OFF で深いフレーム跨ぎの sigilless `\value` が subtest closure 内で stale（661 subtest fail）。**= multi-frame retention 壁（read-coherence）**・write-back 系の reconcile では届かない | **未解決**。次セッションの focused 課題。sigilless for-rebind の env flush + nested-closure capture 同期 or shared-cell が要る |
+
+make test PASS（985 files / 9622 tests）。**Stage 3 は val.t 1 件で merge blocked**（whitelisted）。draft PR #3349
+に 13/14 着地。**val.t は multi-frame sigilless retention＝独立 substrate**（earlier memory の「multi-frame
+retention 壁」と同根）で、本セッションの「interpreter-run path が caller lexical を名前書き→call-site で
+toggle 非依存 reconcile」パターンとは別系。次セッション＝val.t（sigilless multi-frame）を focused に。
+
+**教訓**: Stage 3 で surface した 14 件は t/ scan 非代表だったが、**13 件は単一パターン**（interpreter-run
+op が caller lexical を名前書きするが call-site で reconcile しない）の異なる発現で、各 op site に
+`reconcile_locals_from_env_at_site(code)` を足すだけで解けた（ON で byte-identical）。残り val.t だけが
+read-direction の multi-frame retention で質的に異なる。
