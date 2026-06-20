@@ -190,7 +190,7 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
         第32–33セッションで実依存を多数発見・write-through 化: 0-arg fast-call 捕捉（#3317）・dynamic var callee write（#3320）・
         regex `~~` match（#3321）・method 捕捉（#3322）・qualified/our sub 捕捉（#3323）・dynamic var env-read（#3324）・
         light/positional-light 捕捉（#3326）・**deferred role body 捕捉（#3327）**・**deferred class body 捕捉（#3328）**・
-        **import された symbol/`constant`（#3329）**・sigilless param alias（#3318）・**例外脱出 UNDO/LEAVE 捕捉（#3331）**。
+        **import された symbol/`constant`（#3329）**・sigilless param alias（#3318）・**例外脱出 UNDO/LEAVE 捕捉（#3332）**。
       pin: `t/{rw-param,method-rw-param,closure-captured-var,rw-sub-lvalue,mut-method-receiver,sigilless-alias,dynamic-var,
       qualified-sub-captured-var,method-captured-var,light-call-captured-var,run-nested-role-body,class-body-captured-var,
       import-constant,undo-phaser}-writeback-coherence.t` 他。
@@ -198,7 +198,7 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
       - carrier（EVAL/regex/`s///`・require BEGIN EVAL）・supply/concurrent（done/react/whenever）・attribute trait_mod・slurpy-junction。
       DEFERRED（壁）= multi-frame retention（caller→mid→writer・lazy-eval 衝突 #3317）・range map/grep（lazy-eval）・
       pair-value hash（§4-A container-identity deep wall）・**nested-sub の例外脱出 UNDO 捕捉**（`outer(){ my $ng; sub fails(){ UNDO {$ng~=...}; die }; ...}`：
-      nested named sub は compiled_fns 不在で OTF/interpreter fallback 経路へ → pending 未記録。top-level sub は #3331 で解消済・roast keep-undo.t は top-level のみ使用）。
+      nested named sub は compiled_fns 不在で OTF/interpreter fallback 経路へ → pending 未記録。top-level sub は #3332 で解消済・roast keep-undo.t は top-level のみ使用）。
       詳細・手順 = memory `project_dual_store_unification_next`。
       別途 ON-mode 既存バグ（dual-store 無関係・別 PR）: class body 内で `@outer.elems` が 1（outer array visibility）。
 - [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
