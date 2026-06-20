@@ -471,13 +471,6 @@ impl Interpreter {
         } else {
             self.auto_fetch_proxy_args(args)?
         };
-        // Slice F: snapshot whether a callable was passed before `args` is moved
-        // into dispatch. A native builtin that runs a caller-supplied thunk (the
-        // X/Z-metaop thunks `__mutsu_reverse_xx`/`__mutsu_*_shortcircuit`, which
-        // run the thunk via the interpreter and write its captured-outer
-        // mutation into env *by name*) leaves the caller's local slot stale; the
-        // tail reconciles it from env when this flag is set.
-        let args_callable = Self::args_have_callable(&args);
         loan_env!(self, set_pending_callsite_line(callsite_line));
         // Check if there's a CALL-ME override from trait_mod mixin
         let call_me_override =
@@ -584,14 +577,14 @@ impl Interpreter {
         // Slice F: write any `is rw` parameter writeback through to the caller's
         // local slot (see `apply_pending_rw_writeback`).
         self.apply_pending_rw_writeback(code);
-        // Slice F: a native builtin that ran a caller-supplied thunk (X/Z-metaop
-        // thunks) wrote the thunk's captured-outer mutation into env by name but
-        // recorded no `pending_rw_writeback_sources` (it dispatches via the
-        // interpreter, not the VM closure path). Reconcile the caller's slots
-        // from env so the write is visible without the reverse pull. Gated on a
-        // callable argument + `env_dirty`, i.e. exactly when ON would have
-        // pulled, so ON behavior is unchanged.
-        if args_callable && self.env_dirty {
+        // Slice F: a function call that dirtied env may have mutated a caller's
+        // captured-outer lexical by name — a native builtin running a thunk
+        // (X/Z-metaop thunks), a `multi sub` candidate body (`$reached = True`),
+        // an interpreter fallback, ... Reconcile the caller's slots from env so
+        // the write is visible without the reverse pull. Gated on `env_dirty`,
+        // exactly when the barrier would have pulled, so ON behavior is
+        // unchanged; a pure compiled call (env not dirtied) pays nothing.
+        if self.env_dirty {
             self.reconcile_locals_from_env_at_site(code);
         }
         self.stack.push(result);

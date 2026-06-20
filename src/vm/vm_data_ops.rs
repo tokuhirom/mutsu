@@ -339,6 +339,11 @@ impl Interpreter {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
+        // Slice F: a user `.gist`/`.Str` closure run below can mutate a
+        // captured-outer caller lexical (`say $x but role { method gist {$seen=1} }`).
+        // `say` is a dedicated op (no `code` param), so capture the caller frame's
+        // code before any dispatch clobbers `current_code` and reconcile after.
+        let caller_code = self.current_code;
         let mut parts = Vec::new();
         for v in &values {
             let v = loan_env!(self, auto_fetch_proxy(v))?;
@@ -351,6 +356,7 @@ impl Interpreter {
                 parts.push(runtime::gist_value(&v));
             }
         }
+        self.reconcile_caller_after_lazy_force(caller_code);
         let line = parts.join("");
         loan_env!(self, write_to_named_handle("$*OUT", &line, true))?;
         Ok(())
@@ -363,6 +369,8 @@ impl Interpreter {
         } else {
             let start = self.stack.len() - n;
             let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
+            // Slice F: see exec_say_op — reconcile after a user `.gist` closure.
+            let caller_code = self.current_code;
             let mut parts = Vec::new();
             for v in &values {
                 if needs_method_dispatch(v) {
@@ -371,6 +379,7 @@ impl Interpreter {
                     parts.push(runtime::gist_value(v));
                 }
             }
+            self.reconcile_caller_after_lazy_force(caller_code);
             parts.join("")
         };
         loan_env!(self, write_to_named_handle("$*ERR", &content, true))?;

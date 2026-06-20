@@ -1,28 +1,6 @@
 use super::*;
 
 impl Interpreter {
-    /// True if any argument is a callable (a block/closure/routine value), or a
-    /// list/array argument that *directly contains* one. Used by the method- and
-    /// function-call ops to decide whether a call may have run a caller-captured
-    /// block that mutated an outer lexical, and therefore whether the caller's
-    /// local slots need reconciling from env (Slice F). The one-level descent
-    /// into list args catches the X/Z-metaop short-circuit thunks, which are
-    /// passed as an `(thunk, ...)` list to `__mutsu_zip_shortcircuit` &c.
-    pub(super) fn args_have_callable(args: &[Value]) -> bool {
-        fn is_callable(v: &Value) -> bool {
-            matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
-        }
-        args.iter().any(|a| {
-            is_callable(a)
-                || match a {
-                    Value::Array(items, _) => items.items.iter().any(is_callable),
-                    Value::Seq(items) => items.iter().any(is_callable),
-                    Value::Slip(items) => items.iter().any(is_callable),
-                    _ => false,
-                }
-        })
-    }
-
     /// Slice 2a: clear the aggregate held inside a shared `ContainerRef` cell
     /// (`undefine @ary` where `my $r = @ary` promoted `@ary` to a cell). Uses
     /// `Arc::make_mut` so a copy taken out of the cell (`my @copy = @ary`) is
@@ -666,7 +644,14 @@ impl Interpreter {
     ///
     /// Both are byte-identical to the work reverse-sync ON would do (the call-op
     /// drain + the barrier pull), so ON behavior is unchanged.
-    fn reconcile_caller_after_lazy_force(&mut self, caller_code: usize) {
+    ///
+    /// Also used by op handlers that run user code without a `code` parameter in
+    /// hand (`say`/`note`, which dispatch a `.gist`/`.Str` closure that can
+    /// mutate a captured-outer lexical): they capture `self.current_code` before
+    /// the dispatch and pass it here afterwards. `caller_code` is the address of
+    /// the caller frame's `CompiledCode`, captured before the inner `exec_one`
+    /// runs clobbered `current_code`.
+    pub(super) fn reconcile_caller_after_lazy_force(&mut self, caller_code: usize) {
         // The force body's own `exec_one` runs reset `current_code` to the lazy
         // body; restore it to the caller so a subsequent force in the same op
         // handler reconciles the right frame.
