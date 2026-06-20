@@ -556,6 +556,16 @@ impl Compiler {
         } else if (name == "?CLASS" || name == "?ROLE") && !self.local_map.contains_key(name) {
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
             self.code.emit(OpCode::GetGlobal(name_idx));
+        } else if name.starts_with('*') {
+            // Dynamic variables (`$*x`) are dynamic-scope: even when `my $*x`
+            // allocated a local slot, read straight from `env` by name so a
+            // callee's `$*x = …` (which always writes env — dynamic scope) is
+            // visible here WITHOUT the reverse `sync_locals_from_env` pull
+            // (Slice F). Writes already reach env; the slot is now read-vestigial.
+            let name_idx = self
+                .code
+                .add_constant(Value::str(self.qualify_variable_name(name)));
+            self.code.emit(OpCode::GetGlobal(name_idx));
         } else if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::GetLocal(slot));
         } else {
