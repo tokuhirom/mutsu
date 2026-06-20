@@ -180,17 +180,28 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
                 （rebind 許可と cell 共有の両立）。
       - Phase 0.5 第2段（任意・実挙動変化）: `GetArrayVar`/`Index` の auto-decont + 新 lvalue opcode の本配線。
       - Phase 3 機会的残: 属性束縛（`$!x :=` / per-attribute container template、S03-binding/attributes・S14-traits 5-8）。
-- [~] **Slice F coherence — write-through ファミリー（#3300–#3311, 2026-06-19）= `t/` が reverse-sync 非依存に到達**:
-      reverse-sync（`sync_locals_from_env`）が backstop していた by-name writer を、call-site op（caller `code` 保有）で
+- [~] **Slice F coherence — write-through ファミリー（#3300–#3329, 2026-06-19〜20）= reverse-sync 依存を順次 write-through 化**:
+      reverse-sync（`sync_locals_from_env`）が backstop していた by-name writer を、call-site / registration op（caller `code` 保有）で
       caller local slot へ直接 write-through する共通機構 `pending_rw_writeback_sources` + `apply_pending_rw_writeback(code)` に
-      畳んだ。スライス: lvalue-method（#3300）・for-loop QuantHash topic（#3302）・**sub `is rw`/`is raw` param（#3304）**・
-      **method `is rw`/`is raw` param + `is raw` 脱落バグ（#3305）**・**closure 捕捉変数（#3307）**・**`is rw` sub lvalue 返り（#3309）**・
-      **mut-method receiver（Array/Hash-backed instance・#3311）**。診断トグル `MUTSU_NO_REVERSE_SYNC=1`。
-      **★全 `t/`(~950) を ON/OFF 差分スキャン2通り（`onf==0&&offf>0` / `offf>onf`）で 0 件＝`t/` は reverse-sync 非依存。**
-      pin: `t/{rw-param,method-rw-param,closure-captured-var,rw-sub-lvalue,mut-method-receiver}-writeback-coherence.t`。
-      **残る依存は roast レベルのみ（carrier=EVAL/regex/`s///`・supply/concurrent）= NEXT SESSION**（手順・スクリプト・機構リファレンス
-      ＝memory `project_dual_store_unification_next` の「NEXT SESSION 準備」節）。DEFERRED=range map/grep（lazy-eval・ブロックが
-      sink forcing 時に走る）・pair-value hash（§4-A container-identity deep wall）。
+      畳む。診断トグル `MUTSU_NO_REVERSE_SYNC=1`（`MUTSU_NO_REVERSE_SYNC=0` でも OFF 扱い＝ON 測定は `env -u` で unset 必須）。
+      - 第1陣 #3300–#3311: lvalue-method（#3300）・for-loop QuantHash topic（#3302）・sub/method `is rw`/`is raw` param（#3304/#3305）・
+        closure 捕捉変数（#3307）・`is rw` sub lvalue 返り（#3309）・mut-method receiver（#3311）。
+      - **★第31セッションの「全 `t/` reverse-sync 非依存（差分スキャン0件）」は測定エラー（トグル未発火の偽陰性）と判明・取り下げ。**
+        第32–33セッションで実依存を多数発見・write-through 化: 0-arg fast-call 捕捉（#3317）・dynamic var callee write（#3320）・
+        regex `~~` match（#3321）・method 捕捉（#3322）・qualified/our sub 捕捉（#3323）・dynamic var env-read（#3324）・
+        light/positional-light 捕捉（#3326）・**deferred role body 捕捉（#3327）**・**deferred class body 捕捉（#3328）**・
+        **import された symbol/`constant`（#3329）**・sigilless param alias（#3318）。
+      pin: `t/{rw-param,method-rw-param,closure-captured-var,rw-sub-lvalue,mut-method-receiver,sigilless-alias,dynamic-var,
+      qualified-sub-captured-var,method-captured-var,light-call-captured-var,run-nested-role-body,class-body-captured-var,
+      import-constant}-writeback-coherence.t` 他。
+      **残る OFF 依存（roast/`t/` 共通）= 次セッション以降のグラインド対象**:
+      - **keep-undo / 例外脱出 writeback（root cause 判明・slice6-8 より大）**: call dispatch の Err 経路で free-var writeback 記録も
+        env merge もスキップ（`run_leave_queue_guarded` が UNDO を sub `code` 内実行→`$ng` を sub env に書くが Err 返りで writeback 未到達）。
+        要 = 各 dispatch variant の Err 経路で pending 記録 + call-site が Err 伝播前に drain。probe=`tmp/probe-undo.p6`。
+      - carrier（EVAL/regex/`s///`・require BEGIN EVAL）・supply/concurrent（done/react/whenever）・attribute trait_mod・slurpy-junction。
+      DEFERRED（壁）= multi-frame retention（caller→mid→writer・lazy-eval 衝突 #3317）・range map/grep（lazy-eval）・
+      pair-value hash（§4-A container-identity deep wall）。詳細・手順 = memory `project_dual_store_unification_next`。
+      別途 ON-mode 既存バグ（dual-store 無関係・別 PR）: class body 内で `@outer.elems` が 1（outer array visibility）。
 - [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
       **前提 = roast-level reverse-sync 依存（carrier/supply）も write-through 化 or cell 共有で解消。** ここで初めて pairs/slip
       carrier-drop も安全化し、`locals` が単一権威・`env` は派生ビューになる。
