@@ -168,11 +168,12 @@ impl Interpreter {
                             // recorded through to this caller frame's local slots
                             // (the slow dispatch path drains too; the cached fast
                             // path must as well or a second call's write is lost).
-                            self.apply_pending_rw_writeback(code);
-                            // Compiled path: positional_light's scoped-overlay
-                            // merge already sets env_dirty iff a captured-outer
-                            // write happened. A blanket set here would force a
-                            // redundant locals pull on every pure call (e.g. fib).
+                            // The env_dirty-gated reconcile also catches a
+                            // *nested* callee's captured-outer write (multi-frame
+                            // accumulation), which the single-frame drain misses.
+                            // The reconcile is free for a pure call (env not
+                            // dirtied — e.g. fib).
+                            self.drain_and_reconcile_after_cached_call(code);
                             return Ok(());
                         }
                     }
@@ -224,10 +225,10 @@ impl Interpreter {
                         self.stack.push(result);
                         // Slice F: drain captured-outer writes through to this
                         // caller frame's local slots (see the positional-light
-                        // cached path above).
-                        self.apply_pending_rw_writeback(code);
-                        // Compiled path: light's scoped-overlay merge already
-                        // signals env_dirty only on a captured-outer write.
+                        // cached path above). The env_dirty-gated reconcile also
+                        // covers a nested callee's captured-outer write
+                        // (multi-frame accumulation).
+                        self.drain_and_reconcile_after_cached_call(code);
                         return Ok(());
                     }
                 }
@@ -320,7 +321,11 @@ impl Interpreter {
                         // Put CF back in cache
                         self.otf_call_cache.insert(name_sym, cf);
                         let result = result?;
-                        self.apply_pending_rw_writeback(code);
+                        // Slice F: drain this frame's recorded captured-outer
+                        // writes, plus (env_dirty-gated) reconcile to catch a
+                        // nested callee's captured-outer write that the
+                        // single-frame drain misses (multi-frame accumulation).
+                        self.drain_and_reconcile_after_cached_call(code);
                         self.stack.push(result);
                         // Slice 6.3 step 2: all three sub-cases now signal env_dirty
                         // precisely — light / positional_light via their scoped-overlay
@@ -410,8 +415,12 @@ impl Interpreter {
                 self.stack.push(result);
                 // Slice F: write any captured-outer variables the callee mutated
                 // straight through to this caller's local slots, so they stay
-                // coherent without the reverse `sync_locals_from_env` pull.
-                self.apply_pending_rw_writeback(code);
+                // coherent without the reverse `sync_locals_from_env` pull. The
+                // env_dirty-gated reconcile additionally catches a *nested*
+                // callee's captured-outer write (`via()` -> `bump-outer()` ->
+                // `$acc`), which the single-frame drain discards one frame too
+                // deep, so `via(); via()` accumulates correctly.
+                self.drain_and_reconcile_after_cached_call(code);
                 // Slice 6.3 step 2: no blanket env_dirty here. call_compiled_function_fast
                 // now signals env_dirty precisely: for a function WITH locals via its
                 // scoped-overlay / clone merge (captured-outer write only), and for a
@@ -511,6 +520,11 @@ impl Interpreter {
             && let Some(sub_val) = self.get_wrapped_sub(&name)
         {
             let result = self.vm_call_sub_value(sub_val, args, false)?;
+            // Slice F (multi-frame coherence): a wrapper closure (`&f.wrap(-> {
+            // $seen = True; callsame })`) mutates a captured caller lexical by
+            // name. This branch blanket-marks `env_dirty`, so reconcile the
+            // caller's slots from env too — the reverse pull would have, in ON.
+            self.reconcile_locals_from_env_at_site(code);
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -528,6 +542,10 @@ impl Interpreter {
         // interpreter terminal.
         if let Some(callable) = lexical_override {
             let result = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
+            // Slice F (multi-frame coherence): the dispatched lexical callable may
+            // mutate a caller lexical by name; this branch blanket-marks
+            // `env_dirty`, so reconcile the caller's slots from env too.
+            self.reconcile_locals_from_env_at_site(code);
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
@@ -776,6 +794,16 @@ impl Interpreter {
         let result = result?;
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?;
         self.apply_pending_rw_writeback(code);
+        // Slice F (multi-frame coherence): a closure value invoked here
+        // (`$code()`/`$blk()`) — or a nested method/closure it calls — can mutate
+        // one of this caller frame's lexicals by name (e.g. a `$*OUT.print` whose
+        // method closes over the caller's `$output`). Reconcile the caller's slots
+        // from env so the write is visible at the next GetLocal without the reverse
+        // `sync_locals_from_env` pull. This path unconditionally marks `env_dirty`
+        // below (it cannot track the dispatched closure's writes precisely), so the
+        // reconcile is unconditional too — matching the blanket dirtiness the
+        // reverse pull would have acted on in the ON path.
+        self.reconcile_locals_from_env_at_site(code);
         self.stack.push(result);
         self.env_dirty = true;
         Ok(())
@@ -860,6 +888,11 @@ impl Interpreter {
         };
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
         self.apply_pending_rw_writeback(code);
+        // Slice F (multi-frame coherence): see `exec_call_on_value_op`. A code var
+        // invoked by name (`&foo()` / `$blk()`) — or a callee it forwards to — may
+        // mutate a caller lexical by name; reconcile the caller's slots from env
+        // (this path also blanket-marks `env_dirty` below, so reconcile too).
+        self.reconcile_locals_from_env_at_site(code);
         self.stack.push(result);
         self.env_dirty = true;
         Ok(())
