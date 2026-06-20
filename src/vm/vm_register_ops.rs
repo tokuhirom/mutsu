@@ -1447,6 +1447,13 @@ impl Interpreter {
                 }
             }
 
+            // Slice F: write the deferred body's outer-lexical mutations through
+            // to this caller frame's local slots (`register_class_decl` ran the
+            // body via `run_block_raw`, which recorded them); keeps e.g.
+            // `$tracker` coherent without the reverse pull. This op holds the
+            // outer `code`.
+            self.apply_pending_rw_writeback(code);
+
             self.env_dirty = true;
             Ok(())
         } else {
