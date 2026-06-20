@@ -1,13 +1,26 @@
 use super::*;
 
 impl Interpreter {
-    /// True if any argument is a callable (a block/closure/routine value). Used
-    /// by the method-call ops to decide whether a `mark_dirty` method may have
-    /// run a caller-captured block that mutated an outer lexical, and therefore
-    /// whether the caller's local slots need reconciling from env (Slice F).
+    /// True if any argument is a callable (a block/closure/routine value), or a
+    /// list/array argument that *directly contains* one. Used by the method- and
+    /// function-call ops to decide whether a call may have run a caller-captured
+    /// block that mutated an outer lexical, and therefore whether the caller's
+    /// local slots need reconciling from env (Slice F). The one-level descent
+    /// into list args catches the X/Z-metaop short-circuit thunks, which are
+    /// passed as an `(thunk, ...)` list to `__mutsu_zip_shortcircuit` &c.
     pub(super) fn args_have_callable(args: &[Value]) -> bool {
-        args.iter()
-            .any(|a| matches!(a, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }))
+        fn is_callable(v: &Value) -> bool {
+            matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+        }
+        args.iter().any(|a| {
+            is_callable(a)
+                || match a {
+                    Value::Array(items, _) => items.items.iter().any(is_callable),
+                    Value::Seq(items) => items.iter().any(is_callable),
+                    Value::Slip(items) => items.iter().any(is_callable),
+                    _ => false,
+                }
+        })
     }
 
     /// Slice 2a: clear the aggregate held inside a shared `ContainerRef` cell
