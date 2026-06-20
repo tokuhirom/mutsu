@@ -1183,6 +1183,17 @@ pub struct Interpreter {
     pub(crate) for_param_restore_stack: Vec<(String, Option<Value>)>,
     pub(crate) call_frames: Vec<crate::vm::VmCallFrame>,
     pub(crate) env_dirty: bool,
+    /// Address of the `CompiledCode` of the bytecode frame currently executing
+    /// in `exec_one` (set at the top of every dispatch). Used by the lazy-force
+    /// machinery to reconcile the *caller's* local slots from env after a reify
+    /// mutated a captured-outer lexical (Slice F: the lazy body runs at reify
+    /// time, deep inside an op handler, so its captured-outer write reaches env
+    /// but not the caller slot under reverse-sync OFF). Stored as an address
+    /// (not a raw pointer) so the interpreter stays `Send` for worker threads;
+    /// it is only dereferenced synchronously within the same call tree, where
+    /// the pointed-to `CompiledCode` is an ancestor stack frame and therefore
+    /// alive. `0` before any frame runs. Reset across thread clones.
+    pub(crate) current_code: usize,
     /// When `Some`, a *carrier* (EVAL / interpreter fallback) is running and
     /// every by-name env write through `set_env_with_main_alias` logs its name
     /// here. On carrier return, exactly these names are written back into the
@@ -3368,6 +3379,7 @@ impl Interpreter {
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
             env_dirty: false,
+            current_code: 0,
             carrier_writes: None,
             method_dispatch_pure: false,
             resume_ip: None,
@@ -5927,6 +5939,7 @@ impl Interpreter {
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
             env_dirty: false,
+            current_code: 0,
             carrier_writes: None,
             method_dispatch_pure: false,
             resume_ip: None,

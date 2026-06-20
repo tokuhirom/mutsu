@@ -1,6 +1,15 @@
 use super::*;
 
 impl Interpreter {
+    /// True if any argument is a callable (a block/closure/routine value). Used
+    /// by the method-call ops to decide whether a `mark_dirty` method may have
+    /// run a caller-captured block that mutated an outer lexical, and therefore
+    /// whether the caller's local slots need reconciling from env (Slice F).
+    pub(super) fn args_have_callable(args: &[Value]) -> bool {
+        args.iter()
+            .any(|a| matches!(a, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }))
+    }
+
     /// Slice 2a: clear the aggregate held inside a shared `ContainerRef` cell
     /// (`undefine @ary` where `my $r = @ary` promoted `@ary` to a cell). Uses
     /// `Arc::make_mut` so a copy taken out of the cell (`my @copy = @ary`) is
@@ -416,6 +425,13 @@ impl Interpreter {
         &mut self,
         list: &LazyList,
     ) -> Result<Vec<Value>, RuntimeError> {
+        let caller_code = self.current_code;
+        let r = self.force_lazy_list_vm_inner(list);
+        self.reconcile_caller_after_lazy_force(caller_code);
+        r
+    }
+
+    fn force_lazy_list_vm_inner(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
         // Handle scan-based lazy lists: compute elements on demand
         if list.scan_spec.is_some() {
             return self.force_scan_lazy_list(list, 200_000);
@@ -611,6 +627,55 @@ impl Interpreter {
     /// Side effects (e.g. `$count++`) are correctly scoped because we pause
     /// mid-execution rather than re-running from scratch.
     pub(super) fn force_lazy_list_vm_n(
+        &mut self,
+        list: &LazyList,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let caller_code = self.current_code;
+        let r = self.force_lazy_list_vm_n_inner(list, needed);
+        self.reconcile_caller_after_lazy_force(caller_code);
+        r
+    }
+
+    /// Reconcile the caller frame's local slots after a lazy force, so a
+    /// captured-outer lexical mutated at reify time (e.g. `map({$c++})`,
+    /// `gather`) is visible in the caller's slots even when the blanket reverse
+    /// pull (`sync_locals_from_env`) is disabled (Slice F campaign). Two reify
+    /// shapes record their writes differently and both must be drained here —
+    /// the force machinery is the effective "call site" for the callbacks it
+    /// runs, but unlike a real call op it never drains them:
+    ///
+    /// - a `map`/`grep` callback runs via `call_compiled_closure`, which logs
+    ///   the changed caller free-vars into `pending_rw_writeback_sources`
+    ///   (drained by `apply_pending_rw_writeback`, as every call op does);
+    /// - a `gather` body merges its env changes and sets `env_dirty`, mirrored
+    ///   by `reconcile_locals_from_env_at_site` (the #3331 helper).
+    ///
+    /// Both are byte-identical to the work reverse-sync ON would do (the call-op
+    /// drain + the barrier pull), so ON behavior is unchanged.
+    fn reconcile_caller_after_lazy_force(&mut self, caller_code: usize) {
+        // The force body's own `exec_one` runs reset `current_code` to the lazy
+        // body; restore it to the caller so a subsequent force in the same op
+        // handler reconciles the right frame.
+        self.current_code = caller_code;
+        if caller_code == 0 {
+            return;
+        }
+        if self.env_dirty || !self.pending_rw_writeback_sources.is_empty() {
+            // SAFETY: `caller_code` is the address of the `CompiledCode` of the
+            // bytecode frame that invoked this force. That frame is an ancestor
+            // on the call stack (the op handler driving the force) and is alive
+            // for the whole synchronous duration of the force, so the pointer is
+            // valid here.
+            let code = unsafe { &*(caller_code as *const CompiledCode) };
+            self.apply_pending_rw_writeback(code);
+            if self.env_dirty {
+                self.reconcile_locals_from_env_at_site(code);
+            }
+        }
+    }
+
+    fn force_lazy_list_vm_n_inner(
         &mut self,
         list: &LazyList,
         needed: usize,
