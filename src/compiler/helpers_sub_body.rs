@@ -341,6 +341,16 @@ impl Compiler {
         cf.precompute_named_param_slots();
         cf.detect_inner_subs();
         cf.compute_declared_locals();
+        // Contribute this directly-nested named sub's WRITE set to the enclosing
+        // scope so `compute_free_vars` can flag the locals it mutates as
+        // `needs_cell_named_sub` (the VM then boxes them at their declaration site
+        // for cross-call accumulation through a shared cell — see
+        // docs/captured-outer-cell-sharing.md). A named sub has no runtime creation
+        // op, so this compile-time pass is the only place to surface its writes.
+        self.code.named_sub_captures.push((
+            cf.code.free_var_writes.clone(),
+            cf.code.needs_cell_named_sub_free.clone(),
+        ));
         self.compiled_functions.insert(key, cf);
     }
 

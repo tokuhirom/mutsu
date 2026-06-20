@@ -3352,6 +3352,17 @@ impl Interpreter {
                     .map(|i| self.locals[i].clone())
             })
             .unwrap_or(Value::Nil);
+        // A boxed (shared-cell) scalar saves its INNER value, decoupled from the
+        // cell: otherwise the snapshot would be the same Arc that the dynamic-scope
+        // write mutates, so the restore would see the modified value, not the
+        // original (named-sub captured-outer boxing — see
+        // docs/captured-outer-cell-sharing.md). The matching write-through restore
+        // is in `restore_let_value`. Gated on the same toggle as the boxing it
+        // supports, so the default build is byte-identical to before.
+        let old_val = match old_val {
+            Value::ContainerRef(arc) if self.cell_boxing_active() => arc.lock().unwrap().clone(),
+            v => v,
+        };
         // For temp, deep-copy Array/Hash so the snapshot is independent of
         // future mutations (Arc is shared, so a shallow clone wouldn't work).
         let save_val = if is_temp {

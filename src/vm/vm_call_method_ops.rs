@@ -1256,9 +1256,7 @@ impl Interpreter {
                 // the barrier would have pulled — so this is byte-identical to the
                 // barrier under reverse-sync ON; a pure method call (env not
                 // dirtied) pays nothing.
-                if self.env_dirty {
-                    self.reconcile_locals_from_env_at_site(code);
-                }
+                self.blanket_reconcile_if_dirty(code);
                 // Wrap map/grep results back into HyperSeq/RaceSeq
                 if let Some(is_hyper) = hyper_race_wrap
                     && let Some(result) = self.stack.pop()
