@@ -1118,6 +1118,10 @@ impl Interpreter {
             ip,
             std::mem::discriminant(&code.ops[*ip])
         );
+        // Track the currently-executing frame's code so the lazy-force machinery
+        // can reconcile this (caller) frame's local slots from env after a reify
+        // that mutated a captured-outer lexical (Slice F). See `current_code`.
+        self.current_code = code as *const CompiledCode as usize;
         match &code.ops[*ip] {
             // -- Constants --
             OpCode::LoadConst(idx) => {

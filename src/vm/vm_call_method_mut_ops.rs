@@ -349,6 +349,9 @@ impl Interpreter {
         } else {
             raw_args
         };
+        // Slice F: snapshot whether a callable was passed before `args` is moved
+        // into dispatch, for the caller-slot reconcile at the call tail.
+        let args_callable = Self::args_have_callable(&args);
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
@@ -1528,12 +1531,14 @@ impl Interpreter {
                         }
                     }
                 }
-                // Slice F: reconcile a captured-outer lexical mutated by an
+                // Slice F: reconcile the caller's local slots from env after a
+                // method that may have mutated a captured-outer lexical — an
                 // interpreter-dispatched construction (`.new`/`.bless` running a
-                // `submethod BUILD`/`TWEAK`) at the call site, since that path
-                // bypasses the compiled-method writeback. See the CallMethod twin
-                // and `reconcile_locals_from_env_at_site`.
-                if mark_dirty && matches!(method.as_str(), "new" | "bless") {
+                // `submethod BUILD`/`TWEAK`), or a list method run with a block
+                // argument (`.map`/`.grep`/`.sort`/...) whose block mutates an
+                // outer lexical. See the CallMethod twin and
+                // `reconcile_locals_from_env_at_site`.
+                if mark_dirty && (matches!(method.as_str(), "new" | "bless") || args_callable) {
                     self.reconcile_locals_from_env_at_site(code);
                 }
             }
