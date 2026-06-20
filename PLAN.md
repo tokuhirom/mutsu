@@ -192,18 +192,23 @@ VM decoupling 完結（下記）で実行エンジンは単一 struct `Interpret
         light/positional-light 捕捉（#3326）・**deferred role body 捕捉（#3327）**・**deferred class body 捕捉（#3328）**・
         **import された symbol/`constant`（#3329）**・sigilless param alias（#3318）・**例外脱出 UNDO/LEAVE 捕捉（#3332）**・
         **junction autothread 捕捉（#3333）**・**eager `.map`/`.grep`（literal/Range/Seq）の捕捉（#3335）**・
-        **deep `:=` element bind/write（`$s[1]<k>[2]=v` / `:=$src`・`IndexAssignDeepNested`）の locals write-through（#3340）**。
+        **deep `:=` element bind/write（`$s[1]<k>[2]=v` / `:=$src`・`IndexAssignDeepNested`）の locals write-through（#3340）**・
+        **let/temp restore（`exec_let_block_op`/try restore 後の locals reconcile・#3341）**・
+        **pair-value 要素変異（`overwrite_{hash,array}_bindings_by_identity` の置換名を `pending_rw_writeback_sources` に記録・#3342）**。
       pin: `t/{rw-param,method-rw-param,closure-captured-var,rw-sub-lvalue,mut-method-receiver,sigilless-alias,dynamic-var,
       qualified-sub-captured-var,method-captured-var,light-call-captured-var,run-nested-role-body,class-body-captured-var,
-      import-constant,undo-phaser,junction-autothread,eager-map-grep-captured,deep-element-bind}-writeback-coherence.t` 他。
-      **残る OFF 依存（roast/`t/` 共通）= 次セッション以降のグラインド対象**:
-      - carrier（EVAL/regex/`s///`・require BEGIN EVAL・**`Xorelse`/`Zorelse` の `__mutsu_cross_shortcircuit` thunk**＝interpreter
-        builtin が thunk を `call_function`→carrier 経路で呼ぶ・`writeback_carrier_writes` が outer-frame slot を reconcile しない）・
-        supply/concurrent（done/react/whenever）・attribute trait_mod・slurpy-junction。
-      DEFERRED（壁）= multi-frame retention（caller→mid→writer・lazy-eval 衝突 #3317・**attribute default `has $.v = nn()` の捕捉副作用＝
-        `.new`→BUILDALL 跨ぎ multi-frame**）・range map/grep（lazy-eval）・
-      pair-value hash（§4-A container-identity deep wall）・**nested-sub の例外脱出 UNDO 捕捉**（`outer(){ my $ng; sub fails(){ UNDO {$ng~=...}; die }; ...}`：
-      nested named sub は compiled_fns 不在で OTF/interpreter fallback 経路へ → pending 未記録。top-level sub は #3332 で解消済・roast keep-undo.t は top-level のみ使用）。
+      import-constant,undo-phaser,junction-autothread,eager-map-grep-captured,deep-element-bind,let-temp-restore,
+      pair-value}-writeback*-coherence.t` 他。
+      **OFF 依存サーフェス（差分スキャン）= 第36セッションで 36→13 に激減**（#3342 の by-identity 記録が
+      eager-push 伝播/method 変異/grep-rw 等の全 shared-Arc by-name 変異を波及的に OFF-coherent 化＝
+      eval-carrier/attribute-trait-mod/methods-instance 等「multi-frame 壁」と見られていた多数を解消）。
+      **残る OFF 依存 13 = 真の壁（次セッション以降）**:
+      - **multi-frame retention**（closure-nested/multitier-overlay-env/scoped-overlay-env-dirty/slurpy-is-raw/
+        wrap-closure-capture/zeroarg-env-dirty＝caller→mid→writer の captured-outer 伝播・lazy-eval 衝突 #3317）。
+        **= 次の大物 substrate（lazy-force 境界で retention を抑止する設計が必要）。**
+      - **regex carrier**（regex-m-s の `s///`-topic `$_` writeback・regex-declarative-modifiers の `:let`）。
+      - **並行 cell**（done-paren-stmt-modifier/gather-infinite-coroutine/react-whenever-last-next/supply-* ＝
+        別スレッドが caller slot に到達不可・cell 共有 §4-A 前提）。
       詳細・手順 = memory `project_dual_store_unification_next`。
       別途 ON-mode 既存バグ（dual-store 無関係・別 PR）: class body 内で `@outer.elems` が 1（outer array visibility）。
 - [ ] **Slice F（収束点）** — coarse 機構削除（`env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`/`saved_env_dirty`）。
