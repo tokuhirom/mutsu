@@ -229,9 +229,6 @@ impl Interpreter {
         } else {
             raw_args
         };
-        // Slice F: snapshot whether a callable was passed before `args` is moved
-        // into dispatch, for the caller-slot reconcile at the call tail.
-        let args_callable = Self::args_have_callable(&args);
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethod target".to_string())
         })?;
@@ -1237,20 +1234,15 @@ impl Interpreter {
                     }
                 }
                 // Slice F: reconcile the caller's local slots from env after a
-                // method call that may have mutated a captured-outer lexical, so
-                // the write is coherent without the blanket `sync_locals_from_env`
-                // barrier pull. Two shapes need this:
-                //   * a construction (`.new`/`.bless`) running an interpreter
-                //     `submethod BUILD`/`TWEAK` that mutates an outer lexical by
-                //     name (bypasses the compiled-method `merge_method_env`);
-                //   * a list method run with a block argument (`.map`/`.grep`/
-                //     `.sort`/`.first`/...) whose block mutates a captured-outer
-                //     lexical (`$c` in `@a.map({$c++})`) — the native block loop
-                //     writes it to env but not the caller slot.
-                // Gated on `mark_dirty` (only when ON would have pulled) and, for
-                // the block case, on the presence of a callable argument, so a
-                // plain method call keeps paying nothing extra.
-                if mark_dirty && (matches!(method, "new" | "bless") || args_callable) {
+                // method call that dirtied env, so any captured-outer lexical the
+                // call mutated by name (a `submethod BUILD`/`TWEAK` during `.new`,
+                // a `.map`/`.grep`/`.sort` block, a `.gist`/`.Str` closure run by
+                // `say`/`note`, ...) is coherent without the blanket reverse
+                // `sync_locals_from_env` pull. Gated on `env_dirty` — exactly when
+                // the barrier would have pulled — so this is byte-identical to the
+                // barrier under reverse-sync ON; a pure method call (env not
+                // dirtied) pays nothing.
+                if self.env_dirty {
                     self.reconcile_locals_from_env_at_site(code);
                 }
                 // Wrap map/grep results back into HyperSeq/RaceSeq
