@@ -1689,6 +1689,12 @@ impl Interpreter {
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
+        // Slice F: an inc/dec (`$*foo++`) of a caller-declared dynamic variable
+        // writes only `env` by name; record it so the call-site drain writes it
+        // through to the caller frame's slot (mirrors the SetGlobal path).
+        if name.starts_with('*') {
+            self.pending_rw_writeback_sources.push(name.to_string());
+        }
         // Propagate via local_bind_pairs (for `:=` bindings within this scope
         // or cross-scope bindings resolved by resolve_pending_alias_binds).
         if let Some(source_idx) = code.locals.iter().position(|n| n == name) {
