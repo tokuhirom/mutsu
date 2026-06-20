@@ -164,6 +164,11 @@ impl Interpreter {
                                 name_str,
                             )?;
                             self.stack.push(result);
+                            // Slice F: drain any captured-outer writes the body
+                            // recorded through to this caller frame's local slots
+                            // (the slow dispatch path drains too; the cached fast
+                            // path must as well or a second call's write is lost).
+                            self.apply_pending_rw_writeback(code);
                             // Compiled path: positional_light's scoped-overlay
                             // merge already sets env_dirty iff a captured-outer
                             // write happened. A blanket set here would force a
@@ -217,6 +222,10 @@ impl Interpreter {
                         }
                         let result = self.call_compiled_function_light(cf, args, compiled_fns)?;
                         self.stack.push(result);
+                        // Slice F: drain captured-outer writes through to this
+                        // caller frame's local slots (see the positional-light
+                        // cached path above).
+                        self.apply_pending_rw_writeback(code);
                         // Compiled path: light's scoped-overlay merge already
                         // signals env_dirty only on a captured-outer write.
                         return Ok(());

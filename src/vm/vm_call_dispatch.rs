@@ -1257,6 +1257,21 @@ impl Interpreter {
             }
         }
 
+        // Slice F (env<->locals coherence): record the captured-outer variables
+        // this body writes so the call-site op writes their new env values straight
+        // through to the caller's local slots, dropping the dependency on the
+        // reverse `sync_locals_from_env` pull. Mirrors the fast-call (#3317) and
+        // named-dispatch (#3323) paths: `sub take($n) { $seen = $n }` writes its
+        // enclosing `$seen` by name. `free_var_writes` is empty for a pure body
+        // (no cost); the topic is excluded as a per-call alias.
+        for sym in &cf.code.free_var_writes {
+            sym.with_str(|fname| {
+                if fname != "_" && fname != "@_" && fname != "%_" {
+                    self.pending_rw_writeback_sources.push(fname.to_string());
+                }
+            });
+        }
+
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {
@@ -1636,6 +1651,17 @@ impl Interpreter {
                     self.env_dirty = true;
                 }
             }
+        }
+
+        // Slice F (env<->locals coherence): record the captured-outer variables
+        // this body writes so the call-site op writes them straight through to the
+        // caller's local slots (see `call_compiled_function_positional_light`).
+        for sym in &cf.code.free_var_writes {
+            sym.with_str(|fname| {
+                if fname != "_" && fname != "@_" && fname != "%_" {
+                    self.pending_rw_writeback_sources.push(fname.to_string());
+                }
+            });
         }
 
         match result {
