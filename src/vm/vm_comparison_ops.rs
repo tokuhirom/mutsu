@@ -1240,13 +1240,12 @@ impl Interpreter {
             }
             _ => None,
         };
-        // Sync env->locals first so that any values modified by interpreter
-        // calls (e.g. EVAL modifying $GLOBAL:: variables) are picked up
-        // before we overwrite env with local values for regex interpolation.
-        if self.env_dirty {
-            self.sync_locals_from_env(code);
-            self.env_dirty = false;
-        }
+        // Clear the env-dirty flag before overwriting env with local values for
+        // regex interpolation. The reverse env->locals pull this used to perform
+        // was removed in Stage 3 (the interpreter-bridge writes it covered, e.g.
+        // EVAL modifying a `$GLOBAL::` variable, are now reconciled by precise
+        // write-throughs at their own sites).
+        self.env_dirty = false;
         self.sync_regex_interpolation_env_from_locals(code);
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
         self.in_smartmatch_rhs = true;

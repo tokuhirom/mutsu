@@ -1,16 +1,16 @@
 use super::*;
 
 impl Interpreter {
-    /// Sync locals from env if the dirty flag is set, then clear the flag.
-    /// If locals are also dirty, flush them to env first so we don't lose
-    /// values that were only written to the locals array (fast-path SetLocal).
-    pub(super) fn ensure_locals_synced(&mut self, code: &CompiledCode) {
-        if self.env_dirty {
-            // Flush locals→env first so env has the latest simple-local values
-            // before we pull env→locals (which may overwrite them with stale data).
-            self.sync_locals_from_env(code);
-            self.env_dirty = false;
-        }
+    /// Clear the env-dirty flag at a barrier where the caller does not need a
+    /// reconcile. The blanket reverse `sync_locals_from_env` pull this used to
+    /// perform was removed in Stage 3 (docs/env-locals-coherence.md §7): every
+    /// by-name caller-lexical env write is now reconciled by a precise
+    /// write-through (`pending_rw_writeback_sources` /
+    /// `reconcile_locals_from_env_at_site` / carrier logging) at the sites that
+    /// need it. This barrier therefore only clears the flag — preserving the
+    /// no-op-pull behavior the default (reverse-sync-off) build already shipped.
+    pub(super) fn ensure_locals_synced(&mut self, _code: &CompiledCode) {
+        self.env_dirty = false;
     }
 
     /// Collapse the interpreter's env to a flat (`parent=None`) env if it is
@@ -308,81 +308,19 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn sync_locals_from_env(&mut self, code: &CompiledCode) {
-        crate::vm::vm_stats::record_locals_pull();
-        // Campaign diagnostic (Slice F): skip the actual reverse pull so a slice
-        // can verify a test no longer depends on it. See `reverse_sync_disabled`.
-        if crate::vm::vm_stats::reverse_sync_disabled() {
-            return;
-        }
-        // Slice A (docs/vm-single-store.md): when stats are on, measure the
-        // *precision* of the reverse sync — how many of the slots this pull
-        // overwrites were genuinely stale (env differed from local) vs already
-        // coherent. The whole comparison short-circuits when stats are off, so
-        // there is zero release-build cost (the `.cloned()` below was already
-        // unconditional). `cheaply_unchanged` is the same conservative
-        // value-identity test `merge_method_env` uses (it reports "changed" on a
-        // value-equal but distinct Arc, so this slightly over-counts stale — the
-        // safe direction for a "what must the precise model preserve" survey).
-        let stats_on = crate::vm::vm_stats::enabled();
-        let mut any_stale = false;
-        for (i, name) in code.locals.iter().enumerate() {
-            // Don't overwrite HashSlotRef locals with env values.
-            // These are live container references from `:=` binding and must
-            // not be replaced by stale env copies.
-            if matches!(self.locals[i], Value::HashSlotRef { .. }) {
-                continue;
-            }
-            // Attribute locals (!attr) are managed exclusively via GetLocal/SetLocal.
-            // Never overwrite them from env, which may hold stale method-entry values.
-            if name.starts_with('!') {
-                continue;
-            }
-            if let Some(val) = self.env().get(name).cloned() {
-                if stats_on
-                    && !crate::vm::vm_method_dispatch::cheaply_unchanged(&self.locals[i], &val)
-                {
-                    crate::vm::vm_stats::record_stale_slot(name);
-                    any_stale = true;
-                }
-                self.locals[i] = val;
-                continue;
-            }
-            if let Some(bare) = name
-                .strip_prefix('$')
-                .or_else(|| name.strip_prefix('@'))
-                .or_else(|| name.strip_prefix('%'))
-                .or_else(|| name.strip_prefix('&'))
-                && let Some(val) = self.env().get(bare).cloned()
-            {
-                if stats_on
-                    && !crate::vm::vm_method_dispatch::cheaply_unchanged(&self.locals[i], &val)
-                {
-                    crate::vm::vm_stats::record_stale_slot(name);
-                    any_stale = true;
-                }
-                self.locals[i] = val;
-            }
-        }
-        if any_stale {
-            crate::vm::vm_stats::record_locals_pull_effective();
-        }
-    }
-
-    /// Slice F write-through for an interpreter-dispatched construction
-    /// (`.new`/`.bless` that runs a `submethod BUILD`/`TWEAK` via the
-    /// interpreter's `run_build_phase`). Those submethods can mutate a
-    /// captured-outer lexical by name (`my $n; submethod BUILD { $n++ }`), but —
-    /// unlike a compiled method (whose `merge_method_env` records
-    /// `pending_rw_writeback_sources`) — the interpreter build path never reaches
-    /// that machinery, so the caller's slot is only reconciled by the blanket
-    /// `sync_locals_from_env` barrier pull (`env_dirty`). This mirrors that pull
-    /// *at the construction call site* and unconditionally (not gated by the
-    /// campaign toggle), so the slot stays coherent without the reverse pull. The
-    /// per-slot skips match `sync_locals_from_env` exactly (HashSlotRef binding
-    /// cells / `!attr` locals), so under reverse-sync ON it is byte-identical to
-    /// the barrier pull it duplicates. Only called on the impure path
-    /// (`!method_dispatch_pure`), i.e. exactly when ON would have pulled.
+    /// Precise env→locals reconcile at a call/construction site where an
+    /// interpreter bridge wrote a caller lexical by name. This is the surviving
+    /// mechanism that keeps the slot store coherent now that the blanket reverse
+    /// pull is gone (Stage 3, docs/env-locals-coherence.md §7). The canonical case
+    /// is an interpreter-dispatched construction (`.new`/`.bless` running a
+    /// `submethod BUILD`/`TWEAK` via `run_build_phase`) whose body mutates a
+    /// captured-outer lexical (`my $n; submethod BUILD { $n++ }`): unlike a
+    /// compiled method (whose `merge_method_env` records
+    /// `pending_rw_writeback_sources`), the interpreter build path never reaches
+    /// that machinery, so the caller's slot must be reconciled here at the call
+    /// site. The per-slot skips (HashSlotRef binding cells / `!attr` locals) match
+    /// the precise write-through family exactly. Gated by the caller on
+    /// `env_dirty` at the hot sites, so a pure call pays nothing.
     pub(super) fn reconcile_locals_from_env_at_site(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
             if matches!(self.locals[i], Value::HashSlotRef { .. }) {
@@ -668,11 +606,12 @@ impl Interpreter {
     /// parameter (and captured-outer-write) sources recorded by the call
     /// dispatch paths and write each caller variable's new `env` value straight
     /// through to its local slot in the caller's frame (`code`). This keeps the
-    /// slot coherent at the call site, removing the dependency on the reverse
-    /// `sync_locals_from_env` pull. Mirrors the reverse pull's invariant: never
-    /// clobber a live `HashSlotRef` binding slot. Sources whose name is not a
-    /// local of this frame are simply dropped (the reverse pull is the backstop
-    /// for any cross-frame propagation that this single-level drain misses).
+    /// slot coherent at the call site. Invariant: never clobber a live
+    /// `HashSlotRef` binding slot. Sources whose name is not a local of this
+    /// frame are dropped here; cross-frame propagation up to an ancestor's slot
+    /// is handled by the env_dirty-gated `reconcile_locals_from_env_at_site` that
+    /// `drain_and_reconcile_after_cached_call` (and the slow call path) runs at
+    /// each frame's call site.
     pub(super) fn apply_pending_rw_writeback(&mut self, code: &CompiledCode) {
         if self.pending_rw_writeback_sources.is_empty() {
             return;
