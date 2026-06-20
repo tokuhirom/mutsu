@@ -63,8 +63,6 @@ roast/S12-attributes/instance.t
 roast/S12-attributes/mutators.t
 roast/S12-class/basic.t
 roast/S12-coercion/coercion-methods.t
-roast/S12-construction/BUILD.t
-roast/S12-construction/TWEAK.t
 roast/S12-construction/destruction.t
 roast/S12-construction/roles-6e.t
 roast/S12-introspection/attributes.t

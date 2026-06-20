@@ -635,6 +635,17 @@ write-site does not yet write through to the caller's local slot.
    (S02-types/{set,pair}, etc.) fail OFF on a `.gist`/stringification subtest —
    likely a `$_`/loop-topic or `$/`-list slot left stale by a path not yet
    write-through'd. Probe individually; several may share mechanism 2/5.
+8. **construction captured-outer (`submethod BUILD`/`TWEAK`) — DONE.** A
+   `.new`/`.bless` that runs a `submethod BUILD`/`TWEAK` via the interpreter's
+   `run_build_phase`/`run_tweak_phase` bypasses the compiled-method
+   `merge_method_env` writeback, so a body like `my $n; submethod TWEAK { $n++ }`
+   left the caller slot reconciled only by the barrier pull. Fix:
+   `reconcile_locals_from_env_at_site` mirrors the pull at the `.new`/`.bless`
+   call site (CallMethod + CallMethodMut tails), and `mro_has_build_or_tweak`
+   stops the native-construct fast path from marking a BUILD/TWEAK class env-pure
+   (it isn't — TWEAK can mutate caller env). Removed S12-construction/{BUILD,TWEAK}.t
+   deps. pin: t/construction-captured-outer-coherence.t. (Remaining S12-construction
+   deps: destruction.t #3 is `DESTROY`-at-GC, a different mechanism.)
 
 ### Order of attack (next sessions)
 dynamic-var env-read (2) → `our` (3) → method-call `pending_local_updates`

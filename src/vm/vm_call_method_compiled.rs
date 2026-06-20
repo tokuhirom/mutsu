@@ -104,9 +104,14 @@ impl Interpreter {
             && let Value::Package(class_name) = &target
             && let Some(result) = loan_env!(self, try_native_default_construct(*class_name, &args))
         {
-            // Native construction is pure data assembly: it returns a fresh
-            // instance and writes nothing to the caller env (Slice 6.3).
-            self.method_dispatch_pure = true;
+            // Native construction of an attribute-only class is pure data assembly
+            // (named args + defaults; writes nothing to the caller env, Slice 6.3).
+            // BUT if the class has a `submethod BUILD`/`TWEAK`, the native path runs
+            // that phase, whose body can mutate a captured-outer caller lexical
+            // (`my $n; submethod TWEAK { $n++ }`) — so that construction is NOT
+            // env-pure: leave the dispatch impure so the call site reconciles the
+            // caller's slot (Slice F, `reconcile_locals_from_env_at_site`).
+            self.method_dispatch_pure = !self.mro_has_build_or_tweak(&class_name.resolve());
             return result;
         }
         // Native built-in construction: `Buf`/`Blob` (byte overlay), `utf8`/
@@ -1477,8 +1482,12 @@ impl Interpreter {
             && let Value::Package(class_name) = &target
             && let Some(result) = loan_env!(self, try_native_default_construct(*class_name, &args))
         {
-            // Pure construction: fresh instance, no caller-env write (Slice 6.3).
-            self.method_dispatch_pure = true;
+            // Pure construction: fresh instance, no caller-env write (Slice 6.3) —
+            // UNLESS the class has a `submethod BUILD`/`TWEAK` whose body can mutate
+            // a captured-outer caller lexical, in which case the dispatch is impure
+            // and the call site must reconcile the caller slot (Slice F twin of the
+            // non-mut path; `reconcile_locals_from_env_at_site`).
+            self.method_dispatch_pure = !self.mro_has_build_or_tweak(&class_name.resolve());
             return result;
         }
         // Native built-in construction (mut path twin of the above).

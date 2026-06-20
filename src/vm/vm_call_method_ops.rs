@@ -1233,6 +1233,17 @@ impl Interpreter {
                         }
                     }
                 }
+                // Slice F: an interpreter-dispatched construction (`.new`/`.bless`
+                // running a `submethod BUILD`/`TWEAK`) may mutate a captured-outer
+                // lexical by name. That interpreter build path bypasses the
+                // compiled-method `merge_method_env` writeback, so the caller slot
+                // is otherwise only reconciled by the blanket `sync_locals_from_env`
+                // barrier pull. Reconcile it here at the call site instead (gated on
+                // `mark_dirty`, i.e. only when ON would have pulled) so the slot
+                // stays coherent without the reverse pull.
+                if mark_dirty && matches!(method, "new" | "bless") {
+                    self.reconcile_locals_from_env_at_site(code);
+                }
                 // Wrap map/grep results back into HyperSeq/RaceSeq
                 if let Some(is_hyper) = hyper_race_wrap
                     && let Some(result) = self.stack.pop()
