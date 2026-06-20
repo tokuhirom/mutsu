@@ -9,7 +9,12 @@ cargo build --release
 ./benchmarks/run-all.sh
 ```
 
-## Current Status (2026-05-24)
+## Current Status (benchmarks: 2026-05-24)
+
+> The benchmark table below was measured on 2026-05-24 and has not been re-run
+> since (Value layout shrank to 48 bytes and the VM was unified into a single
+> struct in the meantime). Re-measure with `./benchmarks/run-all.sh` before
+> relying on these exact numbers.
 
 | Benchmark | mutsu | raku | ratio | notes |
 |-----------|-------|------|-------|-------|
@@ -36,19 +41,31 @@ Note: raku times include ~170ms startup overhead. mutsu startup is ~4ms.
 ## Architecture Overview
 
 ```
-Source → Parser → AST → Compiler → Bytecode → VM (fast path)
-                    ↓
-              Interpreter (slow path: eval_block_value, etc.)
+Source → Parser → AST → Compiler → Bytecode → VM (run() → opcode dispatch)
 ```
 
-### VM path (fast)
-- Compiled functions/methods execute via `vm.run()` → opcode dispatch
+The tree-walking interpreter has been eliminated (CP-1/CP-2/CP-3, #3075–#3104).
+There is now a **single struct `Interpreter`** which *is* the bytecode VM — the
+former `struct VM` was melted into it. All execution flows through compiled
+bytecode.
+
+### Bytecode execution (the only engine)
+- Compiled functions/methods execute via `run()` → opcode dispatch
 - Local variables use indexed slots (`self.locals[i]`), not HashMap
 - Parameter binding via `call_compiled_function_positional_light` (no env clone)
 
-### Interpreter path (slow)
-- `eval_block_value()` walks the AST directly
-- Variables stored in `env: HashMap<Symbol, Value>` — deep clone on scope boundaries when Arc is shared
+### Remaining tree-walk carriers
+- `eval_block_value()` still exists as a method, but only as a *carrier* for
+  cases that re-enter source evaluation (e.g. `EVAL`, embedded `{...}` blocks in
+  regexes), delegating to the same native implementations — it is no longer a
+  separate execution engine.
+
+### `env_dirty` dual store
+- The VM keeps both indexed `locals` slots and an `env: HashMap<Symbol, Value>`.
+  The `env` is needed for closure captures, dynamic variables (`$*VAR`), and
+  package-scoped resolution. Keeping the two in sync (reverse-sync, guarded by
+  `env_dirty` / `sync_locals_from_env`) is the main internal optimization debt
+  still being paid down (Slice F campaign).
 
 ## Remaining Bottleneck: Method Dispatch (~2.5x slower)
 
@@ -89,7 +106,11 @@ This eliminates env clone for closure creation (currently clones ~100 entries).
 
 ### Phase 4a: Value representation (NaN-boxing)
 
-`Value` enum is currently 72 bytes. NaN-boxing encodes common types (Int, Num, Bool, Nil) in 8 bytes using NaN payload bits. Expected: 2x improvement on int-arith, ~30% on fib.
+`Value` enum is currently 48 bytes (down from 72 after boxing the oversized
+variants — Capture, BigRat, CustomTypeInstance, Uni, etc.; guarded by the
+`value_size_guard` test in `src/value/mod.rs`). NaN-boxing would encode common
+types (Int, Num, Bool, Nil) in 8 bytes using NaN payload bits. Expected: 2x
+improvement on int-arith, ~30% on fib.
 
 ### Phase 4b: Threaded dispatch (direct threading)
 
