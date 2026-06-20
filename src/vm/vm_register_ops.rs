@@ -650,6 +650,7 @@ impl Interpreter {
             body,
             is_export,
             custom_traits,
+            ..
         } = stmt
         {
             let name_str = name.resolve();

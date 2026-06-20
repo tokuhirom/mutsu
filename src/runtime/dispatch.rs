@@ -1357,7 +1357,7 @@ impl Interpreter {
             is_block: false,
         });
         self.proto_dispatch_stack
-            .push((proto_name.to_string(), args.to_vec()));
+            .push((proto_name.to_string(), args.to_vec(), None));
         let result = if def.body.is_empty() {
             // Bodyless proto behaves as implicit {*} dispatch.
             self.call_proto_dispatch()
@@ -1377,12 +1377,125 @@ impl Interpreter {
         }
     }
 
+    /// Look up a `proto method` body for `method_name` in `class_name`'s MRO.
+    /// Returns the nearest (owner_class, proto `FunctionDef`). Cheap no-op when
+    /// no proto methods are declared anywhere.
+    pub(crate) fn lookup_proto_method(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<(String, FunctionDef)> {
+        if self.registry().proto_methods.is_empty() {
+            return None;
+        }
+        let mro = self.class_mro(class_name);
+        for cn in mro {
+            if let Some(f) = self
+                .registry()
+                .proto_methods
+                .get(&(cn.clone(), method_name.to_string()))
+            {
+                return Some((cn, f.clone()));
+            }
+        }
+        None
+    }
+
+    /// Run a `proto method` body, with `{*}` dispatching to the matching multi
+    /// candidate on `invocant`. Reuses the normal resolved-method runner so the
+    /// proto body gets `self`, attributes, and parameter binding like any method.
+    pub(crate) fn run_proto_method(
+        &mut self,
+        invocant: Value,
+        receiver_class: &str,
+        owner_class: &str,
+        method_name: &str,
+        args: Vec<Value>,
+        proto: FunctionDef,
+    ) -> Result<Value, RuntimeError> {
+        let rewritten = Self::rewrite_proto_dispatch_stmts(&proto.body);
+        let method_def = MethodDef {
+            params: proto.params.clone(),
+            param_defs: proto.param_defs.clone(),
+            body: std::sync::Arc::new(rewritten),
+            is_rw: false,
+            is_private: false,
+            is_multi: false,
+            is_my: false,
+            role_origin: None,
+            original_role: None,
+            return_type: None,
+            compiled_code: None,
+            delegation: None,
+            is_default: false,
+            deprecated_message: None,
+            is_submethod: false,
+        };
+        let attributes = match &invocant {
+            Value::Instance { attributes, .. } => attributes.as_map().clone(),
+            _ => std::collections::HashMap::new(),
+        };
+        self.proto_dispatch_stack.push((
+            method_name.to_string(),
+            args.clone(),
+            Some(ProtoMethodCtx {
+                invocant: invocant.clone(),
+            }),
+        ));
+        let result = self.run_instance_method_resolved(
+            receiver_class,
+            owner_class,
+            method_def,
+            attributes,
+            args,
+            Some(invocant),
+        );
+        self.proto_dispatch_stack.pop();
+        result.map(|(v, _)| v)
+    }
+
+    /// Proto-method-body interception shared by all method-call op handlers and
+    /// `call_method_with_values`. If `target`'s class (or an ancestor) declares a
+    /// `proto method`/`proto submethod` body for `method`, run that body (its
+    /// `{*}` dispatches to the matching multi candidate) and return `Some(result)`.
+    /// Returns `None` when the caller should dispatch normally — including the
+    /// one-shot redispatch case, where the `proto_method_skip` flag is consumed.
+    ///
+    /// TODO: methods reached via `handles` delegation forwarders run through
+    /// `assign_method_lvalue_with_values` rather than the method-call op handlers
+    /// or `call_method_with_values`, so a delegated proto method's body is not yet
+    /// intercepted here. Cover that path when delegation dispatch is unified.
+    pub(crate) fn try_proto_method_body(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let cn = match target {
+            Value::Instance { class_name, .. } => class_name.resolve(),
+            _ => return None,
+        };
+        if self.proto_method_skip.as_deref() == Some(method) {
+            self.proto_method_skip = None;
+            return None;
+        }
+        let (owner, proto) = self.lookup_proto_method(&cn, method)?;
+        Some(self.run_proto_method(target.clone(), &cn, &owner, method, args.to_vec(), proto))
+    }
+
     pub(super) fn call_proto_dispatch(&mut self) -> Result<Value, RuntimeError> {
-        let (proto_name, args) = self
+        let (proto_name, args, method_ctx) = self
             .proto_dispatch_stack
             .last()
             .cloned()
             .ok_or_else(|| RuntimeError::new("{*} used outside proto".to_string()))?;
+        // `proto method` body: `{*}` redispatches to the matching multi *method*
+        // candidate on the invocant. The one-shot `proto_method_skip` flag makes
+        // the re-entry bypass proto interception so it reaches the real candidate.
+        if let Some(ctx) = method_ctx {
+            self.proto_method_skip = Some(proto_name.clone());
+            return self.call_method_with_values(ctx.invocant, &proto_name, args);
+        }
         self.clear_pending_dispatch_error();
         let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args) else {
             if let Some(err) = self.take_pending_dispatch_error() {
