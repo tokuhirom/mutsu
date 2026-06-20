@@ -1,5 +1,11 @@
 # Collapsing the VM's `locals` ↔ `env` dual store
 
+> **Historical record (2026-06-05 … -15).** This documents the CP-2
+> footprint-reduction era and a plan ("deletion not achievable") that the later
+> single-store redesign superseded. For the current live design see
+> [vm-single-store.md](vm-single-store.md) and [env-locals-coherence.md](env-locals-coherence.md).
+> Kept because PLAN.md links here for the "what was tried" history.
+
 Tracking design for the highest-leverage VM-decoupling task
 (`ANALYSIS.md` §1.2, `PLAN.md` "🔴 最優先"). This is a high-blast-radius change,
 so it is staged into small, individually-shippable slices. This file is the
