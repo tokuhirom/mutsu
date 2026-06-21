@@ -1,11 +1,13 @@
 # Captured-outer lexical cell 共有 — 実装プラン（Sub-slice 1b+ / env_dirty 削除への substrate）
 
-> **Status:** SLICE 1〜1.10 DONE（〜2026-06-21・第41〜44セッション）。§6 第1スライス（named-sub 捕捉
-> scalar decl-site cell 化）＋§7.1〜7.1f（metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／
+> **Status:** SLICE 1〜1.11 DONE（〜2026-06-21・第41〜44セッション）。§6 第1スライス（named-sub 捕捉
+> scalar decl-site cell 化）＋§7.1〜7.1g（metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／
 > **captured-outer container `@`/`%` cell 化＝§7.1d**／**`X`-cross metaop thunk scalar writeback＝§7.1e**／
-> **nested-method capture＝§7.1f**）を実装。
-> 各 pin が **blanket reconcile ON/OFF 両方で PASS**。OFF survey は 15 file（うち並行 ~13）。
-> 次＝§7.2（parametric-role-of-type＝instance-attr 別機構／並行 cluster）。
+> **nested-method capture＝§7.1f**／**cross-thread shared-var writeback＝§7.1g**）を実装。
+> 各 pin が **blanket reconcile ON/OFF 両方で PASS**。**決定的 OFF-only fail（`^not ok`）= 0 に到達**。
+> 残サーフェス＝①`parametric-role-of-type`（instance-attr cell 別機構）②flaky な reactive 並行系（決定的 pin 不可）
+> ③`env-dirty-reconcile-coherence`（reconcile 自体の test）。
+> 次＝§7.2（parametric-role-of-type）or env_dirty 削除の最終段（§7.4・`blanket_reconcile_if_dirty` 空洞化）。
 > 関連: [docs/env-locals-coherence.md](env-locals-coherence.md)（§7.3 = env_dirty 削除の壁）/
 > [docs/container-identity.md](container-identity.md)（cell インフラ）/ PLAN.md §1-A・§2-C・§2-E。
 >
@@ -325,6 +327,26 @@ gap は nested-declared method の interpreter dispatch path だけ）。
   enclosing lexical read＋outer write・複数 outer・後続式コヒーレンス・intervening call・ON/OFF 両 PASS）。
   make test 9727 / make roast 回帰なし。OFF survey 16→15（並行 ~13 残）。
 
+### 7.1g ✅ スライス1.11（DONE・第44セッション）= cross-thread shared-var writeback（並行 cluster の決定的部）
+
+並行 cluster ~13 のうち、`promise-combinator`・`scheduler-cue-times` は **flaky でなく決定的**な OFF 依存（OFF=1 が 4/4 再現・
+ON=0）。`my $seen = []; Promise.allof(start { cas $seen, -> @c { flat @c, 1 } }).result; is ~$seen, '1'` ＝worker
+`start` block の `cas`（atomic array CAS・`__mutsu_atomic_arr::$seen` shared store に書く）が `.result`（await）後に
+parent の `$seen` **local slot** に届かない。`sync_shared_vars_to_env`（runtime/mod.rs）は cross-thread の dirty key を
+env に書き戻すが（`__mutsu_atomic_arr::`/`__mutsu_atomic_hash::`/`__mutsu_atomic_name::` を解決）、**caller slot は
+refresh しない**＝blanket reconcile ON のみ pull。
+
+- **修正（precise-writeback・非gated）**: `sync_shared_vars_to_env` の `updates` 反映ループで各 synced key を
+  `pending_rw_writeback_sources` に push → `.result`/await の **CallMethod call-site が drain**（slice 1.10 で
+  `drain_and_reconcile_after_cached_call` 化済みなので追加配線不要）。ON は env_dirty→blanket superset=byte-identical、
+  OFF は precise drain のみ。env が cross-thread sync 後の source of truth なので slot=env は常に coherence 方向＝安全。
+- **★cross-thread cell（doc §8）の本格実装は不要だった**: 基本 cross-thread captured-write（`start { $x = v }; await`）は
+  既に shared_vars で ON/OFF 両成立（決定的 probe で確認）。決定的 OFF 依存は **atomic CAS の sync→slot writeback** のみで、
+  slice 1.10 の drain 基盤に sync 名を載せるだけで解けた。残る並行 cluster の OFF 依存は **flaky な reactive 系**
+  （supply/whenever の timing 依存・`^not ok` に出ない）で、決定的 substrate ではない。
+- pin=`t/cross-thread-shared-var-writeback-coherence.t`（6・cas array/scalar/hash・累積・後続式・intervening・ON/OFF 両 PASS）。
+  make test 9739 / make roast（要確認）。**決定的 OFF-only fail（`^not ok`）= 0 に到達**。
+
 ### 7.2 後続スライス（その先）
 - **`parametric-role-of-type`**（OFF で決定的 abort・ran 11/14・test 12）: ON で PASS。**captured-outer ではなく
   インスタンス属性コヒーレンス**＝`my role TreeNode[::T] does Positional { has TreeNode[T] @!children handles
@@ -334,7 +356,11 @@ gap は nested-declared method の interpreter dispatch path だけ）。
   （`mirror_attr_local_to_cell`／`read_self_attr_cell` 周辺）。captured-outer cell 共有とは独立機構＝別スライス。
 - **container `@`/`%` の named-sub 以外の cell 化**（必要なら）: closure 捕捉 container は現状 Arc 共有で動く。`box_captured_lexicals`
   の `@`/`%` skip を緩和する場合は §8 の decont 監査が前提（broad boxing は ~12 file 回帰を実証済＝precise 限定必須）。
-- **並行 cluster**（supply/whenever/react/promise/proc-async/scheduler ~13）: cross-thread cell（最難・最後）。
+- **並行 cluster の残り**（supply/whenever/react ~11）: §7.1g で決定的部（promise-combinator/scheduler-cue-times の
+  atomic-CAS sync）は解決。残りは **flaky な reactive 系**（supply/whenever の timing 依存・`^not ok` に出ず
+  abort/timeout で manifest）＝決定的 OFF-pin が書けないため toggle survey で追いきれない。env_dirty 削除の最終段
+  （`blanket_reconcile_if_dirty` 空洞化）で実挙動を確認するのが現実的。基本 cross-thread captured-write は shared_vars で
+  既に ON/OFF 両成立済（cross-thread cell の本格実装は不要と判明）。
 
 ### 7.3 ★各スライスの必須手順（slice 1 の教訓）
 
