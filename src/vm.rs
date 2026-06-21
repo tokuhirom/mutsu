@@ -146,6 +146,7 @@ pub(crate) mod vm_misc_ops;
 mod vm_native_dispatch;
 mod vm_native_extrema;
 mod vm_native_first;
+mod vm_native_json;
 mod vm_native_map;
 mod vm_native_sort;
 mod vm_native_subst;

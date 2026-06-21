@@ -1101,6 +1101,10 @@ impl Interpreter {
                 } else if let Some(result) = self.try_native_test_function(name, &args) {
                     // Dispatch Test functions straight to their typed handler (lever A).
                     result
+                } else if let Some(result) = self.try_native_json_function(name, &args) {
+                    // Dispatch JSON::Fast / JSON::Tiny `to-json` / `from-json`
+                    // to the native implementation (runtime/json.rs).
+                    result
                 } else if let Some(callable) = self.lexical_amp_var_callable(Some(code), name) {
                     // Pure lexical `&name` callable (a `&code` parameter or
                     // `my &f = ...` with no same-named package sub): dispatch

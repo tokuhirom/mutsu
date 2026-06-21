@@ -1031,6 +1031,17 @@ pub(in crate::parser) fn register_module_exports(module: &str) {
                 associativity: None,
             })
             .collect()
+    } else if module == "JSON::Fast" || module == "JSON::Tiny" {
+        // Native modules: `to-json`/`from-json` are implemented in Rust
+        // (runtime/json.rs), so there is no source file to scan for exports.
+        ["to-json", "from-json"]
+            .iter()
+            .map(|s| InlineModuleExport {
+                name: (*s).to_string(),
+                precedence: None,
+                associativity: None,
+            })
+            .collect()
     } else {
         // Check for infinite recursion
         let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
