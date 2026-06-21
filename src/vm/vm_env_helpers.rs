@@ -692,6 +692,94 @@ impl Interpreter {
         blanket_reconcile_disabled()
     }
 
+    /// Box each captured-outer scalar that a carrier body (`EVAL`, an embedded
+    /// regex `{...}` block) WRITES into a `ContainerRef` cell shared across the
+    /// live `env` and every saved call frame's `saved_env`, so the carrier's
+    /// by-name write reaches the owner frame even after the owner's env is
+    /// restored on return (the multi-frame accumulation wall — a captured-outer
+    /// write hidden inside an `EVAL` string is invisible to the static
+    /// `free_var_writes` analysis at the owner's decl site, so it cannot be boxed
+    /// there; box it here at carrier-run time instead).
+    ///
+    /// Gated on `cell_boxing_active()` (the `MUTSU_NO_BLANKET_RECONCILE` toggle):
+    /// in the default build the blanket reconcile carries this, so boxing stays
+    /// off and behaviour is byte-identical (see `box_decl_local_cell`).
+    pub(crate) fn box_carrier_free_var_writes(&mut self, code: &CompiledCode) {
+        if !self.cell_boxing_active() || code.free_var_writes.is_empty() {
+            return;
+        }
+        // Restrict to the EVAL carrier (`__mutsu_in_eval`). The other
+        // eval_block_value users — supply/whenever/gather bodies — have their own
+        // concurrent-cell coherence (Track C, the hardest/last cluster); boxing
+        // their captured vars here conflicts with that machinery, so leave them be.
+        if self.env().get("__mutsu_in_eval").is_none() {
+            return;
+        }
+        let names: Vec<String> = code.free_var_writes.iter().map(|s| s.resolve()).collect();
+        for name in names {
+            if name == "_" || name == "$_" || name == "@_" || name == "%_" {
+                continue;
+            }
+            // Scalars only (containers share via Arc already); never hide a
+            // type object / sub / instance behind a cell.
+            if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+                continue;
+            }
+            // A sigilless alias (`sub swap(\x,\y){ y=x }`) is NOT a captured-outer
+            // lexical: `x` resolves through `__mutsu_sigilless_alias::x` to the
+            // caller's `$a`, and writes propagate via that chain (#3318). Boxing
+            // `x` into a cell detaches it from `$a` — skip it.
+            if self
+                .env()
+                .get(&format!("__mutsu_sigilless_alias::{}", name))
+                .is_some()
+            {
+                continue;
+            }
+            let cur = match self.env().get(&name) {
+                Some(v) => v.clone(),
+                None => continue,
+            };
+            if cur.is_container_ref() {
+                continue;
+            }
+            if matches!(
+                cur,
+                Value::Package(_)
+                    | Value::Array(..)
+                    | Value::Hash(..)
+                    | Value::Sub(..)
+                    | Value::Instance { .. }
+                    | Value::Proxy { .. }
+            ) {
+                continue;
+            }
+            // A genuine type/`where` constraint must keep flowing through the
+            // assignment chokepoint (write-through bypasses the re-check); `Mu`
+            // is universal so it is safe to box (mirrors slice 1.5).
+            let mut tc = loan_env!(self, var_type_constraint(&name));
+            if tc.is_none() {
+                tc = loan_env!(self, var_type_constraint(name.trim_start_matches('$')));
+            }
+            if matches!(tc.as_deref(), Some(t) if t != "Mu") {
+                continue;
+            }
+            let container = cur.into_container_ref();
+            self.set_env_with_main_alias(&name, container.clone());
+            if let Some(idx) = code.locals.iter().rposition(|n| n == &name) {
+                self.locals[idx] = container.clone();
+            }
+            for frame in self.call_frames.iter_mut().rev() {
+                if frame.saved_env.contains_key(&name) {
+                    frame.saved_env.insert(name.clone(), container.clone());
+                }
+            }
+            if self.shared_vars_active {
+                loan_env!(self, set_shared_var(&name, container.clone()));
+            }
+        }
+    }
+
     pub(super) fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
         code.locals.iter().position(|n| n == name)
     }
