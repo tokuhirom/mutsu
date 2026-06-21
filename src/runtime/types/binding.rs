@@ -48,6 +48,64 @@ impl Interpreter {
                 .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
     }
 
+    /// Evaluate a parameter's default expression under Raku's parameter
+    /// scoping: the parameter being bound is in scope (as its undefined type
+    /// object) *within its own default*, shadowing any outer symbol of the same
+    /// name. This is why `sub f(&foo = &foo)` defaults to the (undefined)
+    /// parameter — not the outer routine `foo` — and `$x = $x` is undefined.
+    /// Earlier parameters remain visible because they were bound in prior loop
+    /// iterations. The topic (`$_`/`_`) is saved/restored so the eval does not
+    /// leak it into the caller's scope.
+    fn eval_param_default(
+        &mut self,
+        pd: &ParamDef,
+        default_expr: &Expr,
+    ) -> Result<Value, RuntimeError> {
+        let saved_topic = self.env.get("_").cloned();
+        let saved_dollar_topic = self.env.get("$_").cloned();
+        // Shadow the parameter with its undefined type object (or Nil) so a
+        // self-reference in the default resolves to the parameter rather than
+        // an outer symbol of the same name.
+        let saved_self = if !pd.name.is_empty() {
+            let prev = self.env.get(&pd.name).cloned();
+            let shadow = pd
+                .type_constraint
+                .as_deref()
+                .filter(|c| !c.starts_with("::"))
+                .and_then(|c| self.resolve_type_object(c))
+                .unwrap_or(Value::Nil);
+            self.env.insert(pd.name.clone(), shadow);
+            Some(prev)
+        } else {
+            None
+        };
+        let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())]);
+        // Restore the parameter's prior env binding; the caller performs the
+        // real bind right after. On the error path this prevents the shadow
+        // from leaking.
+        if let Some(prev) = saved_self {
+            match prev {
+                Some(v) => {
+                    self.env.insert(pd.name.clone(), v);
+                }
+                None => {
+                    self.env.remove(&pd.name);
+                }
+            }
+        }
+        if let Some(t) = saved_topic {
+            self.env.insert("_".to_string(), t);
+        } else {
+            self.env.remove("_");
+        }
+        if let Some(t) = saved_dollar_topic {
+            self.env.insert("$_".to_string(), t);
+        } else {
+            self.env.remove("$_");
+        }
+        value
+    }
+
     fn parameter_binding_error(message: String) -> RuntimeError {
         let mut err = RuntimeError::new(message);
         let mut ex_attrs = std::collections::HashMap::new();
@@ -768,21 +826,7 @@ impl Interpreter {
                     }
                 }
                 if !found && let Some(default_expr) = &pd.default {
-                    // Save $_ so that evaluating the default expression does not
-                    // leak the topic into the caller's scope.
-                    let saved_topic = self.env.get("_").cloned();
-                    let saved_dollar_topic = self.env.get("$_").cloned();
-                    let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
-                    if let Some(t) = saved_topic {
-                        self.env.insert("_".to_string(), t);
-                    } else {
-                        self.env.remove("_");
-                    }
-                    if let Some(t) = saved_dollar_topic {
-                        self.env.insert("$_".to_string(), t);
-                    } else {
-                        self.env.remove("$_");
-                    }
+                    let value = self.eval_param_default(pd, default_expr)?;
                     let value = self.checked_default_param_value(pd, value)?;
                     let value = if pd
                         .type_constraint
@@ -1456,21 +1500,7 @@ impl Interpreter {
                     }
                     positional_idx += 1;
                 } else if let Some(default_expr) = &pd.default {
-                    // Save $_ so that evaluating the default expression does not
-                    // leak the topic into the caller's scope.
-                    let saved_topic = self.env.get("_").cloned();
-                    let saved_dollar_topic = self.env.get("$_").cloned();
-                    let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
-                    if let Some(t) = saved_topic {
-                        self.env.insert("_".to_string(), t);
-                    } else {
-                        self.env.remove("_");
-                    }
-                    if let Some(t) = saved_dollar_topic {
-                        self.env.insert("$_".to_string(), t);
-                    } else {
-                        self.env.remove("$_");
-                    }
+                    let value = self.eval_param_default(pd, default_expr)?;
                     let value = self.checked_default_param_value(pd, value)?;
                     if let Some(captured_name) = pd
                         .type_constraint

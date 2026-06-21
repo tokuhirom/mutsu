@@ -429,7 +429,7 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
 | ~~S06-advanced/callframe.t~~ | 12 | caller-frame by-name write slot writeback | ✅ slice 1.18 |
 | ~~S06-multi/proto.t~~ | 21 | caching proto `state %` writeback | ✅ slice 1.17 |
 | ~~S06-multi/subsignature.t~~ | 54 | caching proto `state %` writeback | ✅ slice 1.17 |
-| S06-signature/code.t | 8 | `&`-param signature | |
+| ~~S06-signature/code.t~~ | 8 | `&`-param default self-scoping | ✅ slice 1.19 |
 | S12-construction/destruction.t | 3 | DESTROY phaser | |
 | ~~S32-list/map.t~~ | 62 | `.map` block LAST phaser writeback | ✅ slice 1.15 |
 | ~~S32-scalar/undef.t~~ | 85 | undefine() lvalue slot writeback | ✅ slice 1.16 |
@@ -467,13 +467,22 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
   と分離した理由＝caller-frame の slot は数フレーム上にあり、writer が return 前に**より深い**呼び出しをすると（`f(){ callframe(1).my.<$x>=v; g() }`）pending が g() の call-site で1フレーム早く消費される→**retain-on-miss**（slot が
   当該 code に無ければ破棄せず保持し、所有フレームまで運ぶ）。`is dynamic` でない caller lexical は従来通り die。
   pin=`t/caller-frame-write-slot-coherence.t`（5・ON/OFF 両 PASS）。make test 9799。
-- **残り 2（純 writeback でない＝別軸）**:
+- ~~**code.t 8（`&`-param）**~~ ✅ **slice 1.19 で消化（第47セッション・PR 別途）**。`sub foo(&foo = &foo){...}` の default
+  scoping バグ＝**writeback でなく露出バグ**（ON は carrier `lives-ok { foo }` で captured write が reconcile に落とされ偶然
+  PASS、OFF が正しく伝播して露出）。真因＝パラメータの default 式を評価する際に **そのパラメータ自身が scope に入っていない**
+  ため、`&foo`（default RHS）が外側の登録済み sub `foo` に解決されていた（raku は param `&foo` 自身＝undefined に解決）。
+  修正＝`bind_function_args_values` の両 default-eval サイト（binding.rs ~770 named / ~1500 positional）を新ヘルパー
+  `eval_param_default` に集約し、default 式評価の**直前にパラメータ名自身を undefined 型オブジェクト（or Nil）で env に
+  pre-bind**（self-reference が outer ではなく未定義パラメータに解決＝Raku の「param はその default 内で scope に入る」規則）。
+  earlier param（`$b = $a`）は前 iter で bind 済なので影響なし、別名 outer（`$z = $y`）も影響なし。pin=
+  `t/param-default-self-scoping.t`（7・ON/OFF 両 PASS）。make test 9819。
+- **残り 1（純 writeback でない＝別軸）**:
   - **destruction.t 3**: `submethod DESTROY { $x++ }` の GC 時 captured write（最小再現は GC タイミング依存で要工夫）。
-  - **code.t 8（`&`-param）**: `sub foo(&foo = &foo){...}` の default scoping バグ＝**writeback でなく露出バグ**（第46で確認・別軸）。
   - ＋別軸: lazy-lists.t 24-26（laziness バグ・L 系）／IO-Socket-Async.t 5,7（flaky）。
 
-**残 2（code.t scoping・destruction.t GC＝いずれも純 writeback でない別軸）＋別軸 2（lazy-lists laziness・IO-Socket-Async flaky）
-全消化後に §7.4（env_dirty 削除）が射程**。純 writeback コヒーレンスのサーフェスは slice 1.18 で枯渇。
+**残 1（destruction.t GC＝純 writeback でない別軸）＋別軸 2（lazy-lists laziness・IO-Socket-Async flaky）
+全消化後に §7.4（env_dirty 削除）が射程**。純 writeback コヒーレンスのサーフェスは slice 1.18 で枯渇、
+露出バグ（code.t scoping）は slice 1.19 で消化。
 
 ### 7.2b ✅ proto `{*}` redispatch ＋ `state` var coherence（proto.t 21 / subsignature.t 54）= slice 1.17 で解決
 **実際の真因は当初推測（`restore_env_preserving_existing` が state を巻き戻す）とは別だった。** plain `state %h` を持つ
