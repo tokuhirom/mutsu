@@ -180,7 +180,7 @@ impl Compiler {
         // value-producing sub that value is the implicit return, so keep it.
         // Only discard it when the return spec fixes the value (sink_last_expr).
         if Self::has_catch_or_control(body) {
-            sub_compiler.compile_try_routine(body, &None);
+            sub_compiler.compile_try(body, &None);
             if sink_last_expr {
                 sub_compiler.code.emit(OpCode::Pop);
                 let nil_idx = sub_compiler.code.add_constant(Value::Nil);
@@ -520,7 +520,7 @@ impl Compiler {
         // leaves the body's final-expression value on the stack, which is the
         // closure's implicit return value, so keep it (do not Pop).
         if Self::has_catch_or_control(body) {
-            sub_compiler.compile_try_routine(body, &None);
+            sub_compiler.compile_try(body, &None);
         } else if Self::has_block_enter_leave_phasers(body) {
             // Body has ENTER/LEAVE/KEEP/UNDO/PRE/POST — wrap in BlockScope
             let idx = sub_compiler.code.emit(OpCode::BlockScope {

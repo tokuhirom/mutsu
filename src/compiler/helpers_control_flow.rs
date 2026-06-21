@@ -275,23 +275,6 @@ impl Compiler {
 
     /// Compile Expr::Try { body, catch } to TryCatch opcode.
     pub(super) fn compile_try(&mut self, body: &[Stmt], catch: &Option<Vec<Stmt>>) {
-        // Default (block context: try/do/bare blocks): a trailing unhandled
-        // Failure is thrown so the block's CATCH handler (or `try`) sees it.
-        self.compile_try_inner(body, catch, true);
-    }
-
-    /// Like `compile_try`, but for routine (sub/method/closure) bodies, where a
-    /// trailing `fail`/Failure value is RETURNED rather than thrown.
-    pub(super) fn compile_try_routine(&mut self, body: &[Stmt], catch: &Option<Vec<Stmt>>) {
-        self.compile_try_inner(body, catch, false);
-    }
-
-    pub(super) fn compile_try_inner(
-        &mut self,
-        body: &[Stmt],
-        catch: &Option<Vec<Stmt>>,
-        throw_trailing_failure: bool,
-    ) {
         let saved = self.push_dynamic_scope_lexical();
         // Detect duplicate CATCH/CONTROL phasers in the same block: Raku
         // requires at most one of each per block (X::Phaser::Multiple).
@@ -476,13 +459,14 @@ impl Compiler {
         if !main_leaves_value {
             self.code.emit(OpCode::LoadNil);
         }
-        // In a block context (try/do/bare block), a trailing unhandled Failure
-        // is thrown into this try's CATCH/control handler (peek, keep the value
-        // on the stack so normal values are still the block's result). Routine
-        // bodies skip this: a `fail`/Failure tail is their return value.
-        if throw_trailing_failure {
-            self.code.emit(OpCode::ThrowIfFailure);
-        }
+        // A trailing unhandled Failure *value* on the stack is thrown into this
+        // block/routine's CATCH (or `try`) handler — `ThrowIfFailure` peeks and
+        // keeps the value so a normal trailing value is still the result. This
+        // matches Raku for both blocks (`try { @a.elems; CATCH {...} }`) and
+        // routines (`sub { s2(); CATCH {...} }` where `s2` returns a Failure).
+        // A direct `fail` raises a control signal (not a stack value) handled by
+        // the routine boundary, so it is unaffected and still returned.
+        self.code.emit(OpCode::ThrowIfFailure);
         // Jump over catch/control on success.
         let jump_end = self.code.emit(OpCode::Jump(0));
         // Patch catch_start.
