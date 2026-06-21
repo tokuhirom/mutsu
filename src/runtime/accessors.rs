@@ -2115,6 +2115,20 @@ impl Interpreter {
     /// binding so every alias sees the restoration and object identity (id +
     /// cell) is preserved, rather than rebinding the name to a detached copy.
     fn restore_let_value(&mut self, name: String, restored: Value) {
+        // A boxed (shared-cell) binding: write the restored value THROUGH the live
+        // cell so the owner's local slot (which holds the same Arc) sees the
+        // restoration, rather than replacing the env entry with a detached plain
+        // value (which would strand the slot's stale cell). The `let`-save already
+        // captured the inner value (see `exec_let_save_op`). Covers named-sub
+        // captured-outer boxing (docs/captured-outer-cell-sharing.md). Gated on the
+        // same toggle as the boxing it supports, so the default build is
+        // byte-identical to before.
+        if self.cell_boxing_active()
+            && let Some(Value::ContainerRef(arc)) = self.env.get(&name).cloned()
+        {
+            arc.lock().unwrap().clone_from(&restored);
+            return;
+        }
         if let Value::Instance {
             attributes: saved_attrs,
             ..

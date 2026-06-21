@@ -1266,6 +1266,32 @@ pub(crate) struct CompiledCode {
     /// closures so an enclosing scope can tell which of *its* locals are mutated
     /// from inside a closure. Used to compute `captured_mutated_locals`.
     pub(crate) free_var_writes: Vec<Symbol>,
+    /// Write contributions of directly-nested *named subs* (declared in this
+    /// scope), each a `(free_var_writes, needs_cell_named_sub_free)` pair copied
+    /// from the sub's finalized `CompiledCode`. A named sub is always reachable
+    /// (callable any time after declaration) and — unlike a closure — has no
+    /// runtime creation op (`RegisterSub` is hoisted to the top of the scope,
+    /// before the captured local is even declared). So `compute_free_vars` uses
+    /// these to compute `needs_cell_named_sub`, and the VM boxes those locals into
+    /// a shared cell at their *declaration site* (see
+    /// docs/captured-outer-cell-sharing.md), letting `via(); via()` accumulate
+    /// through a shared cell instead of the `env_dirty` blanket reconcile. Kept
+    /// SEPARATE from the closure-driven `needs_cell_locals`: closures are boxed
+    /// precisely at their creation op (`box_captured_lexicals`, scoped to the exact
+    /// captured slot), whereas named-sub boxing happens at the declaration site, so
+    /// it must only fire for locals a named sub actually *writes* — never for an
+    /// unrelated same-named local in a sibling block (which would wrongly box e.g.
+    /// a `let`-restored variable; same-named `my` locals share one slot).
+    pub(crate) named_sub_captures: Vec<(Vec<Symbol>, Vec<Symbol>)>,
+    /// Own locals that a directly-nested named sub WRITES (computed from
+    /// `named_sub_captures`). The VM boxes these into a shared `ContainerRef` cell
+    /// at their declaration site (`box_decl_local_cell`). Distinct from
+    /// `needs_cell_locals` (closure-driven) — see `named_sub_captures`.
+    pub(crate) needs_cell_named_sub: Vec<Symbol>,
+    /// Named-sub writes of a NON-own (ancestor) lexical, bubbled up so the ancestor
+    /// that declares the local folds it into its own `needs_cell_named_sub`
+    /// (mirrors `needs_cell_free_vars` for closures).
+    pub(crate) needs_cell_named_sub_free: Vec<Symbol>,
     /// Own locals that are BOTH captured by a nested closure AND mutated after
     /// their declaration (reassigned/inc-dec in this scope, or written from
     /// inside a nested closure). Such a local must be a shared container so the
@@ -1342,6 +1368,9 @@ impl CompiledCode {
             needs_env_sync: Vec::new(),
             free_var_syms: Vec::new(),
             free_var_writes: Vec::new(),
+            named_sub_captures: Vec::new(),
+            needs_cell_named_sub: Vec::new(),
+            needs_cell_named_sub_free: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
             needs_cell_free_vars: Vec::new(),
@@ -1682,6 +1711,35 @@ impl CompiledCode {
                 }
             }
         }
+        // Named-sub decl-site boxing (kept entirely separate from the closure
+        // analysis above): a local that a directly-nested named sub WRITES must be
+        // a shared cell so the sub's by-name env write and the owner's slot read
+        // alias one cell, enabling cross-call accumulation. Only WRITES count (a
+        // read-only capture works through the env snapshot); only own locals are
+        // boxed here, non-own (ancestor) writes bubble up via
+        // `needs_cell_named_sub_free`. This never touches `needs_cell`/closures, so
+        // it cannot over-box an unrelated same-named local (e.g. a `let`-restored
+        // var in a sibling block).
+        let mut ncns: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        let mut ncns_free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        for (nf_writes, nf_ncns_free) in &self.named_sub_captures {
+            for sym in nf_writes {
+                if sym.with_str(|s| own.contains(s)) {
+                    ncns.insert(*sym);
+                } else {
+                    ncns_free.insert(*sym);
+                }
+            }
+            for sym in nf_ncns_free {
+                if sym.with_str(|s| own.contains(s)) {
+                    ncns.insert(*sym);
+                } else {
+                    ncns_free.insert(*sym);
+                }
+            }
+        }
+        self.needs_cell_named_sub = ncns.into_iter().collect();
+        self.needs_cell_named_sub_free = ncns_free.into_iter().collect();
         self.free_var_syms = free.into_iter().collect();
         self.free_var_writes = free_writes.into_iter().collect();
         self.captured_mutated_locals = captured_mutated.into_iter().collect();

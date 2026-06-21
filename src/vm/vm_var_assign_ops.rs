@@ -5702,15 +5702,97 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Box the just-declared scalar local at `idx` into a shared `ContainerRef`
+    /// cell placed in BOTH the slot and the env entry, so a directly-nested named
+    /// sub that writes the lexical by name (via `SetGlobal` through env) and the
+    /// owner that reads it by slot observe one cell — enabling cross-call
+    /// accumulation without the `env_dirty` blanket reconcile. The skips mirror
+    /// `box_captured_lexicals` exactly: scalars only (`@`/`%`/`&` share already),
+    /// never an already-shared cell or a reference/identity-bearing value, and
+    /// never a type/`where`-constrained scalar (whose every mutation must re-flow
+    /// through the assignment chokepoint, which a cell write-through bypasses).
+    fn box_decl_local_cell(&mut self, code: &CompiledCode, idx: usize) {
+        let name = &code.locals[idx];
+        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+            return;
+        }
+        if self.locals[idx].is_container_ref() {
+            return;
+        }
+        if matches!(
+            self.locals[idx],
+            Value::Package(_)
+                | Value::Array(..)
+                | Value::Hash(..)
+                | Value::Sub(..)
+                | Value::Instance { .. }
+                | Value::Proxy { .. }
+        ) {
+            return;
+        }
+        if loan_env!(self, var_type_constraint(name)).is_some()
+            || loan_env!(self, var_type_constraint(name.trim_start_matches('$'))).is_some()
+        {
+            return;
+        }
+        let container = self.locals[idx].clone().into_container_ref();
+        self.locals[idx] = container.clone();
+        let nm = code.locals[idx].clone();
+        self.env_mut().insert(nm.clone(), container.clone());
+        // Track C: keep a running thread's shared snapshot pointing at the cell
+        // (mirrors box_captured_lexicals).
+        if self.shared_vars_active {
+            loan_env!(self, set_shared_var(&nm, container.clone()));
+        }
+    }
+
     pub(super) fn exec_set_local_op(
         &mut self,
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        // Named-sub declaration boxing decision: a scalar local that a
+        // directly-nested *named sub* writes (`needs_cell_named_sub`) becomes a
+        // shared `ContainerRef` cell so the named sub's by-name env writes and the
+        // owner's slot reads alias one cell, carrying cross-call accumulation
+        // (`via(); via()`) through the cell instead of the `env_dirty` blanket
+        // reconcile (see docs/captured-outer-cell-sharing.md).
+        //
+        // Boxing and the blanket reconcile are MUTUALLY EXCLUSIVE coherence
+        // mechanisms — exactly one is active. Gating boxing on
+        // `blanket_reconcile_disabled()` keeps the DEFAULT (shipping) build
+        // byte-identical to before (reconcile carries coherence, no boxing), while
+        // the `MUTSU_NO_BLANKET_RECONCILE` build activates boxing. This is what lets
+        // the slice land safely: with the reconcile on, cell-sharing would
+        // propagate a captured-outer write that the reconcile happens to drop
+        // through some carriers (e.g. `lives-ok { ... }`), and that extra
+        // propagation surfaces unrelated latent bugs (a missing `&foo = &foo`
+        // self-reference type-check, etc.). Those are fixed as the surface is
+        // migrated; until then boxing is exercised only under the toggle, where the
+        // pins prove it carries the named-sub accumulation surface.
+        //
+        // `vardecl_context` is consumed inside the inner handler, so snapshot it
+        // here. Gated on a non-empty `needs_cell_named_sub`, so ordinary code (e.g.
+        // `fib`) pays nothing. Such a captured local is `needs_env_sync`
+        // (non-simple), so the boxing must wrap BOTH the fast and slow inner paths
+        // — hence it lives here, not inside one branch. Deliberately keyed on
+        // `needs_cell_named_sub`, NOT the closure-driven `needs_cell_locals`:
+        // closures are boxed precisely at their creation op, so reusing that set
+        // here would over-box unrelated same-named locals (same-named `my` locals
+        // share one slot) and break e.g. `let`-restore in a sibling block.
+        let box_decl = self.cell_boxing_active()
+            && self.vardecl_context
+            && !code.needs_cell_named_sub.is_empty();
         let r = self.exec_set_local_op_inner(code, idx);
         // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
         if r.is_ok() {
             self.mirror_attr_local_to_cell(code, idx as usize);
+            if box_decl
+                && let Some(sym) = code.locals_sym.get(idx as usize)
+                && code.needs_cell_named_sub.contains(sym)
+            {
+                self.box_decl_local_cell(code, idx as usize);
+            }
         }
         r
     }

@@ -1,8 +1,37 @@
 # Captured-outer lexical cell 共有 — 実装プラン（Sub-slice 1b+ / env_dirty 削除への substrate）
 
-> **Status:** PREP（2026-06-21・第40セッション末）。次セッションで着手するための自己完結プラン。
+> **Status:** SLICE 1 DONE（2026-06-21・第41セッション）。§6 の第1スライス（named-sub 捕捉
+> scalar の decl-site cell 化）を実装。`t/captured-outer-cell-sharing.t`(12) と
+> `t/multi-frame-accumulation-coherence.t`(10) が **blanket reconcile ON/OFF 両方で PASS**＝この
+> サーフェスは cell 共有で解けた。次＝§7 スライス2（捕捉 container `@`/`%`）。
 > 関連: [docs/env-locals-coherence.md](env-locals-coherence.md)（§7.3 = env_dirty 削除の壁）/
 > [docs/container-identity.md](container-identity.md)（cell インフラ）/ PLAN.md §1-A・§2-C・§2-E。
+>
+> **★設計判断（第41セッション）— boxing は blanket reconcile と相互排他・toggle gated**:
+> cell boxing と blanket reconcile は **どちらか一方のみ active**（`box_decl_local_cell` は
+> `cell_boxing_active()` = `MUTSU_NO_BLANKET_RECONCILE` 時のみ発火）。理由＝reconcile ON のまま boxing
+> すると、reconcile が一部 carrier（`lives-ok {…}` 等）で **落とす** captured-outer write を cell が
+> 正しく伝播 → その伝播が **無関係な潜在バグを露出**（例: `&foo = &foo` の self-ref 型チェック欠落＝
+> roast `S06-signature/code.t` test 8 が main では write-loss で偶然 PASS していた）。∴ デフォルト
+> （shipping/CI）は reconcile が coherence を担い main と byte-identical、toggle 時のみ boxing を
+> exercise（pin が named-sub accumulation surface を担保）。env_dirty 削除時に boxing を恒久 ON 化＋
+> 露出バグを順次修正する。`let`/`temp` の cell-aware restore（`exec_let_save_op` deref +
+> `restore_let_value` write-through）も同 toggle gated。
+>
+> **実装メモ（第41セッション）**: 検出＝compile-time。`CompiledCode.named_sub_captures:
+> Vec<(free_var_writes, needs_cell_named_sub_free)>` に直接子 named sub の **write 集合**のみ畳む
+> （`compile_sub_body` が cf 構築後 push）。`compute_free_vars` が own local への named-sub write を
+> `needs_cell_named_sub` に、非 own を `needs_cell_named_sub_free`（祖先へ bubble）に計上。**closure 駆動の
+> `needs_cell_locals` とは完全分離**＝closure は creation op で精密 box されるので、それを decl-site で
+> 流用すると無関係な同名 local（同名 `my` は同一 slot 共有）を over-box し `let`-restore 等を壊す
+> （当初これで roast `let.t` 4/9/12 回帰＝修正済）。ボックス化＝**decl-site**だが捕捉 scalar は
+> `needs_env_sync`（non-simple）のため `exec_set_local_op` の **fast/slow 両 inner path をラップする
+> 外側**で box（fast path 内だけだと non-simple var に効かない＝当初の誤り）。検証トグル＝
+> `MUTSU_NO_BLANKET_RECONCILE`、6 つの env_dirty-gated reconcile を `blanket_reconcile_if_dirty(code)` に
+> 集約（将来の env_dirty 削除を 1 メソッドの空洞化で行えるように）。教訓: ①top-level/bare-block の
+> `my` は env(SetGlobal)行き＝slot box 不可だが、捕捉は **block-scoped か sub-body** の local で起きる
+> ので問題なし。②local 名は **sigil なし**（"acc" 等）で `free_var_writes`/`locals` 一貫。
+> ③同名 `my` は `alloc_local` で **同一 slot 共有**＝by-name box は scope を跨ぐので write 集合で精密化必須。
 
 ---
 

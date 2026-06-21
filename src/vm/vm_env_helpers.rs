@@ -1,4 +1,17 @@
 use super::*;
+use std::sync::OnceLock;
+
+/// Whether the `env_dirty`-gated "blanket reconcile" barrier is disabled. This is
+/// a diagnostic toggle (`MUTSU_NO_BLANKET_RECONCILE`) used to measure how much
+/// captured-outer surface still depends on the env→locals pull (rather than on
+/// shared `ContainerRef` cells). Resolved once so the hot path is a single cached
+/// boolean load. See `blanket_reconcile_if_dirty` and
+/// docs/captured-outer-cell-sharing.md §5.
+#[inline]
+pub(crate) fn blanket_reconcile_disabled() -> bool {
+    static DISABLED: OnceLock<bool> = OnceLock::new();
+    *DISABLED.get_or_init(|| std::env::var_os("MUTSU_NO_BLANKET_RECONCILE").is_some())
+}
 
 impl Interpreter {
     /// Clear the env-dirty flag at a barrier where the caller does not need a
@@ -648,9 +661,35 @@ impl Interpreter {
     /// call (e.g. `fib`) never trips it and pays nothing.
     pub(super) fn drain_and_reconcile_after_cached_call(&mut self, code: &CompiledCode) {
         self.apply_pending_rw_writeback(code);
-        if self.env_dirty {
+        self.blanket_reconcile_if_dirty(code);
+    }
+
+    /// Multi-frame captured-outer accumulation barrier: when a nested callee wrote
+    /// a caller lexical *by name* (env_dirty), pull the env values back into the
+    /// caller's slots at the call site. This is the LAST load-bearing role of
+    /// `env_dirty` — the "blanket reconcile" that
+    /// docs/captured-outer-cell-sharing.md is incrementally replacing with shared
+    /// `ContainerRef` cells (a captured-outer lexical migrated to a shared cell no
+    /// longer needs this pull, because both the slot and the env hold the same
+    /// Arc). Once that surface is empty the whole mechanism (this method +
+    /// `env_dirty`) is deleted. Gated on `env_dirty` so a pure call (e.g. `fib`)
+    /// pays nothing; the `MUTSU_NO_BLANKET_RECONCILE` diagnostic disables it so the
+    /// remaining not-yet-cell-shared surface can be measured (see §5 of the doc).
+    #[inline]
+    pub(super) fn blanket_reconcile_if_dirty(&mut self, code: &CompiledCode) {
+        if self.env_dirty && !blanket_reconcile_disabled() {
             self.reconcile_locals_from_env_at_site(code);
         }
+    }
+
+    /// Whether captured-outer cell boxing is the active coherence mechanism (the
+    /// complement of the blanket reconcile — exactly one is on). Method wrapper
+    /// over `blanket_reconcile_disabled()` so callers outside the `vm` module
+    /// (e.g. `let`/`temp` restore in `runtime/`) can reach it. See
+    /// `box_decl_local_cell` and docs/captured-outer-cell-sharing.md.
+    #[inline]
+    pub(crate) fn cell_boxing_active(&self) -> bool {
+        blanket_reconcile_disabled()
     }
 
     pub(super) fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {

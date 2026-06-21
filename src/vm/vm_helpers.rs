@@ -667,9 +667,7 @@ impl Interpreter {
             // valid here.
             let code = unsafe { &*(caller_code as *const CompiledCode) };
             self.apply_pending_rw_writeback(code);
-            if self.env_dirty {
-                self.reconcile_locals_from_env_at_site(code);
-            }
+            self.blanket_reconcile_if_dirty(code);
         }
     }
 

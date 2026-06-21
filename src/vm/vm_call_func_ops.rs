@@ -602,9 +602,7 @@ impl Interpreter {
         // the write is visible without the reverse pull. Gated on `env_dirty`,
         // exactly when the barrier would have pulled, so ON behavior is
         // unchanged; a pure compiled call (env not dirtied) pays nothing.
-        if self.env_dirty {
-            self.reconcile_locals_from_env_at_site(code);
-        }
+        self.blanket_reconcile_if_dirty(code);
         self.stack.push(result);
         // env_dirty is now managed inside dispatch_func_call_inner: the
         // interpreter / native fallback branches set it (they mutate env by

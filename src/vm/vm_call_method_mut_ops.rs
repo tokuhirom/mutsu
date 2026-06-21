@@ -1565,9 +1565,7 @@ impl Interpreter {
                 // closure run by `say`/`note`, ...). Gated on `env_dirty`,
                 // exactly when the barrier would have pulled. See the CallMethod
                 // twin and `reconcile_locals_from_env_at_site`.
-                if self.env_dirty {
-                    self.reconcile_locals_from_env_at_site(code);
-                }
+                self.blanket_reconcile_if_dirty(code);
             }
         }
         Ok(())
