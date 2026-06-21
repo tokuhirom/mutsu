@@ -387,6 +387,19 @@ impl Interpreter {
             let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);
             if !candidates.is_empty() {
                 let tail: Vec<char> = chars[pos..].to_vec();
+                // The subrule matches `tail` (a slice starting at `pos`) in a fresh
+                // sub-interpreter, where slice-position 0 is not the original text
+                // start. Publish the char before the slice so look-behind anchors
+                // (`^^`) in the subrule see the real context. At `pos == 0` inherit
+                // the current value (this slice may itself be a nested subrule).
+                let saved_prev = super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.get());
+                let slice_prev = if pos > 0 {
+                    Some(chars[pos - 1])
+                } else {
+                    saved_prev
+                };
+                super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.set(slice_prev));
+                let _restore_prev = super::regex_helpers::RegexPrecedingCharGuard(saved_prev);
                 let mut best: Option<(usize, RegexCaptures)> = None;
                 let mut best_sym: Option<String> = None;
                 for (sub_pat, sub_pkg, sym_key) in candidates {
