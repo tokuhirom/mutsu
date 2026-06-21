@@ -327,7 +327,13 @@ impl Compiler {
         } else {
             for (i, stmt) in main_stmts.iter().enumerate() {
                 let is_last = i == main_stmts.len() - 1;
-                if is_last && !has_explicit_catch {
+                // Keep the final expression's value on the stack so the try
+                // block evaluates to it (the value of a `do`/sub/closure body).
+                // This holds even with an explicit CATCH block: on the success
+                // path Raku still yields the last expression. compile_try always
+                // leaves exactly one value (LoadNil below when none), so stack
+                // discipline is unchanged for statement-context callers.
+                if is_last {
                     if let Stmt::Expr(expr) = stmt {
                         self.compile_expr(expr);
                         main_leaves_value = true;
@@ -453,6 +459,14 @@ impl Compiler {
         if !main_leaves_value {
             self.code.emit(OpCode::LoadNil);
         }
+        // A trailing unhandled Failure *value* on the stack is thrown into this
+        // block/routine's CATCH (or `try`) handler — `ThrowIfFailure` peeks and
+        // keeps the value so a normal trailing value is still the result. This
+        // matches Raku for both blocks (`try { @a.elems; CATCH {...} }`) and
+        // routines (`sub { s2(); CATCH {...} }` where `s2` returns a Failure).
+        // A direct `fail` raises a control signal (not a stack value) handled by
+        // the routine boundary, so it is unaffected and still returned.
+        self.code.emit(OpCode::ThrowIfFailure);
         // Jump over catch/control on success.
         let jump_end = self.code.emit(OpCode::Jump(0));
         // Patch catch_start.

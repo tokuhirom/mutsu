@@ -2360,6 +2360,8 @@ impl Interpreter {
                     "hostname",
                     "signals",
                     "signal",
+                    "cpu-cores",
+                    "endian",
                     "gist",
                     "raku",
                     "Str",

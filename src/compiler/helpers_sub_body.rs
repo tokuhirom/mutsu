@@ -175,11 +175,14 @@ impl Compiler {
         if let Some(line) = sub_compiler.last_source_line {
             sub_compiler.code.emit(OpCode::SetSourceLine(line));
         }
-        // If sub body contains CATCH/CONTROL, wrap in implicit try
+        // If sub body contains CATCH/CONTROL, wrap in implicit try. compile_try
+        // leaves the body's final-expression value on the stack; for a normal
+        // value-producing sub that value is the implicit return, so keep it.
+        // Only discard it when the return spec fixes the value (sink_last_expr).
         if Self::has_catch_or_control(body) {
             sub_compiler.compile_try(body, &None);
-            sub_compiler.code.emit(OpCode::Pop);
             if sink_last_expr {
+                sub_compiler.code.emit(OpCode::Pop);
                 let nil_idx = sub_compiler.code.add_constant(Value::Nil);
                 sub_compiler.code.emit(OpCode::LoadConst(nil_idx));
             }
@@ -513,10 +516,11 @@ impl Compiler {
         }
         // Hoist sub declarations within the closure body
         sub_compiler.hoist_sub_decls(body, true);
-        // If body contains CATCH/CONTROL, wrap in implicit try
+        // If body contains CATCH/CONTROL, wrap in implicit try. compile_try
+        // leaves the body's final-expression value on the stack, which is the
+        // closure's implicit return value, so keep it (do not Pop).
         if Self::has_catch_or_control(body) {
             sub_compiler.compile_try(body, &None);
-            sub_compiler.code.emit(OpCode::Pop);
         } else if Self::has_block_enter_leave_phasers(body) {
             // Body has ENTER/LEAVE/KEEP/UNDO/PRE/POST — wrap in BlockScope
             let idx = sub_compiler.code.emit(OpCode::BlockScope {

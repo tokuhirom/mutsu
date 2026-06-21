@@ -2989,6 +2989,17 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            OpCode::ThrowIfFailure => {
+                // Peek (do not pop): a trailing unhandled Failure must be thrown
+                // so the enclosing CATCH handler (or `try`) sees it, while a
+                // normal value remains on the stack as the block's return value.
+                if let Some(val) = self.stack.last()
+                    && let Some(err) = self.failure_to_runtime_error_if_unhandled(val)
+                {
+                    return Err(err);
+                }
+                *ip += 1;
+            }
             OpCode::SinkPop => {
                 if let Some(val) = self.stack.pop() {
                     match &val {
