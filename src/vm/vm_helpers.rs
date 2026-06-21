@@ -971,13 +971,14 @@ impl Interpreter {
 
             // Snapshot the stage so no pipe lock is held across the pull/apply
             // (which may recursively pull from a nested pipe source).
-            let (source, func, is_grep, source_idx) = {
+            let (source, func, is_grep, source_idx, index_transform) = {
                 let spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
                 (
                     spec.source.clone(),
                     spec.func.clone(),
                     spec.is_grep,
                     spec.source_idx,
+                    spec.index_transform,
                 )
             };
 
@@ -991,6 +992,27 @@ impl Interpreter {
                     let c = cache.as_ref().cloned().unwrap_or_default();
                     let n = needed.min(c.len());
                     return Ok(c[..n].to_vec());
+                }
+                Some(elem) if index_transform.is_some() => {
+                    // `.pairs`/`.antipairs`/`.kv` over a lazy source: emit the
+                    // index-based transform using the source position as the key,
+                    // bypassing the map/grep callback entirely.
+                    let idx = Value::Int(source_idx as i64);
+                    let produced: Vec<Value> = match index_transform.unwrap() {
+                        crate::value::IndexTransform::Pairs => {
+                            vec![Value::ValuePair(Box::new(idx), Box::new(elem))]
+                        }
+                        crate::value::IndexTransform::AntiPairs => {
+                            vec![Value::ValuePair(Box::new(elem), Box::new(idx))]
+                        }
+                        crate::value::IndexTransform::Kv => vec![idx, elem],
+                    };
+                    {
+                        let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
+                        spec.source_idx = source_idx + 1;
+                    }
+                    let mut cache = list.cache.lock().unwrap();
+                    cache.get_or_insert_with(Vec::new).extend(produced);
                 }
                 Some(elem) => {
                     // Apply the stage with Interpreter-native dispatch so the callback

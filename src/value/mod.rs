@@ -1801,6 +1801,23 @@ pub(crate) struct MapGrepSpec {
     pub(crate) source_idx: usize,
     /// `true` once `source` reported exhaustion (finite source ran out).
     pub(crate) done: bool,
+    /// When set, this stage ignores `func`/`is_grep` and emits an index-based
+    /// transform of each source element (`.pairs`/`.antipairs`/`.kv`), using
+    /// `source_idx` as the positional key. Lets these methods stay lazy over a
+    /// lazy source instead of materializing it.
+    pub(crate) index_transform: Option<IndexTransform>,
+}
+
+/// Index-based transform applied lazily to a positional source, used by
+/// `.pairs`/`.antipairs`/`.kv` over a lazy list so they don't force it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum IndexTransform {
+    /// `.pairs`: element `i` → `Pair(i, elem)`.
+    Pairs,
+    /// `.antipairs`: element `i` → `Pair(elem, i)`.
+    AntiPairs,
+    /// `.kv`: element `i` → two flat outputs `i, elem`.
+    Kv,
 }
 
 /// Saved for-loop state for resuming a gather coroutine mid-iteration.
@@ -2106,6 +2123,45 @@ impl LazyList {
                 is_grep,
                 source_idx: 0,
                 done: false,
+                index_transform: None,
+            })),
+            closure_seq: None,
+        }
+    }
+
+    /// Create a lazy `.pairs`/`.antipairs`/`.kv` stage over `source`.
+    ///
+    /// Stays lazy (carries the gather + preserve markers so array assignment
+    /// keeps it lazy, matching Rakudo where these methods are `.is-lazy` over a
+    /// lazy list). Elements are produced on demand by pulling from `source` and
+    /// applying the index transform with the source position as the key.
+    pub(crate) fn new_index_pipe(source: Value, transform: IndexTransform) -> Self {
+        let mut env = crate::env::Env::new();
+        env.insert(
+            "__mutsu_lazylist_from_gather".to_string(),
+            Value::Bool(true),
+        );
+        env.insert(
+            "__mutsu_preserve_lazy_on_array_assign".to_string(),
+            Value::Bool(true),
+        );
+        Self {
+            body: Vec::new(),
+            env,
+            cache: Mutex::new(Some(Vec::new())),
+            compiled_code: None,
+            compiled_fns: None,
+            elems_count: None,
+            scan_spec: None,
+            sequence_spec: None,
+            coroutine: None,
+            lazy_pipe: Some(Mutex::new(MapGrepSpec {
+                source,
+                func: Value::Nil,
+                is_grep: false,
+                source_idx: 0,
+                done: false,
+                index_transform: Some(transform),
             })),
             closure_seq: None,
         }

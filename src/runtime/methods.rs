@@ -3135,6 +3135,24 @@ impl Interpreter {
                 ll.in_array_context(),
             )));
         }
+        // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
+        // lazy index-pipe stage instead of forcing the source (mirrors the
+        // CallMethodMut fast-path so a chained `.pairs` stays lazy too).
+        if let Value::LazyList(ll) = &target
+            && ll.is_genuinely_lazy()
+            && args.is_empty()
+            && matches!(method, "kv" | "pairs" | "antipairs")
+        {
+            let transform = match method {
+                "pairs" => crate::value::IndexTransform::Pairs,
+                "antipairs" => crate::value::IndexTransform::AntiPairs,
+                _ => crate::value::IndexTransform::Kv,
+            };
+            return Ok(Value::LazyList(std::sync::Arc::new(
+                crate::value::LazyList::new_index_pipe(target.clone(), transform),
+            )));
+        }
+
         // Force LazyList and re-dispatch as Seq
         if let Value::LazyList(ll) = &target
             && Self::should_force_lazy_list(method)

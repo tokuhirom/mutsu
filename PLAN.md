@@ -55,10 +55,13 @@
     `env_dirty` を真に消すには **env を locals の派生ビュー化＝単一ストア化**が要り、それは
     **env↔locals が同一コンテナ cell を共有する**こと（前提①）が前提。
 - **✅ env↔locals 純 writeback コヒーレンスは完了**（slice 1〜1.20・#3400 まで）。OFF roast survey の純 writeback
-  サーフェスは枯渇。**残る OFF 依存は別軸＝lazy-lists.t の laziness バグ**（`.kv`/`.pairs`/`.antipairs` の eager force・
-  下記 §C 参照）。
-- **∴ 次の一手 = lazy-lists 真 lazy 化（§C 末尾 ＋ §3-F の L 系）。** これを消化すれば OFF survey が実質クリアし、
-  `env_dirty` 削除（§2-E）が射程に入る。それまで env_dirty は perf ゲートとして正当に残す。
+  サーフェスは枯渇。
+- **✅ lazy-lists.t laziness バグも解消（2026-06-22）**: `.kv`/`.pairs`/`.antipairs` を lazy index-pipe 化（lazy ソース
+  上で eager force しない）。`S02-types/lazy-lists.t` 24-26 が OFF でも PASS。OFF roast survey の決定的サーフェスは
+  **IO-Socket-Async.t の reactive 並行 flaky のみ**（決定的 pin 不可）。
+- **∴ `env_dirty` 物理削除（§2-E）が射程に入った。** `blanket_reconcile_if_dirty` 空洞化 → `env_dirty`/
+  `ensure_locals_synced`/`saved_env_dirty` 削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
+  IO-Socket-Async の flaky はこの空洞化で実挙動を確認する。
 
 ### B. tree-walking interpreter 撤去 — **struct 統合は完了・残フォークは状態所有待ち**
 
@@ -98,13 +101,13 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
       nested-method capture／cross-thread shared-var／object 添字代入 invocant／substr-rw・undefine lvalue／zip-topic・LAST
       phaser／proto `state %`／caller-frame write／param default self-scoping／**cross-thread DESTROY writeback（#3400）**）。
       **OFF roast survey の純 writeback サーフェスは枯渇**（残は別軸＝下記）。`:=` bind・closure captured scalar も done。
-      **★残る OFF 依存は純 writeback でない別軸 2 のみ**:
-      - **lazy-lists.t 24-26 = laziness バグの露出**（`.kv`/`.pairs`/`.antipairs` が gather を eager force・ON は write-loss
-        で偶然 raku 一致、OFF が正しく伝播して露出）。**修正＝`.kv`/`.pairs`/`.antipairs` の真 lazy 化**（§3-F の L 系と合流・
-        precise-writeback では解けない）。**これが env_dirty 削除の最後の前提。**
+      **★残る OFF 依存は IO-Socket-Async.t の flaky のみ**:
+      - **✅ lazy-lists.t 24-26 解消（2026-06-22）**: `.kv`/`.pairs`/`.antipairs` を lazy index-pipe（`MapGrepSpec.index_transform`）
+        化し lazy ソースを eager force しないように修正。`my @res = one.kv` が gather body（`$was-lazy=0`）を走らせず、OFF で
+        も PASS。値は eager 版とバイト一致（pairs=`i=>elem` / antipairs=`elem=>i` / kv=`i,elem` flat）。無限ソース上でも lazy。
       - IO-Socket-Async.t 5,7 = reactive 並行 flaky（決定的 pin 不可・env_dirty 削除の `blanket_reconcile_if_dirty` 空洞化で実挙動確認）。
-- [ ] **★次の本丸 = lazy-lists 真 lazy 化（→ §1-A 解禁）**: 上記 lazy-lists.t を消化すれば OFF survey が実質クリアし、
-      §2-E（`env_dirty`/`ensure_locals_synced`/`saved_env_dirty` 物理削除）が射程に入る。L 系（§3-F の L2b 系）と合流。
+- [ ] **★次の本丸 = `env_dirty` 物理削除（§2-E・→ §1-A 解禁）**: OFF survey の決定的サーフェスが枯渇したので、
+      `blanket_reconcile_if_dirty` 空洞化 → `env_dirty`/`ensure_locals_synced`/`saved_env_dirty` 削除に着手できる。
 - [ ] follow-up（pre-existing・小）: `$x = @arr` 共有の method param 版（`method m($n){ $n.push }`）・`is copy` $-param。
       設計＝[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §5。
 
