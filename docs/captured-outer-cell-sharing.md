@@ -195,12 +195,53 @@ local slot に一致する名前を §3 パターンで cell 化。
 
 ## 7. 後続スライス（env_dirty 削除まで）
 
-- **スライス2: 捕捉 container `@`/`%` の cell 化**。`box_captured_lexicals` の `@`/`%` skip を escape-aware に緩和。
-  **前提**: outer container の decont 消費面の網羅監査（env-locals-coherence §6 open-q#1・iteration/slice/native
-  method が raw items を舐める経路）。Sub-slice 1b の本来の「container」部分。
-- **スライス3+**: §5 の検証で surface する残ケース（scoped overlay / carrier 等）を順次 cell 化。
-- **最終**: 残サーフェス 0 を確認 → `env_dirty` / `ensure_locals_synced` / `saved_env_dirty` 削除
-  （PLAN.md §2-E）。`pairs`/`slip` carrier-drop も同時に安全化。
+### 7.0 ★残サーフェス地図（slice 1 後・2026-06-21 計測）
+
+slice 1 マージ後に `MUTSU_NO_BLANKET_RECONCILE=1 prove -e target/debug/mutsu t/` で計測した、
+**まだ blanket reconcile に依存する（= cell 共有未到達の）23 file**。全て **default build では PASS**（reconcile
+が担う）。container `@`/`%` は Arc 共有で既に成立済（survey に container 単独 test なし）。slice 1 の named-sub
+scalar accumulation は boxing で解決済（pin 2 本が toggle 下 PASS）ので地図に出ない。
+
+| クラスタ | files | 性質・着手難度 |
+|---|---|---|
+| **並行(~13)** | `supply-{act,close-phaser,elems,multi-whenever-done,quit-handler,sync-infinite-emit,syntax-basic}`・`whenever-{last,quit}-phaser`・`promise-combinator`・`proc-async`(4)・`scheduler-cue-times`・`concurrency-basic` | cross-thread cell 共有の壁。`Arc<Mutex>` cell と `shared_vars`/`clone_for_thread` 整合（§8）。**最難・後回し**。 |
+| **carrier(~5)** | `metaop-thunk-captured-outer`(4)・`subst-closure-writeback`(3)・`eval-carrier-precise`(2)・`lazy-reify-captured-outer`(2)・`require-expression`(1) | 捕捉 outer write を carrier 経由で運ぶが multi-frame で cell 未共有。 |
+| **attr/method(~3)** | `attribute-trait-mod`(5・単一最大)・`methods-instance-regressions`(1)・`cross-metaops-regressions`(1) | method dispatch 経由の捕捉。 |
+| **misc** | `gather-lazy`(2)・`env-dirty-reconcile-coherence`(1=reconcile 自体の test) | |
+
+> 地図は `tmp/blanket-reconcile-surface.txt`（揮発）にも出力。再計測コマンドは上記。
+
+### 7.1 ★次スライス推奨 = `metaop-thunk` の typed-scalar（`Mu` universal 緩和）
+
+`metaop-thunk-captured-outer`(4 fail) は `my Mu $s; 1 Zand ($s++,)` 系＝**thunk（closure）に捕捉される
+typed scalar**。untyped `my $s` は toggle 下 PASS（`box_captured_lexicals` が box）だが、`Mu` 制約付きは
+§6.3/§8 の「type/where 制約 skip」で box されず fail。**`Mu` は universal type（全値マッチ）なので write-through が
+制約再チェックを迂回しても無害**＝`box_captured_lexicals`（vm_register_ops.rs:349）と `box_decl_local_cell`
+（vm_var_assign_ops.rs）の type-skip を `Mu` のみ緩和すれば解ける小スライス。**注意**: `Any` は Junction を弾く
+ので universal でない＝緩和は `Mu` のみ。closure 駆動なので `box_captured_lexicals` 側の緩和が主。
+
+### 7.2 後続スライス（その先）
+
+- **carrier cluster**（subst-closure / eval-carrier / lazy-reify）: 捕捉 outer scalar を carrier 経路でも cell 化。
+- **container `@`/`%` の明示 cell 化**（必要なら）: 現状 Arc 共有で動くが、`box_captured_lexicals` の `@`/`%` skip を
+  escape-aware に緩和する場合は **outer container の decont 消費面の網羅監査**が前提（§8）。
+- **並行 cluster**: cross-thread cell（最難・最後）。
+
+### 7.3 ★各スライスの必須手順（slice 1 の教訓）
+
+1. **boxing は `cell_boxing_active()` gated を維持**（default は reconcile・byte-identical）。新サーフェスを cell 化する
+   = その cluster の var を toggle 下で box する実装を追加。
+2. **必ず local で `make roast`（または該当 synopsis）を回す**。`make test` だけでは roast 回帰を見逃す
+   （slice 1 は let.t/code.t を make test では検出できなかった）。
+3. **cell 化が露出する潜在バグ**（reconcile が carrier で write を落として偶然 PASS していたケース）を覚悟する。
+   toggle 下で fail が残るなら、それは「次に直すべき本当のバグ」＝記録して order 付け。
+4. toggle OFF/ON 両方で pin が PASS することを確認。
+
+### 7.4 最終（env_dirty 削除）
+
+残サーフェス（toggle OFF survey）が 0 になったら → `blanket_reconcile_if_dirty` を空洞化 →
+`env_dirty` / `ensure_locals_synced` / `saved_env_dirty` 削除（PLAN.md §2-E）。`pairs`/`slip` carrier-drop も同時に安全化。
+このとき boxing の `cell_boxing_active()` gate を外して恒久 ON 化。
 
 ---
 
