@@ -92,6 +92,12 @@ impl Interpreter {
             | "version" | "signature" | "signals" | "endian" => {
                 Ok(attributes.get(method).cloned().unwrap_or(Value::Nil))
             }
+            "cpu-cores" => {
+                let n = std::thread::available_parallelism()
+                    .map(|n| n.get() as i64)
+                    .unwrap_or(1);
+                Ok(Value::Int(n))
+            }
             "signal" => {
                 // .signal(SIGHUP), .signal("SIGHUP"), .signal("HUP"), .signal(Int)
                 let arg = args.first().cloned().unwrap_or(Value::Nil);

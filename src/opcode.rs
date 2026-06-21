@@ -403,6 +403,11 @@ pub(crate) enum OpCode {
     Pop,
     /// Pop with sink context — throws unhandled Failures when fatal_mode is active
     SinkPop,
+    /// Peek the top of stack (without popping) and throw it if it is an
+    /// unhandled Failure. Used at the tail of a try/CATCH body so a trailing
+    /// `fail`/Failure value is thrown into the block's CATCH handler while a
+    /// normal trailing value is retained as the block's return value.
+    ThrowIfFailure,
 
     // -- Range creation --
     MakeRange,
