@@ -1266,6 +1266,19 @@ pub(crate) struct CompiledCode {
     /// closures so an enclosing scope can tell which of *its* locals are mutated
     /// from inside a closure. Used to compute `captured_mutated_locals`.
     pub(crate) free_var_writes: Vec<Symbol>,
+    /// Free `@`/`%` container variables this code mutates IN PLACE (via a mutating
+    /// method like `push`/`append`, or an element/index assignment) without ever
+    /// rebinding the whole container by name. Such mutations are NOT `SetGlobal`
+    /// name-writes, so they never appear in `free_var_writes`; this set captures
+    /// them separately so a nested named sub that mutates a captured outer
+    /// container (e.g. a user `trait_mod:<is>` pushing to an outer `@names`) can
+    /// have that container boxed into a shared `ContainerRef` cell at its
+    /// declaration site (see `needs_cell_named_sub` / box_decl_local_cell and
+    /// docs/captured-outer-cell-sharing.md §7.2). Kept SEPARATE from
+    /// `free_var_writes` so it never perturbs the default-build precise-writeback
+    /// drain (which keys on `free_var_writes`); it only feeds the gated cell
+    /// boxing.
+    pub(crate) free_var_container_writes: Vec<Symbol>,
     /// Write contributions of directly-nested *named subs* (declared in this
     /// scope), each a `(free_var_writes, needs_cell_named_sub_free)` pair copied
     /// from the sub's finalized `CompiledCode`. A named sub is always reachable
@@ -1368,6 +1381,7 @@ impl CompiledCode {
             needs_env_sync: Vec::new(),
             free_var_syms: Vec::new(),
             free_var_writes: Vec::new(),
+            free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             needs_cell_named_sub: Vec::new(),
             needs_cell_named_sub_free: Vec::new(),
@@ -1596,6 +1610,47 @@ impl CompiledCode {
         }
     }
 
+    /// Array/hash methods that mutate the receiver in place. A `CallMethodMut`
+    /// with one of these on a `@`/`%` target is an in-place container write (not a
+    /// name rebind), so it must count toward `free_var_container_writes`.
+    fn is_mutating_container_method(method: &str) -> bool {
+        matches!(
+            method,
+            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+        )
+    }
+
+    /// The constant-pool index naming a `@`/`%` container that `op` mutates IN
+    /// PLACE (element/index assignment, or a mutating method like `push`). These
+    /// are deliberately excluded from `op_name_write_const_idx` (they are not
+    /// `SetGlobal` name rebinds); the caller filters for non-own `@`/`%` names and
+    /// records them in `free_var_container_writes` to drive cell boxing.
+    fn op_container_mutate_const_idx(&self, op: &OpCode) -> Option<u32> {
+        match op {
+            OpCode::IndexAssignExprNamed { name_idx, .. }
+            | OpCode::IndexAssignExprNested { name_idx, .. }
+            | OpCode::IndexAssignDeepNested { name_idx, .. } => Some(*name_idx),
+            OpCode::IndexAssignPseudoStashNamed { stash_name_idx, .. } => Some(*stash_name_idx),
+            OpCode::ArrayPush {
+                target_name_idx, ..
+            } => Some(*target_name_idx),
+            OpCode::CallMethodMut {
+                name_idx,
+                target_name_idx,
+                ..
+            } => {
+                if let Some(Value::Str(method)) = self.constants.get(*name_idx as usize)
+                    && Self::is_mutating_container_method(method)
+                {
+                    Some(*target_name_idx)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Compute `free_var_syms`: the names this code references from an enclosing
     /// scope (GetGlobal-family ops whose name is not one of this code's own
     /// locals), unioned with the free variables of nested closures that are not
@@ -1613,6 +1668,9 @@ impl CompiledCode {
         // distinguisher is a preceding `MarkVarDeclContext` (declaration). A
         // `SetLocal` without a pending decl marker is a mutation.
         let mut self_mutated: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        // Free `@`/`%` containers mutated in place (push/append/element-assign).
+        let mut free_container_writes: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
         let mut pending_decl = false;
         for op in &self.ops {
             // Read+write free-var set (names referenced from an enclosing scope).
@@ -1621,6 +1679,15 @@ impl CompiledCode {
                 && !own.contains(name.as_str())
             {
                 free.insert(Symbol::intern(name));
+            }
+            // Free-var container in-place mutation (push/append/element-assign):
+            // NOT a name-write, so tracked separately for cell boxing.
+            if let Some(idx) = self.op_container_mutate_const_idx(op)
+                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+                && (name.starts_with('@') || name.starts_with('%'))
+                && !own.contains(name.as_str())
+            {
+                free_container_writes.insert(Symbol::intern(name));
             }
             // Name-based writes: either a free-var write or an own-local mutation.
             if let Some(idx) = Self::op_name_write_const_idx(op)
@@ -1664,6 +1731,14 @@ impl CompiledCode {
                     self_mutated.insert(*sym);
                 } else {
                     free_writes.insert(*sym);
+                }
+            }
+            // A nested closure that mutates an outer container in place keeps that
+            // container free here unless we own it (it stays a container-write
+            // contribution either way — own ones are handled by the cell at decl).
+            for sym in &nested.free_var_container_writes {
+                if !sym.with_str(|s| own.contains(s)) {
+                    free_container_writes.insert(*sym);
                 }
             }
         }
@@ -1742,6 +1817,7 @@ impl CompiledCode {
         self.needs_cell_named_sub_free = ncns_free.into_iter().collect();
         self.free_var_syms = free.into_iter().collect();
         self.free_var_writes = free_writes.into_iter().collect();
+        self.free_var_container_writes = free_container_writes.into_iter().collect();
         self.captured_mutated_locals = captured_mutated.into_iter().collect();
         self.needs_cell_locals = needs_cell.into_iter().collect();
         self.needs_cell_free_vars = needs_cell_free.into_iter().collect();

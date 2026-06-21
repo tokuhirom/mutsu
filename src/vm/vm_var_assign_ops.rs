@@ -5713,7 +5713,15 @@ impl Interpreter {
     /// through the assignment chokepoint, which a cell write-through bypasses).
     fn box_decl_local_cell(&mut self, code: &CompiledCode, idx: usize) {
         let name = &code.locals[idx];
-        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+        if name.starts_with('&') {
+            return;
+        }
+        // `@`/`%` containers captured-and-mutated in place by a nested named sub
+        // (e.g. a user `trait_mod:<is>` pushing to an outer `@names`) are boxed as
+        // a whole-container cell so the sub's by-name mutation and the owner's
+        // by-name read alias one cell (docs/captured-outer-cell-sharing.md §7.2).
+        if name.starts_with('@') || name.starts_with('%') {
+            self.box_decl_local_container_cell(code, idx);
             return;
         }
         if self.locals[idx].is_container_ref() {
@@ -5743,6 +5751,39 @@ impl Interpreter {
         // (mirrors box_captured_lexicals).
         if self.shared_vars_active {
             loan_env!(self, set_shared_var(&nm, container.clone()));
+        }
+    }
+
+    /// Box a just-declared `@`/`%` container local into a shared `ContainerRef`
+    /// cell placed in BOTH the slot and the env entry (the array/hash `:=` cell
+    /// shape), so a nested named sub that mutates the container by name and the
+    /// owner that reads it by name observe one cell. The mutating-method and
+    /// element-assign write-back paths already descend through the cell
+    /// (`try_native_array_mut` / `try_native_hash_mut_bound` / `env_root_descended_mut`),
+    /// and `GetArrayVar`/`GetHashVar` `into_deref()` the cell on read.
+    fn box_decl_local_container_cell(&mut self, code: &CompiledCode, idx: usize) {
+        if self.locals[idx].is_container_ref() {
+            return;
+        }
+        if !matches!(self.locals[idx], Value::Array(..) | Value::Hash(..)) {
+            return;
+        }
+        let name = code.locals[idx].clone();
+        // Typed containers must keep flowing through the assignment chokepoint.
+        if loan_env!(self, var_type_constraint(&name)).is_some()
+            || loan_env!(
+                self,
+                var_type_constraint(name.trim_start_matches(['@', '%']))
+            )
+            .is_some()
+        {
+            return;
+        }
+        let container = self.locals[idx].clone().into_container_ref();
+        self.locals[idx] = container.clone();
+        self.env_mut().insert(name.clone(), container.clone());
+        if self.shared_vars_active {
+            loan_env!(self, set_shared_var(&name, container.clone()));
         }
     }
 
