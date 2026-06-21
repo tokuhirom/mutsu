@@ -417,7 +417,7 @@ pin=`t/undefine-lvalue-writeback-coherence.t`（3）。`S32-scalar/undef.t` ON/O
 これまでの「決定的 OFF 依存 = 0 到達」は **t/ のみの `^not ok` survey** に基づく過小評価だった。`MUTSU_NO_BLANKET_RECONCILE=1
 make roast`（release・全 whitelist 1285）を実走したところ、**13 ファイルが OFF で決定的に fail**（全て pre-existing＝
 main baseline でも同じ subtest が OFF fail・本スライスの変更とは無関係＝debug 比較で確認）。これが env_dirty 物理削除
-（§7.4）を解禁するために潰すべき残サーフェス（初回 13 → slice 1.13 で substr-rw.t/buf.t、slice 1.14 で zip.t、slice 1.15 で map.t、slice 1.16 で undef.t 消化 → **残 8**）:
+（§7.4）を解禁するために潰すべき残サーフェス（初回 13 → slice 1.13 で substr-rw.t/buf.t、slice 1.14 で zip.t、slice 1.15 で map.t、slice 1.16 で undef.t、slice 1.17 で proto.t/subsignature.t 消化 → **残 6**）:
 
 | file | failed subtests | 推定カテゴリ | 状態 |
 |------|-----------------|--------------|------|
@@ -427,8 +427,8 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
 | ~~S03-metaops/zip.t~~ | 68, 71 | Z-cross topicalizing thunk writeback | ✅ slice 1.14 |
 | S02-names/caller.t | 9 | callframe/caller | |
 | S06-advanced/callframe.t | 12 | callframe | |
-| S06-multi/proto.t | 21 | multi-dispatch | |
-| S06-multi/subsignature.t | 54 | subsignature destructure | |
+| ~~S06-multi/proto.t~~ | 21 | caching proto `state %` writeback | ✅ slice 1.17 |
+| ~~S06-multi/subsignature.t~~ | 54 | caching proto `state %` writeback | ✅ slice 1.17 |
 | S06-signature/code.t | 8 | `&`-param signature | |
 | S12-construction/destruction.t | 3 | DESTROY phaser | |
 | ~~S32-list/map.t~~ | 62 | `.map` block LAST phaser writeback | ✅ slice 1.15 |
@@ -445,38 +445,37 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
   gather writeback が正しく伝播して**潜在 laziness バグを露出**（doc §7.3 教訓 #3 の典型）。∴ 修正は `.kv`/`.pairs`/
   `.antipairs` の **真の lazy 化**（L 系・別軸）＝precise-writeback では解けない。env_dirty 削除には laziness 修正が前提。
 - ~~**undef.t 85**~~ ✅ **slice 1.16 で消化**（§7.1l・substr-rw と同経路の `undefine()` lvalue）。
+- ~~**proto.t 21 ＋ subsignature.t 54**~~ ✅ **slice 1.17 で消化（1 修正で 2 file・PR #3389）**。caching proto
+  （`proto cached($a){ state %cache; %cache{$a} //= {*} }`）の cache が呼び出しを跨いで accumulate せず multi が毎回
+  再 dispatch（OFF=`aba`／raku=ON=`ab`）。真因＝**`{*}` redispatch が RHS で評価される hash element-assign の
+  dual-store divergence**: `{*}`（`call_proto_dispatch`）の `restore_env_preserving_existing`（dispatch.rs:2074）が
+  `self.env` を丸ごとスワップし、env の `%cache` Arc を proto body の local slot の Arc から**切り離す**（strong_count→1）。
+  `try_fast_hash_element_assign`（vm_var_assign_ops.rs:2606）は strong_count==1 だと local slot を更新しない（env のみ
+  in-place mutate）ので slot が stale な空 hash のまま残り、続く `sync_env_from_locals`（run_inner）が stale slot を env に
+  書き戻して `state` 永続化が空 hash を保存→cache 喪失。修正（非 gated・precise）＝fast hash assign 末尾で strong_count==1
+  でも local slot が**存在すれば**（＝定義上必ず diverged）代入後 env 値を slot へ mirror（env-only `%*ENV` 等は slot 無し＝
+  no-op、default は blanket reconcile で冗長＝byte-identical）。`state @`-array element-assign（`@cache[$i] //= {*}`）+
+  in-place push は元々 coherent で非該当。教訓: run_inner の state persist は `sync_state_locals`（env 優先・476）→
+  `sync_env_from_locals`（480）順なので、reorder（env flush 先）は逆効果（stale local が fresh env を clobber）＝源流の
+  divergence 修正が正解。pin=`t/proto-state-cache-writeback-coherence.t`（6・ON/OFF 両 PASS）。make test 9788。
 - **残り（全て第45セッションで ON=PASS/OFF=FAIL を実測＝純 writeback コヒーレンス・露出バグではない）**:
-  - **proto.t 21 ＋ subsignature.t 54 ＝同一テスト**「caching proto の `state %cache` が persist せず multi が再呼ばれる」
-    （**1 修正で 2 file 消化＝次の最有力**。詳細＝§7.2b）。
   - **callframe.t 12**: `f()` が `callframe(1)` introspection 経由で caller の `$x is dynamic` を書く（callframe write-back）。
-  - **caller.t 9**: `$CALLER::` 経由の rw dynamic-var write。
+  - **caller.t 9**: `$CALLER::` 経由の rw dynamic-var write。**callframe.t と同機構（caller-frame 名前書き）＝次の最有力。**
   - **destruction.t 3**: `submethod DESTROY { $x++ }` の GC 時 captured write（最小再現は GC タイミング依存で要工夫）。
   - **code.t 8（`&`-param）**: ★doc 冒頭 Status の設計ノートは「cell boxing が `&foo=&foo` self-ref 型チェック欠落を露出」型と
-    示唆＝**writeback でなく露出バグの可能性・着手前に要確認**。
+    示唆＝**writeback でなく露出バグの可能性・着手前に要確認**（最小再現 `sub foo(&foo = &foo){...}`・第46で確認＝scoping バグ・別軸）。
 
-**残 8 全消化後に §7.4（env_dirty 削除）が射程**（lazy-lists の laziness 修正が含まれるため一直線ではない）。
+**残 4（caller/callframe/code/destruction）＋別軸 2（lazy-lists laziness・IO-Socket-Async flaky）全消化後に §7.4（env_dirty 削除）が射程**。
 
-### 7.2b ★次セッション着手メモ — proto `{*}` redispatch ＋ `state` var coherence（proto.t 21 / subsignature.t 54）
-**最有力ターゲット（1 修正で 2 file）。** 最小再現（`tmp/proto.raku` に保存・下記を再作成）:
-```raku
-my $called_with = '';
-proto cached($a) { state %cache; %cache{$a} //= {*} }
-multi cached($a) { $called_with ~= $a; $a x 2 }
-say cached('a'); say cached('b'); say cached('a');   # 3回目は cache hit で multi を呼ばない
-say "called_with=", $called_with;   # ON/raku: ab    OFF before fix: aba（3回目も multi 呼んだ）
-```
-**確定済の分析**:
-- plain `state %h` を持つ**通常 sub** は OFF でも正常 persist（`tmp/state.raku` で確認・`counter(){state %seen; %seen<x>++}` → 1 2 3）。
-  ∴ state var 機構そのものは OK。**proto 固有**の問題。
-- proto sub の実行＝`dispatch.rs:1351-1377`: `eval_block_value(&rewritten)`（`{*}` を redispatch に書換え）で body を走らせた後、
-  **`restore_env_preserving_existing(&restored_env, &def.params)` で env を `saved_env` から復元**する。`%cache{$a} //= {*}` は
-  `{*}`（multi 候補へ frame 跨ぎ redispatch）を評価してから `%cache`（state）に書くので、**state 書込が redispatch 後・env 復元の
-  対象**になり、OFF では復元で巻き戻る（ON は blanket reconcile が拾う）と推測。
-- **着手手順**: ①proto body の state var が「persistent state store」と「env/slot」のどちらに住むか確認
-  （通常 sub の state 復元がどう持続を保証しているか＝`restore_env_preserving_existing` が state キーを skip しているか）。
-  ②proto path で同じ skip/persist が効いているか、`{*}` redispatch の env 操作が state を上書きしていないか。
-  ③修正は「proto body 実行後、state var の更新を持続 store / caller slot に反映」＝他スライス同様 `pending_rw_writeback_sources`
-  push か、env 復元時に state キーを保全する形になる見込み。pin は上記 proto + 通常 state の両方を ON/OFF で固定。
+### 7.2b ✅ proto `{*}` redispatch ＋ `state` var coherence（proto.t 21 / subsignature.t 54）= slice 1.17 で解決
+**実際の真因は当初推測（`restore_env_preserving_existing` が state を巻き戻す）とは別だった。** plain `state %h` を持つ
+通常 sub は OFF でも正常 persist（`counter(){state %seen; %seen<x>++}` → 1 2 3）＝state 機構自体は OK。`state $n`
+スカラも proto body で正常 persist。**問題は `%cache{$a} //= {*}` の hash element-assign 固有**: `{*}`
+（`call_proto_dispatch`）の `restore_env_preserving_existing`（dispatch.rs:2074）が `self.env` を丸ごとスワップし、env の
+`%cache` Arc を proto body の local slot の Arc から切り離す（strong_count→1）。`try_fast_hash_element_assign`
+（vm_var_assign_ops.rs:2606）が strong_count==1 で local slot を更新しない→slot stale→`sync_env_from_locals` が
+env を stale slot で clobber→state 永続化が空 hash 保存。修正＝fast hash assign 末尾で strong_count==1 でも local slot
+存在時に env 値を mirror。詳細＝§7.2a の proto.t 行。pin=`t/proto-state-cache-writeback-coherence.t`。
 
 ### 7.3 ★各スライスの必須手順（slice 1 の教訓）
 
