@@ -304,7 +304,12 @@ drain。**非gated（ON/OFF 両対応・reconcile と idempotent）**。pin=`t/c
 
 - **nested-method capture**（`methods-instance` subtest 3 = `method foo { my $a; method bar { $tracker = $a } }`）:
   EVAL でない multi-frame captured-write（nested method 宣言が enclosing method の lexical 捕捉）。別機構の調査要。
-- **`parametric-role-of-type`**（OFF で決定的 abort・ran 11/14）: ON で PASS。captured-outer の別サーフェス（要調査）。
+- **`parametric-role-of-type`**（OFF で決定的 abort・ran 11/14・test 12）: ON で PASS。**captured-outer ではなく
+  インスタンス属性コヒーレンス**＝`my role TreeNode[::T] does Positional { has TreeNode[T] @!children handles
+  <AT-POS ASSIGN-POS BIND-POS>; has T $.data is rw }` で `$tree[0] = TreeNode.new`（ASSIGN-POS handles 経由で `@!children`
+  へ書込）後に `$tree[0]`（AT-POS）が **non-instance** を返し `$tree[0].data = 1` が `X::Assignment::RO` で abort。
+  typed array インスタンス属性の in-place mutation が OFF で persist しない＝Phase 3 instance-attr cell の別サーフェス
+  （`mirror_attr_local_to_cell`／`read_self_attr_cell` 周辺）。captured-outer cell 共有とは独立機構＝別スライス。
 - **container `@`/`%` の named-sub 以外の cell 化**（必要なら）: closure 捕捉 container は現状 Arc 共有で動く。`box_captured_lexicals`
   の `@`/`%` skip を緩和する場合は §8 の decont 監査が前提（broad boxing は ~12 file 回帰を実証済＝precise 限定必須）。
 - **並行 cluster**（supply/whenever/react/promise/proc-async/scheduler ~13）: cross-thread cell（最難・最後）。

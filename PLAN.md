@@ -88,13 +88,15 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 - [ ] **Phase 2 Stage 2 slice 5（最終 SlotRef キル）**: 残る `HashSlotRef`/`DeferredHashAccess` 生成サイト
       （junction-bind / `is raw` reduce lvalue-read の autoviv）を cell 化し、variant を削除。
 - [ ] **grep-rw-view 撤去**: 最後の ptr-keyed グローバル。matched 要素を cell 昇格し view registry を全廃。
-- [ ] **★env↔locals cell 共有 — captured-outer cell 化（A の律速・最重要）**: nested callee（closure **だけでなく**
+- [~] **★env↔locals cell 共有 — captured-outer cell 化（A の律速・最重要）**: nested callee（closure **だけでなく**
       named sub）に捕捉＋変異される lexical を、owner の local slot と env エントリの両方で**同一 `ContainerRef` cell**
-      にする（escape-aware・裸ローカルは従来の Arc 共有で perf 崖回避）。**実装プラン確定済＝
-      [docs/captured-outer-cell-sharing.md](docs/captured-outer-cell-sharing.md)**（配管は全て既存・`:=` bind が
-      precedent・欠落は「検出＋ボックス化」だけ）。**第1スライス＝named-sub 捕捉 scalar（`$acc` の multi-frame 壁）**、
-      スライス2＝捕捉 container `@`/`%`。`:=` bind container/scalar 共有は既に done。
-      **これが入ると env↔locals が乖離しなくなり、§1-A の単一ストア化（env_dirty 削除）が解禁される。**
+      にする（escape-aware・裸ローカルは従来の Arc 共有で perf 崖回避）。台帳＝
+      [docs/captured-outer-cell-sharing.md](docs/captured-outer-cell-sharing.md)。**slice 1〜1.9 landed**（named-sub 捕捉
+      scalar／metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／**captured-outer container `@`/`%` cell 化**／
+      **X-cross metaop thunk scalar writeback**）。OFF survey 16 file まで縮小。**残り**：①並行 cluster ~13（cross-thread
+      cell・最難・最後）②instance-attr コヒーレンス（`parametric-role-of-type`＝Phase 3 cell 領域・別機構）③multi-frame
+      nested-method capture（`methods-instance`）。`:=` bind container/scalar 共有・closure captured scalar は既に done。
+      **これが完了すると env↔locals が乖離しなくなり、§1-A の単一ストア化（env_dirty 削除）が解禁される。**
 - [ ] follow-up（pre-existing・小）: `$x = @arr` 共有の method param 版（`method m($n){ $n.push }`）・`is copy` $-param。
       設計＝[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §5。
 
