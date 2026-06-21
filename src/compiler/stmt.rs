@@ -2008,13 +2008,7 @@ impl Compiler {
                     for (i, s) in body.iter().enumerate() {
                         let is_last = i == body.len() - 1;
                         if is_last {
-                            if let Stmt::Expr(expr) = s {
-                                self.compile_expr(expr);
-                                if let Expr::Var(name) = expr {
-                                    let name_idx = self.code.add_constant(Value::str(name.clone()));
-                                    self.code.emit(OpCode::TagContainerRef(name_idx));
-                                }
-                            } else {
+                            if !self.compile_when_tail_stmt(s) {
                                 self.compile_stmt(s);
                             }
                         } else {
@@ -2030,13 +2024,7 @@ impl Compiler {
                 for (i, s) in body.iter().enumerate() {
                     let is_last = i == body.len() - 1;
                     if is_last {
-                        if let Stmt::Expr(expr) = s {
-                            self.compile_expr(expr);
-                            if let Expr::Var(name) = expr {
-                                let name_idx = self.code.add_constant(Value::str(name.clone()));
-                                self.code.emit(OpCode::TagContainerRef(name_idx));
-                            }
-                        } else {
+                        if !self.compile_when_tail_stmt(s) {
                             self.compile_stmt(s);
                         }
                     } else {
@@ -2054,13 +2042,7 @@ impl Compiler {
                     for (i, s) in body.iter().enumerate() {
                         let is_last = i == body.len() - 1;
                         if is_last {
-                            if let Stmt::Expr(expr) = s {
-                                self.compile_expr(expr);
-                                if let Expr::Var(name) = expr {
-                                    let name_idx = self.code.add_constant(Value::str(name.clone()));
-                                    self.code.emit(OpCode::TagContainerRef(name_idx));
-                                }
-                            } else {
+                            if !self.compile_when_tail_stmt(s) {
                                 self.compile_stmt(s);
                             }
                         } else {

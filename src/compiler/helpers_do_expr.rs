@@ -430,6 +430,12 @@ impl Compiler {
                 // (it leaves the block value on the stack); only a non-final
                 // `given` is unsupported here.
                 Stmt::Given { .. } if i != last => return false,
+                // A loose `when`/`default` (a topicalizer that smartmatches `$_`
+                // and `succeed`s) is not expressible via the `do if` value path:
+                // its value flows out through the enclosing `when`/`given` via a
+                // control signal, not as a stack-top fallthrough. Branches that
+                // contain one must use ordinary statement compilation.
+                Stmt::When { .. } | Stmt::Default(_) => return false,
                 Stmt::If {
                     then_branch,
                     else_branch,
