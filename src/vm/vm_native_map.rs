@@ -302,10 +302,17 @@ fn classify_expr(expr: &Expr) -> Option<bool> {
         Expr::ControlFlow { .. } => None,
         Expr::Unary { op, expr } | Expr::PostfixOp { op, expr } => {
             if matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus) {
-                // `$_++` / `$_--` mutate the topic; an increment of any other
-                // variable cannot be reproduced by the clone-based loop.
+                // `$_++` / `$_--` mutate the topic. A `++`/`--` of a plain
+                // *named* scalar (`$c++`, a captured-outer or block-local var)
+                // does NOT touch the topic and is reproduced by the native loop
+                // exactly like `$c = $c + 1` (its free-var write is recorded and
+                // drained at the call site, #3307) — so classify it as a simple,
+                // non-topic-mutating body. Any other `++`/`--` target (an indexed
+                // element `@a[$i]++`, an attribute `$o.x++`, a deref) is not a
+                // plain name write and stays an escape (fall back).
                 match expr.as_ref() {
                     Expr::Var(n) if n == "_" => Some(true),
+                    Expr::Var(_) => Some(false),
                     _ => None,
                 }
             } else {

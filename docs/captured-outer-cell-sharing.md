@@ -222,9 +222,33 @@ toggle 下でも PASS に。pin=`t/metaop-thunk-captured-outer-coherence.t`（12
 make roast 1285 回帰なし。**注意**: `Any` は Junction を弾くので universal でない＝緩和は `Mu` のみ。closure 駆動
 なので `box_captured_lexicals` 側の緩和のみで足り、`box_decl_local_cell`（named-sub path）は今回不要だった。
 
+### 7.1b ✅ スライス1.6（DONE・第42セッション）= carrier cluster の single-frame 部（lazy map / gather / subst）
+
+carrier cluster のうち **single-frame**（書く callee が caller と同一フレーム or 直接呼ばれた callee）の3機構を
+precise writeback 化（`pending_rw_writeback_sources` に積み、既存の call-site/force-site drain が処理）＝blanket
+reconcile 非依存に。**この3つは cell 化ではなく precise-writeback で解けた**（map/grep が既に使う #3335/#3307 の機構を
+横展開）:
+
+- **lazy map（`@a.map({$c++}).eager`）**: `try_native_array_map` の `classify_body` が `$c++`/`$c--`（topic 以外の
+  **plain named** scalar inc/dec）を過剰に escape（`None`）扱いし slow path へ落とし、slow path は captured write を
+  記録しなかった。`Expr::Var(_) => Some(false)`（topic を変異しないので simple）に緩和＝native loop が処理し
+  `$c=$c+1` 同様に free-var write を記録（vm_native_map.rs:303）。indexed `@a[$i]++`/attr `$o.x++` は引き続き fall back。
+- **gather（`gather { ...; $c++; take $_ }`）**: forcing 時の `reconcile_caller_after_lazy_force` が gather body を
+  `blanket_reconcile_if_dirty`（OFF 無効）でしか reconcile していなかった。両 force inner（`force_lazy_list_vm_inner` /
+  `_n_inner`）の env-merge 直後に gather body の `free_var_writes` を `record_eager_block_free_var_writeback` で記録
+  （vm_helpers.rs）＝force-site の既存 `apply_pending_rw_writeback` が precise drain。
+- **subst（`.subst(/../, { $n++ })`）**: `eval_subst_replacement_cased` は捕捉 lexical write を env へ伝播するが
+  pending に積まず blanket 依存だった。伝播箇所で名前を `pending_rw_writeback_sources` に push（methods_string.rs）＝
+  `.subst` call-site が drain。
+
+pin（既存）=`t/{lazy-reify-captured-outer,gather-lazy,subst-closure-writeback}.t`（ON/OFF 両 PASS）。make test 9672 /
+make roast 1285 回帰なし。
+
 ### 7.2 後続スライス（その先）
 
-- **carrier cluster**（subst-closure / eval-carrier / lazy-reify）: 捕捉 outer scalar を carrier 経路でも cell 化。
+- **carrier cluster の multi-frame 残**（`eval-carrier-precise` subtest 3/5・`require-expression` subtest 3）:
+  **descendant frame から ancestor lexical を書く EVAL/require carrier**＝§1 の multi-frame accumulation 壁そのもの。
+  precise single-frame drain では届かず（記録が中間フレームで discard される）、**cell 共有が要る本丸**。
 - **container `@`/`%` の明示 cell 化**（必要なら）: 現状 Arc 共有で動くが、`box_captured_lexicals` の `@`/`%` skip を
   escape-aware に緩和する場合は **outer container の decont 消費面の網羅監査**が前提（§8）。
 - **並行 cluster**: cross-thread cell（最難・最後）。

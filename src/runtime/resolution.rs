@@ -1978,7 +1978,7 @@ impl Interpreter {
     /// lexical lands in `env` but is never recorded for write-through. Replay the
     /// block's compile-time `free_var_writes` here. Topic/param names are
     /// loop-local (restored by the caller) and excluded.
-    fn record_eager_block_free_var_writeback(
+    pub(crate) fn record_eager_block_free_var_writeback(
         &mut self,
         code: &crate::opcode::CompiledCode,
         params: &[String],

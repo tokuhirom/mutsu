@@ -1082,6 +1082,13 @@ impl Interpreter {
             }
             if let Some(v) = self.env.get_sym(k) {
                 saved.insert_sym(k, v.clone());
+                // Precise (env_dirty-independent) writeback: record the captured
+                // lexical so the `.subst` call site drains it into the caller's
+                // local slot via `apply_pending_rw_writeback`, like a map/grep
+                // callback. Without this the write reached env but the caller's
+                // slot relied on the blanket reconcile (being retired — see
+                // docs/captured-outer-cell-sharing.md).
+                self.pending_rw_writeback_sources.push(name);
             }
         }
         self.env = saved;
