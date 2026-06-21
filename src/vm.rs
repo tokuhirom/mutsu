@@ -3325,7 +3325,20 @@ impl Interpreter {
                 arity,
                 arg_sources_idx,
             } => {
-                self.exec_call_on_value_op(code, *arity, *arg_sources_idx, compiled_fns)?;
+                // Set a resume point before propagating a control signal so an
+                // enclosing `CONTROL {}` can `.resume` after this call — e.g.
+                // `my $w = &warn; $w.("x")` raises a resumable `warn` signal from
+                // inside the dispatched callable, exactly like a direct `warn`
+                // (which the `ExecCall` arm below already handles).
+                match self.exec_call_on_value_op(code, *arity, *arg_sources_idx, compiled_fns) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        if !e.is_resume && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
+                        return Err(e);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::CallOnCodeVar {
@@ -3333,13 +3346,21 @@ impl Interpreter {
                 arity,
                 arg_sources_idx,
             } => {
-                self.exec_call_on_code_var_op(
+                match self.exec_call_on_code_var_op(
                     code,
                     *name_idx,
                     *arity,
                     *arg_sources_idx,
                     compiled_fns,
-                )?;
+                ) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        if !e.is_resume && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
+                        return Err(e);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::ExecCall {
