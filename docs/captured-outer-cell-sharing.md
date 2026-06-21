@@ -596,8 +596,19 @@ env を stale slot で clobber→state 永続化が空 hash 保存。修正＝fa
 
 ## 9. 着手手順（次セッション用クイックスタート）
 
-1. このプラン §6.1 案A の配線可否を調査（`compute_free_vars` から named sub の `CompiledCode` 到達可能か）。
-2. `t/captured-outer-cell-sharing.t` を先に書く（multi-frame `$acc` accumulation 他・raku 期待値で固定）。
-3. 検出＋ボックス化を実装（§6.1-6.2）。
-4. §6.4 で検証（blanket 外して pin が通る → 戻して make test）。
-5. PR（feature branch・auto-merge）。CI 後、§7 スライス2へ。
+**★純 writeback コヒーレンスは slice 1.20（#3400）で完了＝OFF roast survey の純 writeback サーフェスは枯渇。**
+captured-outer cell 共有のグラインドはここで終わり。次の本丸は**別軸の laziness バグ**で、これが env_dirty 削除（§7.4）の
+最後の前提。
+
+**次セッションの本丸 = `S02-types/lazy-lists.t` 24-26 の真 lazy 化（§7.2a triage 参照・§3-F の L 系と合流）**:
+- 症状: OFF で subtests 24-26 が決定的 fail（`MUTSU_FUDGE=1 MUTSU_NO_BLANKET_RECONCILE=1 prove -e target/debug/mutsu
+  roast/S02-types/lazy-lists.t` → Failed 24-26）。ON は write-loss で偶然 raku 一致。
+- 真因: `make-lazy-list = gather { take ...; $was-lazy = 0 }.lazy` を `.kv`/`.pairs`/`.antipairs` が **eager に force** して
+  `$was-lazy = 0` を走らせる（mutsu の `.kv`/`.pairs`/`.antipairs` が非 lazy）。**writeback ではなく laziness バグ**＝
+  precise-writeback では解けない。
+- 修正方針: `.kv`/`.pairs`/`.antipairs` を真に lazy 化（lazy Seq/gather を eager 消費しない）。`docs/lazy-arrays.md` の
+  L 系（L2b 等）と設計を合流させる。raku で `(gather { ... }).lazy.kv` が lazy のままなことを確認してから着手。
+- これが入れば OFF survey が実質クリア（残は IO-Socket-Async.t の flaky のみ＝決定的 pin 不可）→ §7.4 が射程。
+
+**その後 = §7.4（env_dirty 物理削除）**: `blanket_reconcile_if_dirty` 空洞化 → `env_dirty`/`ensure_locals_synced`/
+`saved_env_dirty` 削除 → `cell_boxing_active()` gate を外して boxing 恒久 ON 化。IO-Socket-Async の flaky はこの空洞化で実挙動確認。
