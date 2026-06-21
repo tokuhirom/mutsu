@@ -896,6 +896,20 @@ pub struct Interpreter {
     /// EVAL) can observe handlers installed by the outer VM and propagate
     /// warn/control signals appropriately.
     pub(crate) control_handler_depth: u32,
+    /// Active CONTROL handler bodies, innermost last. Each entry is
+    /// `(code_ptr, control_begin, control_end, frame_depth)` where `code_ptr` is a
+    /// raw `*const CompiledCode` (kept as `usize` to stay `Send`) of the block
+    /// that installed the handler, and `frame_depth` is `call_frames.len()` at
+    /// install time. Pushed/popped in lockstep with `control_handler_depth`
+    /// (`exec_try_catch_op_inner`). Lets a resumable `warn` raised *deep* in a
+    /// callee be handled in that callee's still-live frame — running the handler
+    /// inline (with the installing frame's locals temporarily swapped in, found at
+    /// `call_frames[frame_depth].saved_locals`) and resuming via the callee
+    /// frame's own `resume_ip` — instead of unwinding to the installing block,
+    /// whose frame-relative `resume_ip` would point into the wrong code. SAFETY:
+    /// the installing block's `CompiledCode` is an ancestor frame on the live Rust
+    /// call stack while any entry is live, so the pointer never dangles.
+    pub(crate) control_handlers: Vec<(usize, usize, usize, usize)>,
     test_assertion_line_stack: Vec<i64>,
     block_stack: Vec<Value>,
     doc_comments: HashMap<String, DocComment>,
@@ -3106,6 +3120,7 @@ impl Interpreter {
             pending_call_arg_sources: None,
             test_pending_callsite_line: None,
             control_handler_depth: 0,
+            control_handlers: Vec::new(),
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),
@@ -5831,6 +5846,7 @@ impl Interpreter {
             pending_call_arg_sources: None,
             test_pending_callsite_line: None,
             control_handler_depth: 0,
+            control_handlers: Vec::new(),
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),

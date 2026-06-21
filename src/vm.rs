@@ -437,16 +437,6 @@ impl Interpreter {
                     ip = target_ip;
                     continue;
                 }
-                if e.is_warn && self.control_handler_depth == 0 {
-                    if !self.warning_suppressed() {
-                        self.write_warn_to_stderr(&e.message);
-                    }
-                    if let Some(v) = e.return_value {
-                        self.stack.push(v);
-                    }
-                    ip += 1;
-                    continue;
-                }
                 self.sync_state_locals(code);
                 self.pop_once_scope();
                 // An uncaught CX::Return signal that escapes the top-level
@@ -671,16 +661,6 @@ impl Interpreter {
                     && let Some(target_ip) = self.find_label_target(code, label)
                 {
                     ip = target_ip;
-                    continue;
-                }
-                if e.is_warn && self.control_handler_depth == 0 {
-                    if !self.warning_suppressed() {
-                        self.write_warn_to_stderr(&e.message);
-                    }
-                    if let Some(v) = e.return_value {
-                        self.stack.push(v);
-                    }
-                    ip += 1;
                     continue;
                 }
                 self.sync_state_locals(code);
@@ -982,25 +962,8 @@ impl Interpreter {
                     ip = target_ip;
                     continue;
                 }
-                // Handle warn signals inline when no CONTROL handler is active.
-                if e.is_warn && self.control_handler_depth == 0 {
-                    if !self.warning_suppressed() {
-                        self.write_warn_to_stderr(&e.message);
-                    }
-                    if let Some(v) = e.return_value {
-                        self.stack.push(v);
-                    }
-                    // If a resume point was recorded for the original warn
-                    // site (e.g., when a CONTROL block rethrew the CX::Warn),
-                    // resume there so execution continues after the warn
-                    // rather than past whatever op propagated the signal.
-                    if let Some(resume_point) = self.resume_ip.take() {
-                        ip = resume_point;
-                    } else {
-                        ip += 1;
-                    }
-                    continue;
-                }
+                // Warns are handled at the per-op `exec_one` chokepoint, so a warn
+                // never reaches this loop's error arm; propagate anything else.
                 return Err(e);
             }
             if self.is_halted() {
@@ -1106,7 +1069,30 @@ impl Interpreter {
         }
     }
 
+    /// Execute the op at `*ip`. Wraps `exec_one_dispatch` so a resumable `warn`
+    /// raised by the op (directly, or by a builtin/closure it calls) is handled
+    /// inline in THIS frame — running the innermost installed `CONTROL` handler,
+    /// or printing — and execution resumes via this op's frame-correct resume
+    /// point. Handling at the single per-op chokepoint means every exec loop
+    /// (run loop, run_range, named-sub, method, closure, …) gets correct
+    /// cross-frame warn resumption without per-loop wiring. See
+    /// `handle_warn_inline`.
     fn exec_one(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        match self.exec_one_dispatch(code, ip, compiled_fns) {
+            Err(e) if e.is_warn => {
+                *ip = self.handle_warn_inline(&e, *ip + 1, compiled_fns)?;
+                Ok(())
+            }
+            other => other,
+        }
+    }
+
+    fn exec_one_dispatch(
         &mut self,
         code: &CompiledCode,
         ip: &mut usize,

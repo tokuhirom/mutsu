@@ -54,6 +54,93 @@ impl Interpreter {
         }
     }
 
+    /// Handle a resumable `warn` (or any resumable control signal carrying a
+    /// CONTROL topic) *inline* in the current frame, running the innermost
+    /// installed CONTROL handler body if one is present, or printing to stderr if
+    /// not. Returns `Ok(Some(resume_ip))` when execution should continue (set
+    /// `ip = resume_ip`), or `Err` if the handler raised a non-resume error
+    /// (propagate). Always returns `Some` for a warn — a warn is always resumable.
+    ///
+    /// This is the key to resuming a warn raised *deep* in a callee: the warn is
+    /// caught and handled at the deepest frame's exec loop (where the raising op
+    /// recorded a frame-correct `resume_ip`), instead of unwinding to the block
+    /// that installed the handler — whose frame-relative `resume_ip` would point
+    /// into the wrong `CompiledCode`. The handler body reads/writes outer lexicals
+    /// by name through the (dynamic) env, so running it from the callee frame is
+    /// observationally identical to running it at the installing block.
+    pub(super) fn handle_warn_inline(
+        &mut self,
+        e: &RuntimeError,
+        fallback_ip: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<usize, RuntimeError> {
+        // Run the innermost handler, if any (popped while running so a warn
+        // re-raised inside the handler is handled by an outer handler / printed,
+        // never re-entrant).
+        if let Some((code_ptr, cb, ce, frame_depth)) = self.control_handlers.last().copied() {
+            // SAFETY: see the `control_handlers` field doc — the installing block
+            // is an ancestor frame on the live Rust call stack.
+            let handler_code: &CompiledCode = unsafe { &*(code_ptr as *const CompiledCode) };
+            let saved_topic = self.env().get("_").cloned();
+            if let Some(topic) = Self::control_signal_topic_value(e) {
+                self.env_mut().insert("_".to_string(), topic);
+            }
+            let saved_stack = self.stack.len();
+            // The handler body's bytecode references the *installing* frame's
+            // local slots, not this (deeper) callee frame's. Temporarily swap the
+            // installing frame's saved locals into `self.locals` so slot accesses
+            // hit the right storage and the handler's mutations land where the
+            // installing frame will see them after this callee returns. (When the
+            // warn is in the installing frame itself, `frame_depth ==
+            // call_frames.len()` and no swap is needed.)
+            let swap_locals = frame_depth < self.call_frames.len();
+            if swap_locals {
+                std::mem::swap(&mut self.locals, &mut self.call_frames[frame_depth].saved_locals);
+            }
+            self.control_handlers.pop();
+            let dec = self.control_handler_depth > 0;
+            if dec {
+                self.control_handler_depth -= 1;
+            }
+            let handler_result = self.run_range(handler_code, cb, ce, compiled_fns);
+            if dec {
+                self.control_handler_depth += 1;
+            }
+            self.control_handlers.push((code_ptr, cb, ce, frame_depth));
+            if swap_locals {
+                std::mem::swap(&mut self.locals, &mut self.call_frames[frame_depth].saved_locals);
+            }
+            self.stack.truncate(saved_stack);
+            match saved_topic {
+                Some(v) => {
+                    self.env_mut().insert("_".to_string(), v);
+                }
+                None => {
+                    self.env_mut().remove("_");
+                }
+            }
+            match handler_result {
+                Ok(()) => {}
+                Err(ref c) if c.is_resume || c.is_succeed => {}
+                Err(c) if c.is_warn => {
+                    if !self.warning_suppressed() {
+                        self.write_warn_to_stderr(&c.message);
+                    }
+                }
+                Err(c) => return Err(c),
+            }
+        } else if !self.warning_suppressed() {
+            self.write_warn_to_stderr(&e.message);
+        }
+        // A resumable warn raised mid-expression (e.g. a Nil coercion) carries the
+        // value the suspended call should evaluate to; the stack already holds the
+        // surrounding operands, so push it so the call site sees a result.
+        if let Some(rv) = e.return_value.clone() {
+            self.stack.push(rv);
+        }
+        Ok(self.resume_ip.take().unwrap_or(fallback_ip))
+    }
+
     fn control_signal_topic_value(signal: &RuntimeError) -> Option<Value> {
         // User-defined classes doing X::Control carry their original
         // exception instance. Surface it directly so CONTROL blocks see the
@@ -3098,6 +3185,12 @@ impl Interpreter {
         let has_control = control_begin < end;
         if has_control {
             self.control_handler_depth += 1;
+            self.control_handlers.push((
+                code as *const CompiledCode as usize,
+                control_begin,
+                end,
+                self.call_frames.len(),
+            ));
         }
         // Guard the protected body with a panic->X:: boundary so an internal
         // Rust panic (overflow/OOB/unwrap) raised anywhere inside it becomes a
@@ -3105,6 +3198,7 @@ impl Interpreter {
         let body_result = self.run_range_guarded(code, body_start, catch_begin, compiled_fns);
         if has_control {
             self.control_handler_depth -= 1;
+            self.control_handlers.pop();
         }
         match body_result {
             Ok(()) => {
@@ -3266,11 +3360,18 @@ impl Interpreter {
                             }
                             if has_control {
                                 self.control_handler_depth += 1;
+                                self.control_handlers.push((
+                                    code as *const CompiledCode as usize,
+                                    control_begin,
+                                    end,
+                                    self.call_frames.len(),
+                                ));
                             }
                             let body_result =
                                 self.run_range(code, resume_point, catch_begin, compiled_fns);
                             if has_control {
                                 self.control_handler_depth -= 1;
+                                self.control_handlers.pop();
                             }
                             match body_result {
                                 Ok(()) => {
