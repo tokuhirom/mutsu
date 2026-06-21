@@ -1,13 +1,14 @@
 # Captured-outer lexical cell 共有 — 実装プラン（Sub-slice 1b+ / env_dirty 削除への substrate）
 
-> **Status:** SLICE 1〜1.11 DONE（〜2026-06-21・第41〜44セッション）。§6 第1スライス（named-sub 捕捉
-> scalar decl-site cell 化）＋§7.1〜7.1g（metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／
-> **captured-outer container `@`/`%` cell 化＝§7.1d**／**`X`-cross metaop thunk scalar writeback＝§7.1e**／
-> **nested-method capture＝§7.1f**／**cross-thread shared-var writeback＝§7.1g**）を実装。
-> 各 pin が **blanket reconcile ON/OFF 両方で PASS**。**決定的 OFF-only fail（`^not ok`）= 0 に到達**。
-> 残サーフェス＝①`parametric-role-of-type`（instance-attr cell 別機構）②flaky な reactive 並行系（決定的 pin 不可）
-> ③`env-dirty-reconcile-coherence`（reconcile 自体の test）。
-> 次＝§7.2（parametric-role-of-type）or env_dirty 削除の最終段（§7.4・`blanket_reconcile_if_dirty` 空洞化）。
+> **Status:** SLICE 1〜1.19 DONE（〜2026-06-21・第41〜47セッション）。§6 第1スライス（named-sub 捕捉
+> scalar decl-site cell 化）＋§7.1〜7.1l（metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／
+> captured-outer container `@`/`%` cell 化／`X`-cross metaop thunk／nested-method capture／cross-thread shared-var／
+> object 添字代入 invocant slot／substr-rw・subbuf-rw／zip short-circuit／map LAST phaser／undefine() lvalue）
+> ＋slice 1.17（proto state-%cache）／1.18（caller-frame by-name write）／**1.19（param default self-scoping＝code.t 8）**
+> を実装。各 pin が **blanket reconcile ON/OFF 両方で PASS**。**OFF roast survey（authoritative・§7.2a）= 初回 13 → 残 1**。
+> **残 1（純 writeback でない）＝destruction.t 3（DESTROY captured-write の cell-detachment・§7.2c に真因確定・専用スライス要）**。
+> ＋別軸 2＝lazy-lists.t（laziness・L 系）／IO-Socket-Async.t（flaky）。
+> 次＝§7.2c（destruction.t の cell write-through・案A）or env_dirty 削除の最終段（§7.4・`blanket_reconcile_if_dirty` 空洞化）。
 > 関連: [docs/env-locals-coherence.md](env-locals-coherence.md)（§7.3 = env_dirty 削除の壁）/
 > [docs/container-identity.md](container-identity.md)（cell インフラ）/ PLAN.md §1-A・§2-C・§2-E。
 >
@@ -430,7 +431,7 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
 | ~~S06-multi/proto.t~~ | 21 | caching proto `state %` writeback | ✅ slice 1.17 |
 | ~~S06-multi/subsignature.t~~ | 54 | caching proto `state %` writeback | ✅ slice 1.17 |
 | ~~S06-signature/code.t~~ | 8 | `&`-param default self-scoping | ✅ slice 1.19 |
-| S12-construction/destruction.t | 3 | DESTROY phaser | |
+| S12-construction/destruction.t | 3 | DESTROY captured-write cell-detachment（§7.2c） | 🔴 専用スライス要 |
 | ~~S32-list/map.t~~ | 62 | `.map` block LAST phaser writeback | ✅ slice 1.15 |
 | ~~S32-scalar/undef.t~~ | 85 | undefine() lvalue slot writeback | ✅ slice 1.16 |
 | S32-io/IO-Socket-Async.t | 5, 7 | reactive 並行（flaky 疑い） | |
@@ -476,13 +477,77 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
   pre-bind**（self-reference が outer ではなく未定義パラメータに解決＝Raku の「param はその default 内で scope に入る」規則）。
   earlier param（`$b = $a`）は前 iter で bind 済なので影響なし、別名 outer（`$z = $y`）も影響なし。pin=
   `t/param-default-self-scoping.t`（7・ON/OFF 両 PASS）。make test 9819。
-- **残り 1（純 writeback でない＝別軸）**:
-  - **destruction.t 3**: `submethod DESTROY { $x++ }` の GC 時 captured write（最小再現は GC タイミング依存で要工夫）。
+- **残り 1（純 writeback でない＝別軸・第47で真因を cell-detachment と特定）**:
+  - **destruction.t 3**: `submethod DESTROY { $in_destructor++ }` の GC 時 captured write が `await start { loop {…} }` の
+    後で top-level slot に届かない。**第47セッションで最小再現＋真因を確定**（下記 §7.2c）。当初の「GC タイミング依存」は誤り＝
+    **決定的**（`MUTSU_NO_BLANKET_RECONCILE=1` で確実に fail）。真因は単純な writeback gap でなく **cell detachment**（DESTROY が
+    slow-path `run_instance_method_resolved` 経由で実行され、その env merge が top-level slot と共有していた `ContainerRef` cell を
+    plain Int に置換して切り離す）＋ **await 境界後に top-level frame が drain しない**の二重問題。precise-writeback の単純横展開では
+    解けず、専用スライス要（§7.2c）。
   - ＋別軸: lazy-lists.t 24-26（laziness バグ・L 系）／IO-Socket-Async.t 5,7（flaky）。
 
 **残 1（destruction.t GC＝純 writeback でない別軸）＋別軸 2（lazy-lists laziness・IO-Socket-Async flaky）
 全消化後に §7.4（env_dirty 削除）が射程**。純 writeback コヒーレンスのサーフェスは slice 1.18 で枯渇、
 露出バグ（code.t scoping）は slice 1.19 で消化。
+
+### 7.2c 🔴 destruction.t 3 — DESTROY captured-write の cell-detachment（第47セッション調査・未解決・専用スライス要）
+
+**最小再現（決定的・`MUTSU_NO_BLANKET_RECONCILE=1` で確実 fail）**:
+```raku
+my $a = 0;
+my @order;
+class Foo { submethod DESTROY { $a++ } }
+class Bar { submethod DESTROY { push @order, "x" } }
+my $b0 = Bar.new; $b0 = Nil;
+await start {
+    loop {
+        $*VM.request-garbage-collection;
+        my $foo = Foo.new;
+        my $bar = Bar.new unless +@order;   # 条件付き生成が鍵
+        last if $a && @order;
+    }
+};
+say "a=$a";     # OFF: a=0（ON/raku: a=1）
+```
+
+**切り分け結果（min1〜min10）**:
+- `$a` 単独の DESTROY write（1クラス）は OFF でも **正常**（min1/min5/min6）。同一 DESTROY が複数スカラ／スカラ＋配列を
+  書いても正常（min5/min6）。異なる DESTROY が別々のスカラを書いても**毎イテレーション両方生成なら**正常（min7/min9）。
+- **fail するのは**: 複数の DESTROY-bearing クラスがあり、片方（`@order`）が**条件付き生成**（`unless +@order`）で、
+  loop 脱出イテレーションでは `$a` を書く DESTROY だけが発火する構成（min4/min8/min10）。継承は不要。
+
+**真因（計測で確定）**:
+- `peek()`（`$a` を captured-outer として env から読む sub）は **env=1** を見る＝**env は正しく蓄積**。
+- top-level frame の `$a` を読む直接 interpolation は **slot=0（stale）**。∴ top-level `my $a` は OFF の cell-boxing で
+  **local slot（cell）に box** され、env と乖離。
+- DESTROY は slow-path `run_instance_method_resolved`（class.rs:934）経由。その末尾の env merge
+  （`merged_env.insert_sym(*k, v.clone())`・class.rs:1421-1429）が、saved_env に存在する captured var を**新しい plain Int に
+  置換**して `self.env = merged_env`。これで env の `$a` が top-level slot の `ContainerRef` cell（Arc）から**切り離される**
+  （cell には旧値 0 が残る）。
+- かつ `await start {…}` の後、top-level frame で `pending_*_writeback` を drain する経路が**無い**（drain したのは loop 内の
+  start-block frame だけ＝`locals=["foo","chld"]` で `$a` slot 無し→retain しても top-level まで運ばれない）。
+
+**試した修正と不成立の理由（第47・revert 済）**:
+1. DESTROY merge で変更 captured scalar を `pending_rw_writeback_sources`（drop-on-miss）に記録＋loop 境界
+   （vm_control_ops.rs:256）で `apply_pending_rw_writeback` → ❌ slot が現フレームに無く drop。
+2. `pending_caller_var_writeback`（retain-on-miss）に変更 → ❌ retain はするが await 後 top-level frame で drain が走らず、
+   かつ slot を見つけても **cell でなく plain 代入**になり cell 共有を壊す。
+3. 計測で `find_local_slot` が全中間フレームで `$a` slot を見つけられない（`locals=[]`/`["foo","chld"]`）ことを確認＝
+   top-level slot は別フレーム。
+
+**案A（cell write-through）も第47で試行→不成立（計測で確定）**: DESTROY merge（class.rs:1421）で `saved_env.get_sym(k)` が
+`ContainerRef` cell のとき plain 置換でなく cell へ write-through する案を実装したが OFF=0 のまま。**計測で `saved=Some(Int(0))`
+＝env は cell でなく plain Int を保持**と判明。∴ **cell は top-level slot にのみ存在し、nested frame（start-block/loop）の env
+には plain コピーしか伝播していない**＝そもそも env↔slot が同一 Arc を共有していない。DESTROY merge は env しか触れないので、
+top-level slot の cell には原理的に到達不可。案A は前提（env が cell を保持）が成り立たず不成立。revert 済。
+
+**∴ これは localized fix で解けない＝PLAN §2-C Sub-slice 1b の「env↔locals がコンテナ cell を**フレームを跨いで**共有する」
+substrate そのもの**。top-level の captured cell が `await start { loop {…} }` の nested frame の env に**同一 Arc として伝播**
+しない限り（現状は plain コピー）、DESTROY（やその他 nested-frame からの captured write）は top-level slot へ届かない。
+**次セッションの本丸＝cell の cross-frame 伝播**: 捕捉 cell を push_call_frame / start-spawn / loop-scope の env チェーンに
+**同一 Arc で**載せる（plain コピーを作らない）。これが入れば DESTROY のみならず multi-frame captured write 全般が cell 経由で
+coherent になり、§7.4（env_dirty 削除）の前提が満たされる。destruction.t 3 はその最小 pin。
+（補助案B＝await/loop 境界 top-level drain は、cell 伝播が入れば不要。）
 
 ### 7.2b ✅ proto `{*}` redispatch ＋ `state` var coherence（proto.t 21 / subsignature.t 54）= slice 1.17 で解決
 **実際の真因は当初推測（`restore_env_preserving_existing` が state を巻き戻す）とは別だった。** plain `state %h` を持つ
