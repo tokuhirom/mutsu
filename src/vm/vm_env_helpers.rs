@@ -626,18 +626,46 @@ impl Interpreter {
     /// `drain_and_reconcile_after_cached_call` (and the slow call path) runs at
     /// each frame's call site.
     pub(super) fn apply_pending_rw_writeback(&mut self, code: &CompiledCode) {
-        if self.pending_rw_writeback_sources.is_empty() {
-            return;
-        }
-        let sources = std::mem::take(&mut self.pending_rw_writeback_sources);
-        for source in sources {
-            if let Some(slot) = self.find_local_slot(code, &source)
-                && !matches!(self.locals[slot], Value::HashSlotRef { .. })
-                && let Some(val) = self.env().get(&source).cloned()
-            {
-                self.locals[slot] = val;
+        if !self.pending_rw_writeback_sources.is_empty() {
+            let sources = std::mem::take(&mut self.pending_rw_writeback_sources);
+            for source in sources {
+                if let Some(slot) = self.find_local_slot(code, &source)
+                    && !matches!(self.locals[slot], Value::HashSlotRef { .. })
+                    && let Some(val) = self.env().get(&source).cloned()
+                {
+                    self.locals[slot] = val;
+                }
             }
         }
+        self.apply_pending_caller_var_writeback(code);
+    }
+
+    /// Drain caller-frame-targeted writes (`$CALLER::x = v` / `callframe(d).my.<$x>
+    /// = v`). Unlike `pending_rw_writeback_sources`, a source whose slot is NOT in
+    /// this frame's `code` is RETAINED rather than dropped, because the target slot
+    /// lives an unknown number of frames up: the writer may make an intervening
+    /// *deeper* call (whose code lacks the slot) before returning to the frame that
+    /// owns it, and that deeper call's drain must not consume the pending write.
+    /// Each matched source is removed so it is applied exactly once.
+    pub(super) fn apply_pending_caller_var_writeback(&mut self, code: &CompiledCode) {
+        if self.pending_caller_var_writeback.is_empty() {
+            return;
+        }
+        let sources = std::mem::take(&mut self.pending_caller_var_writeback);
+        let mut retained = Vec::new();
+        for source in sources {
+            if let Some(slot) = self.find_local_slot(code, &source) {
+                if !matches!(self.locals[slot], Value::HashSlotRef { .. })
+                    && let Some(val) = self.env().get(&source).cloned()
+                {
+                    self.locals[slot] = val;
+                }
+                // matched (slot exists in this frame) → applied, do not retain
+            } else {
+                retained.push(source);
+            }
+        }
+        self.pending_caller_var_writeback = retained;
     }
 
     /// Slice F (multi-frame coherence): drain after a *cached fast-call* dispatch

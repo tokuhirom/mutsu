@@ -1259,6 +1259,15 @@ pub struct Interpreter {
     /// straight through to the caller's local slot, so the slot stays coherent
     /// without the reverse `sync_locals_from_env` pull.
     pub(crate) pending_rw_writeback_sources: Vec<String>,
+    /// Like `pending_rw_writeback_sources` but for writes that target a *caller
+    /// frame's* lexical by name (`callframe(d).my.<$x> = v` / `$CALLER::x = v`).
+    /// These differ in two ways: (1) the target slot lives several frames up, not
+    /// in the immediate caller, so a source unmatched at one call site must be
+    /// RETAINED (not dropped) until it reaches the frame that owns the slot — an
+    /// intervening *deeper* call (the writer making another call before returning)
+    /// must not consume it; (2) the value is read from env at drain time, same as
+    /// the rw list. Drained at the same call sites, with retain-on-miss semantics.
+    pub(crate) pending_caller_var_writeback: Vec<String>,
     pub(crate) local_bind_pairs: Vec<(usize, usize)>,
     pub(crate) otf_compile_cache: HashMap<u64, CompiledFunction>,
     pub(crate) state_scope_id: Option<u64>,
@@ -3419,6 +3428,7 @@ impl Interpreter {
             explicit_initializer_context: false,
             vardecl_context: false,
             pending_rw_writeback_sources: Vec::new(),
+            pending_caller_var_writeback: Vec::new(),
             local_bind_pairs: Vec::new(),
             otf_compile_cache: HashMap::new(),
             state_scope_id: None,
@@ -5347,6 +5357,19 @@ impl Interpreter {
         if self.env.contains_key(name) {
             self.env.insert(name.to_string(), value);
         }
+        // Single-store coherence: this write targets a *caller frame's* lexical by
+        // name (`callframe(d).my.<$x> = v` / `$CALLER::x = v`). `pop_caller_env_
+        // with_writeback` propagates it into the restored caller env on return, but
+        // the caller's local *slot* is not refreshed when blanket reconcile is off,
+        // so the caller reads the stale slot. Record the bare name so the call site
+        // drains `env[name]` into that slot. Uses the caller-var list (retain-on-
+        // miss) rather than the rw list, so an intervening deeper call the writer
+        // makes before returning does not consume it one frame too soon. No-op when
+        // no such slot exists; the default build's blanket reconcile makes it
+        // redundant = byte-identical.
+        if !self.pending_caller_var_writeback.iter().any(|n| n == name) {
+            self.pending_caller_var_writeback.push(name.to_string());
+        }
         Ok(())
     }
 
@@ -5981,6 +6004,7 @@ impl Interpreter {
             explicit_initializer_context: false,
             vardecl_context: false,
             pending_rw_writeback_sources: Vec::new(),
+            pending_caller_var_writeback: Vec::new(),
             local_bind_pairs: Vec::new(),
             otf_compile_cache: HashMap::new(),
             state_scope_id: None,
