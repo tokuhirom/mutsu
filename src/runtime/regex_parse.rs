@@ -5041,10 +5041,19 @@ impl Interpreter {
                         continue;
                     }
                     let name: String = chars[name_start..j].iter().collect();
-                    let value = self
-                        .env
-                        .get(&name)
-                        .cloned()
+                    // Reduce-time dyn-var overlay: a `$*` var written by a grammar
+                    // action mid-parse takes precedence over `self.env` so the next
+                    // subrule matches with the updated value (see REGEX_DYNVAR_OVERLAY).
+                    let overlay_value = if name.starts_with('*')
+                        && super::regex::regex_helpers::dynvar_overlay_active()
+                    {
+                        super::regex::regex_helpers::dynvar_mark_seen();
+                        super::regex::regex_helpers::dynvar_overlay_get(&name)
+                    } else {
+                        None
+                    };
+                    let value = overlay_value
+                        .or_else(|| self.env.get(&name).cloned())
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                         .unwrap_or(Value::Nil);
                     let value = value.into_deref();
@@ -5320,6 +5329,13 @@ impl Interpreter {
                         | ':'
                         | '#'
                         | '\''
+                        // `%` (and `%%`) is the separator-quantifier infix and `&`
+                        // is the conjunction infix; an interpolated scalar matches
+                        // *literally* (raku does not re-parse it as regex source),
+                        // so e.g. a `%>` delimiter after `\h*` must not bind as a
+                        // `\h* % ...` separator. Escape them to force literal match.
+                        | '%'
+                        | '&'
                 )
             {
                 out.push('\\');

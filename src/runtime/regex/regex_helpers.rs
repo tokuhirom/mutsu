@@ -1,5 +1,6 @@
 use super::super::*;
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 use unicode_segmentation::UnicodeSegmentation;
@@ -18,6 +19,105 @@ thread_local! {
     /// means `c` was the char just before the slice. Saved/restored around each
     /// subrule dispatch so nesting threads correctly.
     pub(crate) static REGEX_PRECEDING_CHAR: Cell<Option<char>> = const { Cell::new(None) };
+    /// Parse-scoped overlay of `$*` dynamic-variable values written by grammar
+    /// action methods that run at *reduce time* (during matching). The regex
+    /// match engine is `&self`, so an action's dyn-var write (e.g.
+    /// Template::Mustache's delimiter finalizer `($*LEFT,$*RIGHT)=@delim`) cannot
+    /// mutate `self.env` mid-match. Instead the reduce-time action runs in a
+    /// scratch interpreter and its changed `$*` vars are published here;
+    /// `interpolate_regex_scalars` consults this overlay BEFORE `self.env` so
+    /// subsequent subrule matches re-interpolate their patterns with the new
+    /// values. `Some` only while a grammar-actions parse is live (the common
+    /// non-grammar case stays `None` for zero lookup cost). Keyed by the env name
+    /// form (sigil-less, twigil-kept: `$*LEFT` -> `"*LEFT"`).
+    pub(crate) static REGEX_DYNVAR_OVERLAY: RefCell<Option<HashMap<String, Value>>> = const { RefCell::new(None) };
+    /// Set true once `interpolate_regex_scalars` resolves a `$*` dynamic var
+    /// while a grammar-actions parse is live — i.e. the grammar's matching
+    /// actually depends on a dynamic variable. The reduce-time action hook only
+    /// fires when this is true, so ordinary (non-dyn-var) grammars pay nothing.
+    pub(crate) static REGEX_GRAMMAR_DYNVAR_SEEN: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Look up a `$*` dynamic var in the reduce-time overlay (see
+/// `REGEX_DYNVAR_OVERLAY`). `name` is the env form without sigil (e.g. `*LEFT`).
+/// Returns `None` when the overlay is inactive or has no entry for the name.
+pub(crate) fn dynvar_overlay_get(name: &str) -> Option<Value> {
+    REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow().as_ref().and_then(|m| m.get(name).cloned()))
+}
+
+/// True while a grammar-actions parse has an active dyn-var overlay.
+pub(crate) fn dynvar_overlay_active() -> bool {
+    REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow().is_some())
+}
+
+/// Record that the live grammar parse interpolated a `$*` dynamic var, enabling
+/// the reduce-time action hook for the rest of the parse.
+pub(crate) fn dynvar_mark_seen() {
+    REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.set(true));
+}
+
+/// Whether any `$*` dynamic var has been interpolated during the live parse.
+pub(crate) fn dynvar_seen() -> bool {
+    REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.get())
+}
+
+/// Reset the overlay to empty (and clear the SEEN flag) at the start of a fresh
+/// top-level grammar scan. A scan evolves the overlay left-to-right; a NEW scan
+/// of the whole input (e.g. the candidate-selection pass vs the real match, or a
+/// re-`parse`) must begin with the initial dynamic-var state from `self.env`,
+/// not the values a previous scan left behind. No-op when the overlay is
+/// inactive (non-grammar matching).
+pub(crate) fn dynvar_overlay_reset_scan() {
+    REGEX_DYNVAR_OVERLAY.with(|slot| {
+        let mut b = slot.borrow_mut();
+        if b.is_some() {
+            *b = Some(HashMap::new());
+        }
+    });
+    REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.set(false));
+}
+
+/// Clone the current overlay contents (empty when inactive). Used to seed a
+/// reduce-time action's scratch interpreter with the latest dyn-var values.
+pub(crate) fn dynvar_overlay_snapshot() -> HashMap<String, Value> {
+    REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow().clone().unwrap_or_default())
+}
+
+/// Publish a changed `$*` dynamic var into the overlay so subsequent subrule
+/// pattern interpolation sees it. `name` is the env form (e.g. `*LEFT`).
+pub(crate) fn dynvar_overlay_put(name: &str, value: Value) {
+    REGEX_DYNVAR_OVERLAY.with(|slot| {
+        if let Some(m) = slot.borrow_mut().as_mut() {
+            m.insert(name.to_string(), value);
+        }
+    });
+}
+
+/// RAII guard that activates the reduce-time dyn-var overlay for the duration of
+/// a grammar-actions parse and restores the previous state (overlay + seen flag)
+/// on drop, so nested/re-entrant `Grammar.parse` calls stay balanced.
+pub(crate) struct RegexDynvarOverlayGuard {
+    prev_overlay: Option<HashMap<String, Value>>,
+    prev_seen: bool,
+}
+
+impl RegexDynvarOverlayGuard {
+    pub(crate) fn activate() -> Self {
+        let prev_overlay =
+            REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow_mut().replace(HashMap::new()));
+        let prev_seen = REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.replace(false));
+        RegexDynvarOverlayGuard {
+            prev_overlay,
+            prev_seen,
+        }
+    }
+}
+
+impl Drop for RegexDynvarOverlayGuard {
+    fn drop(&mut self) {
+        REGEX_DYNVAR_OVERLAY.with(|slot| *slot.borrow_mut() = self.prev_overlay.take());
+        REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.set(self.prev_seen));
+    }
 }
 
 /// Restores `REGEX_PRECEDING_CHAR` to a saved value when dropped, so a subrule

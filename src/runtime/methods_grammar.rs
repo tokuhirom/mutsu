@@ -151,6 +151,15 @@ impl Interpreter {
         // parses stay balanced.
         let saved_grammar_actions =
             std::mem::replace(&mut self.current_grammar_actions, actions_obj.clone());
+        // Activate the reduce-time dyn-var overlay for action-driven parses so an
+        // action that writes a `$*` dynamic var mid-parse (e.g. a delimiter
+        // finalizer) affects subsequent subrule matching. No-op overlay cost
+        // until a pattern actually interpolates a `$*` var (see the SEEN gate in
+        // `interpolate_regex_scalars`). Dropped at scope end, restoring any outer
+        // parse's overlay.
+        let _dynvar_overlay_guard = actions_obj
+            .is_some()
+            .then(super::regex::regex_helpers::RegexDynvarOverlayGuard::activate);
         let result = (|| -> Result<Value, RuntimeError> {
             let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
                 Ok(Some(pattern)) => pattern,
@@ -182,6 +191,11 @@ impl Interpreter {
                 let _ = self.bind_function_args_values(&def.param_defs, &def.params, &rule_args);
             }
 
+            // Candidate selection above (`eval_token_call_values`) may have run a
+            // preliminary match that evolved the reduce-time dyn-var overlay
+            // (e.g. fired a delimiter finalizer). Reset it so the real match
+            // begins from the initial dynamic-var state in `self.env`.
+            super::regex::regex_helpers::dynvar_overlay_reset_scan();
             let captures = if method == "parse" || method == "parsefile" {
                 self.regex_match_with_captures_full_from_start(&pattern, &text)
             } else {
