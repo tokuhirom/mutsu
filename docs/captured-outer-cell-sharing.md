@@ -395,6 +395,12 @@ phaser の `$ranLAST=True` を拾わない。修正＝phaser 実行直後に `vm
 追加→pending push→call site の `apply_pending_rw_writeback` drain。ON は冪等 superset＝byte-identical。
 pin=`t/map-last-phaser-writeback-coherence.t`（4・last/natural-end/eager・ON/OFF 両 PASS）。`S32-list/map.t` ON/OFF PASS。
 
+### 7.1l ✅ スライス1.16（DONE・第45セッション）= `undefine()` lvalue slot writeback（`undef.t` 85）
+`undefine($x) = v`（rw）が OFF で `$x` を変更しない（OFF=foo・ON/raku=bar）。slice 1.13 の substr-rw と**同一経路**＝
+`assign_named_sub_lvalue_with_values` の `undefine` branch（builtins_lvalue.rs:250）が `env[$x]` のみ書き slot 未 refresh。
+修正＝env 書込前に target var 名を `pending_rw_writeback_sources` に push→call site の `apply_pending_rw_writeback` drain。
+pin=`t/undefine-lvalue-writeback-coherence.t`（3）。`S32-scalar/undef.t` ON/OFF PASS。
+
 ### 7.2 後続スライス（その先）
 - **delegated mutating method call の invocant writeback**（pre-existing・トグル非依存）: `$q.push(5)` が `handles` 経由で
   `@!c` に委譲されるとき、attr は変異するが method-call 後に caller の `$q` slot/instance が refresh されず累積が壊れる
@@ -411,7 +417,7 @@ pin=`t/map-last-phaser-writeback-coherence.t`（4・last/natural-end/eager・ON/
 これまでの「決定的 OFF 依存 = 0 到達」は **t/ のみの `^not ok` survey** に基づく過小評価だった。`MUTSU_NO_BLANKET_RECONCILE=1
 make roast`（release・全 whitelist 1285）を実走したところ、**13 ファイルが OFF で決定的に fail**（全て pre-existing＝
 main baseline でも同じ subtest が OFF fail・本スライスの変更とは無関係＝debug 比較で確認）。これが env_dirty 物理削除
-（§7.4）を解禁するために潰すべき残サーフェス（初回 13 → slice 1.13 で substr-rw.t/buf.t、slice 1.14 で zip.t、slice 1.15 で map.t 消化 → **残 9**）:
+（§7.4）を解禁するために潰すべき残サーフェス（初回 13 → slice 1.13 で substr-rw.t/buf.t、slice 1.14 で zip.t、slice 1.15 で map.t、slice 1.16 で undef.t 消化 → **残 8**）:
 
 | file | failed subtests | 推定カテゴリ | 状態 |
 |------|-----------------|--------------|------|
@@ -426,10 +432,10 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
 | S06-signature/code.t | 8 | `&`-param signature | |
 | S12-construction/destruction.t | 3 | DESTROY phaser | |
 | ~~S32-list/map.t~~ | 62 | `.map` block LAST phaser writeback | ✅ slice 1.15 |
-| S32-scalar/undef.t | 85 | undef/Failure | |
+| ~~S32-scalar/undef.t~~ | 85 | undefine() lvalue slot writeback | ✅ slice 1.16 |
 | S32-io/IO-Socket-Async.t | 5, 7 | reactive 並行（flaky 疑い） | |
 
-**残 9 の triage（第45セッション・一部実測済）**:
+**残 8 の triage（第45セッション・実測済）**:
 - ~~**map.t 62**~~ ✅ **slice 1.15 で消化**（§7.1k）。`.map({ LAST $x=True })` の LAST phaser body は map body と**別に**
   コンパイル・実行される（`resolution.rs:2253`）ので、map body の `record_eager_block_free_var_writeback`（:2276）が
   phaser の write を拾わなかった。phaser 実行直後に `record_eager_block_free_var_writeback(&phaser_code, &[])` 追加で解決。
@@ -442,7 +448,7 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
   undef.t(85)。各々 `MUTSU_NO_BLANKET_RECONCILE=1 ... roast/<file>` で ON/OFF/raku 比較し writeback-tractable か
   「露出した別バグ」か分類してから着手（map LAST と同型の writeback なら速い）。
 
-**残 9 全消化後に §7.4（env_dirty 削除）が射程**（lazy-lists の laziness 修正が含まれるため一直線ではない）。
+**残 8 全消化後に §7.4（env_dirty 削除）が射程**（lazy-lists の laziness 修正が含まれるため一直線ではない）。
 
 ### 7.3 ★各スライスの必須手順（slice 1 の教訓）
 

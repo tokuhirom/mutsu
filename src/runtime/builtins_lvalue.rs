@@ -248,6 +248,9 @@ impl Interpreter {
                 found
             };
             if let Some(vname) = var_name {
+                // Single-store coherence: refresh the caller's local slot from the
+                // env write below (same as substr-rw / object subscript assign).
+                self.pending_rw_writeback_sources.push(vname.clone());
                 self.env.insert(vname.clone(), value.clone());
                 return Ok(value);
             }
