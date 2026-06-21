@@ -1663,6 +1663,57 @@ impl Interpreter {
         }
     }
 
+    /// Materialize a user `message` *method* into the `message` attribute of a
+    /// freshly-constructed exception. raku computes `Exception.message` lazily,
+    /// but mutsu's interpreter-less stringification (`join`, `sprintf "%s"`, `~`,
+    /// interpolation -> `to_string_value`) cannot dispatch a user method, so such
+    /// an exception would stringify as "X::Foo with no message" outside an
+    /// explicit `.Str`/`.gist` call. Running the (conventionally pure) message
+    /// method once at construction and caching the result keeps every
+    /// stringification path coherent. Scoped to exceptions that define `message`
+    /// as a method and have no `message` attribute, so built-in and
+    /// attribute-message exceptions are unaffected. Errors in the message method
+    /// are swallowed (the exception is still returned un-materialized).
+    pub(super) fn materialize_exception_message_in_result(
+        &mut self,
+        result: Result<Value, RuntimeError>,
+    ) -> Result<Value, RuntimeError> {
+        let Ok(Value::Instance {
+            class_name,
+            attributes,
+            id,
+        }) = result
+        else {
+            return result;
+        };
+        let cn = class_name.resolve();
+        let is_exc = cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::");
+        if !is_exc
+            || attributes.as_map().contains_key("message")
+            || !self.has_user_method(&cn, "message")
+        {
+            return Ok(Value::Instance {
+                class_name,
+                attributes,
+                id,
+            });
+        }
+        let instance = Value::Instance {
+            class_name,
+            attributes: attributes.clone(),
+            id,
+        };
+        if let Ok(msg) = self.call_method_with_values(instance.clone(), "message", vec![]) {
+            let msg_str = msg.to_string_value();
+            if !msg_str.is_empty() {
+                let mut attrs = attributes.as_map().clone();
+                attrs.insert("message".to_string(), Value::str(msg_str));
+                return Ok(Value::make_instance(class_name, attrs));
+            }
+        }
+        Ok(instance)
+    }
+
     pub(super) fn dispatch_new(
         &mut self,
         target: Value,

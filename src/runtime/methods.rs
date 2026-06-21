@@ -3336,7 +3336,7 @@ impl Interpreter {
             "new" | "bless" | "Mu::new" | "handled" | "new-from-pairs"
         ) && let Some(result) = self.dispatch_new_and_constructors(&target, method, args.clone())
         {
-            return result;
+            return self.materialize_exception_message_in_result(result);
         }
 
         // Enum dispatch
