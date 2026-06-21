@@ -264,6 +264,117 @@ impl Interpreter {
         out
     }
 
+    /// Reduce-time grammar action hook for a `<subrule>` quantifier iteration.
+    /// Called from the quantifier loop after each iteration commits. When the
+    /// live parse is action-driven AND its matching already depends on a `$*`
+    /// dynamic var (the SEEN gate), run THIS iteration's subrule action so any
+    /// dyn-var write it performs (e.g. Template::Mustache's delimiter finalizer
+    /// `($*LEFT,$*RIGHT)=@delim`) is published to the overlay and thus visible to
+    /// the next iteration's pattern interpolation. No-op for ordinary grammars.
+    pub(super) fn maybe_run_reduce_time_dynvar_action(
+        &self,
+        token: &RegexToken,
+        new_caps: &RegexCaptures,
+    ) {
+        if !super::regex_helpers::dynvar_overlay_active() || !super::regex_helpers::dynvar_seen() {
+            return;
+        }
+        let Some(actions) = self.current_grammar_actions.clone() else {
+            return;
+        };
+        let rule_name = match &token.atom {
+            RegexAtom::Named(n) => n.trim().to_string(),
+            _ => return,
+        };
+        // The sub-capture this iteration stored under (explicit `$<alias>=` wins).
+        let cap_name = token
+            .named_capture
+            .clone()
+            .unwrap_or_else(|| rule_name.clone());
+        let Some(sub) = new_caps
+            .named_subcaps
+            .get(&cap_name)
+            .and_then(|v| v.last())
+            .cloned()
+        else {
+            return;
+        };
+        self.run_reduce_time_action(&sub, &rule_name, actions);
+    }
+
+    /// Run a single subrule's grammar action in a scratch interpreter and publish
+    /// any `$*` dynamic-var writes it makes into the reduce-time overlay. The
+    /// scratch is seeded with the overlay's current values so the action sees the
+    /// latest dynamic state; only vars whose value actually changes are published.
+    fn run_reduce_time_action(&self, sub: &RegexCaptures, rule_name: &str, actions: Value) {
+        // Run on an INDEPENDENT deep copy of the actions object so any `self`
+        // attribute the action mutates does not leak into the real actions
+        // object — the authoritative post-parse action pass will run again and is
+        // the one whose `make`/`self` effects count. The reduce-time pass exists
+        // ONLY to extract `$*` dynamic-var writes (which flow through the scratch
+        // env into the overlay, not through actions state). `InstanceAttrs::clone`
+        // is a deep, fresh-cell copy.
+        let mut actions = match &actions {
+            Value::Instance {
+                class_name,
+                attributes,
+                id,
+            } => Value::Instance {
+                class_name: *class_name,
+                attributes: Arc::new((**attributes).clone()),
+                id: *id,
+            },
+            other => other.clone(),
+        };
+        let match_obj = Value::make_match_object_full_q(
+            sub.matched.clone(),
+            sub.from as i64,
+            sub.to as i64,
+            &sub.positional,
+            &sub.named,
+            &sub.named_subcaps,
+            &sub.positional_subcaps,
+            &sub.positional_quantified,
+            &sub.positional_nil,
+            None,
+            &sub.named_quantified,
+        );
+        let mut scratch = Interpreter {
+            env: self.env.clone(),
+            current_package: Arc::new(RwLock::new(self.current_package())),
+            ..Default::default()
+        };
+        self.copy_full_registry_into(&mut scratch);
+        // Seed the scratch's `$*` vars from the overlay (latest delimiters etc.).
+        for (k, v) in super::regex_helpers::dynvar_overlay_snapshot() {
+            scratch.env.insert(k, v);
+        }
+        // Baseline of `$*` vars visible to the action, to diff after it runs.
+        let baseline: HashMap<String, Value> = scratch
+            .env
+            .iter()
+            .filter(|(k, _)| k.starts_with("*"))
+            .map(|(k, v)| (k.with_str(|s| s.to_string()), v.clone()))
+            .collect();
+        let _ = scratch.invoke_grammar_actions(match_obj, &mut actions, rule_name);
+        // Publish changed `$*` vars into the overlay for subsequent matching.
+        let changed: Vec<(String, Value)> = scratch
+            .env
+            .iter()
+            .filter(|(k, _)| k.starts_with("*"))
+            .filter_map(|(k, v)| {
+                let name = k.with_str(|s| s.to_string());
+                match baseline.get(&name) {
+                    Some(old) if old == v => None,
+                    _ => Some((name, v.clone())),
+                }
+            })
+            .collect();
+        for (name, val) in changed {
+            super::regex_helpers::dynvar_overlay_put(&name, val);
+        }
+    }
+
     /// Create an X::Syntax::Regex::QuantifierValue exception with the given flag attribute set to True.
     pub(super) fn make_quantifier_value_error(flag: &str, message: &str) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();

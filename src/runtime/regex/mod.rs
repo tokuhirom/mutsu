@@ -1,6 +1,6 @@
 mod regex_casefold;
 mod regex_eval;
-mod regex_helpers;
+pub(crate) mod regex_helpers;
 mod regex_interpolate;
 mod regex_match_atom;
 mod regex_match_atom_simple;

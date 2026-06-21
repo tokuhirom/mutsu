@@ -924,6 +924,15 @@ impl Interpreter {
                                     iter_pos_base,
                                     apply_named_capture(token, current, next, pos_base, new_caps),
                                 );
+                                // Reduce-time grammar action: when a `<subrule>`
+                                // quantifier iteration commits inside an
+                                // action-driven parse whose matching depends on a
+                                // `$*` dynamic var, run this iteration's subrule
+                                // action now so any dyn-var write (e.g. a delimiter
+                                // finalizer) is visible to the next iteration's
+                                // pattern interpolation. Gated on the SEEN flag so
+                                // plain grammars pay nothing.
+                                self.maybe_run_reduce_time_dynvar_action(token, &new_caps);
                                 current_caps = new_caps.clone();
                                 positions.push((next, new_caps));
                                 current = next;
@@ -1155,6 +1164,15 @@ impl Interpreter {
                                     iter_pos_base,
                                     apply_named_capture(token, current, next, pos_base, new_caps),
                                 );
+                                // Reduce-time grammar action: when a `<subrule>`
+                                // quantifier iteration commits inside an
+                                // action-driven parse whose matching depends on a
+                                // `$*` dynamic var, run this iteration's subrule
+                                // action now so any dyn-var write (e.g. a delimiter
+                                // finalizer) is visible to the next iteration's
+                                // pattern interpolation. Gated on the SEEN flag so
+                                // plain grammars pay nothing.
+                                self.maybe_run_reduce_time_dynvar_action(token, &new_caps);
                                 current_caps = new_caps.clone();
                                 positions.push((next, new_caps));
                                 current = next;
