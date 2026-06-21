@@ -2,6 +2,47 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Compiler {
+    /// Compile a `given`/`when`/`default` body's final statement in value
+    /// position, leaving its value on the stack (the value the block — and via
+    /// `succeed`, the enclosing `given` — evaluates to). Returns `false` when
+    /// `stmt` is not one of the value-producing forms handled here, so the
+    /// caller falls back to plain statement compilation.
+    ///
+    /// Without this, a `when`/`given` block whose final statement is an `if`
+    /// (or a bare block) compiled in statement mode discards its value, so
+    /// `given $t { if ... { "x" } }` wrongly evaluated to `Nil`. `Stmt::Expr`
+    /// in tail position already keeps its value (and tags a bare-variable topic
+    /// for container writeback), so that case is preserved here too.
+    pub(super) fn compile_when_tail_stmt(&mut self, stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::Expr(expr) => {
+                self.compile_expr(expr);
+                if let Expr::Var(name) = expr {
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::TagContainerRef(name_idx));
+                }
+                true
+            }
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+                binding_var,
+            } if binding_var.is_none()
+                && Self::do_if_branch_supported(then_branch)
+                && Self::do_if_branch_supported(else_branch) =>
+            {
+                self.compile_do_if_expr(cond, then_branch, else_branch);
+                true
+            }
+            Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                self.compile_block_inline(inner);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Compile a block inline (for blocks without placeholders).
     pub(super) fn compile_block_inline(&mut self, stmts: &[Stmt]) {
         let saved = self.push_dynamic_scope_lexical();
