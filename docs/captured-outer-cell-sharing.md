@@ -417,7 +417,7 @@ pin=`t/undefine-lvalue-writeback-coherence.t`（3）。`S32-scalar/undef.t` ON/O
 これまでの「決定的 OFF 依存 = 0 到達」は **t/ のみの `^not ok` survey** に基づく過小評価だった。`MUTSU_NO_BLANKET_RECONCILE=1
 make roast`（release・全 whitelist 1285）を実走したところ、**13 ファイルが OFF で決定的に fail**（全て pre-existing＝
 main baseline でも同じ subtest が OFF fail・本スライスの変更とは無関係＝debug 比較で確認）。これが env_dirty 物理削除
-（§7.4）を解禁するために潰すべき残サーフェス（初回 13 → slice 1.13 で substr-rw.t/buf.t、slice 1.14 で zip.t、slice 1.15 で map.t、slice 1.16 で undef.t、slice 1.17 で proto.t/subsignature.t 消化 → **残 6**）:
+（§7.4）を解禁するために潰すべき残サーフェス（初回 13 → slice 1.13 で substr-rw.t/buf.t、slice 1.14 で zip.t、slice 1.15 で map.t、slice 1.16 で undef.t、slice 1.17 で proto.t/subsignature.t、slice 1.18 で caller.t/callframe.t 消化 → **残 4**）:
 
 | file | failed subtests | 推定カテゴリ | 状態 |
 |------|-----------------|--------------|------|
@@ -425,8 +425,8 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
 | ~~S03-operators/buf.t~~ | 38 | subbuf-rw lvalue slot writeback | ✅ slice 1.13 |
 | S02-types/lazy-lists.t | 24-26 | lazy list captured-outer | |
 | ~~S03-metaops/zip.t~~ | 68, 71 | Z-cross topicalizing thunk writeback | ✅ slice 1.14 |
-| S02-names/caller.t | 9 | callframe/caller | |
-| S06-advanced/callframe.t | 12 | callframe | |
+| ~~S02-names/caller.t~~ | 9 | caller-frame by-name write slot writeback | ✅ slice 1.18 |
+| ~~S06-advanced/callframe.t~~ | 12 | caller-frame by-name write slot writeback | ✅ slice 1.18 |
 | ~~S06-multi/proto.t~~ | 21 | caching proto `state %` writeback | ✅ slice 1.17 |
 | ~~S06-multi/subsignature.t~~ | 54 | caching proto `state %` writeback | ✅ slice 1.17 |
 | S06-signature/code.t | 8 | `&`-param signature | |
@@ -435,7 +435,7 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
 | ~~S32-scalar/undef.t~~ | 85 | undefine() lvalue slot writeback | ✅ slice 1.16 |
 | S32-io/IO-Socket-Async.t | 5, 7 | reactive 並行（flaky 疑い） | |
 
-**残 8 の triage（第45セッション・実測済）**:
+**triage（第45〜46セッション・実測済）**:
 - ~~**map.t 62**~~ ✅ **slice 1.15 で消化**（§7.1k）。`.map({ LAST $x=True })` の LAST phaser body は map body と**別に**
   コンパイル・実行される（`resolution.rs:2253`）ので、map body の `record_eager_block_free_var_writeback`（:2276）が
   phaser の write を拾わなかった。phaser 実行直後に `record_eager_block_free_var_writeback(&phaser_code, &[])` 追加で解決。
@@ -458,14 +458,22 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
   in-place push は元々 coherent で非該当。教訓: run_inner の state persist は `sync_state_locals`（env 優先・476）→
   `sync_env_from_locals`（480）順なので、reorder（env flush 先）は逆効果（stale local が fresh env を clobber）＝源流の
   divergence 修正が正解。pin=`t/proto-state-cache-writeback-coherence.t`（6・ON/OFF 両 PASS）。make test 9788。
-- **残り（全て第45セッションで ON=PASS/OFF=FAIL を実測＝純 writeback コヒーレンス・露出バグではない）**:
-  - **callframe.t 12**: `f()` が `callframe(1)` introspection 経由で caller の `$x is dynamic` を書く（callframe write-back）。
-  - **caller.t 9**: `$CALLER::` 経由の rw dynamic-var write。**callframe.t と同機構（caller-frame 名前書き）＝次の最有力。**
+- ~~**caller.t 9 ＋ callframe.t 12**~~ ✅ **slice 1.18 で消化（1 修正で 2 file・第46セッション）**。caller-frame の
+  lexical を名前書きする `$CALLER::x = v`（rw dynamic-var）／`callframe(d).my.<$x> = v` が OFF=stale（ON=書込成功）。
+  真因＝`set_caller_var`（mod.rs:5327）は `caller_env_stack[idx]` と現在 env に書き、`pop_caller_env_with_writeback`
+  （mod.rs:5277）が return 時に restored caller env へ dynamic var を伝播するが、**caller の local slot は未更新**＝OFF で
+  stale slot を読む。修正＝`set_caller_var` で書いた bare name を**新リスト `pending_caller_var_writeback`** に push し、
+  call-site の `apply_pending_rw_writeback` が `env[name]`→slot に drain。★`pending_rw_writeback_sources`（drop-on-miss）
+  と分離した理由＝caller-frame の slot は数フレーム上にあり、writer が return 前に**より深い**呼び出しをすると（`f(){ callframe(1).my.<$x>=v; g() }`）pending が g() の call-site で1フレーム早く消費される→**retain-on-miss**（slot が
+  当該 code に無ければ破棄せず保持し、所有フレームまで運ぶ）。`is dynamic` でない caller lexical は従来通り die。
+  pin=`t/caller-frame-write-slot-coherence.t`（5・ON/OFF 両 PASS）。make test 9799。
+- **残り 2（純 writeback でない＝別軸）**:
   - **destruction.t 3**: `submethod DESTROY { $x++ }` の GC 時 captured write（最小再現は GC タイミング依存で要工夫）。
-  - **code.t 8（`&`-param）**: ★doc 冒頭 Status の設計ノートは「cell boxing が `&foo=&foo` self-ref 型チェック欠落を露出」型と
-    示唆＝**writeback でなく露出バグの可能性・着手前に要確認**（最小再現 `sub foo(&foo = &foo){...}`・第46で確認＝scoping バグ・別軸）。
+  - **code.t 8（`&`-param）**: `sub foo(&foo = &foo){...}` の default scoping バグ＝**writeback でなく露出バグ**（第46で確認・別軸）。
+  - ＋別軸: lazy-lists.t 24-26（laziness バグ・L 系）／IO-Socket-Async.t 5,7（flaky）。
 
-**残 4（caller/callframe/code/destruction）＋別軸 2（lazy-lists laziness・IO-Socket-Async flaky）全消化後に §7.4（env_dirty 削除）が射程**。
+**残 2（code.t scoping・destruction.t GC＝いずれも純 writeback でない別軸）＋別軸 2（lazy-lists laziness・IO-Socket-Async flaky）
+全消化後に §7.4（env_dirty 削除）が射程**。純 writeback コヒーレンスのサーフェスは slice 1.18 で枯渇。
 
 ### 7.2b ✅ proto `{*}` redispatch ＋ `state` var coherence（proto.t 21 / subsignature.t 54）= slice 1.17 で解決
 **実際の真因は当初推測（`restore_env_preserving_existing` が state を巻き戻す）とは別だった。** plain `state %h` を持つ
