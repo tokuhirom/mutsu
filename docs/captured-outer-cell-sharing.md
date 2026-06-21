@@ -347,13 +347,28 @@ refresh しない**＝blanket reconcile ON のみ pull。
 - pin=`t/cross-thread-shared-var-writeback-coherence.t`（6・cas array/scalar/hash・累積・後続式・intervening・ON/OFF 両 PASS）。
   make test 9739 / make roast（要確認）。**決定的 OFF-only fail（`^not ok`）= 0 に到達**。
 
+### 7.1h ✅ スライス1.12（DONE・第45セッション）= object 添字代入の invocant slot writeback（`parametric-role-of-type`）
+`parametric-role-of-type`（OFF で決定的 abort・ran 11/14・test 12）を解消。真因は当初の「typed array 属性の COW detach」
+診断ではなく **object 添字代入の invocant slot 未 refresh** だった。最小再現＝
+`role ER[::T] does Positional { has ER[T] @!c handles <AT-POS ASSIGN-POS BIND-POS> }; my $e = ER[Int].new; $e[0] = ER[Int].new; say $e[0].WHAT`
+が ON=`(ER)`／OFF=`(Any)`。`$e[0] = v` は `exec_index_assign_expr_named_op` → ASSIGN-POS dispatch →
+`assign_method_lvalue_with_values`（methods_mut.rs:1813 の handles delegation 経路）が delegate container を変異させ
+`env[$e]` に更新済 instance を `write_back_sharing` で書くが、**caller の local slot は refresh しない**。default build は
+blanket reconcile が `$e` を env から pull するので顕在化せず、OFF（cell boxing）では slot が stale instance のまま →
+AT-POS が空 `@!c` を読む。
+- **修正（precise・非gated）**: `exec_index_assign_expr_named_op` 末尾で、添字代入後 `env[var]` が `Instance`/`Mixin`
+  （＝object 添字代入で ASSIGN-POS/ASSIGN-KEY を dispatch したケース）なら `locals_set_by_name` で local slot へ write-through。
+  plain Array/Hash 要素代入は fast path で既に slot 更新済＆ここに Instance/Mixin として到達しないので発火しない。
+  ON は blanket reconcile の冪等 superset＝byte-identical。**副次効果**: plain `role P does Positional { has @!c handles
+  <AT-POS ASSIGN-POS> }` の `$p[0]=v`（ON/OFF 両方で `Nil` を返していた pre-existing バグ）も同時に修正。
+- pin=`t/positional-role-attr-writeback-coherence.t`（7・Positional/parametric/Associative 添字代入・BIND-POS・ON/OFF 両 PASS）。
+  make test 9755。**注**: delegated mutating *method call*（`$q.push(5)` が `@!c` へ委譲）は ON/OFF **両方**で失敗する別の
+  pre-existing バグ（method-call 後の invocant slot 未 refresh・トグル非依存）＝本スライス対象外・スコープ外として pin から除外。
+
 ### 7.2 後続スライス（その先）
-- **`parametric-role-of-type`**（OFF で決定的 abort・ran 11/14・test 12）: ON で PASS。**captured-outer ではなく
-  インスタンス属性コヒーレンス**＝`my role TreeNode[::T] does Positional { has TreeNode[T] @!children handles
-  <AT-POS ASSIGN-POS BIND-POS>; has T $.data is rw }` で `$tree[0] = TreeNode.new`（ASSIGN-POS handles 経由で `@!children`
-  へ書込）後に `$tree[0]`（AT-POS）が **non-instance** を返し `$tree[0].data = 1` が `X::Assignment::RO` で abort。
-  typed array インスタンス属性の in-place mutation が OFF で persist しない＝Phase 3 instance-attr cell の別サーフェス
-  （`mirror_attr_local_to_cell`／`read_self_attr_cell` 周辺）。captured-outer cell 共有とは独立機構＝別スライス。
+- **delegated mutating method call の invocant writeback**（pre-existing・トグル非依存）: `$q.push(5)` が `handles` 経由で
+  `@!c` に委譲されるとき、attr は変異するが method-call 後に caller の `$q` slot/instance が refresh されず累積が壊れる
+  （ON/OFF 両方で失敗）。env_dirty 削除には不要（ON でも壊れている＝OFF survey の決定的依存ではない）が、一般的バグとして別途修正可。
 - **container `@`/`%` の named-sub 以外の cell 化**（必要なら）: closure 捕捉 container は現状 Arc 共有で動く。`box_captured_lexicals`
   の `@`/`%` skip を緩和する場合は §8 の decont 監査が前提（broad boxing は ~12 file 回帰を実証済＝precise 限定必須）。
 - **並行 cluster の残り**（supply/whenever/react ~11）: §7.1g で決定的部（promise-combinator/scheduler-cue-times の
@@ -361,6 +376,33 @@ refresh しない**＝blanket reconcile ON のみ pull。
   abort/timeout で manifest）＝決定的 OFF-pin が書けないため toggle survey で追いきれない。env_dirty 削除の最終段
   （`blanket_reconcile_if_dirty` 空洞化）で実挙動を確認するのが現実的。基本 cross-thread captured-write は shared_vars で
   既に ON/OFF 両成立済（cross-thread cell の本格実装は不要と判明）。
+
+### 7.2a ★OFF roast survey（第45セッション・2026-06-21・authoritative）= env_dirty 削除の真の残サーフェス
+これまでの「決定的 OFF 依存 = 0 到達」は **t/ のみの `^not ok` survey** に基づく過小評価だった。`MUTSU_NO_BLANKET_RECONCILE=1
+make roast`（release・全 whitelist 1285）を実走したところ、**13 ファイルが OFF で決定的に fail**（全て pre-existing＝
+main baseline でも同じ subtest が OFF fail・本スライスの変更とは無関係＝debug 比較で確認）。これが env_dirty 物理削除
+（§7.4）を解禁するために潰すべき残サーフェス:
+
+| file | failed subtests | 推定カテゴリ |
+|------|-----------------|--------------|
+| S32-str/substr-rw.t | 1, 8-9, 16, 24-25, 33-38 | Proxy STORE / substr-rw lvalue slot writeback（最大・12 fail） |
+| S02-types/lazy-lists.t | 24-26 | lazy list captured-outer |
+| S03-metaops/zip.t | 68, 71 | metaop thunk captured |
+| S02-names/caller.t | 9 | callframe/caller |
+| S06-advanced/callframe.t | 12 | callframe |
+| S06-multi/proto.t | 21 | multi-dispatch |
+| S06-multi/subsignature.t | 54 | subsignature destructure |
+| S06-signature/code.t | 8 | `&`-param signature |
+| S03-operators/buf.t | 38 | buf mutate |
+| S12-construction/destruction.t | 3 | DESTROY phaser |
+| S32-list/map.t | 62 | lazy map captured |
+| S32-scalar/undef.t | 85 | undef/Failure |
+| S32-io/IO-Socket-Async.t | 5, 7 | reactive 並行（flaky 疑い） |
+
+**最大の塊 = substr-rw.t（12 fail）**＝`substr-rw($s, ...) = v` の Proxy/lvalue 経路が env だけ更新し local slot を
+refresh しない（本スライスの object-subscript 修正と同型の別経路）。次スライスの第一候補。手順＝
+`MUTSU_NO_BLANKET_RECONCILE=1 target/release/mutsu roast/S32-str/substr-rw.t` で最小再現→writeback 経路特定→
+`locals_set_by_name`/`pending_rw_writeback_sources` で precise 化。**13 全消化後に §7.4（env_dirty 削除）が射程。**
 
 ### 7.3 ★各スライスの必須手順（slice 1 の教訓）
 

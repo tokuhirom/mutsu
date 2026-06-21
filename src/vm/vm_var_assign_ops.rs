@@ -2889,6 +2889,24 @@ impl Interpreter {
         {
             self.mark_element_share(&var_name, encoded);
         }
+        // Object index-assign (`$obj[i] = v` / `$obj{k} = v` dispatching
+        // ASSIGN-POS/ASSIGN-KEY to an Instance or Mixin that does Positional/
+        // Associative) writes the mutated object back into `env[var]` but the
+        // inner op does not refresh the caller's local slot. The default build's
+        // blanket env reconcile carries this; make it a precise slot write-through
+        // so the `MUTSU_NO_BLANKET_RECONCILE` single-store path (and the eventual
+        // `env_dirty` removal) keeps the slot coherent. Plain Array/Hash element
+        // assigns already update the slot via the fast paths and never reach here
+        // as an Instance/Mixin, so this only fires for object subscript targets.
+        if result.is_ok()
+            && matches!(
+                self.env().get(&save_var_name),
+                Some(Value::Instance { .. }) | Some(Value::Mixin(..))
+            )
+            && let Some(v) = self.env().get(&save_var_name).cloned()
+        {
+            self.locals_set_by_name(code, &save_var_name, v);
+        }
         result
     }
 
