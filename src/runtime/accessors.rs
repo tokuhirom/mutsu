@@ -516,8 +516,24 @@ impl Interpreter {
                     let params = (0..arity).map(|i| format!("arg{}", i)).collect();
                     return (params, Vec::new());
                 }
-                // Well-known 0-arity terms should report as having no parameters
-                if matches!(name.resolve().as_ref(), "rand" | "now" | "time") {
+                // Well-known 0-arity terms, and slurpy (`*@args`) builtins whose
+                // required-positional arity is 0, should report no parameters
+                // (raku: `&warn.arity == 0`). Mustache's logger keys on
+                // `&warn.?arity == 2`, so a spurious arity of 1 sent it down the
+                // wrong (2-arg) branch.
+                if matches!(
+                    name.resolve().as_ref(),
+                    "rand"
+                        | "now"
+                        | "time"
+                        | "warn"
+                        | "note"
+                        | "say"
+                        | "print"
+                        | "put"
+                        | "die"
+                        | "fail"
+                ) {
                     return (Vec::new(), Vec::new());
                 }
                 (vec!["arg0".to_string()], Vec::new())
