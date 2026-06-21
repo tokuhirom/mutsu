@@ -6477,8 +6477,19 @@ impl Interpreter {
         // unless the blanket reconcile is on. Record each synced caller-visible
         // name so the await/`.result` call site drains it straight to the caller's
         // slot (`apply_pending_rw_writeback`), dropping the reverse-sync dependency.
+        //
+        // The synced var's owning slot may live an *unknown number of frames up*:
+        // `await` runs `run_pending_instance_destroys()` (DESTROY dispatch, empty
+        // `locals`) between the shared-var sync and returning to the top-level
+        // frame that owns the slot. A drop-on-miss list (`pending_rw_writeback_sources`)
+        // would be consumed and discarded by those intervening DESTROY frames
+        // before reaching the owner. Use the retain-on-miss list
+        // (`pending_caller_var_writeback`) instead, which carries the source up the
+        // frame chain until the frame whose `code` actually has the slot drains it.
         for (key, val) in updates {
-            self.pending_rw_writeback_sources.push(key.clone());
+            if !self.pending_caller_var_writeback.contains(&key) {
+                self.pending_caller_var_writeback.push(key.clone());
+            }
             self.env.insert(key, val);
         }
     }
