@@ -431,7 +431,7 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
 | ~~S06-multi/proto.t~~ | 21 | caching proto `state %` writeback | ✅ slice 1.17 |
 | ~~S06-multi/subsignature.t~~ | 54 | caching proto `state %` writeback | ✅ slice 1.17 |
 | ~~S06-signature/code.t~~ | 8 | `&`-param default self-scoping | ✅ slice 1.19 |
-| S12-construction/destruction.t | 3 | cross-thread worker-DESTROY captured-write の parent-slot 未 refresh（§7.2c） | 🔴 cross-thread writeback 記録拡張 |
+| ~~S12-construction/destruction.t~~ | 3 | cross-thread worker-DESTROY captured-write（retain-on-miss sync） | ✅ slice 1.20 |
 | ~~S32-list/map.t~~ | 62 | `.map` block LAST phaser writeback | ✅ slice 1.15 |
 | ~~S32-scalar/undef.t~~ | 85 | undefine() lvalue slot writeback | ✅ slice 1.16 |
 | S32-io/IO-Socket-Async.t | 5, 7 | reactive 並行（flaky 疑い） | |
@@ -477,22 +477,30 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
   pre-bind**（self-reference が outer ではなく未定義パラメータに解決＝Raku の「param はその default 内で scope に入る」規則）。
   earlier param（`$b = $a`）は前 iter で bind 済なので影響なし、別名 outer（`$z = $y`）も影響なし。pin=
   `t/param-default-self-scoping.t`（7・ON/OFF 両 PASS）。make test 9819。
-- **残り 1（純 writeback でない＝別軸・第47で真因を cell-detachment と特定）**:
-  - **destruction.t 3**: `submethod DESTROY { $in_destructor++ }` の captured write が `await start { loop {…} }` の
-    後で top-level slot に届かない。**第47セッションで最小再現＋真因を確定**（下記 §7.2c）。当初の「GC タイミング依存」も
-    「cell-detachment」も**誤り**＝真因は **cross-thread**（`start` が別スレッド・worker で DESTROY 発火）。env は親へ伝播し
-    親 slot も await call-site で到達可能だが、**ワーカーが書いた captured scalar を親の pending writeback に記録する一点が欠落**
-    （loop+複数 var 時に shared_vars dirty から落ちる）。**cell substrate 不要・cross-thread writeback 記録の拡張で解ける見込み**（§7.2c）。
+- ~~**destruction.t 3**~~ ✅ **slice 1.20 で消化（第48セッション・retain-on-miss cross-thread sync）**。`submethod DESTROY {
+  $a++ }` の worker-thread captured write が top-level slot に届かない。真因＝§7.2c の「cell-detachment」は**誤診断**（#3398
+  で訂正済・真因は cross-thread writeback の **drop-on-miss** リスト誤用）。実測トレースで確定: worker が `$a` を 1 に書き
+  `shared_vars_dirty` にマーク → `await` の `sync_shared_vars_to_env`（mod.rs:6420）が `["a","@order"]` を pending に push し
+  `env["a"]=1` → しかしその後 `await` 内の `run_pending_instance_destroys()`（builtins_system.rs:1796）が **DESTROY を
+  `locals=[]` で dispatch** し、その tail の `apply_pending_rw_writeback`（drop-on-miss）が pending を**消費して捨てる** →
+  top-level frame（`locals=["a","@order","b0"]`・"a" slot 所有）が drain する頃には `sources=[]`。**修正**＝`sync_shared_vars_to_env`
+  の push 先を **drop-on-miss の `pending_rw_writeback_sources` → retain-on-miss の `pending_caller_var_writeback`** に変更
+  （cross-thread synced var の owning slot は数フレーム上＝caller-var と同形の retain-on-miss が正しい）。slice 1.18 の
+  caller-frame writeback と同じリストを再利用＝中間 DESTROY frame は slot 無しで retain、top-level が drain して slot refresh。
+  pin=`t/destroy-cross-thread-writeback-coherence.t`（5・ON/OFF 両 PASS）。
   - ＋別軸: lazy-lists.t 24-26（laziness バグ・L 系）／IO-Socket-Async.t 5,7（flaky）。
 
-**残 1（destruction.t GC＝純 writeback でない別軸）＋別軸 2（lazy-lists laziness・IO-Socket-Async flaky）
-全消化後に §7.4（env_dirty 削除）が射程**。純 writeback コヒーレンスのサーフェスは slice 1.18 で枯渇、
-露出バグ（code.t scoping）は slice 1.19 で消化。
+**残＝別軸 2（lazy-lists laziness・IO-Socket-Async flaky）のみ。純 writeback コヒーレンスのサーフェスは枯渇
+（slice 1.18 で純 writeback、1.19 で露出バグ、1.20 で cross-thread DESTROY writeback）。
+§7.4（env_dirty 削除）は lazy-lists の真 lazy 化（L 系・別軸）後に射程。**
 
-### 7.2c 🔴 destruction.t 3 — cross-thread（worker DESTROY）captured-write の parent-slot 未 refresh（第47セッション・真因確定・未解決）
+### 7.2c ✅ destruction.t 3 — cross-thread（worker DESTROY）captured-write（第47調査・第48解決＝slice 1.20）
 
-> **訂正（第47後半）**: 当初この節は「cell-detachment」と記したが**誤診断だった**。計測で `$a` は **cell-box されていない**
-> （`box_decl_local_cell`/`box_captured_lexicals` の probe が一切発火せず）。真因は **cross-thread**（`start` が別スレッド）。
+**★解決済（slice 1.20・第48セッション）。** 真因は cross-thread writeback の **drop-on-miss リスト誤用**（§7.2a の slice 1.20
+行を参照）。修正＝`sync_shared_vars_to_env` の push 先を `pending_rw_writeback_sources`（drop-on-miss）→
+`pending_caller_var_writeback`（retain-on-miss）に変更。なお第47前半の「cell-detachment」診断は#3398 で誤りと訂正済
+（計測で `$a` は cell-box されておらず、`box_decl_local_cell`/`box_captured_lexicals` の probe が一切発火しない）＝
+真因は cross-thread。以下は当時の調査記録（歴史参考）。
 
 **最小再現（決定的・`MUTSU_NO_BLANKET_RECONCILE=1` で確実 fail）**:
 ```raku
@@ -588,8 +596,19 @@ env を stale slot で clobber→state 永続化が空 hash 保存。修正＝fa
 
 ## 9. 着手手順（次セッション用クイックスタート）
 
-1. このプラン §6.1 案A の配線可否を調査（`compute_free_vars` から named sub の `CompiledCode` 到達可能か）。
-2. `t/captured-outer-cell-sharing.t` を先に書く（multi-frame `$acc` accumulation 他・raku 期待値で固定）。
-3. 検出＋ボックス化を実装（§6.1-6.2）。
-4. §6.4 で検証（blanket 外して pin が通る → 戻して make test）。
-5. PR（feature branch・auto-merge）。CI 後、§7 スライス2へ。
+**★純 writeback コヒーレンスは slice 1.20（#3400）で完了＝OFF roast survey の純 writeback サーフェスは枯渇。**
+captured-outer cell 共有のグラインドはここで終わり。次の本丸は**別軸の laziness バグ**で、これが env_dirty 削除（§7.4）の
+最後の前提。
+
+**次セッションの本丸 = `S02-types/lazy-lists.t` 24-26 の真 lazy 化（§7.2a triage 参照・§3-F の L 系と合流）**:
+- 症状: OFF で subtests 24-26 が決定的 fail（`MUTSU_FUDGE=1 MUTSU_NO_BLANKET_RECONCILE=1 prove -e target/debug/mutsu
+  roast/S02-types/lazy-lists.t` → Failed 24-26）。ON は write-loss で偶然 raku 一致。
+- 真因: `make-lazy-list = gather { take ...; $was-lazy = 0 }.lazy` を `.kv`/`.pairs`/`.antipairs` が **eager に force** して
+  `$was-lazy = 0` を走らせる（mutsu の `.kv`/`.pairs`/`.antipairs` が非 lazy）。**writeback ではなく laziness バグ**＝
+  precise-writeback では解けない。
+- 修正方針: `.kv`/`.pairs`/`.antipairs` を真に lazy 化（lazy Seq/gather を eager 消費しない）。`docs/lazy-arrays.md` の
+  L 系（L2b 等）と設計を合流させる。raku で `(gather { ... }).lazy.kv` が lazy のままなことを確認してから着手。
+- これが入れば OFF survey が実質クリア（残は IO-Socket-Async.t の flaky のみ＝決定的 pin 不可）→ §7.4 が射程。
+
+**その後 = §7.4（env_dirty 物理削除）**: `blanket_reconcile_if_dirty` 空洞化 → `env_dirty`/`ensure_locals_synced`/
+`saved_env_dirty` 削除 → `cell_boxing_active()` gate を外して boxing 恒久 ON 化。IO-Socket-Async の flaky はこの空洞化で実挙動確認。
