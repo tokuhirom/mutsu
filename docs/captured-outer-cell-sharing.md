@@ -535,14 +535,19 @@ say "a=$a";     # OFF: a=0（ON/raku: a=1）
 3. 計測で `find_local_slot` が全中間フレームで `$a` slot を見つけられない（`locals=[]`/`["foo","chld"]`）ことを確認＝
    top-level slot は別フレーム。
 
-**∴ 専用スライスの設計方針（次セッション）**: 二択。
-- **(A) cell write-through**: DESTROY merge（class.rs:1421）で saved_env[k] が `ContainerRef` cell のとき、plain 置換でなく
-  **cell に write-through**（`set_container_value` 等）して cell を merged_env に保持→top-level slot の cell（同一 Arc）が
-  即座に更新値を見る。これが本筋（cell 共有の本来の挙動）。`@`/`%` container は元々 Arc 共有なので非該当、scalar cell のみ。
-- **(B) await/loop 境界での top-level drain**: `await` の call-site と loop 境界で `pending_caller_var_writeback` を
-  retain-on-miss で運び、所有フレームまで到達させる。ただし cell detachment（A）が先に要る（drain しても plain 代入では
-  cell を壊す）。
-**(A) が本命。** cell write-through が入れば env↔slot が乖離しなくなり、§7.4（env_dirty 削除）の前提にも直結する。
+**案A（cell write-through）も第47で試行→不成立（計測で確定）**: DESTROY merge（class.rs:1421）で `saved_env.get_sym(k)` が
+`ContainerRef` cell のとき plain 置換でなく cell へ write-through する案を実装したが OFF=0 のまま。**計測で `saved=Some(Int(0))`
+＝env は cell でなく plain Int を保持**と判明。∴ **cell は top-level slot にのみ存在し、nested frame（start-block/loop）の env
+には plain コピーしか伝播していない**＝そもそも env↔slot が同一 Arc を共有していない。DESTROY merge は env しか触れないので、
+top-level slot の cell には原理的に到達不可。案A は前提（env が cell を保持）が成り立たず不成立。revert 済。
+
+**∴ これは localized fix で解けない＝PLAN §2-C Sub-slice 1b の「env↔locals がコンテナ cell を**フレームを跨いで**共有する」
+substrate そのもの**。top-level の captured cell が `await start { loop {…} }` の nested frame の env に**同一 Arc として伝播**
+しない限り（現状は plain コピー）、DESTROY（やその他 nested-frame からの captured write）は top-level slot へ届かない。
+**次セッションの本丸＝cell の cross-frame 伝播**: 捕捉 cell を push_call_frame / start-spawn / loop-scope の env チェーンに
+**同一 Arc で**載せる（plain コピーを作らない）。これが入れば DESTROY のみならず multi-frame captured write 全般が cell 経由で
+coherent になり、§7.4（env_dirty 削除）の前提が満たされる。destruction.t 3 はその最小 pin。
+（補助案B＝await/loop 境界 top-level drain は、cell 伝播が入れば不要。）
 
 ### 7.2b ✅ proto `{*}` redispatch ＋ `state` var coherence（proto.t 21 / subsignature.t 54）= slice 1.17 で解決
 **実際の真因は当初推測（`restore_env_preserving_existing` が state を巻き戻す）とは別だった。** plain `state %h` を持つ
