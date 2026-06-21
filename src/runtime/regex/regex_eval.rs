@@ -8,18 +8,44 @@ impl Interpreter {
     /// evaluation. `self` and `target` have distinct registry `Arc`s, so this is
     /// a snapshot copy (matches the prior per-field clone in the struct literal).
     pub(crate) fn copy_decl_registry_into(&self, target: &mut Interpreter) {
-        let (functions, proto_functions, token_defs) = {
-            let src = self.registry();
-            (
-                src.functions.clone(),
-                src.proto_functions.clone(),
-                src.token_defs.clone(),
-            )
-        };
-        let mut dst = target.registry_mut();
-        dst.functions = functions;
-        dst.proto_functions = proto_functions;
-        dst.token_defs = token_defs;
+        // During a `Grammar.parse(:actions(...))`, a sub-interpreter spawned for
+        // subrule/proto-regex matching may evaluate a `<?{ $<x>.made ... }>`
+        // assertion, which has to dispatch the action class's methods (in
+        // `Registry::classes`). Copy the *full* registry in that case so those
+        // methods are reachable; otherwise keep the lean three-field copy that the
+        // common (action-less) regex/closure eval path relies on.
+        if self.current_grammar_actions.is_some() {
+            self.copy_full_registry_into(target);
+        } else {
+            let (functions, proto_functions, token_defs) = {
+                let src = self.registry();
+                (
+                    src.functions.clone(),
+                    src.proto_functions.clone(),
+                    src.token_defs.clone(),
+                )
+            };
+            let mut dst = target.registry_mut();
+            dst.functions = functions;
+            dst.proto_functions = proto_functions;
+            dst.token_defs = token_defs;
+        }
+        // Propagate the in-progress `Grammar.parse(:actions(...))` object so the
+        // assertion's sub-interpreter can still run the action method mid-parse.
+        // None outside a parse, so this is a no-op there.
+        target.current_grammar_actions = self.current_grammar_actions.clone();
+    }
+
+    /// Snapshot the *entire* declaration registry (classes, roles, methods,
+    /// proto-methods, ... in addition to functions/tokens) into `target`. Needed
+    /// when the sub-interpreter must dispatch user class methods — e.g. running
+    /// grammar action methods on the `:actions` object during an in-parse
+    /// `<?{ $<x>.made ... }>` assertion (see `run_named_capture_actions`), where
+    /// the action class's methods live in `Registry::classes`, which the leaner
+    /// `copy_decl_registry_into` omits.
+    pub(crate) fn copy_full_registry_into(&self, target: &mut Interpreter) {
+        let snapshot = self.registry().clone();
+        *target.registry_mut() = snapshot;
     }
 
     /// Evaluate a closure interpolation `<{ code }>` inside a regex.
@@ -132,8 +158,29 @@ impl Interpreter {
             .map(|s| Value::str(s.clone()))
             .collect();
         env.insert("/".to_string(), Value::array(match_list));
+        // When the assertion references `.made` AND we are inside a
+        // `Grammar.parse(:actions(...))`, run the relevant action method on each
+        // just-matched named capture so `$<x>.made` is available *during* the
+        // parse. raku runs actions incrementally at reduce time; mutsu otherwise
+        // only runs them post-parse, which leaves `.made` undefined here (e.g.
+        // Template::Mustache's standalone-line rule:
+        // `token linetag { ^^ (\h*) <tag> <?{ $<tag>.made<type> ~~ none(...) }> ... }`).
+        // The actions run in a scratch interpreter so the assertion's own
+        // `$/`/`$0` env below is not clobbered by the action dispatch.
+        let made_named: HashMap<String, Value> = if code.contains(".made")
+            && let Some(actions0) = self.current_grammar_actions.clone()
+        {
+            self.run_named_capture_actions(caps, actions0)
+        } else {
+            HashMap::new()
+        };
+
         // Set named captures
         for (k, v) in &caps.named {
+            if let Some(m) = made_named.get(k) {
+                env.insert(format!("<{}>", k), m.clone());
+                continue;
+            }
             let value = if v.len() == 1 {
                 Value::str(v[0].clone())
             } else {
@@ -152,6 +199,69 @@ impl Interpreter {
             Ok(val) => val.truthy(),
             Err(_) => false,
         }
+    }
+
+    /// Build a Match object for each named capture in `caps` and run its grammar
+    /// action method (proto-regex `:sym<>` variant aware) so the resulting Match
+    /// carries `.made`. Used by `eval_regex_code_assertion` to support
+    /// `$<x>.made` inside `<?{ ... }>` assertions during parsing. Runs in a
+    /// scratch interpreter to avoid mutating the caller's env. Best-effort: a
+    /// capture whose action errors or is absent maps to its un-actioned Match.
+    fn run_named_capture_actions(
+        &self,
+        caps: &RegexCaptures,
+        mut actions: Value,
+    ) -> HashMap<String, Value> {
+        let mut out = HashMap::new();
+        let full = Value::make_match_object_full_q(
+            caps.matched.clone(),
+            caps.from as i64,
+            caps.to as i64,
+            &caps.positional,
+            &caps.named,
+            &caps.named_subcaps,
+            &caps.positional_subcaps,
+            &caps.positional_quantified,
+            &caps.positional_nil,
+            None,
+            &caps.named_quantified,
+        );
+        let Value::Instance { attributes, .. } = &full else {
+            return out;
+        };
+        let attr_map = attributes.as_map();
+        let Some(Value::Hash(named)) = attr_map.get("named") else {
+            return out;
+        };
+        let mut scratch = Interpreter {
+            env: self.env.clone(),
+            current_package: Arc::new(RwLock::new(self.current_package())),
+            ..Default::default()
+        };
+        self.copy_full_registry_into(&mut scratch);
+        for (k, child) in named.iter() {
+            let ran = match child {
+                Value::Array(items, meta) => {
+                    let mut acc = Vec::with_capacity(items.len());
+                    for it in items.as_ref() {
+                        let dn = Interpreter::get_action_name(it).unwrap_or_else(|| k.clone());
+                        let m = scratch
+                            .invoke_grammar_actions(it.clone(), &mut actions, &dn)
+                            .unwrap_or_else(|_| it.clone());
+                        acc.push(m);
+                    }
+                    Value::Array(Arc::new(crate::value::ArrayData::new(acc)), *meta)
+                }
+                _ => {
+                    let dn = Interpreter::get_action_name(child).unwrap_or_else(|| k.clone());
+                    scratch
+                        .invoke_grammar_actions(child.clone(), &mut actions, &dn)
+                        .unwrap_or_else(|_| child.clone())
+                }
+            };
+            out.insert(k.clone(), ran);
+        }
+        out
     }
 
     /// Create an X::Syntax::Regex::QuantifierValue exception with the given flag attribute set to True.
