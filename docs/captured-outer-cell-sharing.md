@@ -244,14 +244,33 @@ reconcile 非依存に。**この3つは cell 化ではなく precise-writeback 
 pin（既存）=`t/{lazy-reify-captured-outer,gather-lazy,subst-closure-writeback}.t`（ON/OFF 両 PASS）。make test 9672 /
 make roast 1285 回帰なし。
 
+### 7.1c ✅ スライス1.7（DONE・第42セッション）= EVAL carrier の multi-frame cell 共有
+
+carrier cluster の **multi-frame** 部（`eval-carrier-precise` subtest 3/5・`require-expression` subtest 3）＝
+**descendant frame から ancestor lexical を書く EVAL carrier**（`sub set_x(){ EVAL '$x = 5' }; set_x()`）。
+EVAL 文字列内の write は **静的 `free_var_writes` 解析が見えず**、owner の decl-site で cell 化できない。precise
+single-frame writeback も**不可**＝値が callee の env restore で失われ、drain は restore 後の stale env を読む（実証済）。
+∴ **EVAL 実行時に cross-frame cell 化**: `box_carrier_free_var_writes`（vm_env_helpers.rs）が EVAL'd code の
+`free_var_writes` の captured-outer scalar を、live `env` + 全 `call_frames.saved_env` で同一 `ContainerRef` cell 化
+→ EVAL の by-name write が cell を通り、owner frame の env restore 後も cell が 5 を保持。**ガード**:
+①`cell_boxing_active()` gated（default は no-op・byte-identical）②`__mutsu_in_eval` 限定（supply/whenever/gather body も
+eval_block_value 経由だが Track C 並行 cell が別管理＝触れない）③sigilless alias（`__mutsu_sigilless_alias::x`）は
+skip（`\x`→`$a` の alias chain を cell が detach するため）④type/where 制約 skip（`Mu` 除く）。
+呼び出し＝`eval_block_value`（resolution.rs・compile 後・run 前）。pin（既存）=`t/{eval-carrier-precise-writeback,
+require-expression}.t`（ON/OFF 両 PASS）。make test 9679 / make roast 1285 回帰なし。OFF survey 20→18。
+**注意**: 当初 `__mutsu_in_eval` 無し（broad）版は supply/whenever 14 file を OFF-clean 化したが
+`concurrent-cell-writeback` subtest4 / `sigilless-params` subtest3 を**回帰**＝並行 cell 機構との衝突。EVAL 限定で解消。
+
 ### 7.2 後続スライス（その先）
 
-- **carrier cluster の multi-frame 残**（`eval-carrier-precise` subtest 3/5・`require-expression` subtest 3）:
-  **descendant frame から ancestor lexical を書く EVAL/require carrier**＝§1 の multi-frame accumulation 壁そのもの。
-  precise single-frame drain では届かず（記録が中間フレームで discard される）、**cell 共有が要る本丸**。
+- **nested-method capture**（`methods-instance` subtest 3 = `method foo { my $a; method bar { $tracker = $a } }`）:
+  EVAL でない multi-frame captured-write（nested method 宣言が enclosing method の lexical 捕捉）。別機構の調査要。
+- **top-level captured-outer scalar**（`cross-metaops` subtest 2 = `my Mu $t; Nil Xorelse ($t = $_,)`）: env 常駐の
+  top-level scalar を metaop thunk が捕捉。`box_captured_lexicals` は local slot を box する＝env 常駐は対象外。
+- **top-level container（`attribute-trait-mod` 5 fail）**: `my @noted-names` を trait_mod dispatch 経由で変異（env 常駐）。
 - **container `@`/`%` の明示 cell 化**（必要なら）: 現状 Arc 共有で動くが、`box_captured_lexicals` の `@`/`%` skip を
   escape-aware に緩和する場合は **outer container の decont 消費面の網羅監査**が前提（§8）。
-- **並行 cluster**: cross-thread cell（最難・最後）。
+- **並行 cluster**（supply/whenever/react/promise/proc-async/scheduler ~13）: cross-thread cell（最難・最後）。
 
 ### 7.3 ★各スライスの必須手順（slice 1 の教訓）
 

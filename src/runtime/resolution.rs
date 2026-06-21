@@ -1772,6 +1772,11 @@ impl Interpreter {
             .map(|(k, v)| (*k, v.clone()))
             .collect();
         let (code, compiled_fns) = self.compile_block_value(body);
+        // Multi-frame coherence (env_dirty-deletion path): box any captured-outer
+        // scalar this carrier body writes into a shared cell across env + saved
+        // frames, so the by-name write survives the owner frame's env restore.
+        // No-op in the default build (gated on cell_boxing_active).
+        self.box_carrier_free_var_writes(&code);
         self.block_scope_depth += 1;
         let result = self.run_compiled_block(&code, &compiled_fns);
         let trailing_sub_value = match body.last() {
