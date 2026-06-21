@@ -2924,13 +2924,29 @@ impl Interpreter {
                     // Check element type constraints from container metadata
                     self.check_array_value_element_types(&target, &normalized_args)?;
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
-                        let items = Arc::make_mut(arc_items);
-                        if method == "append" {
-                            items.extend(flatten_append_args(normalized_args));
+                        let kind = *kind;
+                        let vals = if method == "append" {
+                            flatten_append_args(normalized_args)
                         } else {
-                            items.extend(normalized_args);
+                            normalized_args
+                        };
+                        if Arc::strong_count(arc_items) > 1 {
+                            // Shared backing array: mutate the interior in place so
+                            // every alias observes the push. `Arc::make_mut` would
+                            // detach a private copy and lose the write for those
+                            // aliases — the bug behind `$t.push` inside a `for`/`when`
+                            // body where `$t` is a by-ref param: entering the block
+                            // flushes a shared clone of `$t` into env, and a
+                            // make_mut here would write only that env copy, leaving
+                            // the caller's binding stale. SAFETY: same contract as
+                            // `array_push_in_place` — no live borrow into the items,
+                            // and we do not re-enter the VM while the borrow is held.
+                            let data = unsafe { crate::value::arc_contents_mut(arc_items) };
+                            data.items.extend(vals);
+                        } else {
+                            Arc::make_mut(arc_items).extend(vals);
                         }
-                        return Ok(Value::Array(Arc::clone(arc_items), *kind));
+                        return Ok(Value::Array(Arc::clone(arc_items), kind));
                     }
                     // Interior mutation: if the target Array has shared references
                     // (Arc refcount > 1), mutate in-place so all references see the
@@ -2975,7 +2991,13 @@ impl Interpreter {
                         return Err(RuntimeError::cannot_lazy("pop"));
                     }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
-                        let items = Arc::make_mut(arc_items);
+                        // Shared backing array: in-place interior mutation (see `push`).
+                        let items = if Arc::strong_count(arc_items) > 1 {
+                            // SAFETY: same contract as `array_push_in_place`.
+                            unsafe { &mut crate::value::arc_contents_mut(arc_items).items }
+                        } else {
+                            Arc::make_mut(arc_items)
+                        };
                         let out = if items.is_empty() {
                             make_empty_array_failure_what("pop", &empty_what)
                         } else {
@@ -3001,11 +3023,20 @@ impl Interpreter {
                 "unshift" => {
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
-                        let items = Arc::make_mut(arc_items);
+                        let kind = *kind;
+                        // Shared backing array: mutate the interior in place so
+                        // every alias (a by-ref param, a captured-outer slot)
+                        // observes the change. See the `push` branch above.
+                        let items = if Arc::strong_count(arc_items) > 1 {
+                            // SAFETY: same contract as `array_push_in_place`.
+                            unsafe { &mut crate::value::arc_contents_mut(arc_items).items }
+                        } else {
+                            Arc::make_mut(arc_items)
+                        };
                         for (i, arg) in normalized_args.iter().enumerate() {
                             items.insert(i, arg.clone());
                         }
-                        return Ok(Value::Array(Arc::clone(arc_items), *kind));
+                        return Ok(Value::Array(Arc::clone(arc_items), kind));
                     }
                     let mut items = match &target {
                         Value::Array(v, ..) => v.to_vec(),
@@ -3022,11 +3053,18 @@ impl Interpreter {
                 "prepend" => {
                     let flat_values = flatten_append_args(args);
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
-                        let items = Arc::make_mut(arc_items);
+                        let kind = *kind;
+                        // Shared backing array: in-place interior mutation (see `push`).
+                        let items = if Arc::strong_count(arc_items) > 1 {
+                            // SAFETY: same contract as `array_push_in_place`.
+                            unsafe { &mut crate::value::arc_contents_mut(arc_items).items }
+                        } else {
+                            Arc::make_mut(arc_items)
+                        };
                         for (i, arg) in flat_values.iter().enumerate() {
                             items.insert(i, arg.clone());
                         }
-                        return Ok(Value::Array(Arc::clone(arc_items), *kind));
+                        return Ok(Value::Array(Arc::clone(arc_items), kind));
                     }
                     let items = match &target {
                         Value::Array(v, ..) => v.to_vec(),
@@ -3052,7 +3090,13 @@ impl Interpreter {
                         )));
                     }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
-                        let items = Arc::make_mut(arc_items);
+                        // Shared backing array: in-place interior mutation (see `push`).
+                        let items = if Arc::strong_count(arc_items) > 1 {
+                            // SAFETY: same contract as `array_push_in_place`.
+                            unsafe { &mut crate::value::arc_contents_mut(arc_items).items }
+                        } else {
+                            Arc::make_mut(arc_items)
+                        };
                         let out = if items.is_empty() {
                             make_empty_array_failure_what("shift", &empty_what)
                         } else {
