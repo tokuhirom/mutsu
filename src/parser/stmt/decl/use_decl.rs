@@ -70,6 +70,23 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             // :!name
             let r = r.strip_prefix('!').unwrap_or(r);
             if let Ok((r, tag_name)) = ident(r) {
+                // Version/auth/api selectors (`:ver<...>`, `:auth<...>`, `:api<...>`)
+                // are NOT import tags — they refine which distribution to load.
+                // Consume their `<...>` value and discard, instead of treating the
+                // name as an import tag (which produced `no such tag 'ver'`).
+                let is_dist_selector =
+                    matches!(tag_name.as_str(), "ver" | "auth" | "api") && r.starts_with('<');
+                if is_dist_selector {
+                    let after = match r[1..].find('>') {
+                        Some(end) => &r[end + 2..],
+                        None => return Err(PError::expected("closing '>' in version adverb")),
+                    };
+                    let (after, _) = ws(after)?;
+                    let after = after.strip_prefix(',').unwrap_or(after);
+                    let (after, _) = ws(after)?;
+                    rest = after;
+                    continue;
+                }
                 use_tags.push(tag_name.to_string());
                 // :name(expr)
                 let r = skip_balanced_parens(r);

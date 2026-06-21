@@ -2038,6 +2038,9 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     check_pseudo_package_in_decl(&name)?;
+    // Consume optional type adverbs (:ver<...>, :auth<...>, :api<...>) on the
+    // unit package name, e.g. `unit module Foo:ver<0.0.12>:auth<zef:bar>;`.
+    let (rest, _traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
     Ok((
