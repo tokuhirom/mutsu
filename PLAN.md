@@ -163,11 +163,14 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 
 目標: **mutsu でウェブブログシステムが構築できる**。現状 **0% 稼働**。
 
-- [~] **Template::Mustache** — 基本レンダリングは**動作**（`render('Hello {{name}}!', {name=>'World'})`→OK・セクション/
-      イテレーションも描画。旧記載「grammar action dispatch が最大ブロッカー」は陳腐化＝proto regex の action は基本動作）。
-      `proto method` 本体実行は landed（#3358）。残ギャップ: ① `handles` 委譲経由の proto method（ログフィルタ・stderr のみ・
-      非致命）、② デリミタ変更 `{{=..=}}`（`$*LEFT/$*RIGHT` 動的変数の finalizer 再代入が次パースに伝播しない）。
-      詳細＝メモリ `project-template-mustache-status`。ハーネス＝`tmp/mustache/`。
+- [~] **Template::Mustache** — 基本＋セクション＋partial＋cascade＋**継承（#3380）**＋readme Roster（#3381）まで動作。
+      2026-06-21 session-3 で #3377（cross-frame warn resume）/#3378（given/when 末尾 if 値）/#3380（do-if `-> $v`
+      バインド→12-inheritence 全パス）/#3381（`^^` を subrule 内で行頭誤認しない→50-readme Roster）をマージ。
+      **次ターゲット = ② デリミタ `{{=<% %>=}}`**（`$*LEFT/$*RIGHT` 動的変数の finalizer 再代入が次マッチに伝播しない＝
+      grammar action を reduce 時に実行し dyn-var 書き込みを overlay 経由で後続マッチへ。詳細メモリ
+      `plan-delimiter-incremental-actions`）。他の残: 06-logging（CONTROL `.resume` の真の cross-frame 継続）、
+      50-readme #4（grammar パース性能・無限ループでなく遅い）、`handles` 委譲経由 proto method（stderr のみ・非致命）。
+      詳細＝メモリ `project-template-mustache-status` / `session-handoff-2026-06-21-mustache`。ハーネス＝`tmp/mustache/`。
 - [ ] **HTTP::Server::Tiny** の依存（HTTP::Parser / IO::Blob / HTTP::Status）→ 本体。
 - [ ] DB アクセス — pure Raku 簡易実装 or qqx ベースの SQLite wrapper（NativeCall 不可）。
 - [ ] File::Temp / MIME::Base64 (pure Raku) / File::Directory::Tree。
