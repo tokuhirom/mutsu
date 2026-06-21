@@ -318,7 +318,127 @@ impl Interpreter {
             }
             return Ok(Value::Nil);
         }
+        // A CONTROL handler is active somewhere up the dynamic call stack. If the
+        // *innermost* one unconditionally `.resume`s (`resume_safe`), run it
+        // INLINE here, at the raise site, then return `Ok(Nil)` so the deep
+        // computation continues exactly where the `warn` was raised. Returning an
+        // `Err` instead would unwind the Rust call stack to the CONTROL block's
+        // frame, destroying every frame between here and there — so the rest of
+        // the deep computation (the code after the `warn`) would be lost. This is
+        // the cross-frame resumable-warn mechanism. A non-resume-safe handler
+        // (e.g. `when CX::Warn { }`, which `succeed`s/exits the block) must take
+        // the unwinding path so the `succeed` has a block boundary to unwind to.
+        if let Some(result) = self.try_resume_safe_control_inline(&message) {
+            return result;
+        }
         Err(RuntimeError::warn_signal(message))
+    }
+
+    /// If the innermost active CONTROL handler is `resume_safe`, run it inline
+    /// against the current (deep) environment and return the value the suspended
+    /// `warn` should evaluate to (`Nil` for a bare `.resume`). Returns `None`
+    /// when there is no inline-eligible handler, so the caller falls back to the
+    /// unwinding path. See `builtin_warn` for why this is necessary.
+    fn try_resume_safe_control_inline(
+        &mut self,
+        message: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let top = self.control_handlers.last()?;
+        if !top.resume_safe {
+            return None;
+        }
+        let handler = top.handler.as_ref()?;
+        // Clone what we need so we can take `&mut self` while running.
+        let code = handler.code.clone();
+        let control_begin = handler.control_begin;
+        let end = handler.end;
+        let fns = handler.compiled_fns.clone();
+
+        // Present the warning to the handler as a `CX::Warn` topic in `$_`,
+        // mirroring the unwinding path in `exec_try_catch_op_inner`.
+        let warn_signal = RuntimeError::warn_signal(message.to_string());
+        let topic = Self::control_signal_topic_value(&warn_signal);
+        let saved_topic = self.env().get("_").cloned();
+        if let Some(t) = topic {
+            self.env_mut().insert("_".to_string(), t);
+        }
+        let saved_when = self.when_matched();
+        self.set_when_matched(false);
+
+        // The handler's bytecode (`code`) belongs to the CONTROL-installing
+        // frame and addresses *that* frame's local slots, but right now
+        // `self.locals` is the deep frame's (the `warn` raise site). Reconstruct
+        // the installing frame's locals from `env` — the cross-frame-visible
+        // store, where `code.locals[i]` names slot `i` (this mirrors
+        // `reconcile_locals_from_env_at_site`). After running, flush any slot the
+        // handler mutated back to `env` and mark `env_dirty`, so the installing
+        // frame reconciles its slots from `env` when the deep call chain returns
+        // (the same path a normal cross-frame by-name write takes). This is what
+        // makes the handler's `$out ~= .Str` survive to after `render()`.
+        let handler_locals: Vec<Value> = code
+            .locals
+            .iter()
+            .map(|name| {
+                self.env().get(name).cloned().unwrap_or_else(|| {
+                    name.strip_prefix('$')
+                        .or_else(|| name.strip_prefix('@'))
+                        .or_else(|| name.strip_prefix('%'))
+                        .or_else(|| name.strip_prefix('&'))
+                        .and_then(|bare| self.env().get(bare).cloned())
+                        .unwrap_or(Value::Nil)
+                })
+            })
+            .collect();
+        let seeded = handler_locals.clone();
+        let saved_locals = std::mem::replace(&mut self.locals, handler_locals);
+
+        // The handler runs in the deep frame's stack; isolate its operand-stack
+        // effects so the suspended computation's stack is left untouched.
+        let saved_stack = self.stack.len();
+        let result = self.run_range(&code, control_begin, end, &fns);
+        self.stack.truncate(saved_stack);
+
+        // Flush slots the handler changed back to env so the installing frame
+        // (and any intervening by-name reader, e.g. `render`'s own `$out ~=`)
+        // observes them. Only changed slots are written, to keep blast radius
+        // minimal.
+        let handler_locals = std::mem::replace(&mut self.locals, saved_locals);
+        for (i, name) in code.locals.iter().enumerate() {
+            if name.is_empty() {
+                continue;
+            }
+            if handler_locals[i] != seeded[i] {
+                self.env_mut()
+                    .insert(name.clone(), handler_locals[i].clone());
+            }
+        }
+        self.env_dirty = true;
+
+        self.set_when_matched(saved_when);
+        if let Some(v) = saved_topic {
+            self.env_mut().insert("_".to_string(), v);
+        } else {
+            self.env_mut().remove("_");
+        }
+
+        match result {
+            // Handler fell through (no explicit `.resume`) — for a resume_safe
+            // handler this is equivalent to resuming with Nil.
+            Ok(()) => Some(Ok(Value::Nil)),
+            // `.resume` — the warn resumes; a bare `.resume` yields Nil.
+            Err(ce) if ce.is_resume => Some(Ok(Value::Nil)),
+            // The handler re-threw the warn (`warn`/`.rethrow` of CX::Warn):
+            // act like the default handler — print and resume.
+            Err(ce) if ce.is_warn => {
+                if !self.warning_suppressed() {
+                    self.write_warn_to_stderr(&ce.message);
+                }
+                Some(Ok(Value::Nil))
+            }
+            // Anything else (shouldn't happen for a resume_safe handler) →
+            // propagate so it is not silently swallowed.
+            Err(ce) => Some(Err(ce)),
+        }
     }
 
     pub(super) fn make_stub_exception(message: String) -> Value {

@@ -54,7 +54,7 @@ impl Interpreter {
         }
     }
 
-    fn control_signal_topic_value(signal: &RuntimeError) -> Option<Value> {
+    pub(crate) fn control_signal_topic_value(signal: &RuntimeError) -> Option<Value> {
         // User-defined classes doing X::Control carry their original
         // exception instance. Surface it directly so CONTROL blocks see the
         // real type rather than a generic CX::Done wrapper.
@@ -3053,6 +3053,7 @@ impl Interpreter {
         control_start: u32,
         body_end: u32,
         explicit_catch: bool,
+        resume_safe: bool,
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
@@ -3065,6 +3066,7 @@ impl Interpreter {
             control_start,
             body_end,
             explicit_catch,
+            resume_safe,
             ip,
             compiled_fns,
         );
@@ -3086,6 +3088,7 @@ impl Interpreter {
         control_start: u32,
         body_end: u32,
         explicit_catch: bool,
+        resume_safe: bool,
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
@@ -3098,6 +3101,29 @@ impl Interpreter {
         let has_control = control_begin < end;
         if has_control {
             self.control_handler_depth += 1;
+            // Register this CONTROL handler so a `warn` raised deep inside the
+            // protected body (on the Rust call stack, several frames down) can
+            // find it. A `resume_safe` handler carries its own bytecode +
+            // function table so `builtin_warn` can run it INLINE at the raise
+            // site and resume the deep computation, instead of unwinding the
+            // Rust stack (which would lose every frame between the warn and
+            // here). The depth invariant `control_handlers.len() ==
+            // control_handler_depth` is preserved so the innermost handler is
+            // always `control_handlers.last()`.
+            let handler = if resume_safe {
+                Some(crate::vm::ControlHandlerCode {
+                    code: std::sync::Arc::new(code.clone()),
+                    control_begin,
+                    end,
+                    compiled_fns: compiled_fns.clone(),
+                })
+            } else {
+                None
+            };
+            self.control_handlers.push(crate::vm::ControlHandlerEntry {
+                resume_safe,
+                handler,
+            });
         }
         // Guard the protected body with a panic->X:: boundary so an internal
         // Rust panic (overflow/OOB/unwrap) raised anywhere inside it becomes a
@@ -3105,6 +3131,7 @@ impl Interpreter {
         let body_result = self.run_range_guarded(code, body_start, catch_begin, compiled_fns);
         if has_control {
             self.control_handler_depth -= 1;
+            self.control_handlers.pop();
         }
         match body_result {
             Ok(()) => {
@@ -3266,11 +3293,26 @@ impl Interpreter {
                             }
                             if has_control {
                                 self.control_handler_depth += 1;
+                                let handler = if resume_safe {
+                                    Some(crate::vm::ControlHandlerCode {
+                                        code: std::sync::Arc::new(code.clone()),
+                                        control_begin,
+                                        end,
+                                        compiled_fns: compiled_fns.clone(),
+                                    })
+                                } else {
+                                    None
+                                };
+                                self.control_handlers.push(crate::vm::ControlHandlerEntry {
+                                    resume_safe,
+                                    handler,
+                                });
                             }
                             let body_result =
                                 self.run_range(code, resume_point, catch_begin, compiled_fns);
                             if has_control {
                                 self.control_handler_depth -= 1;
+                                self.control_handlers.pop();
                             }
                             match body_result {
                                 Ok(()) => {

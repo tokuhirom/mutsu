@@ -1204,6 +1204,12 @@ pub struct Interpreter {
     pub(crate) quanthash_bind_params: Vec<String>,
     pub(crate) for_param_restore_stack: Vec<(String, Option<Value>)>,
     pub(crate) call_frames: Vec<crate::vm::VmCallFrame>,
+    /// Active CONTROL handlers on the dynamic call stack (one per executing
+    /// `CONTROL { }` block). Kept in lock-step with `control_handler_depth` so
+    /// a `warn` raised deep inside a protected body can find the innermost
+    /// handler via `.last()` and, if it is `resume_safe`, run it inline at the
+    /// raise site (cross-frame resumable warn). See `vm::ControlHandlerEntry`.
+    pub(crate) control_handlers: Vec<crate::vm::ControlHandlerEntry>,
     pub(crate) env_dirty: bool,
     /// Address of the `CompiledCode` of the bytecode frame currently executing
     /// in `exec_one` (set at the top of every dispatch). Used by the lazy-force
@@ -3413,6 +3419,7 @@ impl Interpreter {
             quanthash_bind_params: Vec::new(),
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
+            control_handlers: Vec::new(),
             env_dirty: false,
             current_code: 0,
             carrier_writes: None,
@@ -5989,6 +5996,7 @@ impl Interpreter {
             quanthash_bind_params: Vec::new(),
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
+            control_handlers: Vec::new(),
             env_dirty: false,
             current_code: 0,
             carrier_writes: None,

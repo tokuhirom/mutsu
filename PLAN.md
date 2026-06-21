@@ -163,14 +163,11 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 
 目標: **mutsu でウェブブログシステムが構築できる**。現状 **0% 稼働**。
 
-- [~] **Template::Mustache** — 基本＋セクション＋partial＋cascade＋**継承（#3380）**＋readme Roster（#3381）まで動作。
-      2026-06-21 session-3 で #3377（cross-frame warn resume）/#3378（given/when 末尾 if 値）/#3380（do-if `-> $v`
-      バインド→12-inheritence 全パス）/#3381（`^^` を subrule 内で行頭誤認しない→50-readme Roster）をマージ。
-      **次ターゲット = ② デリミタ `{{=<% %>=}}`**（`$*LEFT/$*RIGHT` 動的変数の finalizer 再代入が次マッチに伝播しない＝
-      grammar action を reduce 時に実行し dyn-var 書き込みを overlay 経由で後続マッチへ。詳細メモリ
-      `plan-delimiter-incremental-actions`）。他の残: 06-logging（CONTROL `.resume` の真の cross-frame 継続）、
-      50-readme #4（grammar パース性能・無限ループでなく遅い）、`handles` 委譲経由 proto method（stderr のみ・非致命）。
-      詳細＝メモリ `project-template-mustache-status` / `session-handoff-2026-06-21-mustache`。ハーネス＝`tmp/mustache/`。
+- [x] **Template::Mustache — 完動（#3395, 2026-06-21）。** 全テストがパス（外部 `JSON::Fast` 依存の
+      91/92-specs を除く＝mutsu のバグではない）。最後のブロッカー 06-logging（深いフレームで投げた `warn` を
+      unit の `CONTROL { default { …; .resume } }` で受けて深部を継続）を #3395 で解決＝resume_safe な CONTROL を
+      raise 地点でインライン実行。詳細＝メモリ `project-template-mustache-status`、news/2026-06.md。
+      残（非致命・別軸）: 50-readme #4 grammar パース性能（遅いが正しい）、`handles` 委譲経由 proto method（stderr のみ）。
 - [ ] **HTTP::Server::Tiny** の依存（HTTP::Parser / IO::Blob / HTTP::Status）→ 本体。
 - [ ] DB アクセス — pure Raku 簡易実装 or qqx ベースの SQLite wrapper（NativeCall 不可）。
 - [ ] File::Temp / MIME::Base64 (pure Raku) / File::Directory::Tree。
@@ -205,7 +202,7 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 | 起動時間 vs raku | **0.04x** | 0.04x |
 | tree-walk フォールバック（メソッド/関数） | **~1% / ~18.6%（大半 carrier）** | 0%（carrier 除く） |
 | 動作モジュール数 | 0 | 5+（ウェブブログスタック） |
-| Template::Mustache / HTTP::Server::Tiny | ❌ | ✅ |
+| Template::Mustache / HTTP::Server::Tiny | **Mustache ✅** / Tiny ❌ | ✅ |
 
 ---
 

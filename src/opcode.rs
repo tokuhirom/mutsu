@@ -1039,6 +1039,13 @@ pub(crate) enum OpCode {
         /// True when CATCH { } is explicitly present — unhandled exceptions
         /// (no `when`/`default` match) must be re-thrown.
         explicit_catch: bool,
+        /// True when this block's CONTROL handler unconditionally `.resume`s
+        /// (e.g. `CONTROL { default { ...; .resume } }`) with no `when`/`succeed`
+        /// exit. Such a handler can be run *inline* at a deep `warn` raise site
+        /// (see `builtin_warn`) without unwinding the Rust call stack, which is
+        /// what enables cross-frame resumable warns. Computed at compile time
+        /// from the CONTROL block AST (the runtime cannot see the AST).
+        resume_safe: bool,
     },
 
     // -- Error handling --

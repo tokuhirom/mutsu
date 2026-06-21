@@ -311,12 +311,17 @@ impl Compiler {
             }
         }
         let has_explicit_catch = catch_stmts.is_some();
+        let resume_safe = control_stmts
+            .as_deref()
+            .map(Self::control_block_is_resume_safe)
+            .unwrap_or(false);
         // Emit TryCatch placeholder.
         let try_idx = self.code.emit(OpCode::TryCatch {
             catch_start: 0,
             control_start: 0,
             body_end: 0,
             explicit_catch: has_explicit_catch,
+            resume_safe,
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
@@ -508,5 +513,48 @@ impl Compiler {
             self.code.patch_jump(j);
         }
         self.pop_dynamic_scope_lexical(saved);
+    }
+
+    /// Classify a CONTROL block as "resume-safe": it always `.resume`s and
+    /// never `succeed`s/`when`-exits, so a `warn` caught by it can be handled
+    /// *inline* at the deep raise site (see `Interpreter::builtin_warn`) without
+    /// unwinding the Rust call stack — the mechanism behind cross-frame
+    /// resumable warns. Conservative: anything it does not recognise → false
+    /// (falls back to the existing unwinding path).
+    fn control_block_is_resume_safe(stmts: &[Stmt]) -> bool {
+        let meaningful: Vec<&Stmt> = stmts
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        if meaningful.is_empty() {
+            return false;
+        }
+        // A single `default { ... }` delegates to its body — the common
+        // `CONTROL { default { ...; .resume } }` shape.
+        if meaningful.len() == 1
+            && let Stmt::Default(body) = meaningful[0]
+        {
+            return Self::control_block_is_resume_safe(body);
+        }
+        // Any `when` arm or `succeed` escapes the block via a control signal
+        // (it does NOT resume) — the #3372 killer case. Reject.
+        if meaningful.iter().any(|s| Self::stmt_exits_control_block(s)) {
+            return false;
+        }
+        // The tail statement must be a `.resume` method call.
+        matches!(meaningful.last(), Some(Stmt::Expr(e)) if Self::expr_is_resume_call(e))
+    }
+
+    fn expr_is_resume_call(e: &Expr) -> bool {
+        matches!(e, Expr::MethodCall { name, .. } if name.resolve() == "resume")
+    }
+
+    fn stmt_exits_control_block(s: &Stmt) -> bool {
+        match s {
+            Stmt::When { .. } => true,
+            Stmt::Call { name, .. } => name.resolve() == "succeed",
+            Stmt::Expr(Expr::Call { name, .. }) => name.resolve() == "succeed",
+            _ => false,
+        }
     }
 }
