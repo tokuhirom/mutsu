@@ -6436,7 +6436,15 @@ impl Interpreter {
         // Instance attribute CAS updates need no propagation here: cell-CAS
         // mutates the receiver's shared attribute cell in place, so every
         // alias (including the parent thread's) observes the swap directly.
+        //
+        // Slice 1b (cross-thread cell sharing): a cross-thread update (e.g. a
+        // worker `start { cas $seen, … }` whose result is `await`ed) lands in the
+        // parent env here, but the parent's matching *local slot* is not refreshed
+        // unless the blanket reconcile is on. Record each synced caller-visible
+        // name so the await/`.result` call site drains it straight to the caller's
+        // slot (`apply_pending_rw_writeback`), dropping the reverse-sync dependency.
         for (key, val) in updates {
+            self.pending_rw_writeback_sources.push(key.clone());
             self.env.insert(key, val);
         }
     }
