@@ -444,11 +444,39 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
   走らせてしまう（mutsu の `.kv`/`.pairs`/`.antipairs` が非 lazy）。ON は write-loss で偶然 raku 一致、OFF は slice 1.6 の
   gather writeback が正しく伝播して**潜在 laziness バグを露出**（doc §7.3 教訓 #3 の典型）。∴ 修正は `.kv`/`.pairs`/
   `.antipairs` の **真の lazy 化**（L 系・別軸）＝precise-writeback では解けない。env_dirty 削除には laziness 修正が前提。
-- **未 triage（7）**: caller.t(9)/callframe.t(12)/proto.t(21)/subsignature.t(54)/code.t(8 `&`-param)/destruction.t(3 DESTROY)/
-  undef.t(85)。各々 `MUTSU_NO_BLANKET_RECONCILE=1 ... roast/<file>` で ON/OFF/raku 比較し writeback-tractable か
-  「露出した別バグ」か分類してから着手（map LAST と同型の writeback なら速い）。
+- ~~**undef.t 85**~~ ✅ **slice 1.16 で消化**（§7.1l・substr-rw と同経路の `undefine()` lvalue）。
+- **残り（全て第45セッションで ON=PASS/OFF=FAIL を実測＝純 writeback コヒーレンス・露出バグではない）**:
+  - **proto.t 21 ＋ subsignature.t 54 ＝同一テスト**「caching proto の `state %cache` が persist せず multi が再呼ばれる」
+    （**1 修正で 2 file 消化＝次の最有力**。詳細＝§7.2b）。
+  - **callframe.t 12**: `f()` が `callframe(1)` introspection 経由で caller の `$x is dynamic` を書く（callframe write-back）。
+  - **caller.t 9**: `$CALLER::` 経由の rw dynamic-var write。
+  - **destruction.t 3**: `submethod DESTROY { $x++ }` の GC 時 captured write（最小再現は GC タイミング依存で要工夫）。
+  - **code.t 8（`&`-param）**: ★doc 冒頭 Status の設計ノートは「cell boxing が `&foo=&foo` self-ref 型チェック欠落を露出」型と
+    示唆＝**writeback でなく露出バグの可能性・着手前に要確認**。
 
 **残 8 全消化後に §7.4（env_dirty 削除）が射程**（lazy-lists の laziness 修正が含まれるため一直線ではない）。
+
+### 7.2b ★次セッション着手メモ — proto `{*}` redispatch ＋ `state` var coherence（proto.t 21 / subsignature.t 54）
+**最有力ターゲット（1 修正で 2 file）。** 最小再現（`tmp/proto.raku` に保存・下記を再作成）:
+```raku
+my $called_with = '';
+proto cached($a) { state %cache; %cache{$a} //= {*} }
+multi cached($a) { $called_with ~= $a; $a x 2 }
+say cached('a'); say cached('b'); say cached('a');   # 3回目は cache hit で multi を呼ばない
+say "called_with=", $called_with;   # ON/raku: ab    OFF before fix: aba（3回目も multi 呼んだ）
+```
+**確定済の分析**:
+- plain `state %h` を持つ**通常 sub** は OFF でも正常 persist（`tmp/state.raku` で確認・`counter(){state %seen; %seen<x>++}` → 1 2 3）。
+  ∴ state var 機構そのものは OK。**proto 固有**の問題。
+- proto sub の実行＝`dispatch.rs:1351-1377`: `eval_block_value(&rewritten)`（`{*}` を redispatch に書換え）で body を走らせた後、
+  **`restore_env_preserving_existing(&restored_env, &def.params)` で env を `saved_env` から復元**する。`%cache{$a} //= {*}` は
+  `{*}`（multi 候補へ frame 跨ぎ redispatch）を評価してから `%cache`（state）に書くので、**state 書込が redispatch 後・env 復元の
+  対象**になり、OFF では復元で巻き戻る（ON は blanket reconcile が拾う）と推測。
+- **着手手順**: ①proto body の state var が「persistent state store」と「env/slot」のどちらに住むか確認
+  （通常 sub の state 復元がどう持続を保証しているか＝`restore_env_preserving_existing` が state キーを skip しているか）。
+  ②proto path で同じ skip/persist が効いているか、`{*}` redispatch の env 操作が state を上書きしていないか。
+  ③修正は「proto body 実行後、state var の更新を持続 store / caller slot に反映」＝他スライス同様 `pending_rw_writeback_sources`
+  push か、env 復元時に state キーを保全する形になる見込み。pin は上記 proto + 通常 state の両方を ON/OFF で固定。
 
 ### 7.3 ★各スライスの必須手順（slice 1 の教訓）
 
