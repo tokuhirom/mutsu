@@ -202,11 +202,16 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
     mutsu の `run`/`qqx`（`:out`/`:err`/`exitcode`）は raku とバイト一致で動作確認済。`sqlite3 -json` で行を JSON 出力可。
     工数 ~1-2日。値エスケープ/1クエリ1プロセスは要注意。
   - **フォールバック**: flat-file `.raku`＋`EVALFILE`（mutsu で round-trip 確認済）は今日すぐ動く MVP。
-- [ ] **JSON — JSON::Fast はロード不可（NQP 依存）。builtin or shim を推奨。**
-      JSON::Fast 0.19 は `use nqp;`＋**~50 個の nqp op**（`list_i`/`findnotcclass`/`strfromcodes`/native int 等）に
-      依存。mutsu は nqp op を 2 個（`atkey`/`atpos`）しか実装しておらず、`use JSON::Fast` 時点で `Unknown function:
-      list_i` で死。全 op 実装は数週・高リスク。**代替＝mutsu に builtin `to-json`/`from-json` を実装**（or `nqp::`
-      非依存の小さな pure-Raku JSON shim）。Template::Mustache 91/92-specs も即解禁。
+- [x] **JSON — `to-json`/`from-json` をネイティブ実装（#TBD, 2026-06-22）。** JSON::Fast 0.19 は `use nqp;`＋~50 個の
+      nqp op 依存でロード不可のため、`use JSON::Fast` / `use JSON::Tiny` を組み込みモジュールとして認識し（`Test` と同方式・
+      `loaded_modules` ゲート）、`to-json`/`from-json` を Rust ネイティブ実装（`src/runtime/json.rs`、ディスパッチは
+      `src/vm/vm_native_json.rs`）。raku JSON::Fast とバイト一致（pretty 2-space / `:!pretty` / `:sorted-keys` / `:spacing`、
+      Rat→`.0`・Num→`e0`、null→`Any`、decimal→Rat・exp→Num、surrogate escape）。テスト `t/json.t`（34 件）。
+  - **残ブロッカー（JSON とは独立）: Template::Mustache 91/92-specs。** ハーネス TestUtil の `%specs{ .basename } := %data<tests>`
+    後に `%specs.head.value.head<template>` が「Type Array does not support associative indexing」で死ぬ。原因＝`:=` で hash 要素に
+    束縛した Array が `.head.value`（Pair.value）経由で **itemized** に見え（`.elems`=1、`.head`＝配列自体）、`<template>` 添字で失敗。
+    `my %h; %h{"k"} := @arr; %h.head.value.head` で JSON 抜きに再現する一般バグ（container-identity 系、`pair-value-container-three-facets`
+    と同族・高 blast-radius）。JSON 機能自体は完動。
 - [ ] **ユーティリティ:**
   - [x] **File::Temp 0.0.12 — 完動（#3399, 2026-06-22）。** `tempfile`/`tempdir` 実ファイル生成・
     write→read・END cleanup・`File::Directory::Tree` 依存ロードまで raku 一致。ブロッカーだった
@@ -219,7 +224,8 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
 - [ ] バイナリ配布: mise GitHub バックエンドのインストール検証 / GitHub Releases 自動化。
 
 **次の高インパクト順（推奨）:** ✅① `use`/`unit module` の `:ver<>:auth<>` adverb（File::Temp 完動・#3399）→
-② builtin `to-json`/`from-json`（JSON 全般＋mustache specs）→ ③ `IO::Socket::Async.Supply(:bin)`→Buf
+✅② native `to-json`/`from-json`（JSON 全般・#TBD。mustache 91/92 は別の `:=`-hash-itemization バグ待ち）→
+③ `IO::Socket::Async.Supply(:bin)`→Buf
 （HTTP server 本体が死ぬ地点）→ ④ coercion-type パラメータ `T()` → ⑤ builtin 型サブクラスの user メソッド
 override 解決（IO::Blob）。①②④⑤ はいずれも単一モジュールを超える一般機能。
 

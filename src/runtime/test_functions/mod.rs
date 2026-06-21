@@ -143,6 +143,12 @@ impl Interpreter {
             || self.loaded_modules.iter().any(|m| m.starts_with("Test::"))
     }
 
+    /// True once `use JSON::Fast` / `use JSON::Tiny` has been seen, gating the
+    /// native `to-json` / `from-json` dispatch (see `vm_native_json.rs`).
+    pub(crate) fn json_module_loaded(&self) -> bool {
+        self.loaded_modules.contains("JSON::Fast") || self.loaded_modules.contains("JSON::Tiny")
+    }
+
     /// Check if a name matches a known test function (Test or Test::Util).
     /// Used by the bare word resolver to dispatch zero-arg test function calls.
     pub(crate) fn is_test_function_name(name: &str) -> bool {

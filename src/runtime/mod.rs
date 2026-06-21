@@ -151,6 +151,7 @@ mod eval_check;
 mod handle;
 mod io;
 mod io_handles;
+pub(crate) mod json;
 mod lock_reentry;
 mod main_args;
 mod metamodel;
@@ -3862,6 +3863,12 @@ impl Interpreter {
                     | "fatal"
                     | "oo"
                     | "class"
+                    // JSON::Fast / JSON::Tiny: the real distributions depend on
+                    // ~50 nqp ops mutsu does not implement. Recognize them as
+                    // built-in modules and provide native `to-json`/`from-json`
+                    // (see runtime/json.rs, dispatched in vm_native_json.rs).
+                    | "JSON::Fast"
+                    | "JSON::Tiny"
             ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {
