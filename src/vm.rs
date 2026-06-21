@@ -170,6 +170,31 @@ fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
 }
 
 /// Saved state for a compiled function/closure/method call frame.
+/// A CONTROL handler active on the dynamic (Rust) call stack. Pushed when a
+/// block with a `CONTROL { }` phaser begins executing its protected body and
+/// popped when that body finishes. `control_handlers.len()` is kept equal to
+/// `control_handler_depth` so the innermost handler is always `.last()`.
+pub(crate) struct ControlHandlerEntry {
+    /// Whether this handler unconditionally `.resume`s (see `OpCode::TryCatch`
+    /// `resume_safe`). When false, `handler` is `None` and a deep warn falls
+    /// back to the unwinding path.
+    pub resume_safe: bool,
+    /// Present only for `resume_safe` handlers: the bytecode + range + function
+    /// table needed to run the handler INLINE at a deep `warn` raise site.
+    pub handler: Option<ControlHandlerCode>,
+}
+
+/// Self-contained bytecode for running a `resume_safe` CONTROL handler inline.
+/// The `code` is an owned `Arc` clone of the installing frame's `CompiledCode`
+/// (intra-range jump targets stay valid because indices are preserved); the
+/// `compiled_fns` clone lets the handler body call user subs visible at install.
+pub(crate) struct ControlHandlerCode {
+    pub code: std::sync::Arc<CompiledCode>,
+    pub control_begin: usize,
+    pub end: usize,
+    pub compiled_fns: HashMap<String, CompiledFunction>,
+}
+
 pub(crate) struct VmCallFrame {
     pub saved_env: Env,
     pub saved_locals: Vec<Value>,
@@ -964,7 +989,7 @@ impl Interpreter {
         }
     }
 
-    fn run_range(
+    pub(crate) fn run_range(
         &mut self,
         code: &CompiledCode,
         start: usize,
@@ -3816,6 +3841,7 @@ impl Interpreter {
                 control_start,
                 body_end,
                 explicit_catch,
+                resume_safe,
             } => {
                 self.exec_try_catch_op(
                     code,
@@ -3823,6 +3849,7 @@ impl Interpreter {
                     *control_start,
                     *body_end,
                     *explicit_catch,
+                    *resume_safe,
                     ip,
                     compiled_fns,
                 )?;
