@@ -584,6 +584,13 @@ impl Interpreter {
             }
         }
         *self.env_mut() = merged_env;
+        // Precise (env_dirty-independent) writeback: record the gather body's
+        // captured-outer writes so `apply_pending_rw_writeback` (called from
+        // `reconcile_caller_after_lazy_force`) drains them into the caller's local
+        // slots, exactly like a `map`/`grep` callback. Without this the gather
+        // case relied solely on the blanket `env_dirty` reconcile (the surface
+        // docs/captured-outer-cell-sharing.md is retiring).
+        self.record_eager_block_free_var_writeback(cc.as_ref(), &[]);
 
         // Check whether the merged env actually changed any outer-scope variables.
         let env_actually_changed = {
@@ -896,6 +903,10 @@ impl Interpreter {
             }
         }
         *self.env_mut() = merged_env;
+        // Precise (env_dirty-independent) writeback of the gather body's
+        // captured-outer writes — see the matching comment in
+        // `force_lazy_list_vm_inner`.
+        self.record_eager_block_free_var_writeback(cc.as_ref(), &[]);
 
         let env_actually_changed = {
             let merged = self.env();
