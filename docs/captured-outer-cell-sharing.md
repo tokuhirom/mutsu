@@ -6,9 +6,9 @@
 > object 添字代入 invocant slot／substr-rw・subbuf-rw／zip short-circuit／map LAST phaser／undefine() lvalue）
 > ＋slice 1.17（proto state-%cache）／1.18（caller-frame by-name write）／**1.19（param default self-scoping＝code.t 8）**
 > を実装。各 pin が **blanket reconcile ON/OFF 両方で PASS**。**OFF roast survey（authoritative・§7.2a）= 初回 13 → 残 1**。
-> **残 1（純 writeback でない）＝destruction.t 3（DESTROY captured-write の cell-detachment・§7.2c に真因確定・専用スライス要）**。
+> **残 1（純 writeback でない）＝destruction.t 3（cross-thread worker-DESTROY の parent-slot 未 refresh・§7.2c に真因確定）**。
 > ＋別軸 2＝lazy-lists.t（laziness・L 系）／IO-Socket-Async.t（flaky）。
-> 次＝§7.2c（destruction.t の cell write-through・案A）or env_dirty 削除の最終段（§7.4・`blanket_reconcile_if_dirty` 空洞化）。
+> 次＝§7.2c（cross-thread writeback 記録の拡張＝slice 1.11 family・cell substrate 不要）or env_dirty 削除の最終段（§7.4・`blanket_reconcile_if_dirty` 空洞化）。
 > 関連: [docs/env-locals-coherence.md](env-locals-coherence.md)（§7.3 = env_dirty 削除の壁）/
 > [docs/container-identity.md](container-identity.md)（cell インフラ）/ PLAN.md §1-A・§2-C・§2-E。
 >
@@ -431,7 +431,7 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
 | ~~S06-multi/proto.t~~ | 21 | caching proto `state %` writeback | ✅ slice 1.17 |
 | ~~S06-multi/subsignature.t~~ | 54 | caching proto `state %` writeback | ✅ slice 1.17 |
 | ~~S06-signature/code.t~~ | 8 | `&`-param default self-scoping | ✅ slice 1.19 |
-| S12-construction/destruction.t | 3 | DESTROY captured-write cell-detachment（§7.2c） | 🔴 専用スライス要 |
+| S12-construction/destruction.t | 3 | cross-thread worker-DESTROY captured-write の parent-slot 未 refresh（§7.2c） | 🔴 cross-thread writeback 記録拡張 |
 | ~~S32-list/map.t~~ | 62 | `.map` block LAST phaser writeback | ✅ slice 1.15 |
 | ~~S32-scalar/undef.t~~ | 85 | undefine() lvalue slot writeback | ✅ slice 1.16 |
 | S32-io/IO-Socket-Async.t | 5, 7 | reactive 並行（flaky 疑い） | |
@@ -478,19 +478,21 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
   earlier param（`$b = $a`）は前 iter で bind 済なので影響なし、別名 outer（`$z = $y`）も影響なし。pin=
   `t/param-default-self-scoping.t`（7・ON/OFF 両 PASS）。make test 9819。
 - **残り 1（純 writeback でない＝別軸・第47で真因を cell-detachment と特定）**:
-  - **destruction.t 3**: `submethod DESTROY { $in_destructor++ }` の GC 時 captured write が `await start { loop {…} }` の
-    後で top-level slot に届かない。**第47セッションで最小再現＋真因を確定**（下記 §7.2c）。当初の「GC タイミング依存」は誤り＝
-    **決定的**（`MUTSU_NO_BLANKET_RECONCILE=1` で確実に fail）。真因は単純な writeback gap でなく **cell detachment**（DESTROY が
-    slow-path `run_instance_method_resolved` 経由で実行され、その env merge が top-level slot と共有していた `ContainerRef` cell を
-    plain Int に置換して切り離す）＋ **await 境界後に top-level frame が drain しない**の二重問題。precise-writeback の単純横展開では
-    解けず、専用スライス要（§7.2c）。
+  - **destruction.t 3**: `submethod DESTROY { $in_destructor++ }` の captured write が `await start { loop {…} }` の
+    後で top-level slot に届かない。**第47セッションで最小再現＋真因を確定**（下記 §7.2c）。当初の「GC タイミング依存」も
+    「cell-detachment」も**誤り**＝真因は **cross-thread**（`start` が別スレッド・worker で DESTROY 発火）。env は親へ伝播し
+    親 slot も await call-site で到達可能だが、**ワーカーが書いた captured scalar を親の pending writeback に記録する一点が欠落**
+    （loop+複数 var 時に shared_vars dirty から落ちる）。**cell substrate 不要・cross-thread writeback 記録の拡張で解ける見込み**（§7.2c）。
   - ＋別軸: lazy-lists.t 24-26（laziness バグ・L 系）／IO-Socket-Async.t 5,7（flaky）。
 
 **残 1（destruction.t GC＝純 writeback でない別軸）＋別軸 2（lazy-lists laziness・IO-Socket-Async flaky）
 全消化後に §7.4（env_dirty 削除）が射程**。純 writeback コヒーレンスのサーフェスは slice 1.18 で枯渇、
 露出バグ（code.t scoping）は slice 1.19 で消化。
 
-### 7.2c 🔴 destruction.t 3 — DESTROY captured-write の cell-detachment（第47セッション調査・未解決・専用スライス要）
+### 7.2c 🔴 destruction.t 3 — cross-thread（worker DESTROY）captured-write の parent-slot 未 refresh（第47セッション・真因確定・未解決）
+
+> **訂正（第47後半）**: 当初この節は「cell-detachment」と記したが**誤診断だった**。計測で `$a` は **cell-box されていない**
+> （`box_decl_local_cell`/`box_captured_lexicals` の probe が一切発火せず）。真因は **cross-thread**（`start` が別スレッド）。
 
 **最小再現（決定的・`MUTSU_NO_BLANKET_RECONCILE=1` で確実 fail）**:
 ```raku
@@ -503,50 +505,45 @@ await start {
     loop {
         $*VM.request-garbage-collection;
         my $foo = Foo.new;
-        my $bar = Bar.new unless +@order;   # 条件付き生成が鍵
+        my $bar = Bar.new unless +@order;   # 条件付き生成
         last if $a && @order;
     }
 };
 say "a=$a";     # OFF: a=0（ON/raku: a=1）
 ```
 
-**切り分け結果（min1〜min10）**:
-- `$a` 単独の DESTROY write（1クラス）は OFF でも **正常**（min1/min5/min6）。同一 DESTROY が複数スカラ／スカラ＋配列を
-  書いても正常（min5/min6）。異なる DESTROY が別々のスカラを書いても**毎イテレーション両方生成なら**正常（min7/min9）。
-- **fail するのは**: 複数の DESTROY-bearing クラスがあり、片方（`@order`）が**条件付き生成**（`unless +@order`）で、
-  loop 脱出イテレーションでは `$a` を書く DESTROY だけが発火する構成（min4/min8/min10）。継承は不要。
+**最重要事実: `start` は別スレッド**。`builtin_start`→`spawn_callable_promise`（builtins_system.rs:106）が
+**`clone_for_thread()` + `spawn_user_thread`** でワーカーを起動＝**DESTROY はワーカースレッド（クローン interpreter）で発火**。
+env はワーカー→親に伝播するが（slice 1.11 の shared_vars 機構）、親の **local slot** は別途 refresh が要る。
 
-**真因（計測で確定）**:
-- `peek()`（`$a` を captured-outer として env から読む sub）は **env=1** を見る＝**env は正しく蓄積**。
-- top-level frame の `$a` を読む直接 interpolation は **slot=0（stale）**。∴ top-level `my $a` は OFF の cell-boxing で
-  **local slot（cell）に box** され、env と乖離。
-- DESTROY は slow-path `run_instance_method_resolved`（class.rs:934）経由。その末尾の env merge
-  （`merged_env.insert_sym(*k, v.clone())`・class.rs:1421-1429）が、saved_env に存在する captured var を**新しい plain Int に
-  置換**して `self.env = merged_env`。これで env の `$a` が top-level slot の `ContainerRef` cell（Arc）から**切り離される**
-  （cell には旧値 0 が残る）。
-- かつ `await start {…}` の後、top-level frame で `pending_*_writeback` を drain する経路が**無い**（drain したのは loop 内の
-  start-block frame だけ＝`locals=["foo","chld"]` で `$a` slot 無し→retain しても top-level まで運ばれない）。
+**切り分け（OFF）**:
+- 単純 cross-thread write `await start { $x = 5 }` → ✅ `x=5`（slice 1.11 で既に成立）。
+- 単一 DESTROY-in-thread `await start { my $f=Foo.new; $f=Nil; $*VM.request-garbage-collection }` → ✅ `x=5`。
+- **fail するのは loop + 複数 captured var（`$a` scalar + `@order` array）+ 条件付き生成**（d10/min4/min10）。
+  ループ無し・単一 var は OK。
 
-**試した修正と不成立の理由（第47・revert 済）**:
-1. DESTROY merge で変更 captured scalar を `pending_rw_writeback_sources`（drop-on-miss）に記録＋loop 境界
-   （vm_control_ops.rs:256）で `apply_pending_rw_writeback` → ❌ slot が現フレームに無く drop。
-2. `pending_caller_var_writeback`（retain-on-miss）に変更 → ❌ retain はするが await 後 top-level frame で drain が走らず、
-   かつ slot を見つけても **cell でなく plain 代入**になり cell 共有を壊す。
-3. 計測で `find_local_slot` が全中間フレームで `$a` slot を見つけられない（`locals=[]`/`["foo","chld"]`）ことを確認＝
-   top-level slot は別フレーム。
+**真因（計測で確定・親の await call-site で probe）**: `exec_call_func_op`→`dispatch_func_call_inner`→**L597
+`apply_pending_rw_writeback(code)`** の時点で:
+- `code.locals = ["a","@order","b0"]`（top-level frame）／`find_local_slot("a") = Some(0)`（**slot は存在**）／
+  `env.get("a") = Int(1)`（**env は正しく伝播済**）。
+- だが `pending_rw_writeback_sources` / `pending_caller_var_writeback` が **空**＝drain が走らず slot[0] が 0 のまま。
+- ∴ **欠落は「ワーカーが書いた captured scalar `a` を親の pending writeback に記録する」一点だけ**。単一 write 版は
+  slice 1.11 の `sync_shared_vars_to_env`（mod.rs:6412・dirty key を `pending_rw_writeback_sources` に push）が "a" を
+  運ぶので動く。loop+複数 var 版では **"a" が dirty として運ばれない**（ループ内の `last if $a` 読み出しが dirty を消費する／
+  複数 var の dirty 追跡が一部しか乗らない、のいずれか＝要特定）。
 
-**案A（cell write-through）も第47で試行→不成立（計測で確定）**: DESTROY merge（class.rs:1421）で `saved_env.get_sym(k)` が
-`ContainerRef` cell のとき plain 置換でなく cell へ write-through する案を実装したが OFF=0 のまま。**計測で `saved=Some(Int(0))`
-＝env は cell でなく plain Int を保持**と判明。∴ **cell は top-level slot にのみ存在し、nested frame（start-block/loop）の env
-には plain コピーしか伝播していない**＝そもそも env↔slot が同一 Arc を共有していない。DESTROY merge は env しか触れないので、
-top-level slot の cell には原理的に到達不可。案A は前提（env が cell を保持）が成り立たず不成立。revert 済。
+**試した修正と不成立（第47・全 revert 済）**: ①DESTROY merge（class.rs:1421）で変更 captured scalar を
+`pending_rw_writeback_sources`/`pending_caller_var_writeback` に記録＋loop 境界 drain → ❌ 記録は**ワーカー interpreter の
+pending** に入り join で消失（drain は `locals=[]`/`["foo","bar"]` のワーカー frame でしか起きず "a" slot 不在で retain→消失）。
+②DESTROY merge で cell write-through → ❌ そもそも env が cell でなく plain Int（`saved=Some(Int(0))`）＝cell 不在で不成立。
 
-**∴ これは localized fix で解けない＝PLAN §2-C Sub-slice 1b の「env↔locals がコンテナ cell を**フレームを跨いで**共有する」
-substrate そのもの**。top-level の captured cell が `await start { loop {…} }` の nested frame の env に**同一 Arc として伝播**
-しない限り（現状は plain コピー）、DESTROY（やその他 nested-frame からの captured write）は top-level slot へ届かない。
-**次セッションの本丸＝cell の cross-frame 伝播**: 捕捉 cell を push_call_frame / start-spawn / loop-scope の env チェーンに
-**同一 Arc で**載せる（plain コピーを作らない）。これが入れば DESTROY のみならず multi-frame captured write 全般が cell 経由で
-coherent になり、§7.4（env_dirty 削除）の前提が満たされる。destruction.t 3 はその最小 pin。
+**∴ 次セッションの本丸＝cross-thread writeback recording の拡張（slice 1.11 family・localized で解ける見込み）**:
+`sync_shared_vars_to_env`（await が builtins_system.rs:1791 で呼ぶ）が、ワーカーで mutate された captured-outer scalar を
+**漏れなく** `pending_rw_writeback_sources` に push すれば、親の await call-site の既存 drain（L597・top-level slot に到達可）が
+slot を refresh する。**まず特定すべき: loop+複数 var の場合に shared_vars_dirty から "a" が落ちる経路**（ループ内 `$a` 読み出しの
+dirty クリア? worker の最終 sync で一部 var のみ?）。これは **cell substrate 不要**＝cross-thread shared-var の dirty/pending
+記録の取りこぼし修正。env も slot も await call-site で到達可能なことは計測済みなので、pending 記録さえ補えば通る。
+destruction.t 3 がその pin。（別軸: lazy-lists.t laziness / IO-Socket-Async flaky は無関係。）
 （補助案B＝await/loop 境界 top-level drain は、cell 伝播が入れば不要。）
 
 ### 7.2b ✅ proto `{*}` redispatch ＋ `state` var coherence（proto.t 21 / subsignature.t 54）= slice 1.17 で解決
