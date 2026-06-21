@@ -6,9 +6,11 @@
 > object 添字代入 invocant slot／substr-rw・subbuf-rw／zip short-circuit／map LAST phaser／undefine() lvalue）
 > ＋slice 1.17（proto state-%cache）／1.18（caller-frame by-name write）／**1.19（param default self-scoping＝code.t 8）**
 > を実装。各 pin が **blanket reconcile ON/OFF 両方で PASS**。**OFF roast survey（authoritative・§7.2a）= 初回 13 → 残 1**。
-> **残 1（純 writeback でない）＝destruction.t 3（cross-thread worker-DESTROY の parent-slot 未 refresh・§7.2c に真因確定）**。
-> ＋別軸 2＝lazy-lists.t（laziness・L 系）／IO-Socket-Async.t（flaky）。
-> 次＝§7.2c（cross-thread writeback 記録の拡張＝slice 1.11 family・cell substrate 不要）or env_dirty 削除の最終段（§7.4・`blanket_reconcile_if_dirty` 空洞化）。
+> **destruction.t 3 = slice 1.20（#3400）で解決済**（cross-thread writeback の retain-on-miss・§7.2c）。
+> **lazy-lists.t 24-26 = 2026-06-22 で解決済**（`.kv`/`.pairs`/`.antipairs` を lazy index-pipe 化＝
+> `MapGrepSpec.index_transform`・lazy ソースを eager force しない）。**∴ OFF roast survey の決定的サーフェスは
+> IO-Socket-Async.t の reactive 並行 flaky のみ（決定的 pin 不可）に枯渇。**
+> 次＝env_dirty 削除の最終段（§7.4・`blanket_reconcile_if_dirty` 空洞化）。
 > 関連: [docs/env-locals-coherence.md](env-locals-coherence.md)（§7.3 = env_dirty 削除の壁）/
 > [docs/container-identity.md](container-identity.md)（cell インフラ）/ PLAN.md §1-A・§2-C・§2-E。
 >
@@ -596,19 +598,20 @@ env を stale slot で clobber→state 永続化が空 hash 保存。修正＝fa
 
 ## 9. 着手手順（次セッション用クイックスタート）
 
-**★純 writeback コヒーレンスは slice 1.20（#3400）で完了＝OFF roast survey の純 writeback サーフェスは枯渇。**
-captured-outer cell 共有のグラインドはここで終わり。次の本丸は**別軸の laziness バグ**で、これが env_dirty 削除（§7.4）の
-最後の前提。
+**★純 writeback コヒーレンスは slice 1.20（#3400）で完了。lazy-lists.t 24-26 の真 lazy 化も完了（2026-06-22）＝
+OFF roast survey の決定的サーフェスは IO-Socket-Async.t の flaky のみに枯渇。** これで env_dirty 削除（§7.4）の前提が
+すべて揃った。
 
-**次セッションの本丸 = `S02-types/lazy-lists.t` 24-26 の真 lazy 化（§7.2a triage 参照・§3-F の L 系と合流）**:
-- 症状: OFF で subtests 24-26 が決定的 fail（`MUTSU_FUDGE=1 MUTSU_NO_BLANKET_RECONCILE=1 prove -e target/debug/mutsu
-  roast/S02-types/lazy-lists.t` → Failed 24-26）。ON は write-loss で偶然 raku 一致。
+**lazy-lists.t 24-26 の解決（2026-06-22・完了）**:
 - 真因: `make-lazy-list = gather { take ...; $was-lazy = 0 }.lazy` を `.kv`/`.pairs`/`.antipairs` が **eager に force** して
-  `$was-lazy = 0` を走らせる（mutsu の `.kv`/`.pairs`/`.antipairs` が非 lazy）。**writeback ではなく laziness バグ**＝
-  precise-writeback では解けない。
-- 修正方針: `.kv`/`.pairs`/`.antipairs` を真に lazy 化（lazy Seq/gather を eager 消費しない）。`docs/lazy-arrays.md` の
-  L 系（L2b 等）と設計を合流させる。raku で `(gather { ... }).lazy.kv` が lazy のままなことを確認してから着手。
-- これが入れば OFF survey が実質クリア（残は IO-Socket-Async.t の flaky のみ＝決定的 pin 不可）→ §7.4 が射程。
+  `$was-lazy = 0` を走らせていた。ON は write-loss で偶然 raku 一致、OFF が正しく伝播して露出（writeback でなく laziness バグ）。
+- 修正: `MapGrepSpec` に `index_transform: Option<IndexTransform>`（Pairs/AntiPairs/Kv）を追加し、`.kv`/`.pairs`/`.antipairs`
+  を **lazy index-pipe**（`LazyList::new_index_pipe`）化。genuinely-lazy ソース（`.lazy` gather・無限 spec）に対しては eager
+  force でなく lazy pipe を返す。`source_idx` を positional key に使い、pull は既存の `pull_source_element`（gather coroutine を
+  incremental 消費）を再利用。`force_lazy_pipe` が `index_transform` Some 時に func/grep を bypass して index 変換を emit。
+  3 dispatch 経路（CallMethodMut fast-path・CallMethod 非mut・runtime slow-path methods.rs）すべてに早期 dispatch を追加。
+  index-pipe は preserve marker を持つので `my @res = one.kv` が lazy 保持。値は eager 版とバイト一致。pin=
+  `t/lazy-pairs-kv-antipairs.t`（18・ON/OFF 両 PASS）。
 
-**その後 = §7.4（env_dirty 物理削除）**: `blanket_reconcile_if_dirty` 空洞化 → `env_dirty`/`ensure_locals_synced`/
+**次 = §7.4（env_dirty 物理削除）**: `blanket_reconcile_if_dirty` 空洞化 → `env_dirty`/`ensure_locals_synced`/
 `saved_env_dirty` 削除 → `cell_boxing_active()` gate を外して boxing 恒久 ON 化。IO-Socket-Async の flaky はこの空洞化で実挙動確認。
