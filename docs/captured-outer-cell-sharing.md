@@ -1,9 +1,10 @@
 # Captured-outer lexical cell 共有 — 実装プラン（Sub-slice 1b+ / env_dirty 削除への substrate）
 
-> **Status:** SLICE 1〜1.8 DONE（〜2026-06-21・第41〜43セッション）。§6 第1スライス（named-sub 捕捉
-> scalar decl-site cell 化）＋§7.1〜7.1d（metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／
-> **captured-outer container `@`/`%` cell 化＝§7.1d**）を実装。各 pin が **blanket reconcile ON/OFF 両方で PASS**。
-> OFF survey は 17 file（うち並行 ~13）。次＝§7.2（cross-metaops scalar metaop-thunk／nested-method capture）。
+> **Status:** SLICE 1〜1.9 DONE（〜2026-06-21・第41〜43セッション）。§6 第1スライス（named-sub 捕捉
+> scalar decl-site cell 化）＋§7.1〜7.1e（metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／
+> **captured-outer container `@`/`%` cell 化＝§7.1d**／**`X`-cross metaop thunk scalar writeback＝§7.1e**）を実装。
+> 各 pin が **blanket reconcile ON/OFF 両方で PASS**。OFF survey は 16 file（うち並行 ~13）。
+> 次＝§7.2（nested-method capture／parametric-role-of-type／並行 cluster）。
 > 関連: [docs/env-locals-coherence.md](env-locals-coherence.md)（§7.3 = env_dirty 削除の壁）/
 > [docs/container-identity.md](container-identity.md)（cell インフラ）/ PLAN.md §1-A・§2-C・§2-E。
 >
@@ -286,13 +287,23 @@ slot-restore も同一 cell を保つ。
 - pin=`t/captured-outer-container-cell-sharing.t`（9・trait_mod push/hash-elem・named-sub accumulation・ON/OFF 両 PASS）。
   OFF survey 17 file（attribute-trait-mod の 5 fail 解消）。
 
+### 7.1e ✅ スライス1.9（DONE・第43セッション）= `X`-cross metaop thunk の captured-outer scalar write（`cross-metaops` subtest 2）
+
+`Nil Xorelse ($t = $_,)`（`X` cross meta over short-circuit op）は右辺を `__mutsu_cross_shortcircuit("orelse", Nil,
+AnonSub{$t=$_})` の **immediately-invoked thunk** にコンパイルする。call arg として渡される closure は escape 解析が
+non-escaping 扱い→`box_captured_lexicals` が box しない→thunk の captured-outer write（`$t`）が OFF で caller slot に
+届かない。**cell 化でなく precise-writeback で解決**（slice 1.6 の lazy-map/gather/subst と同型）: `builtin_cross_shortcircuit`
+が thunk 実行後（`thunk_ran` 時のみ）に thunk の `compiled_code.free_var_writes` を `record_eager_block_free_var_writeback`
+で `pending_rw_writeback_sources` に積む→`__mutsu_cross_shortcircuit` の call-site が既存 `apply_pending_rw_writeback` で
+drain。**非gated（ON/OFF 両対応・reconcile と idempotent）**。pin=`t/cross-metaop-thunk-captured-writeback-coherence.t`
+（6・Xorelse/Xandthen/Xor・ON/OFF 両 PASS）。make test 回帰なし。OFF survey 17→16。
+**注意（範囲外の別バグ）**: ①`(1,2,3) Xandthen (...)` の list 反復 count（raku=3・mutsu=2）は cross_shortcircuit ループの
+別バグ（ON でも fail・captured-write 無関係）。②`$x + 1`（`$x=11` 後）が 2 を返すパーサ quirk も別件。両方とも本スライス対象外。
+
 ### 7.2 後続スライス（その先）
 
 - **nested-method capture**（`methods-instance` subtest 3 = `method foo { my $a; method bar { $tracker = $a } }`）:
   EVAL でない multi-frame captured-write（nested method 宣言が enclosing method の lexical 捕捉）。別機構の調査要。
-- **top-level captured-outer scalar**（`cross-metaops` subtest 2 = `my Mu $t; Nil Xorelse ($t = $_,)`）: env 常駐の
-  top-level scalar を metaop thunk（immediately-invoked＝escape 解析が見ない）が捕捉。`box_captured_lexicals` は escaping
-  closure の local slot を box するので未到達。precise-writeback（Xorelse の metaop call-site で drain）か box 化のいずれか。
 - **`parametric-role-of-type`**（OFF で決定的 abort・ran 11/14）: ON で PASS。captured-outer の別サーフェス（要調査）。
 - **container `@`/`%` の named-sub 以外の cell 化**（必要なら）: closure 捕捉 container は現状 Arc 共有で動く。`box_captured_lexicals`
   の `@`/`%` skip を緩和する場合は §8 の decont 監査が前提（broad boxing は ~12 file 回帰を実証済＝precise 限定必須）。

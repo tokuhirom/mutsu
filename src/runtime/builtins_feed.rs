@@ -171,6 +171,7 @@ impl Interpreter {
         };
         let thunk = args[2].clone();
         let mut out = Vec::new();
+        let mut thunk_ran = false;
         for left in left_values {
             let needs_rhs = match op.as_str() {
                 "and" | "&&" => left.truthy(),
@@ -183,6 +184,7 @@ impl Interpreter {
                 out.push(left);
                 continue;
             }
+            thunk_ran = true;
             let rhs_value = if op == "andthen" || op == "orelse" {
                 let saved_topic = self.env.get("_").cloned();
                 self.env.insert("_".to_string(), left.clone());
@@ -203,6 +205,19 @@ impl Interpreter {
             for rhs in rhs_values {
                 out.push(rhs);
             }
+        }
+        // The thunk (`X` short-circuit RHS, e.g. `Nil Xorelse ($t = $_,)`) is an
+        // immediately-invoked closure, so escape analysis never boxes the outer
+        // lexicals it captures-and-writes. Record its captured-outer writes so the
+        // enclosing `__mutsu_cross_shortcircuit` call site drains them back into
+        // the caller's locals (mirrors the lazy-map / gather / subst carriers,
+        // slice 1.6) — without this they are lost once the blanket reconcile is
+        // removed (docs/captured-outer-cell-sharing.md §7.2).
+        if thunk_ran
+            && let Value::Sub(ref data) = thunk
+            && let Some(code) = data.compiled_code.clone()
+        {
+            self.record_eager_block_free_var_writeback(&code, &data.params);
         }
         Ok(Value::array(out))
     }
