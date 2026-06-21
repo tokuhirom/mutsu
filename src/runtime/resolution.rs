@@ -2255,6 +2255,11 @@ impl Interpreter {
                         let (phaser_code, phaser_fns) = phaser_compiler.compile(phaser_body);
                         // Ignore errors from LAST phasers (best-effort)
                         let _ = vm.run_reuse(&phaser_code, &phaser_fns);
+                        // Record the phaser's captured-outer writes (`LAST $x = True`)
+                        // so the enclosing call site drains them into the caller's
+                        // local slots — the map body's own writeback (below) only
+                        // covers `code`, not the separately-compiled phaser body.
+                        vm.record_eager_block_free_var_writeback(&phaser_code, &[]);
                     }
                 }
 
