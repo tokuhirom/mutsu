@@ -253,6 +253,7 @@ impl Interpreter {
         let right_thunks = crate::runtime::value_to_list(&args[2]);
         let len = left_values.len().min(right_thunks.len());
         let mut out = Vec::with_capacity(len);
+        let mut ran_thunks: Vec<Value> = Vec::new();
         for i in 0..len {
             let left = left_values[i].clone();
             let needs_rhs = match op.as_str() {
@@ -271,6 +272,7 @@ impl Interpreter {
             let rhs_value = if !matches!(entry, Value::Sub(_)) {
                 entry
             } else if op == "andthen" || op == "orelse" {
+                ran_thunks.push(entry.clone());
                 let saved_topic = self.env.get("_").cloned();
                 self.env.insert("_".to_string(), left.clone());
                 let result = self.eval_call_on_value(entry, Vec::new());
@@ -284,9 +286,20 @@ impl Interpreter {
                 }
                 result?
             } else {
+                ran_thunks.push(entry.clone());
                 self.eval_call_on_value(entry, Vec::new())?
             };
             out.push(rhs_value);
+        }
+        // Record each evaluated thunk's captured-outer writes so the call site
+        // drains them into the caller's locals (carrier; see the topic variant
+        // and slice 1.9 / docs §7.1i).
+        for thunk in ran_thunks {
+            if let Value::Sub(ref data) = thunk
+                && let Some(code) = data.compiled_code.clone()
+            {
+                self.record_eager_block_free_var_writeback(&code, &data.params);
+            }
         }
         Ok(Value::array(out))
     }
@@ -318,6 +331,7 @@ impl Interpreter {
         };
         let thunk = args[2].clone();
         let mut out = Vec::new();
+        let mut thunk_ran = false;
         for (i, left) in left_values.iter().enumerate() {
             let needs_rhs = match op.as_str() {
                 "andthen" => crate::runtime::types::value_is_defined(left),
@@ -328,6 +342,7 @@ impl Interpreter {
                 out.push(left.clone());
                 continue;
             }
+            thunk_ran = true;
             let saved_topic = self.env.get("_").cloned();
             self.env.insert("_".to_string(), left.clone());
             let result = self.eval_call_on_value(thunk.clone(), Vec::new());
@@ -343,6 +358,17 @@ impl Interpreter {
             // The thunk returns the whole right list; pick element i (zip is 1:1).
             let rhs_items = crate::runtime::value_to_list(&rhs_value);
             out.push(rhs_items.into_iter().nth(i).unwrap_or(Value::Nil));
+        }
+        // Record the topicalizing thunk's captured-outer writes (`$x = $_`) so the
+        // call site drains them into the caller's locals — same as the
+        // `__mutsu_cross_shortcircuit` carrier (slice 1.9). Without this the write
+        // is lost once the blanket reconcile is removed
+        // (docs/captured-outer-cell-sharing.md §7.1i).
+        if thunk_ran
+            && let Value::Sub(ref data) = thunk
+            && let Some(code) = data.compiled_code.clone()
+        {
+            self.record_eager_block_free_var_writeback(&code, &data.params);
         }
         Ok(Value::array(out))
     }
