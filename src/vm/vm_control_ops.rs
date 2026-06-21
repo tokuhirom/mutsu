@@ -95,7 +95,10 @@ impl Interpreter {
             // call_frames.len()` and no swap is needed.)
             let swap_locals = frame_depth < self.call_frames.len();
             if swap_locals {
-                std::mem::swap(&mut self.locals, &mut self.call_frames[frame_depth].saved_locals);
+                std::mem::swap(
+                    &mut self.locals,
+                    &mut self.call_frames[frame_depth].saved_locals,
+                );
             }
             self.control_handlers.pop();
             let dec = self.control_handler_depth > 0;
@@ -108,7 +111,10 @@ impl Interpreter {
             }
             self.control_handlers.push((code_ptr, cb, ce, frame_depth));
             if swap_locals {
-                std::mem::swap(&mut self.locals, &mut self.call_frames[frame_depth].saved_locals);
+                std::mem::swap(
+                    &mut self.locals,
+                    &mut self.call_frames[frame_depth].saved_locals,
+                );
             }
             self.stack.truncate(saved_stack);
             match saved_topic {
