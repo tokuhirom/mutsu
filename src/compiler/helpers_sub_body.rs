@@ -347,10 +347,15 @@ impl Compiler {
         // for cross-call accumulation through a shared cell — see
         // docs/captured-outer-cell-sharing.md). A named sub has no runtime creation
         // op, so this compile-time pass is the only place to surface its writes.
-        self.code.named_sub_captures.push((
-            cf.code.free_var_writes.clone(),
-            cf.code.needs_cell_named_sub_free.clone(),
-        ));
+        // In addition to scalar/whole-container name rebinds (`free_var_writes`),
+        // include `@`/`%` containers the sub mutates IN PLACE (push / element
+        // assign — `free_var_container_writes`), so a captured outer container
+        // (e.g. a user `trait_mod:<is>` pushing to an outer `@names`) is boxed too.
+        let mut nf_writes = cf.code.free_var_writes.clone();
+        nf_writes.extend(cf.code.free_var_container_writes.iter().copied());
+        self.code
+            .named_sub_captures
+            .push((nf_writes, cf.code.needs_cell_named_sub_free.clone()));
         self.compiled_functions.insert(key, cf);
     }
 
