@@ -346,9 +346,15 @@ impl Interpreter {
                     // boxing it (inline `where` desugars to an anonymous subset, so
                     // var_type_constraint catches block/whatever/`&pred` forms).
                     // Applied to (B) only — the loop path (A) is left unchanged.
-                    if loan_env!(self, var_type_constraint(s)).is_some()
-                        || loan_env!(self, var_type_constraint(s.trim_start_matches('$'))).is_some()
-                    {
+                    // EXCEPTION: `Mu` is the universal type — every value satisfies
+                    // it, so the ContainerRef write-through bypasses no real check.
+                    // Box `my Mu $s` so captured-outer thunks (metaop `Xxx`/`Zand`)
+                    // share its cell and stay coherent without the blanket reconcile.
+                    let mut tc = loan_env!(self, var_type_constraint(s));
+                    if tc.is_none() {
+                        tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
+                    }
+                    if matches!(tc.as_deref(), Some(t) if t != "Mu") {
                         return None;
                     }
                 }

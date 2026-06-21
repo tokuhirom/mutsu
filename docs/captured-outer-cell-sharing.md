@@ -211,14 +211,16 @@ scalar accumulation は boxing で解決済（pin 2 本が toggle 下 PASS）の
 
 > 地図は `tmp/blanket-reconcile-surface.txt`（揮発）にも出力。再計測コマンドは上記。
 
-### 7.1 ★次スライス推奨 = `metaop-thunk` の typed-scalar（`Mu` universal 緩和）
+### 7.1 ✅ スライス1.5（DONE・第42セッション）= `metaop-thunk` の typed-scalar（`Mu` universal 緩和）
 
 `metaop-thunk-captured-outer`(4 fail) は `my Mu $s; 1 Zand ($s++,)` 系＝**thunk（closure）に捕捉される
 typed scalar**。untyped `my $s` は toggle 下 PASS（`box_captured_lexicals` が box）だが、`Mu` 制約付きは
 §6.3/§8 の「type/where 制約 skip」で box されず fail。**`Mu` は universal type（全値マッチ）なので write-through が
-制約再チェックを迂回しても無害**＝`box_captured_lexicals`（vm_register_ops.rs:349）と `box_decl_local_cell`
-（vm_var_assign_ops.rs）の type-skip を `Mu` のみ緩和すれば解ける小スライス。**注意**: `Any` は Junction を弾く
-ので universal でない＝緩和は `Mu` のみ。closure 駆動なので `box_captured_lexicals` 側の緩和が主。
+制約再チェックを迂回しても無害**＝`box_captured_lexicals`（vm_register_ops.rs:343-353）の type-skip を
+`tc != "Mu"` のときのみ発火するよう緩和。subtest 4/6/8/9（`Zand`/`Zor`/`Z&&`/`Z||` with `my Mu $s`）が
+toggle 下でも PASS に。pin=`t/metaop-thunk-captured-outer-coherence.t`（12・ON/OFF 両 PASS）。make test 9656 /
+make roast 1285 回帰なし。**注意**: `Any` は Junction を弾くので universal でない＝緩和は `Mu` のみ。closure 駆動
+なので `box_captured_lexicals` 側の緩和のみで足り、`box_decl_local_cell`（named-sub path）は今回不要だった。
 
 ### 7.2 後続スライス（その先）
 
