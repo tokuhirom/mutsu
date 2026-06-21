@@ -302,6 +302,22 @@ impl Interpreter {
             })
             .unwrap_or(1);
         message.push_str(&format!("\n  in block <unit> at {} line {}", file, line));
+        // When no CONTROL handler is active (`control_handler_depth == 0`), this
+        // warn's only possible fate is the default handler: print to stderr and
+        // resume. Handle it inline here, at the raise site, rather than returning
+        // an `Err` that unwinds the Rust call stack. Unwinding loses every frame
+        // between here and the top-level loop, so a `warn` raised deep inside a
+        // method/sub chain (e.g. `render -> log -> &warn.()`) would abandon the
+        // whole computation instead of resuming it (cross-frame warn). Because
+        // `control_handler_depth == 0` guarantees there is no `CONTROL`/`when
+        // CX::Warn` block on the stack, there is no `succeed`/unwind target to
+        // honour, so resolving the warn locally is complete and correct here.
+        if self.control_handler_depth == 0 {
+            if !self.warning_suppressed() {
+                self.write_warn_to_stderr(&message);
+            }
+            return Ok(Value::Nil);
+        }
         Err(RuntimeError::warn_signal(message))
     }
 
