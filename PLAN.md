@@ -200,7 +200,7 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
       list_i` で死。全 op 実装は数週・高リスク。**代替＝mutsu に builtin `to-json`/`from-json` を実装**（or `nqp::`
       非依存の小さな pure-Raku JSON shim）。Template::Mustache 91/92-specs も即解禁。
 - [ ] **ユーティリティ:**
-  - [x] **File::Temp 0.0.12 — 完動（#TBD, 2026-06-22）。** `tempfile`/`tempdir` 実ファイル生成・
+  - [x] **File::Temp 0.0.12 — 完動（#3399, 2026-06-22）。** `tempfile`/`tempdir` 実ファイル生成・
     write→read・END cleanup・`File::Directory::Tree` 依存ロードまで raku 一致。ブロッカーだった
     `use`/`unit module` の `:ver<>:auth<>` adverb（version/auth セレクタを import タグ扱いして `no such tag 'ver'`）を
     解消＝parser で dist セレクタとして消費・破棄。`unit module Foo:ver<>:auth<>` も対応。多数のモジュールに効く一般機能。
@@ -210,7 +210,7 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
     **coercion-type シグネチャパラメータ（`T()`/`T(U)`）の一般対応**が必要。medium・汎用性高。
 - [ ] バイナリ配布: mise GitHub バックエンドのインストール検証 / GitHub Releases 自動化。
 
-**次の高インパクト順（推奨）:** ✅① `use`/`unit module` の `:ver<>:auth<>` adverb（File::Temp 完動・#TBD）→
+**次の高インパクト順（推奨）:** ✅① `use`/`unit module` の `:ver<>:auth<>` adverb（File::Temp 完動・#3399）→
 ② builtin `to-json`/`from-json`（JSON 全般＋mustache specs）→ ③ `IO::Socket::Async.Supply(:bin)`→Buf
 （HTTP server 本体が死ぬ地点）→ ④ coercion-type パラメータ `T()` → ⑤ builtin 型サブクラスの user メソッド
 override 解決（IO::Blob）。①②④⑤ はいずれも単一モジュールを超える一般機能。
