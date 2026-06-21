@@ -57,7 +57,7 @@ impl Interpreter {
                 self.async_socket_close_in_memory(conn_id)?;
                 Ok(Value::Nil)
             }
-            "Supply" if is_real_tcp => self.async_socket_supply_real_tcp(conn_id),
+            "Supply" if is_real_tcp => self.async_socket_supply_real_tcp(conn_id, &args),
             "Supply" => self.async_socket_supply_in_memory(conn_id, &args, attributes),
             "write" | "print" if is_real_tcp => {
                 self.async_socket_write_real_tcp(conn_id, method, &args)
@@ -110,8 +110,13 @@ impl Interpreter {
     fn async_socket_supply_real_tcp(
         &mut self,
         conn_id: Option<u64>,
+        args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let id = conn_id.ok_or_else(|| RuntimeError::new("Missing async conn-id"))?;
+        // `.Supply(:bin)` must emit `Buf[uint8]` chunks (raw bytes), not decoded
+        // `Str`. This is the exact point HTTP::Server::Tiny's handler needs: it
+        // feeds the emitted value to `parse-http-request`, which expects a Blob.
+        let is_bin = Self::named_bool(args, "bin");
         let supply_id = next_supply_id();
         let (tx, rx) = mpsc::channel::<SupplyEvent>();
         if let Ok(mut map) = supply_channel_map().lock() {
@@ -131,8 +136,12 @@ impl Interpreter {
                                 break;
                             }
                             Ok(n) => {
-                                let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                                if tx.send(SupplyEvent::Emit(Value::str(data))).is_err() {
+                                let value = if is_bin {
+                                    Self::make_buf(buf[..n].to_vec())
+                                } else {
+                                    Value::str(String::from_utf8_lossy(&buf[..n]).to_string())
+                                };
+                                if tx.send(SupplyEvent::Emit(value)).is_err() {
                                     break;
                                 }
                             }
@@ -221,17 +230,7 @@ impl Interpreter {
         initial_values: &mut Vec<Value>,
     ) {
         if is_bin {
-            let mut battrs = HashMap::new();
-            battrs.insert(
-                "bytes".to_string(),
-                Value::array(
-                    pending_bytes
-                        .iter()
-                        .map(|b| Value::Int(*b as i64))
-                        .collect(),
-                ),
-            );
-            initial_values.push(Value::make_instance(Symbol::intern("Buf"), battrs));
+            initial_values.push(Self::make_buf(pending_bytes.to_vec()));
         } else if let Some(supply) = get_async_supply(supply_id) {
             let decoded = if supply.encoding.eq_ignore_ascii_case("utf-8") {
                 String::from_utf8_lossy(pending_bytes).to_string()
@@ -386,12 +385,7 @@ impl Interpreter {
         for sid in supply_ids {
             if let Some(supply) = get_async_supply(*sid) {
                 if supply.is_bin {
-                    let mut battrs = HashMap::new();
-                    battrs.insert(
-                        "bytes".to_string(),
-                        Value::array(bytes.iter().map(|b| Value::Int(*b as i64)).collect()),
-                    );
-                    let buf = Value::make_instance(Symbol::intern("Buf"), battrs);
+                    let buf = Self::make_buf(bytes.to_vec());
                     let _ = self.async_supplier_emit_value(*sid, buf);
                 } else {
                     let mut pending = supply.byte_buffer.clone();
