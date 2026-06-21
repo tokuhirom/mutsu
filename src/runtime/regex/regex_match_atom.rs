@@ -319,6 +319,19 @@ impl Interpreter {
             let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);
             if !candidates.is_empty() {
                 let tail: Vec<char> = chars[pos..].to_vec();
+                // The subrule candidates match `tail` (a slice from `pos`) at
+                // position 0, so publish the char before the slice for look-behind
+                // anchors (`^^`). At `pos == 0` inherit the current value (this
+                // slice may itself be a nested subrule's tail). Restored on every
+                // exit path by the guard.
+                let saved_prev = super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.get());
+                let slice_prev = if pos > 0 {
+                    Some(chars[pos - 1])
+                } else {
+                    saved_prev
+                };
+                super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.set(slice_prev));
+                let _restore_prev = super::regex_helpers::RegexPrecedingCharGuard(saved_prev);
 
                 // Left-recursion detection using (name, remaining_chars_count) as key.
                 // remaining = chars.len() - pos = tail.len().

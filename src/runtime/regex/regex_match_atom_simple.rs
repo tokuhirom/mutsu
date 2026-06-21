@@ -244,12 +244,23 @@ impl Interpreter {
                 };
             }
             RegexAtom::StartOfLine => {
-                if pos == 0 {
+                // The char immediately before `pos`. At slice-position 0 this is
+                // not necessarily the start of the original parse text: a subrule
+                // is matched against `chars[pos..]` in a sub-interpreter, so
+                // consult `REGEX_PRECEDING_CHAR` (the char before this slice). It
+                // is `None` only at the true start of the parse text.
+                let prev = if pos > 0 {
+                    Some(chars[pos - 1])
+                } else {
+                    super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.get())
+                };
+                let Some(prev) = prev else {
+                    // True start of the parse text — a line start.
                     return Some(pos);
-                }
+                };
                 // After \n: match unless at end-of-string (trailing newline)
                 // or \n was part of \r\n (match after complete \r\n, not between \r and \n)
-                if chars[pos - 1] == '\n' {
+                if prev == '\n' {
                     // Don't match at end-of-string after trailing \n
                     if pos == chars.len() {
                         return None;
@@ -257,7 +268,7 @@ impl Interpreter {
                     return Some(pos);
                 }
                 // After \r not followed by \n: standalone \r is a line ending
-                if chars[pos - 1] == '\r' {
+                if prev == '\r' {
                     // \r followed by \n is NOT a standalone line ending;
                     // don't match between \r and \n
                     if pos < chars.len() && chars[pos] == '\n' {

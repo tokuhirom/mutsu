@@ -1,5 +1,5 @@
 use super::super::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 use unicode_segmentation::UnicodeSegmentation;
@@ -9,6 +9,26 @@ thread_local! {
     /// Collects plain (non-assertion) code blocks that should be executed eagerly
     /// during regex matching, even if the overall match fails. Used by `comb` etc.
     pub(crate) static EAGER_CODE_BLOCKS: RefCell<Option<Vec<CodeBlockContext>>> = const { RefCell::new(None) };
+    /// The character immediately preceding the start of the text currently being
+    /// matched. A subrule (`<foo>`) is matched against a *slice* `chars[pos..]`
+    /// in a fresh sub-interpreter, so position 0 of that slice is not necessarily
+    /// the start of a line in the original text. Look-behind anchors (`^^`, `^`)
+    /// consult this to decide whether slice-position 0 is a real line/string
+    /// start: `None` means it truly is the start of the parse text, `Some(c)`
+    /// means `c` was the char just before the slice. Saved/restored around each
+    /// subrule dispatch so nesting threads correctly.
+    pub(crate) static REGEX_PRECEDING_CHAR: Cell<Option<char>> = const { Cell::new(None) };
+}
+
+/// Restores `REGEX_PRECEDING_CHAR` to a saved value when dropped, so a subrule
+/// dispatch can publish the slice's preceding char for the duration of the match
+/// and have it restored on every exit path (including early returns).
+pub(crate) struct RegexPrecedingCharGuard(pub(crate) Option<char>);
+
+impl Drop for RegexPrecedingCharGuard {
+    fn drop(&mut self) {
+        REGEX_PRECEDING_CHAR.with(|c| c.set(self.0));
+    }
 }
 
 /// Strip combining marks from a character, returning just the base character(s).
