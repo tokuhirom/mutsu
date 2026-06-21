@@ -1518,12 +1518,37 @@ impl Interpreter {
             let rw_map_topic = self.env.get("__mutsu_rw_map_topic__").cloned();
             let mut merged = saved_env;
             self.pop_caller_env_with_writeback(&mut merged);
+            // Slice 1b (captured-outer cell sharing): a nested-declared method/sub
+            // dispatched through `call_sub_value` (`$d.bar` where `method bar { … }`
+            // was declared in `foo`'s body) runs its body via the interpreter and
+            // merges a captured-outer scalar write back into `merged` (the caller
+            // env) below. But the caller's matching *local slot* is not refreshed
+            // from env unless the blanket reconcile is on. Record each captured-outer
+            // scalar this body actually *changed* (vs its body-entry snapshot) so the
+            // call site (`apply_pending_rw_writeback`) writes the merged value straight
+            // through to the caller's slot, dropping the dependency on the reverse
+            // `sync_locals_from_env` pull. Mirrors `merge_method_env`'s
+            // `changed_caller_locals` for the compiled method path.
+            let mut captured_outer_writes: Vec<String> = Vec::new();
             if merge_all {
                 for (k, v) in self.env.iter() {
                     if k != "_"
                         && k != "@_"
                         && (merged.contains_key_sym(*k) || k.starts_with("__mutsu_var_meta::"))
                     {
+                        if merged.contains_key_sym(*k)
+                            && matches!(
+                                v,
+                                Value::Bool(_)
+                                    | Value::Int(_)
+                                    | Value::Num(_)
+                                    | Value::Str(_)
+                                    | Value::Rat(_, _)
+                            )
+                            && body_entry_env.get_sym(*k) != Some(v)
+                        {
+                            captured_outer_writes.push(k.resolve().to_string());
+                        }
                         merged.insert_sym(*k, v.clone());
                     }
                 }
@@ -1559,10 +1584,15 @@ impl Interpreter {
                         // a mutation, and must not clobber the caller's live value.
                         && body_entry_env.get_sym(*k) != Some(v)
                     {
+                        captured_outer_writes.push(k.resolve().to_string());
                         merged.insert_sym(*k, v.clone());
                     }
                 }
             }
+            // Record the captured-outer scalar writes for precise caller-slot
+            // write-back (drained by the call-site `apply_pending_rw_writeback`).
+            self.pending_rw_writeback_sources
+                .extend(captured_outer_writes);
             self.merge_sigilless_alias_writes(&mut merged, &self.env);
             // Apply rw bindings after merge so they take precedence
             self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);

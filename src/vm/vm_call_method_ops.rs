@@ -1316,7 +1316,13 @@ impl Interpreter {
                 // the barrier would have pulled — so this is byte-identical to the
                 // barrier under reverse-sync ON; a pure method call (env not
                 // dirtied) pays nothing.
-                self.blanket_reconcile_if_dirty(code);
+                //
+                // Slice 1b: a nested-declared method dispatched through the
+                // interpreter (`call_sub_value`) records the captured-outer scalars
+                // it changed in `pending_rw_writeback_sources`; drain them straight
+                // to the caller's local slots (precise, reverse-sync-independent)
+                // before the env_dirty-gated blanket reconcile.
+                self.drain_and_reconcile_after_cached_call(code);
                 // Wrap map/grep results back into HyperSeq/RaceSeq
                 if let Some(is_hyper) = hyper_race_wrap
                     && let Some(result) = self.stack.pop()

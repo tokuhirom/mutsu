@@ -1,10 +1,11 @@
 # Captured-outer lexical cell 共有 — 実装プラン（Sub-slice 1b+ / env_dirty 削除への substrate）
 
-> **Status:** SLICE 1〜1.9 DONE（〜2026-06-21・第41〜43セッション）。§6 第1スライス（named-sub 捕捉
-> scalar decl-site cell 化）＋§7.1〜7.1e（metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／
-> **captured-outer container `@`/`%` cell 化＝§7.1d**／**`X`-cross metaop thunk scalar writeback＝§7.1e**）を実装。
-> 各 pin が **blanket reconcile ON/OFF 両方で PASS**。OFF survey は 16 file（うち並行 ~13）。
-> 次＝§7.2（nested-method capture／parametric-role-of-type／並行 cluster）。
+> **Status:** SLICE 1〜1.10 DONE（〜2026-06-21・第41〜44セッション）。§6 第1スライス（named-sub 捕捉
+> scalar decl-site cell 化）＋§7.1〜7.1f（metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／
+> **captured-outer container `@`/`%` cell 化＝§7.1d**／**`X`-cross metaop thunk scalar writeback＝§7.1e**／
+> **nested-method capture＝§7.1f**）を実装。
+> 各 pin が **blanket reconcile ON/OFF 両方で PASS**。OFF survey は 15 file（うち並行 ~13）。
+> 次＝§7.2（parametric-role-of-type＝instance-attr 別機構／並行 cluster）。
 > 関連: [docs/env-locals-coherence.md](env-locals-coherence.md)（§7.3 = env_dirty 削除の壁）/
 > [docs/container-identity.md](container-identity.md)（cell インフラ）/ PLAN.md §1-A・§2-C・§2-E。
 >
@@ -300,10 +301,31 @@ drain。**非gated（ON/OFF 両対応・reconcile と idempotent）**。pin=`t/c
 **注意（範囲外の別バグ）**: ①`(1,2,3) Xandthen (...)` の list 反復 count（raku=3・mutsu=2）は cross_shortcircuit ループの
 別バグ（ON でも fail・captured-write 無関係）。②`$x + 1`（`$x=11` 後）が 2 を返すパーサ quirk も別件。両方とも本スライス対象外。
 
-### 7.2 後続スライス（その先）
+### 7.1f ✅ スライス1.10（DONE・第44セッション）= nested-method capture（`methods-instance` subtest 3）
 
-- **nested-method capture**（`methods-instance` subtest 3 = `method foo { my $a; method bar { $tracker = $a } }`）:
-  EVAL でない multi-frame captured-write（nested method 宣言が enclosing method の lexical 捕捉）。別機構の調査要。
+`method foo { my $a = 42; method bar { $tracker = $a } }` の **method body 内で宣言された method** `bar` を
+`.foo` 後に `.bar` で呼ぶケース。`bar` の captured-outer write（`$tracker`）が OFF で caller slot に届かず stale。
+**真因＝dispatch path**: nested-declared method は foo 実行時に RegisterSub で **captured env 付き `&bar` sub** として登録され、
+`$d.bar` は compiled method merge path（`call_compiled_method` / `merge_method_env`）でも closure dispatch
+（`call_compiled_closure_with_topic`）でもなく、slow path `call_method_with_values` → **`call_sub_value(merge_all=true)`**
+（tree-walk）を通る。`call_sub_value` は captured-outer scalar write を `merged`（caller env）へ正しくマージするが、
+**caller の local slot を refresh しない**＝blanket reconcile ON 時のみ slot が env から pull される。
+（class-level method の `$Foo++` は compiled path = #3322 の `merge_method_env` `changed_caller_locals` 記録で OFF も成立済。
+gap は nested-declared method の interpreter dispatch path だけ）。
+
+- **修正（precise-writeback・非gated）**: ①`call_sub_value`（resolution.rs）の merge ループで、body-entry snapshot
+  （`body_entry_env`）から **変化した captured-outer scalar**（Bool/Int/Num/Str/Rat・caller env に存在）を収集し
+  `pending_rw_writeback_sources` に push（merge_all / non-merge_all 両 branch・既存の precise scalar-changed 条件と同型）。
+  ②CallMethod op（vm_call_method_ops.rs）の call-site tail を `blanket_reconcile_if_dirty(code)` →
+  `drain_and_reconcile_after_cached_call(code)`（= `apply_pending_rw_writeback` + blanket）に変更。**この op は従来
+  pending を drain しておらず**（`merge_method_env` のコメント「CallMethod op が slot へ書き戻す」が示す意図に実装が
+  追いついていなかった＝latent gap も同時に解消）。ON では blanket が superset なので byte-identical、OFF では
+  precise drain のみが効く。
+- pin=`t/nested-method-captured-writeback-coherence.t`（9・given/topic・explicit invocant・RMW 累積・+=・string・
+  enclosing lexical read＋outer write・複数 outer・後続式コヒーレンス・intervening call・ON/OFF 両 PASS）。
+  make test 9727 / make roast 回帰なし。OFF survey 16→15（並行 ~13 残）。
+
+### 7.2 後続スライス（その先）
 - **`parametric-role-of-type`**（OFF で決定的 abort・ran 11/14・test 12）: ON で PASS。**captured-outer ではなく
   インスタンス属性コヒーレンス**＝`my role TreeNode[::T] does Positional { has TreeNode[T] @!children handles
   <AT-POS ASSIGN-POS BIND-POS>; has T $.data is rw }` で `$tree[0] = TreeNode.new`（ASSIGN-POS handles 経由で `@!children`
