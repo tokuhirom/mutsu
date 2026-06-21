@@ -141,6 +141,16 @@ impl Interpreter {
         self.env.insert("_".to_string(), Value::str(text.clone()));
         Self::clear_pending_goal_failure();
         let is_full_parse = method == "parse" || method == "parsefile";
+        // Expose the `:actions` object for the whole parse (candidate selection in
+        // `eval_token_call_values` already runs the pattern, so the assertions can
+        // fire before the main match) so that `<?{ ... }>` code assertions
+        // referencing `$<x>.made` can run the relevant action method on a
+        // just-matched named capture during parsing. raku runs actions
+        // incrementally at reduce time; mutsu otherwise only runs them post-parse.
+        // See `eval_regex_code_assertion`. Saved/restored so nested/re-entrant
+        // parses stay balanced.
+        let saved_grammar_actions =
+            std::mem::replace(&mut self.current_grammar_actions, actions_obj.clone());
         let result = (|| -> Result<Value, RuntimeError> {
             let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
                 Ok(Some(pattern)) => pattern,
@@ -318,6 +328,7 @@ impl Interpreter {
         } else {
             self.env.remove("made");
         }
+        self.current_grammar_actions = saved_grammar_actions;
         // In Raku 6.c/6.d, Grammar.parse/parsefile returns Nil on failure.
         // In 6.e+, it returns a Failure object. The decision is keyed on the
         // grammar's *declaration* revision (captured as type metadata), not the
@@ -343,7 +354,7 @@ impl Interpreter {
     }
 
     /// Extract `action_name` from a Match object (set for aliased captures).
-    fn get_action_name(match_obj: &Value) -> Option<String> {
+    pub(crate) fn get_action_name(match_obj: &Value) -> Option<String> {
         if let Value::Instance { attributes, .. } = match_obj
             && let Some(Value::Str(action_name)) = attributes.as_map().get("action_name")
         {
@@ -353,7 +364,7 @@ impl Interpreter {
     }
 
     /// Walk the match tree bottom-up and invoke action methods on the actions object.
-    fn invoke_grammar_actions(
+    pub(crate) fn invoke_grammar_actions(
         &mut self,
         match_obj: Value,
         actions: &mut Value,

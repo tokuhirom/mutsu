@@ -1166,6 +1166,13 @@ pub struct Interpreter {
     /// Value set by `make()` inside grammar action methods.
     /// Persists across env save/restore in method dispatch.
     pub(crate) action_made: Option<Value>,
+    /// The `:actions` object of an in-progress `Grammar.parse`, if any. Set for
+    /// the duration of a parse so that `<?{ ... }>` code assertions can run the
+    /// relevant action method on a just-matched named capture and expose its
+    /// `.made` result during parsing (raku runs actions incrementally at reduce
+    /// time; mutsu otherwise only runs them post-parse). Saved/restored around
+    /// nested/re-entrant parses.
+    pub(crate) current_grammar_actions: Option<Value>,
     /// Pending error from regex security validation, to be propagated by the caller.
     #[allow(dead_code)]
     pending_regex_error: Option<RuntimeError>,
@@ -3373,6 +3380,7 @@ impl Interpreter {
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
             action_made: None,
+            current_grammar_actions: None,
             pending_regex_error: None,
             precomp_enabled: true,
             monkey_typing: false,
@@ -5933,6 +5941,7 @@ impl Interpreter {
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
             action_made: None,
+            current_grammar_actions: None,
             pending_regex_error: None,
             precomp_enabled: self.precomp_enabled,
             monkey_typing: self.monkey_typing,
