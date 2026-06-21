@@ -2733,6 +2733,26 @@ impl Interpreter {
                 {
                     self.locals[slot] = env_val;
                 }
+                // strong_count==1 divergence repair: a re-entrant call evaluated
+                // as the RHS (e.g. a `proto {*}` redispatch) can swap `self.env`
+                // out from under the block's local slot via
+                // `restore_env_preserving_existing`, leaving the slot pointing at
+                // a stale, detached Arc while env holds the live one (strong_count
+                // drops to 1). The assign above mutated only env, so a local slot
+                // that still exists is — by definition of strong_count==1 — a
+                // diverged copy. Mirror the live env value back to it to keep the
+                // dual store coherent, so a later `state`-var persist (which reads
+                // env first, then `sync_env_from_locals` flushes the slot) does not
+                // clobber the value with the stale slot. No-op for a genuine
+                // env-only hash (e.g. `%*ENV`) that has no local slot, and the
+                // default build's blanket reconcile makes it redundant (byte-
+                // identical) — it only matters on the single-store path.
+                if local_slot.is_none()
+                    && let Some(slot) = self.find_local_slot(code, var_name)
+                    && let Some(env_val) = self.env().get(var_name).cloned()
+                {
+                    self.locals[slot] = env_val;
+                }
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]
                 if var_name == "%*ENV" {
