@@ -268,6 +268,14 @@ impl Interpreter {
                 }
                 found
             };
+            // Single-store coherence: `assign_method_lvalue_with_values` writes
+            // the mutated string back into `env[target_var]` but not the caller's
+            // local slot. The default build's blanket reconcile carried this;
+            // record the target so the call-site `apply_pending_rw_writeback`
+            // drains the env value into the slot precisely (no blanket pull).
+            if let Some(ref tv) = target_var {
+                self.pending_rw_writeback_sources.push(tv.clone());
+            }
             return self.assign_method_lvalue_with_values(
                 target_var.as_deref(),
                 target,
@@ -293,6 +301,9 @@ impl Interpreter {
                 }
                 found
             };
+            if let Some(ref tv) = target_var {
+                self.pending_rw_writeback_sources.push(tv.clone());
+            }
             return self.assign_method_lvalue_with_values(
                 target_var.as_deref(),
                 target,

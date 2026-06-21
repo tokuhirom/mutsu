@@ -365,6 +365,18 @@ AT-POS が空 `@!c` を読む。
   make test 9755。**注**: delegated mutating *method call*（`$q.push(5)` が `@!c` へ委譲）は ON/OFF **両方**で失敗する別の
   pre-existing バグ（method-call 後の invocant slot 未 refresh・トグル非依存）＝本スライス対象外・スコープ外として pin から除外。
 
+### 7.1i ✅ スライス1.13（DONE・第45セッション）= substr-rw / subbuf-rw lvalue slot writeback（OFF 最大塊・12 fail）
+`substr-rw($s, ...) = v`／`subbuf-rw($buf, ...) = v` が OFF で `$s`/`$buf` を変更しない（`gorch ding` のまま・raku=
+`gloop ding`）。経路＝lvalue assign は `__mutsu_assign_named_sub_lvalue` Call → `assign_named_sub_lvalue_with_values`
+（builtins_lvalue.rs:258/281）が env scan で target var を特定し `assign_method_lvalue_with_values` に委譲→string/buf を
+変異して `env[$s]` に書くが **caller local slot 未 refresh**。`exec_call_func_op` の `lvalue_writeback_target` 機構は
+`__mutsu_assign_method_lvalue`/`__mutsu_index_assign_method_lvalue`（args[4]=target）専用で named-sub lvalue は対象外。
+- **修正（precise・非gated）**: substr-rw/subbuf-rw branch で解決済 target var 名を `pending_rw_writeback_sources` に push。
+  `exec_call_func_op` は **常に** `apply_pending_rw_writeback(code)`（vm_call_func_ops.rs:597）を呼ぶので、env の更新値が
+  precise に slot へ drain される（blanket pull 不要）。ON は冪等 superset＝byte-identical。
+- pin=`t/substr-rw-lvalue-writeback-coherence.t`（6・substr-rw/from-only/累積/bound proxy/subbuf-rw・ON/OFF 両 PASS）。
+  make test 9754。`S32-str/substr-rw.t` 46/46・`S03-operators/buf.t` も ON/OFF PASS（OFF survey の **2 file** 消化）。
+
 ### 7.2 後続スライス（その先）
 - **delegated mutating method call の invocant writeback**（pre-existing・トグル非依存）: `$q.push(5)` が `handles` 経由で
   `@!c` に委譲されるとき、attr は変異するが method-call 後に caller の `$q` slot/instance が refresh されず累積が壊れる
@@ -381,28 +393,28 @@ AT-POS が空 `@!c` を読む。
 これまでの「決定的 OFF 依存 = 0 到達」は **t/ のみの `^not ok` survey** に基づく過小評価だった。`MUTSU_NO_BLANKET_RECONCILE=1
 make roast`（release・全 whitelist 1285）を実走したところ、**13 ファイルが OFF で決定的に fail**（全て pre-existing＝
 main baseline でも同じ subtest が OFF fail・本スライスの変更とは無関係＝debug 比較で確認）。これが env_dirty 物理削除
-（§7.4）を解禁するために潰すべき残サーフェス:
+（§7.4）を解禁するために潰すべき残サーフェス（初回 13 → slice 1.13 で **substr-rw.t / buf.t 消化済 → 残 11**）:
 
-| file | failed subtests | 推定カテゴリ |
-|------|-----------------|--------------|
-| S32-str/substr-rw.t | 1, 8-9, 16, 24-25, 33-38 | Proxy STORE / substr-rw lvalue slot writeback（最大・12 fail） |
-| S02-types/lazy-lists.t | 24-26 | lazy list captured-outer |
-| S03-metaops/zip.t | 68, 71 | metaop thunk captured |
-| S02-names/caller.t | 9 | callframe/caller |
-| S06-advanced/callframe.t | 12 | callframe |
-| S06-multi/proto.t | 21 | multi-dispatch |
-| S06-multi/subsignature.t | 54 | subsignature destructure |
-| S06-signature/code.t | 8 | `&`-param signature |
-| S03-operators/buf.t | 38 | buf mutate |
-| S12-construction/destruction.t | 3 | DESTROY phaser |
-| S32-list/map.t | 62 | lazy map captured |
-| S32-scalar/undef.t | 85 | undef/Failure |
-| S32-io/IO-Socket-Async.t | 5, 7 | reactive 並行（flaky 疑い） |
+| file | failed subtests | 推定カテゴリ | 状態 |
+|------|-----------------|--------------|------|
+| ~~S32-str/substr-rw.t~~ | 1, 8-9, 16, 24-25, 33-38 | substr-rw lvalue slot writeback | ✅ slice 1.13 |
+| ~~S03-operators/buf.t~~ | 38 | subbuf-rw lvalue slot writeback | ✅ slice 1.13 |
+| S02-types/lazy-lists.t | 24-26 | lazy list captured-outer | |
+| S03-metaops/zip.t | 68, 71 | metaop thunk captured | |
+| S02-names/caller.t | 9 | callframe/caller | |
+| S06-advanced/callframe.t | 12 | callframe | |
+| S06-multi/proto.t | 21 | multi-dispatch | |
+| S06-multi/subsignature.t | 54 | subsignature destructure | |
+| S06-signature/code.t | 8 | `&`-param signature | |
+| S12-construction/destruction.t | 3 | DESTROY phaser | |
+| S32-list/map.t | 62 | lazy map captured | |
+| S32-scalar/undef.t | 85 | undef/Failure | |
+| S32-io/IO-Socket-Async.t | 5, 7 | reactive 並行（flaky 疑い） | |
 
-**最大の塊 = substr-rw.t（12 fail）**＝`substr-rw($s, ...) = v` の Proxy/lvalue 経路が env だけ更新し local slot を
-refresh しない（本スライスの object-subscript 修正と同型の別経路）。次スライスの第一候補。手順＝
-`MUTSU_NO_BLANKET_RECONCILE=1 target/release/mutsu roast/S32-str/substr-rw.t` で最小再現→writeback 経路特定→
-`locals_set_by_name`/`pending_rw_writeback_sources` で precise 化。**13 全消化後に §7.4（env_dirty 削除）が射程。**
+**次スライス候補**: lazy-lists/map（lazy captured-outer・slice 1.6 の lazy map 修正と同系）or zip metaop thunk
+（slice 1.5/1.9 と同系）が同型 precise-writeback で解ける見込み。手順＝
+`MUTSU_NO_BLANKET_RECONCILE=1 target/release/mutsu roast/<file>` で最小再現→env 書込経路特定→
+`locals_set_by_name`/`pending_rw_writeback_sources` で precise 化。**残 11 全消化後に §7.4（env_dirty 削除）が射程。**
 
 ### 7.3 ★各スライスの必須手順（slice 1 の教訓）
 
