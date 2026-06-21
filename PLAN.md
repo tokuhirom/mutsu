@@ -186,9 +186,14 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
 - [ ] **HTTP::Server::Tiny スタック（全て pure Raku, NativeCall なし）— 想像以上に近い。**
       本体は `use`＋`.new`＋非同期サーバが TCP listen/accept まで実際に動く。リクエスト/レスポンス往復を阻む
       独立した4バグ:
-  - **HTTP::Server::Tiny v0.0.2**: 最有力ブロッカー＝`IO::Socket::Async.Supply(:bin)` が `Buf[uint8]` でなく
-    `Str` を emit（`:bin` adverb 無視）→ ハンドラが `parse-http-request(Str)` で型エラー死。**ここが live server が
-    死ぬ正確な地点＝単独最大インパクト。**
+  - [x] **HTTP::Server::Tiny v0.0.2 — `IO::Socket::Async.Supply(:bin)` が `Buf[uint8]` を emit するよう修正（#TBD,
+    2026-06-22）。** real-TCP Supply パス（`async_socket_supply_real_tcp`）が `:bin` adverb を無視して常に `Str` を
+    emit していた（reader thread が `from_utf8_lossy`）→ `:bin` を受け取り `Self::make_buf`（`Buf[uint8]`）を emit。
+    in-memory パスの bin Buf 構築も `Self::make_buf` に統一（従来は素の `Buf`）。テスト `t/io-socket-async-bin.t`。
+  - **残（別の既存バグ・live server 続行に必要）**: `whenever $conn.Supply(...)` の **内側**で `done`/`last` を呼ぶと
+    制御シグナルが react のハンドラに捕捉されず「Unhandled exception in code scheduled on thread」（空メッセージ）で
+    プロセス終了する（bin/非 bin 共通・`.tap` 回避なら OK）。real-TCP Supply の tap コールバックが worker thread 上で
+    走り、react の control-flow フレームから切れているため。HTTP::Server::Tiny のリクエストループが `done` を使うなら要修正。
   - **HTTP::Parser v0.0.2**: `token SP { "\x20" }`（regex slang 内の**括弧なし** `"\xNN"`）がデコードされず
     grammar 全体が失敗（`\x[20]`/`\x[0d]` 等の括弧付きや非 regex の `"\x20"` は OK）。easy/medium。
   - **IO::Blob v0.0.1**: `class IO::Blob is IO::Handle` の user override（`.get`/`.lines` 等）が builtin native
@@ -224,8 +229,8 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
 - [ ] バイナリ配布: mise GitHub バックエンドのインストール検証 / GitHub Releases 自動化。
 
 **次の高インパクト順（推奨）:** ✅① `use`/`unit module` の `:ver<>:auth<>` adverb（File::Temp 完動・#3399）→
-✅② native `to-json`/`from-json`（JSON 全般・#TBD。mustache 91/92 は別の `:=`-hash-itemization バグ待ち）→
-③ `IO::Socket::Async.Supply(:bin)`→Buf
+✅② native `to-json`/`from-json`（JSON 全般・#3402。mustache 91/92 は別の `:=`-hash-itemization バグ待ち）→
+✅③ `IO::Socket::Async.Supply(:bin)`→`Buf[uint8]`（#TBD。live server には別途 `whenever Supply`内 `done` teardown 修正が要）
 （HTTP server 本体が死ぬ地点）→ ④ coercion-type パラメータ `T()` → ⑤ builtin 型サブクラスの user メソッド
 override 解決（IO::Blob）。①②④⑤ はいずれも単一モジュールを超える一般機能。
 
