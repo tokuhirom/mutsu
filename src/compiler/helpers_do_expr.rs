@@ -177,7 +177,42 @@ impl Compiler {
         then_branch: &[Stmt],
         else_branch: &[Stmt],
     ) {
-        self.compile_expr(cond);
+        self.compile_do_if_expr_bound(cond, then_branch, else_branch, &None);
+    }
+
+    /// Like `compile_do_if_expr`, but honours a per-branch topic binding
+    /// (`if EXPR -> $v { ... }`). When `binding_var` is `Some`, the condition
+    /// value is bound to `$v` for the `then` branch — desugared exactly like the
+    /// statement-form `if` (`{ my $v = EXPR; if $v { ... } }`) — so a value-mode
+    /// `if`/`elsif` with a topic binding does not leave `$v` (or `$_`) reading
+    /// the enclosing topic. Inner `elsif`s thread their own binding through the
+    /// recursion.
+    pub(super) fn compile_do_if_expr_bound(
+        &mut self,
+        cond: &Expr,
+        then_branch: &[Stmt],
+        else_branch: &[Stmt],
+        binding_var: &Option<String>,
+    ) {
+        if let Some(var_name) = binding_var {
+            let bare_name = var_name.trim_start_matches('$').to_string();
+            let var_decl = Stmt::VarDecl {
+                name: bare_name.clone(),
+                expr: cond.clone(),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: vec![],
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            };
+            self.compile_stmt(&var_decl);
+            self.compile_expr(&Expr::Var(bare_name));
+        } else {
+            self.compile_expr(cond);
+        }
         let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
         self.compile_block_inline(then_branch);
         let jump_end = self.code.emit(OpCode::Jump(0));
@@ -191,10 +226,10 @@ impl Compiler {
                 cond: inner_cond,
                 then_branch: inner_then,
                 else_branch: inner_else,
-                ..
+                binding_var: inner_binding,
             } = &else_branch[0]
             {
-                self.compile_do_if_expr(inner_cond, inner_then, inner_else);
+                self.compile_do_if_expr_bound(inner_cond, inner_then, inner_else, inner_binding);
             } else {
                 self.compile_block_inline(else_branch);
             }
@@ -430,12 +465,6 @@ impl Compiler {
                 // (it leaves the block value on the stack); only a non-final
                 // `given` is unsupported here.
                 Stmt::Given { .. } if i != last => return false,
-                // A loose `when`/`default` (a topicalizer that smartmatches `$_`
-                // and `succeed`s) is not expressible via the `do if` value path:
-                // its value flows out through the enclosing `when`/`given` via a
-                // control signal, not as a stack-top fallthrough. Branches that
-                // contain one must use ordinary statement compilation.
-                Stmt::When { .. } | Stmt::Default(_) => return false,
                 Stmt::If {
                     then_branch,
                     else_branch,

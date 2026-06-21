@@ -28,11 +28,10 @@ impl Compiler {
                 then_branch,
                 else_branch,
                 binding_var,
-            } if binding_var.is_none()
-                && Self::do_if_branch_supported(then_branch)
+            } if Self::do_if_branch_supported(then_branch)
                 && Self::do_if_branch_supported(else_branch) =>
             {
-                self.compile_do_if_expr(cond, then_branch, else_branch);
+                self.compile_do_if_expr_bound(cond, then_branch, else_branch, binding_var);
                 true
             }
             Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
