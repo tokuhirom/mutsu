@@ -161,17 +161,59 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 
 ### H. モジュール互換（Q3 — ウェブブログスタック）
 
-目標: **mutsu でウェブブログシステムが構築できる**。現状 **0% 稼働**。
+目標: **mutsu でウェブブログシステムが構築できる**。**Template::Mustache 完動（#3395）**。
+HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCall 非依存で動作可能、各々独立した一般機能の欠落待ち。
 
 - [x] **Template::Mustache — 完動（#3395, 2026-06-21）。** 全テストがパス（外部 `JSON::Fast` 依存の
       91/92-specs を除く＝mutsu のバグではない）。最後のブロッカー 06-logging（深いフレームで投げた `warn` を
       unit の `CONTROL { default { …; .resume } }` で受けて深部を継続）を #3395 で解決＝resume_safe な CONTROL を
       raise 地点でインライン実行。詳細＝メモリ `project-template-mustache-status`、news/2026-06.md。
       残（非致命・別軸）: 50-readme #4 grammar パース性能（遅いが正しい）、`handles` 委譲経由 proto method（stderr のみ）。
-- [ ] **HTTP::Server::Tiny** の依存（HTTP::Parser / IO::Blob / HTTP::Status）→ 本体。
-- [ ] DB アクセス — pure Raku 簡易実装 or qqx ベースの SQLite wrapper（NativeCall 不可）。
-- [ ] File::Temp / MIME::Base64 (pure Raku) / File::Directory::Tree。
+#### モジュール動作状況調査（2026-06-21, mutsu でロード＋テスト試行）
+
+候補モジュールを zef で取得し mutsu で `use`＋テスト試行した結果。**HTTP スタック・JSON・ユーティリティは
+すべて NativeCall 非依存**（pure Raku）で、原理的に動作可能。各ブロッカーは独立した一般機能の欠落。
+ハーネス＝`tmp/webstack/`（gitignored）。
+
+- [ ] **HTTP::Server::Tiny スタック（全て pure Raku, NativeCall なし）— 想像以上に近い。**
+      本体は `use`＋`.new`＋非同期サーバが TCP listen/accept まで実際に動く。リクエスト/レスポンス往復を阻む
+      独立した4バグ:
+  - **HTTP::Server::Tiny v0.0.2**: 最有力ブロッカー＝`IO::Socket::Async.Supply(:bin)` が `Buf[uint8]` でなく
+    `Str` を emit（`:bin` adverb 無視）→ ハンドラが `parse-http-request(Str)` で型エラー死。**ここが live server が
+    死ぬ正確な地点＝単独最大インパクト。**
+  - **HTTP::Parser v0.0.2**: `token SP { "\x20" }`（regex slang 内の**括弧なし** `"\xNN"`）がデコードされず
+    grammar 全体が失敗（`\x[20]`/`\x[0d]` 等の括弧付きや非 regex の `"\x20"` は OK）。easy/medium。
+  - **IO::Blob v0.0.1**: `class IO::Blob is IO::Handle` の user override（`.get`/`.lines` 等）が builtin native
+    IO::Handle メソッドに shadow され `Expected IO::Handle` で死。MRO/dispatch バグ（builtin 型のサブクラスの
+    user メソッドが native を優先すべき）。medium・汎用性高。
+  - **HTTP::Status v0.0.5**: user `method sink` がシンクコンテキストで呼ばれず status table が空。
+    ⚠️ 注意: 過去に sink 修正は sink.t を回帰させた（メモリ `sink-context-blocked-container-identity` 参照）。
+- [ ] **DB アクセス — sqlite3 CLI ラッパ（pure Raku）が現実解。**
+  - **DBIish/DBDish**: NativeCall 依存 → **ブロック**（ドライバは `sqlite3_*` C API）。API shape のみ再利用可。
+  - **推奨**: `run`/`qqx` で `sqlite3`（`/usr/bin/sqlite3` 3.45.1, インストール済）を呼ぶ薄い pure-Raku ラッパ。
+    mutsu の `run`/`qqx`（`:out`/`:err`/`exitcode`）は raku とバイト一致で動作確認済。`sqlite3 -json` で行を JSON 出力可。
+    工数 ~1-2日。値エスケープ/1クエリ1プロセスは要注意。
+  - **フォールバック**: flat-file `.raku`＋`EVALFILE`（mutsu で round-trip 確認済）は今日すぐ動く MVP。
+- [ ] **JSON — JSON::Fast はロード不可（NQP 依存）。builtin or shim を推奨。**
+      JSON::Fast 0.19 は `use nqp;`＋**~50 個の nqp op**（`list_i`/`findnotcclass`/`strfromcodes`/native int 等）に
+      依存。mutsu は nqp op を 2 個（`atkey`/`atpos`）しか実装しておらず、`use JSON::Fast` 時点で `Unknown function:
+      list_i` で死。全 op 実装は数週・高リスク。**代替＝mutsu に builtin `to-json`/`from-json` を実装**（or `nqp::`
+      非依存の小さな pure-Raku JSON shim）。Template::Mustache 91/92-specs も即解禁。
+- [ ] **ユーティリティ:**
+  - **File::Temp 0.0.12 — 最も簡単。** ロジックは mutsu で既に動く（`tempfile`/`tempdir` 実ファイル生成・
+    write→read・END cleanup まで OK）。唯一のブロッカー＝`use File::Directory::Tree:ver<…>:auth<…>` の
+    `:ver`/`:auth` を mutsu が import タグ扱いして `no such tag 'ver'`。**`use`/`unit module` の `:ver<>:auth<>`
+    adverb 対応だけで動く＝easy・多数のモジュールに効く。**
+  - **MIME::Base64 1.2.5**: `decode-str` は OK、`encode-str` が誤り（`AA==`）。原因＝`Blob:D` 型パラメータに束縛した
+    blob を `for $d -> $a,$b?,$c?` で**バイト反復できず** blob 丸ごとが `$a` に入る。medium（VM gap）。
+  - **File::Directory::Tree 0.2**: 全 sub が `IO(Cool) $io` 強制型パラメータを使い `Str→IO` 強制不可で死。
+    **coercion-type シグネチャパラメータ（`T()`/`T(U)`）の一般対応**が必要。medium・汎用性高。
 - [ ] バイナリ配布: mise GitHub バックエンドのインストール検証 / GitHub Releases 自動化。
+
+**次の高インパクト順（推奨）:** ① `use`/`unit module` の `:ver<>:auth<>` adverb（File::Temp 即解禁・広範）→
+② builtin `to-json`/`from-json`（JSON 全般＋mustache specs）→ ③ `IO::Socket::Async.Supply(:bin)`→Buf
+（HTTP server 本体が死ぬ地点）→ ④ coercion-type パラメータ `T()` → ⑤ builtin 型サブクラスの user メソッド
+override 解決（IO::Blob）。①②④⑤ はいずれも単一モジュールを超える一般機能。
 
 ### I. Track C — 並行（共有セル）残
 
