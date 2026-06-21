@@ -54,8 +54,11 @@
   - **根本**: 置き場が2つある限り「env を名前書きした→slot が stale かも」という目印は何らかの形で必要。
     `env_dirty` を真に消すには **env を locals の派生ビュー化＝単一ストア化**が要り、それは
     **env↔locals が同一コンテナ cell を共有する**こと（前提①）が前提。
-- **∴ 次の一手 = 前提① の env↔locals コンテナ cell 共有（下記 §C Sub-slice 1b）。** これが入って初めて
-  `env_dirty` 削除が射程に入る。それまで env_dirty は perf ゲートとして正当に残す。
+- **✅ env↔locals 純 writeback コヒーレンスは完了**（slice 1〜1.20・#3400 まで）。OFF roast survey の純 writeback
+  サーフェスは枯渇。**残る OFF 依存は別軸＝lazy-lists.t の laziness バグ**（`.kv`/`.pairs`/`.antipairs` の eager force・
+  下記 §C 参照）。
+- **∴ 次の一手 = lazy-lists 真 lazy 化（§C 末尾 ＋ §3-F の L 系）。** これを消化すれば OFF survey が実質クリアし、
+  `env_dirty` 削除（§2-E）が射程に入る。それまで env_dirty は perf ゲートとして正当に残す。
 
 ### B. tree-walking interpreter 撤去 — **struct 統合は完了・残フォークは状態所有待ち**
 
@@ -88,15 +91,20 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 - [ ] **Phase 2 Stage 2 slice 5（最終 SlotRef キル）**: 残る `HashSlotRef`/`DeferredHashAccess` 生成サイト
       （junction-bind / `is raw` reduce lvalue-read の autoviv）を cell 化し、variant を削除。
 - [ ] **grep-rw-view 撤去**: 最後の ptr-keyed グローバル。matched 要素を cell 昇格し view registry を全廃。
-- [~] **★env↔locals cell 共有 — captured-outer cell 化（A の律速・最重要）**: nested callee（closure **だけでなく**
-      named sub）に捕捉＋変異される lexical を、owner の local slot と env エントリの両方で**同一 `ContainerRef` cell**
-      にする（escape-aware・裸ローカルは従来の Arc 共有で perf 崖回避）。台帳＝
-      [docs/captured-outer-cell-sharing.md](docs/captured-outer-cell-sharing.md)。**slice 1〜1.9 landed**（named-sub 捕捉
-      scalar／metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／**captured-outer container `@`/`%` cell 化**／
-      **X-cross metaop thunk scalar writeback**）。OFF survey 16 file まで縮小。**残り**：①並行 cluster ~13（cross-thread
-      cell・最難・最後）②instance-attr コヒーレンス（`parametric-role-of-type`＝Phase 3 cell 領域・別機構）③multi-frame
-      nested-method capture（`methods-instance`）。`:=` bind container/scalar 共有・closure captured scalar は既に done。
-      **これが完了すると env↔locals が乖離しなくなり、§1-A の単一ストア化（env_dirty 削除）が解禁される。**
+- [x] **★env↔locals cell 共有 — captured-outer cell 化／純 writeback コヒーレンス（A の律速・完了）**: nested callee
+      （closure・named sub）／carrier／cross-thread に捕捉＋変異される lexical の writeback コヒーレンスを precise 化。台帳＝
+      [docs/captured-outer-cell-sharing.md](docs/captured-outer-cell-sharing.md)。**slice 1〜1.20 landed**（named-sub 捕捉
+      scalar／metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／container `@`/`%` cell 化／X-cross thunk／
+      nested-method capture／cross-thread shared-var／object 添字代入 invocant／substr-rw・undefine lvalue／zip-topic・LAST
+      phaser／proto `state %`／caller-frame write／param default self-scoping／**cross-thread DESTROY writeback（#3400）**）。
+      **OFF roast survey の純 writeback サーフェスは枯渇**（残は別軸＝下記）。`:=` bind・closure captured scalar も done。
+      **★残る OFF 依存は純 writeback でない別軸 2 のみ**:
+      - **lazy-lists.t 24-26 = laziness バグの露出**（`.kv`/`.pairs`/`.antipairs` が gather を eager force・ON は write-loss
+        で偶然 raku 一致、OFF が正しく伝播して露出）。**修正＝`.kv`/`.pairs`/`.antipairs` の真 lazy 化**（§3-F の L 系と合流・
+        precise-writeback では解けない）。**これが env_dirty 削除の最後の前提。**
+      - IO-Socket-Async.t 5,7 = reactive 並行 flaky（決定的 pin 不可・env_dirty 削除の `blanket_reconcile_if_dirty` 空洞化で実挙動確認）。
+- [ ] **★次の本丸 = lazy-lists 真 lazy 化（→ §1-A 解禁）**: 上記 lazy-lists.t を消化すれば OFF survey が実質クリアし、
+      §2-E（`env_dirty`/`ensure_locals_synced`/`saved_env_dirty` 物理削除）が射程に入る。L 系（§3-F の L2b 系）と合流。
 - [ ] follow-up（pre-existing・小）: `$x = @arr` 共有の method param 版（`method m($n){ $n.push }`）・`is copy` $-param。
       設計＝[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §5。
 
