@@ -159,6 +159,59 @@ impl Interpreter {
         }
     }
 
+    /// `Exception.Str`/`.gist` delegate to `self.message` (raku semantics). When a
+    /// user exception supplies `message` as a *method* (e.g. composed from a
+    /// parameterized role `role X[Str $e] { method message {...} }`) rather than an
+    /// attribute, the native exception Str/gist fast path would otherwise read the
+    /// (absent) `message` attribute and render "X::Foo with no message". Route
+    /// through the user method instead. `.message` already dispatches to the user
+    /// method, so it is unaffected. Returns `Ok(None)` when this case does not
+    /// apply (the caller continues with normal dispatch). Shared by the CallMethod
+    /// and CallMethodMut paths (`$e.Str` on a variable compiles to CallMethodMut).
+    pub(super) fn try_exception_str_via_user_message(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        if !matches!(method, "Str" | "gist") || !args.is_empty() {
+            return Ok(None);
+        }
+        let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target
+        else {
+            return Ok(None);
+        };
+        let cn = class_name.resolve();
+        if !(cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::"))
+            || attributes.as_map().contains_key("message")
+            || !self.has_user_method(&cn, "message")
+            || self.has_user_method(&cn, method)
+        {
+            return Ok(None);
+        }
+        let msg = self.vm_call_method_with_values(target.clone(), "message", vec![])?;
+        let out = if method == "gist" {
+            let bt = attributes
+                .as_map()
+                .get("backtrace")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let m = msg.to_string_value();
+            if bt.is_empty() {
+                Value::str(m)
+            } else {
+                Value::str(format!("{m}\n{bt}"))
+            }
+        } else {
+            Value::str(msg.to_string_value())
+        };
+        Ok(Some(out))
+    }
+
     /// `fail`/`die`/`throw`/`rethrow`/`resume` require a concrete (instance)
     /// invocant. Calling one on an Exception *type object* (e.g. `X::NYI.throw`)
     /// is `X::Parameter::InvalidConcreteness`, not "no such method". Shared by the
@@ -245,6 +298,13 @@ impl Interpreter {
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
             let v = result?;
             self.stack.push(v);
+            return Ok(());
+        }
+        // `Exception.Str`/`.gist` delegate to `self.message` (raku semantics) when
+        // `message` is a user *method* rather than an attribute. See
+        // `try_exception_str_via_user_message`.
+        if let Some(out) = self.try_exception_str_via_user_message(&target, method, &args)? {
+            self.stack.push(out);
             return Ok(());
         }
         // .return method: triggers a return from the enclosing sub with the invocant

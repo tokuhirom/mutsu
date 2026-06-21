@@ -416,6 +416,13 @@ impl Interpreter {
             self.stack.push(v);
             return Ok(());
         }
+        // `Exception.Str`/`.gist` delegate to a user `message` *method* (e.g. from a
+        // parameterized role). `$e.Str` on a variable compiles to CallMethodMut, so
+        // the mut path needs the same interception as CallMethod.
+        if let Some(out) = self.try_exception_str_via_user_message(&target, &method, &args)? {
+            self.stack.push(out);
+            return Ok(());
+        }
         // gist/Str/raku/perl of a genuinely-lazy list renders raku's placeholder
         // (`[...]` in `@` array context, `(...)` for a bare Seq, `...` for Str)
         // rather than forcing the (possibly infinite) sequence. Must run before
