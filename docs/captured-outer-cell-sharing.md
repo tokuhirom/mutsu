@@ -919,22 +919,36 @@ re-flush し increment が文跨ぎで消える（double-OFF で find=4→1・ch
 `$obj~~T;$obj~~U;` の default 潜在バグも直す）。pin=`t/custom-how-type-check-writeback-coherence.t`（6・ON/OFF 両 PASS）。
 **残 roast double-OFF 3**: lazy-lists（laziness 別軸）／throttle（timing・flaky 系）／terminator（auto-curly composer・parser）。
 
-### 10.19 ハンドオフ — roast double-OFF 残 3（S17 後・2026-06-22）
+### 10.22 slice S18（2026-06-22）— EVAL carrier の scalar 再代入 writeback を container slot にも適用（roast 3→2）
 
-S4〜S17（15 slice）で **roast double-OFF surface 25 → 3**。全 whitelist（1285）の double-OFF sweep
-（`MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1` release）で確定した残 3（**全て writeback でない別軸**・新規回帰ゼロ）:
+`my $z = []; EVAL q'$z = do { 1 } + 2;'; is $z, 1` = EVAL carrier が captured-outer caller scalar `$z` を **container を
+保持していた slot に** scalar 再代入する。**真因＝`writeback_carrier_writes`（vm_env_helpers.rs）の reconcile 適格判定が
+「古い slot 値が scalar か」だった**: `my $z = []`（slot=Array）→ EVAL の `$z = 1`（env=Int）writeback 時、slot の現在値が
+Array なので scalar 分岐をスキップ → container 保護分岐（COW `:=` cell hazard 回避で上書き拒否）→ blanket reconcile
+（double-OFF で no-op）頼みになり slot が stale Array のまま。**この case は誤って「parser（auto-curly）」と分類されていたが
+実体は EVAL carrier scalar writeback**（normal は z=1・auto-curly parse は正常・double-OFF だけ z=[]）。**修正**: 適格判定を
+**新しい env 値が scalar か**に変更（`is_writeback_safe_scalar(&env_val)` ＋ slot が `:=` bind cell＝`ContainerRef`/`HashSlotRef`
+でないこと）。scalar 新値は container COW-copy hazard を持たないので、slot が以前 container を持っていても安全に上書き可。
+`my @e = …; EVAL q'@e = 7,8'`（container→container）は新値が container なので従来の保護分岐のまま＝非該当。`:=` bind cell
+（`t/element-bind-cell.t`・`S03-binding/nested.t`・`arrays.t`）両モード PASS で回帰なし。pin=`t/eval-carrier-scalar-writeback-coherence.t`
+（6・ON/OFF 両 PASS）。**この修正は一般的**（任意の `EVAL q'$x = scalar'` で container を持っていた slot を救う）。
+**残 roast double-OFF 2**: lazy-lists（laziness 別軸）／throttle（timing・flaky 系）。
+
+### 10.19 ハンドオフ — roast double-OFF 残 2（S18 後・2026-06-22）
+
+S4〜S18（16 slice）で **roast double-OFF surface 25 → 2**。全 whitelist（1285）の double-OFF sweep
+（`MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1` release）で確定した残 2（**両方 writeback でない別軸**・新規回帰ゼロ）:
 
 | file | サブテスト | 種別 | 次の一手 |
 |---|---|---|---|
 | `S02-types/lazy-lists.t` | 14,16 | **別軸（laziness）** | `grep is lazy`/`map is lazy`。writeback でなく lazy 化の問題（L 系）。env_dirty とは独立。 |
 | `S17-supply/throttle.t` | 3,4 | **別軸（timing）** | `.5〜.8 秒差`のタイミングアサート。flaky 系。env_dirty と無関係の可能性大。 |
-| `S04-statements/terminator.t` | 12 | **別軸（parser）** | `auto-curly applies inside array composer`。parser の問題で writeback でない。 |
 
-**∴ writeback 候補は枯渇**（S16 proto-multi・S17 custom-HOW で消化）。**残 3 は全て別軸**（laziness/timing/parser）で、
-env_dirty 物理削除の前提から外せるか精査が必要: ①lazy-lists＝`grep/map is lazy`（L 系・別途 lazy 化が前提・writeback では
-解けない）②throttle＝timing flaky（決定的 pin 不可・env_dirty と無関係の可能性大）③terminator＝parser（auto-curly・別軸）。
-**次セッション**: これら 3 が env_dirty 削除をブロックしないことを確認（lazy-lists の double-OFF fail が writeback でなく純粋に
-laziness 由来か、throttle が flaky か、terminator が parser-only か）→ ブロックしなければ §7.4 / PLAN §2-E（`env_dirty` 物理削除：
+**∴ writeback 候補は枯渇**（S16 proto-multi・S17 custom-HOW・S18 EVAL container-slot scalar writeback で消化）。**残 2 は
+両方 writeback でない別軸**（laziness/timing）。**★terminator は parser 誤分類で実体は EVAL writeback だった（S18 で消化）＝
+ハンドオフの「別軸」分類は要再検証の教訓**。**次セッション**: 残 2 が env_dirty 削除をブロックしないことを確認（lazy-lists の
+double-OFF fail が writeback でなく純粋に laziness 由来か、throttle が flaky か・両方とも writeback-snapshot 機構では拾えない）
+→ ブロックしなければ §7.4 / PLAN §2-E（`env_dirty` 物理削除：
 `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 → `env_dirty`/`ensure_locals_synced`/`saved_env_dirty`
 削除 → `cell_boxing_active()` gate 撤去）に着手できる。診断ファイル＝`tmp/roast-double-off-final-fails.txt`。
 **★S16/S17 の共通教訓**: slow path（`run_instance_method_resolved`）経由の dispatch（proto-multi 候補・custom HOW メソッド）は

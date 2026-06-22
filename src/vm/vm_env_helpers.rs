@@ -645,7 +645,25 @@ impl Interpreter {
             // A plain scalar is safe to copy from env: it carries no live `:=`
             // cell, so overwriting the slot cannot clobber shared state. This is
             // the common EVAL case (`$x = scalar`).
-            if Self::is_writeback_safe_scalar(&self.locals[i]) {
+            //
+            // The eligibility is on the *new env value*, not the old slot value:
+            // when the carrier reassigned the variable to a plain scalar (the env
+            // now holds e.g. `Int(1)`), writing it through is safe regardless of
+            // what the slot held before — there is no container COW-copy hazard in
+            // a scalar value. This covers `my $a = []; EVAL q'$a = 1'` (slot held
+            // an Array, env now holds a scalar), which the old "slot is a scalar"
+            // test missed, leaving it to the blanket reconcile (a no-op under
+            // double-OFF, so `$a` stayed the stale Array). The only excluded slots
+            // are live `:=` binding cells (ContainerRef/HashSlotRef), where the
+            // slot must keep routing through the bound cell.
+            let new_is_scalar = Self::is_writeback_safe_scalar(&env_val);
+            let slot_is_bind_cell = matches!(
+                &self.locals[i],
+                Value::ContainerRef(_) | Value::HashSlotRef { .. }
+            );
+            if Self::is_writeback_safe_scalar(&self.locals[i])
+                || (new_is_scalar && !slot_is_bind_cell)
+            {
                 self.locals[i] = env_val;
                 continue;
             }

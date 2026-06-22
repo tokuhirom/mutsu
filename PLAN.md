@@ -81,12 +81,16 @@
     `call_how_method_recording_writeback`（HOW 呼び出し前後 env scalar スナップショット差分→`pending_caller_var_writeback`）
     経由に置換 → smartmatch op 末尾の `apply_pending_caller_var_writeback` が drain・primitives 消化）。**counter が
     read-modify-write なので文跨ぎで消える**のが厄介。S16 同様 ungated（custom-HOW dispatch 限定スコープ）。
-    **★writeback 候補は枯渇**（S16 proto-multi・S17 custom-HOW）。**残 3 は全て別軸**: ①lazy-lists（**laziness 別軸・
-    writeback でない**・L 系 lazy 化が前提）②throttle（timing・flaky 系・決定的 pin 不可）③terminator（auto-curly array
-    composer・**parser・writeback でない**）。**次セッション**: 残 3 が env_dirty 削除をブロックしないことを確認 → §2-E 着手。
+    **S18（#TBD・3→2）= EVAL carrier の scalar 再代入 writeback を container slot にも適用**（`my $z=[]; EVAL q'$z=1'`
+    の writeback が `writeback_carrier_writes`〔vm_env_helpers.rs〕で「古い slot 値が scalar か」判定だったため Array slot を
+    スキップ→上書き拒否→blanket reconcile 頼み。適格判定を**新 env 値が scalar か**＋slot が `:=` bind cell でないことに変更）。
+    **★terminator は「parser/auto-curly」誤分類で実体は EVAL writeback だった**（normal=z=1・double-OFF だけ z=[]）。一般的修正。
+    **★writeback 候補は枯渇**（S16 proto-multi・S17 custom-HOW・S18 EVAL container-slot scalar）。**残 2 は両方 writeback で
+    ない別軸**: ①lazy-lists（**laziness 別軸**・L 系 lazy 化が前提）②throttle（timing・flaky 系・決定的 pin 不可）。
+    **次セッション**: 残 2 が env_dirty 削除をブロックしないことを確認 → §2-E 着手。
 - **✅ env↔locals 純 writeback コヒーレンス（blanket ON 下）は完了**（slice 1〜1.20・#3400）。lazy-lists.t laziness も
   解消（#3403）。OFF roast survey（blanket OFF）の決定的サーフェスは IO-Socket-Async.t flaky のみ。
-- **∴ 次 = roast double-OFF 残 3（別軸＝laziness/timing/parser）が env_dirty 削除をブロックしないか確認 → `env_dirty` 物理削除（§2-E）**:
+- **∴ 次 = roast double-OFF 残 2（別軸＝laziness/timing）が env_dirty 削除をブロックしないか確認 → `env_dirty` 物理削除（§2-E）**:
   `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 → `env_dirty`/`ensure_locals_synced`/
   `saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
 
