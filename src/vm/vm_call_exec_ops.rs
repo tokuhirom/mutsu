@@ -177,11 +177,33 @@ impl Interpreter {
         // Keeps the blanket: deep `:=` bind-cell mutations through interpreter
         // builtins are not name-trackable and dropping the net corrupts cell
         // coherence (the CP-2 wall; t/element-bind-cell.t). See docs/vm-single-store.md.
+        //
+        // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a block
+        // Test function (`lives-ok { $b<a> = 42 }`) mutates a captured-outer
+        // Set/Bag/Mix through env, which `writeback_carrier_writes` leaves to the
+        // (now-removable) blanket pull. Snapshot the caller frame's slot-backing env
+        // values for the COW aggregate types (scalars + Set/Bag/Mix) before the
+        // carrier, then write through only the slots whose env value changed. Plain
+        // Array/Hash and Instance slots are deliberately excluded (see
+        // `is_carrier_writeback_aggregate`). Armed only under boxing; the default
+        // build keeps the blanket pull (byte-identical).
+        let armed = self.cell_boxing_active();
+        let pre_env: Vec<Option<Value>> = if armed {
+            code.locals
+                .iter()
+                .map(|n| self.carrier_snapshot_env_value(n))
+                .collect()
+        } else {
+            Vec::new()
+        };
         let carrier_saved = self.begin_carrier();
         let exec_result = loan_env!(self, exec_call_pairs_values(&name, args));
         let written = self.end_carrier(carrier_saved);
         exec_result?;
         self.writeback_carrier_writes(code, &written);
+        if armed {
+            self.carrier_writeback_changed_aggregates(code, &pre_env);
+        }
         self.env_dirty = true;
         // Stage 3: a block-taking Test function (`lives-ok { ... }`,
         // `throws-like`, ...) routes here (its `__mutsu_test_callsite_line`

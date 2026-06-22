@@ -422,6 +422,68 @@ impl Interpreter {
         written
     }
 
+    /// Snapshot the env value backing local `name` for the carrier aggregate
+    /// writeback (`carrier_writeback_changed_aggregates`). Returns the value only
+    /// for the *cell-free aggregate* types it reconciles (scalar / Set / Bag /
+    /// Mix / Instance); anything else (plain Array/Hash, binding cells) snapshots
+    /// as `None` so the post-carrier diff never overwrites it. Resolves the
+    /// sigil-stripped fallback key the same way the blanket reconcile does.
+    pub(super) fn carrier_snapshot_env_value(&self, name: &str) -> Option<Value> {
+        let v = self.env().get(name).cloned().or_else(|| {
+            name.strip_prefix('$')
+                .or_else(|| name.strip_prefix('@'))
+                .or_else(|| name.strip_prefix('%'))
+                .or_else(|| name.strip_prefix('&'))
+                .and_then(|b| self.env().get(b).cloned())
+        })?;
+        if Self::is_carrier_writeback_aggregate(&v) {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    /// Whether `v` is a cell-free aggregate the carrier writeback may overwrite a
+    /// slot with: a writeback-safe scalar, or a Set/Bag/Mix. Those use COW
+    /// `Arc<…Data>` storage, so a carrier's in-place mutation detaches a fresh Arc
+    /// (the pre-carrier snapshot still holds the old one) and the post-carrier diff
+    /// reliably detects the change. Plain Array/Hash are excluded (env may hold a
+    /// COW-detached copy that would clobber a live interior `:=` element cell), and
+    /// so is `Instance`: its attributes live in a *shared* `Arc<RwLock>` cell that
+    /// mutates in place, so the snapshot shares the cell and the diff can never see
+    /// the change — the Instance rw-accessor surface needs its own slice.
+    pub(super) fn is_carrier_writeback_aggregate(v: &Value) -> bool {
+        Self::is_writeback_safe_scalar(v)
+            || matches!(v, Value::Set(..) | Value::Bag(..) | Value::Mix(..))
+    }
+
+    /// Post-carrier (`lives-ok { … }` / block Test fn) precise writeback for
+    /// cell-free aggregate caller lexicals: for each local whose env value is now
+    /// a different aggregate than `pre_env[i]`, write it through to the slot. The
+    /// double-OFF replacement for the blanket reconcile, restricted to the types
+    /// that carry no live `:=` cell. Skips `!attr` and live binding-cell slots.
+    pub(super) fn carrier_writeback_changed_aggregates(
+        &mut self,
+        code: &CompiledCode,
+        pre_env: &[Option<Value>],
+    ) {
+        for (i, name) in code.locals.iter().enumerate() {
+            if name.starts_with('!')
+                || matches!(
+                    self.locals[i],
+                    Value::HashSlotRef { .. } | Value::ContainerRef(_)
+                )
+            {
+                continue;
+            }
+            let cur = self.carrier_snapshot_env_value(name);
+            let Some(cur) = cur else { continue };
+            if pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur)) {
+                self.locals[i] = cur;
+            }
+        }
+    }
+
     /// A local value that is safe to overwrite from env during a carrier
     /// writeback: an immutable, cell-free scalar. A container (Array/Hash/...),
     /// an Instance, or a binding cell/ref may hold *live* `:=` cells whose

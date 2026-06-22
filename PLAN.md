@@ -62,12 +62,14 @@
     第45「OFF roast survey こそ authoritative」と同型）。診断＝`tmp/roast-double-off-fails.txt`。env_dirty 削除は roast
     25→0 が前提。**S8（#3418・25→22）= user `.defined`（andthen/orelse/notandthen）**（CallDefined snapshot・1 修正 3 file）。
     **S9（#3419・22→21）= symbolic-deref store（`$::()=`/`::('$x')=`）**（`note_caller_env_write` ログ・scalar）。
-    **S10（#TBD・21→20）= user Proxy STORE（lvalue sub）**（`assign_proxy_lvalue` の env scalar スナップショット差分）。
-    残 20 = S14 roles 5／S02 types set系 3（lives-ok container carrier・`:=` hazard）／S02 names our.t 1（EVAL+class+
-    `$GLOBAL::`）／Pair rw aliasing（kv/pointy-rw 2）／その他（docs §10.10 にカテゴリ表）。
+    **S10（#3421・21→20）= user Proxy STORE（lvalue sub）**（`assign_proxy_lvalue` の env scalar スナップショット差分）。
+    **S11（#TBD・20→17）= lives-ok container carrier の Set/Bag/Mix writeback**（`exec_call_pairs_op` の COW aggregate
+    スナップショット差分・Array/Hash と Instance は除外）。残 17 = S14 roles 5（うち rw.t = Instance rw-accessor の
+    shared-cell・snapshot 不可・別手法要）／S02 names our.t 1（EVAL+class+`$GLOBAL::`）／Pair rw aliasing（kv/pointy-rw 2）／
+    その他（docs §10.10 にカテゴリ表）。
 - **✅ env↔locals 純 writeback コヒーレンス（blanket ON 下）は完了**（slice 1〜1.20・#3400）。lazy-lists.t laziness も
   解消（#3403）。OFF roast survey（blanket OFF）の決定的サーフェスは IO-Socket-Async.t flaky のみ。
-- **∴ 次 = roast double-OFF 20→0 を slice で消化 → `env_dirty` 物理削除（§2-E）**:
+- **∴ 次 = roast double-OFF 17→0 を slice で消化 → `env_dirty` 物理削除（§2-E）**:
   `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 → `env_dirty`/`ensure_locals_synced`/
   `saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
 

@@ -805,3 +805,16 @@ blanket reconcile（double-OFF で no-op）でしか届かず stale（double-OFF
 （`is_writeback_safe_scalar` フィルタ）なので container/`:=` cell hazard なし。`cell_boxing_active()` ガード＝default は
 blanket reconcile が担う＝バイト不変。pin=roast/S06-routine-modifiers/lvalue-subroutines.t（double-OFF で PASS 化）。
 **残 roast double-OFF 20**。
+
+### 10.14 slice S11（2026-06-22）— lives-ok container carrier の Set/Bag/Mix writeback を precise 化（roast 20→17）
+
+`my $b=(…).BagHash; lives-ok { $b<a> = 42 }; is $b<a>, 42` = block Test fn（`lives-ok`/`dies-ok`＝`exec_call_pairs_op`
+carrier）が captured-outer の Set/Bag/Mix を env 経由で変異するが、`writeback_carrier_writes` は container slot を保護的に
+スキップ（barrier 任せ）するため double-OFF で stale。**修正**: carrier 実行**前後で env をスナップショット**し、変化した
+slot を write-through。**対象を COW aggregate（scalar + Set/Bag/Mix）に限定**＝`Value::Set/Bag/Mix(Arc<…Data>)` は
+in-place 変異で `make_mut` が COW し新 Arc へ detach する（pre snapshot は旧 Arc を保持）ので差分検出が確実。**Array/Hash
+除外**（env が COW-detach コピーで interior `:=` element cell を破壊する hazard）。**★Instance も除外**＝attributes が
+`Arc<RwLock>` の **shared cell** で in-place 変異するため snapshot が cell を共有し pre==post で差分検出**不可**（Instance
+rw-accessor は別スライス＝S14-roles/rw.t に残置）。`cell_boxing_active()` ガード＝default はバイト不変。
+回帰確認: element-bind-cell/S03-binding nested・arrays/set・mix 全 PASS（`:=` hazard なし）。pin=roast/S02-types/{baghash,
+mixhash,set}.t（double-OFF で PASS 化）。**残 roast double-OFF 17**（rw.t Instance rw-accessor 含む）。
