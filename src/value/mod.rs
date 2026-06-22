@@ -1357,7 +1357,14 @@ impl HashData {
     /// hashes. Plain string keys yield `Value::Pair`; non-string typed keys
     /// (object hashes) yield `Value::ValuePair`. Behaviour-neutral for plain
     /// hashes (returns `Value::Pair(str_key, value)` as before).
+    /// Build a `Pair` for a hash entry `(str_key, value)`, honoring object-hash
+    /// typed keys. The value is decontainerized: a hash element is stored as a
+    /// `ContainerRef` cell, but the pair must carry the inner value (matching a
+    /// `%h<k>` read and `.values`) — otherwise iterating a hash as pairs leaks
+    /// the cell and `+`/`.elems` on the pair value misbehave (the cell counts as
+    /// a single scalar item). See t/bind-hash-value-pairs.t.
     pub fn typed_pair(&self, str_key: &str, value: Value) -> Value {
+        let value = value.deref_container();
         match self.typed_key(str_key) {
             Value::Str(s) => Value::Pair((*s).clone(), Box::new(value)),
             other => Value::ValuePair(Box::new(other), Box::new(value)),
