@@ -436,6 +436,36 @@ impl Interpreter {
             updated_attrs.insert("named".to_string(), Value::hash(updated_named));
         }
 
+        // Recurse into positional captures (numbered `( )` groups). A `( )` group
+        // is an anonymous capture boundary: named rules matched inside it (e.g.
+        // `( <.request-line> )` whose request-line contains `<method>`/`<path>`)
+        // are stored under the group's own Match, not flattened up to this rule,
+        // so the named-children walk above never reaches them. Recurse into each
+        // positional child so their nested actions still fire. The anonymous group
+        // itself has no action method (dispatch falls through as method-not-found
+        // and is silently skipped); only its descendants' actions run.
+        if let Some(Value::Array(pos_arr, pos_meta)) = attributes.as_map().get("list") {
+            let mut updated_pos = Vec::with_capacity(pos_arr.len());
+            for item in pos_arr.iter() {
+                // Only Match instances carry nested captures worth recursing into;
+                // pass anything else through untouched.
+                if matches!(item, Value::Instance { .. }) {
+                    let updated_item =
+                        self.invoke_grammar_actions(item.clone(), actions, "__anon_capture_group")?;
+                    updated_pos.push(updated_item);
+                } else {
+                    updated_pos.push(item.clone());
+                }
+            }
+            updated_attrs.insert(
+                "list".to_string(),
+                Value::Array(
+                    Arc::new(crate::value::ArrayData::new(updated_pos)),
+                    *pos_meta,
+                ),
+            );
+        }
+
         // Rebuild match_obj with updated children
         let match_obj = Value::make_instance(class_name, (updated_attrs.clone()).to_map());
 
