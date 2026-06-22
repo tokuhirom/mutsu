@@ -713,6 +713,23 @@ pub fn raku_value(v: &Value) -> String {
         Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
             setbagmix_raku(v).unwrap_or_else(|| v.to_string_value())
         }
+        Value::Mixin(inner, mixins) => {
+            // An allomorphic value (IntStr/RatStr/NumStr/ComplexStr) renders as
+            // `TypeStr.new(<numeric>, "<original string>")` — e.g. `<42>.raku`
+            // → `IntStr.new(42, "42")`, `<1e3>.raku` → `NumStr.new(1000e0, "1e3")`
+            // (the string half preserves the source literal). The numeric half is
+            // the inner value's `.raku`. A non-allomorphic mixin falls back to its
+            // inner value's `.raku`.
+            if let Some(name) = crate::value::types::allomorph_type_name(inner, mixins) {
+                let str_repr = mixins
+                    .get("Str")
+                    .map(raku_value)
+                    .unwrap_or_else(|| "\"\"".to_string());
+                format!("{}.new({}, {})", name, raku_value(inner), str_repr)
+            } else {
+                raku_value(inner)
+            }
+        }
         other => other.to_string_value(),
     }
 }

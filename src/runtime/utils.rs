@@ -1125,6 +1125,18 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // `$(...)` itemized container: `.gist` never shows the itemization sigil,
         // so it gists exactly like its inner value (`${a=>1}.gist` → `{a => 1}`).
         Value::Scalar(inner) => gist_value(inner),
+        // An allomorph (IntStr/NumStr/…) gists as its preserved source string
+        // (`<1e3>.gist` → `1e3`, not the inner Num's `1000`); a general mixin
+        // gists via its inner value.
+        Value::Mixin(inner, mixins) => {
+            if crate::value::types::allomorph_type_name(inner, mixins).is_some()
+                && let Some(str_val) = mixins.get("Str")
+            {
+                str_val.to_string_value()
+            } else {
+                gist_value(inner)
+            }
+        }
         _ => value.to_string_value(),
     }
 }
