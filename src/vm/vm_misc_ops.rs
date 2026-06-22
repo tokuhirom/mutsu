@@ -1559,6 +1559,13 @@ impl Interpreter {
             {
                 let proxy_val = current_proxy.unwrap();
                 loan_env!(self, assign_proxy_lvalue(proxy_val, val.clone()))?;
+                // A Proxy STORE (e.g. `$r := substr-rw($str, ...); $r = v`) mutates
+                // the referent caller lexical (`$str`) by name in env. The STORE
+                // records the referent on the retain-on-miss writeback list
+                // (`record_caller_var_writeback`); drain it here so the owner's slot
+                // is refreshed precisely without the blanket env→locals pull
+                // (substrate step toward env_dirty removal; byte-identical under ON).
+                self.apply_pending_rw_writeback(code);
                 self.stack.push(val);
                 return Ok(());
             }

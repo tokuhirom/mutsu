@@ -251,6 +251,10 @@ impl Interpreter {
                 // Single-store coherence: refresh the caller's local slot from the
                 // env write below (same as substr-rw / object subscript assign).
                 self.pending_rw_writeback_sources.push(vname.clone());
+                // Also record on the retain-on-miss list so the bound-Proxy form
+                // (`my $r := undefine(...); $r = v`) — whose STORE runs a frame
+                // below the slot owner — reaches the owner's slot too.
+                self.record_caller_var_writeback(&vname);
                 self.env.insert(vname.clone(), value.clone());
                 return Ok(value);
             }
@@ -278,6 +282,9 @@ impl Interpreter {
             // drains the env value into the slot precisely (no blanket pull).
             if let Some(ref tv) = target_var {
                 self.pending_rw_writeback_sources.push(tv.clone());
+                // Retain-on-miss too, for the bound-Proxy form (`my $r :=
+                // substr-rw($s, ...); $r = v`) whose STORE runs below the owner.
+                self.record_caller_var_writeback(tv);
             }
             return self.assign_method_lvalue_with_values(
                 target_var.as_deref(),
@@ -306,6 +313,8 @@ impl Interpreter {
             };
             if let Some(ref tv) = target_var {
                 self.pending_rw_writeback_sources.push(tv.clone());
+                // Retain-on-miss too, for the bound-Proxy form.
+                self.record_caller_var_writeback(tv);
             }
             return self.assign_method_lvalue_with_values(
                 target_var.as_deref(),
