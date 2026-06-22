@@ -196,6 +196,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(regex::version_lit(input));
         try_primary!(ident::keyword_literal(input));
         try_primary!(regex::topic_method_call(input));
+        try_primary!(container::itemized_context_paren_expr(input));
         try_primary!(container::itemized_paren_expr(input));
         try_primary!(container::itemized_bracket_expr(input));
         try_primary!(container::itemized_brace_expr(input));
