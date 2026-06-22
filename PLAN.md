@@ -65,13 +65,16 @@
     **S10（#3421・21→20）= user Proxy STORE（lvalue sub）**（`assign_proxy_lvalue` の env scalar スナップショット差分）。
     **S11（#3426・20→17）= lives-ok container carrier の Set/Bag/Mix writeback**（`exec_call_pairs_op` のスナップショット差分）。
     **S12（#3428・17→11）= 同 writeback の eligibility を slot-overwritable に拡張**（slot 現在値型で判定）。**6 file 消化**
-    （our／pointy-rw／gather／coercion-methods／rw／kv）。**S13（#TBD・11→7）= does/but mixin の captured-outer writeback**
+    （our／pointy-rw／gather／coercion-methods／rw／kv）。**S13（#3430・11→7）= does/but mixin の captured-outer writeback**
     （①`Mixin` PartialEq inner 委譲対策の discriminant 差分判定 ②does/but op に carrier snapshot 差分 ③Hash slot 型変化の
-    上書き許可）＝S14 `does`-mixin 4 消化（anonymous/mixin-6e/parameterized-mixin/submethods-6e）。**S14（#TBD・7→6）= param `where` clause の captured-outer
+    上書き許可）＝S14 roles `does`-mixin 4 消化（anonymous/mixin-6e/parameterized-mixin/submethods-6e）。**S14（#3432・7→6）= param `where` clause の captured-outer
     writeback**（`types/binding.rs` の where-eval 前後 env scalar スナップショット差分→`pending_caller_var_writeback`・
-    named-parameters 消化）。**S15（#TBD・6→5）= CAS block の captured-outer writeback**（`builtin_cas_var` の block 実行
-    前後 env scalar スナップショット差分→`pending_caller_var_writeback`・cas-loop 消化）。残 5 = defer-next（multi-dispatch）／
-    primitives（meta compose）／lazy-lists（laziness 別軸）／throttle（timing）／terminator（parser）。
+    named-parameters 消化）。**S15（#3433・6→5）= CAS block の captured-outer writeback**（`builtin_cas_var` の block 実行
+    前後 env scalar スナップショット差分→`pending_caller_var_writeback`・cas-loop 消化）。
+    **残 5（next-session 着手順）**: ①**defer-next**（multi-method `&?ROUTINE.dispatcher()` deferral・minimal repro は PASS＝
+    full test の特定候補構造のエッジケース・要深掘り）②**primitives**（meta compose・要 slot-only 判定）③lazy-lists
+    （**laziness 別軸・writeback でない**）④throttle（timing・flaky 系）⑤terminator（auto-curly array composer・**parser・
+    writeback でない**）。①②が writeback 候補、③④⑤は別軸。slot-only 判定法＝closure経由 vs direct 読みの差（closure=env/direct=slot）。
 - **✅ env↔locals 純 writeback コヒーレンス（blanket ON 下）は完了**（slice 1〜1.20・#3400）。lazy-lists.t laziness も
   解消（#3403）。OFF roast survey（blanket OFF）の決定的サーフェスは IO-Socket-Async.t flaky のみ。
 - **∴ 次 = roast double-OFF 5→0 を slice で消化 → `env_dirty` 物理削除（§2-E）**:
