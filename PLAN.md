@@ -215,11 +215,14 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
       `loaded_modules` ゲート）、`to-json`/`from-json` を Rust ネイティブ実装（`src/runtime/json.rs`、ディスパッチは
       `src/vm/vm_native_json.rs`）。raku JSON::Fast とバイト一致（pretty 2-space / `:!pretty` / `:sorted-keys` / `:spacing`、
       Rat→`.0`・Num→`e0`、null→`Any`、decimal→Rat・exp→Num、surrogate escape）。テスト `t/json.t`（34 件）。
-  - **残ブロッカー（JSON とは独立）: Template::Mustache 91/92-specs。** ハーネス TestUtil の `%specs{ .basename } := %data<tests>`
-    後に `%specs.head.value.head<template>` が「Type Array does not support associative indexing」で死ぬ。原因＝`:=` で hash 要素に
-    束縛した Array が `.head.value`（Pair.value）経由で **itemized** に見え（`.elems`=1、`.head`＝配列自体）、`<template>` 添字で失敗。
-    `my %h; %h{"k"} := @arr; %h.head.value.head` で JSON 抜きに再現する一般バグ（container-identity 系、`pair-value-container-three-facets`
-    と同族・高 blast-radius）。JSON 機能自体は完動。
+  - [x] **hash 要素 cell の pair-value デコンテナ化（#TBD, 2026-06-22）。** `%specs{ .basename } := %data<tests>` 後の
+    `%specs.head.value.head<template>` が「Type Array does not support associative indexing」で死んでいた原因を修正。
+    hash 要素は `ContainerRef` cell で格納されるが、hash を pairs として反復（`.pairs`/`.head`/`.kv`/`.antipairs`/`.sort`）する
+    際に cell を Pair 値へそのまま入れていた（`%h<k>` 読み・`.values` は deref していたのに不整合）→ `+`/`.elems` が cell を
+    単一スカラ扱い。`typed_pair`（hash→pair の中心）＋ `.pairs`/`.kv`/`.antipairs` で `deref_container()` 適用。テスト
+    `t/bind-hash-value-pairs.t`（14 件）。**これで 91/92-specs のハーネスが実際の spec を走るようになった。**
+  - **91/92-specs の残（別軸・本タスク外）**: 実 spec の rendering ギャップ（delimiter 永続化／inheritable partials／lambda）と、
+    最初の spec のみ `+$spec.value`=0 になる subtest/Seq-consumption 系バグ。いずれも itemization とは独立。
 - [ ] **ユーティリティ:**
   - [x] **File::Temp 0.0.12 — 完動（#3399, 2026-06-22）。** `tempfile`/`tempdir` 実ファイル生成・
     write→read・END cleanup・`File::Directory::Tree` 依存ロードまで raku 一致。ブロッカーだった

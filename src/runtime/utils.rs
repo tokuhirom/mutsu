@@ -2012,6 +2012,8 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         // An itemized hash (`item %h` / `$(%h)`) is a single list element and does
         // NOT flatten to its pairs (mirrors the itemized-Array arm above).
         Value::Hash(items) if items.itemized => vec![val.clone()],
+        // `typed_pair` decontainerizes element cells so the pair value matches a
+        // `%h<k>` read / `.values` (see t/bind-hash-value-pairs.t).
         Value::Hash(items) => items
             .iter()
             .map(|(k, v)| items.typed_pair(k, v.clone()))

@@ -486,7 +486,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         } else {
                             kv.push(Value::hash_key_decode(k));
                         }
-                        kv.push(v.clone());
+                        // Decontainerize element cells (see t/bind-hash-value-pairs.t).
+                        kv.push(v.deref_container());
                     }
                     Some(Ok(Value::Seq(Arc::new(kv))))
                 }
@@ -563,18 +564,20 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             match target {
                 Value::Hash(items) => {
                     let has_orig = crate::runtime::utils::hash_uses_typed_keys(target);
+                    // Decontainerize element cells so the pair value matches a
+                    // `%h<k>` read / `.values` (see t/bind-hash-value-pairs.t).
                     let pairs: Vec<Value> = if has_orig {
                         items
                             .iter()
                             .map(|(k, v)| {
                                 let typed_k = crate::runtime::utils::hash_typed_key(target, k);
-                                Value::ValuePair(Box::new(typed_k), Box::new(v.clone()))
+                                Value::ValuePair(Box::new(typed_k), Box::new(v.deref_container()))
                             })
                             .collect()
                     } else {
                         items
                             .iter()
-                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.deref_container())))
                             .collect()
                     };
                     Some(Ok(Value::Seq(Arc::new(pairs))))
@@ -663,9 +666,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         .iter()
                         .map(|(k, v)| {
                             let orig_key = crate::runtime::utils::hash_typed_key(target, k);
-                            match v {
+                            // Decontainerize element cells (see t/bind-hash-value-pairs.t).
+                            match v.deref_container() {
                                 Value::Str(s) => Value::Pair(s.to_string(), Box::new(orig_key)),
-                                _ => Value::ValuePair(Box::new(v.clone()), Box::new(orig_key)),
+                                dv => Value::ValuePair(Box::new(dv), Box::new(orig_key)),
                             }
                         })
                         .collect();
