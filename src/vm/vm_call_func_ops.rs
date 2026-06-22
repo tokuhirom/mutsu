@@ -521,9 +521,12 @@ impl Interpreter {
         {
             let result = self.vm_call_sub_value(sub_val, args, false)?;
             // Slice F (multi-frame coherence): a wrapper closure (`&f.wrap(-> {
-            // $seen = True; callsame })`) mutates a captured caller lexical by
-            // name. This branch blanket-marks `env_dirty`, so reconcile the
-            // caller's slots from env too — the reverse pull would have, in ON.
+            // $seen = True; callsame })`) mutates a captured caller lexical by name.
+            // The closure dispatch recorded it precisely (`pending_*_writeback`);
+            // drain it so the caller's slot refreshes without the blanket env→locals
+            // pull (env_dirty-removal substrate). The blanket reconcile stays as the
+            // fallback (no-op under the substrate harness).
+            self.apply_pending_rw_writeback(code);
             self.reconcile_locals_from_env_at_site(code);
             self.stack.push(result);
             self.env_dirty = true;

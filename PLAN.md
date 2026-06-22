@@ -45,23 +45,21 @@
 - ✅ **reverse pull（`sync_locals_from_env`）撤去済み（#3354, 2026-06-21）**。第27〜40セッションの write-through
   グラインド（約30 PR・roast OFF 依存 16/16 を precise 化）で「reverse pull なしで全 t/+roast green」を達成し、
   危険な同期処理を削除。**二重ストアの correctness hazard は解消。**
-- 🔴 **残る `env_dirty` の物理削除はブロック中**。`env_dirty` はもはや correctness 機構ではなく、
-  precise reconcile（`reconcile_locals_from_env_at_site`）のゲート＝安価な perf 最適化に降格している。
-  だが完全削除には壁がある:
-  - **multi-frame accumulation の壁（2026-06-21 実証）**: `via(); via()`（A→B→外側変数書込を2回）の累積は
-    env_dirty-gated の blanket reconcile が支える唯一の機構。precise な単フレーム drain では届かず、source を
-    親へ持ち越す retention 方式も drain 順序に脆弱で**置換不可**（実験で確認・revert 済）。
-  - **根本**: 置き場が2つある限り「env を名前書きした→slot が stale かも」という目印は何らかの形で必要。
-    `env_dirty` を真に消すには **env を locals の派生ビュー化＝単一ストア化**が要り、それは
-    **env↔locals が同一コンテナ cell を共有する**こと（前提①）が前提。
-- **✅ env↔locals 純 writeback コヒーレンスは完了**（slice 1〜1.20・#3400 まで）。OFF roast survey の純 writeback
-  サーフェスは枯渇。
-- **✅ lazy-lists.t laziness バグも解消（2026-06-22）**: `.kv`/`.pairs`/`.antipairs` を lazy index-pipe 化（lazy ソース
-  上で eager force しない）。`S02-types/lazy-lists.t` 24-26 が OFF でも PASS。OFF roast survey の決定的サーフェスは
-  **IO-Socket-Async.t の reactive 並行 flaky のみ**（決定的 pin 不可）。
-- **∴ `env_dirty` 物理削除（§2-E）が射程に入った。** `blanket_reconcile_if_dirty` 空洞化 → `env_dirty`/
-  `ensure_locals_synced`/`saved_env_dirty` 削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
-  IO-Socket-Async の flaky はこの空洞化で実挙動を確認する。
+- 🟡 **`env_dirty` 物理削除は substrate グラインド進行中**（2026-06-22 着手）。実証で判明: `env_dirty` は
+  ①blanket reconcile のゲート（boxing 下で無効＝除去可）と②**精密 reconcile（`reconcile_locals_from_env_at_site`・
+  carrier/Proxy STORE/let-temp/closure 等のサイト）の perf ゲート（boxing 下でも load-bearing）**の2役。完全削除には
+  精密 reconcile も不要化＝精密 reconcile 依存 surface を一つずつ precise writeback / cell 共有へ畳む必要がある。
+  - **計測ハーネス `MUTSU_NO_PRECISE_RECONCILE`**（#3406）: `MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1`
+    （double-OFF）＝boxing のみ＝env_dirty 削除後の到達状態。残 fail = 未変換 by-name writer。0（flaky 除く）で削除可能。
+  - **double-OFF surface: 16 → 10**（2026-06-22・3 slice landed）: S1 bound-Proxy substr-rw/subbuf-rw/undefine（#3406）／
+    S2 let/temp restore（#3408）／S3 closure-method nested-capture writeback（#3409）。設計＝
+    [docs/captured-outer-cell-sharing.md](docs/captured-outer-cell-sharing.md) §10。
+  - **残 10**: carrier（eval-carrier の regex `:let`／single-store-slice-c-prime）＋並行/制御（supply/react/junction
+    autothread/resumable-control/concurrent-cell＝**cross-thread cell・最難・最後**）＋done-paren（react done()）。
+- **✅ env↔locals 純 writeback コヒーレンス（blanket ON 下）は完了**（slice 1〜1.20・#3400）。lazy-lists.t laziness も
+  解消（#3403）。OFF roast survey（blanket OFF）の決定的サーフェスは IO-Socket-Async.t flaky のみ。
+- **∴ 次 = double-OFF surface 残 10 を畳む（carrier → 並行）→ §2-E（精密 reconcile + `env_dirty`/`ensure_locals_synced`/
+  `saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化）。**
 
 ### B. tree-walking interpreter 撤去 — **struct 統合は完了・残フォークは状態所有待ち**
 

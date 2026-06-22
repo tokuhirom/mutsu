@@ -768,6 +768,19 @@ impl Interpreter {
                 cc.locals_sym.iter().copied().collect();
             let underscore_sym = Symbol::intern("_");
             let at_underscore_sym = Symbol::intern("@_");
+            // Caller lexicals this scan writes back with a *changed* value. They are
+            // recorded (after the loop, to avoid borrowing `self` while iterating
+            // `self.env()`) on the retain-on-miss writeback list so the call site
+            // refreshes the owner's local slot precisely — covers a nested
+            // gist/method/closure that mutated an outer lexical which is NOT a direct
+            // free var of THIS closure (`cap({ note … $seen = 1 })`), so the
+            // free_var recording below misses it (env_dirty-removal substrate).
+            // Only when cell-boxing is the coherence mechanism (boxing build /
+            // substrate harness): the default build's blanket reconcile already
+            // refreshes these slots, so skip the per-call collection to keep the hot
+            // closure path (`.map`, `.grep`) free of extra work.
+            let record_writeback = self.cell_boxing_active();
+            let mut caller_writeback: Vec<Symbol> = Vec::new();
             for (k, v) in self.env().iter() {
                 if *k != underscore_sym
                     && *k != at_underscore_sym
@@ -787,8 +800,20 @@ impl Interpreter {
                     if captured_names.contains(k) && !restored_env.contains_key_sym(*k) {
                         continue;
                     }
+                    // A genuine caller lexical whose value changed across the call:
+                    // queue its slot for a precise refresh.
+                    if record_writeback
+                        && restored_env.contains_key_sym(*k)
+                        && restored_env.get_sym(*k) != Some(v)
+                        && !k.starts_with("__mutsu")
+                    {
+                        caller_writeback.push(*k);
+                    }
                     restored_env.insert_sym(*k, v.clone());
                 }
+            }
+            for k in caller_writeback {
+                self.record_caller_var_writeback(&k.resolve());
             }
             // Slice F (env<->locals coherence): a closure that mutated a captured
             // outer variable (`@a.map({ $sum += $_ })`, `$blk()` closing over a

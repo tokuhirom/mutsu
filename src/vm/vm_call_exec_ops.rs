@@ -59,6 +59,11 @@ impl Interpreter {
         {
             let result = self.vm_call_sub_value(sub_val, args, false)?;
             self.stack.push(result);
+            // A wrapper closure (`&f.wrap(-> { $seen = True; callsame })`) may mutate
+            // a captured-outer lexical; the closure dispatch recorded it precisely
+            // (`pending_*_writeback`). Drain it so the caller's slot refreshes without
+            // the blanket env→locals pull (env_dirty-removal substrate).
+            self.apply_pending_rw_writeback(code);
             self.env_dirty = true;
             return Ok(());
         }
