@@ -1734,6 +1734,31 @@ impl Interpreter {
         // whenever / LAST / QUIT / CLOSE callback as compiled bytecode
         // (Stage 2 #3038/#3039; QUIT handlers Interpreter-native in the Stage 3 follow-up).
         // No drive-loop callback routes back through the tree-walk interpreter.
+        // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): the
+        // `whenever` callbacks mutate captured-outer lexicals by name in env, with
+        // no per-write record this site can drain. Snapshot the caller frame's
+        // slot-backing env values right before the event loop so that, after it,
+        // only the slots whose env value actually changed are written through —
+        // the precise form of the blanket reconcile below, which is the by-name
+        // writer the react loop *is*. Armed only under boxing; the default build
+        // keeps the unconditional `reconcile_locals_from_env_at_site` pull.
+        let armed = self.cell_boxing_active();
+        let pre_env: Vec<Option<Value>> = if armed {
+            code.locals
+                .iter()
+                .map(|n| {
+                    self.env().get(n).cloned().or_else(|| {
+                        n.strip_prefix('$')
+                            .or_else(|| n.strip_prefix('@'))
+                            .or_else(|| n.strip_prefix('%'))
+                            .or_else(|| n.strip_prefix('&'))
+                            .and_then(|b| self.env().get(b).cloned())
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let event_result = if body_done {
             // Drain any queued subscriptions so they don't leak
             self.run_react_event_loop_drain();
@@ -1750,6 +1775,25 @@ impl Interpreter {
         // `sync_locals_from_env` pull. Under reverse-sync ON this is byte-identical
         // to the barrier pull it replaces (same HashSlotRef / `!attr` per-slot
         // skips); under OFF it is what keeps `$i` correct.
+        if armed {
+            for (i, name) in code.locals.iter().enumerate() {
+                if name.starts_with('!') || matches!(self.locals[i], Value::HashSlotRef { .. }) {
+                    continue;
+                }
+                let cur = self.env().get(name).cloned().or_else(|| {
+                    name.strip_prefix('$')
+                        .or_else(|| name.strip_prefix('@'))
+                        .or_else(|| name.strip_prefix('%'))
+                        .or_else(|| name.strip_prefix('&'))
+                        .and_then(|b| self.env().get(b).cloned())
+                });
+                if let Some(cur) = cur
+                    && pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur))
+                {
+                    self.locals[i] = cur;
+                }
+            }
+        }
         self.reconcile_locals_from_env_at_site(code);
         self.env_dirty = true;
 
@@ -1794,6 +1838,19 @@ impl Interpreter {
             // result) instead of the bound tap. Reconcile the caller's slots from
             // env here so the binding is visible immediately. Byte-identical with
             // the reverse pull enabled.
+            //
+            // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): the
+            // bound name is known exactly (`target_var`), so write just that slot
+            // through from env — the precise form of the blanket reconcile below.
+            // Armed only under boxing; the default build keeps the blanket pull.
+            if self.cell_boxing_active()
+                && let Some(name) = target_var
+                && let Some(slot) = self.find_local_slot(code, name)
+                && !matches!(self.locals[slot], Value::HashSlotRef { .. })
+                && let Some(val) = self.env().get(name).cloned()
+            {
+                self.locals[slot] = val;
+            }
             self.reconcile_locals_from_env_at_site(code);
             Ok(())
         } else {
