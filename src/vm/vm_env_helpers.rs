@@ -431,7 +431,7 @@ impl Interpreter {
     /// S03-binding/nested.t). Those names fall back to the `env_dirty` barrier
     /// pull, whose HashSlotRef skip + deferred timing handled them before. The
     /// common EVAL case (`$x = scalar`) is a plain scalar and stays precise.
-    fn is_writeback_safe_scalar(v: &Value) -> bool {
+    pub(crate) fn is_writeback_safe_scalar(v: &Value) -> bool {
         matches!(
             v,
             Value::Int(_)
