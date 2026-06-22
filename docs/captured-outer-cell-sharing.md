@@ -674,11 +674,23 @@ blanket reconcile は fallback として残置（harness 下 no-op）＝default 
 shared Arc 経由で slot が見えるので非該当。pin=`t/let-temp.t` + `t/let-temp-restore-writeback-coherence.t`
 （double-OFF で PASS 化）。make test 9904。
 
-### 10.5 残 13・次スライス候補
+### 10.5 slice S3（2026-06-22）— closure/method nested-capture writeback を precise 化（13→10）
 
-`closure-nested-writeback`（1-2）/ `note-gist-and-dynamic-handle` / `wrap-closure-capture` = **method/closure の
-nested capture writeback**（nested gist/method が捕捉した outer を変異・直接 free var でなく env-scan writeback 経路で
-拾う必要＝retain-on-miss 記録だけでは不足）。`eval-carrier-precise-writeback` / `single-store-slice-c-prime` =
-carrier。`junction-invocant-autothread` / `resumable-control-signal-indirect-call` /
-`concurrent-cell-writeback-coherence` / supply・react 系（4）= 並行/制御（cross-thread cell・最難・最後）。
-`done-paren-stmt-modifier` = react done()。全消化後 → §7.4（精密 reconcile + env_dirty 物理削除）。
+`cap({ note "" but role { method gist { $seen = 1 } } })`（note-gist）/ `capture-out` の `$output`
+（closure-nested-writeback）/ `&f.wrap(-> { $seen = True; callsame })`（wrap-closure-capture）= nested な
+gist/method/wrapper closure が捕捉した outer lexical を変異するが、その lexical は当該 closure の**直接 free var で
+ない**（nested 内で捕捉）ため §closure-dispatch の free_var 記録（811行）が拾えない。**修正**: ①closure-dispatch の
+env-scan writeback ループ（`vm_closure_dispatch.rs`）で、書き戻す caller-visible var の値が変化した場合
+`pending_caller_var_writeback`（retain-on-miss）に記録（`cell_boxing_active()` ガード＝default build の hot closure 経路
+には不可。blanket reconcile が担う）。②wrap dispatch（`vm_call_func_ops.rs:518`・`vm_call_exec_ops.rs:56`）で
+`apply_pending_rw_writeback` を追加（wrapper の記録を drain）。blanket reconcile は fallback として残置。
+pin=`t/note-gist-and-dynamic-handle.t` + `t/closure-nested-writeback.t` + `t/wrap-closure-capture.t`（double-OFF で
+PASS 化）。make test 9904。
+
+### 10.6 残 10・次スライス候補
+
+`eval-carrier-precise-writeback` / `single-store-slice-c-prime` = carrier。`junction-invocant-autothread` /
+`resumable-control-signal-indirect-call` / `concurrent-cell-writeback-coherence` / supply・react 系（4：
+`react-do-whenever-tap-coherence`/`react-whenever-last-next`/`supply-on-demand-closing`/`supply-sync-infinite-emit`）
+= 並行/制御（cross-thread cell・最難・最後）。`done-paren-stmt-modifier` = react done()。全消化後 → §7.4
+（精密 reconcile + env_dirty 物理削除）。
