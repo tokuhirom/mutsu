@@ -720,7 +720,23 @@ impl Interpreter {
                     return Ok(Value::str(formatted));
                 }
             }
-            if (method == "raku" || method == "perl")
+            // Default `.gist` of a user instance matches its `.raku` (raku:
+            // `say F.new(:z(5))` → `F.new(z => 5)`), unless the class defines its
+            // own `gist`. Without this, a defined instance gisted as `F()` (the
+            // type-object form), e.g. `say $obj`, `$obj.=meth` round-trips.
+            // A class that does Real/Numeric/Stringy keeps its coercion-based
+            // gist (`class Plain does Real { method Bridge {...} }` gists as its
+            // number, not `Plain.new(...)`), so fall through for those. The
+            // numeric coercion is also recognized via a `Bridge` method (mirrors
+            // the native-bypass check), since `does Real` is not always visible
+            // to `does_check`.
+            let has_coercion_gist = target.does_check("Real")
+                || target.does_check("Numeric")
+                || target.does_check("Stringy")
+                || matches!(&target, Value::Instance { class_name, .. }
+                    if self.has_user_method(&class_name.resolve(), "Bridge"));
+            let gist_default = method == "gist" && !has_coercion_gist;
+            if (method == "raku" || method == "perl" || gist_default)
                 && args.is_empty()
                 && !self.has_user_method(&class_name.resolve(), method)
             {

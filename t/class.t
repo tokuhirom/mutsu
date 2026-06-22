@@ -19,7 +19,9 @@ is $p.WHAT, "(Point)", ".WHAT";
 ok $p.isa("Point"), ".isa with own class";
 
 # .gist / .Str
-is $p.gist, "Point()", ".gist";
+# raku: a defined instance's default gist is `ClassName.new(attr => value, ...)`
+# (same as .raku), not the type-object form `Point()`.
+is $p.gist, "Point.new(x => 3, y => 4)", ".gist";
 is $p.Str, "Point()", ".Str";
 
 # .raku / .perl
