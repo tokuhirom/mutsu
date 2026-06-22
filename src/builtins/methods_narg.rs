@@ -3479,14 +3479,14 @@ fn range_pick_n_fast(target: &Value, arg: &Value) -> Option<Value> {
         };
 
         if count == 0 {
-            return Some(Value::array(Vec::new()));
+            return Some(Value::Seq(Arc::new(Vec::new())));
         }
 
         let items = generic_range_pick_n(gs, ge, excl_start, excl_end, count)?;
-        Some(Value::array(items))
+        Some(Value::Seq(Arc::new(items)))
     } else {
         if end < start {
-            return Some(Value::array(Vec::new()));
+            return Some(Value::Seq(Arc::new(Vec::new())));
         }
 
         if is_whatever {
@@ -3498,7 +3498,7 @@ fn range_pick_n_fast(target: &Value, arg: &Value) -> Option<Value> {
                 return None;
             }
             let items = range_pick_n_i64(start, end, range_size as usize);
-            return Some(Value::array(items));
+            return Some(Value::Seq(Arc::new(items)));
         }
 
         let count = match arg {
@@ -3510,10 +3510,10 @@ fn range_pick_n_fast(target: &Value, arg: &Value) -> Option<Value> {
         };
 
         if count == 0 {
-            return Some(Value::array(Vec::new()));
+            return Some(Value::Seq(Arc::new(Vec::new())));
         }
 
         let items = range_pick_n_i64(start, end, count);
-        Some(Value::array(items))
+        Some(Value::Seq(Arc::new(items)))
     }
 }
