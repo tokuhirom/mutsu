@@ -197,8 +197,11 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
     制御シグナルが react のハンドラに捕捉されず「Unhandled exception in code scheduled on thread」（空メッセージ）で
     プロセス終了する（bin/非 bin 共通・`.tap` 回避なら OK）。real-TCP Supply の tap コールバックが worker thread 上で
     走り、react の control-flow フレームから切れているため。HTTP::Server::Tiny のリクエストループが `done` を使うなら要修正。
-  - **HTTP::Parser v0.0.2**: `token SP { "\x20" }`（regex slang 内の**括弧なし** `"\xNN"`）がデコードされず
-    grammar 全体が失敗（`\x[20]`/`\x[0d]` 等の括弧付きや非 regex の `"\x20"` は OK）。easy/medium。
+  - [x] **HTTP::Parser v0.0.2 — regex slang 内の括弧なし `"\xNN"` デコードを修正（#TBD, 2026-06-22）。**
+    double-quote regex 文字列の `\x` ハンドラが `\x[HH]`（括弧付き）のみ処理し、`"\x20"` を "x20" に落としていた
+    （`token SP { "\x20" }` で grammar 全体が失敗）→ クォート外と同じく括弧なし連続 hex 桁を読むように。テスト
+    `t/regex-dq-hex-escape.t`。**これで HTTP::Parser の grammar がロード・パース実行できるようになった**（10 件中 2 件
+    PASS）。残る 8 失敗は別軸の独立バグ（Buf/byte 列処理・`.subst`・encode 往復）で、`\x20` とは無関係。
   - **IO::Blob v0.0.1**: `class IO::Blob is IO::Handle` の user override（`.get`/`.lines` 等）が builtin native
     IO::Handle メソッドに shadow され `Expected IO::Handle` で死。MRO/dispatch バグ（builtin 型のサブクラスの
     user メソッドが native を優先すべき）。medium・汎用性高。
