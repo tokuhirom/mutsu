@@ -85,22 +85,25 @@
     の writeback が `writeback_carrier_writes`〔vm_env_helpers.rs〕で「古い slot 値が scalar か」判定だったため Array slot を
     スキップ→上書き拒否→blanket reconcile 頼み。適格判定を**新 env 値が scalar か**＋slot が `:=` bind cell でないことに変更）。
     **★terminator は「parser/auto-curly」誤分類で実体は EVAL writeback だった**（normal=z=1・double-OFF だけ z=[]）。一般的修正。
-    **★writeback 候補は枯渇**（S16 proto-multi・S17 custom-HOW・S18 EVAL container-slot scalar）。**残 2 は両方 writeback で
-    ない別軸**: ①**lazy-lists（真の laziness blocker・要 lazy 化）**②throttle（timing・flaky 系・決定的 pin 不可）。
-    **★lazy-lists は精密切り分け済（重要）**: `gather{take $_ for 0..^$n; $was-lazy=0}.lazy` を `grep[^3]` で消費する
-    `S02-types/lazy-lists.t` 14/16。**blanket だけ OFF でも precise だけ OFF でも fail（両方 ON の default のみ pass）**＝
-    take counter 計測で double-OFF / blanket-OFF とも gather が **eager force される**（takes=10・normal は lazy で take 計上 0）。
-    ∴ **precise writeback では解けず、blanket reconcile が laziness 維持に load-bearing**＝env_dirty 削除前に **grep/map が
-    `.lazy` gather を eager force しない真 lazy 化が必要**（L 系別軸）。診断＝`tmp/lazy2.raku` 相当。
-    **次セッション着手順**: ①lazy-lists の真 lazy 化（grep/map on lazy gather・最有力ブロッカー）→ ②throttle が flaky か最終確認
-    （`.5〜.8 秒`タイミングアサート＝決定的 pin 不可なら env_dirty 削除のブロッカーから外す）→ ③§2-E（`env_dirty` 物理削除）着手。
-- **✅ env↔locals 純 writeback コヒーレンス（blanket ON 下）は完了**（slice 1〜1.20・#3400）。lazy-lists.t laziness も
-  解消（#3403）。OFF roast survey（blanket OFF）の決定的サーフェスは IO-Socket-Async.t flaky のみ。
-- **∴ 次 = lazy-lists の真 lazy 化（確定した env_dirty 削除ブロッカー）→ throttle flaky 確認 → `env_dirty` 物理削除（§2-E）**:
-  lazy-lists は blanket reconcile が laziness 維持に load-bearing（grep/map が `.lazy` gather を eager force するのを抑える）
-  と精密切り分け済＝precise writeback では解けない genuine blocker。これを真 lazy 化で外してから、
-  `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 → `env_dirty`/`ensure_locals_synced`/
-  `saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
+    **★writeback 候補は枯渇**（S16 proto-multi・S17 custom-HOW・S18 EVAL container-slot scalar）。
+    **★S19/S20（2026-06-22・#3443 MERGED / #3445）で残 double-OFF を消化＝決定的 roast blocker 実質ゼロ**:
+    - **S19（#3443）= gather の `.map`/`.grep` 真 lazy 化**。`gather{…}.grep(…)[^3]` が gather を両モード **eager force**
+      していた（normal の PASS は gather tail captured write の write-loss で偶然 raku 一致）。**前 handoff の「blanket が
+      laziness を load-bearing」診断は逆**＝gather は両モード eager だった。lazy pipe 化の例外が gather coroutine を除外していた
+      4+1 サイトに `is_from_gather()` を OR 追加。`S02-types/lazy-lists.t` 14/16 解消。pin=`t/lazy-gather-grep-map-laziness.t`。
+    - **S20（#3445）= LazyThunk 自己比較 deadlock**。`S04-statements/lazy.t` が double-OFF で **futex deadlock**（perf
+      on-CPU ゼロ・WCHAN=futex で確定）。`PartialEq (LazyThunk,LazyThunk)` が同一 Arc で cache mutex 二重ロック（END phaser
+      overlay `v!=orig_v` が自己比較）。`Arc::ptr_eq` 短絡で修正。pin=`t/lazythunk-self-compare-deadlock.t`。詳細＝
+      docs/captured-outer-cell-sharing.md §10.23/§10.24。
+    **★double-OFF survey は必ず proper harness（`MUTSU_BIN=… prove -e scripts/run-roast-test.sh`）で実走せよ**＝raw
+    `prove -e mutsu` は fudge 未処理で false-positive（encoding 系）を出す（spurt.t は stale temp-file flaky）。
+- **✅ env↔locals 純 writeback コヒーレンス＋laziness/deadlock も完了**（slice 1〜1.20・S4〜S20）。
+- **★残 double-OFF = throttle（timing flaky）のみ＝env_dirty 物理削除の決定的 roast blocker は実質ゼロ**。
+- **∴ 次 = ①throttle が flaky か最終確認（`.5〜.8 秒`タイミングアサート＝決定的 pin 不可なら削除ブロッカーから外す）
+  → ②`env_dirty` 物理削除（§2-E）着手**: `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 →
+  `env_dirty`/`ensure_locals_synced`/`saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
+  残既知の非決定的＝full-consumption-through-pipe gather tail writeback（lazy pipe 経由 grep の内側 force が誤フレームに
+  drop-on-miss・roast 非該当）。
 
 ### B. tree-walking interpreter 撤去 — **struct 統合は完了・残フォークは状態所有待ち**
 
