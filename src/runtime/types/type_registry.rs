@@ -83,6 +83,35 @@ impl Interpreter {
         }
     }
 
+    pub(in crate::runtime) fn init_seek_type_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
+        // The `SeekType` enum used by IO::Handle.seek (and user IO classes that
+        // subclass it, e.g. IO::Blob): SeekFromBeginning(0)/SeekFromCurrent(1)/
+        // SeekFromEnd(2). Registering it as a real enum makes `SeekType:D`
+        // parameter/default type checks pass and the values smartmatch SeekType.
+        let variants = vec![
+            ("SeekFromBeginning".to_string(), EnumValue::Int(0)),
+            ("SeekFromCurrent".to_string(), EnumValue::Int(1)),
+            ("SeekFromEnd".to_string(), EnumValue::Int(2)),
+        ];
+        self.registry_mut()
+            .enum_types
+            .insert("SeekType".to_string(), variants.clone());
+        base.insert(Symbol::intern("SeekType"), Value::str_from("SeekType"));
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: Symbol::intern("SeekType"),
+                key: Symbol::intern(key),
+                value: val.clone(),
+                index,
+            };
+            base.insert(
+                Symbol::intern(&format!("SeekType::{}", key)),
+                enum_val.clone(),
+            );
+            base.insert(Symbol::intern(key), enum_val);
+        }
+    }
+
     pub(in crate::runtime) fn init_signal_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
         // Use libc constants on Unix, standard POSIX numbers on other platforms
         let variants = vec![
