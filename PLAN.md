@@ -76,12 +76,17 @@
     slow path（`run_instance_method_resolved`）経由で、捕捉 write を env に伝播するが `env_dirty` を立てない＝blanket pull
     すら発火せず default build でも slot stale（`is` 読みは reconcile site を踏み roast は偶然 green・`say` 直読みは壊れる）。
     ∴ S16 は ungated**（precise writeback は blanket の部分集合で正しい結果を変えず default 潜在バグも直す）。
-    **残 4（next-session 着手順）**: ①**primitives**（meta compose・要 slot-only 判定・HOW メソッドが slow path 経由なら
-    S16 と同型）②lazy-lists（**laziness 別軸・writeback でない**）③throttle（timing・flaky 系）④terminator（auto-curly array
-    composer・**parser・writeback でない**）。①が writeback 候補、②③④は別軸。slot-only 判定法＝closure経由 vs direct 読みの差。
+    **S17（#TBD・4→3）= custom HOW type-check メソッドの captured-outer writeback**（`Metamodel::Primitives.create_type`
+    の HOW `type_check`/`accepts_type`/`find_method` が captured counter を `++`。3 dispatch サイトを
+    `call_how_method_recording_writeback`（HOW 呼び出し前後 env scalar スナップショット差分→`pending_caller_var_writeback`）
+    経由に置換 → smartmatch op 末尾の `apply_pending_caller_var_writeback` が drain・primitives 消化）。**counter が
+    read-modify-write なので文跨ぎで消える**のが厄介。S16 同様 ungated（custom-HOW dispatch 限定スコープ）。
+    **★writeback 候補は枯渇**（S16 proto-multi・S17 custom-HOW）。**残 3 は全て別軸**: ①lazy-lists（**laziness 別軸・
+    writeback でない**・L 系 lazy 化が前提）②throttle（timing・flaky 系・決定的 pin 不可）③terminator（auto-curly array
+    composer・**parser・writeback でない**）。**次セッション**: 残 3 が env_dirty 削除をブロックしないことを確認 → §2-E 着手。
 - **✅ env↔locals 純 writeback コヒーレンス（blanket ON 下）は完了**（slice 1〜1.20・#3400）。lazy-lists.t laziness も
   解消（#3403）。OFF roast survey（blanket OFF）の決定的サーフェスは IO-Socket-Async.t flaky のみ。
-- **∴ 次 = roast double-OFF 4→0 を slice で消化 → `env_dirty` 物理削除（§2-E）**:
+- **∴ 次 = roast double-OFF 残 3（別軸＝laziness/timing/parser）が env_dirty 削除をブロックしないか確認 → `env_dirty` 物理削除（§2-E）**:
   `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 → `env_dirty`/`ensure_locals_synced`/
   `saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
 

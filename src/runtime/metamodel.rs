@@ -167,6 +167,58 @@ impl Interpreter {
         Ok(Value::Bool(result))
     }
 
+    /// Call a user HOW method (`type_check` / `accepts_type` / `find_method`)
+    /// during type checking, recording any captured-outer caller scalar it
+    /// mutates so the owning caller *local slot* is refreshed at the smartmatch
+    /// call site.
+    ///
+    /// env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a custom
+    /// HOW method (e.g. `method type_check(Mu $, Mu \c) { ++$counter; … }`) runs
+    /// via the slow `run_instance_method_resolved` path, which merges its
+    /// captured-outer scalar writes back into env but does NOT set `env_dirty` or
+    /// record a precise writeback. The caller slot is then refreshed only by the
+    /// blanket pull — a no-op under double-OFF. Worse, the counter is a
+    /// read-modify-write (`++$counter`): with the slot stale, each successive
+    /// smartmatch statement re-flushes the stale slot into env, so the increment
+    /// is lost across statements. Snapshot the writeback-safe env scalars around
+    /// the dispatch and record the names it changes into the retain-on-miss
+    /// caller-var writeback, drained at the smartmatch op
+    /// (`apply_pending_caller_var_writeback`). Ungated (like the proto-multi slice
+    /// S16): the recording is scoped to custom-HOW type-check dispatch only, it is
+    /// a precise subset of the blanket reconcile (never changes a correct result),
+    /// and it also fixes the latent default-build case where successive bare
+    /// sink-context smartmatches (`$obj ~~ T; $obj ~~ U;`) lost the counter.
+    pub(super) fn call_how_method_recording_writeback(
+        &mut self,
+        how: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let pre_env: std::collections::HashMap<Symbol, Value> = self
+            .env
+            .iter()
+            .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        let result = self.call_method_with_values(how, method, args);
+        let changed: Vec<String> = self
+            .env
+            .iter()
+            .filter(|(k, v)| {
+                let kn = k.resolve();
+                kn != "_"
+                    && kn != "$_"
+                    && Self::is_writeback_safe_scalar(v)
+                    && pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
+            })
+            .map(|(k, _)| k.resolve())
+            .collect();
+        for n in changed {
+            self.record_caller_var_writeback(&n);
+        }
+        result
+    }
+
     /// Check if a value matches a CustomType (used by smartmatch).
     /// Implements the Raku type checking protocol:
     /// - With cache: check cache directly, then call_accepts if set
@@ -185,7 +237,7 @@ impl Interpreter {
                 // data that corrupts sigilless parameter binding on subsequent
                 // method calls.
                 self.pending_call_arg_sources = None;
-                if let Ok(result) = self.call_method_with_values(
+                if let Ok(result) = self.call_how_method_recording_writeback(
                     rhs_how.clone(),
                     "accepts_type",
                     vec![Value::Nil, lhs.clone()],
@@ -213,7 +265,7 @@ impl Interpreter {
 
         // No cache (before compose): call find_method for ACCEPTS on the HOW
         // (this is what Raku's MOP does), but the default ACCEPTS returns False.
-        let _ = self.call_method_with_values(
+        let _ = self.call_how_method_recording_writeback(
             rhs_how.clone(),
             "find_method",
             vec![Value::Nil, Value::str_from("ACCEPTS")],

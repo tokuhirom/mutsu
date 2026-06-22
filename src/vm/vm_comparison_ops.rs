@@ -1403,6 +1403,16 @@ impl Interpreter {
         if !pure {
             self.env_dirty = true;
         }
+        // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a custom
+        // HOW `type_check`/`accepts_type`/`find_method` invoked by this smartmatch
+        // (`$obj ~~ $custom-type`) may mutate a captured-outer caller scalar (e.g.
+        // `++$counter`); the slow HOW dispatch records those names into the
+        // retain-on-miss caller-var writeback but never sets `env_dirty`. Drain it
+        // here so the owning slot is refreshed before the next statement reads it
+        // (critical for the read-modify-write `++$counter`). No-op in default
+        // builds (the recording is gated on cell_boxing_active); cross-frame
+        // names recorded by the regex path above are retained for the caller.
+        self.apply_pending_caller_var_writeback(code);
         *ip = rhs_end;
         Ok(())
     }
