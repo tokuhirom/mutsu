@@ -1758,7 +1758,7 @@ impl Interpreter {
         } else {
             (false, op_no_scan)
         };
-        let base_op = if base_op == "∘" {
+        let mut base_op = if base_op == "∘" {
             "o".to_string()
         } else {
             base_op
@@ -1809,6 +1809,21 @@ impl Interpreter {
                 }
                 other => vec![other],
             };
+        }
+        // The `R` (reverse) metaop on a reduction reverses the entire fold:
+        // `[R op] @list` == `[op] @list.reverse` (and likewise for the scan form
+        // `[\R op]`). Reversing the operand list and stripping the `R` yields the
+        // correct result for non-commutative / non-associative ops (`-`, `/`),
+        // where the per-step operand swap done by `eval_reduction_operator_values`
+        // would instead compute `[op]` right-folded (e.g. `[R/] 100,10,2` is
+        // `2/10/100` = 0.002, not `100/(10/2)` = 20).
+        while let Some(inner) = base_op.strip_prefix('R') {
+            if !inner.is_empty() && Self::is_builtin_reduction_op(inner) {
+                list.reverse();
+                base_op = inner.to_string();
+            } else {
+                break;
+            }
         }
         if base_op == "," {
             if scan {
@@ -2133,11 +2148,16 @@ impl Interpreter {
                             "base-10 number must begin with valid digits or '.'",
                         ));
                     }
-                    let identity = runtime::reduction_identity(&base_op);
                     // Coerce Instance values via Numeric()/Bridge() so that
                     // user-defined numeric types work (e.g. `[*] CustomNumify.new`).
                     let elem = self.coerce_numeric_bridge_value(list[0].clone())?;
-                    let v = self.reduction_step_with_args(&base_op, None, vec![identity, elem])?;
+                    // A single-element reduction returns the element *numified*,
+                    // NOT `op(identity, element)`. The latter is only correct for
+                    // the commutative `+`/`*` (where `0 + x == x`); for `-`/`/`/
+                    // `**`/`%` it would wrongly compute `0 - 5`, `1 / 5`, etc.
+                    // Numify via the additive identity so `[+] "2"` is Int 2,
+                    // `[-] 5` is 5, and `[/] 5` is 5 (matching Rakudo).
+                    let v = self.reduction_step_with_args("+", None, vec![Value::Int(0), elem])?;
                     let result = if negate { Value::Bool(!v.truthy()) } else { v };
                     self.stack.push(result);
                     return Ok(());
