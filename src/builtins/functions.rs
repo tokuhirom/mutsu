@@ -294,6 +294,10 @@ pub(crate) fn native_function(
     if name == "chrs" {
         return native_function_variadic(name, args);
     }
+    // pack/unpack take a template plus a variable item list; route every arity.
+    if name == "pack" || name == "unpack" {
+        return native_function_variadic(name, args);
+    }
     if name == "zip" {
         if args
             .iter()
@@ -1609,6 +1613,25 @@ fn is_extrema_named_pair(v: &Value) -> bool {
 
 fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match name {
+        "pack" => {
+            // pack(Str $template, *@items) — flatten the trailing items so
+            // `pack 'S' x $n, $list` (one List arg) sees individual elements.
+            let template = args.first().map(Value::to_string_value).unwrap_or_default();
+            let mut items = Vec::new();
+            for a in args.iter().skip(1) {
+                flat_val(a, &mut items, true);
+            }
+            Some(crate::builtins::pack::pack(&template, &items))
+        }
+        "unpack" => {
+            // unpack(Blob $blob, Str $template)
+            let bytes = args
+                .first()
+                .map(crate::runtime::Interpreter::extract_buf_bytes)
+                .unwrap_or_default();
+            let template = args.get(1).map(Value::to_string_value).unwrap_or_default();
+            Some(crate::builtins::pack::unpack(&bytes, &template))
+        }
         "min" => {
             if args.is_empty() {
                 return Some(Ok(Value::Nil));

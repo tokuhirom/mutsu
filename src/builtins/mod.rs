@@ -11,6 +11,7 @@ mod functions;
 pub(crate) mod iterator_construct;
 pub(crate) mod methods_0arg;
 mod methods_narg;
+pub(crate) mod pack;
 pub(crate) mod parse_base;
 pub(crate) mod primality;
 pub(crate) mod quanthash_coerce;

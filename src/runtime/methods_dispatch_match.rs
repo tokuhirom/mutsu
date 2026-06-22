@@ -95,6 +95,12 @@ impl Interpreter {
                 Some(self.dispatch_encode(&target, &args))
             }
             "decode" => self.dispatch_decode(&target, &args),
+            "unpack" if matches!(&target, Value::Instance { .. }) => {
+                // $blob.unpack($template) — experimental, mirrors the sub form.
+                let bytes = Self::extract_buf_bytes(&target);
+                let template = args.first().map(Value::to_string_value).unwrap_or_default();
+                Some(crate::builtins::pack::unpack(&bytes, &template))
+            }
             "subbuf" => self.dispatch_subbuf(&target, &args),
             "polymod" => Some(self.method_polymod(&target, &args)),
             "VAR" if args.is_empty() => {

@@ -2614,7 +2614,11 @@ impl Compiler {
                     || module == "nqp"
                     || module == "soft"
                     || module == "oo"
-                    || module == "class" => {}
+                    || module == "class"
+                    // `use experimental :pack/:cached/:macros/...` enables
+                    // experimental features that mutsu provides unconditionally
+                    // (e.g. pack/unpack), so the pragma is a compile-time no-op.
+                    || module == "experimental" => {}
             Stmt::Use { module, .. } if module == "MONKEY-TYPING" || module == "MONKEY" => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 self.code.emit(OpCode::UseModule {

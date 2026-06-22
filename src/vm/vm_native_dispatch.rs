@@ -333,7 +333,9 @@ impl Interpreter {
             // other native function bails out on Instance args (they may need
             // method dispatch) and falls through to the interpreter.
             let name = name_sym.resolve();
-            if !matches!(name.as_str(), "any" | "all" | "one" | "none") {
+            // `unpack(Blob, Str)` takes a Blob (Instance) argument and is
+            // handled natively; everything else bails out on Instance args.
+            if !matches!(name.as_str(), "any" | "all" | "one" | "none" | "unpack") {
                 return None;
             }
         }
