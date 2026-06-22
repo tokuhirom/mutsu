@@ -87,7 +87,8 @@ pub(super) fn dispatch(
                 .chars()
                 .map(|c| Value::Int(c as u32 as i64))
                 .collect();
-            Some(Some(Ok(Value::array(ords))))
+            // `.ords` returns a Seq (like `.comb`), not a List.
+            Some(Some(Ok(Value::Seq(std::sync::Arc::new(ords)))))
         }
         "uniprop" => {
             match target {
@@ -263,6 +264,7 @@ pub(super) fn dispatch(
             };
             let items: Vec<i64> = match target {
                 Value::Array(items, ..) => items.iter().map(&val_to_i64).collect(),
+                Value::Seq(items) => items.iter().map(&val_to_i64).collect(),
                 Value::Range(a, b) => (*a..=*b).collect(),
                 Value::RangeExcl(a, b) => (*a..*b).collect(),
                 _ => vec![val_to_i64(target)],

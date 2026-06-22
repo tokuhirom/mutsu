@@ -1089,7 +1089,8 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         "ords" => {
             let s = arg.to_string_value();
             let codes: Vec<Value> = s.chars().map(|ch| Value::Int(ch as u32 as i64)).collect();
-            Some(Ok(Value::array(codes)))
+            // `ords` returns a Seq (like `comb`), not a List.
+            Some(Ok(Value::Seq(std::sync::Arc::new(codes))))
         }
         "gist" => Some(Ok(Value::str(arg.to_string_value()))),
         _ => None,
