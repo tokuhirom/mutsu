@@ -153,9 +153,43 @@ pub(crate) fn is_adverbial_pair_key(s: &str) -> bool {
     true
 }
 
-fn raku_array_wrap_counted(inner: &str, kind: ArrayKind, count: usize) -> String {
+/// Whether a single element warrants a trailing comma when it is the sole
+/// element of a real (`@`-sigil) array's `.raku`: `[1..5,]`, `[(1, 2),]`,
+/// `[{:x(1)},]`. Raku adds the comma when the element is itself an Iterable
+/// whose bare `.raku` literal would otherwise flatten/merge into the array
+/// (Range, List/Array, Seq, Hash/Map). Pair, Set/Bag/Mix (rendered as
+/// constructor calls), scalars, and type objects do NOT get a comma.
+fn element_needs_trailing_comma(v: &Value) -> bool {
+    match v {
+        Value::ContainerRef(cell) => {
+            let inner = cell.lock().unwrap().clone();
+            element_needs_trailing_comma(&inner)
+        }
+        Value::Range(..)
+        | Value::RangeExcl(..)
+        | Value::RangeExclStart(..)
+        | Value::RangeExclBoth(..)
+        | Value::GenericRange { .. }
+        | Value::Array(..)
+        | Value::Seq(..)
+        | Value::Hash(_) => true,
+        _ => false,
+    }
+}
+
+fn raku_array_wrap_counted(
+    inner: &str,
+    kind: ArrayKind,
+    count: usize,
+    single_listy: bool,
+) -> String {
+    // A real array with a single Iterable element renders with a trailing comma
+    // so the round-trip does not flatten it: `[1..5,]`, `$[(1, 2),]`.
+    let array_comma = if count == 1 && single_listy { "," } else { "" };
     match kind {
-        ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy => format!("[{}]", inner),
+        ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy => {
+            format!("[{}{}]", inner, array_comma)
+        }
         ArrayKind::List => {
             if count == 1 {
                 format!("({},)", inner)
@@ -163,7 +197,7 @@ fn raku_array_wrap_counted(inner: &str, kind: ArrayKind, count: usize) -> String
                 format!("({})", inner)
             }
         }
-        ArrayKind::ItemArray => format!("$[{}]", inner),
+        ArrayKind::ItemArray => format!("$[{}{}]", inner, array_comma),
         ArrayKind::ItemList => {
             if inner.is_empty() {
                 "$( )".to_string()
@@ -178,7 +212,7 @@ fn raku_array_wrap_counted(inner: &str, kind: ArrayKind, count: usize) -> String
 
 fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
     // Fallback without count (used for self-referencing snapshot rendering)
-    raku_array_wrap_counted(inner, kind, 2) // count=2 to avoid trailing comma
+    raku_array_wrap_counted(inner, kind, 2, false) // count=2 to avoid trailing comma
 }
 
 /// Render a value for `.raku` but strip itemization (Scalar container).
@@ -300,7 +334,13 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
         .collect();
     let count = rendered.len();
     let inner = rendered.join(", ");
-    raku_array_wrap_counted(&inner, kind, count)
+    // For a real (`@`-sigil) array, a single Iterable element needs a trailing
+    // comma (`[1..5,]`); a self-referential marker element does not.
+    let single_listy = count == 1
+        && kind.is_real_array()
+        && !is_self_array_ref_marker(&items[0])
+        && element_needs_trailing_comma(&items[0]);
+    raku_array_wrap_counted(&inner, kind, count, single_listy)
 }
 
 pub fn raku_value(v: &Value) -> String {
