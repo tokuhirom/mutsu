@@ -403,6 +403,7 @@ impl Interpreter {
         // observes them. Only changed slots are written, to keep blast radius
         // minimal.
         let handler_locals = std::mem::replace(&mut self.locals, saved_locals);
+        let armed = self.cell_boxing_active();
         for (i, name) in code.locals.iter().enumerate() {
             if name.is_empty() {
                 continue;
@@ -410,6 +411,22 @@ impl Interpreter {
             if handler_locals[i] != seeded[i] {
                 self.env_mut()
                     .insert(name.clone(), handler_locals[i].clone());
+                // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
+                // the handler body mutated the installing frame's lexical `name`
+                // by writing `env` here, but the frame's local SLOT is reached only
+                // by the blanket/precise `reconcile_locals_from_env_at_site` at the
+                // warn-call site — a no-op once env_dirty is removed (double-OFF: a
+                // *resumed* indirect `warn` left the caller's `$out` slot stale even
+                // though env held the handler's write). Record the name for the
+                // non-gated precise drain (`apply_pending_rw_writeback`) that every
+                // call site already runs: drop-on-miss for the same frame, plus
+                // retain-on-miss so a deeper raise site carries it up to the
+                // installing frame. Armed only under boxing; the default build's
+                // blanket reconcile covers it (byte-identical).
+                if armed {
+                    self.pending_rw_writeback_sources.push(name.clone());
+                    self.record_caller_var_writeback(name);
+                }
             }
         }
         self.env_dirty = true;

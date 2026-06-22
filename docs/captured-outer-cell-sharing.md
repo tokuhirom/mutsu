@@ -720,9 +720,22 @@ loop 後の 1 回の `apply_pending_caller_var_writeback` が env（既に全 ei
 pin=`t/junction-invocant-autothread-writeback-coherence.t`（6・double-OFF で PASS 化）。回帰元
 `roast/S03-junctions/autothreading.t` 107/107 PASS。
 
-### 10.8 残 7・次スライス候補
+### 10.8 slice S6（2026-06-22）— resumable CONTROL handler writeback を precise 化（7→6）
 
-残はすべて **並行/制御**（cross-thread cell・最難・最後）: `resumable-control-signal-indirect-call`（control signal・
-単一スレッド寄り＝次の候補）/ `done-paren-stmt-modifier`（react done()）/ `concurrent-cell-writeback-coherence` /
-supply・react 系 4（`react-do-whenever-tap-coherence`/`react-whenever-last-next`/`supply-on-demand-closing`/
-`supply-sync-infinite-emit`）。全消化後 → §7.4（精密 reconcile + env_dirty 物理削除）。
+`my $out=''; CONTROL { default { $out ~= "[{.message}]"; .resume } }; my $w = &warn; $w.("indirect")` =
+indirect call（`$w.(...)`／`&warn.(...)`＝CallOnValue）から raise された resumable な `warn` を、enclosing CONTROL の
+`resume_safe` ハンドラがインライン実行する（`try_resume_safe_control_inline`・builtins_control_flow.rs）。ハンドラ本体は
+installing frame の lexical `$out` を変異するが、ハンドラは locals を env から再構成 → 実行 → **変化した slot を env に
+flush + env_dirty** するだけで、frame の local SLOT は warn-call サイトの blanket/精密 `reconcile_locals_from_env_at_site`
+でしか更新されない＝double-OFF で no-op。**direct `warn`（ExecCall）は通り**、indirect（CallOnValue）だけ落ちた
+（計測: indirect 後 `env["out"]=[indirect]` は生存・slot[0] が stale・read が slot を見て空）。**修正**: ハンドラの flush
+ループで変化した名前を `pending_rw_writeback_sources`（drop-on-miss・same-frame）＋ `pending_caller_var_writeback`
+（retain-on-miss・deeper raise site が installing frame まで運ぶ）に記録。両 call site（ExecCall/CallOnValue）が既に走らせる
+**非ゲートの `apply_pending_rw_writeback`** が env → slot を drain する。`cell_boxing_active()` ガード＝default build は従来
+どおり blanket reconcile が担う＝バイト不変。pin=`t/resumable-control-signal-indirect-call.t`（5・double-OFF で PASS 化）。
+
+### 10.9 残 6・次スライス候補
+
+残はすべて **並行/react**（cross-thread cell・最難・最後）: `done-paren-stmt-modifier`（react done()）/
+`concurrent-cell-writeback-coherence` / supply・react 系 4（`react-do-whenever-tap-coherence`/`react-whenever-last-next`/
+`supply-on-demand-closing`/`supply-sync-infinite-emit`）。全消化後 → §7.4（精密 reconcile + env_dirty 物理削除）。
