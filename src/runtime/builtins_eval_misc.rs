@@ -309,7 +309,17 @@ impl Interpreter {
         let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
         for (i, val) in args.iter().enumerate() {
             let source_name = arg_sources.get(i).and_then(|entry| entry.as_deref());
-            let repr = Self::dd_format(val, source_name);
+            // A user-class instance's `.raku` needs the class registry to collect
+            // its public attributes, which the static `raku_value` cannot reach
+            // (it would render `F()`); dispatch the instance method instead.
+            let value_repr = if matches!(val, Value::Instance { .. }) {
+                self.call_method_with_values(val.clone(), "raku", vec![])
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|_| crate::builtins::methods_0arg::raku_repr::raku_value(val))
+            } else {
+                crate::builtins::methods_0arg::raku_repr::raku_value(val)
+            };
+            let repr = Self::dd_format_with_repr(val, source_name, value_repr);
             self.emit_stderr(&format!("{}\n", repr));
         }
         Ok(args.first().cloned().unwrap_or(Value::Nil))
@@ -321,8 +331,12 @@ impl Interpreter {
     /// is a plain variable (e.g. `dd %h`), Raku prefixes it with the runtime
     /// type and the variable name: `Hash %h = {:a(1)}`. Literals and complex
     /// expressions render as just the value.
-    fn dd_format(val: &Value, source_name: Option<&str>) -> String {
-        let value_repr = crate::builtins::methods_0arg::raku_repr::raku_value(val);
+    /// Format a `dd` line from a precomputed value representation. The caller
+    /// supplies the value repr — an interpreter-dispatched `.raku` for a
+    /// user-class instance (whose attribute list needs the class registry), or
+    /// the static `raku_value` otherwise. When the argument is a plain variable
+    /// (`dd %h`), Raku prefixes it with the runtime type and name.
+    fn dd_format_with_repr(val: &Value, source_name: Option<&str>, value_repr: String) -> String {
         match source_name {
             Some(name) if Self::dd_is_plain_var(name) => {
                 let ty = crate::runtime::utils::value_type_name(val);
