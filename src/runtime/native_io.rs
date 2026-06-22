@@ -3,6 +3,24 @@ use crate::symbol::Symbol;
 use num_traits::ToPrimitive;
 use std::path::Component;
 
+/// Coerce a positional limit argument (the `$limit` of `.lines`/`.words`/`.get`
+/// reads) to a row count. Accepts any non-negative numeric, including an
+/// allomorph (`<3>`, `<3e0>`, `<3+0i>`) by unwrapping the `Mixin` to its inner
+/// numeric. Returns `None` for non-numeric args, `*`/`Whatever`, and `+Inf`
+/// (all meaning "no limit").
+fn numeric_limit_arg(arg: &Value) -> Option<usize> {
+    match arg {
+        Value::Int(i) => Some((*i).max(0) as usize),
+        Value::BigInt(bi) => Some(bi.to_usize().unwrap_or(usize::MAX)),
+        Value::Num(f) if f.is_infinite() => None,
+        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+        Value::Rat(n, d) if *d != 0 => Some(((*n as f64 / *d as f64) as i64).max(0) as usize),
+        Value::Complex(re, im) if *im == 0.0 && *re >= 0.0 => Some(*re as usize),
+        Value::Mixin(inner, _) => numeric_limit_arg(inner),
+        _ => None,
+    }
+}
+
 fn io_exception(class_name: &str, message: String) -> RuntimeError {
     let mut err = RuntimeError::new(message);
     err.exception = Some(Box::new(Value::make_instance(
@@ -766,15 +784,8 @@ impl Interpreter {
                 let (_, _, _, _, chomp, nl_in, _, _, _, _, _) = self.parse_io_flags_values(&args);
                 let mut parts = Self::split_content_by_separators(&content, &nl_in, chomp);
 
-                // Check for a positional limit argument
-                let limit = args.iter().find_map(|arg| match arg {
-                    Value::Int(i) => Some((*i).max(0) as usize),
-                    Value::BigInt(bi) => {
-                        use num_traits::ToPrimitive;
-                        Some(bi.to_usize().unwrap_or(usize::MAX))
-                    }
-                    _ => None,
-                });
+                // Check for a positional limit argument (any numeric, incl. allomorphs)
+                let limit = args.iter().find_map(numeric_limit_arg);
                 if let Some(n) = limit {
                     parts.truncate(n);
                 }
@@ -788,15 +799,8 @@ impl Interpreter {
                     .split_whitespace()
                     .map(|token| Value::str(token.to_string()))
                     .collect();
-                // Check for a positional limit argument
-                let limit = args.iter().find_map(|arg| match arg {
-                    Value::Int(i) => Some((*i).max(0) as usize),
-                    Value::BigInt(bi) => {
-                        use num_traits::ToPrimitive;
-                        Some(bi.to_usize().unwrap_or(usize::MAX))
-                    }
-                    _ => None,
-                });
+                // Check for a positional limit argument (any numeric, incl. allomorphs)
+                let limit = args.iter().find_map(numeric_limit_arg);
                 if let Some(n) = limit {
                     parts.truncate(n);
                 }
@@ -2518,23 +2522,13 @@ impl Interpreter {
                         Value::Pair(k, v) if k == "close" => {
                             close_after = v.truthy();
                         }
-                        Value::Pair(..) => {}
-                        Value::Int(i) => limit = Some((*i).max(0) as usize),
-                        Value::BigInt(bi) => {
-                            use num_traits::ToPrimitive;
-                            limit = Some(bi.to_usize().unwrap_or(usize::MAX));
+                        // Any numeric (incl. allomorphs) is a row limit; named
+                        // args and Whatever/+Inf mean "no limit".
+                        _ => {
+                            if let Some(n) = numeric_limit_arg(arg) {
+                                limit = Some(n);
+                            }
                         }
-                        Value::Whatever => {}
-                        Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {}
-                        Value::Num(f) if *f >= 0.0 => limit = Some(*f as usize),
-                        Value::Rat(n, d) if *d == 0 && *n > 0 => {}
-                        Value::Rat(n, d) if *d != 0 => {
-                            limit = Some(((*n as f64 / *d as f64) as i64).max(0) as usize);
-                        }
-                        Value::Complex(re, im) if *im == 0.0 && *re >= 0.0 => {
-                            limit = Some(*re as usize);
-                        }
-                        _ => {}
                     }
                 }
                 if limit.is_some() {
@@ -2571,16 +2565,13 @@ impl Interpreter {
                         Value::Pair(k, v) if k == "close" => {
                             close_after = v.truthy();
                         }
-                        Value::Pair(..) => {}
-                        Value::Int(i) => limit = Some((*i).max(0) as usize),
-                        Value::BigInt(bi) => {
-                            use num_traits::ToPrimitive;
-                            limit = Some(bi.to_usize().unwrap_or(usize::MAX));
+                        // Any numeric (incl. allomorphs) is a word limit; named
+                        // args and Whatever/+Inf mean "no limit".
+                        _ => {
+                            if let Some(n) = numeric_limit_arg(arg) {
+                                limit = Some(n);
+                            }
                         }
-                        Value::Whatever => {}
-                        Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {}
-                        Value::Num(f) if *f >= 0.0 => limit = Some(*f as usize),
-                        _ => {}
                     }
                 }
                 if limit.is_none() {
