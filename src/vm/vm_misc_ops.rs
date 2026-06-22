@@ -1246,6 +1246,15 @@ impl Interpreter {
         };
         self.env_mut().insert(store_name.clone(), value.clone());
         self.update_local_if_exists(code, &store_name, &value);
+        // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a
+        // symbolic-deref store (`$::($name) = v`) writes the target lexical by name
+        // straight into env. `update_local_if_exists` refreshes the slot only when
+        // it lives in *this* frame; inside a carrier (`lives-ok { $::($n) = v }`)
+        // the owning slot is the carrier-caller's, reached only via the carrier
+        // writeback. Log the name so `writeback_carrier_writes` reconciles it (and
+        // set env_dirty) — without this the write is lost once the blanket
+        // reconcile is removed (mirrors the regex `:let` path).
+        self.note_caller_env_write(&store_name);
         self.stack.push(value);
     }
 
@@ -1263,6 +1272,9 @@ impl Interpreter {
         };
         self.env_mut().insert(store_name.clone(), value.clone());
         self.update_local_if_exists(code, &store_name, &value);
+        // env_dirty substrate: same as exec_symbolic_deref_store_op — `::('$x') = v`
+        // writes the target lexical by name, so log it for the carrier writeback.
+        self.note_caller_env_write(&store_name);
         self.stack.push(value);
     }
 
