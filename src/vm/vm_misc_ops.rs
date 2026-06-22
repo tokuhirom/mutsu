@@ -3387,7 +3387,7 @@ impl Interpreter {
         // is in `restore_let_value`. Gated on the same toggle as the boxing it
         // supports, so the default build is byte-identical to before.
         let old_val = match old_val {
-            Value::ContainerRef(arc) if self.cell_boxing_active() => arc.lock().unwrap().clone(),
+            Value::ContainerRef(arc) => arc.lock().unwrap().clone(),
             v => v,
         };
         // For temp, deep-copy Array/Hash so the snapshot is independent of
@@ -3438,21 +3438,15 @@ impl Interpreter {
                 let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
                 let success = Self::is_let_success(&topic);
                 loan_env!(self, resolve_let_saves_on_success(mark, success));
-                self.env_dirty = true;
                 // `let`/`temp` restore writes the saved value back into `env` only;
                 // the matching local slot still holds the in-block value. The restore
                 // recorded each restored name precisely (`restore_let_value`); drain
-                // it so the frame's slots refresh without the blanket env→locals pull
-                // (env_dirty-removal substrate). The blanket reconcile stays as the
-                // fallback (no-op under the substrate harness).
+                // it so the frame's slots refresh.
                 self.apply_pending_rw_writeback(code);
-                self.reconcile_locals_from_env_at_site(code);
             }
             Err(e) => {
                 loan_env!(self, restore_let_saves(mark));
-                self.env_dirty = true;
                 self.apply_pending_rw_writeback(code);
-                self.reconcile_locals_from_env_at_site(code);
                 return Err(e);
             }
         }

@@ -5078,7 +5078,6 @@ impl Interpreter {
                     let cell_val = Value::ContainerRef(cell.clone());
                     self.set_env_with_main_alias(src, cell_val.clone());
                     self.update_local_if_exists(code, src, &cell_val);
-                    self.env_dirty = true;
                 }
                 self.stack.push(val);
             }
@@ -5115,7 +5114,6 @@ impl Interpreter {
                         let cell_val = Value::ContainerRef(cell.clone());
                         self.set_env_with_main_alias(src, cell_val.clone());
                         self.update_local_if_exists(code, src, &cell_val);
-                        self.env_dirty = true;
                     }
                 }
                 self.stack.push(val);
@@ -5576,8 +5574,7 @@ impl Interpreter {
 
     /// Like `exec_get_local_op` but does NOT resolve DeferredHashAccess/HashSlotRef.
     /// Pushes the raw local value, preserving container references for `=:=` checks.
-    pub(super) fn exec_get_local_raw_op(&mut self, code: &CompiledCode, idx: u32) {
-        self.ensure_locals_synced(code);
+    pub(super) fn exec_get_local_raw_op(&mut self, idx: u32) {
         let idx = idx as usize;
         let val = self.locals[idx].clone();
         self.stack.push(val);
@@ -5588,7 +5585,6 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        self.ensure_locals_synced(code);
         let idx = idx as usize;
         // Check if this variable has a binding alias (e.g. from $CALLER::foo := $other_var)
         let name = code.locals.get(idx).cloned().unwrap_or_default();
@@ -5859,9 +5855,7 @@ impl Interpreter {
         // closures are boxed precisely at their creation op, so reusing that set
         // here would over-box unrelated same-named locals (same-named `my` locals
         // share one slot) and break e.g. `let`-restore in a sibling block.
-        let box_decl = self.cell_boxing_active()
-            && self.vardecl_context
-            && !code.needs_cell_named_sub.is_empty();
+        let box_decl = self.vardecl_context && !code.needs_cell_named_sub.is_empty();
         let r = self.exec_set_local_op_inner(code, idx);
         // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
         if r.is_ok() {
@@ -6026,12 +6020,8 @@ impl Interpreter {
                 // closure. For the substr-rw/subbuf-rw/undefine Proxies the STORE
                 // records the referent on the retain-on-miss writeback list
                 // (`record_caller_var_writeback`); `apply_pending_rw_writeback` drains
-                // it precisely (works under the no-precise-reconcile substrate harness
-                // — env_dirty-removal step). The blanket reconcile remains as the
-                // fallback for arbitrary user `Proxy` STOREs that write other lexicals
-                // (no-op under the harness); byte-identical in the default build.
+                // it precisely.
                 self.apply_pending_rw_writeback(code);
-                self.reconcile_locals_from_env_at_site(code);
                 return Ok(());
             }
             // First write through a missing-key `:=` bind (a local holding a
@@ -7253,11 +7243,8 @@ impl Interpreter {
             // A Proxy STORE wrote the referent caller lexical by name. For
             // substr-rw/subbuf-rw/undefine the STORE recorded the referent precisely
             // (`record_caller_var_writeback`); drain it here so the slot refreshes
-            // without the blanket pull (env_dirty-removal substrate; see the other
-            // Proxy-STORE assign site). The blanket reconcile stays as the fallback
-            // for arbitrary user `Proxy` STOREs (no-op under the substrate harness).
+            // (see the other Proxy-STORE assign site).
             self.apply_pending_rw_writeback(code);
-            self.reconcile_locals_from_env_at_site(code);
             return Ok(());
         }
 
@@ -7526,7 +7513,6 @@ impl Interpreter {
             return;
         }
 
-        self.ensure_locals_synced(code);
         // MY:: pseudo-stash: collect all variable names from current scope.
         let mut entries: HashMap<String, Value> = HashMap::new();
         for (i, var_name) in code.locals.iter().enumerate() {
@@ -7572,7 +7558,6 @@ impl Interpreter {
             return loan_env!(self, package_stash_value(name));
         }
         // MY / LEXICAL: collect locals + env
-        self.ensure_locals_synced(code);
         let mut entries: HashMap<String, Value> = HashMap::new();
         for (i, var_name) in code.locals.iter().enumerate() {
             let val = self.locals[i].clone();

@@ -2139,9 +2139,7 @@ impl Interpreter {
         // captured-outer boxing (docs/captured-outer-cell-sharing.md). Gated on the
         // same toggle as the boxing it supports, so the default build is
         // byte-identical to before.
-        if self.cell_boxing_active()
-            && let Some(Value::ContainerRef(arc)) = self.env.get(&name).cloned()
-        {
+        if let Some(Value::ContainerRef(arc)) = self.env.get(&name).cloned() {
             arc.lock().unwrap().clone_from(&restored);
             return;
         }

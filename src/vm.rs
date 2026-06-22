@@ -207,7 +207,6 @@ pub(crate) struct VmCallFrame {
     /// without cloning the whole set). Removed on `pop_call_frame`. Empty for the
     /// slow path, which restores the full set via `saved_readonly` instead.
     pub readonly_added: Vec<String>,
-    pub saved_env_dirty: bool,
     pub saved_local_bind_pairs: Vec<(usize, usize)>,
 }
 
@@ -653,7 +652,6 @@ impl Interpreter {
         // the outer execution next reads a local. (The ping-pong achieved this
         // implicitly: the inner Interpreter's env flowed back through the interpreter and
         // the caller re-synced from it.)
-        self.env_dirty = true;
 
         result
     }
@@ -2762,7 +2760,6 @@ impl Interpreter {
                 let left = self.stack.pop().unwrap();
                 let out = loan_env!(self, eval_sequence_values(left, right, *exclude_end))?;
                 self.stack.push(out);
-                self.env_dirty = true;
                 *ip += 1;
             }
 
@@ -2839,15 +2836,12 @@ impl Interpreter {
                 let has_user_defined = class_name
                     .as_ref()
                     .is_some_and(|cn| self.has_user_method(&cn.resolve(), "defined"));
-                // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
-                // a user `.defined` mutates a captured-outer lexical by name in env
+                // A user `.defined` mutates a captured-outer lexical by name in env
                 // via the interpreter slow path (`run_instance_method`), which
                 // records nothing this site can drain. Snapshot the caller frame's
                 // slot-backing env values before the call so only the changed slots
-                // are written through after — the precise form of the blanket
-                // reconcile below. Armed only under boxing; the default build keeps
-                // the unconditional pull.
-                let armed = has_user_defined && self.cell_boxing_active();
+                // are written through after.
+                let armed = has_user_defined;
                 let pre_env: Vec<Option<Value>> = if armed {
                     code.locals
                         .iter()
@@ -2910,9 +2904,6 @@ impl Interpreter {
                             self.locals[i] = cur;
                         }
                     }
-                }
-                if has_user_defined {
-                    self.reconcile_locals_from_env_at_site(code);
                 }
                 self.stack.push(defined);
                 *ip += 1;
@@ -3057,7 +3048,6 @@ impl Interpreter {
                 if let Some(Value::LazyList(list)) = self.stack.pop() {
                     // Sink context must realize lazy gathers for side effects.
                     self.force_lazy_list_vm(&list)?;
-                    self.env_dirty = true;
                 }
                 *ip += 1;
             }
@@ -3077,14 +3067,12 @@ impl Interpreter {
                     match &val {
                         Value::LazyList(list) => {
                             self.force_lazy_list_vm(list)?;
-                            self.env_dirty = true;
                         }
                         Value::LazyIoLines { handle, words, .. } => {
                             // Sinking a lazy IO lines iterator must drain the
                             // underlying handle so that side effects (read
                             // position, .eof) are observable.
                             loan_env!(self, force_lazy_io_lines(handle, *words))?;
-                            self.env_dirty = true;
                         }
                         _ => {
                             // Sinking an unhandled Failure always throws (Raku behavior)
@@ -3202,31 +3190,23 @@ impl Interpreter {
 
             // -- I/O --
             OpCode::Say(n) => {
-                self.ensure_locals_synced(code);
                 self.sync_env_from_locals(code);
                 self.exec_say_op(*n)?;
-                self.env_dirty = true;
                 *ip += 1;
             }
             OpCode::Put(n) => {
-                self.ensure_locals_synced(code);
                 self.sync_env_from_locals(code);
                 self.exec_put_op(*n)?;
-                self.env_dirty = true;
                 *ip += 1;
             }
             OpCode::Print(n) => {
-                self.ensure_locals_synced(code);
                 self.sync_env_from_locals(code);
                 self.exec_print_op(*n)?;
-                self.env_dirty = true;
                 *ip += 1;
             }
             OpCode::Note(n) => {
-                self.ensure_locals_synced(code);
                 self.sync_env_from_locals(code);
                 self.exec_note_op(*n)?;
-                self.env_dirty = true;
                 *ip += 1;
             }
 
@@ -4146,7 +4126,6 @@ impl Interpreter {
                 self.env_mut().insert(name.clone(), pkg_val.clone());
                 self.chain_declared_packages.insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
-                self.env_dirty = true;
                 *ip += 1;
             }
             OpCode::RegisterPackageMy { name_idx } => {
@@ -4163,7 +4142,6 @@ impl Interpreter {
                 if let Some(set) = self.block_declared_vars.last_mut() {
                     set.insert(name);
                 }
-                self.env_dirty = true;
                 *ip += 1;
             }
             OpCode::RegisterPackageStub { name_idx } => {
@@ -4573,7 +4551,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::GetLocalRaw(idx) => {
-                self.exec_get_local_raw_op(code, *idx);
+                self.exec_get_local_raw_op(*idx);
                 *ip += 1;
             }
             OpCode::SetLocal(idx) => {

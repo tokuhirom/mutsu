@@ -94,7 +94,6 @@ impl Interpreter {
         };
         self.env_mut()
             .insert(lookup_key.to_string(), Value::Array(Arc::new(items), kind));
-        self.env_dirty = true;
         Ok(Some(result.items))
     }
 
@@ -1002,18 +1001,11 @@ impl Interpreter {
     pub(super) fn exec_but_mixin_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): `$obj but R`
-        // runs role R's `submethod TWEAK`/`BUILD` via the interpreter, which can
-        // mutate a captured-outer caller lexical by name (`my $invoked; role R {
-        // submethod TWEAK { $invoked = True } }`). Snapshot the overwritable slots
-        // for the precise diff that reconciles them under boxing (the reconcile
-        // below is the toggle-gated pull).
-        let armed = self.cell_boxing_active();
-        let pre_env = if armed {
-            self.snapshot_carrier_overwritable_env(code)
-        } else {
-            Vec::new()
-        };
+        // `$obj but R` runs role R's `submethod TWEAK`/`BUILD` via the interpreter,
+        // which can mutate a captured-outer caller lexical by name (`my $invoked;
+        // role R { submethod TWEAK { $invoked = True } }`). Snapshot the
+        // overwritable slots for the precise diff that reconciles them.
+        let pre_env = self.snapshot_carrier_overwritable_env(code);
         // `but` composing a role or another type into a type-object invocant is
         // illegal (no instance); mixing a concrete value (`Method but True`) is
         // allowed, so this only guards the role / type-object-RHS branches.
@@ -1042,15 +1034,9 @@ impl Interpreter {
                 return Err(Self::does_type_object_error("but", tn));
             }
             let composed = composed?;
-            // Stage 3: `$obj but R` runs role R's `submethod TWEAK`/`BUILD` via the
-            // interpreter (`eval_does_values`), which can mutate a captured-outer
-            // caller lexical by name (`my $invoked; role R { submethod TWEAK {
-            // $invoked = True } }`). Reconcile the caller's slots from env so the
-            // write is visible without the reverse `sync_locals_from_env` pull.
-            if armed {
-                self.carrier_writeback_changed_aggregates(code, &pre_env);
-            }
-            self.reconcile_locals_from_env_at_site(code);
+            // Reconcile the caller's slots from env so a captured-outer write made
+            // by the role's `submethod TWEAK`/`BUILD` is visible.
+            self.carrier_writeback_changed_aggregates(code, &pre_env);
             self.stack.push(composed);
             return Ok(());
         }
@@ -1279,23 +1265,13 @@ impl Interpreter {
         // Sync Interpreter locals to interpreter env so BUILD submethods can access
         // and modify closure variables from the enclosing scope.
         self.sync_env_from_locals(code);
-        // env_dirty substrate: snapshot for the precise BUILD/TWEAK captured-outer
-        // writeback (see exec_does_var_op).
-        let armed = self.cell_boxing_active();
-        let pre_env = if armed {
-            self.snapshot_carrier_overwritable_env(code)
-        } else {
-            Vec::new()
-        };
+        // Snapshot for the precise BUILD/TWEAK captured-outer writeback (see
+        // exec_does_var_op).
+        let pre_env = self.snapshot_carrier_overwritable_env(code);
         let result = self.vm_does_values(left, right)?;
-        // Sync back: BUILD submethods may have modified closure variables.
-        // Stage 3: use the toggle-independent reconcile so the BUILD submethod's
-        // captured-outer writes reach the caller's slots even with the reverse
-        // `sync_locals_from_env` pull disabled (byte-identical under ON).
-        if armed {
-            self.carrier_writeback_changed_aggregates(code, &pre_env);
-        }
-        self.reconcile_locals_from_env_at_site(code);
+        // Sync back: BUILD submethods may have modified closure variables, so the
+        // captured-outer writes reach the caller's slots.
+        self.carrier_writeback_changed_aggregates(code, &pre_env);
         // Capture Mixin value for trait_mod writeback (same as DoesVar path)
         if matches!(&result, Value::Mixin(..)) && self.trait_mod_writeback_key.is_some() {
             self.trait_mod_writeback_value = Some(result.clone());
@@ -1314,24 +1290,13 @@ impl Interpreter {
         // Sync Interpreter locals to interpreter env so BUILD submethods can access
         // and modify closure variables from the enclosing scope.
         self.sync_env_from_locals(code);
-        // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a
-        // `submethod BUILD`/`TWEAK` run by the mixin can mutate a captured-outer
+        // A `submethod BUILD`/`TWEAK` run by the mixin can mutate a captured-outer
         // caller lexical (`my $n=0; role R { submethod TWEAK { $n++ } }; $x does R`).
-        // The reconcile below is the toggle-gated pull; snapshot the overwritable
-        // slots so the precise diff reconciles them under boxing too.
-        let armed = self.cell_boxing_active();
-        let pre_env = if armed {
-            self.snapshot_carrier_overwritable_env(code)
-        } else {
-            Vec::new()
-        };
+        // Snapshot the overwritable slots so the precise diff reconciles them.
+        let pre_env = self.snapshot_carrier_overwritable_env(code);
         let updated = self.vm_does_values(left, right)?;
         // Sync back: BUILD submethods may have modified closure variables.
-        // Stage 3: toggle-independent reconcile (see exec_does_op).
-        if armed {
-            self.carrier_writeback_changed_aggregates(code, &pre_env);
-        }
-        self.reconcile_locals_from_env_at_site(code);
+        self.carrier_writeback_changed_aggregates(code, &pre_env);
         let name = Self::const_str(code, name_idx).to_string();
         self.env_mut().insert(name.clone(), updated.clone());
         self.update_local_if_exists(code, &name, &updated);

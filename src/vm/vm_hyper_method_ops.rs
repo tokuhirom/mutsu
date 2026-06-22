@@ -22,7 +22,6 @@ impl Interpreter {
         }
         self.set_env_with_main_alias(var, new_val.clone());
         self.locals_set_by_name(code, var, new_val);
-        self.env_dirty = true;
     }
 
     /// `$b>>++` / `$b>>--` on a Bag/Mix/Set: apply the postfix op to each weight,
@@ -519,7 +518,6 @@ impl Interpreter {
                     )
                 );
             }
-            self.env_dirty = true;
         }
         // Hash target: write any in-place per-value mutation back to the
         // original variable (e.g. `%h>>++` increments the stored values). The
@@ -543,7 +541,6 @@ impl Interpreter {
             } else {
                 self.overwrite_hash_bindings_by_identity(existing, new_hash);
             }
-            self.env_dirty = true;
         }
         // Preserve the container type of the target for QuantHash types.
         // The items list was produced by value_to_list, which yields Pairs
@@ -878,7 +875,6 @@ impl Interpreter {
                 self,
                 overwrite_array_items_by_identity_for_vm(existing, items.clone(), *kind,)
             );
-            self.env_dirty = true;
         }
         // Preserve the container type of the target for QuantHash types
         match &target {

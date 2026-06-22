@@ -131,13 +131,11 @@ impl Interpreter {
                 // CARRIER: pseudo-package names (SETTING::, OUTER::, CALLER::) need
                 // the interpreter's reflective scope resolution. See ledger §C.
                 // For regular qualified names, try compiled dispatch first.
-                let result = if self.is_interpreter_handled_function(name) {
+                if self.is_interpreter_handled_function(name) {
                     self.vm_call_function(name, Vec::new())?
                 } else {
                     self.call_function_compiled_first(name, Vec::new(), compiled_fns)?
-                };
-                self.env_dirty = true;
-                result
+                }
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
                 v.clone()
             } else {
@@ -152,9 +150,7 @@ impl Interpreter {
                 // precisely via its return merge; no blanket mark needed.
                 self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?
             } else {
-                let result = self.compile_and_call_function_def(&def, Vec::new(), compiled_fns)?;
-                self.env_dirty = true;
-                result
+                self.compile_and_call_function_def(&def, Vec::new(), compiled_fns)?
             }
         } else if self.has_type(name)
             || Self::is_builtin_type(name)
@@ -167,16 +163,12 @@ impl Interpreter {
                 Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
             )
         {
-            let result = self.vm_call_on_value(callable, Vec::new(), Some(compiled_fns))?;
-            self.env_dirty = true;
-            result
+            self.vm_call_on_value(callable, Vec::new(), Some(compiled_fns))?
         } else if let Some(sub_id) = self.wrap_sub_id_for_name(name)
             && !self.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.get_wrapped_sub(name)
         {
-            let result = self.vm_call_on_value(sub_val, Vec::new(), Some(compiled_fns))?;
-            self.env_dirty = true;
-            result
+            self.vm_call_on_value(sub_val, Vec::new(), Some(compiled_fns))?
         } else if Interpreter::is_test_function_name(name)
             && self.test_mode_active()
             // Only try test function dispatch for hyphenated names (e.g.
@@ -186,9 +178,7 @@ impl Interpreter {
             && name.contains('-')
         {
             // CARRIER: Test-framework function dispatch (test-mode state). See ledger §C.
-            let result = self.vm_call_function(name, Vec::new())?;
-            self.env_dirty = true;
-            result
+            self.vm_call_function(name, Vec::new())?
         } else if self.has_function(name)
             || Interpreter::is_implicit_zero_arg_builtin(name)
             || self.has_multi_function(name)
@@ -206,9 +196,7 @@ impl Interpreter {
                 // compiled-first function dispatch (ledger §2): this adds OTF
                 // compilation of simple user subs; the interpreter remains only as
                 // the terminal fallback inside call_function_compiled_first.
-                let result = self.call_function_compiled_first(name, Vec::new(), compiled_fns)?;
-                self.env_dirty = true;
-                result
+                self.call_function_compiled_first(name, Vec::new(), compiled_fns)?
             }
         } else if name == "callsame"
             || name == "nextsame"
@@ -218,9 +206,7 @@ impl Interpreter {
             || name == "lastcall"
         {
             // CARRIER: call-chain introspection (interpreter MOP dispatch stack). See ledger §C.
-            let result = self.vm_call_function(name, Vec::new())?;
-            self.env_dirty = true;
-            result
+            self.vm_call_function(name, Vec::new())?
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::Package(Symbol::intern(name))
@@ -243,9 +229,7 @@ impl Interpreter {
                 // Route the package-qualified term fork through the Interpreter's unified
                 // compiled-first function dispatch (ledger §2): interpreter remains
                 // only as the terminal fallback.
-                let result = self.call_function_compiled_first(name, Vec::new(), compiled_fns)?;
-                self.env_dirty = true;
-                result
+                self.call_function_compiled_first(name, Vec::new(), compiled_fns)?
             } else if let Some((pkg_prefix, last_seg)) = name.rsplit_once("::")
                 && !last_seg.is_empty()
                 && last_seg.starts_with(|c: char| c.is_ascii_lowercase())

@@ -1279,7 +1279,6 @@ impl Interpreter {
             // Write through the shared cell in place: every alias of this
             // iterator instance (caller var, locals) sees the advance directly.
             attributes.insert("index".to_string(), Value::Int(index as i64));
-            self.env_dirty = true;
         }
         Some(Ok(ret))
     }
@@ -1871,11 +1870,9 @@ impl Interpreter {
         // Save/swap stack and locals for the block
         let mut saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
-        let saved_env_dirty = self.env_dirty;
 
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
-        self.env_dirty = false;
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
                 if (name.starts_with('@') || name.starts_with('%'))
@@ -1941,7 +1938,6 @@ impl Interpreter {
         // Restore outer state
         self.locals = saved_locals;
         self.stack = saved_stack;
-        self.env_dirty = saved_env_dirty;
 
         match exec_err {
             Some(e) => Err(e),
@@ -2017,7 +2013,6 @@ impl Interpreter {
                     self.env_mut().insert_sym(*k, v.clone());
                 }
             }
-            self.env_dirty = true;
         }
         if pushed_dispatch {
             self.pop_method_dispatch();

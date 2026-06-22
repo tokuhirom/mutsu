@@ -88,26 +88,17 @@ impl Interpreter {
                 "X::Assignment::RO: target is not assignable",
             ));
         };
-        // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a user
-        // `Proxy` STORE (`STORE => method ($v) { $realvar = $v }` from an lvalue
-        // sub) mutates a captured-outer caller lexical by name. The slot is the
-        // assign-caller's, reached only via the blanket reconcile at the assign
-        // site — a no-op once env_dirty is removed. Snapshot the env scalars before
-        // STORE so the names it changed can be recorded for the retain-on-miss
-        // caller-var writeback, which the assign call site drains. Armed only under
-        // boxing; the default build's blanket reconcile covers it (byte-identical).
-        let pre_env: Option<std::collections::HashMap<crate::symbol::Symbol, Value>> =
-            if self.cell_boxing_active() {
-                Some(
-                    self.env
-                        .iter()
-                        .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
-                        .map(|(k, v)| (*k, v.clone()))
-                        .collect(),
-                )
-            } else {
-                None
-            };
+        // A user `Proxy` STORE (`STORE => method ($v) { $realvar = $v }` from an
+        // lvalue sub) mutates a captured-outer caller lexical by name. Snapshot the
+        // env scalars before STORE so the names it changed can be recorded for the
+        // retain-on-miss caller-var writeback, which the assign call site drains.
+        let pre_env: Option<std::collections::HashMap<crate::symbol::Symbol, Value>> = Some(
+            self.env
+                .iter()
+                .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
+                .map(|(k, v)| (*k, v.clone()))
+                .collect(),
+        );
         let store_result =
             self.call_sub_value(*storer.clone(), vec![proxy.clone(), value.clone()], true);
         if let Err(err) = store_result {

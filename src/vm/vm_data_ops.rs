@@ -512,12 +512,10 @@ impl Interpreter {
                 };
                 let result = self.shared_array_extend(target_name, items, false);
                 self.stack.push(result);
-                self.env_dirty = true;
                 return Ok(());
             }
             let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
             self.stack.push(result);
-            self.env_dirty = true;
             return Ok(());
         }
         // TODO: compile to bytecode — shaped-array push, blocked-by: shaped
@@ -531,7 +529,6 @@ impl Interpreter {
             let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
             let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
             self.stack.push(result);
-            self.env_dirty = true;
             return Ok(());
         }
         let mut val = self.stack.pop().unwrap_or(Value::Nil);
@@ -605,7 +602,6 @@ impl Interpreter {
                     let result = Value::Array(arr.clone(), kind);
                     drop(guard);
                     self.stack.push(result);
-                    self.env_dirty = true;
                     return Ok(());
                 }
                 // Non-array inner (e.g. Hash): generic clone-and-write-back.
@@ -614,12 +610,10 @@ impl Interpreter {
                 let result = loan_env!(self, call_method_with_values(inner, "push", vec![val]))?;
                 *cell.lock().unwrap() = result.clone();
                 self.stack.push(result);
-                self.env_dirty = true;
                 return Ok(());
             }
             let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
             self.stack.push(result);
-            self.env_dirty = true;
             return Ok(());
         }
 

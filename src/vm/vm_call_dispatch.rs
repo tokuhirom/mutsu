@@ -509,8 +509,6 @@ impl Interpreter {
         };
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack_depth = self.stack.len();
-        let saved_env_dirty = self.env_dirty;
-        self.env_dirty = false;
 
         // Raku: routines get their own $_ initialized to (Any).
         let saved_topic = if cf.code.is_routine {
@@ -608,7 +606,6 @@ impl Interpreter {
 
         // Restore state
         self.locals = saved_locals;
-        self.env_dirty = saved_env_dirty;
 
         // Restore env: if env was mutated, merge non-local changes back.
         // When has_locals is false, saved_env is None and no restore is needed
@@ -624,7 +621,6 @@ impl Interpreter {
                     cf.code.locals.iter().map(|s| s.as_str()).collect()
                 };
             let scoped = std::mem::replace(self.env_mut(), caller_env);
-            let mut changed = false;
             for (k, v) in scoped.overlay_iter() {
                 // The callee's private topic / arg array / routine-id must not
                 // leak to the caller (the caller env already holds its own).
@@ -633,13 +629,7 @@ impl Interpreter {
                 }
                 if !k.with_str(|s| local_names.contains(s)) {
                     self.env_mut().insert_sym(*k, v.clone());
-                    changed = true;
                 }
-            }
-            // Mark env dirty so the caller re-syncs locals when a captured outer
-            // variable was modified (e.g. $a++ where $a is from the caller scope).
-            if changed {
-                self.env_dirty = true;
             }
         } else if let Some(saved_env) = saved_env {
             if saved_env.ptr_eq(self.env()) {
@@ -663,7 +653,6 @@ impl Interpreter {
                 // Mark env as dirty so caller re-syncs its locals from env.
                 // This is needed when captured outer variables were modified
                 // by the function (e.g. $a++ where $a is from the caller's scope).
-                self.env_dirty = true;
             }
         } else {
             // Slice 6.3 step 2: the no-merge case — a 0-local function (no overlay,
@@ -674,9 +663,7 @@ impl Interpreter {
             // no assign / increment / nested call / registration) cannot dirty a
             // caller slot — the dispatch's routine `_` is restored above — so it
             // needs no pull. Only a body that can write env forces the re-sync.
-            if cf.code.has_env_writes {
-                self.env_dirty = true;
-            }
+            if cf.code.has_env_writes {}
         }
 
         // Restore caller's $_ after routine call. In the scoped path the caller
@@ -1079,8 +1066,6 @@ impl Interpreter {
         }
 
         let saved_locals = std::mem::take(&mut self.locals);
-        let saved_env_dirty = self.env_dirty;
-        self.env_dirty = false;
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / local env writes land in a
@@ -1122,7 +1107,6 @@ impl Interpreter {
                     self.restore_readonly_vars(saved_readonly);
                     self.set_env(caller_env);
                     self.locals = saved_locals;
-                    self.env_dirty = saved_env_dirty;
                     {
                         let param_name = &cf.param_defs[param_idx].name;
                         let got = runtime::value_type_name(&val);
@@ -1207,7 +1191,6 @@ impl Interpreter {
         self.stack.truncate(saved_stack_depth);
 
         self.locals = saved_locals;
-        self.env_dirty = saved_env_dirty;
         self.restore_readonly_vars(saved_readonly);
 
         // Restore the caller env and merge the overlay (the callee's own writes)
@@ -1238,7 +1221,6 @@ impl Interpreter {
                 }
                 if !k.with_str(|s| local_names.contains(s)) {
                     self.env_mut().insert_sym(*k, v.clone());
-                    self.env_dirty = true;
                 }
             }
         }
@@ -1340,8 +1322,6 @@ impl Interpreter {
         self.record_cf_deprecation(cf);
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
-        let saved_env_dirty = self.env_dirty;
-        self.env_dirty = false;
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / alias / @_ env writes below
@@ -1445,7 +1425,6 @@ impl Interpreter {
                 } else if pd.required {
                     self.set_env(caller_env);
                     self.locals = saved_locals;
-                    self.env_dirty = saved_env_dirty;
                     // Missing required named parameter is a runtime X::AdHoc in
                     // Raku (see binding.rs); carry the typed exception so it does
                     // not fall back to the bare "Exception" default.
@@ -1472,7 +1451,6 @@ impl Interpreter {
                 } else if pd.required {
                     self.set_env(caller_env);
                     self.locals = saved_locals;
-                    self.env_dirty = saved_env_dirty;
                     return Err(RuntimeError::new(format!(
                         "Too few positionals passed; expected {} arguments but got {}",
                         cf.param_defs.iter().filter(|p| !p.named).count(),
@@ -1619,7 +1597,6 @@ impl Interpreter {
 
         // Restore locals
         self.locals = saved_locals;
-        self.env_dirty = saved_env_dirty;
 
         // Restore readonly vars
         self.restore_readonly_vars(saved_readonly);
@@ -1648,7 +1625,6 @@ impl Interpreter {
                 }
                 if !k.with_str(|s| local_names.contains(s)) {
                     self.env_mut().insert_sym(*k, v.clone());
-                    self.env_dirty = true;
                 }
             }
         }
@@ -1691,7 +1667,6 @@ impl Interpreter {
         // own nested-call dirtiness is about the callee env (subsumed by the merge
         // below), so it is reset before the body and recomputed from what the
         // merge actually wrote back to the caller env.
-        let saved_env_dirty = self.env_dirty;
         // Slice F: the rw-writeback list is drained by the call-site op right
         // after each dispatch returns, so it must hold *only* this call's
         // sources on return. Clear any leftover from a sibling whose call site
@@ -1887,7 +1862,6 @@ impl Interpreter {
         // Body-internal env_dirty (from nested calls) concerns the callee env,
         // which the return merge reconciles; reset so the post-merge value
         // reflects only what was actually written back to the caller.
-        self.env_dirty = false;
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -2049,7 +2023,6 @@ impl Interpreter {
         // `is rw` param writeback can alias a caller local slot; dynamic-var
         // writeback (pop_caller_env_with_writeback) targets `$*x` names that have
         // no compiled slot, so it never obliges a pull.
-        let mut changed = false;
         // Fast path: if the env wasn't mutated during the call (Arc still shared),
         // we can skip the expensive env merge and just restore directly.
         if restored_env.ptr_eq(self.env()) {
@@ -2061,11 +2034,6 @@ impl Interpreter {
                 self,
                 apply_rw_bindings_to_env(&rw_bindings, &mut restored_env)
             );
-            // An `is rw` param writeback aliases the caller's argument container,
-            // which may be a caller local slot -> force a re-sync.
-            if !rw_bindings.is_empty() {
-                changed = true;
-            }
             let rw_sources: std::collections::HashSet<String> = rw_bindings
                 .iter()
                 .map(|(_, source)| source.clone())
@@ -2115,22 +2083,11 @@ impl Interpreter {
                     && !k.with_str(|s| local_names.contains(s))
                     && !k.with_str(|s| rw_sources.contains(s))
                 {
-                    // Only a genuine value change (vs what the caller already had)
-                    // can leave a caller local slot stale.
-                    if restored_env.get_sym(*k) != Some(v) {
-                        changed = true;
-                    }
                     restored_env.insert_sym(*k, v.clone());
                 }
             }
             *self.env_mut() = restored_env;
         }
-        // A raw/Proxy return aliases a caller container in a way the value merge
-        // above does not see; keep the conservative mark for those.
-        if cf.is_raw {
-            changed = true;
-        }
-        self.env_dirty = saved_env_dirty || changed;
 
         // Slice F (env<->locals coherence): record the captured-outer variables
         // this body writes so the call-site op writes their new env values

@@ -751,7 +751,6 @@ impl Interpreter {
         // cell mutation of a local that env does not yet reflect -- see the
         // cyclic-`:=`-bind regression in t/element-bind-cell.t. Only the
         // flag-deferred barrier pull, which runs once env is fresh, is correct.)
-        self.env_dirty = true;
         Ok(())
     }
 
@@ -789,7 +788,6 @@ impl Interpreter {
         // cell mutation of a local that env does not yet reflect -- see the
         // cyclic-`:=`-bind regression in t/element-bind-cell.t. Only the
         // flag-deferred barrier pull, which runs once env is fresh, is correct.)
-        self.env_dirty = true;
         Ok(())
     }
 
@@ -810,7 +808,6 @@ impl Interpreter {
         // cell mutation of a local that env does not yet reflect -- see the
         // cyclic-`:=`-bind regression in t/element-bind-cell.t. Only the
         // flag-deferred barrier pull, which runs once env is fresh, is correct.)
-        self.env_dirty = true;
         Ok(())
     }
 
@@ -831,7 +828,6 @@ impl Interpreter {
         // cell mutation of a local that env does not yet reflect -- see the
         // cyclic-`:=`-bind regression in t/element-bind-cell.t. Only the
         // flag-deferred barrier pull, which runs once env is fresh, is correct.)
-        self.env_dirty = true;
         Ok(())
     }
 
@@ -949,7 +945,6 @@ impl Interpreter {
                     self.set_env_with_main_alias(&name, default_value);
                 }
             }
-            self.env_dirty = true;
             return Ok(());
         }
 
@@ -1032,7 +1027,6 @@ impl Interpreter {
                 let name_str = name.to_string();
                 self.locals_set_by_name(code, &name_str, buf.clone());
                 self.set_env_with_main_alias(&name_str, buf);
-                self.env_dirty = true;
                 return Ok(());
             }
         }
@@ -1059,7 +1053,6 @@ impl Interpreter {
             }
             // Mark the variable read-only to prevent mutation
             self.mark_readonly(&name_str);
-            self.env_dirty = true;
             return Ok(());
         }
 
@@ -1204,7 +1197,6 @@ impl Interpreter {
                 self.set_env_with_main_alias(&name_str, instance.clone());
                 // Set type constraint so future assignments are coerced correctly
                 self.vm_set_var_type_constraint(&name_str, Some(trait_name.clone()));
-                self.env_dirty = true;
                 return Ok(());
             }
         }
@@ -1219,7 +1211,6 @@ impl Interpreter {
                 }
                 let name_str = name.to_string();
                 self.vm_set_var_type_constraint(&name_str, Some(et));
-                self.env_dirty = true;
                 return Ok(());
             }
         }
@@ -1257,7 +1248,6 @@ impl Interpreter {
         )?;
         let named_arg = Value::Pair(trait_name, Box::new(trait_value));
         self.vm_call_function("trait_mod:<is>", vec![var_obj, named_arg])?;
-        self.env_dirty = true;
         Ok(())
     }
 
@@ -1287,7 +1277,6 @@ impl Interpreter {
             if name.resolve().is_empty() {
                 self.stack.push(result);
             }
-            self.env_dirty = true;
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterEnum expects EnumDecl"))
@@ -1465,7 +1454,6 @@ impl Interpreter {
             // outer `code`.
             self.apply_pending_rw_writeback(code);
 
-            self.env_dirty = true;
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterClass expects ClassDecl"))
@@ -1590,7 +1578,6 @@ impl Interpreter {
                     });
                 }
             }
-            self.env_dirty = true;
             // Execute deferred non-declaration body statements now that the role
             // name is fully available in the environment.  This lets code like
             // `role R { method foo {}; R.foo }` work.
@@ -1675,7 +1662,6 @@ impl Interpreter {
                     };
                 self.register_exported_var(export_pkg, export_short, export_tags.clone());
             }
-            self.env_dirty = true;
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterSubset expects SubsetDecl"))
@@ -1697,7 +1683,6 @@ impl Interpreter {
         let run_result = self.run_range(code, body_start, end, compiled_fns);
         self.stack.truncate(saved_depth);
         self.finish_subtest(ctx, &label, run_result)?;
-        self.env_dirty = true;
         *ip = end;
         Ok(())
     }
@@ -1718,7 +1703,6 @@ impl Interpreter {
         // attribute mutations written into the shared cell after bind-stdin), then
         // flush all locals to env so captured vars are visible/mutable from the
         // whenever callbacks.
-        self.ensure_locals_synced(code);
         self.sync_env_from_locals(code);
 
         // Enter react mode: whenever blocks will register subscriptions
@@ -1734,31 +1718,23 @@ impl Interpreter {
         // whenever / LAST / QUIT / CLOSE callback as compiled bytecode
         // (Stage 2 #3038/#3039; QUIT handlers Interpreter-native in the Stage 3 follow-up).
         // No drive-loop callback routes back through the tree-walk interpreter.
-        // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): the
-        // `whenever` callbacks mutate captured-outer lexicals by name in env, with
-        // no per-write record this site can drain. Snapshot the caller frame's
+        // The `whenever` callbacks mutate captured-outer lexicals by name in env,
+        // with no per-write record this site can drain. Snapshot the caller frame's
         // slot-backing env values right before the event loop so that, after it,
-        // only the slots whose env value actually changed are written through —
-        // the precise form of the blanket reconcile below, which is the by-name
-        // writer the react loop *is*. Armed only under boxing; the default build
-        // keeps the unconditional `reconcile_locals_from_env_at_site` pull.
-        let armed = self.cell_boxing_active();
-        let pre_env: Vec<Option<Value>> = if armed {
-            code.locals
-                .iter()
-                .map(|n| {
-                    self.env().get(n).cloned().or_else(|| {
-                        n.strip_prefix('$')
-                            .or_else(|| n.strip_prefix('@'))
-                            .or_else(|| n.strip_prefix('%'))
-                            .or_else(|| n.strip_prefix('&'))
-                            .and_then(|b| self.env().get(b).cloned())
-                    })
+        // only the slots whose env value actually changed are written through.
+        let pre_env: Vec<Option<Value>> = code
+            .locals
+            .iter()
+            .map(|n| {
+                self.env().get(n).cloned().or_else(|| {
+                    n.strip_prefix('$')
+                        .or_else(|| n.strip_prefix('@'))
+                        .or_else(|| n.strip_prefix('%'))
+                        .or_else(|| n.strip_prefix('&'))
+                        .and_then(|b| self.env().get(b).cloned())
                 })
-                .collect()
-        } else {
-            Vec::new()
-        };
+            })
+            .collect();
         let event_result = if body_done {
             // Drain any queued subscriptions so they don't leak
             self.run_react_event_loop_drain();
@@ -1770,32 +1746,25 @@ impl Interpreter {
         // compiled bytecode on *this* VM (synchronous `from-list` emit) and
         // mutated captured-outer caller lexicals (`my $i; whenever ... { $i++ }`)
         // straight into `env` by name. Reconcile the caller's local slots from
-        // env unconditionally (not gated by the reverse-sync campaign toggle), so
-        // the slot stays coherent without relying on the speculative reverse
-        // `sync_locals_from_env` pull. Under reverse-sync ON this is byte-identical
-        // to the barrier pull it replaces (same HashSlotRef / `!attr` per-slot
-        // skips); under OFF it is what keeps `$i` correct.
-        if armed {
-            for (i, name) in code.locals.iter().enumerate() {
-                if name.starts_with('!') || matches!(self.locals[i], Value::HashSlotRef { .. }) {
-                    continue;
-                }
-                let cur = self.env().get(name).cloned().or_else(|| {
-                    name.strip_prefix('$')
-                        .or_else(|| name.strip_prefix('@'))
-                        .or_else(|| name.strip_prefix('%'))
-                        .or_else(|| name.strip_prefix('&'))
-                        .and_then(|b| self.env().get(b).cloned())
-                });
-                if let Some(cur) = cur
-                    && pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur))
-                {
-                    self.locals[i] = cur;
-                }
+        // env so the slot stays coherent (same HashSlotRef / `!attr` per-slot
+        // skips); this is what keeps `$i` correct.
+        for (i, name) in code.locals.iter().enumerate() {
+            if name.starts_with('!') || matches!(self.locals[i], Value::HashSlotRef { .. }) {
+                continue;
+            }
+            let cur = self.env().get(name).cloned().or_else(|| {
+                name.strip_prefix('$')
+                    .or_else(|| name.strip_prefix('@'))
+                    .or_else(|| name.strip_prefix('%'))
+                    .or_else(|| name.strip_prefix('&'))
+                    .and_then(|b| self.env().get(b).cloned())
+            });
+            if let Some(cur) = cur
+                && pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur))
+            {
+                self.locals[i] = cur;
             }
         }
-        self.reconcile_locals_from_env_at_site(code);
-        self.env_dirty = true;
 
         *ip = end;
         if let Err(err) = run_result
@@ -1828,7 +1797,6 @@ impl Interpreter {
                 self,
                 run_whenever_with_value(supply_val, target_var, &param, body)
             )?;
-            self.env_dirty = true;
             // Slice F (env<->locals coherence): a `my $tap = do whenever $sup {…}`
             // binds the tap handle by writing `env[target_var]` directly (see
             // `run_whenever_with_value`), but never updates the caller's local
@@ -1843,15 +1811,13 @@ impl Interpreter {
             // bound name is known exactly (`target_var`), so write just that slot
             // through from env — the precise form of the blanket reconcile below.
             // Armed only under boxing; the default build keeps the blanket pull.
-            if self.cell_boxing_active()
-                && let Some(name) = target_var
+            if let Some(name) = target_var
                 && let Some(slot) = self.find_local_slot(code, name)
                 && !matches!(self.locals[slot], Value::HashSlotRef { .. })
                 && let Some(val) = self.env().get(name).cloned()
             {
                 self.locals[slot] = val;
             }
-            self.reconcile_locals_from_env_at_site(code);
             Ok(())
         } else {
             Err(RuntimeError::new("WheneverScope expects Block body"))

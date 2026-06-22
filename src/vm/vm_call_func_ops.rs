@@ -510,7 +510,6 @@ impl Interpreter {
             // env values through to this caller's local slots so they stay coherent
             // without the reverse `sync_locals_from_env` pull.
             self.apply_pending_rw_writeback(code);
-            self.env_dirty = true;
             return Ok(());
         }
 
@@ -527,9 +526,7 @@ impl Interpreter {
             // pull (env_dirty-removal substrate). The blanket reconcile stays as the
             // fallback (no-op under the substrate harness).
             self.apply_pending_rw_writeback(code);
-            self.reconcile_locals_from_env_at_site(code);
             self.stack.push(result);
-            self.env_dirty = true;
             return Ok(());
         }
 
@@ -545,12 +542,7 @@ impl Interpreter {
         // interpreter terminal.
         if let Some(callable) = lexical_override {
             let result = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
-            // Slice F (multi-frame coherence): the dispatched lexical callable may
-            // mutate a caller lexical by name; this branch blanket-marks
-            // `env_dirty`, so reconcile the caller's slots from env too.
-            self.reconcile_locals_from_env_at_site(code);
             self.stack.push(result);
-            self.env_dirty = true;
             return Ok(());
         }
         // Slice F (env<->locals coherence, docs/env-locals-coherence.md): the
@@ -598,14 +590,6 @@ impl Interpreter {
         // Slice F: write any `is rw` parameter writeback through to the caller's
         // local slot (see `apply_pending_rw_writeback`).
         self.apply_pending_rw_writeback(code);
-        // Slice F: a function call that dirtied env may have mutated a caller's
-        // captured-outer lexical by name — a native builtin running a thunk
-        // (X/Z-metaop thunks), a `multi sub` candidate body (`$reached = True`),
-        // an interpreter fallback, ... Reconcile the caller's slots from env so
-        // the write is visible without the reverse pull. Gated on `env_dirty`,
-        // exactly when the barrier would have pulled, so ON behavior is
-        // unchanged; a pure compiled call (env not dirtied) pays nothing.
-        self.blanket_reconcile_if_dirty(code);
         self.stack.push(result);
         // env_dirty is now managed inside dispatch_func_call_inner: the
         // interpreter / native fallback branches set it (they mutate env by
@@ -675,7 +659,6 @@ impl Interpreter {
             {
                 let result = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
                 self.stack.push(result);
-                self.env_dirty = true;
                 return Ok(());
             }
         }
@@ -712,7 +695,6 @@ impl Interpreter {
                 let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
                 self.stack.push(result);
             }
-            self.env_dirty = true;
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
         } else if let Some(callable) = self.lexical_amp_var_callable(Some(code), &name) {
@@ -723,7 +705,6 @@ impl Interpreter {
             // lexical_amp_var_callable excludes builtin / package-sub names.
             let result = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
             self.stack.push(result);
-            self.env_dirty = true;
         } else {
             // Sync Interpreter locals to env before spawning threads so closures capture them
             if name == "start" {
@@ -732,7 +713,6 @@ impl Interpreter {
             let result = self.call_function_compiled_first(&name, args, compiled_fns)?;
             let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
             self.stack.push(result);
-            self.env_dirty = true;
         }
         Ok(())
     }
@@ -795,18 +775,7 @@ impl Interpreter {
         let result = result?;
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?;
         self.apply_pending_rw_writeback(code);
-        // Slice F (multi-frame coherence): a closure value invoked here
-        // (`$code()`/`$blk()`) — or a nested method/closure it calls — can mutate
-        // one of this caller frame's lexicals by name (e.g. a `$*OUT.print` whose
-        // method closes over the caller's `$output`). Reconcile the caller's slots
-        // from env so the write is visible at the next GetLocal without the reverse
-        // `sync_locals_from_env` pull. This path unconditionally marks `env_dirty`
-        // below (it cannot track the dispatched closure's writes precisely), so the
-        // reconcile is unconditional too — matching the blanket dirtiness the
-        // reverse pull would have acted on in the ON path.
-        self.reconcile_locals_from_env_at_site(code);
         self.stack.push(result);
-        self.env_dirty = true;
         Ok(())
     }
 
@@ -889,13 +858,7 @@ impl Interpreter {
         };
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
         self.apply_pending_rw_writeback(code);
-        // Slice F (multi-frame coherence): see `exec_call_on_value_op`. A code var
-        // invoked by name (`&foo()` / `$blk()`) — or a callee it forwards to — may
-        // mutate a caller lexical by name; reconcile the caller's slots from env
-        // (this path also blanket-marks `env_dirty` below, so reconcile too).
-        self.reconcile_locals_from_env_at_site(code);
         self.stack.push(result);
-        self.env_dirty = true;
         Ok(())
     }
 
@@ -912,7 +875,6 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some(callable) = call_me_override {
             let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
-            self.env_dirty = true;
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, true))
         } else {
@@ -1016,7 +978,6 @@ impl Interpreter {
                 // paths above instead rely on their own scoped-overlay merge to
                 // signal env_dirty only when a captured-outer write happened, so
                 // a pure compiled call no longer forces a per-call locals pull.
-                self.env_dirty = true;
                 if self.has_multi_candidates_cached(name) && !self.has_proto(name) {
                     // User-defined multi candidates take priority over builtins.
                     // Resolve the winning candidate Interpreter-side via the same resolver

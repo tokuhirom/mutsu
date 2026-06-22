@@ -379,7 +379,6 @@ impl Interpreter {
             && let Some(result) = self.autoviv_typed_array_push(&type_name.resolve(), &args)?
         {
             self.stack.push(result);
-            self.env_dirty = true;
             return Ok(());
         }
         // .emit on any value: push to supply emit buffer if inside a supply
@@ -430,7 +429,6 @@ impl Interpreter {
                 let t = self.eval_truthy(&target);
                 self.stack
                     .push(Value::Bool(if method == "not" { !t } else { t }));
-                self.env_dirty = true;
                 return Ok(());
             }
         }
@@ -459,10 +457,8 @@ impl Interpreter {
         {
             let kind = kind.clone();
             let mut results = Vec::new();
-            // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
-            // accumulate EVERY eigenstate's by-name caller write (see the matching
+            // Accumulate EVERY eigenstate's by-name caller write (see the matching
             // CallMethodMut junction path for the full rationale).
-            let armed = self.cell_boxing_active();
             for v in values.iter() {
                 let r = if let Some(threaded) =
                     self.maybe_autothread_method_args(v, method, &args)?
@@ -474,15 +470,13 @@ impl Interpreter {
                     self.try_compiled_method_or_interpret(v.clone(), method, args.clone())?
                 };
                 results.push(r);
-                if armed {
-                    let pending: Vec<String> = self
-                        .pending_rw_writeback_sources
-                        .drain(..)
-                        .chain(self.pending_caller_var_writeback.drain(..))
-                        .collect();
-                    for name in pending {
-                        self.record_caller_var_writeback(&name);
-                    }
+                let pending: Vec<String> = self
+                    .pending_rw_writeback_sources
+                    .drain(..)
+                    .chain(self.pending_caller_var_writeback.drain(..))
+                    .collect();
+                for name in pending {
+                    self.record_caller_var_writeback(&name);
                 }
             }
             let junction_result = Value::Junction {
@@ -490,18 +484,13 @@ impl Interpreter {
                 values: Arc::new(results),
             };
             self.stack.push(junction_result);
-            self.env_dirty = true;
             // Slice F (env<->locals coherence): see the matching CallMethodMut
             // junction path. An invocant junction threading a user method that
             // mutates a captured-outer / `our` variable accumulates into env, but
             // only the last eigenstate's pending writeback reaches the caller's
-            // slots; this path returns before the normal post-dispatch reconcile,
-            // so reconcile the caller's local slots from env here (env already
-            // holds every eigenstate's value). Byte-identical with reverse-sync on.
-            if armed {
-                self.apply_pending_caller_var_writeback(code);
-            }
-            self.reconcile_locals_from_env_at_site(code);
+            // slots; drain the accumulated writeback into the caller's local slots
+            // (env already holds every eigenstate's value).
+            self.apply_pending_caller_var_writeback(code);
             return Ok(());
         }
 
@@ -509,7 +498,6 @@ impl Interpreter {
         // If any method arg is a Junction, auto-thread over it.
         if let Some(result) = self.maybe_autothread_method_args(&target, method, &args)? {
             self.stack.push(result);
-            self.env_dirty = true;
             return Ok(());
         }
 
@@ -555,7 +543,6 @@ impl Interpreter {
             };
             let _ = crate::runtime::native_methods::release_lock(&lock, me);
             self.stack.push(result?);
-            self.env_dirty = true;
             return Ok(());
         }
 
@@ -926,7 +913,6 @@ impl Interpreter {
                             Value::RaceSeq(Arc::new(result))
                         };
                         self.stack.push(wrapped);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     // Large list: fall through to array-based dispatch
@@ -958,7 +944,6 @@ impl Interpreter {
             let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
             let matched = self.vm_smart_match(&topic, &target);
             self.stack.push(Value::Bool(matched));
-            self.env_dirty = true;
             return Ok(());
         }
         // .WHO on pseudo-package Package values: build the stash in the Interpreter
@@ -971,7 +956,6 @@ impl Interpreter {
                 let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
                 self.stack.push(stash);
             }
-            self.env_dirty = true;
             return Ok(());
         }
         // `.print(arg)` / `.say(arg)` / `.put(arg)` / `.note(arg)` on a Failure
@@ -1042,7 +1026,6 @@ impl Interpreter {
                 let vals =
                     self.call_method_all_with_fallback(&target, method, &args, skip_native)?;
                 self.stack.push(Value::array(vals));
-                self.env_dirty = true;
             }
             Some("*") => {
                 match self.call_method_all_with_fallback(&target, method, &args, skip_native) {
@@ -1052,7 +1035,6 @@ impl Interpreter {
                     }
                     Err(e) => return Err(e),
                 }
-                self.env_dirty = true;
             }
             _ => {
                 // Array-subclass instance delegation: when the Instance's class
@@ -1089,7 +1071,6 @@ impl Interpreter {
                             self.try_compiled_method_or_interpret(storage, method, args.clone());
                         if let Ok(val) = result {
                             self.stack.push(val);
-                            self.env_dirty = true;
                             return Ok(());
                         }
                         // Fall through to normal dispatch if delegation failed
@@ -1138,7 +1119,6 @@ impl Interpreter {
                                 _ => args,
                             };
                             self.stack.push(Value::real_array(arr));
-                            self.env_dirty = true;
                             return Ok(());
                         }
                         "defined" | "Bool" | "so" | "not" | "gist" | "Str" | "raku" | "perl"
@@ -1216,7 +1196,6 @@ impl Interpreter {
                         _ => args,
                     };
                     self.stack.push(Value::real_array(arr));
-                    self.env_dirty = true;
                     return Ok(());
                 }
                 // If we have a pending Proxy subclass attribute reference and this
@@ -1231,7 +1210,6 @@ impl Interpreter {
                     let result =
                         self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args)?;
                     self.stack.push(result);
-                    self.env_dirty = true;
                     return Ok(());
                 }
                 // Fast path for shift/pop on array values in the non-mutating
@@ -1338,23 +1316,17 @@ impl Interpreter {
                     Some("?") => match call_result {
                         Ok(val) => {
                             self.stack.push(val);
-                            if mark_dirty {
-                                self.env_dirty = true;
-                            }
+                            if mark_dirty {}
                         }
                         Err(e) if Self::is_method_not_found_error(&e) => {
                             self.stack.push(Value::Nil);
-                            if mark_dirty {
-                                self.env_dirty = true;
-                            }
+                            if mark_dirty {}
                         }
                         Err(e) => return Err(e),
                     },
                     _ => {
                         self.stack.push(call_result?);
-                        if mark_dirty {
-                            self.env_dirty = true;
-                        }
+                        if mark_dirty {}
                     }
                 }
                 // Slice F: reconcile the caller's local slots from env after a

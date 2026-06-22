@@ -806,17 +806,13 @@ impl Interpreter {
                     // before the clause runs and record the names it changes into the
                     // retain-on-miss caller-var writeback, drained at the call site.
                     let pre_env: Option<std::collections::HashMap<crate::symbol::Symbol, Value>> =
-                        if self.cell_boxing_active() {
-                            Some(
-                                self.env
-                                    .iter()
-                                    .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
-                                    .map(|(k, v)| (*k, v.clone()))
-                                    .collect(),
-                            )
-                        } else {
-                            None
-                        };
+                        Some(
+                            self.env
+                                .iter()
+                                .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
+                                .map(|(k, v)| (*k, v.clone()))
+                                .collect(),
+                        );
                     let ok = match where_expr.as_ref() {
                         Expr::AnonSub { body, .. } => self
                             .eval_block_value(body)

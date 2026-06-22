@@ -516,17 +516,13 @@ impl Interpreter {
                     // site (`apply_pending_rw_writeback`).
                     let cas_pre_env: Option<
                         std::collections::HashMap<crate::symbol::Symbol, Value>,
-                    > = if self.cell_boxing_active() {
-                        Some(
-                            self.env
-                                .iter()
-                                .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
-                                .map(|(k, v)| (*k, v.clone()))
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    };
+                    > = Some(
+                        self.env
+                            .iter()
+                            .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
+                            .map(|(k, v)| (*k, v.clone()))
+                            .collect(),
+                    );
                     let result = self.call_sub_value(code.clone(), call_args, bind_dollar_topic)?;
                     if let Some(cas_pre_env) = cas_pre_env {
                         let changed: Vec<String> = self
