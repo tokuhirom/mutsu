@@ -71,26 +71,34 @@
     writeback**（`types/binding.rs` の where-eval 前後 env scalar スナップショット差分→`pending_caller_var_writeback`・
     named-parameters 消化）。**S15（#3433・6→5）= CAS block の captured-outer writeback**（`builtin_cas_var` の block 実行
     前後 env scalar スナップショット差分→`pending_caller_var_writeback`・cas-loop 消化）。
-    **S16（#TBD・5→4）= proto-multi 候補の captured-outer writeback**（`try_proto_method_body` の `run_proto_method`
+    **S16（#3437・5→4）= proto-multi 候補の captured-outer writeback**（`try_proto_method_body` の `run_proto_method`
     前後 env scalar スナップショット差分→`pending_caller_var_writeback`・defer-next 消化）。**★真因＝proto 候補は常に
     slow path（`run_instance_method_resolved`）経由で、捕捉 write を env に伝播するが `env_dirty` を立てない＝blanket pull
     すら発火せず default build でも slot stale（`is` 読みは reconcile site を踏み roast は偶然 green・`say` 直読みは壊れる）。
     ∴ S16 は ungated**（precise writeback は blanket の部分集合で正しい結果を変えず default 潜在バグも直す）。
-    **S17（#TBD・4→3）= custom HOW type-check メソッドの captured-outer writeback**（`Metamodel::Primitives.create_type`
+    **S17（#3438・4→3）= custom HOW type-check メソッドの captured-outer writeback**（`Metamodel::Primitives.create_type`
     の HOW `type_check`/`accepts_type`/`find_method` が captured counter を `++`。3 dispatch サイトを
     `call_how_method_recording_writeback`（HOW 呼び出し前後 env scalar スナップショット差分→`pending_caller_var_writeback`）
     経由に置換 → smartmatch op 末尾の `apply_pending_caller_var_writeback` が drain・primitives 消化）。**counter が
     read-modify-write なので文跨ぎで消える**のが厄介。S16 同様 ungated（custom-HOW dispatch 限定スコープ）。
-    **S18（#TBD・3→2）= EVAL carrier の scalar 再代入 writeback を container slot にも適用**（`my $z=[]; EVAL q'$z=1'`
+    **S18（#3439・3→2）= EVAL carrier の scalar 再代入 writeback を container slot にも適用**（`my $z=[]; EVAL q'$z=1'`
     の writeback が `writeback_carrier_writes`〔vm_env_helpers.rs〕で「古い slot 値が scalar か」判定だったため Array slot を
     スキップ→上書き拒否→blanket reconcile 頼み。適格判定を**新 env 値が scalar か**＋slot が `:=` bind cell でないことに変更）。
     **★terminator は「parser/auto-curly」誤分類で実体は EVAL writeback だった**（normal=z=1・double-OFF だけ z=[]）。一般的修正。
     **★writeback 候補は枯渇**（S16 proto-multi・S17 custom-HOW・S18 EVAL container-slot scalar）。**残 2 は両方 writeback で
-    ない別軸**: ①lazy-lists（**laziness 別軸**・L 系 lazy 化が前提）②throttle（timing・flaky 系・決定的 pin 不可）。
-    **次セッション**: 残 2 が env_dirty 削除をブロックしないことを確認 → §2-E 着手。
+    ない別軸**: ①**lazy-lists（真の laziness blocker・要 lazy 化）**②throttle（timing・flaky 系・決定的 pin 不可）。
+    **★lazy-lists は精密切り分け済（重要）**: `gather{take $_ for 0..^$n; $was-lazy=0}.lazy` を `grep[^3]` で消費する
+    `S02-types/lazy-lists.t` 14/16。**blanket だけ OFF でも precise だけ OFF でも fail（両方 ON の default のみ pass）**＝
+    take counter 計測で double-OFF / blanket-OFF とも gather が **eager force される**（takes=10・normal は lazy で take 計上 0）。
+    ∴ **precise writeback では解けず、blanket reconcile が laziness 維持に load-bearing**＝env_dirty 削除前に **grep/map が
+    `.lazy` gather を eager force しない真 lazy 化が必要**（L 系別軸）。診断＝`tmp/lazy2.raku` 相当。
+    **次セッション着手順**: ①lazy-lists の真 lazy 化（grep/map on lazy gather・最有力ブロッカー）→ ②throttle が flaky か最終確認
+    （`.5〜.8 秒`タイミングアサート＝決定的 pin 不可なら env_dirty 削除のブロッカーから外す）→ ③§2-E（`env_dirty` 物理削除）着手。
 - **✅ env↔locals 純 writeback コヒーレンス（blanket ON 下）は完了**（slice 1〜1.20・#3400）。lazy-lists.t laziness も
   解消（#3403）。OFF roast survey（blanket OFF）の決定的サーフェスは IO-Socket-Async.t flaky のみ。
-- **∴ 次 = roast double-OFF 残 2（別軸＝laziness/timing）が env_dirty 削除をブロックしないか確認 → `env_dirty` 物理削除（§2-E）**:
+- **∴ 次 = lazy-lists の真 lazy 化（確定した env_dirty 削除ブロッカー）→ throttle flaky 確認 → `env_dirty` 物理削除（§2-E）**:
+  lazy-lists は blanket reconcile が laziness 維持に load-bearing（grep/map が `.lazy` gather を eager force するのを抑える）
+  と精密切り分け済＝precise writeback では解けない genuine blocker。これを真 lazy 化で外してから、
   `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 → `env_dirty`/`ensure_locals_synced`/
   `saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
 
