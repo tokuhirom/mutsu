@@ -708,6 +708,36 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
+/// Parse an item-context coercion applied to a list/hash contextualizer:
+/// `$@(...)` and `$%(...)`.
+///
+/// In Raku these are the itemizing forms of the list/hash contextualizers:
+/// the inner `@(...)` / `%(...)` builds a List / Hash, and the leading `$`
+/// itemizes it (wraps it in a Scalar container). We lower `$@(expr)` to
+/// `@(expr).item` and `$%(expr)` to `%(expr).item`.
+pub(super) fn itemized_context_paren_expr(input: &str) -> PResult<'_, Expr> {
+    let Some(rest) = input.strip_prefix('$') else {
+        return Err(PError::expected("itemized context paren expression"));
+    };
+    let (rest, inner) = if rest.starts_with("@(") {
+        list_context_paren_expr(rest)?
+    } else if rest.starts_with("%(") {
+        hash_context_paren_expr(rest)?
+    } else {
+        return Err(PError::expected("itemized context paren expression"));
+    };
+    Ok((
+        rest,
+        Expr::MethodCall {
+            target: Box::new(inner),
+            name: Symbol::intern("item"),
+            args: vec![],
+            modifier: None,
+            quoted: false,
+        },
+    ))
+}
+
 /// Parse list-context parenthesized expression: `@(...)`.
 ///
 /// In Raku, `@(expr)` coerces the expression into list context.
