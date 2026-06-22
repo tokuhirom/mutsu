@@ -2145,6 +2145,15 @@ impl Interpreter {
             arc.lock().unwrap().clone_from(&restored);
             return;
         }
+        // Non-cell restore writes the saved value into `env` by name only; record
+        // it so the block-exit op refreshes the owning local slot precisely
+        // (`apply_pending_rw_writeback`) instead of relying on the blanket
+        // env→locals pull (env_dirty-removal substrate). The owner is usually this
+        // same frame (a bare `{ temp $x = … }` block), but a `temp`/`let` inside a
+        // nested callee owns the slot a frame up — record on both the drop-on-miss
+        // and retain-on-miss lists so either reaches it.
+        self.pending_rw_writeback_sources.push(name.clone());
+        self.record_caller_var_writeback(&name);
         if let Value::Instance {
             attributes: saved_attrs,
             ..
