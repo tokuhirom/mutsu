@@ -481,13 +481,42 @@ impl Interpreter {
         pre_env: &[Option<Value>],
     ) {
         for (i, name) in code.locals.iter().enumerate() {
-            if name.starts_with('!') || !Self::slot_carrier_overwritable(&self.locals[i]) {
+            if name.starts_with('!')
+                || matches!(
+                    self.locals[i],
+                    Value::HashSlotRef { .. } | Value::ContainerRef(_)
+                )
+            {
                 continue;
             }
             let Some(cur) = self.carrier_env_value(name) else {
                 continue;
             };
-            if pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur)) {
+            if !Self::slot_carrier_overwritable(&self.locals[i]) {
+                // A plain Array/Hash slot: overwriting from env normally risks
+                // clobbering a live interior `:=` element cell (env may hold a
+                // COW-detached copy). The one safe case is a *type change away* from
+                // the container — `$a does Role` turns a Hash `$a` into a `Mixin`,
+                // discarding the old container wholesale — so write through only
+                // when the env value's variant differs from the slot's.
+                if std::mem::discriminant(&self.locals[i]) != std::mem::discriminant(&cur) {
+                    self.locals[i] = cur;
+                }
+                continue;
+            }
+            // "Changed" must catch a *variant* change even when `PartialEq` treats
+            // the two values as equal: `Value::Mixin(Int(0), …)` compares EQUAL to
+            // `Int(0)` (Mixin PartialEq delegates to its inner value), so a
+            // `$a does Role` that turns an `Int` slot into an allomorphic `Mixin`
+            // would otherwise be missed. Compare the enum discriminant first, then
+            // the value.
+            let changed = match pre_env.get(i) {
+                Some(Some(prev)) => {
+                    std::mem::discriminant(prev) != std::mem::discriminant(&cur) || *prev != cur
+                }
+                _ => true,
+            };
+            if changed {
                 self.locals[i] = cur;
             }
         }
