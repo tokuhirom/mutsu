@@ -474,7 +474,14 @@ fn has_unescaped_statement_boundary(input: &str) -> bool {
 
 fn parse_subst_replacement_expr(input: &str) -> PResult<'_, String> {
     let (input, _) = ws(input)?;
-    let (rest, expr) = super::primary(input)?;
+    // Parse the FULL replacement expression (not just the first primary): the
+    // literal shortcut is only valid when the entire replacement is a single
+    // literal. Using `primary` here would stop after the first term, so a
+    // compound replacement like `"<" ~ $/ ~ ">"` would leave `~ $/ ~ ">"` in the
+    // stream to be (mis)parsed as an outer binary expression, silently dropping
+    // it from the substitution. Requiring `expression` to yield a bare `Literal`
+    // routes any compound replacement to the closure/block path instead.
+    let (rest, expr) = expression(input)?;
     let replacement = match expr {
         Expr::Literal(value) => value.to_string_value(),
         _ => {
@@ -1719,16 +1726,49 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 },
                             ));
                         }
-                        // Expression-based replacement (e.g. S[(o)] = $0.uc)
+                        // Expression-based replacement (e.g. S[(o)] = $0.uc).
                         let (after_eq_ws, _) = ws(after_eq)?;
-                        let (rest, replacement) = expression(after_eq_ws)?;
+                        let (rest, replacement_expr) = expression(after_eq_ws)?;
+                        // Perl5 substitutions keep the legacy `.subst` closure
+                        // lowering, which binds Perl5 captures (`$1`, `$0`, ...)
+                        // per match; the generic interpolator cannot reproduce it.
+                        if adverbs.perl5 {
+                            return Ok((
+                                rest,
+                                build_non_destructive_subst_expr(
+                                    pattern.to_string(),
+                                    replacement_expr,
+                                    &adverbs,
+                                )?,
+                            ));
+                        }
+                        // Capture the raw replacement source and wrap it in a
+                        // `{...}` block so the NonDestructiveSubst interpolator
+                        // evaluates it once per match with `$/`, `$0`, ... bound to
+                        // that match. Crucially this does NOT rebind `$_` (it stays
+                        // the surrounding topic) nor steal the enclosing block's
+                        // placeholder parameters (`$^a`) -- both of which the
+                        // AnonSub `.subst` lowering would incorrectly do. Mirrors
+                        // the destructive `s[pattern] = expr` path above.
+                        let consumed = after_eq_ws.len() - rest.len();
+                        let raw_replacement = after_eq_ws[..consumed].trim().to_string();
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        validate_regex_pattern_or_perror(&pattern)?;
+                        let replacement = format!("{{{raw_replacement}}}");
                         return Ok((
                             rest,
-                            build_non_destructive_subst_expr(
-                                pattern.to_string(),
+                            Expr::NonDestructiveSubst {
+                                pattern,
                                 replacement,
-                                &adverbs,
-                            )?,
+                                samecase: adverbs.samecase,
+                                sigspace: adverbs.sigspace,
+                                samemark: adverbs.samemark,
+                                samespace: adverbs.samespace,
+                                global: adverbs.global,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
+                                perl5: adverbs.perl5,
+                            },
                         ));
                     }
                 }
