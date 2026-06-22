@@ -467,7 +467,10 @@ impl Interpreter {
         } else {
             match &target {
                 Value::Array(items, kind) if kind.is_itemized() => items.to_vec(),
-                _ => Self::value_to_list(&target),
+                // A Blob/Buf maps over its bytes (matches raku iteration).
+                _ => {
+                    Self::buf_as_byte_items(&target).unwrap_or_else(|| Self::value_to_list(&target))
+                }
             }
         };
         // In Raku, `.map` returns a lazy Seq. mutsu evaluates map eagerly for
