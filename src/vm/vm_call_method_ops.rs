@@ -451,6 +451,10 @@ impl Interpreter {
         {
             let kind = kind.clone();
             let mut results = Vec::new();
+            // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
+            // accumulate EVERY eigenstate's by-name caller write (see the matching
+            // CallMethodMut junction path for the full rationale).
+            let armed = self.cell_boxing_active();
             for v in values.iter() {
                 let r = if let Some(threaded) =
                     self.maybe_autothread_method_args(v, method, &args)?
@@ -462,6 +466,16 @@ impl Interpreter {
                     self.try_compiled_method_or_interpret(v.clone(), method, args.clone())?
                 };
                 results.push(r);
+                if armed {
+                    let pending: Vec<String> = self
+                        .pending_rw_writeback_sources
+                        .drain(..)
+                        .chain(self.pending_caller_var_writeback.drain(..))
+                        .collect();
+                    for name in pending {
+                        self.record_caller_var_writeback(&name);
+                    }
+                }
             }
             let junction_result = Value::Junction {
                 kind,
@@ -476,6 +490,9 @@ impl Interpreter {
             // slots; this path returns before the normal post-dispatch reconcile,
             // so reconcile the caller's local slots from env here (env already
             // holds every eigenstate's value). Byte-identical with reverse-sync on.
+            if armed {
+                self.apply_pending_caller_var_writeback(code);
+            }
             self.reconcile_locals_from_env_at_site(code);
             return Ok(());
         }
