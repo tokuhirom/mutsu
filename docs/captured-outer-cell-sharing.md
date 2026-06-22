@@ -749,10 +749,35 @@ callback は `vm_call_map_block` 経由で by-name に env を書くが per-writ
 `t/react-do-whenever-tap-coherence.t`（2）他（全 6・double-OFF で PASS 化）。broad supply/react/concurrency/promise/start
 t/ も両モード PASS。
 
-### 10.10 ✅ double-OFF surface 0 到達 → env_dirty 物理削除へ
+### 10.10 t/ surface 0 到達・**roast double-OFF sweep が 25 file の隠れサーフェスを露呈**（authoritative）
 
 S1〜S7 で **t/ pin（16）＋ broad supply/react/concurrency/promise/start クラスタが両モード（default / double-OFF）で全
-PASS**＝精密 reconcile に依存する t/ サーフェスは枯渇。残既知 OFF 依存は `IO-Socket-Async.t` の flaky のみ。**次の本丸 =
-§7.4 / PLAN §2-E（`env_dirty` 物理削除）**: ①全 t/ + roast の double-OFF sweep で隠れ surface 0 を最終確認 →
+PASS**＝t/ で観測できる精密 reconcile 依存サーフェスは枯渇。**だが全 roast whitelist（1285）の double-OFF sweep
+（`MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1` release）を初めて実走したところ 25 file が決定的 fail
+＝t/ pin は不完全だった**（第45 で「OFF roast survey こそ authoritative」と判明したのと同型の教訓）。env_dirty 物理削除は
+この roast サーフェスを全消化してから。診断は `tmp/roast-double-off.log` / `tmp/roast-double-off-fails.txt`。
+
+**roast double-OFF 25 file（S8 着手前・カテゴリ別）**:
+- **S03 演算子（andthen/orelse/notandthen）**＝user `method defined { $calls++ }` の captured-outer write。
+  → **✅ S10.11 で解決**（CallDefined snapshot writeback・1 修正 3 file）。
+- **S14 roles（anonymous/mixin-6e/parameterized-mixin/rw/submethods-6e・5）**＝role mixin/`rw` accessor の writeback
+  （anonymous/parameterized-mixin は abort=Bad plan）。
+- **S02 types（baghash/mixhash/set・3）**＝Set/Bag/Mix 演算の captured write。
+- **S02 names（our/symbolic-deref・2）**＝`our`/symbolic deref の by-name writeback。
+- **その他**: S02-types/lazy-lists・S04 gather（abort）・S04 terminator・S04 pointy-rw・S06 lvalue-subroutines・
+  S06 named-parameters・S12 coercion-methods・S12 primitives・S12 defer-next・S17 cas-loop・S17 throttle・S32 kv。
+
+**∴ env_dirty 物理削除（§7.4 / PLAN §2-E）は roast double-OFF 0 が前提**: ①roast 25→0 を slice で消化 →
 ②`blanket_reconcile_if_dirty` / `reconcile_locals_from_env_at_site` を空洞化 → ③`env_dirty` / `ensure_locals_synced` /
 `saved_env_dirty` を削除 → ④`cell_boxing_active()` gate を撤去して boxing を恒久 ON（＝単一ストアの派生ビュー化）。
+
+### 10.11 slice S8（2026-06-22）— user `.defined`（andthen/orelse/notandthen）writeback を precise 化（roast 25→22）
+
+`my $calls=0; my class Foo { method defined { $calls++; True } }; Foo andthen meow $_` = `andthen`/`orelse`/`notandthen`
+は LHS の definedness を `OpCode::CallDefined` で判定し、user `method defined` があれば dispatch する（vm.rs:2831）。その
+user method が captured-outer `$calls` を by-name env 書きするが、`CallDefined` の post-call `reconcile_locals_from_env_at_site`
+（double-OFF で no-op）でしか slot に届かず stale（double-OFF で `$calls=0`・期待 1）。`run_instance_method` 経由なので
+per-write 記録なし→**user-method 呼び出し前後で caller-frame slot-backing env 値をスナップショット**し変化した slot だけ
+精密書き戻し（react S7 と同手法）。`cell_boxing_active()` ガード＝default は blanket reconcile が担う＝バイト不変。
+**1 修正で 3 roast file（S03 andthen/orelse/notandthen）消化**。pin=roast/S03-operators/{andthen,orelse,notandthen}.t
+（double-OFF で PASS 化）。
