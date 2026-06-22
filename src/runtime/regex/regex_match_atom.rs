@@ -552,10 +552,20 @@ impl Interpreter {
                     }
                 }
             } else {
-                // Silent subrule — merge named captures only.
+                // Silent subrule (`<.foo>`) — the subrule itself is not captured,
+                // but mutsu propagates its *direct* named captures up to the parent
+                // so grammar action methods (driven by the capture tree) still fire
+                // for them. Merge both the flat `named` text AND the structured
+                // `named_subcaps` (each carrying its own nested captures); dropping
+                // the latter would strip a propagated capture's grandchildren —
+                // e.g. `<.request-line>` containing `<request-target>` which in turn
+                // contains `<path>` would lose `path`, so its action never runs.
                 let mut inner_caps = inner_caps;
                 for (k, v) in inner_caps.named.drain() {
                     new_caps.named.entry(k).or_default().extend(v);
+                }
+                for (k, v) in inner_caps.named_subcaps.drain() {
+                    new_caps.named_subcaps.entry(k).or_default().extend(v);
                 }
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
             }
