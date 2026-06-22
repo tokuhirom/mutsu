@@ -704,10 +704,25 @@ carrier と EVAL carrier の双方）。`cell_boxing_active()` ガード＝defau
 担う＝バイト不変。pin=`t/single-store-slice-c-prime.t`（test 7）+ `t/eval-carrier-precise-writeback.t`（test 12）
 （double-OFF で PASS 化）。
 
-### 10.7 残 8・次スライス候補
+### 10.7 slice S5（2026-06-22）— junction invocant autothread の per-eigenstate writeback を precise 化（8→7）
 
-残はすべて **並行/制御**（cross-thread cell・最難・最後）: `junction-invocant-autothread-writeback-coherence`（junction
-autothread・**単一スレッド**＝最も着手しやすい候補）/ `resumable-control-signal-indirect-call`（control signal）/
-`done-paren-stmt-modifier`（react done()）/ `concurrent-cell-writeback-coherence` / supply・react 系 4
-（`react-do-whenever-tap-coherence`/`react-whenever-last-next`/`supply-on-demand-closing`/`supply-sync-infinite-emit`）。
-全消化後 → §7.4（精密 reconcile + env_dirty 物理削除）。
+`my Mu $x = JB1.new | JB1.new | JB2.new; $x.a`（`method a { $cnt1++ }` / JB2 は `$cnt2++`）= invocant junction を
+ユーザーメソッドで autothread し、各 eigenstate が captured-outer / `our` 変数を変異する。各 eigenstate の dispatch は
+その by-name write を `pending_rw_writeback_sources` に記録するが、**次の eigenstate の dispatch がそのバッファを
+上書き**するため、post-loop drain に残るのは**最後の eigenstate のソースだけ**。EARLIER eigenstate のみが書いた変数
+（最後が `$cnt2` を書く間に `$cnt1` を書いた）は失われ owning slot が stale（double-OFF で `$cnt1=1`・期待 2）。同じ変数を
+全 eigenstate が書く場合は最後のソースで足りるので動いていた（露出は「異なる変数を異なる eigenstate が書く」場合のみ）。
+**修正**: junction loop の各 eigenstate 呼び出し後に `pending_rw_writeback_sources` ＋ `pending_caller_var_writeback` を
+drain して retain-on-miss の `pending_caller_var_writeback` に accumulate（`record_caller_var_writeback`・dedup）。
+loop 後の 1 回の `apply_pending_caller_var_writeback` が env（既に全 eigenstate の累積値を保持）から owning caller slot を
+精密に書く。CallMethod（非mut）/ CallMethodMut（mut）両 junction path に対称適用（`$cnt++` は mut path 経由）。
+`cell_boxing_active()` ガード＝default build は従来どおり blanket `reconcile_locals_from_env_at_site` の pull＝バイト不変。
+pin=`t/junction-invocant-autothread-writeback-coherence.t`（6・double-OFF で PASS 化）。回帰元
+`roast/S03-junctions/autothreading.t` 107/107 PASS。
+
+### 10.8 残 7・次スライス候補
+
+残はすべて **並行/制御**（cross-thread cell・最難・最後）: `resumable-control-signal-indirect-call`（control signal・
+単一スレッド寄り＝次の候補）/ `done-paren-stmt-modifier`（react done()）/ `concurrent-cell-writeback-coherence` /
+supply・react 系 4（`react-do-whenever-tap-coherence`/`react-whenever-last-next`/`supply-on-demand-closing`/
+`supply-sync-infinite-emit`）。全消化後 → §7.4（精密 reconcile + env_dirty 物理削除）。

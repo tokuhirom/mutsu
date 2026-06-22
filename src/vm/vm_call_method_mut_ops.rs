@@ -587,6 +587,20 @@ impl Interpreter {
         {
             let kind = kind.clone();
             let mut results = Vec::new();
+            // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
+            // accumulate EVERY eigenstate's by-name caller write. Each eigenstate's
+            // method dispatch records its captured-outer / `our` write into
+            // `pending_rw_writeback_sources`, but the NEXT eigenstate's dispatch
+            // overwrites that buffer, so only the last eigenstate's source survived
+            // to the post-loop drain — a var written only by an EARLIER eigenstate
+            // (`$cnt1` while the last writes `$cnt2`) was lost (double-OFF). Drain
+            // each eigenstate's sources into the retain-on-miss
+            // `pending_caller_var_writeback` so all of them persist; the post-loop
+            // drain then writes every owning caller slot precisely from env (which
+            // already holds the accumulated value), replacing the blanket
+            // `reconcile_locals_from_env_at_site` pull. Armed only under boxing; the
+            // default build keeps the blanket pull (byte-identical).
+            let armed = self.cell_boxing_active();
             for v in values.iter() {
                 let r = if let Some(threaded) =
                     self.maybe_autothread_method_args(v, &method, &args)?
@@ -598,6 +612,16 @@ impl Interpreter {
                     self.try_compiled_method_or_interpret(v.clone(), &method, args.clone())?
                 };
                 results.push(r);
+                if armed {
+                    let pending: Vec<String> = self
+                        .pending_rw_writeback_sources
+                        .drain(..)
+                        .chain(self.pending_caller_var_writeback.drain(..))
+                        .collect();
+                    for name in pending {
+                        self.record_caller_var_writeback(&name);
+                    }
+                }
             }
             let junction_result = Value::Junction {
                 kind,
@@ -616,6 +640,9 @@ impl Interpreter {
             // pull disabled reconcile the caller's slots from env once here; env
             // already holds every eigenstate's accumulated value. Byte-identical
             // with the reverse pull enabled (gated on the env_dirty just set).
+            if armed {
+                self.apply_pending_caller_var_writeback(code);
+            }
             self.reconcile_locals_from_env_at_site(code);
             return Ok(());
         }
