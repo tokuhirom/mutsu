@@ -370,11 +370,22 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::array(vec![]));
             return self.call_method_with_values(frames, method, args);
         }
-        // Scalar containers are transparent for method dispatch (except .item and .VAR)
+        // Scalar containers are transparent for method dispatch (except .item,
+        // .VAR, and .raku/.perl). `.raku`/`.perl` must see the `Scalar` wrapper
+        // so an itemized aggregate shows its `$` sigil (`${a=>1}.raku` →
+        // `${:a(1)}`, `$[1,2].raku` → `$[1, 2]`); decontainerizing first would
+        // strip it. `.gist` needs no special case — it never shows the sigil, so
+        // gisting the inner value is already correct.
         if let Value::Scalar(inner) = target {
             if method == "VAR" {
                 // Return an opaque Scalar type object so .^name returns "Scalar"
                 return Ok(Value::Package(Symbol::intern("Scalar")));
+            }
+            if method == "raku" || method == "perl" {
+                let wrapped = Value::Scalar(inner);
+                return Ok(Value::str(
+                    crate::builtins::methods_0arg::raku_repr::raku_value(&wrapped),
+                ));
             }
             return self.call_method_with_values(*inner, method, args);
         }

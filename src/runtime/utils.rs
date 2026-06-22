@@ -1122,6 +1122,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
             attributes,
             ..
         } if class_name == "Match" => match_gist(&(attributes).as_map(), 0),
+        // `$(...)` itemized container: `.gist` never shows the itemization sigil,
+        // so it gists exactly like its inner value (`${a=>1}.gist` → `{a => 1}`).
+        Value::Scalar(inner) => gist_value(inner),
         _ => value.to_string_value(),
     }
 }

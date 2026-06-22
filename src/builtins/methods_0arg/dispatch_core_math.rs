@@ -615,6 +615,11 @@ pub(super) fn dispatch(
         "item" => Some(match target {
             Value::Array(items, kind) => Some(Ok(Value::Array(items.clone(), kind.itemize()))),
             Value::LazyList(_) => None, // fall through to runtime to force
+            // A Hash (and any other aggregate) is wrapped in a `Scalar`
+            // container so it behaves as a single non-flattening element in
+            // list context (e.g. passed to `map`). `.raku`/`.perl` on the
+            // `Scalar` still shows the `$` itemization sigil — see the
+            // `Value::Scalar` interception in `call_method_with_values`.
             other => Some(Ok(Value::Scalar(Box::new(other.clone())))),
         }),
         "race" | "hyper" => {
