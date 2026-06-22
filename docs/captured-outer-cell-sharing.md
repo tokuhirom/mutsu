@@ -853,3 +853,17 @@ S14 roles の `does`/`but` mixin 4 file（anonymous/mixin-6e/parameterized-mixin
 `cell_boxing_active()` ガード＝default はバイト不変。**全 roast double-OFF sweep で 11→7（新規回帰ゼロ）**。回帰確認:
 S03-binding nested/arrays PASS。**残 roast double-OFF 7**: lazy-lists／terminator／named-parameters／primitives／
 defer-next／cas-loop／throttle（各別機構）。
+
+### 10.17 slice S14（2026-06-22）— param `where` clause の captured-outer writeback を precise 化（roast 7→6）
+
+`my $t=''; sub order_test(:$a where { $t ~= 'a' }, :$b where { $t ~= 'b' }) {…}; order_test(b=>2, a=>3); ok $t ~~ /a.*b/`
+= named param の `where { $t ~= 'a' }` clause が binding 中に captured-outer `$t` を変異する。**計測で slot-only と確定**:
+`order_test(...)` 後、closure 経由読みは `$t='ab'`（env に届いている）が direct 読みは空（caller slot stale）＝where-clause の
+write は outer env に達するが caller slot は call-site の blanket pull（double-OFF で no-op）でしか refresh されない。
+**修正**: where-constraint named-eval（`types/binding.rs` ~797）で **eval 前後に env の writeback-safe スカラをスナップ
+ショット**し、変化した名前（`_`/param 自身を除く）を retain-on-miss の `pending_caller_var_writeback`
+（`record_caller_var_writeback`）に記録 → compiled-function call site の `drain_and_reconcile_after_cached_call`
+→`apply_pending_caller_var_writeback` が drain。スカラ限定（`is_writeback_safe_scalar`）で `:=` hazard なし。
+`cell_boxing_active()` ガード＝default はバイト不変（where-constraint は稀パスで hot でない）。pin=roast/S06-signature/
+named-parameters.t（double-OFF で PASS 化）。**残 roast double-OFF 6**: cas-loop／defer-next／primitives／lazy-lists
+（laziness 別軸）／throttle（timing）／terminator（parser）。
