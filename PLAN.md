@@ -69,11 +69,12 @@
     （①`Mixin` PartialEq inner 委譲対策の discriminant 差分判定 ②does/but op に carrier snapshot 差分 ③Hash slot 型変化の
     上書き許可）＝S14 `does`-mixin 4 消化（anonymous/mixin-6e/parameterized-mixin/submethods-6e）。**S14（#TBD・7→6）= param `where` clause の captured-outer
     writeback**（`types/binding.rs` の where-eval 前後 env scalar スナップショット差分→`pending_caller_var_writeback`・
-    named-parameters 消化）。残 6 = cas-loop／defer-next／primitives／lazy-lists（laziness 別軸）／throttle（timing）／
-    terminator（parser）。
+    named-parameters 消化）。**S15（#TBD・6→5）= CAS block の captured-outer writeback**（`builtin_cas_var` の block 実行
+    前後 env scalar スナップショット差分→`pending_caller_var_writeback`・cas-loop 消化）。残 5 = defer-next（multi-dispatch）／
+    primitives（meta compose）／lazy-lists（laziness 別軸）／throttle（timing）／terminator（parser）。
 - **✅ env↔locals 純 writeback コヒーレンス（blanket ON 下）は完了**（slice 1〜1.20・#3400）。lazy-lists.t laziness も
   解消（#3403）。OFF roast survey（blanket OFF）の決定的サーフェスは IO-Socket-Async.t flaky のみ。
-- **∴ 次 = roast double-OFF 6→0 を slice で消化 → `env_dirty` 物理削除（§2-E）**:
+- **∴ 次 = roast double-OFF 5→0 を slice で消化 → `env_dirty` 物理削除（§2-E）**:
   `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 → `env_dirty`/`ensure_locals_synced`/
   `saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
 
