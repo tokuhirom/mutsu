@@ -1245,7 +1245,6 @@ impl Interpreter {
         // was removed in Stage 3 (the interpreter-bridge writes it covered, e.g.
         // EVAL modifying a `$GLOBAL::` variable, are now reconciled by precise
         // write-throughs at their own sites).
-        self.env_dirty = false;
         self.sync_regex_interpolation_env_from_locals(code);
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
         self.in_smartmatch_rhs = true;
@@ -1388,21 +1387,16 @@ impl Interpreter {
             // (`apply_pending_caller_var_writeback`). This is what keeps the slot
             // coherent once the blanket/precise reconcile is gone (double-OFF). Only
             // armed under boxing; the default build's blanket reconcile covers it.
-            if self.cell_boxing_active() {
-                for name in &written {
-                    let is_match_name = name == "/"
-                        || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit()));
-                    if is_match_name || self.find_local_slot(code, name).is_some() {
-                        continue;
-                    }
-                    self.record_caller_var_writeback(name);
+            for name in &written {
+                let is_match_name =
+                    name == "/" || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit()));
+                if is_match_name || self.find_local_slot(code, name).is_some() {
+                    continue;
                 }
+                self.record_caller_var_writeback(name);
             }
         }
         self.pending_local_updates.clear();
-        if !pure {
-            self.env_dirty = true;
-        }
         // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a custom
         // HOW `type_check`/`accepts_type`/`find_method` invoked by this smartmatch
         // (`$obj ~~ $custom-type`) may mutate a captured-outer caller scalar (e.g.

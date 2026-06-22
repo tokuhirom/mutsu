@@ -49,8 +49,10 @@
   恒久 `true` にフリップし、**cell-boxing を唯一のコヒーレンス機構**にした（env→locals reconcile を retire）。
   根拠＝double-OFF survey（roast whitelist 1285・proper harness）＋ フル `make test`（`t/` 10135）が両方この状態で 0 失敗。
   これで goal「env↔locals コンテナ cell 共有」を**デフォルト挙動として実現**。
-  - 🟡 **残＝`env_dirty` / `reconcile_locals_from_env_at_site` / `ensure_locals_synced` / `saved_env_dirty` の物理削除**
-    （344 uses・dead code 化済み＝挙動不変の機械的クリーンアップ）。reconcile は no-op 化済みなので段階的に削除可。
+  - ✅ **物理削除 完了（2026-06-23）**: `env_dirty`（342 uses）/ `saved_env_dirty`（21）/ `reconcile_locals_from_env_at_site`（33）
+    / `blanket_reconcile_if_dirty` / `ensure_locals_synced` / `cell_boxing_active()`（恒久 true ゲート 24）/
+    `blanket_reconcile_disabled` / `precise_reconcile_disabled` を全て物理削除（挙動不変・604 行削除）。
+    cell-boxing ＋ precise writeback が唯一のコヒーレンス機構。make test + clippy green。
 - 🟡 **`env_dirty` 物理削除の substrate グラインドは完了**（2026-06-22）。`env_dirty` は
   ①blanket reconcile のゲート（boxing 下で無効＝除去可）と②**精密 reconcile（`reconcile_locals_from_env_at_site`・
   carrier/Proxy STORE/let-temp/closure 等のサイト）の perf ゲート（boxing 下でも load-bearing）**の2役だった。
@@ -109,8 +111,9 @@
 - **★★ roast double-OFF 決定的サーフェス = 0 到達（S4〜S21）＝`env_dirty` 物理削除の前提達成**。残る非決定的のみ＝
   full-consumption-through-pipe gather tail writeback（lazy pipe 経由 grep の内側 force が誤フレームに drop-on-miss・roast 非該当）
   ＋IO-Socket-Async.t flaky。
-- **∴ 次 = `env_dirty` 物理削除（§2-E）着手可能**: `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 →
-  `env_dirty`/`ensure_locals_synced`/`saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
+- **✅ `env_dirty` 物理削除 完了（2026-06-23）**: `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site`/
+  `ensure_locals_synced` 関数と全 call site・`env_dirty`/`saved_env_dirty` フィールド・`cell_boxing_active()` ゲートを削除。
+  残る `env_dirty` 言及はコメントの履歴 breadcrumb のみ（挙動非依存）。§2-E 完了。
   着手前に念のため authoritative double-OFF survey（`MUTSU_BIN=… prove -e scripts/run-roast-test.sh` で全 whitelist）を再実走し 0 を再確認。
 
 ### B. tree-walking interpreter 撤去 — **struct 統合は完了・残フォークは状態所有待ち**
@@ -156,8 +159,8 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
         化し lazy ソースを eager force しないように修正。`my @res = one.kv` が gather body（`$was-lazy=0`）を走らせず、OFF で
         も PASS。値は eager 版とバイト一致（pairs=`i=>elem` / antipairs=`elem=>i` / kv=`i,elem` flat）。無限ソース上でも lazy。
       - IO-Socket-Async.t 5,7 = reactive 並行 flaky（決定的 pin 不可・env_dirty 削除の `blanket_reconcile_if_dirty` 空洞化で実挙動確認）。
-- [ ] **★次の本丸 = `env_dirty` 物理削除（§2-E・→ §1-A 解禁）**: OFF survey の決定的サーフェスが枯渇したので、
-      `blanket_reconcile_if_dirty` 空洞化 → `env_dirty`/`ensure_locals_synced`/`saved_env_dirty` 削除に着手できる。
+- ✅ **`env_dirty` 物理削除 完了（2026-06-23・§2-E）**: `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site`/
+      `ensure_locals_synced` 関数と全 call site・`env_dirty`/`saved_env_dirty` フィールド・`cell_boxing_active()` ゲートを削除（604 行減）。
 - [ ] follow-up（pre-existing・小）: `$x = @arr` 共有の method param 版（`method m($n){ $n.push }`）・`is copy` $-param。
       設計＝[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §5。
 
@@ -173,9 +176,9 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 
 ### E. 単一ストア化の総仕上げ（C 完了後）
 
-- [ ] **`env_dirty` / `ensure_locals_synced` / `saved_env_dirty` 削除**（§1-A）。**前提 = §C Sub-slice 1b で
-      env↔locals がコンテナ cell 共有し乖離しなくなること。** ここで `pairs`/`slip` carrier-drop も安全化し、
-      `locals` が単一権威・`env` は派生ビューになる。`ensure_locals_synced` は既に1行（`env_dirty=false`）へ縮退済。
+- ✅ **`env_dirty` / `ensure_locals_synced` / `saved_env_dirty` 削除 完了（2026-06-23）**。cell-boxing ＋ precise
+      writeback が唯一のコヒーレンス機構。`locals` が単一権威・`env` は派生ビュー。残課題は §C（コンテナ cell 共有の
+      `pairs`/`slip` carrier-drop 安全化）だが、env_dirty 削除自体は完了。
 
 ---
 

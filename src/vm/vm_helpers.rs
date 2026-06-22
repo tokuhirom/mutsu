@@ -335,7 +335,6 @@ impl Interpreter {
             let items = self.force_lazy_list_vm_n(&ll, MAX_ARRAY_EXPAND)?;
             self.env_mut()
                 .insert(name.to_string(), Value::real_array(items));
-            self.env_dirty = true;
         }
         Ok(())
     }
@@ -482,7 +481,6 @@ impl Interpreter {
         let saved_env = self.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
-        let saved_env_dirty = self.env_dirty;
 
         // Set up the lazy list's environment as a scoped overlay's parent: the
         // gather body reads its captured lexicals through to `list.env` and its
@@ -503,7 +501,6 @@ impl Interpreter {
                 self.locals[i] = val.clone();
             }
         }
-        self.env_dirty = false;
         self.stack = Vec::new();
 
         // Run the compiled code using the lazy list's own compiled_fns.
@@ -592,24 +589,9 @@ impl Interpreter {
         // docs/captured-outer-cell-sharing.md is retiring).
         self.record_eager_block_free_var_writeback(cc.as_ref(), &[]);
 
-        // Check whether the merged env actually changed any outer-scope variables.
-        let env_actually_changed = {
-            let merged = self.env();
-            saved_env.iter().any(|(k, old_val)| {
-                merged
-                    .get_sym(*k)
-                    .is_some_and(|new_val| new_val.to_string_value() != old_val.to_string_value())
-            })
-        };
-
         // Restore Interpreter state
         self.locals = saved_locals;
         self.stack = saved_stack;
-        self.env_dirty = if env_actually_changed {
-            true
-        } else {
-            saved_env_dirty
-        };
 
         // Check for errors
         run_result?;
@@ -666,7 +648,7 @@ impl Interpreter {
         if caller_code == 0 {
             return;
         }
-        if self.env_dirty || !self.pending_rw_writeback_sources.is_empty() {
+        if !self.pending_rw_writeback_sources.is_empty() {
             // SAFETY: `caller_code` is the address of the `CompiledCode` of the
             // bytecode frame that invoked this force. That frame is an ancestor
             // on the call stack (the op handler driving the force) and is alive
@@ -674,7 +656,6 @@ impl Interpreter {
             // valid here.
             let code = unsafe { &*(caller_code as *const CompiledCode) };
             self.apply_pending_rw_writeback(code);
-            self.blanket_reconcile_if_dirty(code);
         }
     }
 
@@ -737,7 +718,6 @@ impl Interpreter {
         let saved_env = self.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
-        let saved_env_dirty = self.env_dirty;
 
         // Determine starting IP and locals from coroutine state or fresh start
         let mut ip;
@@ -783,8 +763,6 @@ impl Interpreter {
             self.stack = Vec::new();
             has_prior_state = false;
         }
-
-        self.env_dirty = false;
 
         // Push gather items collector with the take limit
         let saved_gather_len = self.gather_items_len();
@@ -908,23 +886,9 @@ impl Interpreter {
         // `force_lazy_list_vm_inner`.
         self.record_eager_block_free_var_writeback(cc.as_ref(), &[]);
 
-        let env_actually_changed = {
-            let merged = self.env();
-            saved_env.iter().any(|(k, old_val)| {
-                merged
-                    .get_sym(*k)
-                    .is_some_and(|new_val| new_val.to_string_value() != old_val.to_string_value())
-            })
-        };
-
         // Restore Interpreter state
         self.locals = saved_locals;
         self.stack = saved_stack;
-        self.env_dirty = if env_actually_changed {
-            true
-        } else {
-            saved_env_dirty
-        };
 
         run_result?;
 

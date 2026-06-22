@@ -1218,7 +1218,6 @@ pub struct Interpreter {
     /// handler via `.last()` and, if it is `resume_safe`, run it inline at the
     /// raise site (cross-frame resumable warn). See `vm::ControlHandlerEntry`.
     pub(crate) control_handlers: Vec<crate::vm::ControlHandlerEntry>,
-    pub(crate) env_dirty: bool,
     /// Address of the `CompiledCode` of the bytecode frame currently executing
     /// in `exec_one` (set at the top of every dispatch). Used by the lazy-force
     /// machinery to reconcile the *caller's* local slots from env after a reify
@@ -1233,8 +1232,8 @@ pub struct Interpreter {
     /// When `Some`, a *carrier* (EVAL / interpreter fallback) is running and
     /// every by-name env write through `set_env_with_main_alias` logs its name
     /// here. On carrier return, exactly these names are written back into the
-    /// caller's slots (`writeback_carrier_writes`), replacing the blanket
-    /// `env_dirty` pull for that carrier. See docs/vm-single-store.md Slice B.
+    /// caller's slots (`writeback_carrier_writes`). See docs/vm-single-store.md
+    /// Slice B.
     pub(crate) carrier_writes: Option<std::collections::HashSet<String>>,
     pub(crate) method_dispatch_pure: bool,
     pub(crate) resume_ip: Option<usize>,
@@ -3428,7 +3427,6 @@ impl Interpreter {
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
             control_handlers: Vec::new(),
-            env_dirty: false,
             current_code: 0,
             carrier_writes: None,
             method_dispatch_pure: false,
@@ -6024,7 +6022,6 @@ impl Interpreter {
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
             control_handlers: Vec::new(),
-            env_dirty: false,
             current_code: 0,
             carrier_writes: None,
             method_dispatch_pure: false,

@@ -1,46 +1,6 @@
 use super::*;
 
-/// Whether the `env_dirty`-gated "blanket reconcile" barrier is disabled.
-///
-/// **Now permanently `true`.** Coherence rests on cell-boxing alone: every
-/// captured-outer write is folded into a shared `ContainerRef` cell (or a precise
-/// write-back), so the env→locals pull is no longer needed. This was a diagnostic
-/// toggle (`MUTSU_NO_BLANKET_RECONCILE`) during the substrate grind; the whole
-/// roast whitelist + the `t/` suite pass with it forced on (double-OFF survey =
-/// 0), so the blanket reconcile is retired. The `env_dirty` flag and the reconcile
-/// machinery it gates are now dead and removed incrementally.
-/// See docs/captured-outer-cell-sharing.md §7.4 / §10.
-#[inline]
-pub(crate) fn blanket_reconcile_disabled() -> bool {
-    true
-}
-
-/// Whether the *precise* env→locals reconcile (`reconcile_locals_from_env_at_site`,
-/// run at carrier/call sites) is disabled.
-///
-/// **Now permanently `true`** — see [`blanket_reconcile_disabled`]. With both
-/// reconciles retired, coherence rests on cell-boxing ALONE (the end state the
-/// substrate grind targeted). Every former by-name writer has been folded into a
-/// shared cell or a precise write-back, validated by the double-OFF survey
-/// (roast 1285 + `t/` all green).
-#[inline]
-pub(crate) fn precise_reconcile_disabled() -> bool {
-    true
-}
-
 impl Interpreter {
-    /// Clear the env-dirty flag at a barrier where the caller does not need a
-    /// reconcile. The blanket reverse `sync_locals_from_env` pull this used to
-    /// perform was removed in Stage 3 (docs/env-locals-coherence.md §7): every
-    /// by-name caller-lexical env write is now reconciled by a precise
-    /// write-through (`pending_rw_writeback_sources` /
-    /// `reconcile_locals_from_env_at_site` / carrier logging) at the sites that
-    /// need it. This barrier therefore only clears the flag — preserving the
-    /// no-op-pull behavior the default (reverse-sync-off) build already shipped.
-    pub(super) fn ensure_locals_synced(&mut self, _code: &CompiledCode) {
-        self.env_dirty = false;
-    }
-
     /// Collapse the interpreter's env to a flat (`parent=None`) env if it is
     /// currently a scoped overlay. No-op (O(1)) for a flat env. Used at every
     /// boundary that would otherwise let a transient scoped env survive into code
@@ -53,8 +13,8 @@ impl Interpreter {
         }
     }
 
-    /// Save the current env, locals, stack depth, readonly vars, and env_dirty flag
-    /// into a new call frame. Resets env_dirty to false for the new frame.
+    /// Save the current env, locals, stack depth, and readonly vars into a new
+    /// call frame.
     pub(super) fn push_call_frame(&mut self) {
         crate::vm::vm_stats::record_clone_env();
         // Save the caller env by an O(1) clone (an Arc bump, even when scoped):
@@ -68,10 +28,8 @@ impl Interpreter {
             readonly_added: Vec::new(),
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
-            saved_env_dirty: self.env_dirty,
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
         };
-        self.env_dirty = false;
         self.call_frames.push(frame);
     }
 
@@ -85,14 +43,12 @@ impl Interpreter {
             readonly_added: Vec::new(),
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
-            saved_env_dirty: self.env_dirty,
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
         };
-        self.env_dirty = false;
         self.call_frames.push(frame);
     }
 
-    /// Pop the most recent call frame and restore locals, readonly vars, and env_dirty flag.
+    /// Pop the most recent call frame and restore locals and readonly vars.
     /// Returns the frame so callers can access `saved_env` for site-specific merge logic.
     pub(super) fn pop_call_frame(&mut self) -> VmCallFrame {
         let mut frame = self
@@ -110,7 +66,6 @@ impl Interpreter {
                 self.unmark_readonly(name);
             }
         }
-        self.env_dirty = frame.saved_env_dirty;
         frame
     }
 
@@ -336,64 +291,20 @@ impl Interpreter {
         }
     }
 
-    /// Precise env→locals reconcile at a call/construction site where an
-    /// interpreter bridge wrote a caller lexical by name. This is the surviving
-    /// mechanism that keeps the slot store coherent now that the blanket reverse
-    /// pull is gone (Stage 3, docs/env-locals-coherence.md §7). The canonical case
-    /// is an interpreter-dispatched construction (`.new`/`.bless` running a
-    /// `submethod BUILD`/`TWEAK` via `run_build_phase`) whose body mutates a
-    /// captured-outer lexical (`my $n; submethod BUILD { $n++ }`): unlike a
-    /// compiled method (whose `merge_method_env` records
-    /// `pending_rw_writeback_sources`), the interpreter build path never reaches
-    /// that machinery, so the caller's slot must be reconciled here at the call
-    /// site. The per-slot skips (HashSlotRef binding cells / `!attr` locals) match
-    /// the precise write-through family exactly. Gated by the caller on
-    /// `env_dirty` at the hot sites, so a pure call pays nothing.
-    pub(super) fn reconcile_locals_from_env_at_site(&mut self, code: &CompiledCode) {
-        if precise_reconcile_disabled() {
-            // Measurement harness (see `precise_reconcile_disabled`): with the
-            // precise reconcile off, only surfaces already folded into shared
-            // cells stay coherent. Used to drive the env_dirty-removal substrate
-            // grind toward the boxing-only end state.
-            return;
-        }
-        for (i, name) in code.locals.iter().enumerate() {
-            if matches!(self.locals[i], Value::HashSlotRef { .. }) {
-                continue;
-            }
-            if name.starts_with('!') {
-                continue;
-            }
-            if let Some(val) = self.env().get(name).cloned() {
-                self.locals[i] = val;
-            } else if let Some(bare) = name
-                .strip_prefix('$')
-                .or_else(|| name.strip_prefix('@'))
-                .or_else(|| name.strip_prefix('%'))
-                .or_else(|| name.strip_prefix('&'))
-                && let Some(val) = self.env().get(bare).cloned()
-            {
-                self.locals[i] = val;
-            }
-        }
-    }
-
     /// Record a by-name caller-lexical env write that did NOT flow through
     /// `set_env_with_main_alias` (the single by-name writer that auto-logs). Some
     /// ops mutate a caller lexical with a direct `env_mut().insert` — e.g. the
     /// `$x ~~ s///` writeback to its LHS variable. For the reverse sync to stay
     /// precise *and* complete (Slice C', open-question #2), every such write must
-    /// (a) log into the active carrier set so the carrier-return
+    /// log into the active carrier set so the carrier-return
     /// `writeback_carrier_writes` reconciles the caller slot — without this, an
     /// EVAL/carrier that dropped its blanket net (a fully-reconciled bareword
-    /// carrier, #3227/#3231) would silently lose the write — and (b) set
-    /// `env_dirty` so a non-carrier reader still pulls it. Call this right after
+    /// carrier, #3227/#3231) would silently lose the write. Call this right after
     /// the direct insert, for each caller-visible name written.
     pub(crate) fn note_caller_env_write(&mut self, name: &str) {
         if let Some(set) = self.carrier_writes.as_mut() {
             set.insert(name.to_string());
         }
-        self.env_dirty = true;
     }
 
     /// Begin a carrier region: start logging by-name env writes. Returns the
@@ -829,35 +740,6 @@ impl Interpreter {
     /// call (e.g. `fib`) never trips it and pays nothing.
     pub(super) fn drain_and_reconcile_after_cached_call(&mut self, code: &CompiledCode) {
         self.apply_pending_rw_writeback(code);
-        self.blanket_reconcile_if_dirty(code);
-    }
-
-    /// Multi-frame captured-outer accumulation barrier: when a nested callee wrote
-    /// a caller lexical *by name* (env_dirty), pull the env values back into the
-    /// caller's slots at the call site. This is the LAST load-bearing role of
-    /// `env_dirty` — the "blanket reconcile" that
-    /// docs/captured-outer-cell-sharing.md is incrementally replacing with shared
-    /// `ContainerRef` cells (a captured-outer lexical migrated to a shared cell no
-    /// longer needs this pull, because both the slot and the env hold the same
-    /// Arc). Once that surface is empty the whole mechanism (this method +
-    /// `env_dirty`) is deleted. Gated on `env_dirty` so a pure call (e.g. `fib`)
-    /// pays nothing; the `MUTSU_NO_BLANKET_RECONCILE` diagnostic disables it so the
-    /// remaining not-yet-cell-shared surface can be measured (see §5 of the doc).
-    #[inline]
-    pub(super) fn blanket_reconcile_if_dirty(&mut self, code: &CompiledCode) {
-        if self.env_dirty && !blanket_reconcile_disabled() {
-            self.reconcile_locals_from_env_at_site(code);
-        }
-    }
-
-    /// Whether captured-outer cell boxing is the active coherence mechanism (the
-    /// complement of the blanket reconcile — exactly one is on). Method wrapper
-    /// over `blanket_reconcile_disabled()` so callers outside the `vm` module
-    /// (e.g. `let`/`temp` restore in `runtime/`) can reach it. See
-    /// `box_decl_local_cell` and docs/captured-outer-cell-sharing.md.
-    #[inline]
-    pub(crate) fn cell_boxing_active(&self) -> bool {
-        blanket_reconcile_disabled()
     }
 
     /// Box each captured-outer scalar that a carrier body (`EVAL`, an embedded
@@ -869,11 +751,10 @@ impl Interpreter {
     /// `free_var_writes` analysis at the owner's decl site, so it cannot be boxed
     /// there; box it here at carrier-run time instead).
     ///
-    /// Gated on `cell_boxing_active()` (the `MUTSU_NO_BLANKET_RECONCILE` toggle):
-    /// in the default build the blanket reconcile carries this, so boxing stays
-    /// off and behaviour is byte-identical (see `box_decl_local_cell`).
+    /// Cell boxing is the permanent coherence mechanism (the env→locals reconcile
+    /// is retired), so this always boxes when there are free-var writes.
     pub(crate) fn box_carrier_free_var_writes(&mut self, code: &CompiledCode) {
-        if !self.cell_boxing_active() || code.free_var_writes.is_empty() {
+        if code.free_var_writes.is_empty() {
             return;
         }
         // Restrict to the EVAL carrier (`__mutsu_in_eval`). The other

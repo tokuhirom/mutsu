@@ -573,7 +573,6 @@ impl Interpreter {
                 items.len()
             )));
         }
-        self.env_dirty = true;
         let body_start = *ip + 1;
         let loop_end = spec.body_end as usize;
 
@@ -1239,7 +1238,6 @@ impl Interpreter {
                 self,
                 overwrite_array_items_by_identity_for_vm(&source, source_items, source_kind,)
             );
-            self.env_dirty = true;
         }
         // Unmark readonly topic after loop completion
         if topic_readonly {
@@ -1389,7 +1387,6 @@ impl Interpreter {
         // them per-iteration (owned_captures). Balanced by pop on every exit.
         self.push_loop_local_scope();
 
-        self.env_dirty = true;
         // When resuming a gather coroutine, start from the saved position.
         let mut i = if let Some(crate::value::ForLoopResumeState::IntRange { current, .. }) =
             self.gather_for_loop_resume.take()
@@ -1642,8 +1639,6 @@ impl Interpreter {
         let saved_topic_source = self.topic_source_var.take();
         let was_topic_readonly = self.readonly_vars().contains("_");
 
-        self.env_dirty = true;
-
         if !spec.is_rw {
             if let Some(ref name) = param_name {
                 if !name.starts_with('@') && !name.starts_with('%') {
@@ -1828,7 +1823,6 @@ impl Interpreter {
             None
         };
 
-        self.env_dirty = true;
         let mut line_index: i64 = 0;
 
         'for_loop: loop {
@@ -2886,7 +2880,6 @@ impl Interpreter {
             self.env_mut().remove("_");
         }
         self.stack.push(last);
-        self.env_dirty = true;
         *ip = end;
         Ok(())
     }
@@ -3389,14 +3382,10 @@ impl Interpreter {
             Err(e) => {
                 // Exception — restore let saves
                 loan_env!(self, restore_let_saves(let_mark));
-                self.env_dirty = true;
                 // The restore wrote the saved values back into `env` only and
                 // recorded each restored name precisely (`restore_let_value`); drain
-                // it so this frame's slots refresh without the blanket env→locals
-                // pull (env_dirty-removal substrate). The blanket reconcile stays as
-                // the fallback (no-op under the substrate harness).
+                // it so this frame's slots refresh.
                 self.apply_pending_rw_writeback(code);
-                self.reconcile_locals_from_env_at_site(code);
                 if catch_begin >= control_begin {
                     return Err(e);
                 }

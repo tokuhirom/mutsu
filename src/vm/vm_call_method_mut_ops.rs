@@ -45,7 +45,6 @@ impl Interpreter {
             Some("+") => {
                 let vals = self.call_method_all_with_fallback(&target, &method, &args, false)?;
                 self.stack.push(Value::array(vals));
-                self.env_dirty = true;
                 return Ok(());
             }
             Some("*") => {
@@ -56,7 +55,6 @@ impl Interpreter {
                     }
                     Err(e) => return Err(e),
                 }
-                self.env_dirty = true;
                 return Ok(());
             }
             _ => {}
@@ -132,7 +130,6 @@ impl Interpreter {
                     Value::RaceSeq(arc)
                 };
                 self.stack.push(result);
-                self.env_dirty = true;
                 return Ok(());
             }
             // HyperSeq/RaceSeq: delegate methods
@@ -145,24 +142,20 @@ impl Interpreter {
                 match method.as_str() {
                     "hyper" => {
                         self.stack.push(Value::HyperSeq(items_arc));
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     "race" => {
                         self.stack.push(Value::RaceSeq(items_arc));
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     "is-lazy" => {
                         self.stack.push(Value::Bool(false));
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     "^name" => {
                         self.stack.push(Value::str(
                             if is_hyper { "HyperSeq" } else { "RaceSeq" }.to_string(),
                         ));
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     "WHAT" => {
@@ -171,12 +164,10 @@ impl Interpreter {
                         } else {
                             "RaceSeq"
                         })));
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     "defined" => {
                         self.stack.push(Value::Bool(true));
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     "map" | "grep" => {
@@ -199,7 +190,6 @@ impl Interpreter {
                             Value::RaceSeq(Arc::new(result_items))
                         };
                         self.stack.push(wrapped);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     _ => {
@@ -216,7 +206,6 @@ impl Interpreter {
                             self.try_compiled_method_or_interpret(array_target, &method, args)
                         };
                         self.stack.push(call_result?);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                 }
@@ -239,7 +228,6 @@ impl Interpreter {
                 self.stack.push(call_result?);
             }
         }
-        self.env_dirty = true;
         Ok(())
     }
 
@@ -279,7 +267,6 @@ impl Interpreter {
             Some("+") => {
                 let vals = self.call_method_all_with_fallback(&target, &method, &args, false)?;
                 self.stack.push(Value::array(vals));
-                self.env_dirty = true;
                 return Ok(());
             }
             Some("*") => {
@@ -290,7 +277,6 @@ impl Interpreter {
                     }
                     Err(e) => return Err(e),
                 }
-                self.env_dirty = true;
                 return Ok(());
             }
             _ => {}
@@ -321,7 +307,6 @@ impl Interpreter {
         }
         let call_result = call_result?;
         self.stack.push(call_result);
-        self.env_dirty = true;
         Ok(())
     }
 
@@ -405,7 +390,6 @@ impl Interpreter {
             let items = self.force_lazy_list_vm(ll)?;
             let reified = Value::real_array(items);
             self.env_mut().insert(target_name.clone(), reified.clone());
-            self.env_dirty = true;
             reified
         } else {
             target
@@ -542,7 +526,6 @@ impl Interpreter {
                 let t = self.eval_truthy(&target);
                 self.stack
                     .push(Value::Bool(if method == "not" { !t } else { t }));
-                self.env_dirty = true;
                 return Ok(());
             }
         }
@@ -604,10 +587,7 @@ impl Interpreter {
             // each eigenstate's sources into the retain-on-miss
             // `pending_caller_var_writeback` so all of them persist; the post-loop
             // drain then writes every owning caller slot precisely from env (which
-            // already holds the accumulated value), replacing the blanket
-            // `reconcile_locals_from_env_at_site` pull. Armed only under boxing; the
-            // default build keeps the blanket pull (byte-identical).
-            let armed = self.cell_boxing_active();
+            // already holds the accumulated value).
             for v in values.iter() {
                 let r = if let Some(threaded) =
                     self.maybe_autothread_method_args(v, &method, &args)?
@@ -619,15 +599,13 @@ impl Interpreter {
                     self.try_compiled_method_or_interpret(v.clone(), &method, args.clone())?
                 };
                 results.push(r);
-                if armed {
-                    let pending: Vec<String> = self
-                        .pending_rw_writeback_sources
-                        .drain(..)
-                        .chain(self.pending_caller_var_writeback.drain(..))
-                        .collect();
-                    for name in pending {
-                        self.record_caller_var_writeback(&name);
-                    }
+                let pending: Vec<String> = self
+                    .pending_rw_writeback_sources
+                    .drain(..)
+                    .chain(self.pending_caller_var_writeback.drain(..))
+                    .collect();
+                for name in pending {
+                    self.record_caller_var_writeback(&name);
                 }
             }
             let junction_result = Value::Junction {
@@ -635,7 +613,6 @@ impl Interpreter {
                 values: Arc::new(results),
             };
             self.stack.push(junction_result);
-            self.env_dirty = true;
             // Slice F (env<->locals coherence): an invocant junction that threads
             // a *user* method mutating a captured outer / `our` variable (e.g.
             // `$junc.a` with `method a { $cnt++ }`) accumulates each eigenstate's
@@ -643,21 +620,16 @@ impl Interpreter {
             // carries the *last* eigenstate's source — so a different variable
             // written by an earlier eigenstate (`$cnt1` vs the last `$cnt2`) never
             // reaches the caller's local slot. This junction path returns before
-            // the normal post-dispatch reconcile, so with the reverse env->locals
-            // pull disabled reconcile the caller's slots from env once here; env
-            // already holds every eigenstate's accumulated value. Byte-identical
-            // with the reverse pull enabled (gated on the env_dirty just set).
-            if armed {
-                self.apply_pending_caller_var_writeback(code);
-            }
-            self.reconcile_locals_from_env_at_site(code);
+            // the normal post-dispatch reconcile, so drain the accumulated
+            // per-eigenstate writebacks into the caller's slots here; env already
+            // holds every eigenstate's accumulated value.
+            self.apply_pending_caller_var_writeback(code);
             return Ok(());
         }
 
         // Junction auto-threading for method arguments (mut variant)
         if let Some(result) = self.maybe_autothread_method_args(&target, &method, &args)? {
             self.stack.push(result);
-            self.env_dirty = true;
             return Ok(());
         }
 
@@ -671,7 +643,6 @@ impl Interpreter {
                 let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
                 self.stack.push(stash);
             }
-            self.env_dirty = true;
             return Ok(());
         }
 
@@ -704,7 +675,6 @@ impl Interpreter {
             };
             let _ = crate::runtime::native_methods::release_lock(&lock, me);
             self.stack.push(result?);
-            self.env_dirty = true;
             return Ok(());
         }
 
@@ -738,7 +708,6 @@ impl Interpreter {
                 let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.clone());
                 let result = self.shared_array_extend(&target_name, norm, method == "unshift");
                 self.stack.push(result);
-                self.env_dirty = true;
                 return Ok(());
             }
             let result = loan_env!(
@@ -747,7 +716,6 @@ impl Interpreter {
             )
             .unwrap_or_else(|| loan_env!(self, push_to_shared_var(&target_name, args, &target)));
             self.stack.push(result);
-            self.env_dirty = true;
             return Ok(());
         }
 
@@ -872,7 +840,6 @@ impl Interpreter {
                 self.action_made = Some(value.clone());
             }
             self.stack.push(value);
-            self.env_dirty = true;
             return Ok(());
         }
         // `$s.subst-mutate(pattern, replacement, ...)` substitutes in place (like
@@ -912,7 +879,6 @@ impl Interpreter {
                 .insert(target_name.to_string(), new_str.clone());
             self.locals_set_by_name(code, &target_name, new_str);
             self.stack.push(ret);
-            self.env_dirty = true;
             return Ok(());
         }
         // .hyper/.race with named arguments in mut path
@@ -979,7 +945,6 @@ impl Interpreter {
                 Value::RaceSeq(arc)
             };
             self.stack.push(result);
-            self.env_dirty = true;
             return Ok(());
         }
         // HyperSeq/RaceSeq delegation in mut path
@@ -1007,7 +972,6 @@ impl Interpreter {
                         _ => unreachable!(),
                     };
                     self.stack.push(result);
-                    self.env_dirty = true;
                     return Ok(());
                 }
                 "map" | "grep" => {
@@ -1040,7 +1004,6 @@ impl Interpreter {
                         Value::RaceSeq(std::sync::Arc::new(result_items))
                     };
                     self.stack.push(wrapped);
-                    self.env_dirty = true;
                     return Ok(());
                 }
                 _ => {
@@ -1068,7 +1031,6 @@ impl Interpreter {
                     let key = args[0].to_string_value();
                     let result = self.resolve_hash_entry(map, &key);
                     self.stack.push(result);
-                    self.env_dirty = true;
                     return Ok(());
                 }
             }
@@ -1096,7 +1058,6 @@ impl Interpreter {
                         let new_hash = self.tag_container_metadata(new_hash, meta);
                         self.env_mut().insert(target_name.to_string(), new_hash);
                         self.stack.push(value);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     Value::Set(_, false) => {
@@ -1113,7 +1074,6 @@ impl Interpreter {
                         let new_val = Value::set_hash(new_set);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(value);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     Value::Bag(_, false) => {
@@ -1130,7 +1090,6 @@ impl Interpreter {
                         let new_val = Value::bag_hash_big(new_counts);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(value);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     Value::Mix(_, false) => {
@@ -1147,7 +1106,6 @@ impl Interpreter {
                         let new_val = Value::mix_hash(new_weights);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(value);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     Value::Nil | Value::Package(_) => {
@@ -1156,7 +1114,6 @@ impl Interpreter {
                         self.env_mut()
                             .insert(target_name.to_string(), Value::Hash(Value::hash_arc(hash)));
                         self.stack.push(value);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     _ => {}
@@ -1191,7 +1148,6 @@ impl Interpreter {
                         let new_hash = self.tag_container_metadata(new_hash, meta);
                         self.env_mut().insert(target_name.to_string(), new_hash);
                         self.stack.push(old_value);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     Value::Set(_, false) => {
@@ -1204,7 +1160,6 @@ impl Interpreter {
                         let new_val = Value::set_hash(new_set);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(Value::Bool(existed));
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     Value::Bag(_, false) => {
@@ -1217,7 +1172,6 @@ impl Interpreter {
                         let new_val = Value::bag_hash_big(new_counts);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(Value::from_bigint(old_count));
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     Value::Mix(_, false) => {
@@ -1231,12 +1185,10 @@ impl Interpreter {
                         self.env_mut().insert(target_name.to_string(), new_val);
                         let result = crate::value::mix_weight_to_value(old_weight);
                         self.stack.push(result);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     Value::Nil | Value::Package(_) => {
                         self.stack.push(Value::Nil);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     _ => {}
@@ -1289,7 +1241,6 @@ impl Interpreter {
                             self.update_local_if_exists(code, &source_name, &cell_val);
                         }
                         self.stack.push(value);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     Value::Nil | Value::Package(_) => {
@@ -1324,7 +1275,6 @@ impl Interpreter {
                             self.update_local_if_exists(code, &source_name, &cell_val);
                         }
                         self.stack.push(value);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                     Value::Set(_, mutable) => {
@@ -1357,7 +1307,6 @@ impl Interpreter {
             let empty_array = Value::real_array(vec![]);
             self.env_mut()
                 .insert(target_name.to_string(), empty_array.clone());
-            self.env_dirty = true;
             empty_array
         } else {
             target
@@ -1369,7 +1318,6 @@ impl Interpreter {
                 let vals =
                     self.call_method_all_with_fallback(&target, &method, &args, skip_native)?;
                 self.stack.push(Value::array(vals));
-                self.env_dirty = true;
             }
             Some("*") => {
                 match self.call_method_all_with_fallback(&target, &method, &args, skip_native) {
@@ -1379,7 +1327,6 @@ impl Interpreter {
                     }
                     Err(e) => return Err(e),
                 }
-                self.env_dirty = true;
             }
             _ => {
                 // Native fast path for mutating list methods on a plain, untyped
@@ -1394,7 +1341,6 @@ impl Interpreter {
                         self.try_native_array_mut(&target_name, &target, &method, &args)
                 {
                     self.stack.push(result?);
-                    self.env_dirty = true;
                     return Ok(());
                 }
                 // Symmetric bound-cell fast path for hash mutators (`%h.push` /
@@ -1408,7 +1354,6 @@ impl Interpreter {
                         self.try_native_hash_mut_bound(&target_name, &method, &args)
                 {
                     self.stack.push(result?);
-                    self.env_dirty = true;
                     return Ok(());
                 }
                 // Native fast path for the simple (non-erroring) forms of `splice`
@@ -1419,7 +1364,6 @@ impl Interpreter {
                         self.try_native_array_splice(&target_name, &target, &method, &args)
                 {
                     self.stack.push(result?);
-                    self.env_dirty = true;
                     return Ok(());
                 }
                 // Native fast path for mutating Buf write methods on a mutable Buf
@@ -1429,7 +1373,6 @@ impl Interpreter {
                         self.try_native_buf_mut(&target_name, &target, &method, &args)
                 {
                     self.stack.push(result?);
-                    self.env_dirty = true;
                     return Ok(());
                 }
                 // Native fast path for the Iterator protocol on a self-contained
@@ -1440,7 +1383,6 @@ impl Interpreter {
                     && let Some(result) = self.try_native_iterator(&target, &method, &args)
                 {
                     self.stack.push(result?);
-                    self.env_dirty = true;
                     return Ok(());
                 }
                 // Array-subclass instance delegation (mut path): when the Instance's
@@ -1512,7 +1454,6 @@ impl Interpreter {
                                 storage,
                             );
                             self.stack.push(result);
-                            self.env_dirty = true;
                             return Ok(());
                         }
                         // Perform the operation on the backing array
@@ -1547,7 +1488,6 @@ impl Interpreter {
                             storage,
                         );
                         self.stack.push(result);
-                        self.env_dirty = true;
                         return Ok(());
                     }
                 }
@@ -1594,39 +1534,20 @@ impl Interpreter {
                 } else {
                     self.try_compiled_method_mut_or_interpret(&target_name, target, &method, args)
                 };
-                // Slice 6.3: mark env dirty only when the dispatch was not a
-                // proven-pure compiled method call.
-                let mark_dirty = !self.method_dispatch_pure;
                 match modifier {
                     Some("?") => match call_result {
                         Ok(val) => {
                             self.stack.push(val);
-                            if mark_dirty {
-                                self.env_dirty = true;
-                            }
                         }
                         Err(e) if Self::is_method_not_found_error(&e) => {
                             self.stack.push(Value::Nil);
-                            if mark_dirty {
-                                self.env_dirty = true;
-                            }
                         }
                         Err(e) => return Err(e),
                     },
                     _ => {
                         self.stack.push(call_result?);
-                        if mark_dirty {
-                            self.env_dirty = true;
-                        }
                     }
                 }
-                // Slice F: reconcile the caller's local slots from env after a
-                // method that dirtied env (a `submethod BUILD`/`TWEAK` during
-                // `.new`, a `.map`/`.grep`/`.sort` block, a `.gist`/`.Str`
-                // closure run by `say`/`note`, ...). Gated on `env_dirty`,
-                // exactly when the barrier would have pulled. See the CallMethod
-                // twin and `reconcile_locals_from_env_at_site`.
-                self.blanket_reconcile_if_dirty(code);
             }
         }
         Ok(())
@@ -1898,7 +1819,6 @@ impl Interpreter {
         };
         self.env_mut()
             .insert(target_name.to_string(), updated_instance);
-        self.env_dirty = true;
     }
 
     /// Interpreter-native `splice` on a plain, untyped `@`-array bound to `target_name`

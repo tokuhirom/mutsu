@@ -461,7 +461,6 @@ impl Interpreter {
             }
 
             // Mark env as dirty so subsequent reads see updated values
-            self.env_dirty = true;
 
             // Refresh the target from the environment to pick up attribute mutations
             if let Some((ref cn, id)) = target_identity

@@ -741,12 +741,18 @@ impl Interpreter {
             .param_defs
             .iter()
             .any(|pd| pd.sigilless || pd.traits.iter().any(|t| t == "rw" || t == "raw"));
+        // `cc.has_env_writes` catches a body that writes a captured-outer lexical
+        // by name (a `SetGlobal`/`AssignExpr` to a var that is captured but not
+        // tracked in `free_var_syms`, e.g. an anonymous role-method `gist` doing
+        // `$seen = 1`) — `free_changed` misses it, so without this the writeback
+        // is silently dropped. A read-only leaf block (the common map/grep body)
+        // has no env-write opcode and still skips the scan.
         let needs_caller_writeback = free_changed
-            || self.env_dirty
             || has_captured_local
             || has_writable_params
             || !rw_bindings.is_empty()
-            || cc.has_calls;
+            || cc.has_calls
+            || cc.has_env_writes;
         // Whether any closure-writeback metadata key (sigilless readonly/alias,
         // state-var, predictive-seq) may exist in any env. The common program
         // creates none, so this stays false and the per-call metadata scans
@@ -774,12 +780,7 @@ impl Interpreter {
             // refreshes the owner's local slot precisely — covers a nested
             // gist/method/closure that mutated an outer lexical which is NOT a direct
             // free var of THIS closure (`cap({ note … $seen = 1 })`), so the
-            // free_var recording below misses it (env_dirty-removal substrate).
-            // Only when cell-boxing is the coherence mechanism (boxing build /
-            // substrate harness): the default build's blanket reconcile already
-            // refreshes these slots, so skip the per-call collection to keep the hot
-            // closure path (`.map`, `.grep`) free of extra work.
-            let record_writeback = self.cell_boxing_active();
+            // free_var recording below misses it.
             let mut caller_writeback: Vec<Symbol> = Vec::new();
             for (k, v) in self.env().iter() {
                 if *k != underscore_sym
@@ -802,8 +803,7 @@ impl Interpreter {
                     }
                     // A genuine caller lexical whose value changed across the call:
                     // queue its slot for a precise refresh.
-                    if record_writeback
-                        && restored_env.contains_key_sym(*k)
+                    if restored_env.contains_key_sym(*k)
                         && restored_env.get_sym(*k) != Some(v)
                         && !k.starts_with("__mutsu")
                     {
