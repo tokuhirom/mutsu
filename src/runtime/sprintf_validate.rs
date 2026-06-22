@@ -127,6 +127,11 @@ pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result
                 pos = start; // reset
             }
         }
+        // Everything from here through the conversion char is the "directive"
+        // reported in X::Str::Sprintf::Directives::Unsupported (Raku includes
+        // flags / width / the vector flag in `.directive`, e.g. `%5vd` reports
+        // directive `5vd`).
+        let directive_start = pos;
         // Skip flags
         while pos < len {
             let b = bytes[pos];
@@ -161,44 +166,55 @@ pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result
                 }
             }
         }
-        let spec = if pos < len {
-            let s = bytes[pos] as char;
+        // Perl 5 vector flag (`%vd`, `%5vd`, ...) is not supported in Raku and
+        // makes the whole directive invalid regardless of the following spec.
+        let vector_flag = pos < len && (bytes[pos] == b'v' || bytes[pos] == b'V');
+        if vector_flag {
             pos += 1;
+        }
+        // Read the conversion char as a full UTF-8 scalar so `pos` always lands
+        // on a char boundary (the directive may be a non-ASCII char such as
+        // `%♥`, which must still slice cleanly into `.directive` / `.sequence`).
+        let spec = if pos < len {
+            let s = fmt[pos..].chars().next().unwrap();
+            pos += s.len_utf8();
             s
         } else {
             '?'
         };
-        if !matches!(
-            spec,
-            's' | 'd'
-                | 'i'
-                | 'u'
-                | 'x'
-                | 'X'
-                | 'o'
-                | 'b'
-                | 'B'
-                | 'f'
-                | 'F'
-                | 'e'
-                | 'E'
-                | 'g'
-                | 'G'
-                | 'c'
-        ) {
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("directive".to_string(), Value::str(format!("%{}", spec)));
-            attrs.insert(
-                "message".to_string(),
-                Value::str(format!(
-                    "Directive {} is not valid in a sprintf format",
-                    spec
-                )),
+        if vector_flag
+            || !matches!(
+                spec,
+                's' | 'd'
+                    | 'i'
+                    | 'u'
+                    | 'x'
+                    | 'X'
+                    | 'o'
+                    | 'b'
+                    | 'B'
+                    | 'f'
+                    | 'F'
+                    | 'e'
+                    | 'E'
+                    | 'g'
+                    | 'G'
+                    | 'c'
+            )
+        {
+            // Raku reports `.directive` as everything after the `%` (flags,
+            // width, vector flag, conversion char) and `.sequence` as `%` + that.
+            let directive = &fmt[directive_start..pos];
+            let sequence = format!("%{}", directive);
+            let message = format!(
+                "Directive {} is not valid in sprintf format '{}'",
+                directive, sequence
             );
-            let mut err = RuntimeError::new(format!(
-                "Directive {} is not valid in a sprintf format",
-                spec
-            ));
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("directive".to_string(), Value::str(directive.to_string()));
+            attrs.insert("sequence".to_string(), Value::str(sequence));
+            attrs.insert("message".to_string(), Value::str(message.clone()));
+            let mut err = RuntimeError::new(message);
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::Str::Sprintf::Directives::Unsupported"),
                 attrs,
@@ -316,8 +332,8 @@ pub(crate) fn validate_sprintf_arg_types(fmt: &str, args: &[Value]) -> Result<()
             }
         }
         let spec = if pos < len {
-            let s = bytes[pos] as char;
-            pos += 1;
+            let s = fmt[pos..].chars().next().unwrap();
+            pos += s.len_utf8();
             s
         } else {
             '?'
