@@ -51,15 +51,15 @@
   精密 reconcile も不要化＝精密 reconcile 依存 surface を一つずつ precise writeback / cell 共有へ畳む必要がある。
   - **計測ハーネス `MUTSU_NO_PRECISE_RECONCILE`**（#3406）: `MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1`
     （double-OFF）＝boxing のみ＝env_dirty 削除後の到達状態。残 fail = 未変換 by-name writer。0（flaky 除く）で削除可能。
-  - **double-OFF surface: 16 → 7**（2026-06-22・5 slice landed）: S1 bound-Proxy substr-rw/subbuf-rw/undefine（#3406）／
+  - **double-OFF surface: 16 → 6**（2026-06-22・6 slice landed）: S1 bound-Proxy substr-rw/subbuf-rw/undefine（#3406）／
     S2 let/temp restore（#3408）／S3 closure-method nested-capture writeback（#3409）／S4 regex embedded `{ }`/`:let`
-    cross-frame caller writeback（#3412・carrier 2 面消化）／S5 junction invocant autothread per-eigenstate writeback。設計＝
+    cross-frame caller writeback（#3412・carrier 2 面消化）／S5 junction invocant autothread per-eigenstate writeback（#3414）／
+    S6 resumable CONTROL handler writeback（indirect `warn`）。設計＝
     [docs/captured-outer-cell-sharing.md](docs/captured-outer-cell-sharing.md) §10。
-  - **残 7**: 並行/制御のみ（supply/react/resumable-control/concurrent-cell＝**cross-thread cell・最難・最後**）＋
-    done-paren（react done()）＋resumable-control-signal-indirect-call。
+  - **残 6**: 並行/react のみ（supply/react/concurrent-cell＝**cross-thread cell・最難・最後**）＋done-paren（react done()）。
 - **✅ env↔locals 純 writeback コヒーレンス（blanket ON 下）は完了**（slice 1〜1.20・#3400）。lazy-lists.t laziness も
   解消（#3403）。OFF roast survey（blanket OFF）の決定的サーフェスは IO-Socket-Async.t flaky のみ。
-- **∴ 次 = double-OFF surface 残 7 を畳む（並行/制御）→ §2-E（精密 reconcile + `env_dirty`/`ensure_locals_synced`/
+- **∴ 次 = double-OFF surface 残 6 を畳む（並行/react）→ §2-E（精密 reconcile + `env_dirty`/`ensure_locals_synced`/
   `saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化）。**
 
 ### B. tree-walking interpreter 撤去 — **struct 統合は完了・残フォークは状態所有待ち**
