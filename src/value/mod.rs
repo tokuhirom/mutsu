@@ -3992,12 +3992,31 @@ impl Value {
                     .entry(qname.clone())
                     .or_insert_with(|| Value::real_array(Vec::new()));
             }
+            // Silent-action captures: hidden `<.foo>` subrule matches (stored under
+            // a marker key in `named_subcaps`) that carry nested captures. They are
+            // absent from `named`/`.hash`, but their action methods must fire, so
+            // build them into a `silent_caps` array for the grammar action walk.
+            // Each subcap's `action_name` carries the rule name to dispatch on.
+            let mut silent_caps_vals: Vec<Value> = Vec::new();
+            for (key, scs) in &caps.named_subcaps {
+                if key.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
+                    for sc in scs {
+                        silent_caps_vals.push(make_subcap_match(sc, orig));
+                    }
+                }
+            }
             let mut attrs = HashMap::new();
             attrs.insert("str".to_string(), Value::str(caps.matched.clone()));
             attrs.insert("from".to_string(), Value::Int(caps.from as i64));
             attrs.insert("to".to_string(), Value::Int(caps.to as i64));
             attrs.insert("list".to_string(), Value::array(pos_vals));
             attrs.insert("named".to_string(), Value::hash(sub_named));
+            if !silent_caps_vals.is_empty() {
+                attrs.insert(
+                    "silent_caps".to_string(),
+                    Value::real_array(silent_caps_vals),
+                );
+            }
             if let Some(o) = orig {
                 attrs.insert("orig".to_string(), Value::str(o.to_string()));
             }
@@ -4094,6 +4113,24 @@ impl Value {
                 .or_insert_with(|| Value::real_array(Vec::new()));
         }
         attrs.insert("named".to_string(), Value::hash(named_caps_map));
+        // Silent-action captures: hidden `<.foo>` subrule matches carrying nested
+        // captures (see make_subcap_match). Build them into a `silent_caps` array
+        // so the grammar action walk fires their (and descendants') actions; they
+        // are deliberately absent from `named`/`.hash`.
+        let mut silent_caps_vals: Vec<Value> = Vec::new();
+        for (key, scs) in named_subcaps {
+            if key.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
+                for sc in scs {
+                    silent_caps_vals.push(make_subcap_match(sc, orig));
+                }
+            }
+        }
+        if !silent_caps_vals.is_empty() {
+            attrs.insert(
+                "silent_caps".to_string(),
+                Value::real_array(silent_caps_vals),
+            );
+        }
         Value::make_instance(Symbol::intern("Match"), attrs)
     }
 

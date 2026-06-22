@@ -94,7 +94,10 @@ impl Interpreter {
             return self.dispatch_supply_first(&(attributes).as_map(), func, has_end);
         }
 
-        let items = crate::runtime::utils::value_to_list(&target);
+        // A Blob/Buf iterates as its element bytes (unlike list assignment, which
+        // keeps it as a single element), so `.first` scans the bytes.
+        let items = Self::buf_as_byte_items(&target)
+            .unwrap_or_else(|| crate::runtime::utils::value_to_list(&target));
         if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
             return Ok(super::super::builtins_collection::format_first_result(
                 idx, value, has_k, has_kv, has_p,
