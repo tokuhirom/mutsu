@@ -1959,7 +1959,7 @@ pub(in crate::parser) fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
     if r.starts_with(',') && !r.starts_with(",,") {
         let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
-        if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
+        if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
             return Ok((r, Expr::ArrayLiteral(vec![first])));
         }
         let mut items = vec![first];
@@ -1973,7 +1973,7 @@ pub(in crate::parser) fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
             }
             let (r2, _) = parse_char(r2, ',')?;
             let (r2, _) = ws(r2)?;
-            if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
+            if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')') {
                 let items = merge_sequence_seeds(lift_meta_ops_in_list(items));
                 return Ok((r2, finalize_list(items)));
             }
