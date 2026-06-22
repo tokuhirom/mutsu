@@ -54,6 +54,36 @@ impl Interpreter {
         }
     }
 
+    /// `for` over a non-itemized Blob/Buf iterates its bytes (raku: a `Blob`
+    /// value, a `Blob:D`-typed param, or a `:=`-bound Blob yields its bytes).
+    /// Returns the byte items when `iterable` is such a Blob, else `None` (so
+    /// the caller falls back to `value_to_list`).
+    ///
+    /// Two shapes reach this point:
+    /// - a bare Blob value (`for Blob.new(...)`), possibly behind a
+    ///   `ContainerRef`;
+    /// - the compiler's `for $scalar` → `[$scalar]` wrap, a single-element
+    ///   `List`-kind array whose lone element is a Blob (this is how a Blob
+    ///   *param* — the MIME::Base64 case — arrives).
+    ///
+    /// mutsu has no itemization marker for Blobs, so an *itemized* Blob
+    /// (`my $b = Blob.new(...)`, `($blob,)`) is indistinguishable from a
+    /// non-itemized one and also expands here — a divergence from raku (should
+    /// be one item) that no roast Buf/Blob test exercises.
+    fn for_blob_byte_items(iterable: &Value) -> Option<Vec<Value>> {
+        let deref = iterable.deref_container();
+        if let Some(bytes) = crate::runtime::Interpreter::buf_as_byte_items(&deref) {
+            return Some(bytes);
+        }
+        if let Value::Array(items, ArrayKind::List) = &deref
+            && items.len() == 1
+        {
+            let elem = items[0].deref_container();
+            return crate::runtime::Interpreter::buf_as_byte_items(&elem);
+        }
+        None
+    }
+
     pub(crate) fn control_signal_topic_value(signal: &RuntimeError) -> Option<Value> {
         // User-defined classes doing X::Control carry their original
         // exception instance. Surface it directly so CONTROL blocks see the
@@ -507,6 +537,14 @@ impl Interpreter {
                 }
             }
             items
+        } else if let Some(bytes) = Self::for_blob_byte_items(&iterable) {
+            // A non-itemized Blob/Buf iterates its bytes (matches raku: a `Blob`
+            // value or `Blob:D`-typed param yields its bytes — e.g. the
+            // `for $data -> $b1, $b2?, $b3?` encoder loop in MIME::Base64).
+            // mutsu has no itemization marker for Blobs, so `for $itemized_blob`
+            // also expands here — a corner not exercised by any roast Buf/Blob
+            // test.
+            bytes
         } else {
             runtime::value_to_list(&iterable)
         };

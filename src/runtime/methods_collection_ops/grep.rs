@@ -435,6 +435,10 @@ impl Interpreter {
                 self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
             other => {
+                // A Blob/Buf greps over its bytes (matches raku iteration).
+                if let Some(bytes) = Self::buf_as_byte_items(&other) {
+                    return self.eval_grep_with_adverb(args.first().cloned(), bytes, &grep_adverb);
+                }
                 // Treat any other value as a single-element list for grep
                 self.eval_grep_with_adverb(args.first().cloned(), vec![other], &grep_adverb)
             }

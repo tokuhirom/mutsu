@@ -1600,7 +1600,7 @@ impl Interpreter {
     /// must expand it rather than treating the whole Blob as a single element.
     /// (Note: list-*assignment* keeps a Blob as one element — `my @a = $buf` —
     /// so this is used only by the iterating methods, not `value_to_list`.)
-    pub(in crate::runtime) fn buf_as_byte_items(v: &Value) -> Option<Vec<Value>> {
+    pub(crate) fn buf_as_byte_items(v: &Value) -> Option<Vec<Value>> {
         if let Value::Instance {
             class_name,
             attributes,
