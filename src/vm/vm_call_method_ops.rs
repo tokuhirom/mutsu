@@ -297,6 +297,14 @@ impl Interpreter {
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
             let v = result?;
+            // Drain captured-outer writeback recorded by the dispatched multi
+            // candidate body (e.g. `multi method l(%t,*@l){ $r ~= '%'; ... }`
+            // mutating a caller lexical `$r`). The proto path short-circuits
+            // before the normal CallMethod tail, so without this the candidate's
+            // by-name write reaches env but never refreshes the caller slot. The
+            // pending lists are empty in default builds (the snapshot is gated on
+            // cell_boxing_active), so this is a no-op there.
+            self.apply_pending_rw_writeback(code);
             self.stack.push(v);
             return Ok(());
         }

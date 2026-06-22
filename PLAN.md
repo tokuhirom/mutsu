@@ -71,13 +71,17 @@
     writeback**（`types/binding.rs` の where-eval 前後 env scalar スナップショット差分→`pending_caller_var_writeback`・
     named-parameters 消化）。**S15（#3433・6→5）= CAS block の captured-outer writeback**（`builtin_cas_var` の block 実行
     前後 env scalar スナップショット差分→`pending_caller_var_writeback`・cas-loop 消化）。
-    **残 5（next-session 着手順）**: ①**defer-next**（multi-method `&?ROUTINE.dispatcher()` deferral・minimal repro は PASS＝
-    full test の特定候補構造のエッジケース・要深掘り）②**primitives**（meta compose・要 slot-only 判定）③lazy-lists
-    （**laziness 別軸・writeback でない**）④throttle（timing・flaky 系）⑤terminator（auto-curly array composer・**parser・
-    writeback でない**）。①②が writeback 候補、③④⑤は別軸。slot-only 判定法＝closure経由 vs direct 読みの差（closure=env/direct=slot）。
+    **S16（#TBD・5→4）= proto-multi 候補の captured-outer writeback**（`try_proto_method_body` の `run_proto_method`
+    前後 env scalar スナップショット差分→`pending_caller_var_writeback`・defer-next 消化）。**★真因＝proto 候補は常に
+    slow path（`run_instance_method_resolved`）経由で、捕捉 write を env に伝播するが `env_dirty` を立てない＝blanket pull
+    すら発火せず default build でも slot stale（`is` 読みは reconcile site を踏み roast は偶然 green・`say` 直読みは壊れる）。
+    ∴ S16 は ungated**（precise writeback は blanket の部分集合で正しい結果を変えず default 潜在バグも直す）。
+    **残 4（next-session 着手順）**: ①**primitives**（meta compose・要 slot-only 判定・HOW メソッドが slow path 経由なら
+    S16 と同型）②lazy-lists（**laziness 別軸・writeback でない**）③throttle（timing・flaky 系）④terminator（auto-curly array
+    composer・**parser・writeback でない**）。①が writeback 候補、②③④は別軸。slot-only 判定法＝closure経由 vs direct 読みの差。
 - **✅ env↔locals 純 writeback コヒーレンス（blanket ON 下）は完了**（slice 1〜1.20・#3400）。lazy-lists.t laziness も
   解消（#3403）。OFF roast survey（blanket OFF）の決定的サーフェスは IO-Socket-Async.t flaky のみ。
-- **∴ 次 = roast double-OFF 5→0 を slice で消化 → `env_dirty` 物理削除（§2-E）**:
+- **∴ 次 = roast double-OFF 4→0 を slice で消化 → `env_dirty` 物理削除（§2-E）**:
   `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 → `env_dirty`/`ensure_locals_synced`/
   `saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
 

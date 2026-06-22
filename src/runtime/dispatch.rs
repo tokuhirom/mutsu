@@ -1480,7 +1480,45 @@ impl Interpreter {
             return None;
         }
         let (owner, proto) = self.lookup_proto_method(&cn, method)?;
-        Some(self.run_proto_method(target.clone(), &cn, &owner, method, args.to_vec(), proto))
+        // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a multi
+        // candidate dispatched through the proto body's `{*}` runs via the slow
+        // `run_instance_method_resolved` path, which merges captured-outer caller
+        // scalar writes (e.g. `multi method l(%t,*@l){ $r ~= '%'; ... }` mutating
+        // a caller lexical `$r`) back into env but does NOT set `env_dirty` or
+        // record a precise writeback. So the owning caller slot was refreshed only
+        // by the call site's blanket pull — and the blanket pull does not fire
+        // reliably here (the slow path does not flag `env_dirty`), so the caller
+        // slot stayed stale in *default* builds too, not just under double-OFF.
+        // Snapshot the writeback-safe env scalars before the proto dispatch and
+        // record the names it changes into the retain-on-miss caller-var
+        // writeback, drained at the proto call site (`apply_pending_rw_writeback`).
+        // This is ungated: it is a precise subset of the blanket reconcile (so it
+        // never changes a correct result) and it fixes the latent default-build
+        // bug rather than merely the double-OFF measurement surface.
+        let proto_pre_env: std::collections::HashMap<Symbol, Value> = self
+            .env
+            .iter()
+            .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        let result =
+            self.run_proto_method(target.clone(), &cn, &owner, method, args.to_vec(), proto);
+        let changed: Vec<String> = self
+            .env
+            .iter()
+            .filter(|(k, v)| {
+                let kn = k.resolve();
+                kn != "_"
+                    && kn != "$_"
+                    && Self::is_writeback_safe_scalar(v)
+                    && proto_pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
+            })
+            .map(|(k, _)| k.resolve())
+            .collect();
+        for n in changed {
+            self.record_caller_var_writeback(&n);
+        }
+        Some(result)
     }
 
     pub(super) fn call_proto_dispatch(&mut self) -> Result<Value, RuntimeError> {
