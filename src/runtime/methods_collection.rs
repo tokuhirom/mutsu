@@ -66,7 +66,14 @@ impl Interpreter {
             // (`1..*`, `1,2,3...*`, `1,1,*+*...*`): `.map`/`.grep` append another
             // pipe stage that pulls from the sequence on demand (L2b), instead of
             // materializing the (now O(1)-seeded) cache.
-            Value::LazyList(ll) => ll.lazy_pipe.is_some() || ll.is_infinite_spec(),
+            //
+            // A gather-sourced list is also a lazy pipe source: its coroutine can
+            // be resumed one `take` at a time, so `.map`/`.grep` over it must pull
+            // on demand instead of forcing the whole gather body (which would run
+            // trailing side effects the consumer never asked for). This holds for a
+            // *plain* gather too — in Rakudo `gather { … }.grep(…)[^3]` pulls only
+            // the elements the slice needs and never runs the gather's tail.
+            Value::LazyList(ll) => ll.lazy_pipe.is_some() || ll.needs_vm_lazy_dispatch(),
             _ => false,
         }
     }
