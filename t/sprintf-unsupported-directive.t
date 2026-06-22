@@ -5,7 +5,7 @@ use Test;
 # conversion char) and `.sequence` as `%` + that, matching Rakudo. The message
 # is "Directive <directive> is not valid in sprintf format '<sequence>'".
 
-plan 15;
+plan 18;
 
 sub check($fmt, $directive, $message) {
     my $ex;
@@ -21,3 +21,5 @@ check '%z', 'z', q{Directive z is not valid in sprintf format '%z'};
 check '%vd', 'vd', q{Directive vd is not valid in sprintf format '%vd'};
 check '%5vd', '5vd', q{Directive 5vd is not valid in sprintf format '%5vd'};
 check '%v', 'v', q{Directive v is not valid in sprintf format '%v'};
+# A non-ASCII conversion char must slice cleanly into .directive / .sequence.
+check '%♥', '♥', q{Directive ♥ is not valid in sprintf format '%♥'};

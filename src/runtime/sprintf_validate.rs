@@ -172,9 +172,12 @@ pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result
         if vector_flag {
             pos += 1;
         }
+        // Read the conversion char as a full UTF-8 scalar so `pos` always lands
+        // on a char boundary (the directive may be a non-ASCII char such as
+        // `%♥`, which must still slice cleanly into `.directive` / `.sequence`).
         let spec = if pos < len {
-            let s = bytes[pos] as char;
-            pos += 1;
+            let s = fmt[pos..].chars().next().unwrap();
+            pos += s.len_utf8();
             s
         } else {
             '?'
@@ -329,8 +332,8 @@ pub(crate) fn validate_sprintf_arg_types(fmt: &str, args: &[Value]) -> Result<()
             }
         }
         let spec = if pos < len {
-            let s = bytes[pos] as char;
-            pos += 1;
+            let s = fmt[pos..].chars().next().unwrap();
+            pos += s.len_utf8();
             s
         } else {
             '?'
