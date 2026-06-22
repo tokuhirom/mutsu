@@ -753,6 +753,21 @@ pub fn raku_value(v: &Value) -> String {
         Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
             setbagmix_raku(v).unwrap_or_else(|| v.to_string_value())
         }
+        // An ObjAt / ValueObjAt (from `.WHICH`) renders its `.raku` as the
+        // constructor form `ValueObjAt.new("Int|42")`; only `.gist` / `.Str`
+        // show the bare WHICH string (`Int|42`, via `to_string_value`).
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "ObjAt" || class_name == "ValueObjAt" => {
+            let which = attributes
+                .as_map()
+                .get("WHICH")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            format!("{}.new(\"{}\")", class_name.resolve(), which)
+        }
         Value::Mixin(inner, mixins) => {
             // An allomorphic value (IntStr/RatStr/NumStr/ComplexStr) renders as
             // `TypeStr.new(<numeric>, "<original string>")` — e.g. `<42>.raku`

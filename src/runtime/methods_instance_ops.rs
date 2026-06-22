@@ -754,6 +754,12 @@ impl Interpreter {
                         .get("WHICH")
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
+                    // `.gist` (like `.Str`) shows the bare WHICH (`Int|42`);
+                    // only `.raku`/`.perl` show the `ValueObjAt.new("Int|42")`
+                    // constructor form.
+                    if method == "gist" {
+                        return Ok(Value::str(which));
+                    }
                     return Ok(Value::str(format!(
                         "{}.new(\"{}\")",
                         class_name.resolve(),
