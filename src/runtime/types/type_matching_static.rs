@@ -273,6 +273,10 @@ impl Interpreter {
         if constraint == "Buf" && matches!(value_type, "buf8" | "buf16" | "buf32" | "buf64") {
             return true;
         }
+        // IO role: IO::Path and IO::Special do the IO role (IO::Handle does not).
+        if constraint == "IO" && matches!(value_type, "IO::Path" | "IO::Special") {
+            return true;
+        }
         false
     }
 }

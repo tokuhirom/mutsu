@@ -1117,9 +1117,13 @@ impl Interpreter {
                         } else if let Some((target, source)) =
                             parse_coercion_type(&resolved_constraint)
                         {
-                            // Coercion type: check source type if specified, then coerce
+                            // Coercion type: check source type if specified, then coerce.
+                            // A `T(S)` parameter accepts a value that is already a `T`
+                            // (no coercion needed) as well as an `S` (coerced via `.T`),
+                            // so only reject a value that matches neither.
                             if let Some(src) = source
                                 && !self.type_matches_value(src, &value)
+                                && !self.type_matches_value(target, &value)
                             {
                                 let mut err = RuntimeError::new(format!(
                                     "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",

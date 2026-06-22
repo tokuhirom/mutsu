@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 /// Supply callbacks). Matches the main thread's stack (see `main.rs`): the
 /// default ~2 MiB thread stack overflows on deep VM recursion, which shows up
 /// as debug-build-only crashes (release frames are smaller and fit in 2 MiB).
-pub(crate) const USER_THREAD_STACK_SIZE: usize = 32 * 1024 * 1024;
+pub(crate) const USER_THREAD_STACK_SIZE: usize = 256 * 1024 * 1024;
 
 /// Spawn a worker thread with a large stack for running user code, so deep VM
 /// recursion does not overflow the default thread stack.

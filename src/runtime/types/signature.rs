@@ -536,9 +536,12 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             }
         }
         if let Some(constraint) = &sub_pd.type_constraint {
-            if let Some((_target, source)) = parse_coercion_type(constraint) {
+            if let Some((target, source)) = parse_coercion_type(constraint) {
+                // A `T(S)` parameter accepts a value already of type `T` as well as
+                // an `S` (coerced via `.T`); only reject one that matches neither.
                 if let Some(src) = source
                     && !interpreter.type_matches_value(src, &candidate)
+                    && !interpreter.type_matches_value(target, &candidate)
                 {
                     return Err(RuntimeError::new(format!(
                         "X::TypeCheck::Argument: Type check failed for {}: expected {}, got {}",
