@@ -230,8 +230,11 @@ fn handle_negated_long_option(
 
 fn main() {
     // Spawn the real entry point on a thread with a larger stack to avoid
-    // stack overflows during deeply-recursive grammar matching.
-    let builder = std::thread::Builder::new().stack_size(32 * 1024 * 1024);
+    // stack overflows during deeply-recursive grammar matching and deep user
+    // recursion (each Raku-level call consumes a sizeable native frame, so
+    // realistic recursive code — e.g. File::Directory::Tree's rmtree over a
+    // 120-deep directory tree — needs far more than the default 8MB).
+    let builder = std::thread::Builder::new().stack_size(256 * 1024 * 1024);
     let handler = builder
         .spawn(run_main)
         .expect("failed to spawn main thread");

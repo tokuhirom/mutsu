@@ -159,6 +159,14 @@ impl Interpreter {
             } else {
                 target
             };
+        // An Instance that already satisfies the target type needs no coercion
+        // (e.g. re-coercing an IO::Path for an `IO(Cool)` constraint, which the
+        // declaration path can trigger on an already-coerced value). Returning it
+        // directly avoids re-dispatching a coercion method that may not exist on
+        // the native type via the slow path.
+        if matches!(value, Value::Instance { .. }) && self.type_matches_value(base_target, &value) {
+            return Ok(value);
+        }
         if let Value::Instance {
             class_name,
             attributes,
