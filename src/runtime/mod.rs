@@ -5383,10 +5383,22 @@ impl Interpreter {
         // makes before returning does not consume it one frame too soon. No-op when
         // no such slot exists; the default build's blanket reconcile makes it
         // redundant = byte-identical.
+        self.record_caller_var_writeback(name);
+        Ok(())
+    }
+
+    /// Record a by-name env write to a caller-frame lexical (retain-on-miss list).
+    /// The owning local slot may live several frames up — the writer can make an
+    /// intervening deeper call before returning to the owner — so the source is
+    /// retained until a frame whose `code` actually has the slot drains it (see
+    /// `apply_pending_caller_var_writeback`). Use this (not
+    /// `pending_rw_writeback_sources`, which is drop-on-miss / single-frame) when
+    /// the write happens inside a nested callee/closure (e.g. a Proxy STORE whose
+    /// referent lexical is owned by the caller of the `$proxy = v` assignment).
+    pub(crate) fn record_caller_var_writeback(&mut self, name: &str) {
         if !self.pending_caller_var_writeback.iter().any(|n| n == name) {
             self.pending_caller_var_writeback.push(name.to_string());
         }
-        Ok(())
     }
 
     /// Look up a variable through $DYNAMIC:: — searches the entire caller stack.

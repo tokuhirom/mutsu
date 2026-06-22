@@ -6021,11 +6021,16 @@ impl Interpreter {
             {
                 let proxy_val = self.locals[idx].clone();
                 loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
-                // Stage 3: a Proxy STORE (e.g. `$r := substr-rw($str, ...); $r = ...`)
-                // mutates the referent caller lexical (`$str`) by name in env via
-                // the interpreter STORE closure. Reconcile the caller's slots so
-                // the write is visible without the reverse `sync_locals_from_env`
-                // pull (byte-identical under ON).
+                // A Proxy STORE (e.g. `$r := substr-rw($str, ...); $r = ...`) mutates
+                // the referent caller lexical (`$str`) by name in env via the STORE
+                // closure. For the substr-rw/subbuf-rw/undefine Proxies the STORE
+                // records the referent on the retain-on-miss writeback list
+                // (`record_caller_var_writeback`); `apply_pending_rw_writeback` drains
+                // it precisely (works under the no-precise-reconcile substrate harness
+                // — env_dirty-removal step). The blanket reconcile remains as the
+                // fallback for arbitrary user `Proxy` STOREs that write other lexicals
+                // (no-op under the harness); byte-identical in the default build.
+                self.apply_pending_rw_writeback(code);
                 self.reconcile_locals_from_env_at_site(code);
                 return Ok(());
             }
@@ -6896,10 +6901,10 @@ impl Interpreter {
         {
             let proxy_val = self.locals[idx].clone();
             loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
-            // Stage 3: a Proxy STORE mutates the referent caller lexical by name
-            // (e.g. substr-rw); reconcile the caller's slots (see the other
-            // Proxy-STORE assign site).
-            self.reconcile_locals_from_env_at_site(code);
+            // A Proxy STORE wrote the referent caller lexical by name; drain the
+            // precise retain-on-miss writeback it recorded instead of the blanket
+            // env→locals pull.
+            self.apply_pending_rw_writeback(code);
             return Ok(());
         }
         // First write through a missing-key `:=` bind: materialize the path into
@@ -7245,8 +7250,13 @@ impl Interpreter {
             let val = self.stack.pop().unwrap_or(Value::Nil);
             let proxy_val = self.locals[idx].clone();
             loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
-            // Stage 3: reconcile the referent caller lexical the Proxy STORE wrote
-            // by name (see the other Proxy-STORE assign site).
+            // A Proxy STORE wrote the referent caller lexical by name. For
+            // substr-rw/subbuf-rw/undefine the STORE recorded the referent precisely
+            // (`record_caller_var_writeback`); drain it here so the slot refreshes
+            // without the blanket pull (env_dirty-removal substrate; see the other
+            // Proxy-STORE assign site). The blanket reconcile stays as the fallback
+            // for arbitrary user `Proxy` STOREs (no-op under the substrate harness).
+            self.apply_pending_rw_writeback(code);
             self.reconcile_locals_from_env_at_site(code);
             return Ok(());
         }

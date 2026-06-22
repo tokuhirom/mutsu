@@ -13,6 +13,20 @@ pub(crate) fn blanket_reconcile_disabled() -> bool {
     *DISABLED.get_or_init(|| std::env::var_os("MUTSU_NO_BLANKET_RECONCILE").is_some())
 }
 
+/// Whether the *precise* env→locals reconcile (`reconcile_locals_from_env_at_site`,
+/// run at carrier/call sites) is disabled. This is the measurement harness for the
+/// final substrate step toward deleting `env_dirty`: with both this and
+/// `MUTSU_NO_BLANKET_RECONCILE` set, coherence rests on cell-boxing ALONE — the
+/// end state after `env_dirty` removal. Each surface still failing under the
+/// double toggle is a by-name writer not yet folded into a shared cell
+/// (docs/env-locals-coherence.md §7.4). When that set is empty (modulo flaky
+/// concurrency), the precise reconcile and `env_dirty` can be physically removed.
+#[inline]
+pub(crate) fn precise_reconcile_disabled() -> bool {
+    static DISABLED: OnceLock<bool> = OnceLock::new();
+    *DISABLED.get_or_init(|| std::env::var_os("MUTSU_NO_PRECISE_RECONCILE").is_some())
+}
+
 impl Interpreter {
     /// Clear the env-dirty flag at a barrier where the caller does not need a
     /// reconcile. The blanket reverse `sync_locals_from_env` pull this used to
@@ -335,6 +349,13 @@ impl Interpreter {
     /// the precise write-through family exactly. Gated by the caller on
     /// `env_dirty` at the hot sites, so a pure call pays nothing.
     pub(super) fn reconcile_locals_from_env_at_site(&mut self, code: &CompiledCode) {
+        if precise_reconcile_disabled() {
+            // Measurement harness (see `precise_reconcile_disabled`): with the
+            // precise reconcile off, only surfaces already folded into shared
+            // cells stay coherent. Used to drive the env_dirty-removal substrate
+            // grind toward the boxing-only end state.
+            return;
+        }
         for (i, name) in code.locals.iter().enumerate() {
             if matches!(self.locals[i], Value::HashSlotRef { .. }) {
                 continue;
