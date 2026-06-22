@@ -103,8 +103,8 @@ pub fn date_method_0arg(
             Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)))
         }
         "raku" | "perl" => Some(Ok(Value::str(format!(
-            "Date.new(\"{}\")",
-            format_date(year, month, day)
+            "Date.new({},{},{})",
+            year, month, day
         )))),
         "WHICH" => {
             let which = format!("Date|{}", days);
@@ -240,8 +240,23 @@ pub fn datetime_method_0arg(
             year, month, day, hour, minute, second, timezone,
         ))),
         "raku" | "perl" => {
-            let s = format_datetime(year, month, day, hour, minute, second, timezone);
-            Some(Ok(Value::str(format!("DateTime.new(\"{}\")", s))))
+            // Raku renders DateTime.raku as the numeric-argument constructor:
+            // `DateTime.new(2020,3,5,13,45,30)`, a fractional second as a decimal
+            // (`...,30.5)`), and a non-UTC offset as a trailing `:timezone(N)`.
+            let sec_str = if second == second.floor() {
+                format!("{}", second as i64)
+            } else {
+                format!("{}", second)
+            };
+            let mut s = format!(
+                "DateTime.new({},{},{},{},{},{}",
+                year, month, day, hour, minute, sec_str
+            );
+            if timezone != 0 {
+                s.push_str(&format!(",:timezone({})", timezone));
+            }
+            s.push(')');
+            Some(Ok(Value::str(s)))
         }
         "WHICH" => {
             let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
