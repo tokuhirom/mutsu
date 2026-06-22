@@ -1098,21 +1098,16 @@ pub(crate) fn gist_value(value: &Value) -> String {
         }
         Value::Version { .. } => format!("v{}", value.to_string_value()),
         Value::Nil => "Nil".to_string(),
-        // Range gist shows the range notation, not the expanded elements
-        Value::Range(a, b) => format!("{}..{}", a, b),
-        Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
-        Value::RangeExclStart(a, b) => format!("^{}..{}", a, b),
-        Value::RangeExclBoth(a, b) => format!("^{}..^{}", a, b),
-        Value::GenericRange {
-            start,
-            end,
-            excl_start,
-            excl_end,
-        } => {
-            let prefix = if *excl_start { "^" } else { "" };
-            let sep = if *excl_end { "..^" } else { ".." };
-            format!("{}{}{}{}", prefix, gist_value(start), sep, gist_value(end))
-        }
+        // Range.gist is identical to Range.raku in Rakudo: it shows the range
+        // notation (not the expanded elements), numeric endpoints render plainly,
+        // string endpoints are quoted (`"a".."c"`), `i64::MAX`/Whatever endpoints
+        // render as `Inf`/`-Inf`, and `0..^N` uses the `^N` short form. Delegate
+        // to the raku renderer so all of this stays in sync.
+        Value::Range(..)
+        | Value::RangeExcl(..)
+        | Value::RangeExclStart(..)
+        | Value::RangeExclBoth(..)
+        | Value::GenericRange { .. } => crate::builtins::methods_0arg::raku_repr::raku_value(value),
         // A Match nested inside a container (e.g. the values of `$/.caps` or a
         // `m:g//` result list) must still gist as `｢matched｣` plus its sub-
         // captures, matching `Match.gist`. The generic Instance fall-through

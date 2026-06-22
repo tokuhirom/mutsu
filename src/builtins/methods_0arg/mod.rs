@@ -731,94 +731,14 @@ fn range_endpoint_display(v: i64) -> String {
 
 /// Return the gist (compact display) representation of a Range value.
 fn range_gist_string(value: &Value) -> String {
-    match value {
-        Value::Range(a, b) => {
-            format!(
-                "{}..{}",
-                range_endpoint_display(*a),
-                range_endpoint_display(*b)
-            )
-        }
-        Value::RangeExcl(a, b) => {
-            if *a == 0 {
-                format!("^{}", range_endpoint_display(*b))
-            } else {
-                format!(
-                    "{}..^{}",
-                    range_endpoint_display(*a),
-                    range_endpoint_display(*b)
-                )
-            }
-        }
-        Value::RangeExclStart(a, b) => {
-            format!(
-                "{}^..{}",
-                range_endpoint_display(*a),
-                range_endpoint_display(*b)
-            )
-        }
-        Value::RangeExclBoth(a, b) => {
-            format!(
-                "{}^..^{}",
-                range_endpoint_display(*a),
-                range_endpoint_display(*b)
-            )
-        }
-        Value::GenericRange {
-            start,
-            end,
-            excl_start,
-            excl_end,
-        } => {
-            let start_sep = if *excl_start { "^.." } else { ".." };
-            let end_sep = if *excl_end { "^" } else { "" };
-            let endpoint_str = |v: &Value, is_end: bool| -> String {
-                match v {
-                    Value::Whatever | Value::HyperWhatever => {
-                        if is_end {
-                            "Inf".to_string()
-                        } else {
-                            "-Inf".to_string()
-                        }
-                    }
-                    Value::Rat(n, d) => {
-                        if *d == 0 {
-                            if *n == 0 {
-                                "NaN".to_string()
-                            } else if *n > 0 {
-                                "Inf".to_string()
-                            } else {
-                                "-Inf".to_string()
-                            }
-                        } else {
-                            let val = *n as f64 / *d as f64;
-                            if val.fract() == 0.0 {
-                                format!("{:.1}", val)
-                            } else {
-                                format!("{}", val)
-                            }
-                        }
-                    }
-                    _ => v.to_string_value(),
-                }
-            };
-            let start_str = endpoint_str(start.as_ref(), false);
-            let end_str = endpoint_str(end.as_ref(), true);
-            // Special case: 0..^N displays as ^N
-            if !*excl_start && *excl_end {
-                let is_zero = match start.as_ref() {
-                    Value::Int(0) => true,
-                    Value::Num(f) if *f == 0.0 => true,
-                    Value::Rat(0, _) => true,
-                    _ => false,
-                };
-                if is_zero {
-                    return format!("^{}", end_str);
-                }
-            }
-            format!("{}{}{}{}", start_str, start_sep, end_sep, end_str)
-        }
-        _ => value.to_string_value(),
+    // Range.gist is identical to Range.raku in Rakudo: numeric endpoints render
+    // plainly, string endpoints are quoted (`"a".."c"`), `i64::MAX`/Whatever
+    // endpoints render as `Inf`/`-Inf`, and `0..^N` uses the `^N` short form.
+    // Delegate to the raku renderer so both stay in sync.
+    if value.is_range() {
+        raku_repr::raku_value(value)
+    } else {
+        value.to_string_value()
     }
 }
 
