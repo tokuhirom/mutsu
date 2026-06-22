@@ -422,62 +422,71 @@ impl Interpreter {
         written
     }
 
-    /// Snapshot the env value backing local `name` for the carrier aggregate
-    /// writeback (`carrier_writeback_changed_aggregates`). Returns the value only
-    /// for the *cell-free aggregate* types it reconciles (scalar / Set / Bag /
-    /// Mix / Instance); anything else (plain Array/Hash, binding cells) snapshots
-    /// as `None` so the post-carrier diff never overwrites it. Resolves the
-    /// sigil-stripped fallback key the same way the blanket reconcile does.
-    pub(super) fn carrier_snapshot_env_value(&self, name: &str) -> Option<Value> {
-        let v = self.env().get(name).cloned().or_else(|| {
+    /// Resolve the env value backing local `name` (with the sigil-stripped
+    /// fallback the blanket reconcile uses). Raw — no type filter.
+    fn carrier_env_value(&self, name: &str) -> Option<Value> {
+        self.env().get(name).cloned().or_else(|| {
             name.strip_prefix('$')
                 .or_else(|| name.strip_prefix('@'))
                 .or_else(|| name.strip_prefix('%'))
                 .or_else(|| name.strip_prefix('&'))
                 .and_then(|b| self.env().get(b).cloned())
-        })?;
-        if Self::is_carrier_writeback_aggregate(&v) {
-            Some(v)
-        } else {
-            None
-        }
+        })
     }
 
-    /// Whether `v` is a cell-free aggregate the carrier writeback may overwrite a
-    /// slot with: a writeback-safe scalar, or a Set/Bag/Mix. Those use COW
-    /// `Arc<…Data>` storage, so a carrier's in-place mutation detaches a fresh Arc
-    /// (the pre-carrier snapshot still holds the old one) and the post-carrier diff
-    /// reliably detects the change. Plain Array/Hash are excluded (env may hold a
-    /// COW-detached copy that would clobber a live interior `:=` element cell), and
-    /// so is `Instance`: its attributes live in a *shared* `Arc<RwLock>` cell that
-    /// mutates in place, so the snapshot shares the cell and the diff can never see
-    /// the change — the Instance rw-accessor surface needs its own slice.
-    pub(super) fn is_carrier_writeback_aggregate(v: &Value) -> bool {
-        Self::is_writeback_safe_scalar(v)
-            || matches!(v, Value::Set(..) | Value::Bag(..) | Value::Mix(..))
+    /// Whether the carrier writeback may overwrite a slot *currently* holding `v`.
+    /// Eligibility is keyed on what the slot WOULD LOSE, not on the incoming value
+    /// (so an `Int` slot that a carrier turns into a `Mixin` via `does` is fine).
+    /// Excludes the binding cells (`HashSlotRef`/`ContainerRef`) and a plain
+    /// `Array`/`Hash` slot — env may hold a COW-detached copy whose write would
+    /// clobber a live interior `:=` element cell. Scalars, Set/Bag/Mix, Mixin,
+    /// Instance and the rest are safe targets (the whole slot value is replaced).
+    /// (Note: an Instance mutated *in place* through its shared `Arc<RwLock>`
+    /// attribute cell snapshots equal pre/post, so the diff never fires for it —
+    /// only a genuine value/type change writes through.)
+    fn slot_carrier_overwritable(v: &Value) -> bool {
+        !matches!(
+            v,
+            Value::HashSlotRef { .. } | Value::ContainerRef(_) | Value::Array(..) | Value::Hash(..)
+        )
     }
 
-    /// Post-carrier (`lives-ok { … }` / block Test fn) precise writeback for
-    /// cell-free aggregate caller lexicals: for each local whose env value is now
-    /// a different aggregate than `pre_env[i]`, write it through to the slot. The
-    /// double-OFF replacement for the blanket reconcile, restricted to the types
-    /// that carry no live `:=` cell. Skips `!attr` and live binding-cell slots.
+    /// Snapshot the slot-backing env values before a `lives-ok`/`dies-ok` carrier
+    /// runs, for the locals whose slot is overwritable. `None` entries (cell /
+    /// Array / Hash slots, or absent env keys) are never written back.
+    pub(super) fn snapshot_carrier_overwritable_env(
+        &self,
+        code: &CompiledCode,
+    ) -> Vec<Option<Value>> {
+        code.locals
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                if name.starts_with('!') || !Self::slot_carrier_overwritable(&self.locals[i]) {
+                    None
+                } else {
+                    self.carrier_env_value(name)
+                }
+            })
+            .collect()
+    }
+
+    /// Post-carrier (`lives-ok { … }` / block Test fn) precise writeback: for each
+    /// overwritable slot whose env value changed during the carrier, write the new
+    /// env value through to the slot. The double-OFF replacement for the blanket
+    /// reconcile, restricted to slots that carry no live `:=` cell.
     pub(super) fn carrier_writeback_changed_aggregates(
         &mut self,
         code: &CompiledCode,
         pre_env: &[Option<Value>],
     ) {
         for (i, name) in code.locals.iter().enumerate() {
-            if name.starts_with('!')
-                || matches!(
-                    self.locals[i],
-                    Value::HashSlotRef { .. } | Value::ContainerRef(_)
-                )
-            {
+            if name.starts_with('!') || !Self::slot_carrier_overwritable(&self.locals[i]) {
                 continue;
             }
-            let cur = self.carrier_snapshot_env_value(name);
-            let Some(cur) = cur else { continue };
+            let Some(cur) = self.carrier_env_value(name) else {
+                continue;
+            };
             if pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur)) {
                 self.locals[i] = cur;
             }

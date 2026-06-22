@@ -179,20 +179,17 @@ impl Interpreter {
         // coherence (the CP-2 wall; t/element-bind-cell.t). See docs/vm-single-store.md.
         //
         // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a block
-        // Test function (`lives-ok { $b<a> = 42 }`) mutates a captured-outer
-        // Set/Bag/Mix through env, which `writeback_carrier_writes` leaves to the
-        // (now-removable) blanket pull. Snapshot the caller frame's slot-backing env
-        // values for the COW aggregate types (scalars + Set/Bag/Mix) before the
-        // carrier, then write through only the slots whose env value changed. Plain
-        // Array/Hash and Instance slots are deliberately excluded (see
-        // `is_carrier_writeback_aggregate`). Armed only under boxing; the default
-        // build keeps the blanket pull (byte-identical).
+        // Test function (`lives-ok { $b<a> = 42 }` / `lives-ok { $a does Role }`)
+        // mutates a captured-outer caller lexical through env, which
+        // `writeback_carrier_writes` leaves to the (now-removable) blanket pull.
+        // Snapshot the caller frame's slot-backing env values for the overwritable
+        // slots before the carrier, then write through only the slots whose env
+        // value changed. Plain Array/Hash and binding-cell slots are excluded (see
+        // `slot_carrier_overwritable`). Armed only under boxing; the default build
+        // keeps the blanket pull (byte-identical).
         let armed = self.cell_boxing_active();
         let pre_env: Vec<Option<Value>> = if armed {
-            code.locals
-                .iter()
-                .map(|n| self.carrier_snapshot_env_value(n))
-                .collect()
+            self.snapshot_carrier_overwritable_env(code)
         } else {
             Vec::new()
         };
