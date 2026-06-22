@@ -210,6 +210,13 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
     （`token SP { "\x20" }` で grammar 全体が失敗）→ クォート外と同じく括弧なし連続 hex 桁を読むように。テスト
     `t/regex-dq-hex-escape.t`。**これで HTTP::Parser の grammar がロード・パース実行できるようになった**（10 件中 2 件
     PASS）。残る 8 失敗は別軸の独立バグ（Buf/byte 列処理・`.subst`・encode 往復）で、`\x20` とは無関係。
+  - [x] **HTTP::Parser — 完動 14/14（#3420/#3422/#3423, 2026-06-22, session 10）。** 残 8 失敗は grammar action
+    ディスパッチの欠落だった: (1) action walk が numbered `( )` グループ内のルールを辿らない（#3422 positional 再帰）、
+    (2) silent subrule `<.foo>` 自身の action が reduce-time に発火しない（#3423 隠し `silent_caps` チャネル — マーカーキー
+    で `named_subcaps` に格納し `.hash` から不可視のまま action を発火、positional グループ降下時は silent_caps のみで
+    named children は二重発火回避）、(3) `$req.first(* > 127, :k)` が Blob をバイト反復せず（#3423 `.first` メソッド
+    dispatch で `buf_as_byte_items`）。併せて #3422 が混入させた `t/grammar-reduce-time-dynvar.t` 二重ディスパッチ回帰も解消。
+    既知ギャップ: `( <foo> )`（グループ内 named ルール）の action 未発火（match-tree リーク、深い）。
   - [x] **IO::Blob v0.0.1 — builtin 型サブクラスの user メソッド override を修正（#TBD, 2026-06-22）。**
     `class IO::Blob is IO::Handle` の user override（`.get`/`.lines`/`.getc`/`.word`/`.words`）が、Instance dispatch の
     `is_native_method` フォーク（`vm_call_method_compiled.rs` の &self/&mut 両経路）で継承元 native IO::Handle メソッドに
@@ -248,7 +255,11 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
     `use`/`unit module` の `:ver<>:auth<>` adverb（version/auth セレクタを import タグ扱いして `no such tag 'ver'`）を
     解消＝parser で dist セレクタとして消費・破棄。`unit module Foo:ver<>:auth<>` も対応。多数のモジュールに効く一般機能。
   - **MIME::Base64 1.2.5**: `decode-str` は OK、`encode-str` が誤り（`AA==`）。原因＝`Blob:D` 型パラメータに束縛した
-    blob を `for $d -> $a,$b?,$c?` で**バイト反復できず** blob 丸ごとが `$a` に入る。medium（VM gap）。
+    blob を `for $d -> $a,$b?,$c?` で**バイト反復できず** blob 丸ごとが `$a` に入る。**→ 次セッションの deep-infra タスク
+    として綿密な実行プランあり（メモリ `plan-blob-for-iteration`、user 承認 2026-06-22）。** 核心＝Blob に itemization
+    マーカーがない（array は `ArrayKind`）ので param-Blob（→バイト）と `my $b`-Blob（→1 要素）を区別できない。修正は
+    `vm_control_ops.rs:511`（for 専用、`value_to_list` は不変）＋ map/grep。Option B（pragmatic）→ 回帰すれば Option A
+    （Blob itemize マーカー）。
   - [x] **File::Directory::Tree 0.2 — 完動（#TBD, 2026-06-22）。** 全 sub が `IO(Cool) $io` 強制型パラメータを
     使う。3 つの一般バグを修正: (1) `IO` ロールを `IO::Path`/`IO::Special` が does するよう `type_matches` に追加
     （`Str.IO` が返す `IO::Path` が `IO` ターゲットにマッチせず coercion 失敗していた）、(2) coercion param `T(S)` が
