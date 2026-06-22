@@ -1378,6 +1378,26 @@ impl Interpreter {
                 .map(|(n, _)| n.clone())
                 .collect();
             self.writeback_match_locals(code, &written);
+            // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): an
+            // embedded `{ }` / `:my` / `:let` block writes a caller lexical that is
+            // NOT a slot of *this* frame — e.g. a regex run inside `sub do-match { … }`
+            // mutates a lexical captured from the sub's caller. `writeback_match_locals`
+            // only reaches this frame's slots, and the owning slot lives one or more
+            // frames up, so record those names for the retain-on-miss caller-var
+            // writeback; the call site that returns to the owning frame drains them
+            // (`apply_pending_caller_var_writeback`). This is what keeps the slot
+            // coherent once the blanket/precise reconcile is gone (double-OFF). Only
+            // armed under boxing; the default build's blanket reconcile covers it.
+            if self.cell_boxing_active() {
+                for name in &written {
+                    let is_match_name = name == "/"
+                        || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit()));
+                    if is_match_name || self.find_local_slot(code, name).is_some() {
+                        continue;
+                    }
+                    self.record_caller_var_writeback(name);
+                }
+            }
         }
         self.pending_local_updates.clear();
         if !pure {

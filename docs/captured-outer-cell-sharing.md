@@ -687,10 +687,27 @@ env-scan writeback ループ（`vm_closure_dispatch.rs`）で、書き戻す cal
 pin=`t/note-gist-and-dynamic-handle.t` + `t/closure-nested-writeback.t` + `t/wrap-closure-capture.t`（double-OFF で
 PASS 化）。make test 9904。
 
-### 10.6 残 10・次スライス候補
+### 10.6 slice S4（2026-06-22）— regex embedded `{ }` / `:let` の cross-frame caller writeback を precise 化（10→8）
 
-`eval-carrier-precise-writeback` / `single-store-slice-c-prime` = carrier。`junction-invocant-autothread` /
-`resumable-control-signal-indirect-call` / `concurrent-cell-writeback-coherence` / supply・react 系（4：
-`react-do-whenever-tap-coherence`/`react-whenever-last-next`/`supply-on-demand-closing`/`supply-sync-infinite-emit`）
-= 並行/制御（cross-thread cell・最難・最後）。`done-paren-stmt-modifier` = react done()。全消化後 → §7.4
-（精密 reconcile + env_dirty 物理削除）。
+`sub do-match($txt) { $txt ~~ / (\d+) { $tracked = +$0 } / }`（single-store-slice-c-prime test 7）/
+EVAL 内 `my regex la { :let $a = 5; … }`（eval-carrier-precise-writeback test 12）= regex の埋め込み `{ }` /
+`:let` ブロックが、当該マッチが走るフレーム（`do-match` の本体・EVAL'd code）の slot では**ない** caller lexical
+（sub の呼び出し元／EVAL の呼び出し元の `$tracked`/`$a`）を `env` へ by-name 書きする。`writeback_match_locals`
+（マッチサイト `vm_comparison_ops.rs`）は**現フレームの slot しか書かない**ため、owning slot は1つ以上上のフレームに
+あり stale のまま残る（double-OFF で `$tracked=-1`/`$a=1`）。EVAL の cell-boxing（slice 1.7）は `$x=5` 型の
+`SetGlobal` 書き込みは cell 経由で拾うが、`:let` は `restore_env_entries` の直接 env insert で cell リンクを断つ
+ため拾えない。**修正**: マッチサイトで `writeback_match_locals` の後、埋め込み write 名（`pending_local_updates`）の
+うち match-special（`$/`/`$0`…）でも現フレーム slot でもないものを retain-on-miss の
+`pending_caller_var_writeback`（`record_caller_var_writeback`）に記録。owning フレームへ戻る call site の
+`apply_pending_caller_var_writeback` が drain する（slice 1.18/S1-S3 と同型）。**1 修正で 2 surface 消化**（sub
+carrier と EVAL carrier の双方）。`cell_boxing_active()` ガード＝default build は従来どおり blanket/精密 reconcile が
+担う＝バイト不変。pin=`t/single-store-slice-c-prime.t`（test 7）+ `t/eval-carrier-precise-writeback.t`（test 12）
+（double-OFF で PASS 化）。
+
+### 10.7 残 8・次スライス候補
+
+残はすべて **並行/制御**（cross-thread cell・最難・最後）: `junction-invocant-autothread-writeback-coherence`（junction
+autothread・**単一スレッド**＝最も着手しやすい候補）/ `resumable-control-signal-indirect-call`（control signal）/
+`done-paren-stmt-modifier`（react done()）/ `concurrent-cell-writeback-coherence` / supply・react 系 4
+（`react-do-whenever-tap-coherence`/`react-whenever-last-next`/`supply-on-demand-closing`/`supply-sync-infinite-emit`）。
+全消化後 → §7.4（精密 reconcile + env_dirty 物理削除）。
