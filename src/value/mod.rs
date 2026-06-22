@@ -2881,8 +2881,16 @@ impl PartialEq for Value {
             (Value::Mixin(inner, _), other) | (other, Value::Mixin(inner, _)) => {
                 inner.as_ref() == other
             }
-            // LazyThunk: compare cached values if available
+            // LazyThunk: compare cached values if available. Check Arc pointer
+            // identity first — the same thunk compared to itself must short-circuit
+            // before locking, since `a.cache` and `b.cache` are the *same* mutex
+            // and a non-reentrant std `Mutex` would deadlock on the second lock.
+            // (Hit by the END-phaser overlay's `v != orig_v` on a lexical bound to
+            // a `lazy { … }` thunk: captured and live env hold the same Arc.)
             (Value::LazyThunk(a), Value::LazyThunk(b)) => {
+                if Arc::ptr_eq(a, b) {
+                    return true;
+                }
                 let a_cache = a.cache.lock().unwrap();
                 let b_cache = b.cache.lock().unwrap();
                 match (a_cache.as_ref(), b_cache.as_ref()) {
