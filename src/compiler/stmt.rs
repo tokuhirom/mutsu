@@ -768,6 +768,17 @@ impl Compiler {
                 // Track constant declarations so the compiler can avoid itemizing
                 // them in `for` loops (constants have no Scalar container).
                 let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
+                // A `constant` that shadows an outer constant of the same name
+                // (in an enclosing block or closure) is a fresh lexical binding,
+                // not a reassignment of the outer package symbol. It must read
+                // from its own local slot only and must NOT clobber the outer
+                // constant's shared package store (`SetGlobalRaw`). Detect the
+                // shadow *before* inserting this decl into the in-scope set — a
+                // same-scope duplicate errors as X::Redeclaration below, so a hit
+                // here is always an outer shadow.
+                let shadows_outer_constant = is_constant_decl
+                    && (self.constant_vars_in_scope.contains(name.as_str())
+                        || self.outer_constant_names.contains(name.as_str()));
                 if is_constant_decl {
                     // X::Redeclaration on a duplicate same-scope `constant` is only
                     // fired when the *sigil* matches. mutsu's AST strips the `$`
@@ -1032,7 +1043,16 @@ impl Compiler {
                         self.code.emit(OpCode::MarkScalarBindContext);
                     }
                     self.code.emit(OpCode::SetLocal(slot));
-                    if *is_our {
+                    // A `constant` that shadows an outer constant of the same name
+                    // (in an enclosing block or closure) is a fresh lexical binding,
+                    // not a reassignment of the outer package symbol. Compile it as
+                    // a pure `my` lexical: it lives only in its own local slot and
+                    // never touches the shared package store (`our_locals` /
+                    // `SetGlobalRaw`). Writing the package store would clobber the
+                    // outer constant for sibling scopes, and the writeback merge for
+                    // an `our` var declared inside a closure leaks the shadowing
+                    // value back to the caller.
+                    if *is_our && !shadows_outer_constant {
                         let qualified = self.qualify_variable_name(name);
                         // Track this slot as `our`-scoped so BlockScope restoration
                         // can sync the local from its global after block exit.

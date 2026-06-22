@@ -88,6 +88,15 @@ pub(crate) struct Compiler {
     /// entry). Declaring the same constant twice in one block is an
     /// X::Redeclaration; a shadowing declaration in an inner block is allowed.
     constant_vars_current_scope: std::collections::HashSet<String>,
+    /// Names of constants declared in an *enclosing* compiler (i.e. visible at a
+    /// nested closure's definition point). Propagated into child closure
+    /// compilers (which otherwise start with empty constant state). Used ONLY to
+    /// detect that a `constant X` inside the closure *shadows* an outer constant
+    /// — a shadowing constant is purely lexical and must not clobber the outer
+    /// constant's shared package store. This set is deliberately NOT consulted
+    /// during bare-word resolution (that stays driven by `constant_vars_in_scope`
+    /// + `local_map`), so it cannot turn an outer-constant read into a GetLocal.
+    outer_constant_names: std::collections::HashSet<String>,
     /// Local names that are sigilless bindings (declared with `my \Foo = ...`
     /// or as a sigilless parameter).  BareWord resolution only uses GetLocal
     /// for names in this set; `$`-sigiled variables must not shadow type names.
@@ -147,6 +156,7 @@ impl Compiler {
             constant_vars: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
+            outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             last_source_line: None,
             pending_index_rw_writebacks: Vec::new(),

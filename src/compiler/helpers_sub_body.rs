@@ -480,6 +480,16 @@ impl Compiler {
     ) -> CompiledCode {
         let mut sub_compiler = Compiler::new();
         sub_compiler.is_routine = is_routine;
+        // Make the names of all constants visible at this closure's definition
+        // point known to the child compiler, so a `constant X` inside the body
+        // that shadows an outer constant is recognised as shadowing (and thus
+        // kept purely lexical, not written back to the shared package store).
+        sub_compiler.outer_constant_names = self
+            .constant_vars_in_scope
+            .iter()
+            .chain(self.outer_constant_names.iter())
+            .cloned()
+            .collect();
         // A closure body is lexically inside a routine if either the parent
         // already is, or the parent itself is a routine.
         sub_compiler.lexically_in_routine =
