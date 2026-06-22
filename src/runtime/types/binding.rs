@@ -798,6 +798,25 @@ impl Interpreter {
                     let bound_val = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
                     let saved_topic = self.env.get("_").cloned();
                     self.env.insert("_".to_string(), bound_val.clone());
+                    // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
+                    // a `where { $t ~= 'a' }` clause can mutate a captured-outer
+                    // caller lexical by name. The write reaches env, but the owning
+                    // caller slot is refreshed only by the call site's blanket pull
+                    // — a no-op once env_dirty is removed. Snapshot the env scalars
+                    // before the clause runs and record the names it changes into the
+                    // retain-on-miss caller-var writeback, drained at the call site.
+                    let pre_env: Option<std::collections::HashMap<crate::symbol::Symbol, Value>> =
+                        if self.cell_boxing_active() {
+                            Some(
+                                self.env
+                                    .iter()
+                                    .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
+                                    .map(|(k, v)| (*k, v.clone()))
+                                    .collect(),
+                            )
+                        } else {
+                            None
+                        };
                     let ok = match where_expr.as_ref() {
                         Expr::AnonSub { body, .. } => self
                             .eval_block_value(body)
@@ -813,6 +832,21 @@ impl Interpreter {
                             .map(|v| self.smart_match(&bound_val, &v))
                             .unwrap_or(false),
                     };
+                    if let Some(pre_env) = pre_env {
+                        let changed: Vec<String> = self
+                            .env
+                            .iter()
+                            .filter(|(k, v)| {
+                                k.resolve() != "_"
+                                    && Self::is_writeback_safe_scalar(v)
+                                    && pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
+                            })
+                            .map(|(k, _)| k.resolve())
+                            .collect();
+                        for name in changed {
+                            self.record_caller_var_writeback(&name);
+                        }
+                    }
                     if let Some(previous) = saved_topic {
                         self.env.insert("_".to_string(), previous);
                     } else {
