@@ -1595,6 +1595,35 @@ impl Interpreter {
         }
     }
 
+    /// If `v` is a Buf/Blob, return its element bytes as a list of Int values.
+    /// Raku iterates a Blob as its bytes, so list methods (`map`/`grep`/`first`)
+    /// must expand it rather than treating the whole Blob as a single element.
+    /// (Note: list-*assignment* keeps a Blob as one element — `my @a = $buf` —
+    /// so this is used only by the iterating methods, not `value_to_list`.)
+    pub(in crate::runtime) fn buf_as_byte_items(v: &Value) -> Option<Vec<Value>> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = v
+        {
+            let cn = class_name.resolve();
+            let is_blob = cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn == "utf32"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob");
+            if is_blob && let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
+                return Some(bytes.iter().cloned().collect());
+            }
+        }
+        None
+    }
+
     pub(super) fn builtin_first(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Separate named args (Pairs) from positional args
         let mut positional = Vec::new();
