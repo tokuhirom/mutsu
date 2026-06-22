@@ -781,3 +781,15 @@ per-write 記録なし→**user-method 呼び出し前後で caller-frame slot-b
 精密書き戻し（react S7 と同手法）。`cell_boxing_active()` ガード＝default は blanket reconcile が担う＝バイト不変。
 **1 修正で 3 roast file（S03 andthen/orelse/notandthen）消化**。pin=roast/S03-operators/{andthen,orelse,notandthen}.t
 （double-OFF で PASS 化）。
+
+### 10.12 slice S9（2026-06-22）— symbolic-deref store の carrier writeback を precise 化（roast 22→21）
+
+`my $a_var=42; my $b_var="a_var"; lives-ok { $::($b_var) = 23 }; is $a_var, 23` = `$::($name) = v`（symbolic deref store・
+`exec_symbolic_deref_store_op`）と `::('$x') = v`（indirect type lookup store・`exec_indirect_type_lookup_store_op`）は
+ターゲット lexical を by-name で env 書きし `update_local_if_exists` で**現フレームの** slot だけ更新する。`lives-ok { }`
+carrier 内ではターゲット slot は carrier-caller のフレームにあり、carrier writeback（`writeback_carrier_writes`）経由で
+しか届かないが、両 store op は**carrier_writes にログしていなかった**ため OFF で reconcile されず stale（bare block では
+動くが lives-ok 内だけ失敗）。**修正**: 両 store op の env insert 後に `note_caller_env_write(&store_name)` を呼び
+carrier_writes へログ＋env_dirty（regex `:let`・`s///` writeback と同パターン）。スカラなので `:=` cell hazard なし。
+default build はバイト不変（scalar reconcile は blanket の subset）。pin=roast/S02-names/symbolic-deref.t（double-OFF で
+PASS 化）。**残 roast double-OFF 21**（our.t は EVAL+class+`$GLOBAL::`++ の別機構で未消化）。
