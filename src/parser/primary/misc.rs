@@ -183,10 +183,17 @@ fn is_custom_reduction_op(op: &str) -> bool {
         // Also accept the symbol as a prefix of op (shouldn't happen for reduction, but be safe)
         let _ = symbol;
     }
+    // A bareword that is not a declared infix operator: accept it as a custom
+    // reduction op ONLY if it looks like an operator name (lowercase/`_`-initial).
+    // An uppercase-initial identifier is a type name or class (`[Any]`, `[Int]`,
+    // `[Exception]`), so `[Type]` must parse as an array literal, not a reduction
+    // (`[Any].raku` is `[Any]` array literal's `.raku`, NOT a reduction with op
+    // "Any"). User-declared uppercase infixes are already matched above by
+    // `match_user_declared_infix_symbol_op`.
     if !op
         .chars()
         .next()
-        .is_some_and(|c| c.is_alphabetic() || c == '_')
+        .is_some_and(|c| c.is_lowercase() || c == '_')
     {
         return false;
     }
