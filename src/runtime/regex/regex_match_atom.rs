@@ -551,22 +551,49 @@ impl Interpreter {
                         last.action_name = Some(spec.lookup_name.clone());
                     }
                 }
+            } else if !inner_caps.named.is_empty() || !inner_caps.named_subcaps.is_empty() {
+                // Silent subrule (`<.foo>`) that contains nested captures. The
+                // subrule is hidden from `.hash`, but its OWN action method must
+                // still fire (Rakudo dispatches actions at reduce time regardless
+                // of capture), and its nested rules' actions must fire too — with
+                // their `.made` set on the SAME nodes the parent action reads
+                // (`method header-field { ...$/<field-name>.made... }`). Store the
+                // whole subrule match under a HIDDEN MARKER key in `named_subcaps`
+                // (the prefix can never be a real capture name). The Match builder
+                // routes marker entries into a `silent_caps` attribute instead of
+                // `.hash`; the grammar action walk recurses into them. This replaces
+                // the older "flatten direct children into the parent" hack, which
+                // lost the rule's own action and over-exposed children in `.hash`.
+                let inner_len = end - pos;
+                let cs = (pos + inner_caps.capture_start.unwrap_or(0)).clamp(pos, end);
+                let ce = (pos + inner_caps.capture_end.unwrap_or(inner_len)).clamp(cs, end);
+                let captured: String = chars[cs..ce].iter().collect();
+                let mut subcap = inner_caps;
+                subcap.matched = captured;
+                subcap.from = cs;
+                subcap.to = ce;
+                if subcap.sym.is_none() && sym_key.is_some() {
+                    subcap.sym = sym_key.cloned();
+                }
+                subcap.action_name = Some(spec.lookup_name.clone());
+                new_caps.code_blocks.extend(subcap.code_blocks.clone());
+                let marker = format!(
+                    "{}{}",
+                    crate::runtime::SILENT_ACTION_MARKER_PREFIX,
+                    spec.lookup_name
+                );
+                new_caps
+                    .named_subcaps
+                    .entry(marker)
+                    .or_default()
+                    .push(subcap);
             } else {
-                // Silent subrule (`<.foo>`) — the subrule itself is not captured,
-                // but mutsu propagates its *direct* named captures up to the parent
-                // so grammar action methods (driven by the capture tree) still fire
-                // for them. Merge both the flat `named` text AND the structured
-                // `named_subcaps` (each carrying its own nested captures); dropping
-                // the latter would strip a propagated capture's grandchildren —
-                // e.g. `<.request-line>` containing `<request-target>` which in turn
-                // contains `<path>` would lose `path`, so its action never runs.
+                // Childless silent subrule (`<.ws>`, `<.CRLF>`, `<.sym>`, ...): no
+                // nested captures and (in practice) no action of interest, so keep
+                // the cheap path — just carry its code blocks up. Routing these
+                // through the marker channel would store a subcap for every `<.ws>`
+                // in a parse for no benefit.
                 let mut inner_caps = inner_caps;
-                for (k, v) in inner_caps.named.drain() {
-                    new_caps.named.entry(k).or_default().extend(v);
-                }
-                for (k, v) in inner_caps.named_subcaps.drain() {
-                    new_caps.named_subcaps.entry(k).or_default().extend(v);
-                }
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
             }
             out.push((end, new_caps));

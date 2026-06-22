@@ -377,6 +377,46 @@ impl Interpreter {
         None
     }
 
+    /// Dispatch the silent-action captures reachable from a match's attribute
+    /// map: this level's own `silent_caps` (hidden `<.foo>` subrule matches that
+    /// carry nested captures), then — descending through positional `( )` groups
+    /// — each group's `silent_caps`. Only `silent_caps` are fired, never a group's
+    /// named children: those are already dispatched by the named-children walk in
+    /// `invoke_grammar_actions`, so re-firing them would double-dispatch (see
+    /// t/grammar-reduce-time-dynvar.t). Captures are dispatched in source order.
+    fn dispatch_silent_action_caps(
+        &mut self,
+        attrs: &crate::value::AttrReadGuard<'_>,
+        actions: &mut Value,
+    ) -> Result<(), RuntimeError> {
+        if let Some(Value::Array(silent_arr, _)) = attrs.get("silent_caps") {
+            let mut items: Vec<Value> = silent_arr.iter().cloned().collect();
+            items.sort_by_key(|m| {
+                if let Value::Instance { attributes, .. } = m
+                    && let Some(Value::Int(from)) = attributes.as_map().get("from")
+                {
+                    *from
+                } else {
+                    0
+                }
+            });
+            for item in items {
+                let dispatch_name = Self::get_action_name(&item).unwrap_or_default();
+                self.invoke_grammar_actions(item, actions, &dispatch_name)?;
+            }
+        }
+        let positionals: Vec<Value> = match attrs.get("list") {
+            Some(Value::Array(pos_arr, _)) => pos_arr.iter().cloned().collect(),
+            _ => Vec::new(),
+        };
+        for p in &positionals {
+            if let Value::Instance { attributes, .. } = p {
+                self.dispatch_silent_action_caps(&attributes.as_map(), actions)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Walk the match tree bottom-up and invoke action methods on the actions object.
     pub(crate) fn invoke_grammar_actions(
         &mut self,
@@ -436,35 +476,18 @@ impl Interpreter {
             updated_attrs.insert("named".to_string(), Value::hash(updated_named));
         }
 
-        // Recurse into positional captures (numbered `( )` groups). A `( )` group
-        // is an anonymous capture boundary: named rules matched inside it (e.g.
-        // `( <.request-line> )` whose request-line contains `<method>`/`<path>`)
-        // are stored under the group's own Match, not flattened up to this rule,
-        // so the named-children walk above never reaches them. Recurse into each
-        // positional child so their nested actions still fire. The anonymous group
-        // itself has no action method (dispatch falls through as method-not-found
-        // and is silently skipped); only its descendants' actions run.
-        if let Some(Value::Array(pos_arr, pos_meta)) = attributes.as_map().get("list") {
-            let mut updated_pos = Vec::with_capacity(pos_arr.len());
-            for item in pos_arr.iter() {
-                // Only Match instances carry nested captures worth recursing into;
-                // pass anything else through untouched.
-                if matches!(item, Value::Instance { .. }) {
-                    let updated_item =
-                        self.invoke_grammar_actions(item.clone(), actions, "__anon_capture_group")?;
-                    updated_pos.push(updated_item);
-                } else {
-                    updated_pos.push(item.clone());
-                }
-            }
-            updated_attrs.insert(
-                "list".to_string(),
-                Value::Array(
-                    Arc::new(crate::value::ArrayData::new(updated_pos)),
-                    *pos_meta,
-                ),
-            );
-        }
+        // Dispatch actions for silent-action captures: hidden `<.foo>` subrule
+        // matches that carry nested captures. The subrule is absent from `.hash`,
+        // but Rakudo fires its action method (and its descendants') at reduce time
+        // regardless of capture — so recurse into each (bottom-up, in source order)
+        // to dispatch them. Each subcap's `action_name` names the method to call.
+        // This also descends through positional `( )` groups, since a silent
+        // subrule matched inside a group has its marker stored on the GROUP's
+        // match. Only `silent_caps` are dispatched — never the groups' named
+        // children (the named-children walk above already handles those; firing
+        // them again double-dispatches, see t/grammar-reduce-time-dynvar.t).
+        // Results are not stored back: silent captures are never read by user code.
+        self.dispatch_silent_action_caps(&attributes.as_map(), actions)?;
 
         // Rebuild match_obj with updated children
         let match_obj = Value::make_instance(class_name, (updated_attrs.clone()).to_map());

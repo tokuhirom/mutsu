@@ -608,6 +608,13 @@ pub(crate) struct CodeBlockContext {
 /// A single entry in a quantified capture list: (matched_text, from, to, subcaptures).
 pub(crate) type QuantifiedCaptureEntry = (String, usize, usize, Option<RegexCaptures>);
 
+/// Prefix marking a `named_subcaps` entry as a *silent action capture*: the
+/// match of a silent subrule (`<.foo>`) that is hidden from `.hash` but whose
+/// grammar action method (and its descendants') must still fire. The prefix is a
+/// control character that can never appear in a real capture name, so marker
+/// entries never collide with user captures and are trivially filtered.
+pub(crate) const SILENT_ACTION_MARKER_PREFIX: &str = "\u{1}silent\u{1}";
+
 #[derive(Clone, Default)]
 pub(crate) struct RegexCaptures {
     pub(crate) named: HashMap<String, Vec<String>>,
