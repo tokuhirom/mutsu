@@ -2839,6 +2839,31 @@ impl Interpreter {
                 let has_user_defined = class_name
                     .as_ref()
                     .is_some_and(|cn| self.has_user_method(&cn.resolve(), "defined"));
+                // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
+                // a user `.defined` mutates a captured-outer lexical by name in env
+                // via the interpreter slow path (`run_instance_method`), which
+                // records nothing this site can drain. Snapshot the caller frame's
+                // slot-backing env values before the call so only the changed slots
+                // are written through after — the precise form of the blanket
+                // reconcile below. Armed only under boxing; the default build keeps
+                // the unconditional pull.
+                let armed = has_user_defined && self.cell_boxing_active();
+                let pre_env: Vec<Option<Value>> = if armed {
+                    code.locals
+                        .iter()
+                        .map(|n| {
+                            self.env().get(n).cloned().or_else(|| {
+                                n.strip_prefix('$')
+                                    .or_else(|| n.strip_prefix('@'))
+                                    .or_else(|| n.strip_prefix('%'))
+                                    .or_else(|| n.strip_prefix('&'))
+                                    .and_then(|b| self.env().get(b).cloned())
+                            })
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 let defined = if has_user_defined {
                     // Call user method directly, bypassing native method dispatch
                     let cn = class_name.unwrap();
@@ -2865,6 +2890,27 @@ impl Interpreter {
                 // defined { $calls++ }`). Reconcile the caller's slots so the
                 // write is visible without the reverse `sync_locals_from_env`
                 // pull (only on the user-method path; the native check is pure).
+                if armed {
+                    for (i, name) in code.locals.iter().enumerate() {
+                        if name.starts_with('!')
+                            || matches!(self.locals[i], Value::HashSlotRef { .. })
+                        {
+                            continue;
+                        }
+                        let cur = self.env().get(name).cloned().or_else(|| {
+                            name.strip_prefix('$')
+                                .or_else(|| name.strip_prefix('@'))
+                                .or_else(|| name.strip_prefix('%'))
+                                .or_else(|| name.strip_prefix('&'))
+                                .and_then(|b| self.env().get(b).cloned())
+                        });
+                        if let Some(cur) = cur
+                            && pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur))
+                        {
+                            self.locals[i] = cur;
+                        }
+                    }
+                }
                 if has_user_defined {
                     self.reconcile_locals_from_env_at_site(code);
                 }
