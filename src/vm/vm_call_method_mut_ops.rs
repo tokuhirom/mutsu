@@ -413,6 +413,9 @@ impl Interpreter {
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, &method, &args) {
             let v = result?;
+            // Drain captured-outer writeback recorded by the dispatched multi
+            // candidate (see exec_call_method_op). No-op in default builds.
+            self.apply_pending_rw_writeback(code);
             self.stack.push(v);
             return Ok(());
         }
