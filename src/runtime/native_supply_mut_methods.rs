@@ -497,6 +497,20 @@ impl Interpreter {
                     }
                 }
 
+                // The tap callback is an immediately-invoked closure run on this
+                // thread, so escape analysis never boxes the outer lexicals it
+                // captures-and-writes (`$min`/`$max`/`$before` in the throttle
+                // timing tests). Record its captured-outer writes so the enclosing
+                // `.tap` call site drains them back into the caller's locals
+                // (mirrors the lazy-map / gather / cross-shortcircuit carriers) —
+                // without this they are lost once the blanket reconcile is removed
+                // (docs/captured-outer-cell-sharing.md §7.2).
+                if let Value::Sub(ref data) = tap_cb
+                    && let Some(code) = data.compiled_code.clone()
+                {
+                    self.record_eager_block_free_var_writeback(&code, &data.params);
+                }
+
                 if let Some(quit_reason) = on_demand_quit {
                     if let Some(quit_fn) = quit_cb {
                         self.call_supply_quit_handler(quit_fn, quit_reason)?;

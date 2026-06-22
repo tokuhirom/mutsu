@@ -97,13 +97,15 @@
       docs/captured-outer-cell-sharing.md §10.23/§10.24。
     **★double-OFF survey は必ず proper harness（`MUTSU_BIN=… prove -e scripts/run-roast-test.sh`）で実走せよ**＝raw
     `prove -e mutsu` は fudge 未処理で false-positive（encoding 系）を出す（spurt.t は stale temp-file flaky）。
-- **✅ env↔locals 純 writeback コヒーレンス＋laziness/deadlock も完了**（slice 1〜1.20・S4〜S20）。
-- **★残 double-OFF = throttle（timing flaky）のみ＝env_dirty 物理削除の決定的 roast blocker は実質ゼロ**。
-- **∴ 次 = ①throttle が flaky か最終確認（`.5〜.8 秒`タイミングアサート＝決定的 pin 不可なら削除ブロッカーから外す）
-  → ②`env_dirty` 物理削除（§2-E）着手**: `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 →
+- **✅ env↔locals 純 writeback コヒーレンス＋laziness/deadlock も完了**（slice 1〜1.20・S4〜S21）。
+  S21（#3449）= Supply `.tap` callback の captured-outer writeback（`throttle.t` の double-OFF fail は **timing flaky でなく
+  決定的 writeback バグ**だった＝handoff ラベル誤り。tap callback の `$min`/`$max`/`$before` write が slot 未伝播で初期値残留）。
+- **★★ roast double-OFF 決定的サーフェス = 0 到達（S4〜S21）＝`env_dirty` 物理削除の前提達成**。残る非決定的のみ＝
+  full-consumption-through-pipe gather tail writeback（lazy pipe 経由 grep の内側 force が誤フレームに drop-on-miss・roast 非該当）
+  ＋IO-Socket-Async.t flaky。
+- **∴ 次 = `env_dirty` 物理削除（§2-E）着手可能**: `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 →
   `env_dirty`/`ensure_locals_synced`/`saved_env_dirty` 物理削除 → `cell_boxing_active()` gate 撤去で boxing 恒久 ON 化。
-  残既知の非決定的＝full-consumption-through-pipe gather tail writeback（lazy pipe 経由 grep の内側 force が誤フレームに
-  drop-on-miss・roast 非該当）。
+  着手前に念のため authoritative double-OFF survey（`MUTSU_BIN=… prove -e scripts/run-roast-test.sh` で全 whitelist）を再実走し 0 を再確認。
 
 ### B. tree-walking interpreter 撤去 — **struct 統合は完了・残フォークは状態所有待ち**
 
