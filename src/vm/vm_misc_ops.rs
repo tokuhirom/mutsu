@@ -558,6 +558,14 @@ impl Interpreter {
             | Value::Set(..)
             | Value::Bag(..)
             | Value::Mix(..) => runtime::coerce_to_numeric(value),
+            // An allomorph (IntStr/RatStr/NumStr/…) as a Range endpoint coerces
+            // to its numeric value, so `0..<5>` is `0..5` (not a degenerate
+            // single-element range over the un-numified Mixin).
+            Value::Mixin(ref inner, ref mixins)
+                if crate::value::types::allomorph_type_name(inner, mixins).is_some() =>
+            {
+                runtime::coerce_to_numeric(value)
+            }
             // Seq is NOT scalarized here — it must be caught by check_range_invalid_arg
             Value::Seq(..) => value,
             other => other,
