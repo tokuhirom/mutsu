@@ -208,8 +208,10 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
     MRO 上に自前メソッドを持つときは native を取らないように。`has_user_method` は `is_native_method` が真のときのみ評価される
     （short-circuit）ので hot-path コストは最小。`get`/`lines`/`getc`/`word`/`words`/constructor が動作、**Text::CSV を
     IO::Blob から読む `t/020-text-csv.t` が PASS**。テスト `t/builtin-subclass-method-override.t`（8 件）。
-    残（別軸）: `seek`/`read`/`write`/`slurp-rest`/`Supply` は `SeekType` enum（`SeekFromBeginning` 等）が未登録 enum で
-    bareword Str 扱いされ `SeekType:D` デフォルト型チェックに失敗する独立バグ待ち。
+    ✅ `SeekType` enum も登録済み（#TBD, 2026-06-22）: `SeekFromBeginning`/`SeekFromCurrent`/`SeekFromEnd` を組み込み enum 化
+    （`init_seek_type_enum`）し `SeekType:D` デフォルト型チェックが通るように。単独の `$io.seek(n); $io.read(n)` は raku 一致。
+    残（別軸・本タスク外）: 010_basic の `subtest {}` 内 `read`/`print`/`say`/`write`/`slurp-rest`/`close`/`nl`/`Supply` が
+    なお fail（フルファイル内のみ・分離では PASS）。Buf `is` 比較／`.data is rw` 書き戻し／nl-out／Supply など複数の独立バグ。
   - **HTTP::Status v0.0.5**: user `method sink` がシンクコンテキストで呼ばれず status table が空。
     ⚠️ 注意: 過去に sink 修正は sink.t を回帰させた（メモリ `sink-context-blocked-container-identity` 参照）。
 - [ ] **DB アクセス — sqlite3 CLI ラッパ（pure Raku）が現実解。**
