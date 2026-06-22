@@ -413,6 +413,15 @@ pub(crate) fn native_method_0arg(
         {
             return Some(Ok(str_val.clone()));
         }
+        // An allomorph (IntStr/NumStr/…) gists as its preserved source string,
+        // not the inner numeric's gist: `<1e3>.gist` → `1e3` (not `1000`). Only
+        // allomorphs; a general `but`-mixin gists via its inner value (below).
+        if method == "gist"
+            && crate::value::types::allomorph_type_name(inner, mixins).is_some()
+            && let Some(str_val) = mixins.get("Str")
+        {
+            return Some(Ok(str_val.clone()));
+        }
         if method == "WHICH"
             && let Some(allo_name) = crate::value::types::allomorph_type_name(inner, mixins)
         {
@@ -449,6 +458,15 @@ pub(crate) fn native_method_0arg(
                 }
                 _ => {}
             }
+        }
+        // An allomorph (IntStr/RatStr/NumStr/ComplexStr) renders its `.raku` /
+        // `.perl` as `TypeStr.new(<numeric>, "<string>")`, NOT the bare inner
+        // value's `.raku`. (`.gist`/`.Str` keep the source-string form, handled
+        // above; a general `but`-mixin falls through to the inner delegation.)
+        if matches!(method, "raku" | "perl")
+            && crate::value::types::allomorph_type_name(inner, mixins).is_some()
+        {
+            return Some(Ok(Value::str(raku_repr::raku_value(target))));
         }
         // Check for mixin key matching the method name (e.g. "Array", "List", "Int", etc.)
         // This handles `True but [1, 2]` where `.Array` should return the mixed-in array.
