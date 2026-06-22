@@ -200,9 +200,15 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
     （`token SP { "\x20" }` で grammar 全体が失敗）→ クォート外と同じく括弧なし連続 hex 桁を読むように。テスト
     `t/regex-dq-hex-escape.t`。**これで HTTP::Parser の grammar がロード・パース実行できるようになった**（10 件中 2 件
     PASS）。残る 8 失敗は別軸の独立バグ（Buf/byte 列処理・`.subst`・encode 往復）で、`\x20` とは無関係。
-  - **IO::Blob v0.0.1**: `class IO::Blob is IO::Handle` の user override（`.get`/`.lines` 等）が builtin native
-    IO::Handle メソッドに shadow され `Expected IO::Handle` で死。MRO/dispatch バグ（builtin 型のサブクラスの
-    user メソッドが native を優先すべき）。medium・汎用性高。
+  - [x] **IO::Blob v0.0.1 — builtin 型サブクラスの user メソッド override を修正（#TBD, 2026-06-22）。**
+    `class IO::Blob is IO::Handle` の user override（`.get`/`.lines`/`.getc`/`.word`/`.words`）が、Instance dispatch の
+    `is_native_method` フォーク（`vm_call_method_compiled.rs` の &self/&mut 両経路）で継承元 native IO::Handle メソッドに
+    shadow され `Expected IO::Handle` で死んでいた。フォーク条件に `&& !has_user_method(class, method)` を追加し、クラスが
+    MRO 上に自前メソッドを持つときは native を取らないように。`has_user_method` は `is_native_method` が真のときのみ評価される
+    （short-circuit）ので hot-path コストは最小。`get`/`lines`/`getc`/`word`/`words`/constructor が動作、**Text::CSV を
+    IO::Blob から読む `t/020-text-csv.t` が PASS**。テスト `t/builtin-subclass-method-override.t`（8 件）。
+    残（別軸）: `seek`/`read`/`write`/`slurp-rest`/`Supply` は `SeekType` enum（`SeekFromBeginning` 等）が未登録 enum で
+    bareword Str 扱いされ `SeekType:D` デフォルト型チェックに失敗する独立バグ待ち。
   - **HTTP::Status v0.0.5**: user `method sink` がシンクコンテキストで呼ばれず status table が空。
     ⚠️ 注意: 過去に sink 修正は sink.t を回帰させた（メモリ `sink-context-blocked-container-identity` 参照）。
 - [ ] **DB アクセス — sqlite3 CLI ラッパ（pure Raku）が現実解。**

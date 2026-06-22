@@ -194,7 +194,11 @@ impl Interpreter {
             if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
                 return result;
             }
-            if self.is_native_method(&class, method) {
+            // A user-defined subclass of a builtin type may override an inherited
+            // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
+            // The user override must win, so do not take the native fork when the
+            // class (via its MRO) provides its own method of this name.
+            if self.is_native_method(&class, method) && !self.has_user_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
                 return loan_env!(self, call_method_with_values(target, method, args));
@@ -1562,7 +1566,11 @@ impl Interpreter {
             if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
                 return result;
             }
-            if self.is_native_method(&class, method) {
+            // A user-defined subclass of a builtin type may override an inherited
+            // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
+            // The user override must win, so do not take the native fork when the
+            // class (via its MRO) provides its own method of this name.
+            if self.is_native_method(&class, method) && !self.has_user_method(&class, method) {
                 // TODO: compile to bytecode — Instance native-method fork, mut (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
                 return self.vm_call_method_mut_with_values(target_name, target, method, args);
