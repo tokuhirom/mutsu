@@ -663,9 +663,22 @@ retain-on-miss が運ぶ（slice 1.18 と同型）。blanket reconcile は任意
 サイトに残置（double-OFF harness 下では no-op）＝default build はバイト不変。pin=既存
 `t/substr-rw-lvalue-writeback-coherence.t`（test 4・double-OFF で PASS 化）。make test 9890（default/double-OFF 両 PASS）。
 
-### 10.4 次スライス候補
+### 10.4 slice S2（2026-06-22）— `let`/`temp` restore を precise 化（15→13）
 
-残 15 のうち contained なもの: `note-gist-and-dynamic-handle`（test 3 のみ）/
-`done-paren-stmt-modifier`（react done() の precise writeback）。closure 系（`closure-nested-writeback` 1-2・
-`wrap-closure-capture`）は method/closure 捕捉の cell 化（sub-slice 1c）。並行系（supply/react）は cross-thread
-cell（最難・最後）。全消化後 → §7.4（精密 reconcile + env_dirty 物理削除）。
+`temp $x = 20` のブロック退出復元が `restore_let_value`（`accessors.rs`）の非cell path で `env.insert` のみ＝
+slot stale（double-OFF で `$x` が 20 のまま）。restore は復元名を正確に知っている。**修正**: 非cell path で復元名を
+`pending_rw_writeback_sources`（drop-on-miss・same-frame bare block 用）＋ `pending_caller_var_writeback`
+（retain-on-miss・nested callee の `temp` 用）に記録し、block-exit op 3 サイト（`vm_misc_ops.rs` success/err・
+`vm_control_ops.rs` err）で `reconcile_locals_from_env_at_site` の前に `apply_pending_rw_writeback` で精密 drain。
+blanket reconcile は fallback として残置（harness 下 no-op）＝default build 挙動不変。cell-boxed binding は従来どおり
+shared Arc 経由で slot が見えるので非該当。pin=`t/let-temp.t` + `t/let-temp-restore-writeback-coherence.t`
+（double-OFF で PASS 化）。make test 9904。
+
+### 10.5 残 13・次スライス候補
+
+`closure-nested-writeback`（1-2）/ `note-gist-and-dynamic-handle` / `wrap-closure-capture` = **method/closure の
+nested capture writeback**（nested gist/method が捕捉した outer を変異・直接 free var でなく env-scan writeback 経路で
+拾う必要＝retain-on-miss 記録だけでは不足）。`eval-carrier-precise-writeback` / `single-store-slice-c-prime` =
+carrier。`junction-invocant-autothread` / `resumable-control-signal-indirect-call` /
+`concurrent-cell-writeback-coherence` / supply・react 系（4）= 並行/制御（cross-thread cell・最難・最後）。
+`done-paren-stmt-modifier` = react done()。全消化後 → §7.4（精密 reconcile + env_dirty 物理削除）。
