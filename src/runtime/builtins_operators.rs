@@ -1619,6 +1619,14 @@ impl Interpreter {
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // A pure positional list (List/Array/Seq) in numeric context coerces to
+        // its element count: `(1,2,3) <=> (1,2,4)` is `3 <=> 3` (Same) and
+        // `(1,2,3) == (1,2,4)` is `3 == 3` (True), NOT an element-wise compare
+        // (that is `cmp`). This must run before the Instance check below so the
+        // numeric comparison ops (`== != < > <= >= <=>`) see the elem count.
+        if let Some(items) = value.as_list_items() {
+            return Ok(Value::Int(items.len() as i64));
+        }
         if !matches!(value, Value::Instance { .. }) {
             return Ok(value);
         }
