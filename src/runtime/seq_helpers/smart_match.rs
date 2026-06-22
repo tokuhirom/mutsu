@@ -1173,7 +1173,7 @@ impl Interpreter {
                         }
                     }
                     // Before compose or no cache: call HOW.type_check
-                    if let Ok(result) = self.call_method_with_values(
+                    if let Ok(result) = self.call_how_method_recording_writeback(
                         *how.clone(),
                         "type_check",
                         vec![Value::Nil, right.clone()],
