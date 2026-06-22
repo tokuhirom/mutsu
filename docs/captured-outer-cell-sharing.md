@@ -818,3 +818,18 @@ in-place 変異で `make_mut` が COW し新 Arc へ detach する（pre snapsho
 rw-accessor は別スライス＝S14-roles/rw.t に残置）。`cell_boxing_active()` ガード＝default はバイト不変。
 回帰確認: element-bind-cell/S03-binding nested・arrays/set・mix 全 PASS（`:=` hazard なし）。pin=roast/S02-types/{baghash,
 mixhash,set}.t（double-OFF で PASS 化）。**残 roast double-OFF 17**（rw.t Instance rw-accessor 含む）。
+
+### 10.15 slice S12（2026-06-22）— lives-ok carrier writeback の eligibility を slot-overwritable に拡張（roast 17→11）
+
+S11（§10.14）は carrier writeback を **COW aggregate（scalar + Set/Bag/Mix）に限定**したが、これは「新しい env 値の型」で
+判定していたため取りこぼしが多かった。S12 は eligibility を **「上書きされる slot の*現在値*の型」**（`slot_carrier_overwritable`）
+へ転換: 除外は `HashSlotRef`/`ContainerRef`（`:=` binding cell）と plain `Array`/`Hash`（env COW-detach コピーが interior
+`:=` element cell を破壊する hazard）の**2 種のみ**で、それ以外（scalar/Set/Bag/Mix/Mixin/Instance/…）はすべて write-through
+対象。これで `lives-ok { $a does Role[42] }`（Int(0) slot → Mixin・型変化）/ `lives-ok { $obj.r1++ }`（Instance rw-accessor・
+diverged Instance）/ Pair `.kv`/`.values` rw aliasing / `$GLOBAL::`++ も拾える。Instance の in-place attribute 変異は
+shared `Arc<RwLock>` cell で pre==post になり diff 不発火＝無害（genuine な値/型変化のみ write-through）。**全 roast double-OFF
+sweep で 17→11（新規回帰ゼロ・残 11 全て pre-existing）＝S11 比でさらに 6 file 消化**（S02-names/our・S04 pointy-rw・S04
+gather・S12 coercion-methods・S14 rw・S32 kv）。`cell_boxing_active()` ガード＝default はバイト不変。回帰確認: S03-binding
+nested/arrays・element-bind-cell 全 PASS。**残 roast double-OFF 11**: S14 `does`-mixin block-scoped 再代入 4（anonymous/
+mixin-6e/parameterized-mixin/submethods-6e＝block 内 `$a does R` 再代入が outer env に届かない・次スライス）／lazy-lists／
+terminator／named-parameters／primitives／defer-next／cas-loop／throttle。
