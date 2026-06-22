@@ -934,6 +934,41 @@ Array なので scalar 分岐をスキップ → container 保護分岐（COW `:
 （6・ON/OFF 両 PASS）。**この修正は一般的**（任意の `EVAL q'$x = scalar'` で container を持っていた slot を救う）。
 **残 roast double-OFF 2**: lazy-lists（laziness 別軸）／throttle（timing・flaky 系）。
 
+### 10.23 S19 — lazy-lists の真 lazy 化（gather grep/map・PR 進行中・2026-06-22）
+
+§10.19 で「真の laziness blocker」とした `S02-types/lazy-lists.t` 14/16（`grep is lazy` / `map is lazy`）を **真 lazy 化で解決**
+（double-OFF でも 27/27 PASS）。**真因＝blanket reconcile は load-bearing ではなかった**: gather は normal/double-OFF の
+**両方で eager force されていた**（§10.19 の「take counter=10」計測は正しいが結論が逆）。normal で `$was-lazy=1` だったのは
+gather tail `$was-lazy=0` の captured write が **write-loss していた**だけ（ON は write-loss で偶然 raku 一致＝doc §7.3 教訓#3）。
+∴ blanket reconcile が laziness を維持していたのではなく、reconcile が write を伝播した瞬間に露出した。修正は writeback でなく
+**`gather { … }.grep/.map` を eager force せず lazy pipe で pull する**こと。
+
+真の eager-force 元は **4 サイト**（すべて「`.lazy` gather/infinite spec を map/grep で lazy pipe 化する」例外が
+`lazy_pipe.is_some() || is_infinite_spec()` のみで **gather coroutine を除外していた**）:
+1. `is_lazy_pipe_source`（methods_collection.rs:69）— gather を lazy pipe source と認めず → `ll.needs_vm_lazy_dispatch()`
+   （`is_from_gather() || is_infinite_spec()`）を OR 追加。
+2. `try_native_method`（vm_native_dispatch.rs:41）— gather+map/grep を native impl に流して materialize → `is_lazy_pipe_source`
+   ゲートに統一して defer。
+3. `vm_call_method_ops.rs:733` / 4. `vm_call_method_mut_ops.rs:474`（method dispatch 前の force ブロック）/ 加えて
+   `runtime/methods.rs:3157`（slow path force）— map/grep 例外に `|| ll.is_from_gather()` を追加し gather を force しない。
+インフラ（`pull_source_element` の `Value::LazyList → force_lazy_list_vm_n(ll, idx+1)`・vm_helpers.rs:1131）は既存＝coroutine を
+1 take ずつ resume できる。plain gather（非 `.lazy`）も Rakudo では grep+slice で lazy なので `is_from_gather()` で判定（lazy
+マーカーは sub return で失われる＝`is_genuinely_lazy()` は不可）。pin=`t/lazy-gather-grep-map-laziness.t`（8・両モード PASS）。
+
+**★残 double-OFF サーフェス（authoritative survey・全1285 release・S19 後）= 2（writeback 候補ゼロ・新規回帰ゼロ）**:
+- **`S04-statements/lazy.t`**（**新規同定・pre-existing**）= `$var := lazy { $w++; 42 }; is $var,42` が double-OFF で **hang**
+  （exit 124・proper harness でも）。**baseline（S19 前）でも同 hang**＝私の変更と無関係。**LazyThunk の force が double-OFF で
+  無限ループ**する別軸（gather でなく `lazy { block }`＝`Value::LazyThunk`）。§10.19 の「残 2」が見落としていた（handoff survey が
+  proper harness でなく lazy-lists/throttle のみ計測した疑い）。**次の最有力 double-OFF blocker**。
+- **`S17-supply/throttle.t`** 3,4 = timing flaky（§10.19 のまま）。
+（survey で出た spurt.t / gb18030・gb2312・shiftjis-encode-decode.t は **harness artifact**＝raw `prove -e mutsu` が fudge
+ラッパー無しで誤検出・`run-roast-test.sh` 経由では全 PASS。spurt.t は stale temp-file flaky。double-OFF blocker でない。）
+
+**★full-consumption-through-pipe の gather tail writeback は double-OFF で残**（`my @a=gather{…;$t=1}.grep(*>1); ok $t`）:
+直接 gather force は伝播するが、lazy pipe 経由（grep）だと内側 `force_lazy_list_vm_n` の `reconcile_caller_after_lazy_force` が
+pipe 中の誤フレームに drop-on-miss で drain して落とす。**lazy-lists.t（slice・full-consume せず）では踏まれない**ので S19 では
+未修正（pin からも除外）。env_dirty 削除前の writeback slice 候補（retain-on-miss 化 or 外側 force での drain）。
+
 ### 10.19 ハンドオフ — roast double-OFF 残 2（S18 後・2026-06-22）
 
 S4〜S18（16 slice）で **roast double-OFF surface 25 → 2**。全 whitelist（1285）の double-OFF sweep

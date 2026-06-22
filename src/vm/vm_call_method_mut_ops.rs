@@ -474,13 +474,17 @@ impl Interpreter {
         let target = if let Value::LazyList(ref ll) = target
             && ll.needs_vm_lazy_dispatch()
             && Self::lazy_list_needs_forcing(&method)
-            // A chained `.map`/`.grep` on a lazy pipeline OR an infinite
-            // sequence/closure spec appends another stage (interpreter dispatch
-            // via `is_lazy_pipe_source`); laziness-preserving coercions return
-            // the list unchanged (native dispatch) — neither forces.
+            // A `.map`/`.grep` on a lazy pipeline, an infinite sequence/closure
+            // spec, OR a gather coroutine appends another lazy stage (interpreter
+            // dispatch via `is_lazy_pipe_source`) — it must not force the source
+            // here, or a `gather { … }.grep(…)[^3]` would run the whole gather body
+            // (and its trailing side effects) instead of pulling on demand.
+            // Laziness-preserving coercions return the list unchanged (native
+            // dispatch) — neither forces.
+            && !(matches!(method.as_str(), "map" | "grep")
+                && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather()))
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
-                && (matches!(method.as_str(), "map" | "grep")
-                    || Self::lazy_pipe_preserving_coercion(&method)))
+                && Self::lazy_pipe_preserving_coercion(&method))
             // On an infinite sequence/closure spec the count/numeric coercions
             // produce a *soft* X::Cannot::Lazy Failure (recoverable with `//`),
             // emitted by the 0-arg native dispatch — they must not be hard-forced.

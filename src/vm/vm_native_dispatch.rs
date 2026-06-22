@@ -35,11 +35,15 @@ impl Interpreter {
             }
         }
         let method_name = method_sym.resolve();
-        // A chained `.map`/`.grep` on a lazy map/grep pipeline must append
-        // another lazy stage (interpreter `dispatch_map_method`/`dispatch_grep`),
-        // not run the native impl over the pipeline's (empty) cache. Defer.
-        if let Value::LazyList(ll) = target
-            && ll.lazy_pipe.is_some()
+        // A `.map`/`.grep` on a lazy source that the interpreter would turn into
+        // a lazy pipeline stage (a chained map/grep pipe, an infinite sequence, or
+        // a genuinely-lazy `gather { … }.lazy`) must be deferred to the interpreter
+        // (`dispatch_map_method`/`dispatch_grep` via `is_lazy_pipe_source`). Running
+        // the native impl here would materialize the source eagerly — forcing the
+        // whole gather body (and its trailing side effects) instead of pulling on
+        // demand. Defer.
+        if let Value::LazyList(_) = target
+            && Self::is_lazy_pipe_source(target)
             && matches!(method_name.as_str(), "map" | "grep")
         {
             return None;
