@@ -506,7 +506,46 @@ impl Interpreter {
                     } else {
                         vec![current.clone()]
                     };
+                    // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
+                    // the CAS block (`cas $var, { $was = $_; … }`) can mutate a
+                    // captured-outer caller scalar by name. The write reaches env but
+                    // the owning caller slot is refreshed only by the call site's
+                    // blanket pull (no-op once env_dirty is removed). Snapshot the env
+                    // scalars before the block and record the names it changes into
+                    // the retain-on-miss caller-var writeback, drained at the cas call
+                    // site (`apply_pending_rw_writeback`).
+                    let cas_pre_env: Option<
+                        std::collections::HashMap<crate::symbol::Symbol, Value>,
+                    > = if self.cell_boxing_active() {
+                        Some(
+                            self.env
+                                .iter()
+                                .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
+                                .map(|(k, v)| (*k, v.clone()))
+                                .collect(),
+                        )
+                    } else {
+                        None
+                    };
                     let result = self.call_sub_value(code.clone(), call_args, bind_dollar_topic)?;
+                    if let Some(cas_pre_env) = cas_pre_env {
+                        let changed: Vec<String> = self
+                            .env
+                            .iter()
+                            .filter(|(k, v)| {
+                                let kn = k.resolve();
+                                kn != "_"
+                                    && kn != "$_"
+                                    && kn != name
+                                    && Self::is_writeback_safe_scalar(v)
+                                    && cas_pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
+                            })
+                            .map(|(k, _)| k.resolve())
+                            .collect();
+                        for n in changed {
+                            self.record_caller_var_writeback(&n);
+                        }
+                    }
                     match saved_topic {
                         Some(v) => {
                             self.env.insert("_".to_string(), v);
