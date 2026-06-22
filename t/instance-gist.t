@@ -7,7 +7,7 @@ use Test;
 # instance prints. A user-defined `gist` method still takes precedence, and a
 # type OBJECT still gists as `(ClassName)`.
 
-plan 10;
+plan 11;
 
 class Point { has $.x; has $.y }
 class Empty { }
@@ -55,4 +55,11 @@ class Counter { has $.n is rw; method bump { $!n = ($!n // 0) + 1; self } }
     my Counter $c .= new;
     $c .= bump;
     is $c.n, 1, '.= on a self-returning method mutates and stores back';
+}
+
+# --- a callable (Method) instance keeps its own gist, not `Method.new(...)` ---
+{
+    class WithMethod { method foo { } }
+    nok WithMethod.^lookup('foo').gist.contains('Method.new'),
+        'a Method instance does not gist as Method.new(...)';
 }

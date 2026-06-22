@@ -735,7 +735,13 @@ impl Interpreter {
                 || target.does_check("Stringy")
                 || matches!(&target, Value::Instance { class_name, .. }
                     if self.has_user_method(&class_name.resolve(), "Bridge"));
-            let gist_default = method == "gist" && !has_coercion_gist;
+            // Callable instances (Method/Sub/…) gist by name (`foo`), not as
+            // `Method.new(...)`, so keep their built-in gist.
+            let is_callable_instance = matches!(&target, Value::Instance { class_name, .. }
+                if matches!(class_name.resolve().as_str(),
+                    "Method" | "Submethod" | "Sub" | "Routine"
+                        | "Block" | "Code" | "WhateverCode" | "Callable"));
+            let gist_default = method == "gist" && !has_coercion_gist && !is_callable_instance;
             if (method == "raku" || method == "perl" || gist_default)
                 && args.is_empty()
                 && !self.has_user_method(&class_name.resolve(), method)
