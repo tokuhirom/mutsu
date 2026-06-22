@@ -1,30 +1,31 @@
 use super::*;
-use std::sync::OnceLock;
 
-/// Whether the `env_dirty`-gated "blanket reconcile" barrier is disabled. This is
-/// a diagnostic toggle (`MUTSU_NO_BLANKET_RECONCILE`) used to measure how much
-/// captured-outer surface still depends on the env→locals pull (rather than on
-/// shared `ContainerRef` cells). Resolved once so the hot path is a single cached
-/// boolean load. See `blanket_reconcile_if_dirty` and
-/// docs/captured-outer-cell-sharing.md §5.
+/// Whether the `env_dirty`-gated "blanket reconcile" barrier is disabled.
+///
+/// **Now permanently `true`.** Coherence rests on cell-boxing alone: every
+/// captured-outer write is folded into a shared `ContainerRef` cell (or a precise
+/// write-back), so the env→locals pull is no longer needed. This was a diagnostic
+/// toggle (`MUTSU_NO_BLANKET_RECONCILE`) during the substrate grind; the whole
+/// roast whitelist + the `t/` suite pass with it forced on (double-OFF survey =
+/// 0), so the blanket reconcile is retired. The `env_dirty` flag and the reconcile
+/// machinery it gates are now dead and removed incrementally.
+/// See docs/captured-outer-cell-sharing.md §7.4 / §10.
 #[inline]
 pub(crate) fn blanket_reconcile_disabled() -> bool {
-    static DISABLED: OnceLock<bool> = OnceLock::new();
-    *DISABLED.get_or_init(|| std::env::var_os("MUTSU_NO_BLANKET_RECONCILE").is_some())
+    true
 }
 
 /// Whether the *precise* env→locals reconcile (`reconcile_locals_from_env_at_site`,
-/// run at carrier/call sites) is disabled. This is the measurement harness for the
-/// final substrate step toward deleting `env_dirty`: with both this and
-/// `MUTSU_NO_BLANKET_RECONCILE` set, coherence rests on cell-boxing ALONE — the
-/// end state after `env_dirty` removal. Each surface still failing under the
-/// double toggle is a by-name writer not yet folded into a shared cell
-/// (docs/env-locals-coherence.md §7.4). When that set is empty (modulo flaky
-/// concurrency), the precise reconcile and `env_dirty` can be physically removed.
+/// run at carrier/call sites) is disabled.
+///
+/// **Now permanently `true`** — see [`blanket_reconcile_disabled`]. With both
+/// reconciles retired, coherence rests on cell-boxing ALONE (the end state the
+/// substrate grind targeted). Every former by-name writer has been folded into a
+/// shared cell or a precise write-back, validated by the double-OFF survey
+/// (roast 1285 + `t/` all green).
 #[inline]
 pub(crate) fn precise_reconcile_disabled() -> bool {
-    static DISABLED: OnceLock<bool> = OnceLock::new();
-    *DISABLED.get_or_init(|| std::env::var_os("MUTSU_NO_PRECISE_RECONCILE").is_some())
+    true
 }
 
 impl Interpreter {

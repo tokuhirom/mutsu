@@ -45,10 +45,16 @@
 - ✅ **reverse pull（`sync_locals_from_env`）撤去済み（#3354, 2026-06-21）**。第27〜40セッションの write-through
   グラインド（約30 PR・roast OFF 依存 16/16 を precise 化）で「reverse pull なしで全 t/+roast green」を達成し、
   危険な同期処理を削除。**二重ストアの correctness hazard は解消。**
-- 🟡 **`env_dirty` 物理削除は substrate グラインド進行中**（2026-06-22 着手）。実証で判明: `env_dirty` は
+- 🟢 **boxing 恒久 ON 化 = 完了（2026-06-22）**。`blanket_reconcile_disabled()` / `precise_reconcile_disabled()` を
+  恒久 `true` にフリップし、**cell-boxing を唯一のコヒーレンス機構**にした（env→locals reconcile を retire）。
+  根拠＝double-OFF survey（roast whitelist 1285・proper harness）＋ フル `make test`（`t/` 10135）が両方この状態で 0 失敗。
+  これで goal「env↔locals コンテナ cell 共有」を**デフォルト挙動として実現**。
+  - 🟡 **残＝`env_dirty` / `reconcile_locals_from_env_at_site` / `ensure_locals_synced` / `saved_env_dirty` の物理削除**
+    （344 uses・dead code 化済み＝挙動不変の機械的クリーンアップ）。reconcile は no-op 化済みなので段階的に削除可。
+- 🟡 **`env_dirty` 物理削除の substrate グラインドは完了**（2026-06-22）。`env_dirty` は
   ①blanket reconcile のゲート（boxing 下で無効＝除去可）と②**精密 reconcile（`reconcile_locals_from_env_at_site`・
-  carrier/Proxy STORE/let-temp/closure 等のサイト）の perf ゲート（boxing 下でも load-bearing）**の2役。完全削除には
-  精密 reconcile も不要化＝精密 reconcile 依存 surface を一つずつ precise writeback / cell 共有へ畳む必要がある。
+  carrier/Proxy STORE/let-temp/closure 等のサイト）の perf ゲート（boxing 下でも load-bearing）**の2役だった。
+  精密 reconcile 依存 surface を一つずつ precise writeback / cell 共有へ畳み、**残 0 到達後に両 reconcile を retire**。
   - **計測ハーネス `MUTSU_NO_PRECISE_RECONCILE`**（#3406）: `MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1`
     （double-OFF）＝boxing のみ＝env_dirty 削除後の到達状態。残 fail = 未変換 by-name writer。0（flaky 除く）で削除可能。
   - **✅ double-OFF surface: 16 → 0 到達**（2026-06-22・7 slice landed）: S1 bound-Proxy substr-rw/subbuf-rw/undefine
