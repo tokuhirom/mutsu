@@ -3100,7 +3100,8 @@ impl Interpreter {
                                     }
                                 }
                                 Some('x') => {
-                                    // \x[HEX] inside double-quoted regex string
+                                    // \x[HEX] or bracketless \xHH inside a double-quoted
+                                    // regex string (e.g. `token SP { "\x20" }`).
                                     if chars.peek() == Some(&'[') {
                                         chars.next(); // skip '['
                                         let mut hex = String::new();
@@ -3113,6 +3114,16 @@ impl Interpreter {
                                             chars.next();
                                         }
                                         if let Ok(cp) = u32::from_str_radix(hex.trim(), 16)
+                                            && let Some(ch) = char::from_u32(cp)
+                                        {
+                                            literal.push(ch);
+                                        }
+                                    } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                        let mut hex = String::new();
+                                        while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                            hex.push(chars.next().unwrap());
+                                        }
+                                        if let Ok(cp) = u32::from_str_radix(&hex, 16)
                                             && let Some(ch) = char::from_u32(cp)
                                         {
                                             literal.push(ch);
