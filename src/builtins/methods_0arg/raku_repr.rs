@@ -604,7 +604,12 @@ pub fn raku_value(v: &Value) -> String {
                     s.remove(pos);
                 }
             });
-            let hash_repr = format!("{{{}}}", parts.join(", "));
+            // An itemized hash (`${...}`) carries its itemization on the
+            // `itemized` flag (mirroring `ArrayKind::ItemArray`). `.raku` shows
+            // the `$` sigil: `${a=>1}.raku` → `${:a(1)}`. (`.gist` does not —
+            // see `gist_value`.)
+            let sigil = if map.itemized { "$" } else { "" };
+            let hash_repr = format!("{}{{{}}}", sigil, parts.join(", "));
             if is_top && had_cycle {
                 format!("((my {}) = {})", var_name, hash_repr)
             } else {
@@ -664,8 +669,12 @@ pub fn raku_value(v: &Value) -> String {
             format!("{}{}{}{}", start_repr, start_sep, end_sep, end_repr)
         }
         Value::Scalar(inner) => {
-            // $(expr) — itemized container. Render as $(<inner_raku>).
-            format!("$({})", raku_value(inner))
+            // $(expr) — itemized container. `.raku` shows the itemization sigil
+            // shaped to the inner value: a Hash → `${...}`, an Array → `$[...]`,
+            // a List/Seq → `$(...)`, and a plain scalar (Int/Str/Range/…) renders
+            // unwrapped (itemizing an already-scalar value is a no-op:
+            // `$(1).raku` → `1`). This is exactly the hash-value itemization rule.
+            raku_hash_value(inner)
         }
         Value::Capture { positional, named } => {
             let mut parts = Vec::new();

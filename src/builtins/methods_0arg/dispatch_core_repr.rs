@@ -449,6 +449,9 @@ pub(super) fn dispatch(
                 match v {
                     Value::Nil => "Nil".to_string(),
                     Value::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
+                    // `$(...)` itemized element: `.gist` drops the itemization
+                    // sigil, so it gists like its inner value.
+                    Value::Scalar(inner) => gist_item(inner),
                     Value::Array(_, k) if *k == crate::value::ArrayKind::Lazy => {
                         "[...]".to_string()
                     }
@@ -521,6 +524,9 @@ pub(super) fn dispatch(
                 match v {
                     Value::Nil => "Nil".to_string(),
                     Value::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
+                    // `$(...)` itemized element: `.gist` drops the itemization
+                    // sigil, so it gists like its inner value.
+                    Value::Scalar(inner) => gist_item(inner),
                     Value::Array(_, k) if *k == crate::value::ArrayKind::Lazy => {
                         "[...]".to_string()
                     }

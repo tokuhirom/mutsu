@@ -309,10 +309,17 @@ pub(crate) fn native_method_0arg(
     let method = method_sym.resolve();
     let method = method.as_str();
 
-    // Scalar containers are transparent for method dispatch (except .VAR).
+    // Scalar containers are transparent for method dispatch (except .VAR and
+    // .raku/.perl). `.raku`/`.perl` must see the `Scalar` wrapper so an itemized
+    // aggregate shows its `$` sigil (`${a=>1}.raku` → `${:a(1)}`); decontainer-
+    // izing first would strip it. `.gist` never shows the sigil, so delegating
+    // to the inner value is already correct.
     if let Value::Scalar(inner) = target {
         if method == "VAR" {
             return Some(Ok(Value::Package(crate::symbol::Symbol::intern("Scalar"))));
+        }
+        if method == "raku" || method == "perl" {
+            return Some(Ok(Value::str(raku_repr::raku_value(target))));
         }
         return native_method_0arg(inner, method_sym);
     }
@@ -798,11 +805,14 @@ fn range_gist_string(value: &Value) -> String {
 }
 
 fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
+    // `.gist` never shows the `$` itemization marker — at any nesting level
+    // (only `.raku` does). So an itemized array/list gists exactly like its
+    // non-itemized counterpart: `$[1,2].gist` → `[1 2]`, `$(1,2).gist` → `(1 2)`.
     match kind {
-        ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy => format!("[{}]", inner),
-        ArrayKind::List => format!("({})", inner),
-        ArrayKind::ItemArray => format!("$[{}]", inner),
-        ArrayKind::ItemList => format!("$({})", inner),
+        ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy | ArrayKind::ItemArray => {
+            format!("[{}]", inner)
+        }
+        ArrayKind::List | ArrayKind::ItemList => format!("({})", inner),
     }
 }
 
