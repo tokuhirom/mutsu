@@ -1294,6 +1294,18 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "QuantHash"
             | "Blob"
             | "Buf"
+            // Native sized buffer aliases: blob8 == Blob[uint8], buf16 == Buf[uint16], etc.
+            // (utf8/utf16/utf32 are already listed below.)
+            | "blob"
+            | "buf"
+            | "blob8"
+            | "blob16"
+            | "blob32"
+            | "blob64"
+            | "buf8"
+            | "buf16"
+            | "buf32"
+            | "buf64"
             | "Junction"
             | "Match"
             | "Regex"

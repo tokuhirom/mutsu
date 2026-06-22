@@ -260,7 +260,8 @@ HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCa
     解消＝parser で dist セレクタとして消費・破棄。`unit module Foo:ver<>:auth<>` も対応。多数のモジュールに効く一般機能。
   - [x] **MIME::Base64 1.2.5 — 完動（#3427, 2026-06-22, session 11）。** 5 つ目の動作モジュール。`Blob:D` 型パラメータの
     blob を `for $d -> $a,$b?,$c?` でバイト反復できるよう修正（`encode`/`decode`/`encode-str`/`decode-str` 全て raku 一致）。
-    own test 3/4 ファイル完全パス（basic 18/18, rfc4648 16/16, oneline 2/2。4 つ目は `use experimental :pack` + `pack 'S'` で別機能・範囲外）。
+    own test **4/4 ファイル完全パス**（basic 18/18, rfc4648 16/16, oneline 2/2, binary-and-long-line 11/11）。4 つ目は
+    pack/unpack（#3429）＋小文字 native buffer 型エイリアス `blob8`/`blob16`（#TBD）で完動。
     Option B 採用＝for ループ materialization（`vm_control_ops.rs` `for_blob_byte_items`）と `.map`/`.grep` で、裸の Blob 値と
     `for $scalar`→`[$scalar]` ラップ（単一要素 `List` 配列内の Blob）の両形をバイト列展開。`value_to_list` は不変。Blob に
     itemization マーカーがないため `for $my_blob`/`($blob,)`（raku: 1 要素）もバイト展開する divergence を受容（roast の

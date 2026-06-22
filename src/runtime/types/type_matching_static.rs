@@ -273,10 +273,83 @@ impl Interpreter {
         if constraint == "Buf" && matches!(value_type, "buf8" | "buf16" | "buf32" | "buf64") {
             return true;
         }
+        // Sized native buffer constraints. A `blobN` (`Blob[uintN]`) constraint
+        // matches any buffer value whose element width is N — including a plain
+        // `Buf` (which is `Buf[uint8]`, so `Buf ~~ blob8`) and `utfN` encodings
+        // (`utf16 ~~ blob16`). This is what MIME::Base64's binary path needs
+        // (`my blob8 $b = pack(...)`, `my blob16 $u = $s.encode('UTF-16')`). A
+        // `bufN` constraint is the mutable parameterized type and matches only an
+        // explicitly-sized buffer (a plain `Buf` is NOT `buf8`, matching raku).
+        if let Some((c_mutable, c_width)) = Self::sized_buf_constraint(constraint) {
+            if let Some(v_width) = Self::buf_value_width(value_type, c_mutable) {
+                return v_width == c_width;
+            }
+            return false;
+        }
         // IO role: IO::Path and IO::Special do the IO role (IO::Handle does not).
         if constraint == "IO" && matches!(value_type, "IO::Path" | "IO::Special") {
             return true;
         }
         false
+    }
+
+    /// Parse a sized native buffer constraint into `(mutable, width_bits)`.
+    /// `buf8`/`buf16`/… are mutable (`Buf[uintN]`); `blob8`/… are immutable
+    /// (`Blob[uintN]`). Returns `None` for non-sized constraints.
+    fn sized_buf_constraint(constraint: &str) -> Option<(bool, u16)> {
+        let (mutable, rest) = if let Some(r) = constraint.strip_prefix("buf") {
+            (true, r)
+        } else if let Some(r) = constraint.strip_prefix("blob") {
+            (false, r)
+        } else {
+            return None;
+        };
+        match rest {
+            "8" => Some((mutable, 8)),
+            "16" => Some((mutable, 16)),
+            "32" => Some((mutable, 32)),
+            "64" => Some((mutable, 64)),
+            _ => None,
+        }
+    }
+
+    /// The element width (in bits) of a buffer-typed value, or `None` if the
+    /// value is not a buffer that satisfies a constraint of the given mutability.
+    /// A `blobN` constraint (`require_mutable == false`) accepts any buffer of
+    /// matching width; a `bufN` constraint (`require_mutable == true`) accepts
+    /// only an explicitly-sized mutable buffer (not a plain `Buf`/`utfN`).
+    fn buf_value_width(value_type: &str, require_mutable: bool) -> Option<u16> {
+        // Explicitly-sized parameterized buffers (`Buf[uint16]`, `Blob[uint8]`).
+        if let Some(inner) = value_type
+            .strip_prefix("Buf[")
+            .or_else(|| value_type.strip_prefix("Blob["))
+            .and_then(|s| s.strip_suffix(']'))
+        {
+            return match inner {
+                "uint8" | "int8" => Some(8),
+                "uint16" | "int16" => Some(16),
+                "uint32" | "int32" => Some(32),
+                "uint64" | "int64" => Some(64),
+                _ => None,
+            };
+        }
+        if let Some((mutable, width)) = Self::sized_buf_constraint(value_type) {
+            if require_mutable && !mutable {
+                return None;
+            }
+            return Some(width);
+        }
+        if require_mutable {
+            // A `bufN` constraint only matches explicitly-sized mutable buffers.
+            return None;
+        }
+        // Role-based widths for a `blobN` constraint: a plain `Buf` is
+        // `Buf[uint8]`, and `utfN` encodings are `Blob[uintN]`.
+        match value_type {
+            "Buf" | "utf8" => Some(8),
+            "utf16" => Some(16),
+            "utf32" => Some(32),
+            _ => None,
+        }
     }
 }
