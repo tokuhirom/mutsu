@@ -110,6 +110,8 @@ pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "sprintf",
     "zprintf",
     "printf",
+    "pack",
+    "unpack",
     "uniname",
     "uninames",
     "uniprop",
