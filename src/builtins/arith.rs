@@ -1164,18 +1164,23 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
         });
     }
     {
+        // Integer `%` by zero reports the dividend and `using %`, like Rakudo
+        // (`Attempt to divide 7 by zero using %`).
+        let mod_div0 = |dividend: &Value| {
+            RuntimeError::numeric_divide_by_zero_full(Some(dividend.clone()), Some("%"))
+        };
         Ok(match (l, r) {
-            (Value::Int(_), Value::Int(0)) => {
-                return Err(RuntimeError::numeric_divide_by_zero());
+            (Value::Int(a), Value::Int(0)) => {
+                return Err(mod_div0(&Value::Int(a)));
             }
-            (Value::BigInt(_), Value::Int(0)) => {
-                return Err(RuntimeError::numeric_divide_by_zero());
+            (Value::BigInt(a), Value::Int(0)) => {
+                return Err(mod_div0(&Value::from_bigint((*a).clone())));
             }
-            (Value::Int(_), Value::BigInt(b)) if b.is_zero() => {
-                return Err(RuntimeError::numeric_divide_by_zero());
+            (Value::Int(a), Value::BigInt(b)) if b.is_zero() => {
+                return Err(mod_div0(&Value::Int(a)));
             }
-            (Value::BigInt(_), Value::BigInt(b)) if b.is_zero() => {
-                return Err(RuntimeError::numeric_divide_by_zero());
+            (Value::BigInt(a), Value::BigInt(b)) if b.is_zero() => {
+                return Err(mod_div0(&Value::from_bigint((*a).clone())));
             }
             (Value::Int(a), Value::Int(b)) => Value::Int(num_integer::Integer::mod_floor(&a, &b)),
             (Value::BigInt(a), Value::Int(b)) => {

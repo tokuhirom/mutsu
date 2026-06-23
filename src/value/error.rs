@@ -435,7 +435,10 @@ impl RuntimeError {
             attrs.insert("numerator".to_string(), n);
         }
         let ex = Value::make_instance(Symbol::intern("X::Numeric::DivideByZero"), attrs);
-        let mut err = Self::new("X::Numeric::DivideByZero");
+        // Use the descriptive message (not the bare type name) so an uncaught
+        // divide-by-zero prints like Rakudo (`Attempt to divide 1 by zero
+        // using %`) instead of `X::Numeric::DivideByZero`.
+        let mut err = Self::new(&msg);
         err.exception = Some(Box::new(ex));
         err
     }
