@@ -243,7 +243,12 @@ impl Interpreter {
             return result;
         }
         match source {
-            Value::Array(_, kind) if kind.is_real_array() => Value::array(items),
+            // A positional slice of any positional array — `[1,2,3]`, the List
+            // `(1,2,3)`, an itemized `$(1,2,3)`/`$[1,2,3]`, or a lazy array —
+            // decontainerizes to a `List` in Raku, NOT a `Seq`
+            // (`(1,2,3)[1,2].WHAT` is `List`). Only a genuine `Seq` source (or
+            // other non-array iterable) slices to a `Seq`.
+            Value::Array(..) => Value::array(items),
             _ => Value::Seq(Arc::new(items)),
         }
     }
