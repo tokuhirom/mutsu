@@ -506,11 +506,13 @@ impl Interpreter {
         if let Some(result) = self.try_native_first(&target, method, &args) {
             return result;
         }
-        // Native QuantHash coercion `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`
-        // over a list-like receiver (ledger §1: native receiver dispatch ->
-        // Interpreter-native). Pure element-folding shared with the interpreter via
-        // `builtins::quanthash_coerce`. `.MixHash` falls through (it registers
-        // container type metadata, which is interpreter-owned state).
+        // Native QuantHash coercion `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/
+        // `.MixHash` over a list-like receiver (ledger §1: native receiver dispatch
+        // -> Interpreter-native). Pure element-folding shared with the interpreter
+        // via `builtins::quanthash_coerce`. `.MixHash` embeds its type metadata
+        // directly in the `Value::Mix` Arc (not an interpreter-owned side table —
+        // container metadata has travelled in the value since #2952), so it is a
+        // pure value op like the others. Instance/Package receivers fall through.
         if args.is_empty()
             && let Some(result) = Self::try_native_quanthash_coerce(&target, method)
         {
@@ -1097,7 +1099,10 @@ impl Interpreter {
         target: &Value,
         method: &str,
     ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(method, "Set" | "SetHash" | "Bag" | "BagHash" | "Mix") {
+        if !matches!(
+            method,
+            "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+        ) {
             return None;
         }
         // Only list-like / QuantHash receivers go native; everything else
@@ -1134,6 +1139,7 @@ impl Interpreter {
                 })
             }
             "Mix" => crate::builtins::quanthash_coerce::to_mix(target, "Mix"),
+            "MixHash" => crate::builtins::quanthash_coerce::to_mixhash(target),
             _ => unreachable!(),
         };
         Some(result)

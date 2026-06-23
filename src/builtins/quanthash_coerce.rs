@@ -691,3 +691,25 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
         Ok(Value::mix_with_original_keys(weights, original_keys))
     }
 }
+
+/// Coerce `target` to a mutable `MixHash`. This is `.Mix` plus the mutable flag
+/// and the embedded `MixHash` type metadata (`value_type = Real`,
+/// `declared_type = MixHash`). The metadata lives *in* the `Value::Mix` Arc (not
+/// in any interpreter-owned side table — container type metadata has been
+/// embedded in the value since #2952), so this is a pure value operation with no
+/// interpreter state, mirroring the interpreter's `dispatch_to_mix_with_what` +
+/// `tag_container_metadata` path exactly. Single authoritative impl shared by the
+/// VM native dispatch and the interpreter fallback.
+pub(crate) fn to_mixhash(target: Value) -> Result<Value, RuntimeError> {
+    let coerced = to_mix(target, "MixHash")?;
+    let Value::Mix(mut arc, _) = coerced else {
+        // `to_mix` always returns a `Value::Mix` for the receivers we coerce; if
+        // that ever changes, hand the value back unmodified rather than panic.
+        return Ok(coerced);
+    };
+    let data = std::sync::Arc::make_mut(&mut arc);
+    data.value_type = Some("Real".to_string());
+    data.key_type = None;
+    data.declared_type = Some("MixHash".to_string());
+    Ok(Value::Mix(arc, true))
+}

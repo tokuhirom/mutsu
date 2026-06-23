@@ -36,7 +36,7 @@
 | `vm_data_ops.rs` non-simple push | 非Array/非ContainerRef な ArrayPush ターゲット（cold） | LOW | **probe で cold 確認 (2026-06-14)**: ArrayPush opcode は単一引数 push かつ *local* array 限定で emit。closure-captured / multi-arg push は CallMethodMut へ流れ **#3060 で native 化済**（下記）。残る ArrayPush 非Array 分岐は whitelist で発火例ゼロ＝cold |
 | ~~`vm_call_method_mut_ops.rs` CallMethodMut push~~ | ~~closure-captured / multi-arg `@a.push`~~ | — | **✅消化 (#3060)**: `try_native_array_mut` に `push` arm を追加。`@a.push(x)` は単一引数 local のみ ArrayPush opcode、それ以外（captured / multi-arg）は CallMethodMut で来るのを VM ネイティブ化。typed/shaped/lazy/shared/constrained は interpreter 維持 |
 | ~~`vm_smart_match.rs` key-method~~ | ~~smartmatch のキーメソッド抽出~~ | — | **✅消化 (PR2)**: 統一 compiled-first へ |
-| ~~`vm_call_method_compiled.rs` QuantHash coercion~~ | ~~`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`（list-like 受け手）~~ | — | **✅消化 (③ PR-8)**: `try_native_quanthash_coerce` で VM ネイティブ。pure 折り畳みは `builtins/quanthash_coerce` に一本化。`.MixHash`（型メタ登録）/ Instance/Package 受け手は interpreter 維持 |
+| ~~`vm_call_method_compiled.rs` QuantHash coercion~~ | ~~`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/`.MixHash`（list-like 受け手）~~ | — | **✅消化 (③ PR-8 + MixHash slice)**: `try_native_quanthash_coerce` で VM ネイティブ。pure 折り畳みは `builtins/quanthash_coerce` に一本化。**`.MixHash` も追加**（旧除外理由「型メタ登録＝interpreter 所有 state」は #2952 のコンテナ値埋め込み化で stale＝`Value::Mix` の Arc にメタ埋め込みで pure value op・新 `to_mixhash`）。Instance/Package 受け手のみ interpreter 維持 |
 | `vm_call_helpers.rs` hyper temp | temp-bind した item への hyper メソッド | MEDIUM | 第一級コンテナ Phase 2 |
 | ~~`vm_register_ops.rs` react loop~~ | ~~`run_react_event_loop[_drain]` / `run_whenever_with_value`~~ | — | **✅消化 (Stage 1+2, #3010/#3027/#3029/#3031/#3038/#3039)**: 駆動ループの **4 箇所二重化**（react/await-promise/tap×2）を単一エンジンへ統合（tap×2→1 #3010、react↔await-promise を `SupplyDrivePolicy { React, Promise }` + `drive_react_subscriptions` へ #3027）。**Stage 2 = ループ所有権の逆転完了**: `run_react_event_loop`/`drive_react_subscriptions`/`run_react_consumer`/`replay_static_supply` を `impl Interpreter`→`impl VM`（新 `vm/vm_react_loop.rs`）へ移設 #3038、whenever body/LAST/CLOSE callback を `call_sub_value`(tree-walk)→`VM::call_react_callback`（`vm_call_map_block` でトピック束縛しつつコンパイル済みバイトコード実行）へ #3039。await/Promise 経路は薄い `Interpreter::drive_react_subscriptions` ブリッジ（mem::take/VM/restore）で到達。**Stage 3 follow-up = supply `QUIT` handler も VM ネイティブ化**: VM 駆動ループ内の 2 箇所（`vm_react_loop.rs` の React/Channel quit 経路）が `self.interpreter.call_supply_quit_handler`（tree-walk `call_sub_value`）へ戻っていたのを、`VM::call_supply_quit_handler`（`call_react_callback` 経由でコンパイル済みバイトコード実行）へ差し替え。**これで駆動ループのどのコールバックも tree-walk へ戻らない**。`Interpreter::call_supply_quit_handler` は Interpreter 単独の on-demand/tap supply 経路（`native_supplier_methods`/`native_supply_mut_methods`）からのみ使用（それ自体が別系の tree-walk runtime で、ここは対象外）。`supply_emit_buffer` は Interpreter field のまま（`self.interpreter.` 経由で VM から到達でき、global 化は不要）。 |
 
@@ -338,6 +338,21 @@
   **`op`=1418（Routine 値 lexical &-var `&infix:<(|)>` 束縛、今回の Sub/WeakSub 限定 fix の除外分）** / iterator push-* protocol
   （Track B）/ coercion（builtins 降ろし）。残る ctor 難ケース: required-after-BUILD / 未設定 class-typed + BUILD / `is built`/
   MOP set_build / BUILDALL / custom new / CUnion。
+- **2026-06-23 (§1 = `.MixHash` coercion の VM ネイティブ化)**: §D（状態所有）の実測駆動スライス。`MUTSU_VM_STATS` で
+  catch-all の支配カテゴリを計測したところ、PR-8 が **明示的に除外**していた `.MixHash`（QuantHash coercion の唯一の
+  残り）が最頻だった。PR-8 の除外理由は「`.MixHash` は container type metadata を登録＝interpreter 所有 state」だったが、
+  **これは #2952〜2985 のコンテナ値メタ埋め込み化で stale**＝`.MixHash` が生む `Value::Mix` の型メタ（`value_type=Real`/
+  `declared_type=MixHash`）は **interpreter 副テーブルでなく Mix の `Arc<MixData>` に埋め込まれる**（`tag_container_metadata`
+  の `embed_type_info!` 経路。副テーブル `register_container_type_metadata` を踏むのは Instance 等の `other =>` 枝のみ）。
+  ∴ `.MixHash` は env/state を一切触らない pure value op で、`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash` と同型に native 化可能。
+  新 pure fn `builtins::quanthash_coerce::to_mixhash`（`to_mix(_, "MixHash")` → mutable flip + メタ埋め込み）を VM の
+  `try_native_quanthash_coerce` に追加（method match に `"MixHash"` 追加）。**dedup**: interpreter の `dispatch_method_by_name_2`
+  の `Mix|MixHash` 分岐を `to_mixhash` 委譲へ（`tag_container_metadata` 直書きを撤去）＝**1 操作 = 1 実装**。受け手ゲートは
+  既存 5 兄弟と同一（list-like のみ native、Instance/Package は interpreter 維持）。変数受け手（`%h.MixHash`）は
+  `CallMethodMut` ルーティングで mut パスに行き 6 兄弟全て一律 fallback＝**既存挙動と完全 parity**（将来 mut パスへ
+  まとめて降ろす別スライス候補）。挙動不変（native==interpreter＝同一 `to_mixhash`）。pin `t/native-mixhash-coerce.t`(22,
+  raku/mutsu 双方 PASS・Str 要素で `.WHICH` キー差を回避)。mix.t 244/244・set.t・categorize 緑。
+  （bag.t 625 "Foo instance union" は BLOCKERS.md 記載の pre-existing で本変更と無関係。）
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
