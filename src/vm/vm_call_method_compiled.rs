@@ -558,6 +558,12 @@ impl Interpreter {
         {
             return Ok(result);
         }
+        // Native `.IO` coercion over a Cool scalar (`"path".IO`, `42.IO`) — builds
+        // an IO::Path via the shared `make_io_path_instance` (ledger §D). Instance /
+        // non-IO Package / aggregate receivers fall through.
+        if let Some(result) = self.try_native_io_coercion(&target, method, &args) {
+            return result;
+        }
         // TODO: compile to bytecode — native/Buf/Failure method fork (ledger §1).
         // User-defined Instance methods now always run as bytecode (compiled at
         // registration, or on demand above via `populate_uncompiled_method`), so
@@ -1211,6 +1217,58 @@ impl Interpreter {
             "Hash" => crate::builtins::map_hash_coerce::to_hash(target, true),
             _ => unreachable!(),
         })
+    }
+
+    /// Interpreter-native `.IO` coercion over a `Cool` scalar receiver
+    /// (`"path".IO`, `42.IO`): constructs an `IO::Path` from the receiver's string
+    /// value via the single shared `make_io_path_instance` (which inherits `$*SPEC`
+    /// / `$*CWD` from env — a normal native env read, identical to the
+    /// interpreter's `dispatch_method_by_name` `.IO` arm). An `IO::Path`(-subclass)
+    /// *type object* (`Value::Package`) returns itself (`IO::Path === IO::Path.IO`).
+    ///
+    /// Returns `None` (fall through to the interpreter) for `Instance` receivers
+    /// (which may have a user `.IO` or be IO::Path/IO::Handle), non-IO `Package`
+    /// type objects, and aggregate / `Junction` receivers (which autothread or
+    /// have their own semantics) — only plain stringifiable scalars go native.
+    fn try_native_io_coercion(
+        &self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if method != "IO" || !args.is_empty() {
+            return None;
+        }
+        match target {
+            // `.IO` on an IO::Path (sub)class type object returns the type object
+            // itself, so `IO::Path::Unix === IO::Path::Unix.IO`.
+            Value::Package(name) => {
+                let n = name.resolve();
+                if n == "IO::Path" || n.starts_with("IO::Path::") {
+                    Some(Ok(target.clone()))
+                } else {
+                    None
+                }
+            }
+            // Plain stringifiable scalars coerce their string value to an IO::Path.
+            Value::Str(_)
+            | Value::Int(_)
+            | Value::BigInt(_)
+            | Value::Num(_)
+            | Value::Rat(..)
+            | Value::FatRat(..)
+            | Value::Complex(..)
+            | Value::Bool(_) => {
+                let s = target.to_string_value();
+                if s.contains('\0') {
+                    return Some(Err(RuntimeError::new(
+                        "X::IO::Null: Found null byte in pathname",
+                    )));
+                }
+                Some(Ok(self.make_io_path_instance(&s)))
+            }
+            _ => None,
+        }
     }
 
     /// Interpreter-native `.iterator` construction, mirroring
@@ -1929,6 +1987,12 @@ impl Interpreter {
             && let Some(result) = crate::builtins::seq_coerce::to_seq_structural(&target)
         {
             return Ok(result);
+        }
+        // Native `.IO` coercion over a Cool scalar for variable receivers
+        // (`$s.IO`) — builds a *new* IO::Path and never mutates the receiver, so no
+        // writeback. Instance / non-IO Package / aggregate receivers fall through.
+        if let Some(result) = self.try_native_io_coercion(&target, method, &args) {
+            return result;
         }
         // TODO: compile to bytecode — native/Buf/Failure method fork, mut (ledger §1).
         // User-defined methods run as bytecode (compiled at registration or on

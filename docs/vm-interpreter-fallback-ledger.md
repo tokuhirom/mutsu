@@ -400,6 +400,17 @@
   （残るのは `Str.IO` coercion〔別操作・Str 受け手〕と `IO::Path::*.new`〔③ ctor〕）。pin `t/native-io-path-lexical.t`(40,
   literal `.IO` + 変数受け手〔mut path〕+ Win32 subclass round-trip・raku/mutsu 双方 PASS)。io-path.t の既存 fail 2
   （`.SPEC`/`.CWD` attribute）は main でも fail＝本変更と無関係。S16-io/S32-io/tmpdir/cwd/dir whitelist 全緑。
+- **2026-06-23 (§D = Cool scalar `.IO` coercion の VM ネイティブ化)**: IO::Path lexical スライス（上）の follow-up。
+  実測広がりで次点だった `.IO`(14 file・`"path".IO`/`$s.IO`/`42.IO`)＝Str/numeric を IO::Path へ coerce する fallback を
+  ドレイン。`.IO` は `dispatch_method_by_name` の arm（`make_io_path_instance(target.to_string_value())`＋null-byte check、
+  IO::Path 型オブジェクトは identity）で **`&self`＝`$*SPEC`/`$*CWD` を env から読む**＝pure ではないが VM は env を所有する
+  ので native 読み可。VM の非mut/mut 両 catch-all（iterator construct の後・最終 fallback 直前）に `try_native_io_coercion`
+  を追加し、**Str/Int/BigInt/Num/Rat/FatRat/Complex/Bool 受け手 + IO::Path(-subclass) 型オブジェクト identity** を native 化、
+  **同じ `make_io_path_instance` を呼ぶ**＝1 操作 = 1 実装（interpreter dispatch は無改修・同 fn 共有）。Instance（user `.IO`/
+  IO::Path/IO::Handle）/ 非IO Package / aggregate / **Junction（autothread）** は `None` で interpreter 維持＝behavior-invariant
+  （`("a"|"b").IO` は Junction を返し parity 確認）。新 IO::Path を返し受け手を変異しない＝writeback 不要。実測:
+  `$s.IO`/`42.IO` の fallback → 0。pin `t/native-io-coercion.t`(18, literal/変数/numeric/型オブジェクト identity/null-byte
+  dies/Junction autothread/`$*CWD` 継承・raku/mutsu 双方 PASS)。S16-io/S32-io/tmpdir/cwd whitelist 全緑。
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
