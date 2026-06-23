@@ -4,6 +4,36 @@ use std::sync::Arc;
 
 use super::range_endpoint_display;
 
+/// Escape a string the way Rakudo's `Str.raku` does: wrap in double quotes,
+/// backslash the sigil/interpolation metacharacters, map the named control
+/// escapes (`\0 \b \t \n \r`), and render every other control character
+/// (Unicode category Cc: U+0000-U+001F, U+007F-U+009F) as `\x[HEX]` with
+/// upper-case, no-leading-zero hex. Non-control characters pass through as-is.
+pub(crate) fn escape_raku_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '$' => out.push_str("\\$"),
+            '@' => out.push_str("\\@"),
+            '%' => out.push_str("\\%"),
+            '&' => out.push_str("\\&"),
+            '{' => out.push_str("\\{"),
+            '\0' => out.push_str("\\0"),
+            '\u{8}' => out.push_str("\\b"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            c if c.is_control() => out.push_str(&format!("\\x[{:X}]", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// Format a BigRat with a terminating decimal as an exact decimal string.
 /// Assumes denominator is a power of 2 and 5 (verified by caller).
 fn format_bigrat_decimal_exact(n: &num_bigint::BigInt, d: &num_bigint::BigInt) -> String {
@@ -413,17 +443,7 @@ pub fn raku_value(v: &Value) -> String {
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
             format!("slip({})", inner)
         }
-        Value::Str(s) => {
-            let escaped = s
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"")
-                .replace('$', "\\$")
-                .replace('@', "\\@")
-                .replace('%', "\\%")
-                .replace('&', "\\&")
-                .replace('{', "\\{");
-            format!("\"{}\"", escaped)
-        }
+        Value::Str(s) => escape_raku_str(s),
         Value::Int(i) => i.to_string(),
         Value::Rat(n, d) => {
             if *d == 0 {
