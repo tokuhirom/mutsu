@@ -2,7 +2,7 @@ use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test;
 use Test::Util;
 
-plan 19;
+plan 25;
 
 # A pure value evaluated in sink (void) context warns.
 is_run 'say "hi"; 42', { :0status, :out("hi\n"), :err(/"Useless use" .* 42/) },
@@ -55,3 +55,21 @@ is_run 'sub f { my @x = gather 43 }; f()', { :0status, :err(/"Useless use" .* 43
     'gather body inside a sub warns';
 is_run 'my @x = gather { take 1 }; say @x.elems', { :0status, :out("1\n"), :err('') },
     'gather body with only a take does not warn';
+
+# A bare anonymous `$` is reported as "unnamed $ variable", not its internal name.
+is_run '$; my $b;', { :0status, :err(/"Useless use of unnamed " '$' " variable"/) },
+    'bare anonymous $ in sink warns as unnamed variable';
+
+# Pure prefix operators on useless operands warn, naming the operator.
+is_run '-5', { :0status, :err(/"Useless use" .* '"-"' .* '-5'/) },
+    'prefix minus on constant in sink warns';
+is_run '!5', { :0status, :err(/"Useless use" .* '"!"' .* '!5'/) },
+    'prefix bang on constant in sink warns';
+is_run '?5', { :0status, :err(/"Useless use" .* '"?"' .* '?5'/) },
+    'prefix question on constant in sink warns';
+is_run 'my $x = 1; -$x', { :0status, :err(/"Useless use" .* '"-"' .* '-$x'/) },
+    'prefix minus on variable in sink warns';
+
+# A prefix operator on a side-effecting operand never warns.
+is_run 'sub f { 5 }; -f()', { :0status, :err('') },
+    'prefix minus on sub call does not warn';

@@ -307,6 +307,10 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         // user-written bare scalar. A real bare `@a` parses to `ArrayVar("a")`,
         // so this never suppresses a genuine sink warning; it only stops the
         // spurious "Useless use of $@a in sink context" on `my @a := @b`.
+        // A bare anonymous `$` (the unnamed state scalar) parses to a synthetic
+        // `__ANON_STATE_<id>__` name. Raku reports it as "unnamed $ variable",
+        // not by its internal name.
+        Expr::Var(n) if n.starts_with("__ANON_STATE_") => Some("unnamed $ variable".to_string()),
         Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => None,
         Expr::Var(n) => Some(format!("${}", n)),
         Expr::ArrayVar(n) => Some(format!("@{}", n)),
@@ -319,6 +323,14 @@ fn describe_useless(expr: &Expr) -> Option<String> {
             // effects), e.g. `1 + 2` but not `$x + foo()`.
             describe_useless(left)?;
             describe_useless(right)?;
+            let rendered = render_source(expr)?;
+            Some(format!("\"{}\" in expression \"{}\"", sym, rendered))
+        }
+        Expr::Unary { op, expr: inner } => {
+            let sym = pure_prefix_symbol(op)?;
+            // Only flag when the operand itself is useless (no side effects),
+            // e.g. `-5` / `?5` / `-$x` but not `-foo()`.
+            describe_useless(inner)?;
             let rendered = render_source(expr)?;
             Some(format!("\"{}\" in expression \"{}\"", sym, rendered))
         }
@@ -360,6 +372,10 @@ fn render_source(expr: &Expr) -> Option<String> {
         Expr::ArrayVar(n) => Some(format!("@{}", n)),
         Expr::HashVar(n) => Some(format!("%{}", n)),
         Expr::BareWord(s) => Some(s.clone()),
+        Expr::Unary { op, expr: inner } => {
+            let sym = pure_prefix_symbol(op)?;
+            Some(format!("{}{}", sym, render_source(inner)?))
+        }
         Expr::Binary { left, op, right } => {
             let sym = pure_op_symbol(op)?;
             let l = render_source(left)?;
@@ -393,6 +409,19 @@ fn pure_op_symbol(op: &TokenKind) -> Option<&'static str> {
         TokenKind::Gte => ">=",
         TokenKind::LtEqGt => "<=>",
         TokenKind::FatArrow => "=>",
+        _ => return None,
+    })
+}
+
+/// Pure prefix operators that produce a value with no side effect. Operators
+/// not listed here are treated as potentially effectful and never flagged.
+fn pure_prefix_symbol(op: &TokenKind) -> Option<&'static str> {
+    Some(match op {
+        TokenKind::Plus => "+",
+        TokenKind::Minus => "-",
+        TokenKind::Tilde => "~",
+        TokenKind::Bang => "!",
+        TokenKind::Question => "?",
         _ => return None,
     })
 }
