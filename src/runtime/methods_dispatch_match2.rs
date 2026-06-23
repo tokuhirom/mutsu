@@ -93,29 +93,12 @@ impl Interpreter {
                 }
                 None
             }
-            "Mix" | "MixHash" if args.is_empty() => {
-                let result = match self.dispatch_to_mix_with_what(target, method) {
-                    Ok(r) => r,
-                    Err(e) => return Some(Err(e)),
-                };
-                if method == "MixHash" {
-                    // Ensure mutable flag is set for MixHash
-                    let result = if let Value::Mix(items, _) = result {
-                        Value::Mix(items, true)
-                    } else {
-                        result
-                    };
-                    let result = self.tag_container_metadata(
-                        result,
-                        ContainerTypeInfo {
-                            value_type: "Real".to_string(),
-                            key_type: None,
-                            declared_type: Some("MixHash".to_string()),
-                        },
-                    );
-                    return Some(Ok(result));
-                }
-                Some(Ok(result))
+            "Mix" if args.is_empty() => Some(self.dispatch_to_mix_with_what(target, method)),
+            "MixHash" if args.is_empty() => {
+                // `.MixHash` is `.Mix` plus the mutable flag and embedded `MixHash`
+                // type metadata; the metadata lives in the `Value::Mix` Arc, so the
+                // whole coercion is a pure value op shared with the VM native path.
+                Some(crate::builtins::quanthash_coerce::to_mixhash(target))
             }
             "Setty" | "Baggy" | "Mixy" if args.is_empty() => {
                 self.dispatch_setty_baggy_mixy(&target, method)
