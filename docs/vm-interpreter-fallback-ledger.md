@@ -480,6 +480,21 @@
   recursive・非空 rmdir Failure・chmod mode・raku/mutsu 双方 PASS)。S16-io/S32-io/spurt/dir whitelist 全緑。（`.unlink` of missing
   は mutsu=False/raku=True の別 pre-existing 差〔移動前 interpreter も `Err(NotFound)=>Bool(false)`〕で本スライス対象外＝pin 非対象。）
   **残る IO native = `comb`（&mut）と `open`（`io_handles` 確保）＝③ の `io_handles` 所有 capstone。**
+- **2026-06-23 (§D ③ capstone = `IO::Path.open` を VM ネイティブ化＝VM が `io_handles` を直接確保)**: ③（state 所有）の
+  **象徴的マイルストーン**。`open` は IO::Path FS メソッドの中で唯一 **`io_handles` テーブルを変異**する（`open_file_handle`→
+  `insert_handle_state` で handle id 確保＝`&mut self`）。台帳が当初「native-method（IO 系）は ③ がブロック」としていた根拠が
+  まさにこれ＝`io_handles` が interpreter 所有 state だから、だった。だが #2760-2772 以降 `io_handles` は **`Arc<RwLock>` 共有
+  フィールドで VM が所有**＝unified struct の `self` から `open_file_handle` を直接呼べる。新 `&mut self` ゲート `try_io_path_open`
+  を抽出（`resolve_io_path_buf`(&self)/`parse_io_flags_values`(&self) は owned 値を返すので後続 `&mut self` `open_file_handle` と
+  借用衝突なし）し、`native_io_path` は fs_mutate 委譲の直後で委譲＝**1 操作 = 1 実装**（open arm を match から削除）。VM の
+  **非mut/mut 両 dispatch 関数はどちらも `&mut self`** なので（`try_compiled_method_or_interpret_inner`/
+  `try_compiled_method_mut_or_interpret`）、`"x".IO.open`（非mut）も `$p.open`（mut）も native 化。`:r`/`:w`/`:a`/`:rw`/`:bin`/
+  `:enc`/`:create`/`:exclusive` 全 flag と Failure-on-error 整形を保持＝behavior-invariant（同一 `open_file_handle`）。実測:
+  `$p.open` の fallback → 0。**∴ open→read/write→close の全ライフサイクルが catch-all バウンス無しで VM ネイティブに走る**
+  （handle メソッド get/lines/print/say/close/tell/eof/seek/flush 等は既に native）。pin `t/native-io-path-open.t`(20, literal +
+  変数受け手〔mut path〕× :r/:w/:a/:exclusive/:bin・missing/directory Failure・opened state・raku/mutsu 双方 PASS)。S16-io/S32-io/
+  open whitelist 全緑（io-handle.t `.say` 既存 fail は main でも fail＝非whitelist・本変更と無関係）。**残る IO native = `comb`
+  （regex/closure dispatch が `&mut self`）と 2-path op（copy/rename/move/symlink/link）のみ＝③ の IO native はほぼ完遂。**
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`

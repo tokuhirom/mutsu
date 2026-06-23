@@ -246,6 +246,15 @@ impl Interpreter {
             {
                 return result;
             }
+            // Interpreter-native `open`: allocate an `io_handles` entry and return
+            // the `IO::Handle`. The VM owns `io_handles`, so this is a native
+            // dispatch (ledger §D ③). Single impl shared with `native_io_path`.
+            if Self::is_io_path_lexical_class(&class)
+                && let Value::Instance { attributes, .. } = &target
+                && let Some(result) = self.try_io_path_open(&attributes.as_map(), method, &args)
+            {
+                return result;
+            }
             // A user-defined subclass of a builtin type may override an inherited
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the
@@ -1803,6 +1812,15 @@ impl Interpreter {
                 && let Value::Instance { attributes, .. } = &target
                 && let Some(result) =
                     self.try_io_path_fs_mutate(&attributes.as_map(), &class, method, &args)
+            {
+                return result;
+            }
+            // Interpreter-native `open`: allocate an `io_handles` entry and return
+            // the `IO::Handle`. The VM owns `io_handles`, so this is a native
+            // dispatch (ledger §D ③). Single impl shared with `native_io_path`.
+            if Self::is_io_path_lexical_class(&class)
+                && let Value::Instance { attributes, .. } = &target
+                && let Some(result) = self.try_io_path_open(&attributes.as_map(), method, &args)
             {
                 return result;
             }
