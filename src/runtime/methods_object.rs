@@ -48,9 +48,19 @@ impl Interpreter {
     /// data: assign (sigil-coerced) named args to attributes and evaluate
     /// attribute defaults.
     pub(crate) fn is_native_default_constructible(&self, cn_resolved: &str) -> bool {
-        if cn_resolved.contains('[') || cn_resolved.contains("::") {
+        // A parametric type name (`Hash[Int,Str]`, `array[int]`) needs the
+        // interpreter's parametric construction machinery — keep it out.
+        if cn_resolved.contains('[') {
             return false;
         }
+        // A `::`-namespaced name is allowed: built-in exception types
+        // (`X::AdHoc`, `X::TypeCheck::Binding`) and user `A::B` classes are pure
+        // attribute-bag data assembly just like a non-namespaced class, so they
+        // pass through the same eligibility checks below. (§D state-ownership: the
+        // VM constructs them natively instead of bouncing to `dispatch_new`.) The
+        // exception-`message` materialization that the interpreter applies after
+        // `dispatch_new` is reproduced at the native call sites via
+        // `materialize_exception_message_in_result`, so behavior stays identical.
         if !self.registry().classes.contains_key(cn_resolved) {
             return false;
         }
@@ -81,7 +91,18 @@ impl Interpreter {
         // `apply_attribute_does_role_mixins` helper (same approximation as the
         // full constructor), as a post-assembly phase.
         let mut has_attribute = false;
+        // A built-in exception type (`X::AdHoc`, `X::TypeCheck::Binding`, ...) is
+        // registered with NO declared attributes — its named constructor args
+        // (`payload`, `got`, `expected`, ...) are stored as a generic attribute
+        // bag via `is_attribute_buildable`'s undeclared-name `true` fallback, which
+        // `build_native_default_instance` already honours identically to the
+        // interpreter. So such a class is native-constructible even though
+        // `has_attribute` stays false; track that here.
+        let mut is_exception = false;
         for cls in self.mro_readonly(cn_resolved) {
+            if cls == "Exception" {
+                is_exception = true;
+            }
             if cls == "Any" || cls == "Mu" || cls == "Cool" {
                 continue;
             }
@@ -196,7 +217,7 @@ impl Interpreter {
             }
             has_attribute |= !class_def.attributes.is_empty();
         }
-        has_attribute
+        has_attribute || is_exception
     }
 
     /// A type constraint the native default constructor can enforce with a plain
@@ -1674,7 +1695,7 @@ impl Interpreter {
     /// as a method and have no `message` attribute, so built-in and
     /// attribute-message exceptions are unaffected. Errors in the message method
     /// are swallowed (the exception is still returned un-materialized).
-    pub(super) fn materialize_exception_message_in_result(
+    pub(crate) fn materialize_exception_message_in_result(
         &mut self,
         result: Result<Value, RuntimeError>,
     ) -> Result<Value, RuntimeError> {
