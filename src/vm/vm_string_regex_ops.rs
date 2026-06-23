@@ -2144,10 +2144,9 @@ impl Interpreter {
                     Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
                         results,
                     )))
-                } else if results.is_empty() {
-                    Value::Seq(std::sync::Arc::new(Vec::new()))
                 } else {
-                    Value::array(results)
+                    // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
+                    Value::Seq(std::sync::Arc::new(results))
                 }
             }
             "Z" => {
@@ -2206,7 +2205,8 @@ impl Interpreter {
                         results,
                     )))
                 } else {
-                    Value::array(results)
+                    // `Z` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
+                    Value::Seq(std::sync::Arc::new(results))
                 }
             }
             "!" => {
@@ -2301,10 +2301,9 @@ impl Interpreter {
                     Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
                         results,
                     )))
-                } else if results.is_empty() {
-                    Value::Seq(std::sync::Arc::new(Vec::new()))
                 } else {
-                    Value::array(results)
+                    // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
+                    Value::Seq(std::sync::Arc::new(results))
                 }
             }
             "Z" => {
@@ -2326,7 +2325,8 @@ impl Interpreter {
                         results,
                     )))
                 } else {
-                    Value::array(results)
+                    // `Z` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
+                    Value::Seq(std::sync::Arc::new(results))
                 }
             }
             _ => {
