@@ -128,14 +128,26 @@ impl Interpreter {
             && let Value::Package(class_name) = &target
             && let Some(result) = loan_env!(self, try_native_default_construct(*class_name, &args))
         {
+            // An exception type with a user-defined `message` method needs that
+            // method run once at construction and cached into the `message`
+            // attribute, exactly as the interpreter's `dispatch_new` caller does
+            // (`materialize_exception_message_in_result`). For built-in exceptions
+            // and non-exceptions this is a no-op (no user `message` method).
+            let cn = class_name.resolve();
+            let result = self.materialize_exception_message_in_result(result);
             // Native construction of an attribute-only class is pure data assembly
             // (named args + defaults; writes nothing to the caller env, Slice 6.3).
             // BUT if the class has a `submethod BUILD`/`TWEAK`, the native path runs
             // that phase, whose body can mutate a captured-outer caller lexical
             // (`my $n; submethod TWEAK { $n++ }`) — so that construction is NOT
             // env-pure: leave the dispatch impure so the call site reconciles the
-            // caller's slot (Slice F, `reconcile_locals_from_env_at_site`).
-            self.method_dispatch_pure = !self.mro_has_build_or_tweak(&class_name.resolve());
+            // caller's slot (Slice F, `reconcile_locals_from_env_at_site`). A
+            // user `message` method materialized above can likewise run user code,
+            // so treat that as impure too.
+            let runs_message =
+                (cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::"))
+                    && self.has_user_method(&cn, "message");
+            self.method_dispatch_pure = !self.mro_has_build_or_tweak(&cn) && !runs_message;
             return result;
         }
         // Native built-in construction: `Buf`/`Blob` (byte overlay), `utf8`/

@@ -533,6 +533,20 @@
   **clean な pure-value native-method ドレインも枯渇**（残カテゴリ＝③ 組込型 ctor〔Buf.new 等〕/ MOP carrier〔WHAT/name/can〕/
   landmine〔Instance.Str/.Stringy/.raku/.gist〕/ block-exec slow path〔map/grep〕/ concurrency〔Supply/tap〕/ typed-array mutator・
   いずれも別軸 or 構造的ブロッカー前提）。次の §D は ③ 組込型 ctor か tree-walk dispatch chain 削除の substrate（要設計・大）。
+- **2026-06-23 (§D ③ = `::`-namespaced クラス／組込例外型の `.new` を VM ネイティブ化)**: ③ 組込型 ctor フォークの初スライス。
+  `is_native_default_constructible` の `cn_resolved.contains("::")` ガードが **全ての `::` namespaced クラス**（ユーザ `A::B`／
+  組込例外型 `X::AdHoc`・`X::TypeCheck::Binding` …）を native 構築から除外していた＝唯一のブロッカー。`[`（parametric）ガードは維持し
+  `::` ガードを削除。さらに組込例外型は registry に `attributes: Vec::new()`（宣言属性ゼロ・named args は `is_attribute_buildable` の
+  未宣言名 `true` フォールバックで attribute-bag 化）で登録されるため `has_attribute` が false → 末尾返却で除外されていた。MRO に
+  `Exception` を含むなら native 可（`build_native_default_instance` は同じ `is_attribute_buildable` で named args を格納＝interpreter と
+  byte-identical）として `has_attribute || is_exception` に変更。**VM call site（vm_call_method_compiled.rs:127）に
+  `materialize_exception_message_in_result` を追加**＝interpreter slow path（methods.rs:3369 が `dispatch_new` 後に呼ぶ）と等価に、
+  user `message` メソッドを構築時に1回走らせ `message` 属性へキャッシュ（built-in 例外・非例外は no-op）。user `message` を走らせる場合は
+  `method_dispatch_pure=false`（caller slot reconcile 保全）。`materialize_…` の可視性を `pub(super)`→`pub(crate)`。実測: `X::AdHoc.new`/
+  `X::TypeCheck::Binding.new`/`A::B.new`/`P::Q::R.new` の `new` fallback → 0。stash 比較で native==interpreter 出力完全一致を確認
+  （`message`/no-arg の raku 差異は変更前から存在する F-track `.message` 未実装ギャップで本変更と無関係）。pin
+  `t/native-namespaced-and-exception-ctor.t`(16)。make test 10971・S04/S12/S32 construction whitelist 全緑。**残 ③ ctor 候補＝
+  Promise 等並行型・misc 組込型（is_attribute_buildable で attribute-bag 化できない special 構築のもの）。**
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`
