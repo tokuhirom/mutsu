@@ -1141,8 +1141,10 @@ impl Interpreter {
             if let Some(n) = limit {
                 lines.truncate(n);
             }
-            let values = lines.into_iter().map(Value::str).collect();
-            return Ok(Value::array(values));
+            let values: Vec<Value> = lines.into_iter().map(Value::str).collect();
+            // `lines` returns a Seq (so `.^name` is Seq), matching Rakudo and
+            // the `Str.lines` method form.
+            return Ok(Value::Seq(std::sync::Arc::new(values)));
         }
 
         let handle = args
