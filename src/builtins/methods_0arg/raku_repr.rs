@@ -776,6 +776,15 @@ pub fn raku_value(v: &Value) -> String {
         // An ObjAt / ValueObjAt (from `.WHICH`) renders its `.raku` as the
         // constructor form `ValueObjAt.new("Int|42")`; only `.gist` / `.Str`
         // show the bare WHICH string (`Int|42`, via `to_string_value`).
+        // A Match object embedded in a collection renders via its full
+        // `Match.new(...)` form, the same as a direct `$/.raku`. Without this,
+        // `$/.list.raku` / `$/.caps.raku` / an array holding a Match stringified
+        // the Match to its matched text instead.
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Match" => super::match_helpers::match_raku_repr(&attributes.as_map()),
         Value::Instance {
             class_name,
             attributes,
