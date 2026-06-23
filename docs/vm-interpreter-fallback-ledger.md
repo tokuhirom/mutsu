@@ -565,6 +565,20 @@
   buffer/replay しない・construction とは無関係）。** **残 ③ ctor 候補＝QuantHash 族（Bag/Set/Mix/SetHash・element 計数＝`&mut self` type
   check 要・static 不可）・Capture・Proxy（FETCH/STORE closure）・misc。** **★perf 注意=`SharedPromise::new()` 等の `pub(crate)` ctor を
   VM static path から直接呼ぶ＝interpreter 委譲より 1 ホップ短い。**
+- **2026-06-24 (§D ③ = QuantHash 族（`Set`/`SetHash`/`Bag`/`BagHash`/`Mix`/`MixHash`）の `.new` を VM ネイティブ化)**: ③ ctor フォークの
+  4 スライス目。前 3 つと違い QuantHash 構築は **`&mut self`**（element 計数＋parameterized 型 check `type_matches_value`＋container metadata
+  `tag_container_metadata`）で static `try_native_builtin_construct` には載らない＝**dispatch_new の 3 arm（414 行）を新モジュール
+  `methods_quanthash_ctor.rs` の `&mut self` helper `try_native_quanthash_construct` に丸ごと抽出**（IO::Path family と同パターン・「1 操作 =
+  1 実装」）。dispatch_new の 3 arm は helper への delegation（`return self.try_native_quanthash_construct(*class_name, base_class_name,
+  &type_args, args)`）に置換＝**byte-identical な丸ごと移動でコピー無し**（前 3 スライスの「コメント残置二重実装」と異なり真の単一 impl）。VM
+  call site は新 wrapper `try_native_quanthash_construct_for_package(&[Value])`（parametric 名 strip → `is_quanthash_ctor_type` gate → match
+  時のみ args clone）を非mut/mut 両 path に追加（`Set[Int].new` の parametric も `parse_parametric_type_name` で base 解決）。env-pure
+  （値構築＋container metadata tag のみ）＝`method_dispatch_pure=true`。可視性: `strip_named_pair_args` を `pub(super)` に拡大（他の
+  `value_to_list`/`is_lazy_*`/`type_matches_value`/`tag_container_metadata`/`parse_parametric_type_name` は既に pub(super)/pub(crate)）。
+  実測 6 種とも `new` fallback → 0、parametric（`Bag[Int]`/`Set[Int]`）・type-check 失敗（`X::TypeCheck::Binding`）も raku 一致。pin
+  `t/native-quanthash-ctor.t`(18)。make test 11018・setbagmix/baggy/mix whitelist 全緑。**★残 ③ ctor 候補＝`Capture.new`（mutsu 未実装＝
+  別途実装要）・`Proxy`（FETCH/STORE closure）・`Match`/`FakeScheduler` 等の low-traffic static 候補・`Array`/`Hash`（shaped/container
+  metadata でより複雑）。clean な大物 QuantHash を消化したので、残りは小粒 or 未実装機能。**
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`
