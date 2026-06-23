@@ -178,12 +178,16 @@ files occasionally).
 **Builtin / type / coercion (low conflict):**
 
 - **S02-types/generics.t** — **Medium**. Nominalizable generic type.
-- **S02-types/bag.t** — 254/255. Test 215 (BigInt bag weights) FIXED: `BagData.counts`
-  is now `HashMap<String,BigInt>` (baghash.t whitelisted 344/344 by the same change).
-  REMAINING test 252: Bag-union must preserve a `my class Foo is Bag` subclass type
-  (Bag is a `Value`, not a subclassable Instance) — orthogonal, not BigInt-related.
-- **S32-list/skip.t** — **Medium**. Plan mismatch (planned 55, ran 206 — loops more
-  than planned; subtest counting/laziness off); 29 fail.
+- **S02-types/bag.t** — 254/255 → **§F Unpassable as written**. Test 215 (BigInt
+  bag weights) FIXED: `BagData.counts` is now `HashMap<String,BigInt>` (baghash.t
+  whitelisted 344/344 by the same change). The ONLY remaining failure, test 252
+  (`my class Foo is Bag {}; isa-ok Foo.new("a") (+) Foo.new("b"), Foo`), **also
+  fails on reference rakudo** — `(+)` returns a plain `Bag`, not the `Foo`
+  subclass, so `.isa(Foo)` is False in both rakudo and mutsu (tracks the still-open
+  rakudo issue #5190). mutsu matches rakudo; the file cannot be whitelisted until
+  rakudo fixes #5190. Do NOT chase "Bag-union subclass preservation".
+- **S32-list/skip.t** — **DONE / whitelisted** (now passes 55/55; the earlier
+  plan-mismatch / subtest-counting issue is resolved).
 - **S03-operators/inplace.t** — **Medium**, 6/38 (from test 318 "constants"): `.=`
   in-place metaop on class instantiation / readonly constants.
 - **S12-introspection/walk.t** — **Hard but self-contained MOP**. Needs `.WALK` +

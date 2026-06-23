@@ -232,9 +232,12 @@ pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result
             )
         {
             // Raku reports `.directive` as everything after the `%` (flags,
-            // width, vector flag, conversion char) and `.sequence` as `%` + that.
+            // width, vector flag, conversion char) and `.sequence` as the FULL
+            // original format string (not just the offending `%directive`), so
+            // an embedded bad directive such as `a%vdb` reports the whole
+            // `a%vdb`, matching the `... in sprintf format '<fmt>'` message.
             let directive = &fmt[directive_start..pos];
-            let sequence = format!("%{}", directive);
+            let sequence = fmt.to_string();
             let message = format!(
                 "Directive {} is not valid in sprintf format '{}'",
                 directive, sequence
