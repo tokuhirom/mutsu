@@ -36,6 +36,13 @@ impl Interpreter {
     }
 
     pub(crate) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
+        // A first-class element container on the LHS (`ContainerRef`, e.g. a
+        // `.grep(...).head` rw alias / `:=`-bound slot) is transparent to
+        // smartmatch — test the contained value (Raku container semantics).
+        if let Value::ContainerRef(cell) = left {
+            let inner = cell.lock().unwrap().clone();
+            return self.smart_match(&inner, right);
+        }
         match (left, right) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
             (_, Value::Whatever) => true,

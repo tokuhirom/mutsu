@@ -5,7 +5,7 @@ use Test;
 # the source. Every *read* path over such a result — and over any `:=`-bound
 # element cell — must decontainerize the cell before operating on it.
 
-plan 17;
+plan 19;
 
 # .sort over a grep result orders the inner values, not the cells.
 {
@@ -72,4 +72,13 @@ plan 17;
     # `.map(*.Str)` exercises method dispatch on each cell.
     is-deeply @objs.grep({ .n > 1 }).map(*.Str), ('P<2>', 'P<3>'),
         '.map(method) over grep Instance cells';
+    # A cell extracted via `.head` and method-dispatched (CallMethod invocant).
+    is @objs.grep({ .n > 1 }).head.n, 2, 'method call on a `.head`-extracted grep cell';
+}
+
+# Smartmatch over a `.head`-extracted grep cell decontainerizes the LHS
+# (e.g. `42.2.^roles.grep(Rational).head ~~ Rational`).
+{
+    my @nums = 1, 2.5, 3, 4.5;
+    ok @nums.grep(* > 2).head ~~ Rat, 'smartmatch over a grep cell tests the inner value';
 }
