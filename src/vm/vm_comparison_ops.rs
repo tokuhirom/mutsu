@@ -1448,15 +1448,23 @@ impl Interpreter {
     }
 
     fn divisible_by_values(&self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        Ok(Value::Bool(self.is_divisible(left, right)?))
+    }
+
+    /// `$a %% $b` is `$a % $b == 0`. Compute the modulo with the exact-rational
+    /// semantics of `arith_mod` (so Rat/Num/BigInt operands work, not just Int),
+    /// then test the remainder for zero. A zero divisor reports the dividend and
+    /// `infix:<%%>`, matching Rakudo.
+    fn is_divisible(&self, left: Value, right: Value) -> Result<bool, RuntimeError> {
         let (l, r) = runtime::coerce_numeric(left.clone(), right);
-        match (l, r) {
-            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::numeric_divide_by_zero_full(
+        if !r.truthy() {
+            return Err(RuntimeError::numeric_divide_by_zero_full(
                 Some(left),
                 Some("infix:<%%>"),
-            )),
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a % b == 0)),
-            _ => Ok(Value::Bool(false)),
+            ));
         }
+        let remainder = crate::builtins::arith_mod(l, r)?;
+        Ok(!remainder.truthy())
     }
 
     pub(super) fn exec_not_divisible_by_op(&mut self) -> Result<(), RuntimeError> {
@@ -1476,14 +1484,6 @@ impl Interpreter {
     }
 
     fn not_divisible_by_values(&self, left: Value, right: Value) -> Result<Value, RuntimeError> {
-        let (l, r) = runtime::coerce_numeric(left.clone(), right);
-        match (l, r) {
-            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::numeric_divide_by_zero_full(
-                Some(left),
-                Some("infix:<%%>"),
-            )),
-            (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a % b != 0)),
-            _ => Ok(Value::Bool(true)),
-        }
+        Ok(Value::Bool(!self.is_divisible(left, right)?))
     }
 }
