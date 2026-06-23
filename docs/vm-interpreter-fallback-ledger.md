@@ -437,6 +437,21 @@
   双方 PASS)。set.t 248/248・mix.t 244/244・categorize 28/28・hash.t 緑。（bag.t 252 "Foo instance union"・classify.t 40
   "junction classify" は BLOCKERS.md 記載の pre-existing〔いずれも非whitelist〕で本変更と無関係。`(a=>1).Map` の odd-number
   は Pair 受け手〔元から native gate 内〕の別 pre-existing バグで本スライス対象外。）
+- **2026-06-23 (§D = `IO::Path` の FS `stat`-only file test / accessor を VM ネイティブ化)**: coercion ドレイン枯渇後、③ IO
+  native メソッド**本丸**への最初の一歩。IO::Path lexical/cwd スライスが `None` で interpreter 維持していた **FS 接触メソッドの
+  うち `stat` 読みだけで完結する群**＝`e`/`f`/`d`/`l`/`r`/`w`/`x`/`rw`/`rwx`/`z` の file test と `mode`/`s`/`created`/`modified`/
+  `accessed`/`changed` の stat accessor を native 化（広がり計測で `e`=15/`d`=11 file 等・temp-file ヘルパー経由で分散）。これらは
+  **`io_handles` を一切確保せず content 読みも emit もしない**＝path を VM 所有 cwd（`resolve_path`/`apply_chroot`/`get_cwd_path`・
+  純 lexical）に対して解決した後 `fs::metadata`/`exists` を呼ぶだけ。新 `&self` メソッド `try_io_path_fs_stat`（path_buf 解決）＋
+  static `io_path_stat_result`（path_buf+p から全 16 arm の stat + Failure 整形）へ抽出し、`native_io_path` は `try_io_path_cwd_method`
+  の直後で委譲＝**1 操作 = 1 実装**（16 arm を match から削除）。VM は IO::Path lexical/cwd dispatch の隣（`is_native_method`
+  バウンス直前・非mut/mut 両 path）で呼ぶ。`slurp`/`lines`/`words`/`comb`（content 読み・encoding flag）/ `open`/`spurt`（`io_handles`
+  確保・FS write）は `None` で `native_io_path` 維持＝次スライス候補。新しい Bool/Int/Str/Failure を返し受け手非変異＝writeback 不要・
+  behavior-invariant（同一 stat ロジック）。実測: `$p.{e,f,d,s,modified,…}` の fallback → 0。pin `t/native-io-path-fs-stat.t`(30,
+  literal + 変数受け手〔mut path〕× 全 file test/accessor・missing-path Failure・raku/mutsu 双方 PASS。`.modified`/`.accessed`/
+  `.changed` は mutsu=Int / raku=Instant の別 pre-existing 型差を避け `> 0`/`.defined` で検証)。S16-io/S32-io/slurp/spurt whitelist
+  全緑（io-path.t の `.SPEC`/`.CWD` 既存 fail は非whitelist・不変）。**残る IO native = content 読み（slurp/lines）と handle 確保
+  （open/spurt）＝③ の `io_handles` 所有を直接触る本丸。**
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`

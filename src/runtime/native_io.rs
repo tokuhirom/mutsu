@@ -593,6 +593,195 @@ impl Interpreter {
         })
     }
 
+    /// Filesystem `stat`-only predicates / accessors on an `IO::Path`
+    /// (`e`/`f`/`d`/`l`/`r`/`w`/`x`/`rw`/`rwx`/`z` file tests and the
+    /// `mode`/`s`/`created`/`modified`/`accessed`/`changed` stat readers). They
+    /// resolve the receiver's path against the cwd (`&self`, VM-owned env) and
+    /// then read the filesystem via `stat` only — no `io_handles` allocation, no
+    /// `emit_output`, no encoding/content read. So the VM can dispatch them
+    /// natively (ledger §D): the single shared impl that `native_io_path`
+    /// delegates to. Returns `None` for any other method (content reads
+    /// `slurp`/`lines`/handle-opening `open`/`spurt`, which need flags/encoding/
+    /// `io_handles` and stay in `native_io_path`).
+    pub(crate) fn try_io_path_fs_stat(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(
+            method,
+            "e" | "f"
+                | "d"
+                | "l"
+                | "r"
+                | "w"
+                | "x"
+                | "rw"
+                | "rwx"
+                | "z"
+                | "mode"
+                | "s"
+                | "created"
+                | "modified"
+                | "accessed"
+                | "changed"
+        ) {
+            return None;
+        }
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
+        let path_buf = if Path::new(&p).is_absolute() {
+            self.resolve_path(&p)
+        } else if let Some(cwd) = &instance_cwd {
+            self.apply_chroot(PathBuf::from(cwd).join(Path::new(&p)))
+        } else {
+            self.resolve_path(&p)
+        };
+        Some(Self::io_path_stat_result(&path_buf, &p, method))
+    }
+
+    /// Pure `stat`-based result for the [`try_io_path_fs_stat`] methods given an
+    /// already-resolved `path_buf` (and the original `p` for error/Failure
+    /// messages). Factored out so both the VM-native path and `native_io_path`
+    /// run the exact same filesystem queries and Failure shaping.
+    fn io_path_stat_result(path_buf: &Path, p: &str, method: &str) -> Result<Value, RuntimeError> {
+        match method {
+            "e" => Ok(Value::Bool(path_buf.exists())),
+            "f" => match fs::metadata(path_buf) {
+                Ok(meta) => Ok(Value::Bool(meta.is_file())),
+                Err(_) => Ok(io_path_missing_failure(p, method)),
+            },
+            "d" => match fs::metadata(path_buf) {
+                Ok(meta) => Ok(Value::Bool(meta.is_dir())),
+                Err(_) => Ok(io_path_missing_failure(p, method)),
+            },
+            "l" => match fs::symlink_metadata(path_buf) {
+                Ok(meta) => Ok(Value::Bool(meta.file_type().is_symlink())),
+                Err(_) => Ok(io_path_missing_failure(p, method)),
+            },
+            "r" => match fs::metadata(path_buf) {
+                Ok(_) => Ok(Value::Bool(path_is_readable(path_buf))),
+                Err(_) => Ok(io_path_missing_failure(p, method)),
+            },
+            "w" => match fs::metadata(path_buf) {
+                Ok(_) => Ok(Value::Bool(path_is_writable(path_buf))),
+                Err(_) => Ok(io_path_missing_failure(p, method)),
+            },
+            "x" => match fs::metadata(path_buf) {
+                Ok(_) => Ok(Value::Bool(path_is_executable(path_buf))),
+                Err(_) => Ok(io_path_missing_failure(p, method)),
+            },
+            "rw" => match fs::metadata(path_buf) {
+                Ok(_) => Ok(Value::Bool(
+                    path_is_readable(path_buf) && path_is_writable(path_buf),
+                )),
+                Err(_) => Ok(io_path_missing_failure(p, method)),
+            },
+            "rwx" => match fs::metadata(path_buf) {
+                Ok(_) => Ok(Value::Bool(
+                    path_is_readable(path_buf)
+                        && path_is_writable(path_buf)
+                        && path_is_executable(path_buf),
+                )),
+                Err(_) => Ok(io_path_missing_failure(p, method)),
+            },
+            "z" => match fs::metadata(path_buf) {
+                Ok(meta) => Ok(Value::Bool(meta.len() == 0)),
+                Err(_) => {
+                    let message = format!("Failed to find '{}' while trying to do '.z'", p);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(message));
+                    attrs.insert("path".to_string(), Value::str(p.to_string()));
+                    attrs.insert("trying".to_string(), Value::str_from("z"));
+                    let ex = Value::make_instance(Symbol::intern("X::IO::DoesNotExist"), attrs);
+                    let mut failure_attrs = HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ))
+                }
+            },
+            "mode" => {
+                let metadata = fs::metadata(path_buf)
+                    .map_err(|err| RuntimeError::new(format!("Failed to stat '{}': {}", p, err)))?;
+                #[cfg(unix)]
+                {
+                    let mode = metadata.permissions().mode() & 0o777;
+                    Ok(Value::str(format!("{:04o}", mode)))
+                }
+                #[cfg(not(unix))]
+                {
+                    let mode = if metadata.permissions().readonly() {
+                        "0444"
+                    } else {
+                        "0666"
+                    };
+                    Ok(Value::str(mode.to_string()))
+                }
+            }
+            "s" => {
+                let size = io_path_metadata(path_buf, p, method)?.len();
+                Ok(Value::Int(size as i64))
+            }
+            "created" => {
+                let ts = fs::metadata(path_buf)
+                    .and_then(|meta| meta.created())
+                    .map(Self::system_time_to_int)
+                    .map_err(|err| {
+                        RuntimeError::new(format!("Failed to get created time '{}': {}", p, err))
+                    })?;
+                Ok(Value::Int(ts))
+            }
+            "modified" => {
+                let ts = fs::metadata(path_buf)
+                    .and_then(|meta| meta.modified())
+                    .map(Self::system_time_to_int)
+                    .map_err(|err| {
+                        RuntimeError::new(format!("Failed to get modified time '{}': {}", p, err))
+                    })?;
+                Ok(Value::Int(ts))
+            }
+            "accessed" => {
+                let ts = fs::metadata(path_buf)
+                    .and_then(|meta| meta.accessed())
+                    .map(Self::system_time_to_int)
+                    .map_err(|err| {
+                        RuntimeError::new(format!("Failed to get accessed time '{}': {}", p, err))
+                    })?;
+                Ok(Value::Int(ts))
+            }
+            "changed" => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    let meta = fs::metadata(path_buf).map_err(|err| {
+                        RuntimeError::new(format!("Failed to get changed time '{}': {}", p, err))
+                    })?;
+                    Ok(Value::Int(meta.ctime()))
+                }
+                #[cfg(not(unix))]
+                {
+                    // On non-Unix platforms, fall back to modified time
+                    let ts = fs::metadata(path_buf)
+                        .and_then(|meta| meta.modified())
+                        .map(Self::system_time_to_int)
+                        .map_err(|err| {
+                            RuntimeError::new(format!(
+                                "Failed to get changed time '{}': {}",
+                                p, err
+                            ))
+                        })?;
+                    Ok(Value::Int(ts))
+                }
+            }
+            _ => unreachable!("io_path_stat_result called with non-stat method"),
+        }
+    }
+
     pub(super) fn native_io_path(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -611,6 +800,12 @@ impl Interpreter {
         // no filesystem) — handled by the shared `try_io_path_cwd_method` the VM
         // also dispatches natively.
         if let Some(result) = self.try_io_path_cwd_method(attributes, method, &args) {
+            return result;
+        }
+        // Filesystem `stat`-only predicates / accessors (`e`/`f`/`d`/…/`s`/
+        // `modified`) — `stat` reads only, no `io_handles`, shared with the VM's
+        // native dispatch via `try_io_path_fs_stat`.
+        if let Some(result) = self.try_io_path_fs_stat(attributes, method) {
             return result;
         }
         // The concrete class of the receiver (`IO::Path` or a SPEC-variant
@@ -764,135 +959,9 @@ impl Interpreter {
                 new_attrs.insert("cwd".to_string(), Value::str(sep));
                 Ok(Value::make_instance(io_path_class, new_attrs))
             }
-            "e" => Ok(Value::Bool(path_buf.exists())),
-            "f" => match fs::metadata(&path_buf) {
-                Ok(meta) => Ok(Value::Bool(meta.is_file())),
-                Err(_) => Ok(io_path_missing_failure(&p, method)),
-            },
-            "d" => match fs::metadata(&path_buf) {
-                Ok(meta) => Ok(Value::Bool(meta.is_dir())),
-                Err(_) => Ok(io_path_missing_failure(&p, method)),
-            },
-            "l" => match fs::symlink_metadata(&path_buf) {
-                Ok(meta) => Ok(Value::Bool(meta.file_type().is_symlink())),
-                Err(_) => Ok(io_path_missing_failure(&p, method)),
-            },
-            "r" => match fs::metadata(&path_buf) {
-                Ok(_) => Ok(Value::Bool(path_is_readable(&path_buf))),
-                Err(_) => Ok(io_path_missing_failure(&p, method)),
-            },
-            "w" => match fs::metadata(&path_buf) {
-                Ok(_) => Ok(Value::Bool(path_is_writable(&path_buf))),
-                Err(_) => Ok(io_path_missing_failure(&p, method)),
-            },
-            "x" => match fs::metadata(&path_buf) {
-                Ok(_) => Ok(Value::Bool(path_is_executable(&path_buf))),
-                Err(_) => Ok(io_path_missing_failure(&p, method)),
-            },
-            "rw" => match fs::metadata(&path_buf) {
-                Ok(_) => Ok(Value::Bool(
-                    path_is_readable(&path_buf) && path_is_writable(&path_buf),
-                )),
-                Err(_) => Ok(io_path_missing_failure(&p, method)),
-            },
-            "rwx" => match fs::metadata(&path_buf) {
-                Ok(_) => Ok(Value::Bool(
-                    path_is_readable(&path_buf)
-                        && path_is_writable(&path_buf)
-                        && path_is_executable(&path_buf),
-                )),
-                Err(_) => Ok(io_path_missing_failure(&p, method)),
-            },
-            "mode" => {
-                let metadata = fs::metadata(&path_buf)
-                    .map_err(|err| RuntimeError::new(format!("Failed to stat '{}': {}", p, err)))?;
-                #[cfg(unix)]
-                {
-                    let mode = metadata.permissions().mode() & 0o777;
-                    Ok(Value::str(format!("{:04o}", mode)))
-                }
-                #[cfg(not(unix))]
-                {
-                    let mode = if metadata.permissions().readonly() {
-                        "0444"
-                    } else {
-                        "0666"
-                    };
-                    Ok(Value::str(mode.to_string()))
-                }
-            }
-            "s" => {
-                let size = io_path_metadata(&path_buf, &p, method)?.len();
-                Ok(Value::Int(size as i64))
-            }
-            "z" => match fs::metadata(&path_buf) {
-                Ok(meta) => Ok(Value::Bool(meta.len() == 0)),
-                Err(_) => {
-                    let message = format!("Failed to find '{}' while trying to do '.z'", p);
-                    let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(message));
-                    attrs.insert("path".to_string(), Value::str(p.to_string()));
-                    attrs.insert("trying".to_string(), Value::str_from("z"));
-                    let ex = Value::make_instance(Symbol::intern("X::IO::DoesNotExist"), attrs);
-                    let mut failure_attrs = HashMap::new();
-                    failure_attrs.insert("exception".to_string(), ex);
-                    Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    ))
-                }
-            },
-            "created" => {
-                let ts = fs::metadata(&path_buf)
-                    .and_then(|meta| meta.created())
-                    .map(Self::system_time_to_int)
-                    .map_err(|err| {
-                        RuntimeError::new(format!("Failed to get created time '{}': {}", p, err))
-                    })?;
-                Ok(Value::Int(ts))
-            }
-            "modified" => {
-                let ts = fs::metadata(&path_buf)
-                    .and_then(|meta| meta.modified())
-                    .map(Self::system_time_to_int)
-                    .map_err(|err| {
-                        RuntimeError::new(format!("Failed to get modified time '{}': {}", p, err))
-                    })?;
-                Ok(Value::Int(ts))
-            }
-            "accessed" => {
-                let ts = fs::metadata(&path_buf)
-                    .and_then(|meta| meta.accessed())
-                    .map(Self::system_time_to_int)
-                    .map_err(|err| {
-                        RuntimeError::new(format!("Failed to get accessed time '{}': {}", p, err))
-                    })?;
-                Ok(Value::Int(ts))
-            }
-            "changed" => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::MetadataExt;
-                    let meta = fs::metadata(&path_buf).map_err(|err| {
-                        RuntimeError::new(format!("Failed to get changed time '{}': {}", p, err))
-                    })?;
-                    Ok(Value::Int(meta.ctime()))
-                }
-                #[cfg(not(unix))]
-                {
-                    // On non-Unix platforms, fall back to modified time
-                    let ts = fs::metadata(&path_buf)
-                        .and_then(|meta| meta.modified())
-                        .map(Self::system_time_to_int)
-                        .map_err(|err| {
-                            RuntimeError::new(format!(
-                                "Failed to get changed time '{}': {}",
-                                p, err
-                            ))
-                        })?;
-                    Ok(Value::Int(ts))
-                }
-            }
+            // `e`/`f`/`d`/`l`/`r`/`w`/`x`/`rw`/`rwx`/`z`/`mode`/`s`/`created`/
+            // `modified`/`accessed`/`changed` (stat-only) are handled above by the
+            // shared `try_io_path_fs_stat`, which the VM also dispatches natively.
             "lines" => {
                 let content = fs::read_to_string(&path_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
