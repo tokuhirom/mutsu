@@ -336,14 +336,11 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
             }
             'f' | 'F' => {
                 let p = prec_num.unwrap_or(6);
-                // Use exact rational formatting for Rat/FatRat with high precision
-                if p > 17 {
-                    if let Some(rendered) = format_rat_fixed(arg, p, plus_sign, space_flag) {
-                        rendered
-                    } else {
-                        let f = float_val();
-                        format_float_fixed(f, p, plus_sign, space_flag)
-                    }
+                // Use exact rational formatting (round-half-away-from-zero, like
+                // Rakudo) for all numeric args; fall back to float only for
+                // non-numeric arguments.
+                if let Some(rendered) = format_rat_fixed(arg, p, plus_sign, space_flag) {
+                    rendered
                 } else {
                     let f = float_val();
                     format_float_fixed(f, p, plus_sign, space_flag)
