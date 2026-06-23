@@ -2138,7 +2138,7 @@ impl Interpreter {
         }
 
         if lists.is_empty() {
-            return Ok(Value::array(vec![]));
+            return Ok(Value::Seq(std::sync::Arc::new(vec![])));
         }
 
         // Compute Cartesian product iteratively
@@ -2155,18 +2155,20 @@ impl Interpreter {
             result = new_result;
         }
 
-        // Apply `with` function or create tuples
+        // Apply `with` function or create tuples. `cross` returns a Seq (so
+        // `.^name` is Seq, `.raku` shows `.Seq`), matching Rakudo and the `X`
+        // metaop.
         if let Some(func) = with_func {
             let mut final_result = Vec::new();
             for combo in result {
                 let val = self.call_sub_value(func.clone(), combo, false)?;
                 final_result.push(val);
             }
-            Ok(Value::array(final_result))
+            Ok(Value::Seq(std::sync::Arc::new(final_result)))
         } else {
             // Return as list of lists (tuples)
             let tuples: Vec<Value> = result.into_iter().map(Value::array).collect();
-            Ok(Value::array(tuples))
+            Ok(Value::Seq(std::sync::Arc::new(tuples)))
         }
     }
 
