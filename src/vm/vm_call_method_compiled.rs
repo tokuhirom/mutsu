@@ -518,6 +518,14 @@ impl Interpreter {
         {
             return result;
         }
+        // Native `.Map` / `.Hash` coercion over a list-like / Hash / QuantHash
+        // receiver (pure value op; the `Map` declared-type is embedded in the
+        // Hash Arc). Instance/Package fall through.
+        if args.is_empty()
+            && let Some(result) = Self::try_native_map_hash_coerce(&target, method)
+        {
+            return result;
+        }
         // Native `.iterator` construction over a plain receiver (Range/Set/Bag/
         // Mix/List/Array/...): builds the `Iterator` instance via the single
         // `builtins::iterator_construct` impl the interpreter also uses. `Seq`
@@ -1143,6 +1151,44 @@ impl Interpreter {
             _ => unreachable!(),
         };
         Some(result)
+    }
+
+    /// Interpreter-native `.Map` / `.Hash` coercion over a list-like / Hash /
+    /// QuantHash receiver, sharing the single `builtins::map_hash_coerce` impl
+    /// the interpreter also uses. `.Map` decontainerizes and embeds the `Map`
+    /// declared-type *in* the `Value::Hash` Arc (container metadata travels in
+    /// the value since #2952 — no interpreter-owned side table), so both are
+    /// pure value ops. Instance (Match / `__baggy_data__`) and Package (type
+    /// object) receivers fall through to the interpreter's richer handling.
+    /// Lowercase `.hash` is intentionally not handled here.
+    fn try_native_map_hash_coerce(
+        target: &Value,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "Map" | "Hash") {
+            return None;
+        }
+        let list_like = matches!(
+            target,
+            Value::Array(..)
+                | Value::Seq(_)
+                | Value::Slip(_)
+                | Value::Hash(_)
+                | Value::Set(..)
+                | Value::Bag(..)
+                | Value::Mix(..)
+                | Value::Pair(..)
+                | Value::ValuePair(..)
+        ) || target.is_range();
+        if !list_like {
+            return None;
+        }
+        let target = target.clone();
+        Some(match method {
+            "Map" => crate::builtins::map_hash_coerce::to_map(target),
+            "Hash" => crate::builtins::map_hash_coerce::to_hash(target, true),
+            _ => unreachable!(),
+        })
     }
 
     /// Interpreter-native `.iterator` construction, mirroring
@@ -1832,6 +1878,13 @@ impl Interpreter {
         // path's native dispatch. Instance/Package receivers fall through.
         if args.is_empty()
             && let Some(result) = Self::try_native_quanthash_coerce(&target, method)
+        {
+            return result;
+        }
+        // Native `.Map` / `.Hash` coercion for variable receivers (`%h.Map`,
+        // `@a.Hash`) — same pure value op as the non-mut path, no writeback.
+        if args.is_empty()
+            && let Some(result) = Self::try_native_map_hash_coerce(&target, method)
         {
             return result;
         }

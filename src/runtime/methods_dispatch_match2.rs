@@ -107,22 +107,14 @@ impl Interpreter {
                 if matches!(&target, Value::Package(_)) {
                     return Some(Ok(Value::Package(Symbol::intern(method))));
                 }
+                // `.Map` / `.Hash` are pure value coercions (the `Map`
+                // declared-type is embedded in the resulting `Value::Hash` Arc,
+                // not an interpreter-owned side table). Single impl shared with
+                // the VM native path.
                 if method == "Map" {
-                    let result = match self.dispatch_to_map(target) {
-                        Ok(r) => r,
-                        Err(e) => return Some(Err(e)),
-                    };
-                    if matches!(&result, Value::Hash(_)) {
-                        let info = ContainerTypeInfo {
-                            value_type: String::new(),
-                            key_type: None,
-                            declared_type: Some("Map".to_string()),
-                        };
-                        return Some(Ok(self.tag_container_metadata(result, info)));
-                    }
-                    return Some(Ok(result));
+                    return Some(crate::builtins::map_hash_coerce::to_map(target));
                 }
-                Some(self.dispatch_to_hash(target))
+                Some(crate::builtins::map_hash_coerce::to_hash(target, true))
             }
             "hash" if args.is_empty() && !matches!(&target, Value::Instance { .. }) => {
                 Some(self.dispatch_to_hash(target))

@@ -362,6 +362,17 @@
   実測: `@a.{Set,Bag,Mix,SetHash,BagHash,MixHash}` の fallback 6→0（残 `^name` は MOP）。pin
   `t/native-quanthash-coerce-mut-path.t`(19, raku/mutsu 双方 PASS)。mix.t 244/244・set.t・categorize 緑。
   （bag.t 252 / classify.t 40〔junction classify・非whitelist〕は stash 確認で main でも fail＝pre-existing・本変更と無関係。）
+- **2026-06-23 (§1 = `.Map`/`.Hash` coercion の VM ネイティブ化 + builtins 降ろし)**: QuantHash coercion と同型の続き。
+  `.Map`/`.Hash` は **pure value op**（`dispatch_to_hash_impl`/`dispatch_to_map` は完全に `&self` 非依存＝env/registry/
+  state を触らず `Self::` 静的ヘルパー + `super::utils::` のみ・`.Map` の declared-type は `Value::Hash` の `Arc<HashData>`
+  に埋め込まれ #2952 以降副テーブル不使用）。**dedup 降ろし**: `dispatch_to_hash_impl`/`dispatch_to_map`/`items_to_hash`/
+  `make_odd_number_error` を新 `src/builtins/map_hash_coerce.rs`（pure free fn `to_hash(target, check_odd)`/`to_map(target)`）
+  へ移設。interpreter の `dispatch_to_hash` は委譲、`dispatch_to_map` は撤去（`dispatch_method_by_name_2` の `Map|Hash`
+  分岐が `to_map`/`to_hash` を直接呼び `tag_container_metadata` 直書きも撤去）＝**1 操作 = 1 実装**。VM に
+  `try_native_map_hash_coerce`（非mut + mut 両 catch-all）。受け手ゲートは list-like / Hash / QuantHash のみ native、
+  Instance（Match の named captures / `__baggy_data__`）/ Package（型オブジェクト）/ lowercase `.hash` は interpreter 維持。
+  挙動不変（`to_map` は embed して identity 保持＝`Map.Map === Map`、odd-count は `X::Hash::Store::OddNumber`）。pin
+  `t/native-map-hash-coerce.t`(21, raku/mutsu 双方 PASS)。mix.t 244/244・set.t・hash.t・categorize・classify-list 緑。
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
