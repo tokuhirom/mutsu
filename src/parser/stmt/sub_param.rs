@@ -996,13 +996,23 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             || r2.starts_with(']')
             || r2.starts_with('{')
             || r2.starts_with("-->")
+            // A type-only parameter may still carry traits / a where clause:
+            // `Pointer is rw` (a NativeCall out-parameter), `Int where * > 0`.
+            || keyword("is", r2).is_some()
+            || keyword("where", r2).is_some()
         {
             // True/False in signature position are literal Bool values, not type names.
             // In Raku, `sub f(True)` means "type Bool, smartmatched against True".
             // Smartmatch against True always succeeds, so the literal check is just
             // a Bool type constraint. Smartmatch against False always fails, so
             // sub f(False) would reject all calls (equivalent to an impossible constraint).
-            if tc == "True" || tc == "False" {
+            if (tc == "True" || tc == "False")
+                && (r2.starts_with(')')
+                    || r2.starts_with(',')
+                    || r2.starts_with(']')
+                    || r2.starts_with('{')
+                    || r2.starts_with("-->"))
+            {
                 super::super::add_parse_warning(format!(
                     "Potential difficulties:\n    Literal values in signatures are smartmatched against and smartmatch with `{}` will always {}. Use the `where` clause instead.",
                     tc,
@@ -1020,7 +1030,28 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.type_constraint = Some(tc);
             p.named = named;
             p.slurpy = slurpy;
-            return Ok((r2, p));
+            // Optional traits (`is rw`, `is copy`, …) and a `where` clause on the
+            // anonymous parameter.
+            let mut param_traits = Vec::new();
+            let (mut r3, _) = ws(r2)?;
+            while let Some(r) = keyword("is", r3) {
+                let (r, _) = ws1(r)?;
+                let (r, trait_name) = ident(r)?;
+                validate_param_trait(&trait_name, &param_traits, r)?;
+                param_traits.push(trait_name);
+                let (r, _) = ws(r)?;
+                r3 = r;
+            }
+            p.traits = param_traits;
+            let (r3, where_constraint) = if let Some(r) = keyword("where", r3) {
+                let (r, _) = ws1(r)?;
+                let (r, constraint) = parse_where_constraint_expr(r)?;
+                (r, Some(Box::new(constraint)))
+            } else {
+                (r3, None)
+            };
+            p.where_constraint = where_constraint;
+            return Ok((r3, p));
         } else {
             // Check for multiple prefix type constraints (e.g. `Int Str $x`)
             if let Some((r3, _second_tc)) = parse_type_constraint_expr(r2) {
