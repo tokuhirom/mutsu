@@ -915,19 +915,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         }
                     }
                 }
-                let has_float = items
+                // Fold with `+` so the result type promotes like Raku's reduction
+                // (Int+Rat -> Rat, allomorphs unwrap to their numeric value, etc.).
+                let result = items
                     .iter()
-                    .any(|v| matches!(v, Value::Num(_) | Value::Rat(_, _) | Value::Str(_)));
-                if has_float {
-                    let total: f64 = items
-                        .iter()
-                        .map(|v| runtime::to_float_value(v).unwrap_or(0.0))
-                        .sum();
-                    Some(Ok(Value::Num(total)))
-                } else {
-                    let total: i64 = items.iter().map(runtime::to_int).sum();
-                    Some(Ok(Value::Int(total)))
-                }
+                    .cloned()
+                    .try_fold(Value::Int(0), crate::builtins::arith_add);
+                Some(result)
             }
             // Integer ranges: use Gauss formula for O(1) sum
             Value::Range(a, b) => {
