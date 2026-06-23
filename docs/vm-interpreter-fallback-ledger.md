@@ -506,6 +506,19 @@
   5 op・copy-onto-self/createonly Failure・symlink resolve・hard link・raku/mutsu 双方 PASS。stale ファイル混入を防ぐため毎回 dir を
   クリーンに再生成)。S16-io/S32-io/copy/rename whitelist 全緑。**∴ IO::Path FS メソッド族（stat/content-read/fs-mutate/open/2-path）が
   全て VM ネイティブ化完了＝§D ③ の IO native はほぼ完遂。残るは `comb`（regex/closure dispatch が `&mut self`・別軸）のみ。**
+- **2026-06-23 (§D = `.encode`/`.decode`（Str↔Buf 変換）を VM ネイティブ化)**: IO::Path 族の次の clean な native-method ドレイン
+  （広がり `encode`=16 file）。**明示エンコーディング形**（`"x".encode("utf-16")`/`$buf.decode("ascii")`）は `dispatch_method_by_name`
+  catch-all で interpreter にバウンスしていた（0-arg `.encode` は `methods_0arg` で既に native）。これらは VM 所有の `encoding_registry`
+  を読む（`find_encoding`/`encode_with_encoding`/`decode_with_encoding`＝全 `&self`）pure な Str↔Buf 変換で `io_handles` 不要。新
+  `pub(crate)` ヘルパー `try_native_encode_decode` を **`crate::runtime`（methods_io_dispatch.rs）側に**置き（`dispatch_encode`/
+  `dispatch_decode` が `pub(super)` なので同 crate::runtime から呼ぶ・IO::Path と同パターン）、VM の非mut/mut 両 catch-all（`try_native_io_coercion`
+  の直後・最終バウンス直前）から呼ぶ＝**1 操作 = 1 実装**。**保守的ゲート**: `.encode` は plain Cool scalar（Str/Int/BigInt/Num/Rat/
+  FatRat/Complex/Bool）のみ、`.decode` は `dispatch_decode` 自身が Buf/Blob Instance にゲート（それ以外 `None`）。user Instance（custom
+  `.encode`/`.decode` は compiled method で先に解決）・Supply（独自 chunk-encode・interpreter arm が除外）・Buf 受け手の `.encode` は
+  fall through＝behavior-invariant。新しい Buf/Str を返し受け手非変異＝writeback 不要。実測: `"x".encode("utf-16")`/`$buf.decode` の
+  fallback → 0。pin `t/native-encode-decode.t`(23, literal + 変数受け手〔mut path〕× encode utf-8/utf-16/ascii/latin-1・Int/Bool/Rat
+  encode・Buf/Blob decode・round-trip・raku/mutsu 双方 PASS。utf-16 `.elems`=16-bit ユニット数の注意込み)。encoding/buf/S32-str/encode
+  whitelist 全緑。
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`

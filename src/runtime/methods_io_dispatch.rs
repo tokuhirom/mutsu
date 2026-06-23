@@ -2,6 +2,49 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Interpreter-native `.encode` (a `Cool` scalar -> `Buf`) and `.decode`
+    /// (a `Buf`/`Blob` -> `Str`) for built-in receivers, sharing the single
+    /// `dispatch_encode` / `dispatch_decode` impl the interpreter's catch-all also
+    /// uses (ledger §D). Pure transformations: they stringify/encode or decode
+    /// bytes via the VM-owned encoding registry (`&self` reads) and allocate no
+    /// `io_handles`.
+    ///
+    /// `.encode` is gated to plain `Cool` scalars (Str / numeric / Bool); `.decode`
+    /// is gated by `dispatch_decode` itself to `Buf`/`Blob` instances (it returns
+    /// `None` for anything else). User Instances (a custom `.encode`/`.decode` is
+    /// resolved earlier as a compiled method), `Supply` (its own chunk-encode), and
+    /// `Buf` receivers for `.encode` fall through to the interpreter. The 0-arg
+    /// `.encode` is already native via `methods_0arg`; this drains the
+    /// explicit-encoding form (`.encode("utf-16")`). Behavior-invariant.
+    pub(crate) fn try_native_encode_decode(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        match method {
+            "encode"
+                if matches!(
+                    target,
+                    Value::Str(_)
+                        | Value::Int(_)
+                        | Value::BigInt(_)
+                        | Value::Num(_)
+                        | Value::Rat(..)
+                        | Value::FatRat(..)
+                        | Value::Complex(..)
+                        | Value::Bool(_)
+                ) =>
+            {
+                Some(self.dispatch_encode(target, args))
+            }
+            // `dispatch_decode` is internally gated to Buf/Blob instances and
+            // returns `None` for any other receiver, so it falls through cleanly.
+            "decode" => self.dispatch_decode(target, args),
+            _ => None,
+        }
+    }
+
     pub(super) fn dispatch_say(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         let gist = self.render_gist_value(target);
         self.write_to_named_handle("$*OUT", &gist, true)?;
