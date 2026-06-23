@@ -10,7 +10,7 @@ use Test;
 
 use NativeCall;
 
-plan 11;
+plan 16;
 
 # --- the Pointer type itself (no FFI) ---
 {
@@ -51,4 +51,21 @@ sub memset(int64 $p, int32 $c, int64 $n) returns int64 is native('c') { * }
     # Re-wrap the same address and confirm round-trip parity via .Int.
     free($p.Int);
     is $p.Int, $addr, 'Pointer.Int is stable across reads';
+}
+
+# --- a `returns Pointer` function yields a real Pointer object ---
+{
+    sub malloc(int64 $size) returns Pointer is native('c') { * }
+    sub free_p(Pointer $p) is native('c') is symbol('free') { * }
+    sub memset_p(Pointer $p, int32 $c, int64 $n) returns Pointer is native('c') is symbol('memset') { * }
+
+    my $p = malloc(128);
+    is $p.^name, 'Pointer', 'malloc returns a Pointer object';
+    isa-ok $p, Pointer, 'the return value isa Pointer';
+    ok $p.Bool, 'malloc returned a non-NULL Pointer';
+    # The returned Pointer is usable as a by-value Pointer argument.
+    memset_p($p, 0, 128);
+    pass 'memset through a returned Pointer works';
+    free_p($p);
+    pass 'free of a returned Pointer works';
 }
