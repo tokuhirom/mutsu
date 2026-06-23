@@ -69,7 +69,7 @@ pub(crate) struct Compiler {
     bind_vardecl: bool,
     /// When true, Index expressions should emit IndexAutovivify instead of
     /// Index.  Set only during scalar `:=` bind VarDecl compilation so that
-    /// `my $b := %h<foo><baz>` creates a HashSlotRef.
+    /// `my $b := %h<foo><baz>` creates a HashEntryRef.
     scalar_bind_autovivify: bool,
     /// When true (alongside `scalar_bind_autovivify`), the next Index compiled is
     /// the TERMINAL element of the bind RHS (outermost subscript whose value is

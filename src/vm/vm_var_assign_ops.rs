@@ -2674,7 +2674,7 @@ impl Interpreter {
         match env.get(var_name) {
             Some(Value::Hash(hash_arc)) => {
                 let strong_count = Arc::strong_count(hash_arc);
-                // Reject if the hash Arc has more than 2 refs (e.g. HashSlotRef binding)
+                // Reject if the hash Arc has more than 2 refs (e.g. HashEntryRef binding)
                 // strong_count == 1: only env holds it (no local slot)
                 // strong_count == 2: env + locals hold it (common case in for loops)
                 // strong_count > 2: external binding exists, fall through to slow path
@@ -2698,7 +2698,7 @@ impl Interpreter {
                 let peek_key = self.stack[stack_len - 1].to_string_value();
                 if let Some(existing) = hash_arc.get(&peek_key) {
                     let is_bound = match existing {
-                        Value::HashSlotRef { .. } | Value::Scalar(..) => true,
+                        Value::HashEntryRef { .. } | Value::Scalar(..) => true,
                         // Slice 2b: a `=`-shared (or `:=`-bound) element holds a
                         // `ContainerRef` cell; reassignment needs the slow path's
                         // replace-vs-write-through guard, not a blind insert.
@@ -4252,8 +4252,8 @@ impl Interpreter {
             self.update_local_if_exists(code, &original_var_name, &updated_container);
         }
         // After element assignment, Arc::make_mut may have created a new Arc
-        // (COW). Sync HashSlotRef locals that pointed to the OLD
-        // container Arc so they reference the new one. Only update refs that
+        // (COW). Sync HashEntryRef locals whose root `hash` Arc pointed to the
+        // OLD container so they reference the new one. Only update refs that
         // pointed to the same container (identified by old_container_arc_ptr),
         // not refs to unrelated nested containers.
         if let Some(old_ptr) = old_container_arc_ptr {
@@ -4271,7 +4271,7 @@ impl Interpreter {
                     if new_ptr != old_ptr {
                         for local in self.locals.iter_mut() {
                             // Only update refs that pointed to the OLD container.
-                            if let Value::HashSlotRef { hash, .. } = local
+                            if let Value::HashEntryRef { hash, .. } = local
                                 && Arc::as_ptr(hash) as usize == old_ptr
                                 && let Value::Hash(new_arc) = container
                             {
@@ -4987,7 +4987,7 @@ impl Interpreter {
         // cell at the element and writes the same cell back to the source
         // variable, so a later write to either side reaches the other. This is
         // the computed-target analogue of the named-handler cell bind (slice
-        // 3/4); the old `HashSlotRef`/`ArraySlotRef` by-reference into the env
+        // 3/4); the old `HashEntryRef`/array element back-reference by-reference into the env
         // was stale (the alias never propagated). Pre-read before any container
         // borrow. An element source (`:= @b[j]`, encoded with `\0`) is left to a
         // later slice unless it already arrived promoted to a cell.
@@ -5015,7 +5015,7 @@ impl Interpreter {
         // handled here (a multi-key `:=` bind is a separate, exotic path).
         if bind_cell.is_none() && matches!(idx, Value::Junction { .. } | Value::Array(..)) {
             let resolved = match &target {
-                Value::HashSlotRef { .. } => target.hash_slot_read(),
+                Value::HashEntryRef { .. } => target.hash_entry_read(),
                 Value::Scalar(inner) => inner.as_ref().clone(),
                 other => other.clone(),
             };
@@ -5118,9 +5118,9 @@ impl Interpreter {
                 }
                 self.stack.push(val);
             }
-            Value::HashSlotRef { .. } => {
-                // Resolve the HashSlotRef and assign into the resolved container.
-                let resolved = target.hash_slot_read();
+            Value::HashEntryRef { .. } => {
+                // Resolve the HashEntryRef and assign into the resolved container.
+                let resolved = target.hash_entry_read();
                 self.stack.push(resolved);
                 self.stack.push(idx);
                 self.stack.push(val);
@@ -5193,16 +5193,16 @@ impl Interpreter {
     }
 
     /// Phase 2 phantom-entry: materialize a missing-key `:=` bind on the first
-    /// write through the bound variable. A local holding a `HashSlotRef` (single
-    /// missing key, `$e := %m<solo>`) or a `DeferredHashAccess` (missing nested
-    /// key, `$d := %k<p><q>`) is converted into a shared `ContainerRef` cell:
-    /// the path is materialized and the cell is installed at the terminal hash
-    /// entry, and the local is replaced with the same cell. After this the bound
-    /// var and the hash entry alias bidirectionally — the old plain-value
-    /// materialization (`hash_slot_write`/`deferred_hash_write`) lost the alias
-    /// so a later cross-write was not observed (the case-C bug). Returns `true`
-    /// when it handled `idx`; the deferred token is unchanged until first write,
-    /// so `:exists` and pre-write reads keep their lazy semantics.
+    /// write through the bound variable. A local holding a `HashEntryRef` deferred
+    /// token (single missing key `$e := %m<solo>`, or a multi-key path
+    /// `$d := %k<p><q>`) is converted into a shared `ContainerRef` cell: the path
+    /// is walk-created (`hash_entry_terminal`) and the cell is installed at the
+    /// terminal hash entry, and the local is replaced with the same cell. After
+    /// this the bound var and the hash entry alias bidirectionally — the old
+    /// plain-value materialization lost the alias so a later cross-write was not
+    /// observed (the case-C bug). Returns `true` when it handled `idx`; the
+    /// deferred token is unchanged until first write, so `:exists` and pre-write
+    /// reads keep their lazy semantics.
     pub(super) fn materialize_bound_slot_to_cell(
         &mut self,
         code: &CompiledCode,
@@ -5210,37 +5210,19 @@ impl Interpreter {
         val: Value,
     ) -> bool {
         let cell = match &self.locals[idx] {
-            Value::HashSlotRef { hash, key } => {
+            token @ Value::HashEntryRef { .. } => {
+                // Walk-create the deferred path (single key for `$e := %m<solo>`,
+                // multi-key for `$d := %k<p><q>`) and install the shared cell at
+                // the terminal entry so the bound var and the hash entry alias
+                // bidirectionally afterwards.
+                let Some((arc, key)) = token.hash_entry_terminal() else {
+                    return false;
+                };
                 let cell = Arc::new(std::sync::Mutex::new(val));
                 // SAFETY: aliased in-place mutation of a shared hash; see
                 // `arc_contents_mut`. No live borrow into the map.
-                let hd = unsafe { crate::value::arc_contents_mut(hash) };
-                Value::hash_insert_through(
-                    &mut hd.map,
-                    key.clone(),
-                    Value::ContainerRef(cell.clone()),
-                );
-                cell
-            }
-            Value::DeferredHashAccess { parent_slot, key } => {
-                let key = key.clone();
-                // Materialize the intermediate level: ensure the parent slot
-                // holds a hash, creating one and writing it back if missing.
-                let parent_value = parent_slot.hash_slot_read();
-                let inner_hash = if let Value::Hash(_) = &parent_value {
-                    parent_value
-                } else {
-                    let new_hash = Value::hash(std::collections::HashMap::new());
-                    parent_slot.hash_slot_write(new_hash.clone());
-                    new_hash
-                };
-                let cell = Arc::new(std::sync::Mutex::new(val));
-                if let Value::Hash(arc) = &inner_hash {
-                    // SAFETY: aliased in-place mutation of a shared hash; see
-                    // `arc_contents_mut`. No live borrow into the map.
-                    let hd = unsafe { crate::value::arc_contents_mut(arc) };
-                    Value::hash_insert_through(&mut hd.map, key, Value::ContainerRef(cell.clone()));
-                }
+                let hd = unsafe { crate::value::arc_contents_mut(&arc) };
+                Value::hash_insert_through(&mut hd.map, key, Value::ContainerRef(cell.clone()));
                 cell
             }
             _ => return false,
@@ -5369,10 +5351,7 @@ impl Interpreter {
     fn is_non_mirrorable_attr_value(val: &Value) -> bool {
         matches!(
             val,
-            Value::ContainerRef(_)
-                | Value::Proxy { .. }
-                | Value::HashSlotRef { .. }
-                | Value::DeferredHashAccess { .. }
+            Value::ContainerRef(_) | Value::Proxy { .. } | Value::HashEntryRef { .. }
         )
     }
 
@@ -5572,7 +5551,7 @@ impl Interpreter {
         }
     }
 
-    /// Like `exec_get_local_op` but does NOT resolve DeferredHashAccess/HashSlotRef.
+    /// Like `exec_get_local_op` but does NOT resolve HashEntryRef.
     /// Pushes the raw local value, preserving container references for `=:=` checks.
     pub(super) fn exec_get_local_raw_op(&mut self, idx: u32) {
         let idx = idx as usize;
@@ -5678,9 +5657,11 @@ impl Interpreter {
             return Ok(());
         }
         let val = self.locals[idx].clone();
-        // Resolve DeferredHashAccess to its current value (Any if path doesn't exist)
-        if let Value::DeferredHashAccess { .. } = &val {
-            self.stack.push(val.deferred_hash_read());
+        // Resolve a deferred bind token to its current value (Any if the path
+        // doesn't exist). The raw local slot is unchanged, so a later write still
+        // materializes it; `=:=` reads the raw slot via GetLocalRaw.
+        if let Value::HashEntryRef { .. } = &val {
+            self.stack.push(val.hash_entry_read());
             return Ok(());
         }
         // Force lazy thunks transparently on access
@@ -6025,16 +6006,11 @@ impl Interpreter {
                 return Ok(());
             }
             // First write through a missing-key `:=` bind (a local holding a
-            // `HashSlotRef` or `DeferredHashAccess`): materialize the path into a
+            // HashEntryRef): materialize the path into a
             // shared `ContainerRef` cell so the bound var and the hash entry
             // alias bidirectionally (phantom-entry; replaces the old plain-value
             // materialization that lost the alias).
-            if !is_rebind
-                && matches!(
-                    self.locals[idx],
-                    Value::HashSlotRef { .. } | Value::DeferredHashAccess { .. }
-                )
-            {
+            if !is_rebind && matches!(self.locals[idx], Value::HashEntryRef { .. }) {
                 self.materialize_bound_slot_to_cell(code, idx, val);
                 return Ok(());
             }
@@ -6900,13 +6876,7 @@ impl Interpreter {
         // First write through a missing-key `:=` bind: materialize the path into
         // a shared `ContainerRef` cell (phantom-entry; see
         // `materialize_bound_slot_to_cell`).
-        if !is_bind
-            && !is_rebind
-            && matches!(
-                self.locals[idx],
-                Value::HashSlotRef { .. } | Value::DeferredHashAccess { .. }
-            )
-        {
+        if !is_bind && !is_rebind && matches!(self.locals[idx], Value::HashEntryRef { .. }) {
             self.materialize_bound_slot_to_cell(code, idx, val);
             return Ok(());
         }

@@ -479,8 +479,9 @@ impl Value {
                 }
             }
             Value::LazyIoLines { .. } => true,
-            Value::HashSlotRef { .. } => self.hash_slot_read().truthy(),
-            Value::DeferredHashAccess { .. } => false,
+            // An unmaterialized deferred bind token is undefined (and hence
+            // falsy) until written through — see `value_is_defined`.
+            Value::HashEntryRef { .. } => false,
         }
     }
 
@@ -610,8 +611,7 @@ impl Value {
                 "Scalar" // unforced lazy thunk
             }
             Value::LazyIoLines { .. } => "Seq",
-            Value::HashSlotRef { .. } => return self.hash_slot_read().isa_check(type_name),
-            Value::DeferredHashAccess { .. } => "Any",
+            Value::HashEntryRef { .. } => return self.hash_entry_read().isa_check(type_name),
         };
         if my_type == type_name {
             return true;

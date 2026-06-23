@@ -35,8 +35,8 @@
 > - **前提② 状態所有（state ownership）＝レジストリ／IO ハンドル／型メタを Interpreter から VM が真に所有する**
 >   （`docs/vm-interpreter-fallback-ledger.md` の ②③）
 
-∴ **優先すべきは前提①②の substrate（§C・§D）であり、それが B を前進させる。§C の grep-rw-view 撤去は
-完了（#3466）し、残るは「最終 SlotRef キル」のみ — read-deref chokepoint は grep 撤去で整備済みなので地ならし済み。**
+∴ **優先すべきは前提①②の substrate（§C・§D）であり、それが B を前進させる。§C の grep-rw-view 撤去（#3466）も
+最終 SlotRef キル（#3472・`HashEntryRef` 統合）も完了。Phase-2 要素 cell 化の残りは §C のフォローアップのみ。**
 
 ### A. 単一ストア化（locals↔env 二重ストア統合）— ✅ **完了（2026-06-23）**
 
@@ -78,18 +78,13 @@
 実装台帳＝[docs/container-identity.md](docs/container-identity.md)。Phase 0/1 完了、Phase 3（インスタンス属性 cell）も
 Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で deferred）。**残りは Phase 2 の最終キル＋coherence:**
 
-- [ ] **Phase 2 Stage 2 slice 5（最終 SlotRef キル）**: 残る `HashSlotRef`/`DeferredHashAccess` 生成サイト
-      （junction-bind / `is raw` reduce lvalue-read の autoviv）を cell 化し、variant を削除。
-      **★生成サイト（起点）**: `HashSlotRef` は `hash_autovivify`（value/mod.rs:3196・他に :3255/:3301）が autoviv lvalue-read で
-      生成。`DeferredHashAccess` は `vm_var_index_ops.rs:217` で push。読み口は `hash_slot_read`/`deferred_hash_read`
-      （display.rs:984-985・vm_var_index_ops.rs:82・vm_call_func_ops.rs:753 等）。これらを `ContainerRef` cell に統一し
-      2 variant を削除する。
-      **★head-start（grep-rw-view 撤去 #3466 で整備済み）**: 要素 cell の read-deref chokepoint は実測 6 箇所のみで、
-      grep 撤去時に全て埋めた（`compare_values`／`collect_minmax_candidates`／hyper メソッドループ／`.join` ×3／
-      **CallMethod invocant decont**（`exec_call_method_op`・`.VAR` 除く）／`smart_match` LHS）。SlotRef を cell 化しても
-      同じ 6 箇所を踏むだけなので、新たな read-deref 作業はほぼ無い見込み。**★CallMethodMut は decont 不可**＝`:=`-bound
-      容器変異（`my @x := @src; @x.push`）が source に届かなくなる。read dispatch だけ decont する原則を踏襲。
-      設計の land 済み詳細＝[news/2026-06.md](news/2026-06.md)「grep-rw-view 側道機構の撤去」。
+- [x] **Phase 2 Stage 2 slice 5（最終 SlotRef キル・完了・2026-06-23・#3472）**: `HashSlotRef` + `DeferredHashAccess`
+      の 2 variant を単一 path ベース `Value::HashEntryRef { hash, path }` に統合し、`SlotRef` の名前と概念を払拭。
+      欠落 key への `:=` bind の deferred-vivification token は **anti-goal の side-table 無しには原理的に削除不可**
+      （`:exists`/iteration を汚さず Any-read / write-materialize する token は Value variant を要求）と確定し、
+      「全 variant 削除」でなく「`SlotRef` 概念の払拭＋単一 honest token への統合」を達成（`git grep 'SlotRef\|DeferredHashAccess' src/`=0）。
+      `parent_slot` チェーン廃止で **3 段以上の全欠落 path bind（`$b := %h<a><b><c>`）が動く**ようになった（raku 一致）。
+      詳細＝[docs/slotref-removal-plan.md](docs/slotref-removal-plan.md) §0 達成注記 / slice 5。pin=`t/hash-entry-ref-deep-bind.t`。
 - ✅ **grep-rw-view 撤去（#3466・2026-06-23）→ [news/2026-06.md](news/2026-06.md)**。`.grep` を第一級要素 cell 化し
       `for_grep_view`/`GrepView`/`grep_source`/index-based writeback を全廃（-90 行）。
 - ✅ **env↔locals cell 共有 — captured-outer cell 化／純 writeback コヒーレンス（A の律速・完了）**: slice 1〜1.20

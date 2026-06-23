@@ -981,8 +981,7 @@ impl Value {
                     "lazy(...)".to_string()
                 }
             }
-            Value::HashSlotRef { .. } => self.hash_slot_read().to_string_value(),
-            Value::DeferredHashAccess { .. } => self.deferred_hash_read().to_string_value(),
+            Value::HashEntryRef { .. } => self.hash_entry_read().to_string_value(),
         }
     }
 

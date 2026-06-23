@@ -349,7 +349,7 @@ impl Interpreter {
     /// Whether the carrier writeback may overwrite a slot *currently* holding `v`.
     /// Eligibility is keyed on what the slot WOULD LOSE, not on the incoming value
     /// (so an `Int` slot that a carrier turns into a `Mixin` via `does` is fine).
-    /// Excludes the binding cells (`HashSlotRef`/`ContainerRef`) and a plain
+    /// Excludes the binding cells (`HashEntryRef`/`ContainerRef`) and a plain
     /// `Array`/`Hash` slot — env may hold a COW-detached copy whose write would
     /// clobber a live interior `:=` element cell. Scalars, Set/Bag/Mix, Mixin,
     /// Instance and the rest are safe targets (the whole slot value is replaced).
@@ -359,7 +359,10 @@ impl Interpreter {
     fn slot_carrier_overwritable(v: &Value) -> bool {
         !matches!(
             v,
-            Value::HashSlotRef { .. } | Value::ContainerRef(_) | Value::Array(..) | Value::Hash(..)
+            Value::HashEntryRef { .. }
+                | Value::ContainerRef(_)
+                | Value::Array(..)
+                | Value::Hash(..)
         )
     }
 
@@ -396,7 +399,7 @@ impl Interpreter {
             if name.starts_with('!')
                 || matches!(
                     self.locals[i],
-                    Value::HashSlotRef { .. } | Value::ContainerRef(_)
+                    Value::HashEntryRef { .. } | Value::ContainerRef(_)
                 )
             {
                 continue;
@@ -441,7 +444,7 @@ impl Interpreter {
     /// COW-detached copy (autovivified during the carrier's reads). Overwriting
     /// such a slot from env destroys the live cell (regressed
     /// S03-binding/nested.t). Those names fall back to the `env_dirty` barrier
-    /// pull, whose HashSlotRef skip + deferred timing handled them before. The
+    /// pull, whose HashEntryRef skip + deferred timing handled them before. The
     /// common EVAL case (`$x = scalar`) is a plain scalar and stays precise.
     pub(crate) fn is_writeback_safe_scalar(v: &Value) -> bool {
         matches!(
@@ -479,7 +482,7 @@ impl Interpreter {
     /// site as the safety net for those (and for implicit reconcile dependencies
     /// the carrier did not itself write, e.g. a prior `:=` bind); Slice F removes
     /// it once those are explicit. Mirrors `sync_locals_from_env`'s per-slot
-    /// skips (HashSlotRef / `!attr`).
+    /// skips (HashEntryRef / `!attr`).
     /// Slice F write-through for a `~~` regex match: copy the env values the match
     /// produced — the match variable `$/`, numbered captures (`$0`/`$1`/…), and
     /// any embedded `{ }` / `:my` / `:let` block writes (`extra` = the
@@ -490,7 +493,7 @@ impl Interpreter {
     /// container slot, to protect live `:=` cells), a match RESULT is a freshly
     /// produced value (Match / capture list) with no shared interior cell, so it
     /// is always safe to overwrite the slot — mirroring exactly what the reverse
-    /// pull does (which copies unconditionally except for `HashSlotRef`/`!attr`).
+    /// pull does (which copies unconditionally except for `HashEntryRef`/`!attr`).
     pub(super) fn writeback_match_locals(
         &mut self,
         code: &CompiledCode,
@@ -504,7 +507,7 @@ impl Interpreter {
             }
             // Mirror the reverse pull's invariants: never clobber a live `:=`
             // binding cell or an attribute slot managed via GetLocal/SetLocal.
-            if matches!(self.locals[i], Value::HashSlotRef { .. }) || name.starts_with('!') {
+            if matches!(self.locals[i], Value::HashEntryRef { .. }) || name.starts_with('!') {
                 continue;
             }
             if let Some(val) = self.env().get(name).cloned().or_else(|| {
@@ -566,12 +569,12 @@ impl Interpreter {
             // an Array, env now holds a scalar), which the old "slot is a scalar"
             // test missed, leaving it to the blanket reconcile (a no-op under
             // double-OFF, so `$a` stayed the stale Array). The only excluded slots
-            // are live `:=` binding cells (ContainerRef/HashSlotRef), where the
+            // are live `:=` binding cells (ContainerRef/HashEntryRef), where the
             // slot must keep routing through the bound cell.
             let new_is_scalar = Self::is_writeback_safe_scalar(&env_val);
             let slot_is_bind_cell = matches!(
                 &self.locals[i],
-                Value::ContainerRef(_) | Value::HashSlotRef { .. }
+                Value::ContainerRef(_) | Value::HashEntryRef { .. }
             );
             if Self::is_writeback_safe_scalar(&self.locals[i])
                 || (new_is_scalar && !slot_is_bind_cell)
@@ -671,7 +674,7 @@ impl Interpreter {
     /// dispatch paths and write each caller variable's new `env` value straight
     /// through to its local slot in the caller's frame (`code`). This keeps the
     /// slot coherent at the call site. Invariant: never clobber a live
-    /// `HashSlotRef` binding slot. Sources whose name is not a local of this
+    /// `HashEntryRef` binding slot. Sources whose name is not a local of this
     /// frame are dropped here; cross-frame propagation up to an ancestor's slot
     /// is handled by the env_dirty-gated `reconcile_locals_from_env_at_site` that
     /// `drain_and_reconcile_after_cached_call` (and the slow call path) runs at
@@ -681,7 +684,7 @@ impl Interpreter {
             let sources = std::mem::take(&mut self.pending_rw_writeback_sources);
             for source in sources {
                 if let Some(slot) = self.find_local_slot(code, &source)
-                    && !matches!(self.locals[slot], Value::HashSlotRef { .. })
+                    && !matches!(self.locals[slot], Value::HashEntryRef { .. })
                     && let Some(val) = self.env().get(&source).cloned()
                 {
                     self.locals[slot] = val;
@@ -706,7 +709,7 @@ impl Interpreter {
         let mut retained = Vec::new();
         for source in sources {
             if let Some(slot) = self.find_local_slot(code, &source) {
-                if !matches!(self.locals[slot], Value::HashSlotRef { .. })
+                if !matches!(self.locals[slot], Value::HashEntryRef { .. })
                     && let Some(val) = self.env().get(&source).cloned()
                 {
                     self.locals[slot] = val;

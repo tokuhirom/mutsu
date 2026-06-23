@@ -168,10 +168,9 @@ impl Interpreter {
                 "Scalar"
             }
             Value::LazyIoLines { .. } => "Seq",
-            Value::HashSlotRef { .. } => {
-                return self.dispatch_what(&target.hash_slot_read(), args);
+            Value::HashEntryRef { .. } => {
+                return self.dispatch_what(&target.hash_entry_read(), args);
             }
-            Value::DeferredHashAccess { .. } => "Any",
             Value::ContainerRef(_) => {
                 return target.with_deref(|inner| self.dispatch_what(inner, args));
             }

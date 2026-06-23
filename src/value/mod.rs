@@ -1663,22 +1663,25 @@ pub enum Value {
         /// `words($fh)` so a partial consumer leaves the handle open.
         words: bool,
     },
-    /// A reference to a hash slot, used for autovivification in `is raw` contexts.
-    /// Reading this value returns the current value at the key (or Any).
-    /// Assigning to it writes back to the parent hash via interior mutation.
-    /// Indexing it autovivifies (creates an empty Hash at the key if missing).
-    HashSlotRef {
+    /// A deferred write-through reference to a (possibly not-yet-existent) hash
+    /// entry reached by `path` from `hash`. This is the sole survivor of the old
+    /// slot-reference era — NOT a stale Arc+index back-reference, but a vivification
+    /// token that cannot be a `ContainerRef` cell because its target entry does
+    /// not exist yet (binding to a missing key must not pollute `:exists` /
+    /// iteration until the first write — see `t/phantom-entry-bind.t`).
+    ///
+    /// - Reading returns the current value at the path (or `Any` if any level is
+    ///   missing/non-hash), without creating anything.
+    /// - Writing walk-creates intermediate hashes and inserts at the terminal key.
+    /// - `path.len() == 1` is the single-key case (`$b := %h<x>`); a longer path
+    ///   is a deferred nested bind (`$b := %h<a><b>`), accumulated one subscript
+    ///   at a time by `exec_index_autovivify_lazy_op`.
+    ///
+    /// It also serves `is raw` reduce lvalue descent (`hash_autovivify`), where
+    /// the entry is eagerly created first so the path is always length 1.
+    HashEntryRef {
         hash: Arc<HashData>,
-        key: String,
-    },
-    /// A deferred hash access path for binding. Acts as Any for reads.
-    /// When written to, it creates all intermediate hashes and inserts the value.
-    /// Used for `my $b := %h<a><b>` to defer autovivification until assignment.
-    DeferredHashAccess {
-        /// The parent HashSlotRef (points to the first-level key in the root hash)
-        parent_slot: Box<Value>,
-        /// The key for the nested access
-        key: String,
+        path: Vec<String>,
     },
 }
 
@@ -3176,7 +3179,7 @@ impl Value {
     }
 
     /// Autovivify a hash entry: if the key doesn't exist, insert an empty Hash.
-    /// Returns a `HashSlotRef` pointing to the entry in the parent hash.
+    /// Returns a `HashEntryRef` pointing to the entry in the parent hash.
     /// Uses interior mutation of the `Arc<HashMap>` so that **all** clones of
     /// the same `Arc` observe the change.  This is sound in mutsu because the
     /// interpreter is single-threaded and no `&HashMap` borrows are live
@@ -3202,9 +3205,9 @@ impl Value {
                 let new_hash = Value::hash(HashMap::new());
                 data.map.insert(key.to_string(), new_hash);
             }
-            Some(Value::HashSlotRef {
+            Some(Value::HashEntryRef {
                 hash: arc.clone(),
-                key: key.to_string(),
+                path: vec![key.to_string()],
             })
         } else {
             None
@@ -3212,7 +3215,7 @@ impl Value {
     }
 
     /// Autovivifying hash element access for bind descent — the hash analogue of
-    /// [`array_slot_ref`] (Phase 2). Instead of the stale `HashSlotRef`
+    /// [`array_slot_ref`] (Phase 2). Instead of the stale `HashEntryRef`
     /// back-reference, it returns a first-class value that survives COW:
     /// - an existing `ContainerRef` cell is returned as-is (already aliased);
     /// - an existing container leaf (Array/Hash) is returned by value — it shares
@@ -3246,35 +3249,20 @@ impl Value {
         }
     }
 
-    /// Like `hash_autovivify` but does NOT create the entry if missing.
-    /// Returns a HashSlotRef that can be used for deferred autovivification:
-    /// reading from it returns Any/Nil for missing keys, writing to it
-    /// inserts the entry.
-    pub fn hash_slot_ref_lazy(&self, key: &str) -> Option<Value> {
-        if let Value::Hash(arc) = self {
-            Some(Value::HashSlotRef {
-                hash: arc.clone(),
-                key: key.to_string(),
-            })
-        } else {
-            None
-        }
-    }
-
     /// Bind to hash element `key`, promoting it to a first-class container
     /// (Phase 2 Stage 1) — the hash analogue of [`array_slot_ref`]. An existing
     /// *scalar* leaf is replaced in place with a shared `ContainerRef` cell
     /// (reusing one if already present), and that same cell is returned so the
     /// binding aliases the element by **cell identity**, surviving COW clones of
     /// any enclosing container on a later write (the staleness that the old
-    /// `HashSlotRef` back-reference suffers for deep `%h<a><b>` paths).
+    /// `HashEntryRef` back-reference suffers for deep `%h<a><b>` paths).
     ///
     /// An existing *container* leaf (Array/Hash) is an intermediate level of a
-    /// deeper path (`%h<a><b>`, `%h<a>[1]`); it keeps the old `HashSlotRef` so
+    /// deeper path (`%h<a><b>`, `%h<a>[1]`); it keeps the old `HashEntryRef` so
     /// the deeper traversal resolves through the shared inner Arc and the
     /// eventual leaf promotion lands in the physical map the entry points to.
     /// A *missing* key stays lazy (no entry created) — promotion is deferred to
-    /// the first write, exactly like `hash_slot_ref_lazy`.
+    /// the first write (a `HashEntryRef` token carries the path until then).
     ///
     /// Reads decontainerize at the single chokepoint (`resolve_hash_entry`);
     /// writes go through `hash_insert_through` (Stage 0).
@@ -3290,7 +3278,7 @@ impl Value {
                     // itself — it shares the inner Arc, so the eventual
                     // leaf promotion by the next index op lands in the
                     // physical map the entry points to (Stage 2: no
-                    // `HashSlotRef` back-reference needed).
+                    // `HashEntryRef` back-reference needed).
                     Some(elem.clone())
                 }
                 Some(elem) => {
@@ -3298,9 +3286,9 @@ impl Value {
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))
                 }
-                None => Some(Value::HashSlotRef {
+                None => Some(Value::HashEntryRef {
                     hash: arc.clone(),
-                    key: key.to_string(),
+                    path: vec![key.to_string()],
                 }),
             }
         } else {
@@ -3324,30 +3312,68 @@ impl Value {
         }
     }
 
-    /// Read the current value from a HashSlotRef.
-    /// Returns the value at the key in the parent hash, or Any (type object) if missing.
-    pub fn hash_slot_read(&self) -> Value {
-        if let Value::HashSlotRef { hash, key } = self {
-            let ptr = Arc::as_ptr(hash);
-            unsafe {
-                (*ptr)
-                    .get(key.as_str())
-                    .cloned()
-                    .unwrap_or(Value::Package(crate::symbol::Symbol::intern("Any")))
+    /// Read the current value a `HashEntryRef` points to, walking its `path`
+    /// READ-ONLY (no autovivification). Returns `Any` if any intermediate level
+    /// is missing or not a hash, or if the terminal key is absent — so a bind to
+    /// a not-yet-existent entry reads as `Any` without polluting `:exists`.
+    pub fn hash_entry_read(&self) -> Value {
+        let Value::HashEntryRef { hash, path } = self else {
+            return self.clone();
+        };
+        let any = || Value::Package(crate::symbol::Symbol::intern("Any"));
+        let mut cur = hash.clone();
+        for k in &path[..path.len() - 1] {
+            let ptr = Arc::as_ptr(&cur);
+            match unsafe { (*ptr).get(k.as_str()) } {
+                Some(Value::Hash(inner)) => cur = inner.clone(),
+                _ => return any(),
             }
-        } else {
-            self.clone()
         }
+        let last = path.last().unwrap();
+        let ptr = Arc::as_ptr(&cur);
+        unsafe { (*ptr).get(last.as_str()).cloned().unwrap_or_else(any) }
     }
 
-    /// Write a value to a HashSlotRef's parent hash at the stored key.
-    /// Uses interior mutation (same as hash_autovivify).
-    pub fn hash_slot_write(&self, val: Value) {
-        if let Value::HashSlotRef { hash, key } = self {
-            // SAFETY: aliased in-place mutation of a shared container; see
+    /// Walk-CREATE the intermediate hashes of a `HashEntryRef`'s `path` and
+    /// return the `(terminal hash Arc, terminal key)` so the caller can insert.
+    /// Missing/non-hash intermediate levels are replaced with fresh empty hashes
+    /// (interior mutation, so all holders of the shared Arc observe them).
+    pub fn hash_entry_terminal(&self) -> Option<(Arc<HashData>, String)> {
+        let Value::HashEntryRef { hash, path } = self else {
+            return None;
+        };
+        let mut cur = hash.clone();
+        for k in &path[..path.len() - 1] {
+            // SAFETY: aliased in-place mutation of a shared hash; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
-            let data = unsafe { arc_contents_mut(hash) };
-            Value::hash_insert_through(&mut data.map, key.clone(), val);
+            let next = {
+                let data = unsafe { arc_contents_mut(&cur) };
+                match data.map.get(k) {
+                    Some(Value::Hash(inner)) => inner.clone(),
+                    _ => {
+                        let new_hash = Value::hash(HashMap::new());
+                        let arc = match &new_hash {
+                            Value::Hash(a) => a.clone(),
+                            _ => unreachable!(),
+                        };
+                        Value::hash_insert_through(&mut data.map, k.clone(), new_hash);
+                        arc
+                    }
+                }
+            };
+            cur = next;
+        }
+        Some((cur, path.last().unwrap().clone()))
+    }
+
+    /// Write a value through a `HashEntryRef`, walk-creating intermediate hashes
+    /// and inserting at the terminal key (interior mutation).
+    pub fn hash_entry_write(&self, val: Value) {
+        if let Some((arc, key)) = self.hash_entry_terminal() {
+            // SAFETY: aliased in-place mutation of a shared hash; see
+            // `arc_contents_mut`. No borrow into the map is live across the write.
+            let data = unsafe { arc_contents_mut(&arc) };
+            Value::hash_insert_through(&mut data.map, key, val);
         }
     }
 
@@ -3368,32 +3394,11 @@ impl Value {
         }
     }
 
-    /// Read the current value from a DeferredHashAccess.
-    /// Returns Any if the path doesn't exist yet.
-    pub fn deferred_hash_read(&self) -> Value {
-        if let Value::DeferredHashAccess { parent_slot, key } = self {
-            let parent_value = parent_slot.hash_slot_read();
-            if let Value::Hash(arc) = &parent_value {
-                let ptr = Arc::as_ptr(arc);
-                unsafe {
-                    (*ptr)
-                        .get(key.as_str())
-                        .cloned()
-                        .unwrap_or(Value::Package(crate::symbol::Symbol::intern("Any")))
-                }
-            } else {
-                Value::Package(crate::symbol::Symbol::intern("Any"))
-            }
-        } else {
-            self.clone()
-        }
-    }
-
     /// Bind to array element `idx`, promoting it to a first-class container
     /// (Phase 2). The element is replaced in place with a shared
     /// `ContainerRef` cell (reusing an existing one), and that same cell is
     /// returned so the binding aliases the element by **cell identity**. Unlike
-    /// the old `ArraySlotRef` (an array-Arc + index back-reference, which goes
+    /// the old array element back-reference (an array-Arc + index back-reference, which goes
     /// stale when an enclosing container is COW-cloned on a later write), the
     /// `Arc<Mutex>` cell is shared on every clone, so the alias survives
     /// arbitrarily deep `$struct[..]<..>[..]` paths. Reads decontainerize the
@@ -3416,7 +3421,7 @@ impl Value {
             // (`$s[1][1]`, `$s[1]<k>`); return the element value itself —
             // it shares the inner Arc, so the eventual leaf promotion by
             // the next index op lands in the same physical Vec/HashMap the
-            // stored element points to (Stage 2: no `ArraySlotRef`
+            // stored element points to (Stage 2: no array element back-reference
             // back-reference needed).
             if !terminal && matches!(elem, Value::Array(..) | Value::Hash(..)) {
                 return Some(elem.clone());

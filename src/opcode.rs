@@ -94,7 +94,7 @@ pub(crate) enum OpCode {
 
     // -- Variables --
     GetLocal(u32),
-    /// Like GetLocal but does NOT resolve DeferredHashAccess/HashSlotRef values.
+    /// Like GetLocal but does NOT resolve HashEntryRef values.
     /// Used by `=:=` to compare raw container references.
     GetLocalRaw(u32),
     SetLocal(u32),
@@ -248,7 +248,7 @@ pub(crate) enum OpCode {
         right_name_idx: u32,
     },
     /// Container identity (`=:=`) using raw container values.
-    /// Compares DeferredHashAccess/HashSlotRef values by checking if they
+    /// Compares HashEntryRef values by checking if they
     /// point to the same hash slot (Arc::ptr_eq + key equality).
     ContainerEqRaw,
 
@@ -594,18 +594,18 @@ pub(crate) enum OpCode {
         is_positional: bool,
     },
     /// Like Index, but auto-vivifies intermediate hash entries and returns
-    /// a `HashSlotRef` for the final key.  Used by IndexAutovivifyLazy's
+    /// a `HashEntryRef` for the final key.  Used by IndexAutovivifyLazy's
     /// fallback path for non-hash targets.
     #[allow(dead_code)]
     IndexAutovivify,
     /// Like IndexAutovivify but does NOT create the hash entry if missing.
-    /// Returns a HashSlotRef that defers creation until write.
+    /// Returns a HashEntryRef that defers creation until write.
     /// Used for the outermost level of `:=` bind so that binding alone
     /// does not autovivify (e.g. `my $b := %h<a><b>` keeps %h empty).
     IndexAutovivifyLazy,
     /// Like IndexAutovivifyLazy, but the index is the TERMINAL element of a `:=`
     /// bind RHS. A container-valued (Array/Hash) leaf is promoted to a
-    /// `ContainerRef` cell — not kept as a traversal SlotRef.
+    /// `ContainerRef` cell — not kept as a traversal back-reference.
     IndexAutovivifyLazyTerminal,
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
