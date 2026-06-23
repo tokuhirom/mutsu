@@ -82,6 +82,40 @@ pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
 /// `pos` is the 0-based character index at which parsing stopped and `reason`
 /// is the human-readable explanation. Returns `None` when the string actually
 /// IS a valid number (so callers can treat `None` as "no error").
+/// Escape control characters the way Raku renders them inside an
+/// `X::Str::Numeric.source-indicator` (backspace -> `\b`, tab -> `\t`, ...),
+/// leaving printable characters untouched.
+pub(crate) fn escape_for_source_indicator(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '\u{8}' => out.push_str("\\b"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\u{c}' => out.push_str("\\f"),
+            '\0' => out.push_str("\\0"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\x[{:X}]", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Build the `source-indicator` string Raku attaches to an `X::Str::Numeric`:
+/// the source split at character position `pos` with a `U+23CF` marker showing
+/// where numification stopped, control characters escaped. For example
+/// `("5 foo", 1)` yields `in '5<EJECT> foo' (indicated by <EJECT>)`.
+pub(crate) fn build_source_indicator(source: &str, pos: usize) -> String {
+    let good: String = source.chars().take(pos).collect();
+    let bad: String = source.chars().skip(pos).collect();
+    format!(
+        "in '{}\u{23CF}{}' (indicated by \u{23CF})",
+        escape_for_source_indicator(&good),
+        escape_for_source_indicator(&bad)
+    )
+}
+
 pub(crate) fn str_numeric_failure(s: &str) -> Option<(usize, String)> {
     if parse_raku_str_to_numeric(s).is_some() {
         return None;
