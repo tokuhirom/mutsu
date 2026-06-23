@@ -2551,6 +2551,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     | Expr::Literal(_)
                     | Expr::DoStmt(_)
                     | Expr::Grouped(_)
+                    // A hash literal `%(...)` is a term and may be directly
+                    // subscripted: `%(a=>1,b=>2){"a"}` is `1`. (Angle subscript
+                    // `%(...)<a>` already works because that handler is
+                    // unguarded.) Whitespace before `{` still parses as a block,
+                    // since this check requires `{` at the start of `rest`.
+                    | Expr::Hash(_)
             )
             // An inline `my`/`our`/`state` declaration must not be hash-
             // subscripted: the declaration parser consumes the whitespace after
