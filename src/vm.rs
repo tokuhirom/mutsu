@@ -560,7 +560,6 @@ impl Interpreter {
         let saved_topic_save_stack = std::mem::take(&mut self.topic_save_stack);
         let saved_topic_source_var = self.topic_source_var.take();
         let saved_element_source = self.element_source.take();
-        let saved_for_grep_view = self.for_grep_view.take();
         let saved_container_ref_var = self.container_ref_var.take();
         let saved_container_ref_reversed = self.container_ref_reversed;
         let saved_quanthash_bind_params = std::mem::take(&mut self.quanthash_bind_params);
@@ -616,7 +615,6 @@ impl Interpreter {
         self.topic_save_stack = saved_topic_save_stack;
         self.topic_source_var = saved_topic_source_var;
         self.element_source = saved_element_source;
-        self.for_grep_view = saved_for_grep_view;
         self.container_ref_var = saved_container_ref_var;
         self.container_ref_reversed = saved_container_ref_reversed;
         self.quanthash_bind_params = saved_quanthash_bind_params;

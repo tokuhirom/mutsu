@@ -439,18 +439,6 @@ impl Interpreter {
 
         let iterable = self.stack.pop().unwrap();
 
-        // rw aggregate view: `for @a.grep(...) { $_++ }` iterates over a grep
-        // result whose elements alias slots of the original array. If the
-        // iterable carries a registered grep-view binding, remember the source
-        // array + matched indices so the loop can write modified topics back.
-        self.for_grep_view = match &iterable {
-            Value::Array(items, _) => items
-                .grep_source
-                .as_deref()
-                .map(|gv| (gv.source.clone(), gv.indices.clone(), gv.source_kind)),
-            _ => None,
-        };
-
         // Handle lazy IO lines: iterate by pulling one line at a time
         // so that $fh.tell reflects the current read position.
         if let Value::LazyIoLines {
@@ -663,21 +651,6 @@ impl Interpreter {
         let saved_topic_source = self.topic_source_var.take();
         let saved_quanthash_bind = std::mem::take(&mut self.quanthash_bind_params);
         let container_binding = self.container_ref_var.take();
-        // rw aggregate view writeback (`for @a.grep(...) { $_++ }`): take the
-        // grep-view binding captured by exec_for_loop_op. When present and the
-        // loop writes back its topic / rw param, modified values are mirrored to
-        // the source array's matched slots after the loop (by Arc identity).
-        // Only applies when the iterable is a transient grep result flowing
-        // directly into the loop. If `container_binding` is set, the iterable is
-        // a named array variable (e.g. `my @g = @a.grep(...); for @g {...}`)
-        // whose `=` assignment decontainerized the rw aliases — the name-based
-        // writeback owns that array, so the grep view must not leak into @a.
-        let grep_view = if container_binding.is_none() {
-            self.for_grep_view.take()
-        } else {
-            self.for_grep_view = None;
-            None
-        };
         // A sigilless/`is rw` for-param aliases the source element, but an
         // *immutable* Mix/Set/Bag yields immutable weights — assigning to the
         // alias must throw X::Assignment::RO, and no writeback may run (it would
@@ -708,7 +681,6 @@ impl Interpreter {
                 Some(Value::Mix(_, true)) | Some(Value::Set(_, true)) | Some(Value::Bag(_, true))
             )
         });
-        let mut grep_view_writes: Vec<(usize, Value)> = Vec::new();
         let container_reversed = self.container_ref_reversed;
         self.container_ref_reversed = false;
         // Capture hash key order before the loop so writeback uses the
@@ -957,18 +929,6 @@ impl Interpreter {
                             &param_name,
                             idx,
                         );
-                        if let Some((_, ref indices, _)) = grep_view
-                            && arity == 1
-                            && (writes_back_topic || rw_writeback)
-                            && let Some(&src_idx) = indices.get(idx)
-                            && let Some(v) = self.grep_view_topic_value(
-                                writes_back_topic,
-                                rw_writeback,
-                                &param_name,
-                            )
-                        {
-                            grep_view_writes.push((src_idx, v));
-                        }
                         if let Some(ref mut coll) = collected {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {
@@ -1018,18 +978,6 @@ impl Interpreter {
                             &param_name,
                             idx,
                         );
-                        if let Some((_, ref indices, _)) = grep_view
-                            && arity == 1
-                            && (writes_back_topic || rw_writeback)
-                            && let Some(&src_idx) = indices.get(idx)
-                            && let Some(v) = self.grep_view_topic_value(
-                                writes_back_topic,
-                                rw_writeback,
-                                &param_name,
-                            )
-                        {
-                            grep_view_writes.push((src_idx, v));
-                        }
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
@@ -1221,23 +1169,6 @@ impl Interpreter {
             if self.is_halted() {
                 break;
             }
-        }
-        // rw aggregate-view writeback: mirror modified topics/params back to the
-        // source array's matched slots (by Arc identity, so the originating
-        // `@a` variable observes the mutation), e.g. `for @a.grep(...) { $_++ }`.
-        if let Some((source, _, source_kind)) = grep_view
-            && !grep_view_writes.is_empty()
-        {
-            let mut source_items = source.to_vec();
-            for (src_idx, val) in grep_view_writes {
-                if src_idx < source_items.len() {
-                    source_items[src_idx] = val;
-                }
-            }
-            loan_env!(
-                self,
-                overwrite_array_items_by_identity_for_vm(&source, source_items, source_kind,)
-            );
         }
         // Unmark readonly topic after loop completion
         if topic_readonly {
@@ -1966,24 +1897,6 @@ impl Interpreter {
             self.stack.push(Value::array(coll));
         }
         Ok(())
-    }
-
-    /// Read the loop's current writeback value (implicit `$_` or a single rw
-    /// param) for rw aggregate-view (grep) writeback.
-    fn grep_view_topic_value(
-        &self,
-        writes_back_topic: bool,
-        rw_writeback: bool,
-        param_name: &Option<String>,
-    ) -> Option<Value> {
-        if writes_back_topic {
-            self.env().get("_").cloned()
-        } else if rw_writeback {
-            let var = param_name.as_deref().unwrap_or("_");
-            self.env().get(var).cloned()
-        } else {
-            None
-        }
     }
 
     /// Write a mutated whole-container topic back to its source variable after a

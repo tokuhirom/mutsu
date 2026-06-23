@@ -1203,12 +1203,6 @@ pub struct Interpreter {
     pub(crate) container_ref_reversed: bool,
     pub(crate) topic_source_var: Option<String>,
     pub(crate) element_source: Option<(String, Value, bool)>,
-    #[allow(clippy::type_complexity)]
-    pub(crate) for_grep_view: Option<(
-        Arc<crate::value::ArrayData>,
-        Vec<usize>,
-        crate::value::ArrayKind,
-    )>,
     pub(crate) quanthash_bind_params: Vec<String>,
     pub(crate) for_param_restore_stack: Vec<(String, Option<Value>)>,
     pub(crate) call_frames: Vec<crate::vm::VmCallFrame>,
@@ -3422,7 +3416,6 @@ impl Interpreter {
             container_ref_reversed: false,
             topic_source_var: None,
             element_source: None,
-            for_grep_view: None,
             quanthash_bind_params: Vec::new(),
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
@@ -6017,7 +6010,6 @@ impl Interpreter {
             container_ref_reversed: false,
             topic_source_var: None,
             element_source: None,
-            for_grep_view: None,
             quanthash_bind_params: Vec::new(),
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),

@@ -3493,6 +3493,12 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         } as i32)
     }
 
+    // First-class element containers (`ContainerRef`, e.g. a `:=`-bound array
+    // slot or a `.grep` rw alias) compare by their inner value — `.sort`/min/max
+    // over a grepped/bound array must order the values, not the cells.
+    if matches!(a, Value::ContainerRef(_)) || matches!(b, Value::ContainerRef(_)) {
+        return compare_values(&a.deref_container(), &b.deref_container());
+    }
     match (a, b) {
         (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
             version_cmp_parts(ap, bp) as i32

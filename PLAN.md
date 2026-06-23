@@ -79,13 +79,18 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 
 - [ ] **Phase 2 Stage 2 slice 5（最終 SlotRef キル）**: 残る `HashSlotRef`/`DeferredHashAccess` 生成サイト
       （junction-bind / `is raw` reduce lvalue-read の autoviv）を cell 化し、variant を削除。
-- [ ] **grep-rw-view 撤去**: `for_grep_view`（Interpreter フィールド・vm.rs で save/restore）＋ `GrepView`（ArrayData 埋め込み
-      `grep_source`）＋ index ベース writeback（`overwrite_array_items_by_identity_for_vm`＝Arc-identity で source array を特定）
-      を、matched 要素の cell 昇格で全廃する。**★調査結果（2026-06-23）= これは「最終 SlotRef キル」と同じ Phase-2
-      配列要素 cell インフラに依存し、単独スライスではない**: cell 昇格すると `@a` の matched slot が `ContainerRef` を恒久保持
-      → `say @a`/`@a[i]`/copy/gist など**全 read パスが要素 cell を deref する必要**がある。write chokepoint（`assign_element_slot`・
-      value/mod.rs:3170）は存在するが read 側 deref は部分的（`:=`-bound 全体 cell には対応・要素 cell は未網羅）。
-      ∴ **着手順は「最終 SlotRef キル＝Phase-2 要素 cell の read-deref 網羅」が先**、その上で grep-rw-view を cell 化する。
+- [x] **grep-rw-view 撤去（完了・2026-06-23）**: `for_grep_view`（Interpreter フィールド・vm.rs save/restore）＋
+      `GrepView`／`grep_source`（ArrayData 埋め込み）＋ index ベース writeback を全廃。`.grep` は matched source slot を
+      共有 `ContainerRef` cell に昇格し、結果が同じ cell を参照する（`for @a.grep(...){ $_++ }` は通常の要素 cell write
+      パスで @a に書き戻る）。`>>++`/`>>--` は hyper ループで cell を通して in-place inc。pin=`t/grep-cell-read-deref.t`。
+      **read-deref 未網羅は実測で次の箇所のみ（いずれも `:=`-bound 要素 cell の既存バグでもあった）**:
+      (1) `compare_values`（.sort/min/max）(2) `collect_minmax_candidates`（.minmax）(3) hyper メソッドループ（`>>.method`
+      の invocant）(4) `.join` の Instance 判定 3 箇所（fast-narg／runtime／0-arg）(5) **メソッド dispatch の invocant**
+      （`.grep(...).head.method` 等で cell が単要素抽出されメソッド受信側になる）＝`exec_call_method_op` で `ContainerRef`
+      invocant を `.VAR` 以外 decont。**★教訓: 「全 read パスが deref 必要」という事前調査は過大評価。実際は ~30 op を実測して
+      上記のみ欠けていた（say/map/gist/raku/reduce/flat/splice/Bag/Set/first/squish/index 等は既存 chokepoint で deref 済）。
+      ★最重要の中心修正＝CallMethod invocant の decont（読み専用なので安全・CallMethodMut は `:=`-bound 容器変異を壊すので
+      decont 不可）。これ 1 つで `.head.method`/`.first.method` 系の class 全体が解ける。**
 - [x] **★env↔locals cell 共有 — captured-outer cell 化／純 writeback コヒーレンス（A の律速・完了）**: slice 1〜1.20
       ＋ S1〜S21 で nested callee／carrier／cross-thread の captured-mutated lexical を全て precise 化。台帳＝
       [docs/captured-outer-cell-sharing.md](docs/captured-outer-cell-sharing.md)、グラインド詳細＝news/2026-06.md ＋ MEMORY

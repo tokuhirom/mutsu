@@ -219,6 +219,37 @@ impl Interpreter {
                 results.push(val);
                 continue;
             }
+            // Built-in postfix `++`/`--` on a shared `ContainerRef` element (e.g.
+            // `@a.grep(...)>>++`, whose matched elements alias @a's slots): mutate
+            // the inner value THROUGH the cell so the source array observes it, and
+            // return the pre-increment value (postfix semantics). The cell is left
+            // in place, so the source aliasing survives. A plain (non-cell) element
+            // falls through to the ordinary in-place method dispatch below.
+            if matches!(method.as_str(), "postfix:<++>" | "postfix:<-->")
+                && let Value::ContainerRef(cell) = item
+            {
+                let inner = cell.lock().unwrap().clone();
+                let new_val = if method == "postfix:<++>" {
+                    self.increment_value_smart(&inner)?
+                } else {
+                    self.decrement_value_smart(&inner)?
+                };
+                cell.lock().unwrap().clone_from(&new_val);
+                results.push(inner);
+                continue;
+            }
+            // A shared `ContainerRef` element (a `.grep` rw alias / `:=`-bound
+            // slot) flowing through a hyper method call (`@a.grep(...)>>.made`):
+            // dispatch on the inner value, then write any in-place mutation back
+            // THROUGH the cell so the source array observes it and the result
+            // array keeps its source aliasing.
+            let hyper_cell = if let Value::ContainerRef(cell) = item {
+                let cell = cell.clone();
+                *item = cell.lock().unwrap().clone();
+                Some(cell)
+            } else {
+                None
+            };
             let mut skip_native = method == "VAR"
                 || (quoted
                     && matches!(
@@ -468,6 +499,13 @@ impl Interpreter {
                     }
                 }
             }
+            // Re-wrap the element in its shared cell after writing any in-place
+            // mutation back through it, so `existing.items` keeps the source
+            // aliasing for the writeback below.
+            if let Some(cell) = hyper_cell {
+                cell.lock().unwrap().clone_from(item);
+                *item = Value::ContainerRef(cell);
+            }
         }
         if let Value::Array(existing, kind) = &target {
             if let Some(var) = target_var
@@ -500,22 +538,6 @@ impl Interpreter {
                 loan_env!(
                     self,
                     overwrite_array_items_by_identity_for_vm(existing, items.clone(), *kind,)
-                );
-            }
-            if let Some(gv) = existing.grep_source.as_deref() {
-                let mut source_items = gv.source.to_vec();
-                for (filtered_idx, source_idx) in gv.indices.iter().enumerate() {
-                    if filtered_idx < items.len() && *source_idx < source_items.len() {
-                        source_items[*source_idx] = items[filtered_idx].clone();
-                    }
-                }
-                loan_env!(
-                    self,
-                    overwrite_array_items_by_identity_for_vm(
-                        &gv.source,
-                        source_items,
-                        gv.source_kind,
-                    )
                 );
             }
         }
