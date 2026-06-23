@@ -555,6 +555,16 @@
   fallback → 0。stash 比較で native==interpreter 一致確認。pin `t/native-lock-ctor.t`(9)。make test 10964。**★既知の別軸バグ（本変更と無関係・
   main でも再現）: `$lock.protect({ $n++ })` の captured-outer `$n` writeback 落ち（`.protect` の closure capture writeback・ctor とは無関係）。**
   **残 ③ ctor 候補＝Promise/Channel（SharedPromise/channel state）・QuantHash 族（Bag/Set/Mix/SetHash・element 計数）・Capture・misc。**
+- **2026-06-23 (§D ③ = `Promise`/`Channel`/`Supplier`/`Supplier::Preserving` の `.new` を VM ネイティブ化)**: ③ ctor フォークの 3 スライス目
+  ＝simple concurrency primitive。`Promise.new`=`Value::Promise(SharedPromise::new())`（空の planned promise・pure shared state）、
+  `Channel.new`=`Value::Channel(SharedChannel::new())`（空 channel）、`Supplier`/`Supplier::Preserving`=`{emitted:[], done:False,
+  supplier_id:next_supplier_id()}`（emission log ＋ process-global id）＝いずれも env/registry/user code 不要。static
+  `try_native_builtin_construct` に 3 arm 追加、interpreter dispatch_new の既存 arm はコメントのみ残置（byte-identical 二重実装の慣習）。
+  実測 4 種とも `new` fallback → 0。`$p.keep(42)`/`$c.send.list`/`$s.Supply.tap` 機能 raku 一致。pin `t/native-concurrency-ctor.t`(10)。
+  make test 10984。**★既知の別軸ギャップ（本変更と無関係）: `Supplier::Preserving` の tap 前 emit の late-tap replay 未実装（mutsu は
+  buffer/replay しない・construction とは無関係）。** **残 ③ ctor 候補＝QuantHash 族（Bag/Set/Mix/SetHash・element 計数＝`&mut self` type
+  check 要・static 不可）・Capture・Proxy（FETCH/STORE closure）・misc。** **★perf 注意=`SharedPromise::new()` 等の `pub(crate)` ctor を
+  VM static path から直接呼ぶ＝interpreter 委譲より 1 ホップ短い。**
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`

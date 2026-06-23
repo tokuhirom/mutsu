@@ -1648,6 +1648,26 @@ impl Interpreter {
                 attrs.insert("async".to_string(), Value::Bool(true));
             }
             Some(Ok(Value::make_instance(class_name, attrs)))
+        } else if cn == "Promise" {
+            // A bare `Promise.new` is an empty planned promise — pure shared
+            // state, no env / registry / user code. Shared with the interpreter's
+            // `dispatch_new` arm.
+            Some(Ok(Value::Promise(crate::value::SharedPromise::new())))
+        } else if cn == "Channel" {
+            // Likewise an empty channel.
+            Some(Ok(Value::Channel(crate::value::SharedChannel::new())))
+        } else if matches!(cn.as_str(), "Supplier" | "Supplier::Preserving") {
+            // A supplier is pure data: an empty emission log, a not-done flag, and
+            // a fresh process-global supplier id. Shared with the interpreter's
+            // `dispatch_new` arm.
+            let mut attrs = HashMap::new();
+            attrs.insert("emitted".to_string(), Value::array(Vec::new()));
+            attrs.insert("done".to_string(), Value::Bool(false));
+            attrs.insert(
+                "supplier_id".to_string(),
+                Value::Int(super::native_methods::next_supplier_id() as i64),
+            );
+            Some(Ok(Value::make_instance(class_name, attrs)))
         } else {
             None
         }
@@ -2695,9 +2715,13 @@ impl Interpreter {
                     return self.dispatch_socket_inet_new(&args);
                 }
                 "Promise" => {
+                    // Shared with the VM's native fast path
+                    // (`try_native_builtin_construct`).
                     return Ok(Value::Promise(SharedPromise::new()));
                 }
                 "Channel" => {
+                    // Shared with the VM's native fast path
+                    // (`try_native_builtin_construct`).
                     return Ok(Value::Channel(SharedChannel::new()));
                 }
                 "Stash" => {
@@ -2709,6 +2733,8 @@ impl Interpreter {
                 }
                 "Supply" => return Ok(self.make_supply_instance()),
                 "Supplier" | "Supplier::Preserving" => {
+                    // Shared with the VM's native fast path
+                    // (`try_native_builtin_construct`).
                     let mut attrs = HashMap::new();
                     attrs.insert("emitted".to_string(), Value::array(Vec::new()));
                     attrs.insert("done".to_string(), Value::Bool(false));
