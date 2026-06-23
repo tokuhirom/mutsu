@@ -194,6 +194,19 @@ impl Interpreter {
             if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
                 return result;
             }
+            // Interpreter-native pure-lexical `IO::Path` methods (`.parent`/`.add`/
+            // `.basename`/`.sibling`/`.parts`/`.extension`/…): derive a new
+            // path/string/bool purely from the receiver's attributes, with no
+            // filesystem / cwd / env dependency (ledger §D). Single impl shared with
+            // the interpreter's `native_io_path`. Filesystem / cwd-relative forms and
+            // `child :secure` return `None` and fall through to the native fork below.
+            if Self::is_io_path_lexical_class(&class)
+                && let Value::Instance { attributes, .. } = &target
+                && let Some(result) =
+                    Self::try_io_path_lexical(&class, &attributes.as_map(), method, &args)
+            {
+                return result;
+            }
             // A user-defined subclass of a builtin type may override an inherited
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the
@@ -1624,6 +1637,18 @@ impl Interpreter {
             // the handle's record reader (PR-D read side). ArgFiles/Stdin/non-UTF8
             // (which need @*ARGS / decode) fall through.
             if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
+                return result;
+            }
+            // Interpreter-native pure-lexical `IO::Path` methods for variable
+            // receivers (`$p.parent`, `$p.add(...)`): same pure value op as the
+            // non-mut path — produces a *new* IO::Path/string/bool and never mutates
+            // the receiver, so no writeback. Filesystem / cwd-relative forms and
+            // `child :secure` fall through to the native fork below.
+            if Self::is_io_path_lexical_class(&class)
+                && let Value::Instance { attributes, .. } = &target
+                && let Some(result) =
+                    Self::try_io_path_lexical(&class, &attributes.as_map(), method, &args)
+            {
                 return result;
             }
             // A user-defined subclass of a builtin type may override an inherited
