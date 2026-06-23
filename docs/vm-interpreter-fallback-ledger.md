@@ -411,6 +411,21 @@
   （`("a"|"b").IO` は Junction を返し parity 確認）。新 IO::Path を返し受け手を変異しない＝writeback 不要。実測:
   `$s.IO`/`42.IO` の fallback → 0。pin `t/native-io-coercion.t`(18, literal/変数/numeric/型オブジェクト identity/null-byte
   dies/Junction autothread/`$*CWD` 継承・raku/mutsu 双方 PASS)。S16-io/S32-io/tmpdir/cwd whitelist 全緑。
+- **2026-06-23 (§D = `IO::Path.absolute`/`.relative` の VM ネイティブ化)**: IO::Path lexical スライスの cwd 依存 follow-up。
+  `.absolute`/`.relative` は path 文字列に **cwd**（`$*CWD`/instance `cwd` 属性/プロセス cwd）を組み合わせて文字列を導出するが、
+  cwd は `&self` の `resolve_path`/`get_cwd_path`/`apply_chroot` 経由で読み、これらは **純 lexical（FS stat なし）**＝`.IO` 同様
+  VM が env/cwd を所有するので native dispatch 可。新 `&self` メソッド `try_io_path_cwd_method`（win32/cygwin/posix の base 引数・
+  `$*CWD` fallback 全分岐を保持）へ抽出し、`native_io_path` は `try_io_path_lexical` の直後で委譲＝**1 操作 = 1 実装**（`absolute`/
+  `relative` arm を削除）。VM は IO::Path lexical dispatch の隣（`is_native_method` バウンス直前・非mut/mut 両 path）で呼ぶ。
+  `.resolve`（実 FS canonicalize）は `None` で `native_io_path` 維持。新 string を返し受け手非変異＝writeback 不要・behavior-invariant。
+  実測: `$p.absolute`/`.relative` の fallback → 0。pin `t/native-io-path-cwd.t`(14, `$*CWD`/instance cwd/explicit base/変数受け手/
+  round-trip・raku/mutsu 双方 PASS)。io-path.t の既存 fail 2（`.SPEC`/`.CWD`）は不変。S16-io/S32-io/tmpdir/cwd whitelist 全緑。
+- **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
+  到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
+  `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`
+  でゲートされず arm 1499 より前で interpreter 特殊処理されるため、`to_string_value()` で native 化すると壊れる（say.t/buf.t/
+  attributes.t で回帰確認）。`has_user_method`/`has_public_accessor`/built-in 型除外を足しても landmine が次々顕在化＝列挙不能で
+  安全に分離できないため見送り。clean な §D coercion 成果は IO::Path family（lexical/`.IO`/absolute-relative）で確定。
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
