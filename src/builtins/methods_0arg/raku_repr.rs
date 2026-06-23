@@ -784,9 +784,7 @@ pub fn raku_value(v: &Value) -> String {
             class_name,
             attributes,
             ..
-        } if class_name == "Match" => {
-            super::match_helpers::match_raku_repr(&attributes.as_map())
-        }
+        } if class_name == "Match" => super::match_helpers::match_raku_repr(&attributes.as_map()),
         Value::Instance {
             class_name,
             attributes,
