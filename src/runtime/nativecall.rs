@@ -55,6 +55,17 @@ impl CType {
     }
 }
 
+/// One native parameter: its C type plus whether it was declared `is rw`.
+/// An `is rw` `Pointer` is an *out-parameter*: C receives a `void**` and writes
+/// the resulting pointer back into the caller's `Pointer` object.
+// Fields are read only in the `libffi` build (the wasm stub ignores them).
+#[cfg_attr(not(feature = "libffi"), allow(dead_code))]
+#[derive(Debug, Clone, Copy)]
+pub struct ParamSpec {
+    pub ct: CType,
+    pub is_rw: bool,
+}
+
 /// The resolved descriptor for one `is native` sub: which library/symbol to
 /// call and the C signature to marshal against.
 // In a non-`libffi` build (wasm) the fields are only written, never read (the
@@ -67,7 +78,7 @@ pub struct NativeCallSpec {
     pub library: Option<String>,
     /// C symbol name — from `is symbol('...')` if present, else the sub name.
     pub symbol: String,
-    pub params: Vec<CType>,
+    pub params: Vec<ParamSpec>,
     pub ret: CType,
 }
 
@@ -105,6 +116,49 @@ fn resolve_library_candidates(library: &Option<String>) -> Vec<String> {
     ]
 }
 
+/// Process-lifetime cache of dlopen'd libraries, keyed by the candidate name
+/// that successfully loaded. **Loading must persist across calls**: a `Library`
+/// dropped at the end of a call `dlclose`s it, and for a library that was not
+/// already resident (e.g. `libsqlite3`) that unloads it — invalidating every
+/// pointer the program obtained from it (a `sqlite3*` handle becomes a
+/// dangling pointer, so the next call segfaults). Leaking the handle to
+/// `'static` keeps each library mapped for the program's lifetime, matching
+/// Rakudo's NativeCall (which never unloads).
+#[cfg(feature = "libffi")]
+fn load_library_cached(
+    candidates: &[String],
+) -> Result<(&'static libloading::Library, &'static str), RuntimeError> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<String, &'static libloading::Library>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().unwrap();
+
+    let mut last_err = String::new();
+    for cand in candidates {
+        if let Some(lib) = guard.get(cand) {
+            // Leak the key string too so the returned name is `'static`.
+            let name: &'static str = Box::leak(cand.clone().into_boxed_str());
+            return Ok((lib, name));
+        }
+        // SAFETY: dlopen of a user-named shared library is inherently unsafe (we
+        // trust the declared signature). This is the documented NativeCall
+        // contract. The handle is leaked to `'static` (never dlclosed).
+        match unsafe { libloading::Library::new(cand) } {
+            Ok(l) => {
+                let leaked: &'static libloading::Library = Box::leak(Box::new(l));
+                guard.insert(cand.clone(), leaked);
+                let name: &'static str = Box::leak(cand.clone().into_boxed_str());
+                return Ok((leaked, name));
+            }
+            Err(e) => last_err = format!("{cand}: {e}"),
+        }
+    }
+    Err(RuntimeError::new(format!(
+        "NativeCall: cannot load library {candidates:?}: {last_err}"
+    )))
+}
+
 #[cfg(feature = "libffi")]
 pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, RuntimeError> {
     use libffi::middle::{Arg, Cif, CodePtr, Type};
@@ -119,26 +173,7 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     }
 
     let candidates = resolve_library_candidates(&spec.library);
-    // SAFETY: dlopen of a user-named shared library is inherently unsafe (we
-    // trust the declared signature). This is the documented NativeCall contract.
-    // Try each candidate soname; keep the last error for the diagnostic.
-    let mut loaded = None;
-    let mut last_err = String::new();
-    for cand in &candidates {
-        match unsafe { libloading::Library::new(cand) } {
-            Ok(l) => {
-                loaded = Some((l, cand.clone()));
-                break;
-            }
-            Err(e) => last_err = format!("{cand}: {e}"),
-        }
-    }
-    let (lib, lib_name) = loaded.ok_or_else(|| {
-        RuntimeError::new(format!(
-            "NativeCall: cannot load library {:?}: {last_err}",
-            candidates
-        ))
-    })?;
+    let (lib, lib_name) = load_library_cached(&candidates)?;
     let func_ptr: *const std::ffi::c_void = unsafe {
         let sym: libloading::Symbol<*const std::ffi::c_void> =
             lib.get(spec.symbol.as_bytes()).map_err(|e| {
@@ -157,14 +192,26 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     let mut ffi_args: Vec<Arg> = Vec::with_capacity(args.len());
     let mut arg_types: Vec<Type> = Vec::with_capacity(args.len());
 
-    for (i, (ct, v)) in spec.params.iter().zip(args.iter()).enumerate() {
-        let (ty, owner) = marshal_arg(*ct, v).map_err(|msg| {
-            RuntimeError::new(format!(
-                "NativeCall: argument {} to '{}': {msg}",
-                i + 1,
-                spec.symbol
-            ))
-        })?;
+    // Arg indices whose `is rw Pointer` out-slot must be written back into the
+    // caller's Pointer object after the call.
+    let mut writebacks: Vec<usize> = Vec::new();
+
+    for (i, (ps, v)) in spec.params.iter().zip(args.iter()).enumerate() {
+        let (ty, owner) = if ps.is_rw && ps.ct == CType::Pointer {
+            // `Pointer is rw`: pass `void**` — a pointer to a slot holding the
+            // current address; C writes the new pointer into the slot.
+            let slot = Box::new(pointer_address(v));
+            writebacks.push(i);
+            (Type::pointer(), ArgOwner::new_out_ptr(slot))
+        } else {
+            marshal_arg(ps.ct, v).map_err(|msg| {
+                RuntimeError::new(format!(
+                    "NativeCall: argument {} to '{}': {msg}",
+                    i + 1,
+                    spec.symbol
+                ))
+            })?
+        };
         arg_types.push(ty);
         owners.push(owner);
     }
@@ -206,7 +253,66 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
             }
         }
     };
+
+    // Write `is rw Pointer` out-slots back into the caller's Pointer objects.
+    // The `Value::Instance` shares its attribute cell with the caller's
+    // variable, so the new address becomes visible there.
+    for idx in writebacks {
+        if let ArgOwner::OutPtr { slot, .. } = &owners[idx] {
+            write_pointer_address(&args[idx], **slot);
+        }
+    }
+
     Ok(result)
+}
+
+/// Read the C address carried by a NativeCall argument: a `Pointer` object's
+/// `address` attribute, a bare integer, or 0 for Nil / anything else. Unwraps a
+/// `Scalar` / `ContainerRef` container first (a `$`-variable argument arrives
+/// wrapped).
+#[cfg(feature = "libffi")]
+fn pointer_address(v: &Value) -> usize {
+    match v {
+        Value::Int(i) => *i as usize,
+        Value::Instance { attributes, .. } => match attributes.as_map().get("address") {
+            Some(Value::Int(i)) => *i as usize,
+            _ => 0,
+        },
+        Value::Scalar(inner) => pointer_address(inner),
+        Value::ContainerRef(cell) => cell.lock().ok().map(|g| pointer_address(&g)).unwrap_or(0),
+        // An `is rw` argument arrives as a varref Capture carrying the bound
+        // variable's current value.
+        Value::Capture { named, .. } => match named.get("__mutsu_varref_value") {
+            Some(inner) => pointer_address(inner),
+            None => 0,
+        },
+        _ => 0,
+    }
+}
+
+/// Write a resolved C address back into a `Pointer` object's `address`
+/// attribute (in place, through the shared attribute cell). Unwraps a `Scalar`
+/// / `ContainerRef` container so a `$`-variable out-argument updates the
+/// caller's object.
+#[cfg(feature = "libffi")]
+fn write_pointer_address(v: &Value, addr: usize) {
+    match v {
+        Value::Instance { attributes, .. } => {
+            attributes.insert("address".to_string(), Value::Int(addr as i64));
+        }
+        Value::Scalar(inner) => write_pointer_address(inner, addr),
+        Value::ContainerRef(cell) => {
+            if let Ok(g) = cell.lock() {
+                write_pointer_address(&g, addr);
+            }
+        }
+        Value::Capture { named, .. } => {
+            if let Some(inner) = named.get("__mutsu_varref_value") {
+                write_pointer_address(inner, addr);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Backing storage for one marshalled argument; keeps owned data alive for the
@@ -231,10 +337,25 @@ enum ArgOwner {
         #[allow(dead_code)] std::ffi::CString,
         *const std::ffi::c_char,
     ),
+    /// An `is rw Pointer` out-parameter (`void**`): `slot` holds the address
+    /// (C writes the new pointer here), `slot_ptr` is the `void**` value handed
+    /// to libffi (the address of `slot`).
+    OutPtr {
+        slot: Box<usize>,
+        slot_ptr: *mut std::ffi::c_void,
+    },
 }
 
 #[cfg(feature = "libffi")]
 impl ArgOwner {
+    /// Build an out-pointer owner. `slot_ptr` points at the heap-allocated
+    /// `slot`; the `Box` keeps that allocation stable across the move into the
+    /// `owners` vector, so the pointer remains valid for the call.
+    fn new_out_ptr(mut slot: Box<usize>) -> ArgOwner {
+        let slot_ptr: *mut std::ffi::c_void = (slot.as_mut() as *mut usize).cast();
+        ArgOwner::OutPtr { slot, slot_ptr }
+    }
+
     fn as_arg(&self) -> libffi::middle::Arg {
         use libffi::middle::arg;
         match self {
@@ -250,13 +371,34 @@ impl ArgOwner {
             ArgOwner::F64(v) => arg(v),
             ArgOwner::Ptr(p) => arg(p),
             ArgOwner::CStr(_, p) => arg(p),
+            ArgOwner::OutPtr { slot_ptr, .. } => arg(slot_ptr),
         }
     }
 }
 
+/// Unwrap a native-call argument to its underlying scalar value: a `$`-variable
+/// argument arrives wrapped in a `Scalar` / `ContainerRef`, or — when bound to a
+/// parameter — in an `is rw`-style varref `Capture`. Without this, `to_int` /
+/// `to_string_value` on the wrapper yields garbage (a `Capture` coerces to 0),
+/// so a `Pointer`/int held in a variable would be passed as 0.
 #[cfg(feature = "libffi")]
-fn marshal_arg(ct: CType, v: &Value) -> Result<(libffi::middle::Type, ArgOwner), String> {
+fn resolve_arg(v: &Value) -> Value {
+    match v {
+        Value::Scalar(inner) => resolve_arg(inner),
+        Value::ContainerRef(cell) => cell.lock().map(|g| resolve_arg(&g)).unwrap_or(Value::Nil),
+        Value::Capture { named, .. } => match named.get("__mutsu_varref_value") {
+            Some(inner) => resolve_arg(inner),
+            None => v.clone(),
+        },
+        other => other.clone(),
+    }
+}
+
+#[cfg(feature = "libffi")]
+fn marshal_arg(ct: CType, raw: &Value) -> Result<(libffi::middle::Type, ArgOwner), String> {
     use libffi::middle::Type;
+    let resolved = resolve_arg(raw);
+    let v = &resolved;
     let int = || crate::runtime::to_int(v);
     let num = || crate::runtime::utils::to_float_value(v).unwrap_or(0.0);
     Ok(match ct {
@@ -271,7 +413,8 @@ fn marshal_arg(ct: CType, v: &Value) -> Result<(libffi::middle::Type, ArgOwner),
         CType::F32 => (Type::f32(), ArgOwner::F32(num() as f32)),
         CType::F64 => (Type::f64(), ArgOwner::F64(num())),
         CType::Pointer => {
-            let addr = crate::runtime::to_int(v) as usize as *const std::ffi::c_void;
+            // A by-value `Pointer` passes its current address as `void*`.
+            let addr = pointer_address(v) as *const std::ffi::c_void;
             (Type::pointer(), ArgOwner::Ptr(addr))
         }
         CType::Str => {

@@ -201,9 +201,15 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
     `'sqlite3'`）に対応。soname フォールバック（`libfoo.so`→`.so.0/.1/.2`）で runtime-only システムでもロード。
     実証: `abs`/`strlen`/`pow`/`sqrt`/`sqlite3_libversion()`→"3.45.1" が動作。担保＝`t/nativecall-mvp.t`。
     実装＝`src/runtime/nativecall.rs`（`native` feature 下、wasm はスタブ）。`use NativeCall` は no-op 認識。
-  - **残（DBDish::SQLite に必要）**: ① `Pointer[T]` の out-param（`sqlite3_open` が `**ppDb` を返す）/ ②
-    `CArray[uint8]`・`CArray[Str]` / ③ `is repr('CStruct')` 構造体 / ④ callback（`sqlite3_exec` の行コールバック）。
-    ②③④は段階実装。①が最優先（接続ハンドルの取得）。
+  - **✅ Pointer + out-param（#TBD）**: 組み込み `Pointer` 型（`.new`/`.Int`/`.Bool`/`.gist`・prelude 注入）＋
+    `Pointer is rw` out-parameter（C が `void**` に書き戻す）。**ライブラリは process-lifetime でキャッシュ**
+    （呼び出しごとの dlclose が libsqlite3 をアンロードしハンドルを無効化する問題を解消）。変数引数の
+    varref Capture / Scalar / ContainerRef を marshalling 前に unwrap（リテラルしか無かった MVP で潜在した
+    「変数を渡すと 0 になる」バグも修正）。**実証: `sqlite3_open`/`exec`(CREATE/INSERT)/`errmsg`/`close` の
+    完全往復が動作**（`:memory:` DB に表作成・挿入・エラー取得）。担保＝`t/nativecall-pointer.t`（posix_memalign）。
+  - **残（DBDish::SQLite に必要）**: ① Pointer **return**（`malloc`/`sqlite3_*` が `void*` を返す→ Pointer 化）/
+    ② `CArray[uint8]`・`CArray[Str]` / ③ `is repr('CStruct')` 構造体 / ④ callback（`sqlite3_exec` 行 cb）
+    または `sqlite3_prepare_v2`/`step`/`column_*`（prepared statement・out-pointer + text 取得）。
   - **DBIish/DBDish**: 上記 NativeCall 拡張が揃えば原理的に動く（ドライバは `sqlite3_*` C API）。
 - [ ] **DB アクセス（NativeCall が揃うまでの代替）— sqlite3 CLI ラッパ（pure Raku）。**
   - **代替**: `run`/`qqx` で `sqlite3`（`/usr/bin/sqlite3` 3.45.1）を呼ぶ薄い pure-Raku ラッパ。`sqlite3 -json` で

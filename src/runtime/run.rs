@@ -20,6 +20,26 @@ role Rational[::NuT = Int, ::DeT = Int] does Real {
 }
 "#;
 
+/// Builtin `Pointer` type for NativeCall. Stored as a plain class with a single
+/// `address` attribute; the NativeCall marshalling layer reads/writes that
+/// attribute in place (an `is rw Pointer` out-parameter writes the resolved C
+/// address back here). The `.gist`/`.Str` form mirrors Rakudo's
+/// `NativeCall::Types::Pointer<...>` rendering.
+const NATIVECALL_POINTER_PRELUDE: &str = r#"
+class Pointer {
+    has $.address = 0;
+    method Int(--> Int) { $!address }
+    method Numeric(--> Int) { $!address }
+    method Bool(--> Bool) { $!address != 0 }
+    method gist(--> Str) {
+        $!address == 0
+            ?? 'NativeCall::Types::Pointer<NULL>'
+            !! sprintf('NativeCall::Types::Pointer<0x%x>', $!address)
+    }
+    method Str(--> Str) { self.gist }
+}
+"#;
+
 impl Interpreter {
     /// Prepend builtin prelude role definitions to `stmts` when the source
     /// references them. Currently this provides the parametric `Rational` role
@@ -35,6 +55,31 @@ impl Interpreter {
         static RATIONAL_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = RATIONAL_STMTS.get_or_init(|| {
             crate::parse_dispatch::parse_source(RATIONAL_ROLE_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default()
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend the builtin NativeCall `Pointer` class when a program that uses
+    /// NativeCall references `Pointer` without declaring its own. Parsed once
+    /// and cached, like [`inject_prelude_roles`].
+    fn inject_nativecall_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+        if !source.contains("NativeCall")
+            || !source.contains("Pointer")
+            || source.contains("class Pointer")
+        {
+            return;
+        }
+        use std::sync::OnceLock;
+        static POINTER_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = POINTER_STMTS.get_or_init(|| {
+            crate::parse_dispatch::parse_source(NATIVECALL_POINTER_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });
@@ -802,6 +847,7 @@ impl Interpreter {
         // role) when the program references them. These are registered through the
         // normal RoleDecl/VM path by prepending their statements to the body.
         Self::inject_prelude_roles(&preprocessed, &mut stmts);
+        Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
         let (_pre_ph, enter_ph, success_ph, failure_ph, _post_ph, body_main) =
             self.split_block_phasers(&stmts);
         // Register END phasers eagerly (before VM execution) so they run
