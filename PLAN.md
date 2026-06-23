@@ -35,8 +35,9 @@
 > - **前提② 状態所有（state ownership）＝レジストリ／IO ハンドル／型メタを Interpreter から VM が真に所有する**
 >   （`docs/vm-interpreter-fallback-ledger.md` の ②③）
 
-∴ **優先すべきは前提①②の substrate（§C・§D）であり、それが B を前進させる。§C の grep-rw-view 撤去（#3466）も
-最終 SlotRef キル（#3472・`HashEntryRef` 統合）も完了。Phase-2 要素 cell 化の残りは §C のフォローアップのみ。**
+∴ **優先すべきは前提①②の substrate（§C・§D）であり、それが B を前進させる。§C の第一級コンテナ Phase 2 は
+完了（grep-rw-view 撤去 #3466 + 最終 SlotRef キル #3472・`HashEntryRef` 統合 + scalar-param 共有 follow-up）。
+残る substrate は §D 状態所有（前提②）と Phase 3 instance 属性セル。**
 
 ### A. 単一ストア化（locals↔env 二重ストア統合）— ✅ **完了（2026-06-23）**
 
@@ -73,10 +74,13 @@
 
 > 内部に着手順序があり、前段が終わるまで後段に着手できない。A・B 両フラッグシップの律速。
 
-### C. 第一級コンテナ Phase 2 完了 → env↔locals コンテナ cell 共有（前提①）
+### C. 第一級コンテナ Phase 2 — ✅ **完了（2026-06-23）** → 残テーマは Phase 3（instance 属性セル）
 
-実装台帳＝[docs/container-identity.md](docs/container-identity.md)。Phase 0/1 完了、Phase 3（インスタンス属性 cell）も
-Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で deferred）。**残りは Phase 2 の最終キル＋coherence:**
+実装台帳＝[docs/container-identity.md](docs/container-identity.md)。Phase 0/1 完了、**Phase 2（配列/ハッシュ要素の
+第一級コンテナ化）完了**（Stage 0/1/2 + slotref-removal slice 1-5 #3472 + grep-rw-view 撤去 #3466）。Phase 3
+（インスタンス属性 cell）も Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で deferred）。
+`=`-share / `:=`-bind / 要素-要素 bind / 深い欠落 path bind / scalar-param 共有 / typed-array 共有 / for-rw /
+HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complete.t` 18 / nested.t 43 / 各 share 系 suite）。
 
 - [x] **Phase 2 Stage 2 slice 5（最終 SlotRef キル・完了・2026-06-23・#3472）**: `HashSlotRef` + `DeferredHashAccess`
       の 2 variant を単一 path ベース `Value::HashEntryRef { hash, path }` に統合し、`SlotRef` の名前と概念を払拭。
@@ -90,8 +94,11 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 - ✅ **env↔locals cell 共有 — captured-outer cell 化／純 writeback コヒーレンス（A の律速・完了）**: slice 1〜1.20
       ＋ S1〜S21。台帳＝[docs/captured-outer-cell-sharing.md](docs/captured-outer-cell-sharing.md)、詳細＝news/2026-06.md
       ＋ MEMORY 第45〜52。**残る OFF 依存は IO-Socket-Async.t の flaky のみ**。
-- [ ] follow-up（pre-existing・小）: `$x = @arr` 共有の method param 版（`method m($n){ $n.push }`）・`is copy` $-param。
-      設計＝[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §5。
+- [x] **follow-up（完了・2026-06-23）**: `$x = @arr` 共有の method/sub param 版（`method m($n){ $n.push }` /
+      `sub f($n){ $n.push }`）・`is copy` param。probe で raku 完全一致を確認（`sub f($n is copy){...}` は scalar
+      container のコピーだが中の Array reference は共有＝raku 同様 outer に伝播、`@a is copy` は要素コピーで隔離）。
+      担保＝`t/scalar-param-container-share.t`(21) / `t/scalar-param-container-share-method.t`(18) /
+      `t/named-param-container-share.t`(16) / `t/container-identity-phase2-complete.t`(18)。
 
 ### D. 状態所有（state ownership）— VM がレジストリ／IO／型メタを真に所有（前提②）
 
