@@ -1555,6 +1555,87 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("StrDistance"), attrs)
     }
 
+    /// VM-native construction for `FakeScheduler.new` — pure data: a fresh
+    /// process-global scheduler id seeded at virtual time 0.0. `next_fake_scheduler_id`
+    /// / `fake_scheduler_init` only touch a process-global table (no env / registry /
+    /// user code), so the VM builds it directly, byte-identical to the interpreter.
+    pub(crate) fn build_native_fakescheduler_value() -> Value {
+        let sched_id = super::native_methods::next_fake_scheduler_id();
+        super::native_methods::fake_scheduler_init(sched_id, 0.0);
+        let mut attrs = HashMap::new();
+        attrs.insert("scheduler_id".to_string(), Value::Int(sched_id as i64));
+        Value::make_instance(Symbol::intern("FakeScheduler"), attrs)
+    }
+
+    /// VM-native construction for `Proxy.new(:FETCH(...), :STORE(...))` — pure data
+    /// assembly that wraps the (already-evaluated) FETCH/STORE callables.
+    pub(crate) fn build_native_proxy_value(args: &[Value]) -> Value {
+        let mut fetcher = Value::Nil;
+        let mut storer = Value::Nil;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "FETCH" => fetcher = (**value).clone(),
+                    "STORE" => storer = (**value).clone(),
+                    _ => {}
+                }
+            }
+        }
+        Value::Proxy {
+            fetcher: Box::new(fetcher),
+            storer: Box::new(storer),
+            subclass: None,
+            decontainerized: false,
+        }
+    }
+
+    /// VM-native construction for `Match.new(:orig, :from, :pos|:to, :list, :hash)` —
+    /// pure data assembly: the matched substring is sliced out of `orig[from..to]`
+    /// and the positional/named captures stored as instance attributes.
+    pub(crate) fn build_native_match_value(args: &[Value]) -> Value {
+        let mut orig = String::new();
+        let mut from: i64 = 0;
+        let mut to: i64 = 0;
+        let mut list = Value::array(Vec::new());
+        let mut hash = Value::hash(HashMap::new());
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "orig" => orig = value.to_string_value(),
+                    "from" => from = to_int(value),
+                    "pos" | "to" => to = to_int(value),
+                    "list" => list = (**value).clone(),
+                    "hash" => hash = (**value).clone(),
+                    _ => {}
+                }
+            }
+        }
+        // Compute matched string from orig[from..to]
+        let matched: String = orig
+            .chars()
+            .skip(from as usize)
+            .take((to - from) as usize)
+            .collect();
+        let mut attrs = HashMap::new();
+        attrs.insert("str".to_string(), Value::str(matched));
+        attrs.insert("from".to_string(), Value::Int(from));
+        attrs.insert("to".to_string(), Value::Int(to));
+        attrs.insert("orig".to_string(), Value::str(orig));
+        // Convert list to positional captures
+        if let Value::Array(items, ..) = &list {
+            attrs.insert("list".to_string(), Value::array(items.to_vec()));
+        } else {
+            attrs.insert("list".to_string(), Value::array(Vec::new()));
+        }
+        // Convert hash (Map) to named captures
+        if let Value::Hash(map, ..) = &hash {
+            attrs.insert("named".to_string(), Value::hash(map.as_ref().clone()));
+        } else {
+            attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+        }
+        Value::make_instance(Symbol::intern("Match"), attrs)
+    }
+
     /// VM-native construction for a built-in type whose `.new(...)` is pure data
     /// assembly (no env / registry / user code): `Buf`/`Blob` (byte overlay),
     /// `utf8`/`utf16` (code units), `Uni` (codepoints), `Version`, `Duration`
@@ -1668,6 +1749,12 @@ impl Interpreter {
                 Value::Int(super::native_methods::next_supplier_id() as i64),
             );
             Some(Ok(Value::make_instance(class_name, attrs)))
+        } else if cn == "FakeScheduler" {
+            Some(Ok(Self::build_native_fakescheduler_value()))
+        } else if cn == "Proxy" {
+            Some(Ok(Self::build_native_proxy_value(args)))
+        } else if cn == "Match" {
+            Some(Ok(Self::build_native_match_value(args)))
         } else {
             None
         }
@@ -2748,32 +2835,12 @@ impl Interpreter {
                     return Ok(Value::make_instance(*class_name, HashMap::new()));
                 }
                 "FakeScheduler" => {
-                    let sched_id = super::native_methods::next_fake_scheduler_id();
-                    // Initialize with current time (use 0.0 as base for
-                    // virtual time)
-                    super::native_methods::fake_scheduler_init(sched_id, 0.0);
-                    let mut attrs = HashMap::new();
-                    attrs.insert("scheduler_id".to_string(), Value::Int(sched_id as i64));
-                    return Ok(Value::make_instance(Symbol::intern("FakeScheduler"), attrs));
+                    // Shared single implementation with the VM's native fast path.
+                    return Ok(Self::build_native_fakescheduler_value());
                 }
                 "Proxy" => {
-                    let mut fetcher = Value::Nil;
-                    let mut storer = Value::Nil;
-                    for arg in &args {
-                        if let Value::Pair(key, value) = arg {
-                            match key.as_str() {
-                                "FETCH" => fetcher = *value.clone(),
-                                "STORE" => storer = *value.clone(),
-                                _ => {}
-                            }
-                        }
-                    }
-                    return Ok(Value::Proxy {
-                        fetcher: Box::new(fetcher),
-                        storer: Box::new(storer),
-                        subclass: None,
-                        decontainerized: false,
-                    });
+                    // Shared single implementation with the VM's native fast path.
+                    return Ok(Self::build_native_proxy_value(&args));
                 }
                 "CompUnit::DependencySpecification" => {
                     let mut short_name: Option<String> = None;
@@ -3090,48 +3157,8 @@ impl Interpreter {
                     return Ok(Value::slip(args.to_vec()));
                 }
                 "Match" => {
-                    // Match.new(:orig("..."), :from(N), :pos(N), :list(...), :hash(...))
-                    let mut orig = String::new();
-                    let mut from: i64 = 0;
-                    let mut to: i64 = 0;
-                    let mut list = Value::array(Vec::new());
-                    let mut hash = Value::hash(HashMap::new());
-                    for arg in &args {
-                        if let Value::Pair(key, value) = arg {
-                            match key.as_str() {
-                                "orig" => orig = value.to_string_value(),
-                                "from" => from = to_int(value),
-                                "pos" | "to" => to = to_int(value),
-                                "list" => list = *value.clone(),
-                                "hash" => hash = *value.clone(),
-                                _ => {}
-                            }
-                        }
-                    }
-                    // Compute matched string from orig[from..pos]
-                    let matched: String = orig
-                        .chars()
-                        .skip(from as usize)
-                        .take((to - from) as usize)
-                        .collect();
-                    let mut attrs = HashMap::new();
-                    attrs.insert("str".to_string(), Value::str(matched));
-                    attrs.insert("from".to_string(), Value::Int(from));
-                    attrs.insert("to".to_string(), Value::Int(to));
-                    attrs.insert("orig".to_string(), Value::str(orig));
-                    // Convert list to positional captures
-                    if let Value::Array(items, ..) = &list {
-                        attrs.insert("list".to_string(), Value::array(items.to_vec()));
-                    } else {
-                        attrs.insert("list".to_string(), Value::array(Vec::new()));
-                    }
-                    // Convert hash (Map) to named captures
-                    if let Value::Hash(map, ..) = &hash {
-                        attrs.insert("named".to_string(), Value::hash(map.as_ref().clone()));
-                    } else {
-                        attrs.insert("named".to_string(), Value::hash(HashMap::new()));
-                    }
-                    return Ok(Value::make_instance(Symbol::intern("Match"), attrs));
+                    // Shared single implementation with the VM's native fast path.
+                    return Ok(Self::build_native_match_value(&args));
                 }
                 // Types that cannot be instantiated with .new
                 "HyperWhatever" | "Whatever" | "Instant" => {
