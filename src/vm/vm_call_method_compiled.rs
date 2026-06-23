@@ -1824,6 +1824,17 @@ impl Interpreter {
         if let Some(result) = self.try_native_first(&target, method, &args) {
             return result;
         }
+        // Native QuantHash coercion `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/
+        // `.MixHash` over a list-like receiver. Variable receivers (`@a.Set`,
+        // `%h.MixHash`) compile to CallMethodMut and so land on this mut path; the
+        // coercion produces a *new* Set/Bag/Mix value and never mutates the
+        // receiver variable, so there is no writeback — identical to the non-mut
+        // path's native dispatch. Instance/Package receivers fall through.
+        if args.is_empty()
+            && let Some(result) = Self::try_native_quanthash_coerce(&target, method)
+        {
+            return result;
+        }
         // TODO: compile to bytecode — native/Buf/Failure method fork, mut (ledger §1).
         // User-defined methods run as bytecode (compiled at registration or on
         // demand above); what remains is native receiver dispatch blocked on
