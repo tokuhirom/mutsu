@@ -13,8 +13,35 @@ pub(super) fn format_float_fixed(f: f64, p: usize, plus_sign: bool, space_flag: 
     }
 }
 
-/// Format a Rat/FatRat value for %f with exact precision (avoids f64 rounding).
-/// Returns None if the argument is not a rational type.
+/// Convert a finite f64 to an exact rational (numer/denom) via its shortest
+/// round-trippable decimal representation. Rust's `{}` formatting never uses
+/// scientific notation for f64, so the string is always positional.
+fn f64_to_rational(f: f64) -> (BigInt, BigInt) {
+    let s = format!("{f}");
+    let (is_neg, digits) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s.as_str()),
+    };
+    let (int_part, frac_part) = match digits.split_once('.') {
+        Some((i, fr)) => (i, fr),
+        None => (digits, ""),
+    };
+    let combined = format!("{int_part}{frac_part}");
+    let mut numer = combined
+        .parse::<BigInt>()
+        .unwrap_or_else(|_| BigInt::from(0));
+    if is_neg {
+        numer = -numer;
+    }
+    let denom = num_traits::pow::pow(BigInt::from(10), frac_part.len());
+    (numer, denom)
+}
+
+/// Format a numeric value for %f with exact precision (avoids f64 half-to-even
+/// rounding). Uses round-half-away-from-zero like Rakudo. For Num arguments the
+/// f64 is first converted to its exact shortest-decimal rational so that e.g.
+/// `sprintf("%.2f", 1.005e0)` yields `1.01`, matching Rakudo.
+/// Returns None if the argument is not numeric.
 pub(super) fn format_rat_fixed(
     arg: Option<&Value>,
     p: usize,
@@ -27,9 +54,18 @@ pub(super) fn format_rat_fixed(
         Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
             ((**n).clone(), (**d).clone())
         }
+        Some(Value::Int(i)) => (BigInt::from(*i), BigInt::from(1)),
+        Some(Value::Num(f)) if f.is_finite() => f64_to_rational(*f),
+        Some(Value::Str(s)) => match s.trim().parse::<f64>() {
+            Ok(f) if f.is_finite() => f64_to_rational(f),
+            _ => return None,
+        },
         _ => return None,
     };
-    let is_neg = numer < BigInt::from(0);
+    // Detect a negatively-signed zero (e.g. -0.0e0) so its sign is preserved.
+    let neg_zero = matches!(arg, Some(Value::Num(f)) if f.is_sign_negative())
+        || matches!(arg, Some(Value::Str(s)) if s.trim().starts_with('-'));
+    let is_neg = numer < BigInt::from(0) || (numer == BigInt::from(0) && neg_zero);
     let prefix = sign_prefix(is_neg, plus_sign, space_flag);
     let abs_numer = if is_neg { -&numer } else { numer };
     // Compute integer and fractional parts using BigInt arithmetic
