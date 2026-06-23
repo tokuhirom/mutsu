@@ -234,26 +234,44 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     };
     let (input, _) = parse_char(input, sep)?;
     let (input, _) = ws(input)?;
+    // A top-level `;` inside `(...)` separates the list into "sections", one per
+    // semicolon-group: `(1,2;3,4)` is `((1,2),(3,4))`, not the flat `(1,2,3,4)`.
+    // `items` accumulates the CURRENT section; completed sections move into
+    // `sections`. With no semicolon present, the result is the usual flat list.
+    let mut sections: Vec<Vec<Expr>> = Vec::new();
     let mut items = vec![first];
-    if let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone())) {
+    let mut saw_semicolon = false;
+    if sep == ';' {
+        saw_semicolon = true;
+        sections.push(std::mem::take(&mut items));
+    }
+    if !saw_semicolon
+        && let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone()))
+    {
         let (rest, modified_expr) = result?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
         return Ok((rest, modified_expr));
     }
-    // Handle trailing comma before close paren
+    // Handle trailing comma/semicolon before close paren
     if let Ok((input, _)) = parse_char(input, ')') {
-        return Ok((input, finalize_paren_list(items)));
+        return Ok((
+            input,
+            finalize_paren_sections(sections, items, saw_semicolon),
+        ));
     }
     let (mut input_rest, second) = expression_no_sequence(input)?;
     items.push(second);
     loop {
         let (input, _) = ws(input_rest)?;
         if let Ok((input, _)) = parse_char(input, ')') {
-            return Ok((input, finalize_paren_list(items)));
+            return Ok((
+                input,
+                finalize_paren_sections(sections, items, saw_semicolon),
+            ));
         }
-        // Check for sequence operator before comma
-        if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
+        // Check for sequence operator before comma (not inside a semicolon list)
+        if !saw_semicolon && let Some(seq) = try_parse_sequence_in_paren(input, &items) {
             return seq;
         }
         let sep = if input.starts_with(',') {
@@ -265,18 +283,60 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         };
         let (input, _) = parse_char(input, sep)?;
         let (input, _) = ws(input)?;
-        if let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone())) {
+        if sep == ';' {
+            saw_semicolon = true;
+            sections.push(std::mem::take(&mut items));
+        }
+        if !saw_semicolon
+            && let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone()))
+        {
             let (rest, modified_expr) = result?;
             let (rest, _) = ws(rest)?;
             let (rest, _) = parse_char(rest, ')')?;
             return Ok((rest, modified_expr));
         }
         if let Ok((input, _)) = parse_char(input, ')') {
-            return Ok((input, finalize_paren_list(items)));
+            return Ok((
+                input,
+                finalize_paren_sections(sections, items, saw_semicolon),
+            ));
         }
         let (input, next) = expression_no_sequence(input)?;
         items.push(next);
         input_rest = input;
+    }
+}
+
+/// Combine semicolon-separated sections of a parenthesized list. With no
+/// semicolon seen the list is flat (`finalize_paren_list`). Otherwise each
+/// non-empty section becomes one element: a multi-item section is a sub-list,
+/// a single-item section is the bare item. A single overall section (e.g. a
+/// trailing `;`: `(1,2,3;)`) is NOT wrapped, matching Raku.
+fn finalize_paren_sections(
+    mut sections: Vec<Vec<Expr>>,
+    current: Vec<Expr>,
+    saw_semicolon: bool,
+) -> Expr {
+    if !saw_semicolon {
+        return finalize_paren_list(current);
+    }
+    if !current.is_empty() {
+        sections.push(current);
+    }
+    match sections.len() {
+        0 => Expr::ArrayLiteral(Vec::new()),
+        1 => build_paren_section(sections.into_iter().next().unwrap()),
+        _ => Expr::ArrayLiteral(sections.into_iter().map(build_paren_section).collect()),
+    }
+}
+
+/// Render one semicolon-section: a single item stays bare; multiple items form
+/// a sub-list (via `finalize_paren_list`, so meta-ops etc. still lift).
+fn build_paren_section(items: Vec<Expr>) -> Expr {
+    if items.len() == 1 {
+        items.into_iter().next().unwrap()
+    } else {
+        finalize_paren_list(items)
     }
 }
 
@@ -976,6 +1036,11 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok((input, _)) = parse_char(input, ']') {
         return Ok((input, Expr::BracketArray(items, false)));
     }
+    // A top-level `;` sections an array composer just like a parenthesized list:
+    // `[1,2;3,4]` is `[(1,2),(3,4)]`. `items` is the current section; completed
+    // sections move into `sections`.
+    let mut sections: Vec<Vec<Expr>> = Vec::new();
+    let mut saw_semicolon = false;
     let (mut rest, first) = expression(input)?;
     items.push(first);
     loop {
@@ -983,7 +1048,10 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
         if let Ok((r, _)) = parse_char(r, ',') {
             let (r, _) = ws(r)?;
             if let Ok((r, _)) = parse_char(r, ']') {
-                return Ok((r, Expr::BracketArray(merge_sequence_seeds(items), true)));
+                return Ok((
+                    r,
+                    finalize_array_sections(sections, items, saw_semicolon, true),
+                ));
             }
             // After a separator we need another element or a closing `]`.
             // Hitting unparseable/end-of-input here means the array composer
@@ -991,10 +1059,28 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
             let (r, next) = expression(r).map_err(|_| array_fail_goal())?;
             items.push(next);
             rest = r;
+        } else if r.starts_with(';') && !r.starts_with(";;") {
+            // Semicolon section separator.
+            let (r, _) = parse_char(r, ';')?;
+            let (r, _) = ws(r)?;
+            saw_semicolon = true;
+            sections.push(std::mem::take(&mut items));
+            if let Ok((r, _)) = parse_char(r, ']') {
+                return Ok((
+                    r,
+                    finalize_array_sections(sections, items, saw_semicolon, false),
+                ));
+            }
+            let (r, next) = expression(r).map_err(|_| array_fail_goal())?;
+            items.push(next);
+            rest = r;
         } else {
             let (r, _) = ws(r)?;
             if let Ok((r, _)) = parse_char(r, ']') {
-                return Ok((r, Expr::BracketArray(merge_sequence_seeds(items), false)));
+                return Ok((
+                    r,
+                    finalize_array_sections(sections, items, saw_semicolon, false),
+                ));
             }
             // Neither a separator nor the closing bracket: if another term
             // follows, this is "Two terms in a row" (X::Syntax::Confused),
@@ -1005,8 +1091,45 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
             // We have parsed a valid array composer but cannot find the
             // closing `]` (e.g. `[1,2` at end of input): X::Comp::FailGoal.
             let (r, _) = parse_char(r, ']').map_err(|_| array_fail_goal())?;
-            return Ok((r, Expr::BracketArray(merge_sequence_seeds(items), false)));
+            return Ok((
+                r,
+                finalize_array_sections(sections, items, saw_semicolon, false),
+            ));
         }
+    }
+}
+
+/// Combine semicolon-separated sections of an array composer. With no semicolon
+/// the array is flat. Otherwise each non-empty section becomes one element: a
+/// multi-item section is a sub-list, a single-item section is the bare item. A
+/// single overall section (e.g. a trailing `;`: `[1,2,3;]`) stays flat.
+fn finalize_array_sections(
+    mut sections: Vec<Vec<Expr>>,
+    current: Vec<Expr>,
+    saw_semicolon: bool,
+    trailing_comma: bool,
+) -> Expr {
+    if !saw_semicolon {
+        return Expr::BracketArray(merge_sequence_seeds(current), trailing_comma);
+    }
+    if !current.is_empty() {
+        sections.push(current);
+    }
+    if sections.len() <= 1 {
+        let flat = sections.into_iter().next().unwrap_or_default();
+        return Expr::BracketArray(merge_sequence_seeds(flat), false);
+    }
+    let elems = sections.into_iter().map(build_array_section).collect();
+    Expr::BracketArray(elems, false)
+}
+
+/// Render one array section: a single item stays bare; multiple items form a
+/// sub-list (`ArrayLiteral`, so they render as `(a, b)`).
+fn build_array_section(items: Vec<Expr>) -> Expr {
+    if items.len() == 1 {
+        items.into_iter().next().unwrap()
+    } else {
+        Expr::ArrayLiteral(merge_sequence_seeds(items))
     }
 }
 
