@@ -320,7 +320,7 @@ pub fn parse_date_string(s: &str) -> Result<(i64, i64, i64), RuntimeError> {
         temporal_invalid_format_error(
             s,
             "Date",
-            format!("Invalid Date string '{}'; use yyyy-mm-dd", s),
+            format!("Invalid Date string '{}'; use yyyy-mm-dd instead", s),
         )
     };
 
