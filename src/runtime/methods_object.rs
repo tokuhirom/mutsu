@@ -1634,6 +1634,20 @@ impl Interpreter {
         ) {
             // These take no construction args — just an empty instance.
             Some(Ok(Value::make_instance(class_name, HashMap::new())))
+        } else if matches!(cn.as_str(), "Lock" | "Lock::Async" | "Lock::Soft") {
+            // A lock is pure data: a fresh global lock id (and an `async` flag for
+            // `Lock::Async`). `next_lock_id` only bumps a process-global counter —
+            // no env / registry / user code — so the VM builds it directly,
+            // byte-identical to the interpreter's `dispatch_new` arm.
+            let mut attrs = HashMap::new();
+            attrs.insert(
+                "lock-id".to_string(),
+                Value::Int(super::native_methods::next_lock_id() as i64),
+            );
+            if cn == "Lock::Async" {
+                attrs.insert("async".to_string(), Value::Bool(true));
+            }
+            Some(Ok(Value::make_instance(class_name, attrs)))
         } else {
             None
         }
@@ -3419,6 +3433,8 @@ impl Interpreter {
                     return Ok(Value::array(vec![frame]));
                 }
                 "Lock" | "Lock::Async" | "Lock::Soft" => {
+                    // Shared with the VM's native fast path
+                    // (`try_native_builtin_construct`).
                     let mut attrs = HashMap::new();
                     let lock_id = super::native_methods::next_lock_id() as i64;
                     attrs.insert("lock-id".to_string(), Value::Int(lock_id));
