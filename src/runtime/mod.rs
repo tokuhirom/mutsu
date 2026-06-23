@@ -180,6 +180,7 @@ mod methods_pick_roll;
 mod methods_promise;
 mod methods_promise_class;
 mod methods_qualified;
+mod methods_quanthash_ctor;
 mod methods_seq_dispatch;
 pub(crate) mod methods_signature;
 mod methods_string;

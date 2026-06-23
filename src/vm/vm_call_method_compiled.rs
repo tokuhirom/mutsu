@@ -162,6 +162,19 @@ impl Interpreter {
             self.method_dispatch_pure = true;
             return result;
         }
+        // Native QuantHash construction: `Set`/`SetHash`/`Bag`/`BagHash`/`Mix`/
+        // `MixHash`.new(...) — pure element counting + optional parameterized
+        // type-check / container-metadata tag, no env / registry / user code.
+        // Built directly via the single `try_native_quanthash_construct` impl the
+        // interpreter's `dispatch_new` also delegates to.
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && let Some(result) =
+                self.try_native_quanthash_construct_for_package(*class_name, &args)
+        {
+            self.method_dispatch_pure = true;
+            return result;
+        }
         // Native built-in *class* method (a pure type-object method other than
         // `.new`, e.g. `Instant.from-posix`) — built directly instead of routing
         // through the interpreter's class-method dispatch.
@@ -1757,6 +1770,15 @@ impl Interpreter {
             && let Value::Package(class_name) = &target
             && let Some(result) =
                 crate::runtime::Interpreter::try_native_builtin_construct(*class_name, &args)
+        {
+            self.method_dispatch_pure = true;
+            return result;
+        }
+        // Native QuantHash construction (mut path twin of the above).
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && let Some(result) =
+                self.try_native_quanthash_construct_for_package(*class_name, &args)
         {
             self.method_dispatch_pure = true;
             return result;
