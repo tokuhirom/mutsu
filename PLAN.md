@@ -190,12 +190,20 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
     HTTP::Server::Tiny のリクエストループが `done` を使うなら要修正。
   - **HTTP::Status v0.0.5**: user `method sink` がシンクコンテキストで呼ばれず status table が空。
     ⚠️ 注意: 過去に sink 修正は sink.t を回帰させた（メモリ `sink-context-blocked-container-identity` 参照）。
-- [ ] **DB アクセス — sqlite3 CLI ラッパ（pure Raku）が現実解。**
-  - **DBIish/DBDish**: NativeCall 依存 → **ブロック**（ドライバは `sqlite3_*` C API）。API shape のみ再利用可。
-  - **推奨**: `run`/`qqx` で `sqlite3`（`/usr/bin/sqlite3` 3.45.1, インストール済）を呼ぶ薄い pure-Raku ラッパ。
-    mutsu の `run`/`qqx`（`:out`/`:err`/`exitcode`）は raku とバイト一致で動作確認済。`sqlite3 -json` で行を JSON 出力可。
-    工数 ~1-2日。値エスケープ/1クエリ1プロセスは要注意。
-  - **フォールバック**: flat-file `.raku`＋`EVALFILE`（mutsu で round-trip 確認済）は今日すぐ動く MVP。
+- [ ] **NativeCall（C FFI）— MVP landed、DBDish への正攻法。**
+  - **✅ MVP（#TBD）**: `is native(...)` の sub を `dlopen`+`libffi` で実 C 呼び出し。スカラ整数/浮動小数・
+    `Str`→`char*`・`Pointer`・戻り値 `char*`→`Str`・`is symbol(...)`・非デフォルトライブラリ（`is native('m')`/
+    `'sqlite3'`）に対応。soname フォールバック（`libfoo.so`→`.so.0/.1/.2`）で runtime-only システムでもロード。
+    実証: `abs`/`strlen`/`pow`/`sqrt`/`sqlite3_libversion()`→"3.45.1" が動作。担保＝`t/nativecall-mvp.t`。
+    実装＝`src/runtime/nativecall.rs`（`native` feature 下、wasm はスタブ）。`use NativeCall` は no-op 認識。
+  - **残（DBDish::SQLite に必要）**: ① `Pointer[T]` の out-param（`sqlite3_open` が `**ppDb` を返す）/ ②
+    `CArray[uint8]`・`CArray[Str]` / ③ `is repr('CStruct')` 構造体 / ④ callback（`sqlite3_exec` の行コールバック）。
+    ②③④は段階実装。①が最優先（接続ハンドルの取得）。
+  - **DBIish/DBDish**: 上記 NativeCall 拡張が揃えば原理的に動く（ドライバは `sqlite3_*` C API）。
+- [ ] **DB アクセス（NativeCall が揃うまでの代替）— sqlite3 CLI ラッパ（pure Raku）。**
+  - **代替**: `run`/`qqx` で `sqlite3`（`/usr/bin/sqlite3` 3.45.1）を呼ぶ薄い pure-Raku ラッパ。`sqlite3 -json` で
+    行を JSON 出力可。値エスケープ/1クエリ1プロセスは要注意。NativeCall 完成までの繋ぎ。
+  - **フォールバック**: flat-file `.raku`＋`EVALFILE`（mutsu で round-trip 確認済）。
 - **JSON は native 実装済み**（`to-json`/`from-json`・#3402・news 参照）。Template::Mustache 91/92-specs の残（別軸・
   本タスク外）= 実 spec の rendering ギャップ（delimiter 永続化／inheritable partials／lambda）＋ 最初の spec のみ
   `+$spec.value`=0 になる subtest/Seq-consumption 系バグ（itemization とは独立）。

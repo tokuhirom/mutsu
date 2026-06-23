@@ -9,8 +9,11 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["native"]
-native = ["rustyline", "libc", "pcre2"]
+native = ["rustyline", "libc", "pcre2", "libloading", "libffi"]
 wasm = ["wasm-bindgen", "console_error_panic_hook"]
+# NativeCall (C FFI) support — gated under `native`; wasm builds cannot do FFI.
+libloading = ["dep:libloading"]
+libffi = ["dep:libffi"]
 
 [dependencies]
 regex = "1.12.3"
@@ -34,6 +37,8 @@ serde_json = "1"
 bincode = "1"
 icu_collator = "2.1"
 icu_collator_data = "2.1"
+libloading = { version = "0.8", optional = true }
+libffi = { version = "3", optional = true }
 
 [profile.release]
 debug = true

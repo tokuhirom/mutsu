@@ -177,6 +177,19 @@ impl Interpreter {
     }
 
     /// Peek at the callsite line from args without consuming or sanitizing them.
+    /// True for the synthetic callsite-line marker the compiler appends to some
+    /// call argument lists (for deprecation / test diagnostics). NativeCall (and
+    /// any raw-args consumer) must drop it before treating the list as real args.
+    pub(crate) fn is_callsite_line_marker(arg: &Value) -> bool {
+        match arg {
+            Value::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
+            Value::ValuePair(key, _) => {
+                matches!(key.as_ref(), Value::Str(name) if name.as_str() == TEST_CALLSITE_LINE_KEY)
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn peek_callsite_line(args: &[Value]) -> Option<i64> {
         for arg in args {
             match arg {

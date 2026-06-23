@@ -556,6 +556,16 @@ impl Interpreter {
                     custom_traits,
                 )
             })?;
+            // If this sub carries the `is native(...)` trait, record its C-FFI
+            // descriptor so calls route through NativeCall instead of the body.
+            if custom_traits.iter().any(|(t, _)| t == "native") {
+                self.register_native_call_sub(
+                    &resolved_name,
+                    param_defs,
+                    return_type.as_ref(),
+                    custom_traits,
+                )?;
+            }
             self.fn_resolve_gen += 1;
             self.method_resolve_cache.clear();
             self.last_method_resolve = None;
@@ -610,6 +620,72 @@ impl Interpreter {
         } else {
             Err(RuntimeError::new("RegisterSub expects SubDecl"))
         }
+    }
+
+    /// Build and store the NativeCall descriptor for an `is native(...)` sub.
+    /// The library name comes from the `native` trait argument, the C symbol
+    /// from an optional `is symbol('...')` trait (defaulting to the sub name),
+    /// and the C signature from the parameter / return type constraints.
+    fn register_native_call_sub(
+        &mut self,
+        name: &str,
+        param_defs: &[crate::ast::ParamDef],
+        return_type: Option<&String>,
+        custom_traits: &[(String, Option<crate::ast::Expr>)],
+    ) -> Result<(), RuntimeError> {
+        use crate::runtime::nativecall::{CType, NativeCallSpec};
+
+        // Evaluate a trait's argument expression to a String, if present.
+        let mut eval_trait_str = |trait_name: &str| -> Result<Option<String>, RuntimeError> {
+            for (t, arg) in custom_traits {
+                if t == trait_name {
+                    return Ok(match arg {
+                        Some(expr) => Some(
+                            self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
+                                .to_string_value(),
+                        ),
+                        None => None,
+                    });
+                }
+            }
+            Ok(None)
+        };
+
+        let library = eval_trait_str("native")?;
+        let symbol = eval_trait_str("symbol")?.unwrap_or_else(|| name.to_string());
+
+        // Map each parameter's type constraint to a C type. An unmapped /
+        // missing type means we cannot marshal it — skip native registration so
+        // the failure surfaces clearly rather than mis-calling.
+        let mut params = Vec::with_capacity(param_defs.len());
+        for pd in param_defs {
+            let Some(tc) = pd.type_constraint.as_deref() else {
+                return Ok(());
+            };
+            let Some(ct) = CType::from_type_name(tc) else {
+                return Ok(());
+            };
+            params.push(ct);
+        }
+
+        let ret = match return_type {
+            None => CType::Void,
+            Some(rt) => match CType::from_type_name(rt) {
+                Some(ct) => ct,
+                None => return Ok(()),
+            },
+        };
+
+        self.native_call_specs.insert(
+            name.to_string(),
+            NativeCallSpec {
+                library,
+                symbol,
+                params,
+                ret,
+            },
+        );
+        Ok(())
     }
 
     pub(super) fn exec_register_token_op(
