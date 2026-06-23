@@ -5,6 +5,20 @@ use crate::value::{RuntimeError, Value};
 use super::raku_repr::raku_value;
 use super::{format_temporal_num, gist_array_wrap, range_gist_string};
 
+/// Leaf-value gist for a list/array element: a WhateverCode (`*+1`) gists as
+/// `WhateverCode.new`; everything else uses its string value.
+fn leaf_gist(v: &Value) -> String {
+    if let Value::Sub(data) = v
+        && matches!(
+            data.env.get("__mutsu_callable_type"),
+            Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+        )
+    {
+        return "WhateverCode.new".to_string();
+    }
+    v.to_string_value()
+}
+
 /// A collection whose gist embeds an element's gist must defer to the runtime
 /// slow path when any element may carry a user-defined `method gist` (an
 /// instance, custom type, or type object). The pure fast path here cannot
@@ -493,7 +507,7 @@ pub(super) fn dispatch(
                             .unwrap_or_else(|| v.to_string_value())
                     }
                     other if other.is_range() => range_gist_string(other),
-                    other => other.to_string_value(),
+                    other => leaf_gist(other),
                 }
             }
             // Shaped arrays: format with newlines between rows
@@ -568,7 +582,7 @@ pub(super) fn dispatch(
                             .unwrap_or_else(|| v.to_string_value())
                     }
                     other if other.is_range() => range_gist_string(other),
-                    other => other.to_string_value(),
+                    other => leaf_gist(other),
                 }
             }
             let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
@@ -584,6 +598,17 @@ pub(super) fn dispatch(
             }
         }
         Value::Junction { .. } if method == "raku" || method == "perl" => None,
+        // A WhateverCode (`*+1`, `*.abs`) renders as `WhateverCode.new` for
+        // `.gist`/`.raku`/`.perl`, not the generic closure form.
+        Value::Sub(data)
+            if (method == "raku" || method == "perl" || method == "gist")
+                && matches!(
+                    data.env.get("__mutsu_callable_type"),
+                    Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+                ) =>
+        {
+            Some(Ok(Value::str_from("WhateverCode.new")))
+        }
         // Sub/Routine/WeakSub: delegate to interpreter for proper raku/gist/Str
         Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => None,
         Value::Pair(k, v) => {

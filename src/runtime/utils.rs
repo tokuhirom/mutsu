@@ -1132,6 +1132,16 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 gist_value(inner)
             }
         }
+        // A WhateverCode (`*+1`, `*.abs`) gists as `WhateverCode.new`, not the
+        // empty string its bare closure stringification would yield.
+        Value::Sub(data)
+            if matches!(
+                data.env.get("__mutsu_callable_type"),
+                Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+            ) =>
+        {
+            "WhateverCode.new".to_string()
+        }
         _ => value.to_string_value(),
     }
 }

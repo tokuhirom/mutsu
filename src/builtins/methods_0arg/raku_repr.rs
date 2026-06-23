@@ -805,6 +805,16 @@ pub fn raku_value(v: &Value) -> String {
                 raku_value(inner)
             }
         }
+        // A WhateverCode (`*+1`) renders as `WhateverCode.new`, including when it
+        // appears as an element of an array/list being `.raku`-rendered.
+        Value::Sub(data)
+            if matches!(
+                data.env.get("__mutsu_callable_type"),
+                Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+            ) =>
+        {
+            "WhateverCode.new".to_string()
+        }
         other => other.to_string_value(),
     }
 }
