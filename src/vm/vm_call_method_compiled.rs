@@ -529,20 +529,23 @@ impl Interpreter {
             return result;
         }
         // Native QuantHash coercion `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/
-        // `.MixHash` over a list-like receiver (ledger §1: native receiver dispatch
-        // -> Interpreter-native). Pure element-folding shared with the interpreter
-        // via `builtins::quanthash_coerce`. `.MixHash` embeds its type metadata
-        // directly in the `Value::Mix` Arc (not an interpreter-owned side table —
-        // container metadata has travelled in the value since #2952), so it is a
-        // pure value op like the others. Instance/Package receivers fall through.
+        // `.MixHash` over a list-like aggregate or a plain Cool scalar (ledger §D:
+        // native receiver dispatch -> Interpreter-native). Pure element-folding
+        // shared with the interpreter via `builtins::quanthash_coerce`. `.MixHash`
+        // embeds its type metadata directly in the `Value::Mix` Arc (not an
+        // interpreter-owned side table — container metadata has travelled in the
+        // value since #2952), so it is a pure value op like the others. A scalar
+        // (`42.Set`) becomes a single-element collection. Instance/Package/Junction
+        // receivers fall through.
         if args.is_empty()
             && let Some(result) = Self::try_native_quanthash_coerce(&target, method)
         {
             return result;
         }
-        // Native `.Map` / `.Hash` coercion over a list-like / Hash / QuantHash
-        // receiver (pure value op; the `Map` declared-type is embedded in the
-        // Hash Arc). Instance/Package fall through.
+        // Native `.Map` / `.Hash` coercion over a list-like aggregate or a plain
+        // Cool scalar (pure value op; the `Map` declared-type is embedded in the
+        // Hash Arc). A scalar (`42.Hash`) raises the same odd-number error as the
+        // interpreter. Instance/Package/Junction fall through.
         if args.is_empty()
             && let Some(result) = Self::try_native_map_hash_coerce(&target, method)
         {
@@ -1127,32 +1130,23 @@ impl Interpreter {
         }
     }
 
-    /// Interpreter-native QuantHash coercion for `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`
-    /// over a list-like receiver (List/Array/Seq/Slip/Hash/Set/Bag/Mix/Pair/Range).
-    /// Delegates the element folding to the single authoritative pure
-    /// implementation in `builtins::quanthash_coerce`, the same one the
-    /// interpreter's `dispatch_method_by_name_2` uses, so the result is
-    /// behavior-invariant. The `*Hash` variants flip the mutable flag exactly as
-    /// the interpreter does.
+    /// Whether `target` is a receiver for which the pure `.Set`/`.Bag`/`.Mix`/
+    /// `.Map`/`.Hash`-family coercions can run natively in the VM. Two groups go
+    /// native:
+    ///   * list-like / QuantHash aggregates (List/Array/Seq/Slip/Hash/Set/Bag/Mix/
+    ///     Pair/Range) — they flatten their elements; and
+    ///   * plain `Cool` scalars (Str / Int / BigInt / Num / Rat / FatRat / Complex /
+    ///     Bool) — each becomes a single-element collection via the coercion's
+    ///     catch-all arm. The interpreter routes these exact scalars straight to the
+    ///     same shared `builtins` impl with no special-casing (`Str.Set` →
+    ///     `to_set` `other =>` arm = `Set(blue)`), so going native is behavior-invariant.
     ///
-    /// Returns `None` (fall through to the interpreter) for `.MixHash` (it
-    /// registers container type metadata — interpreter-owned state) and for
-    /// non-list-like receivers (`Instance`/`Package`/scalars), leaving those rarer
-    /// cases — `__baggy_data__` instances, type objects, user coercion — to the
-    /// interpreter.
-    fn try_native_quanthash_coerce(
-        target: &Value,
-        method: &str,
-    ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(
-            method,
-            "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
-        ) {
-            return None;
-        }
-        // Only list-like / QuantHash receivers go native; everything else
-        // (Instance/Package/scalars) keeps the interpreter's richer handling.
-        let list_like = matches!(
+    /// `Instance` (`__baggy_data__` / Match captures / user coercion), `Package`
+    /// (type objects — `.Map`/`.Hash` return the type object, handled by the
+    /// interpreter), `Nil`, and `Junction` (autothread) receivers return `false`
+    /// and fall through to the interpreter's richer handling.
+    fn coerce_receiver_native_eligible(target: &Value) -> bool {
+        matches!(
             target,
             Value::Array(..)
                 | Value::Seq(_)
@@ -1163,8 +1157,42 @@ impl Interpreter {
                 | Value::Mix(..)
                 | Value::Pair(..)
                 | Value::ValuePair(..)
-        ) || target.is_range();
-        if !list_like {
+                | Value::Str(_)
+                | Value::Int(_)
+                | Value::BigInt(_)
+                | Value::Num(_)
+                | Value::Rat(..)
+                | Value::FatRat(..)
+                | Value::Complex(..)
+                | Value::Bool(_)
+        ) || target.is_range()
+    }
+
+    /// Interpreter-native QuantHash coercion for `.Set`/`.Bag`/`.Mix`/`.SetHash`/
+    /// `.BagHash`/`.MixHash` over a list-like aggregate or a plain `Cool` scalar
+    /// (see [`coerce_receiver_native_eligible`](Self::coerce_receiver_native_eligible)).
+    /// Delegates the element folding to the single authoritative pure
+    /// implementation in `builtins::quanthash_coerce`, the same one the
+    /// interpreter's `dispatch_method_by_name_2` uses, so the result is
+    /// behavior-invariant. The `*Hash` variants flip the mutable flag exactly as
+    /// the interpreter does. `.MixHash` embeds its type metadata directly in the
+    /// `Value::Mix` Arc (container metadata has travelled in the value since #2952),
+    /// so it is a pure value op like the others.
+    ///
+    /// Returns `None` (fall through to the interpreter) for `Instance`/`Package`/
+    /// `Nil`/`Junction` receivers, leaving those rarer cases — `__baggy_data__`
+    /// instances, type objects, user coercion, autothread — to the interpreter.
+    fn try_native_quanthash_coerce(
+        target: &Value,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(
+            method,
+            "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+        ) {
+            return None;
+        }
+        if !Self::coerce_receiver_native_eligible(target) {
             return None;
         }
         let target = target.clone();
@@ -1190,14 +1218,17 @@ impl Interpreter {
         Some(result)
     }
 
-    /// Interpreter-native `.Map` / `.Hash` coercion over a list-like / Hash /
-    /// QuantHash receiver, sharing the single `builtins::map_hash_coerce` impl
-    /// the interpreter also uses. `.Map` decontainerizes and embeds the `Map`
-    /// declared-type *in* the `Value::Hash` Arc (container metadata travels in
-    /// the value since #2952 — no interpreter-owned side table), so both are
-    /// pure value ops. Instance (Match / `__baggy_data__`) and Package (type
-    /// object) receivers fall through to the interpreter's richer handling.
-    /// Lowercase `.hash` is intentionally not handled here.
+    /// Interpreter-native `.Map` / `.Hash` coercion over a list-like aggregate or
+    /// a plain `Cool` scalar (see
+    /// [`coerce_receiver_native_eligible`](Self::coerce_receiver_native_eligible)),
+    /// sharing the single `builtins::map_hash_coerce` impl the interpreter also
+    /// uses. `.Map` decontainerizes and embeds the `Map` declared-type *in* the
+    /// `Value::Hash` Arc (container metadata travels in the value since #2952 — no
+    /// interpreter-owned side table), so both are pure value ops. A scalar (`42.Hash`)
+    /// raises `X::Hash::Store::OddNumber` via the same `to_hash`, identical to the
+    /// interpreter. Instance (Match / `__baggy_data__`) and Package (type object,
+    /// where `.Map`/`.Hash` returns the type object) receivers fall through to the
+    /// interpreter's richer handling. Lowercase `.hash` is intentionally not handled here.
     fn try_native_map_hash_coerce(
         target: &Value,
         method: &str,
@@ -1205,19 +1236,7 @@ impl Interpreter {
         if !matches!(method, "Map" | "Hash") {
             return None;
         }
-        let list_like = matches!(
-            target,
-            Value::Array(..)
-                | Value::Seq(_)
-                | Value::Slip(_)
-                | Value::Hash(_)
-                | Value::Set(..)
-                | Value::Bag(..)
-                | Value::Mix(..)
-                | Value::Pair(..)
-                | Value::ValuePair(..)
-        ) || target.is_range();
-        if !list_like {
+        if !Self::coerce_receiver_native_eligible(target) {
             return None;
         }
         let target = target.clone();
@@ -1981,8 +2000,9 @@ impl Interpreter {
             return result;
         }
         // Native QuantHash coercion `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/
-        // `.MixHash` over a list-like receiver. Variable receivers (`@a.Set`,
-        // `%h.MixHash`) compile to CallMethodMut and so land on this mut path; the
+        // `.MixHash` over a list-like aggregate or plain Cool scalar. Variable
+        // receivers (`@a.Set`, `$s.Bag`) compile to CallMethodMut and so land on this
+        // mut path; the
         // coercion produces a *new* Set/Bag/Mix value and never mutates the
         // receiver variable, so there is no writeback — identical to the non-mut
         // path's native dispatch. Instance/Package receivers fall through.

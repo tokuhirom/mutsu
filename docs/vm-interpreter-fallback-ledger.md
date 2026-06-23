@@ -420,6 +420,23 @@
   `.resolve`（実 FS canonicalize）は `None` で `native_io_path` 維持。新 string を返し受け手非変異＝writeback 不要・behavior-invariant。
   実測: `$p.absolute`/`.relative` の fallback → 0。pin `t/native-io-path-cwd.t`(14, `$*CWD`/instance cwd/explicit base/変数受け手/
   round-trip・raku/mutsu 双方 PASS)。io-path.t の既存 fail 2（`.SPEC`/`.CWD`）は不変。S16-io/S32-io/tmpdir/cwd whitelist 全緑。
+- **2026-06-23 (§D = QuantHash / Map / Hash coercion を plain `Cool` scalar 受け手でも VM ネイティブ化)**: coercion ドレインの
+  残差掃除。method-fallback の広がり再計測（全 whitelist・distinct ファイル数）で **`Set`/`Bag`/`Mix`/`SetHash`/`BagHash`/
+  `MixHash` が各 8-11 file でまだ fallback** していたのを確認し受け手を特定＝`"a".Set`/`42.Set`/`"blue".Set` 等の **plain
+  scalar 受け手**（list-like aggregate でないため VM gate の `list_like` チェックで除外され interpreter に落ちていた）。
+  interpreter は scalar `.Set` を `dispatch_to_set_with_what`＝**`to_set` そのもの**（Set/Bag/Mix arm に Package 特別扱いすら無く
+  scalar を `other =>` catch-all で単一要素化）で処理する＝native gate を広げても **完全に同一実装で behavior-invariant**。
+  `try_native_quanthash_coerce`/`try_native_map_hash_coerce` 共通の `list_like` 判定を新ヘルパー
+  `coerce_receiver_native_eligible` に集約し、list-like aggregate に **Str/Int/BigInt/Num/Rat/FatRat/Complex/Bool** を追加
+  （非mut + mut 両 catch-all が共有）。`.Map`/`.Hash` の scalar（`42.Hash`）は同じ `to_hash`/`to_map` で `X::Hash::Store::OddNumber`
+  ＝raku/interpreter と一致（odd number）。**Instance（`__baggy_data__`/Match captures/user coercion）/ Package（型オブジェクト・
+  `.Map`/`.Hash` は型オブジェクト返し）/ Nil / Junction（autothread）は `None` で interpreter 維持**＝挙動不変。新しい
+  Set/Bag/Mix/Map/Hash 値を返し受け手を変異しない＝writeback 不要。実測: set.t/bag.t/mix.t の Set/Bag/Mix fallback
+  11/10/10 → 2/2/2（残 2 は `__baggy_data__` Instance / 型オブジェクト＝設計通り fall through）。pin
+  `t/native-scalar-quanthash-coerce.t`(39, literal/変数受け手 × Set/Bag/Mix/SetHash/BagHash/MixHash/Map/Hash・raku/mutsu
+  双方 PASS)。set.t 248/248・mix.t 244/244・categorize 28/28・hash.t 緑。（bag.t 252 "Foo instance union"・classify.t 40
+  "junction classify" は BLOCKERS.md 記載の pre-existing〔いずれも非whitelist〕で本変更と無関係。`(a=>1).Map` の odd-number
+  は Pair 受け手〔元から native gate 内〕の別 pre-existing バグで本スライス対象外。）
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`
