@@ -2,6 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 use num_traits::ToPrimitive;
 use std::path::Component;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Coerce a positional limit argument (the `$limit` of `.lines`/`.words`/`.get`
 /// reads) to a row count. Accepts any non-negative numeric, including an
@@ -1337,6 +1338,60 @@ impl Interpreter {
         }
     }
 
+    /// `IO::Path.comb`: read the whole file, then comb the content. The matcher
+    /// dispatch (`dispatch_comb_with_args`) is `&mut self` because a regex/closure
+    /// matcher runs the match engine — but it reads no `io_handles`, so the VM
+    /// dispatches `comb` natively (ledger §D): the single impl `native_io_path`
+    /// also delegates to. **Also fixes a pre-existing bug**: the no-matcher form
+    /// (`$path.IO.comb` with no positional) used to return an empty Seq here (the
+    /// old arm mapped `dispatch_comb_with_args`'s `None` to empty); it now splits
+    /// the content into graphemes, matching `Str.comb` and Rakudo. Returns `None`
+    /// for any other method.
+    pub(crate) fn try_io_path_comb(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if method != "comb" {
+            return None;
+        }
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let path_buf = self.resolve_io_path_buf(attributes, &p);
+        let content = match fs::read_to_string(&path_buf) {
+            Ok(c) => super::utils::strip_utf8_bom(c),
+            Err(err) => {
+                return Some(Err(RuntimeError::new(format!(
+                    "Failed to read '{}': {}",
+                    p, err
+                ))));
+            }
+        };
+        // Filter out :close (irrelevant for IO::Path) before delegating.
+        let comb_args: Vec<Value> = args
+            .iter()
+            .filter(|a| !matches!(a, Value::Pair(k, _) if k == "close"))
+            .cloned()
+            .collect();
+        Some(
+            match self.dispatch_comb_with_args(Value::str(content.clone()), &comb_args) {
+                Some(res) => res,
+                // No matcher: comb into graphemes (same as `Str.comb` with no
+                // args / Rakudo). The old arm wrongly returned an empty Seq.
+                None => {
+                    let parts: Vec<Value> = content
+                        .graphemes(true)
+                        .map(|g| Value::str(g.to_string()))
+                        .collect();
+                    Ok(Value::Seq(std::sync::Arc::new(parts)))
+                }
+            },
+        )
+    }
+
     pub(super) fn native_io_path(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -1385,6 +1440,12 @@ impl Interpreter {
         // paths against the VM-owned cwd, one-shot syscall, no `io_handles`, shared
         // with the VM's native dispatch via `try_io_path_two_path_op`.
         if let Some(result) = self.try_io_path_two_path_op(attributes, method, &args) {
+            return result;
+        }
+        // `comb` reads the whole file then combs the content (matcher dispatch is
+        // `&mut self` but touches no `io_handles`) — shared with the VM's native
+        // dispatch via `try_io_path_comb`.
+        if let Some(result) = self.try_io_path_comb(attributes, method, &args) {
             return result;
         }
         // The concrete class of the receiver (`IO::Path` or a SPEC-variant
@@ -1543,22 +1604,8 @@ impl Interpreter {
             // shared `try_io_path_fs_stat`, which the VM also dispatches natively.
             // `lines`/`words` (whole-file content reads) are handled above by the
             // shared `try_io_path_content_read`, which the VM also dispatches
-            // natively. `comb` stays here: its regex/closure dispatch needs `&mut`.
-            "comb" => {
-                let content = fs::read_to_string(&path_buf)
-                    .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
-                let content = super::utils::strip_utf8_bom(content);
-                // Filter out :close (irrelevant for IO::Path) before delegating.
-                let comb_args: Vec<Value> = args
-                    .iter()
-                    .filter(|a| !matches!(a, Value::Pair(k, _) if k == "close"))
-                    .cloned()
-                    .collect();
-                match self.dispatch_comb_with_args(Value::str(content), &comb_args) {
-                    Some(res) => res,
-                    None => Ok(Value::Seq(std::sync::Arc::new(Vec::new()))),
-                }
-            }
+            // natively. `comb` is handled above by the shared `try_io_path_comb`,
+            // which the VM also dispatches natively.
             // `slurp` (whole-file content read) is handled above by the shared
             // `try_io_path_content_read`, which the VM also dispatches natively.
             // `open` (allocates an `io_handles` entry) is handled above by the
