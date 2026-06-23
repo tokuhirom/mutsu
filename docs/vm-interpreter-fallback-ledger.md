@@ -547,6 +547,14 @@
   （`message`/no-arg の raku 差異は変更前から存在する F-track `.message` 未実装ギャップで本変更と無関係）。pin
   `t/native-namespaced-and-exception-ctor.t`(16)。make test 10971・S04/S12/S32 construction whitelist 全緑。**残 ③ ctor 候補＝
   Promise 等並行型・misc 組込型（is_attribute_buildable で attribute-bag 化できない special 構築のもの）。**
+- **2026-06-23 (§D ③ = `Lock` 族（`Lock`/`Lock::Async`/`Lock::Soft`）の `.new` を VM ネイティブ化)**: ③ ctor フォークの 2 スライス目。
+  lock 構築は pure data（`next_lock_id()` の process-global カウンタ bump ＋ `Lock::Async` の `async` フラグ・env/registry/user code 不要）。
+  static `try_native_builtin_construct`（VM call site vm_call_method_compiled.rs:145 が呼び `method_dispatch_pure=true`）に Lock arm を追加し、
+  interpreter dispatch_new の既存 arm（`match base_class_name` 内）は `Slip`/`IterationBuffer` 等と同じ「Shared with the VM's native fast
+  path」二重実装の慣習に倣ってコメントのみ追加で残置（4 行・byte-identical）。実測 `Lock.new`/`Lock::Async.new`/`Lock::Soft.new` の `new`
+  fallback → 0。stash 比較で native==interpreter 一致確認。pin `t/native-lock-ctor.t`(9)。make test 10964。**★既知の別軸バグ（本変更と無関係・
+  main でも再現）: `$lock.protect({ $n++ })` の captured-outer `$n` writeback 落ち（`.protect` の closure capture writeback・ctor とは無関係）。**
+  **残 ③ ctor 候補＝Promise/Channel（SharedPromise/channel state）・QuantHash 族（Bag/Set/Mix/SetHash・element 計数）・Capture・misc。**
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`
