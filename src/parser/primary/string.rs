@@ -2713,6 +2713,13 @@ pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
         '\u{201D}' => &['\u{201D}', '\u{201C}'],
         _ => return Err(PError::expected("smart double quote")),
     };
+    // Describe-by-adverb / goal text for an unterminated string, matching
+    // Rakudo's X::Comp::FailGoal for these smart-quote forms.
+    let (dba, goal): (&str, &str) = match first {
+        '\u{201E}' => ("low curly double quotes", "<[\u{201D}\u{201C}]>"),
+        // `\u{201C}`/`\u{201D}` both report as plain curly double quotes.
+        _ => ("curly double quotes", "'\u{201D}'"),
+    };
     let input = &input[first.len_utf8()..];
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
@@ -2720,7 +2727,7 @@ pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
 
     loop {
         if rest.is_empty() {
-            return Err(PError::expected("closing smart double quote"));
+            return Err(super::container::fail_goal_error(dba, goal));
         }
         let next_ch = rest.chars().next().unwrap();
         if closers.contains(&next_ch) {
