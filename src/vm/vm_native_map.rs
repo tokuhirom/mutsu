@@ -211,12 +211,10 @@ impl Interpreter {
             self.set_env_with_main_alias(&name, new_array);
         }
 
-        // On a real array, mutsu's `.map` yields a List-kind array (matching the
-        // interpreter's return shape).
-        Some(Ok(Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(result)),
-            ArrayKind::List,
-        )))
+        // `.map` returns a Seq (matching Rakudo and the interpreter's
+        // `dispatch_map_method`). The rw writeback above is independent of this
+        // return value, so `@a.map({ $_++ })` still mutates `@a`.
+        Some(Ok(Value::Seq(std::sync::Arc::new(result))))
     }
 }
 
