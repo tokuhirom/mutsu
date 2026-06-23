@@ -112,6 +112,15 @@ impl Interpreter {
         if dims.is_empty() {
             return Ok(target.clone());
         }
+        // A non-positional value behaves as a single-element list when
+        // subscripted in a further dimension: in `(10,20,30)[1,2;0]` each
+        // selected scalar is indexed by the trailing `0`, and `20[0]` is `20`
+        // (raku treats a scalar as a 1-element list under subscript). Without
+        // this, deeper dimensions on scalar leaves would all collapse to Nil.
+        if !matches!(target, Value::Array(..) | Value::Hash(..)) {
+            let single = Value::array(vec![target.clone()]);
+            return self.multi_dim_index_read(&single, dims);
+        }
         let dim = &dims[0];
         let rest = &dims[1..];
 
