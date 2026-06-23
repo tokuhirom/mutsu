@@ -1530,6 +1530,20 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 "X::Obsolete: Perl -> is dead. Please use '.' instead.".to_string(),
             ));
         }
+        // Superscript power in method-call syntax: `2.²` == `2²` == `2 ** 2`
+        // (also `.³`, `.⁻¹`, ...). Must run before the general `.method`
+        // dispatch below, which would otherwise treat `²` as a method name.
+        if let Some(after_dot) = rest.strip_prefix('.')
+            && let Some((exp, len)) = parse_superscript_exp(after_dot)
+        {
+            rest = &after_dot[len..];
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: crate::token_kind::TokenKind::StarStar,
+                right: Box::new(Expr::Literal(Value::Int(exp))),
+            };
+            continue;
+        }
         // Method call: .method or .method(args) or .method: args
         // Also handles modifiers: .?method, .!method
         // Also handles: .^method (meta-method)
