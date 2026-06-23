@@ -104,21 +104,7 @@ impl Interpreter {
         attrs.insert("args-have".to_string(), Value::Int(args_have as i64));
         attrs.insert("args-used".to_string(), Value::Int(args_used as i64));
         attrs.insert("format".to_string(), Value::str(fmt.to_string()));
-        let message = format!(
-            "Your printf-style directives specify {} argument{}, but {} {} supplied",
-            args_used,
-            if args_used == 1 { "" } else { "s" },
-            if args_have < 1 {
-                "no".to_string()
-            } else {
-                args_have.to_string()
-            },
-            if args_have == 1 {
-                "argument was"
-            } else {
-                "arguments were"
-            },
-        );
+        let message = super::sprintf::directives_count_message(fmt, args_used, args_have);
         attrs.insert("message".to_string(), Value::str(message.clone()));
         let mut err = RuntimeError::new(message);
         err.exception = Some(Box::new(Value::make_instance(
