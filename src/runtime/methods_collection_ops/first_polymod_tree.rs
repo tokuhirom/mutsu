@@ -238,7 +238,7 @@ impl Interpreter {
         if !stopped {
             result.push(f64_to_val(n));
         }
-        Ok(Value::array(result))
+        Ok(Value::Seq(std::sync::Arc::new(result)))
     }
 
     pub(in crate::runtime) fn dispatch_tree(
