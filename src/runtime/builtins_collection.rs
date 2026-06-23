@@ -768,6 +768,10 @@ impl Interpreter {
         match value {
             // Unwrap Scalar containers
             Value::Scalar(inner) => Self::collect_minmax_candidates(inner, out),
+            // Unwrap first-class element containers (`:=`-bound / grep rw alias).
+            Value::ContainerRef(cell) => {
+                Self::collect_minmax_candidates(&cell.lock().unwrap().clone(), out)
+            }
             Value::Range(a, b)
             | Value::RangeExcl(a, b)
             | Value::RangeExclStart(a, b)

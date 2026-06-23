@@ -568,6 +568,9 @@ impl Interpreter {
         };
         let mut parts = Vec::with_capacity(items.len());
         for v in &items {
+            // Decontainerize a `ContainerRef` element (grep rw alias / `:=`-bound
+            // slot) so a cell-wrapped Instance still gets its user-defined `.Str`.
+            let v = v.deref_container();
             if matches!(v, Value::Instance { .. }) {
                 let s = match self.call_method_with_values(v.clone(), "Str", vec![]) {
                     Ok(s) => s,

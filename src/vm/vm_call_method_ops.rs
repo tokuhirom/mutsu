@@ -294,6 +294,16 @@ impl Interpreter {
         } else {
             target
         };
+        // A method invocant that is a first-class element container
+        // (`ContainerRef`, e.g. a `.grep` rw alias / `:=`-bound slot extracted via
+        // `.head`/`.first`) is transparent to method dispatch — decontainerize it
+        // so the method runs on the inner value (Raku container semantics). `.VAR`
+        // is the one introspection method that wants the container itself.
+        let target = if matches!(&target, Value::ContainerRef(_)) && method != "VAR" {
+            target.deref_container()
+        } else {
+            target
+        };
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
             let v = result?;

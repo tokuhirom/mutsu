@@ -287,17 +287,14 @@ impl Interpreter {
             Value::Array(items, arr_kind) => {
                 let (filtered, mutated_items) =
                     self.eval_grep_over_items_with_mutated(args.first().cloned(), items.to_vec())?;
-                let updated_source = crate::value::Value::array_data_like(&items, mutated_items);
-                self.overwrite_array_bindings_by_identity(
-                    &items,
-                    Value::Array(updated_source.clone(), arr_kind),
-                );
+                // Determine which source positions matched (identity scan against
+                // the post-grep source), so the matched slots can be shared with
+                // the result as first-class element containers.
                 let mut indices = Vec::new();
                 if let Value::Array(filtered_items, ..) = &filtered {
                     let mut scan_from = 0usize;
-                    let source_items = updated_source.as_ref();
                     for needle in filtered_items.iter() {
-                        if let Some(rel) = source_items[scan_from..].iter().position(|candidate| {
+                        if let Some(rel) = mutated_items[scan_from..].iter().position(|candidate| {
                             crate::runtime::utils::values_identical(candidate, needle)
                         }) {
                             let absolute = scan_from + rel;
@@ -306,18 +303,38 @@ impl Interpreter {
                         }
                     }
                 }
-                // Embed the rw-view binding into the filtered ArrayData so it
-                // travels with the value through copy-on-write (no Arc-pointer
-                // side table). The `:k`/`:kv`/`:p` adverbs rebuild a fresh array
-                // in `transform_result`, which naturally drops the binding.
+                // Promote each matched source slot to a shared `ContainerRef`
+                // cell and reference the SAME cells from the grep result. A
+                // writeback loop (`for @a.grep(...) { $_++ }` / `@a.grep(...)>>++`)
+                // then mutates THROUGH the cell into @a's slot via the ordinary
+                // element-cell write path — no GrepView side channel needed. A
+                // later `=` assignment (`my @g = @a.grep(...)`) decontainerizes the
+                // cells, so the named copy owns its values and never writes back.
+                let mut promoted = mutated_items;
+                let mut shared_cells: Vec<Value> = Vec::with_capacity(indices.len());
+                for &i in &indices {
+                    let cell = match &promoted[i] {
+                        v @ Value::ContainerRef(_) => v.clone(),
+                        other => Value::ContainerRef(std::sync::Arc::new(std::sync::Mutex::new(
+                            other.clone(),
+                        ))),
+                    };
+                    promoted[i] = cell.clone();
+                    shared_cells.push(cell);
+                }
+                let updated_source = crate::value::Value::array_data_like(&items, promoted);
+                self.overwrite_array_bindings_by_identity(
+                    &items,
+                    Value::Array(updated_source, arr_kind),
+                );
+                // Build the result array from the shared cells (default `:v`
+                // adverb). The `:k`/`:kv`/`:p` adverbs rebuild a fresh array in
+                // `transform_result` from `indices`, which drops the aliasing (a
+                // keys/pairs copy owns its values).
                 let filtered = match filtered {
                     Value::Array(filtered_items, fkind) if !indices.is_empty() => {
                         let mut data = (*filtered_items).clone();
-                        data.grep_source = Some(Box::new(crate::value::GrepView {
-                            source: updated_source.clone(),
-                            indices: indices.clone(),
-                            source_kind: arr_kind,
-                        }));
+                        data.items = shared_cells;
                         Value::Array(std::sync::Arc::new(data), fkind)
                     }
                     other => other,

@@ -269,8 +269,13 @@ pub(super) fn dispatch(
             }
             if let Some(items) = target.as_list_items() {
                 // If any item is an Instance, fall through to runtime
-                // so user-defined Str() methods can be called.
-                if items.iter().any(|v| matches!(v, Value::Instance { .. })) {
+                // so user-defined Str() methods can be called. A `ContainerRef`
+                // element (grep rw alias / `:=`-bound slot) is decontainerized
+                // first so a cell-wrapped Instance is also routed to runtime.
+                if items
+                    .iter()
+                    .any(|v| v.with_deref(|inner| matches!(inner, Value::Instance { .. })))
+                {
                     return Some(None);
                 }
                 let joined = items
