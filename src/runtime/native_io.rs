@@ -632,15 +632,24 @@ impl Interpreter {
             .get("path")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
-        let path_buf = if Path::new(&p).is_absolute() {
-            self.resolve_path(&p)
-        } else if let Some(cwd) = &instance_cwd {
-            self.apply_chroot(PathBuf::from(cwd).join(Path::new(&p)))
-        } else {
-            self.resolve_path(&p)
-        };
+        let path_buf = self.resolve_io_path_buf(attributes, &p);
         Some(Self::io_path_stat_result(&path_buf, &p, method))
+    }
+
+    /// Resolve an `IO::Path`'s `path` attribute to an absolute filesystem
+    /// `PathBuf` against the VM-owned cwd (`$*CWD` / the instance `cwd` attribute /
+    /// the process cwd), applying any chroot. Purely lexical (no filesystem
+    /// access) — shared by the `&self` native IO::Path methods
+    /// (`try_io_path_fs_stat` / `try_io_path_content_read`) and `native_io_path`.
+    fn resolve_io_path_buf(&self, attributes: &HashMap<String, Value>, p: &str) -> PathBuf {
+        let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
+        if Path::new(p).is_absolute() {
+            self.resolve_path(p)
+        } else if let Some(cwd) = &instance_cwd {
+            self.apply_chroot(PathBuf::from(cwd).join(Path::new(p)))
+        } else {
+            self.resolve_path(p)
+        }
     }
 
     /// Pure `stat`-based result for the [`try_io_path_fs_stat`] methods given an
@@ -782,6 +791,105 @@ impl Interpreter {
         }
     }
 
+    /// Filesystem *whole-file content reads* on an `IO::Path`
+    /// (`slurp`/`lines`/`words`): resolve the path against the VM-owned cwd, read
+    /// the entire file (`fs::read[_to_string]`), then split / decode the bytes.
+    /// These allocate **no `io_handles`** and emit nothing; flag parsing
+    /// (`parse_io_flags_values`) and encoding lookup (`decode_with_encoding`, which
+    /// reads the VM-owned encoding registry) are `&self` reads, so the VM
+    /// dispatches them natively (ledger §D) via the single impl `native_io_path`
+    /// also delegates to. `comb` (its regex/closure dispatch needs `&mut self`)
+    /// and `open`/`spurt` (io_handles / FS writes) return `None` and stay in
+    /// `native_io_path`. Behavior-invariant (same read + split/decode logic).
+    pub(crate) fn try_io_path_content_read(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "slurp" | "lines" | "words") {
+            return None;
+        }
+        Some(self.io_path_content_read(attributes, method, args))
+    }
+
+    /// The fallible body of [`try_io_path_content_read`] (the gate returns
+    /// `Option` so it cannot use `?`). Resolves the path then reads + splits /
+    /// decodes the whole file. Behavior-invariant with the arms `native_io_path`
+    /// previously held.
+    fn io_path_content_read(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let path_buf = self.resolve_io_path_buf(attributes, &p);
+        match method {
+            "slurp" => {
+                let (_, _, _, bin, _, _, _, _, enc, _, _) = self.parse_io_flags_values(args);
+                if bin {
+                    let bytes = fs::read(&path_buf).map_err(|err| {
+                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
+                    })?;
+                    let byte_vals: Vec<Value> = bytes
+                        .into_iter()
+                        .map(|b| Value::Int(i64::from(b)))
+                        .collect();
+                    let mut attrs = HashMap::new();
+                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
+                    return Ok(Value::make_instance(Symbol::intern("Buf[uint8]"), attrs));
+                }
+                // A non-utf-8 encoding reads raw bytes and decodes; utf-8 reads
+                // the string directly (stripping a leading BOM).
+                let needs_non_utf8 = enc.as_ref().is_some_and(|e| {
+                    let lower = e.to_lowercase();
+                    lower != "utf-8" && lower != "utf8"
+                });
+                if needs_non_utf8 {
+                    let bytes = fs::read(&path_buf).map_err(|err| {
+                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
+                    })?;
+                    let decoded = self.decode_with_encoding(&bytes, enc.as_ref().unwrap())?;
+                    Ok(Value::str(decoded))
+                } else {
+                    let content = fs::read_to_string(&path_buf).map_err(|err| {
+                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
+                    })?;
+                    Ok(Value::str(super::utils::strip_utf8_bom(content)))
+                }
+            }
+            "lines" => {
+                let content = fs::read_to_string(&path_buf)
+                    .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
+                let content = super::utils::strip_utf8_bom(content);
+                let (_, _, _, _, chomp, nl_in, _, _, _, _, _) = self.parse_io_flags_values(args);
+                let mut parts = Self::split_content_by_separators(&content, &nl_in, chomp);
+                if let Some(n) = args.iter().find_map(numeric_limit_arg) {
+                    parts.truncate(n);
+                }
+                Ok(Value::Seq(std::sync::Arc::new(parts)))
+            }
+            "words" => {
+                let content = fs::read_to_string(&path_buf)
+                    .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
+                let content = super::utils::strip_utf8_bom(content);
+                let mut parts: Vec<Value> = content
+                    .split_whitespace()
+                    .map(|token| Value::str(token.to_string()))
+                    .collect();
+                if let Some(n) = args.iter().find_map(numeric_limit_arg) {
+                    parts.truncate(n);
+                }
+                Ok(Value::Seq(std::sync::Arc::new(parts)))
+            }
+            _ => unreachable!("io_path_content_read called with non-content method"),
+        }
+    }
+
     pub(super) fn native_io_path(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -806,6 +914,12 @@ impl Interpreter {
         // `modified`) — `stat` reads only, no `io_handles`, shared with the VM's
         // native dispatch via `try_io_path_fs_stat`.
         if let Some(result) = self.try_io_path_fs_stat(attributes, method) {
+            return result;
+        }
+        // Whole-file content reads (`slurp`/`lines`/`words`) — read the file,
+        // split/decode the bytes; no `io_handles`, shared with the VM's native
+        // dispatch via `try_io_path_content_read`.
+        if let Some(result) = self.try_io_path_content_read(attributes, method, &args) {
             return result;
         }
         // The concrete class of the receiver (`IO::Path` or a SPEC-variant
@@ -962,37 +1076,9 @@ impl Interpreter {
             // `e`/`f`/`d`/`l`/`r`/`w`/`x`/`rw`/`rwx`/`z`/`mode`/`s`/`created`/
             // `modified`/`accessed`/`changed` (stat-only) are handled above by the
             // shared `try_io_path_fs_stat`, which the VM also dispatches natively.
-            "lines" => {
-                let content = fs::read_to_string(&path_buf)
-                    .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
-                let content = super::utils::strip_utf8_bom(content);
-
-                // Parse nl-in / chomp named args
-                let (_, _, _, _, chomp, nl_in, _, _, _, _, _) = self.parse_io_flags_values(&args);
-                let mut parts = Self::split_content_by_separators(&content, &nl_in, chomp);
-
-                // Check for a positional limit argument (any numeric, incl. allomorphs)
-                let limit = args.iter().find_map(numeric_limit_arg);
-                if let Some(n) = limit {
-                    parts.truncate(n);
-                }
-                Ok(Value::Seq(std::sync::Arc::new(parts)))
-            }
-            "words" => {
-                let content = fs::read_to_string(&path_buf)
-                    .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
-                let content = super::utils::strip_utf8_bom(content);
-                let mut parts: Vec<Value> = content
-                    .split_whitespace()
-                    .map(|token| Value::str(token.to_string()))
-                    .collect();
-                // Check for a positional limit argument (any numeric, incl. allomorphs)
-                let limit = args.iter().find_map(numeric_limit_arg);
-                if let Some(n) = limit {
-                    parts.truncate(n);
-                }
-                Ok(Value::Seq(std::sync::Arc::new(parts)))
-            }
+            // `lines`/`words` (whole-file content reads) are handled above by the
+            // shared `try_io_path_content_read`, which the VM also dispatches
+            // natively. `comb` stays here: its regex/closure dispatch needs `&mut`.
             "comb" => {
                 let content = fs::read_to_string(&path_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
@@ -1008,40 +1094,8 @@ impl Interpreter {
                     None => Ok(Value::Seq(std::sync::Arc::new(Vec::new()))),
                 }
             }
-            "slurp" => {
-                let (_, _, _, bin, _, _, _, _, enc, _, _) = self.parse_io_flags_values(&args);
-                if bin {
-                    let bytes = fs::read(&path_buf).map_err(|err| {
-                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
-                    })?;
-                    let byte_vals: Vec<Value> = bytes
-                        .into_iter()
-                        .map(|b| Value::Int(i64::from(b)))
-                        .collect();
-                    let mut attrs = HashMap::new();
-                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(Symbol::intern("Buf[uint8]"), attrs));
-                }
-                // If an encoding is specified and it's not utf-8, read raw bytes
-                // and decode with the specified encoding
-                let needs_non_utf8 = enc.as_ref().is_some_and(|e| {
-                    let lower = e.to_lowercase();
-                    lower != "utf-8" && lower != "utf8"
-                });
-                if needs_non_utf8 {
-                    let bytes = fs::read(&path_buf).map_err(|err| {
-                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
-                    })?;
-                    let decoded = self.decode_with_encoding(&bytes, enc.as_ref().unwrap())?;
-                    Ok(Value::str(decoded))
-                } else {
-                    let content = fs::read_to_string(&path_buf).map_err(|err| {
-                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
-                    })?;
-                    let content = super::utils::strip_utf8_bom(content);
-                    Ok(Value::str(content))
-                }
-            }
+            // `slurp` (whole-file content read) is handled above by the shared
+            // `try_io_path_content_read`, which the VM also dispatches natively.
             "open" => {
                 let (
                     read,

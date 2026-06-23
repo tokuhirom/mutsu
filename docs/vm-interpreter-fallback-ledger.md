@@ -452,6 +452,20 @@
   `.changed` は mutsu=Int / raku=Instant の別 pre-existing 型差を避け `> 0`/`.defined` で検証)。S16-io/S32-io/slurp/spurt whitelist
   全緑（io-path.t の `.SPEC`/`.CWD` 既存 fail は非whitelist・不変）。**残る IO native = content 読み（slurp/lines）と handle 確保
   （open/spurt）＝③ の `io_handles` 所有を直接触る本丸。**
+- **2026-06-23 (§D = `IO::Path` の whole-file content 読み `slurp`/`lines`/`words` を VM ネイティブ化)**: FS stat-only スライス
+  （上）の content-read follow-up。`slurp`(広がり 26 file)/`lines`(13)/`words` は **ファイル全体を読む**が、`io_handles` を一切
+  確保せず emit もしない＝path を VM 所有 cwd へ解決後 `fs::read[_to_string]` し、bytes を split/decode するだけ。flag 解析
+  （`parse_io_flags_values`）と encoding lookup（`decode_with_encoding`＝VM 所有の `encoding_registry` を読む）は全て `&self`
+  read なので native dispatch 可。新 `&self` ゲート `try_io_path_content_read`（`Option` 返し）＋ fallible 本体 `io_path_content_read`
+  （`?` を使うため分離）へ抽出。path_buf 解決は 3 サイト目になったので `resolve_io_path_buf` ヘルパーに集約し `try_io_path_fs_stat`
+  も委譲化（dedup）。`native_io_path` は stat 委譲の直後で content 委譲＝**1 操作 = 1 実装**（slurp/lines/words arm を match から削除）。
+  VM は stat dispatch の隣（非mut/mut 両 path）で呼ぶ。**`comb`（regex/closure dispatch が `&mut self` 必要）/ `open`/`spurt`
+  （`io_handles` 確保・FS write）は `None` で `native_io_path` 維持**＝次スライス（③ io_handles 本丸）。新しい Str/Buf/Seq を返し
+  受け手非変異＝writeback 不要・behavior-invariant（同一 read + split/decode、`:bin`/limit/`:!chomp`/非utf-8 decode 全分岐保持）。
+  実測: `$p.{slurp,lines,words}` の fallback → 0。pin `t/native-io-path-content-read.t`(24, literal + 変数受け手〔mut path〕×
+  slurp/lines/words・`:bin` Blob・utf-8 decode・limit・`:!chomp`・missing-path dies・raku/mutsu 双方 PASS)。S16-io/S32-io/slurp/
+  lines whitelist 全緑（io-path.t `.SPEC`/`.CWD` 既存 fail は非whitelist・不変）。**残る IO native = `comb`（&mut）と handle 確保
+  open/spurt＝③ の `io_handles` 所有本丸。**
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`
