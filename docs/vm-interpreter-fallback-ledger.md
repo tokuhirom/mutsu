@@ -519,6 +519,20 @@
   fallback → 0。pin `t/native-encode-decode.t`(23, literal + 変数受け手〔mut path〕× encode utf-8/utf-16/ascii/latin-1・Int/Bool/Rat
   encode・Buf/Blob decode・round-trip・raku/mutsu 双方 PASS。utf-16 `.elems`=16-bit ユニット数の注意込み)。encoding/buf/S32-str/encode
   whitelist 全緑。
+- **2026-06-23 (§D = `IO::Path.comb` を VM ネイティブ化＝IO::Path FS 族 100% 完結 ＋ no-arg comb バグ修正)**: IO::Path FS メソッド
+  族の**最後の 1 メソッド**。`comb` はファイル全体を読んで content を comb するが、matcher dispatch（`dispatch_comb_with_args`）は
+  regex/closure matcher が match エンジンを走らせるため `&mut self`＝ただし `io_handles` は触らない。新 `&mut self` ヘルパー
+  `try_io_path_comb`（read→`?` 用に `match` で error 整形）へ抽出し `native_io_path` は two-path 委譲の直後で委譲＝**1 操作 = 1 実装**
+  （comb arm を match から削除）。VM は two-path dispatch の隣（非mut/mut 両 path）で呼ぶ。**同時に pre-existing バグも修正**: 引数なし
+  `$path.IO.comb`（matcher 無し）が空 Seq を返していた（旧 arm が `dispatch_comb_with_args` の `None` を空にマップ）→ content を
+  grapheme 分割（`Str.comb` no-arg / Rakudo と一致）。`dispatch_comb_with_args` の `None`-no-arg セマンティクスは generic caller
+  （methods_dispatch_match.rs:187）と共有なので**修正は IO::Path comb helper にローカル**に留めた（None→grapheme）。実測:
+  `$p.comb`/`$p.comb(/re/)`/`$p.comb(N)` の fallback → 0。pin `t/native-io-path-comb.t`(17, literal + 変数受け手〔mut path〕× no-arg
+  grapheme・regex・Int chunk・Str fixed・limit・empty file・unicode・raku/mutsu 双方 PASS)。S16-io/S32-io/comb whitelist 全緑。
+  **★∴ IO::Path FS メソッド族（stat/content-read/fs-mutate/open/2-path/comb）が 100% VM ネイティブ化完了＝§D ③ の IO native 完遂。**
+  **clean な pure-value native-method ドレインも枯渇**（残カテゴリ＝③ 組込型 ctor〔Buf.new 等〕/ MOP carrier〔WHAT/name/can〕/
+  landmine〔Instance.Str/.Stringy/.raku/.gist〕/ block-exec slow path〔map/grep〕/ concurrency〔Supply/tap〕/ typed-array mutator・
+  いずれも別軸 or 構造的ブロッカー前提）。次の §D は ③ 組込型 ctor か tree-walk dispatch chain 削除の substrate（要設計・大）。
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`
