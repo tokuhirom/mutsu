@@ -116,6 +116,28 @@ impl Interpreter {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
+        // NativeCall: a sub declared `is native(...)` is dispatched through C
+        // FFI rather than running its (`{ * }`) Raku body. The registry is
+        // empty in the overwhelmingly common case, so this guard is free.
+        if !self.native_call_specs.is_empty() {
+            let name_str = Self::const_str(code, name_idx);
+            if let Some(spec) = self.native_call_specs.get(name_str).cloned() {
+                let arity_usize = arity as usize;
+                if self.stack.len() < arity_usize {
+                    return Err(RuntimeError::new(format!(
+                        "NativeCall: '{}' called with too few arguments on the stack",
+                        spec.symbol
+                    )));
+                }
+                let start = self.stack.len() - arity_usize;
+                let mut args: Vec<Value> = self.stack.drain(start..).collect();
+                // Drop the synthetic callsite-line marker the compiler may append.
+                args.retain(|a| !Self::is_callsite_line_marker(a));
+                let result = crate::runtime::nativecall::call_native(&spec, &args)?;
+                self.stack.push(result);
+                return Ok(());
+            }
+        }
         // If this name is used as a `&`-sigil parameter anywhere, a lexical
         // `&name` binding in the current frame may shadow a same-named package
         // sub. The name-keyed light-call caches cannot represent that, so bypass

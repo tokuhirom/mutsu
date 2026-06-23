@@ -198,6 +198,7 @@ mod native_supply_dispatch;
 mod native_supply_methods;
 mod native_supply_mut_methods;
 pub(crate) mod native_types;
+pub(crate) mod nativecall;
 mod ops;
 mod output_sink;
 pub(crate) mod phasers;
@@ -873,6 +874,10 @@ pub struct Interpreter {
     /// `std::process::exit()`.  Used by in-process `is_run` so that
     /// the nested interpreter does not kill the parent process.
     pub(crate) nested_mode: bool,
+    /// NativeCall (`is native`) sub descriptors, keyed by sub name. Populated at
+    /// declaration; a call to a name present here is routed through C FFI
+    /// instead of running the (`{ * }`) Raku body.
+    pub(crate) native_call_specs: HashMap<String, nativecall::NativeCallSpec>,
     operator_assoc: HashMap<String, String>,
     /// Operator sub names (infix:<..>, prefix:<..>, etc.) that have been
     /// imported into the current lexical scope via `use Module`. Used to
@@ -3109,6 +3114,7 @@ impl Interpreter {
             halted: false,
             exit_code: 0,
             nested_mode: false,
+            native_call_specs: HashMap::new(),
             operator_assoc: HashMap::new(),
             imported_operator_names: HashSet::new(),
             lib_paths: Vec::new(),
@@ -3862,6 +3868,10 @@ impl Interpreter {
                     | "fatal"
                     | "oo"
                     | "class"
+                    // NativeCall: the `is native(...)` trait machinery is built
+                    // into the VM (see runtime/nativecall.rs); `use NativeCall`
+                    // only needs to be a recognized no-op.
+                    | "NativeCall"
                     // JSON::Fast / JSON::Tiny: the real distributions depend on
                     // ~50 nqp ops mutsu does not implement. Recognize them as
                     // built-in modules and provide native `to-json`/`from-json`
@@ -5864,6 +5874,7 @@ impl Interpreter {
             halted: false,
             exit_code: 0,
             nested_mode: self.nested_mode,
+            native_call_specs: self.native_call_specs.clone(),
             operator_assoc: self.operator_assoc.clone(),
             imported_operator_names: self.imported_operator_names.clone(),
             lib_paths: self.lib_paths.clone(),
