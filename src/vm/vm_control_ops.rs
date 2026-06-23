@@ -1238,11 +1238,11 @@ impl Interpreter {
         // the bytecode — see methods_mut.rs). With the real loop `code` in hand,
         // write the final env value of the source straight through to its local
         // slot so the post-loop read sees the mutation without the reverse pull
-        // (skipping a live `HashSlotRef` binding slot, as the reverse pull does).
+        // (skipping a live `HashEntryRef` binding slot, as the reverse pull does).
         if source_mutable_quant
             && let Some(ref source) = container_binding
             && let Some(slot) = self.find_local_slot(code, source)
-            && !matches!(self.locals[slot], Value::HashSlotRef { .. })
+            && !matches!(self.locals[slot], Value::HashEntryRef { .. })
             && let Some(val) = self.env().get(source).cloned()
         {
             self.locals[slot] = val;

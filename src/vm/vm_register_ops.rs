@@ -1746,10 +1746,10 @@ impl Interpreter {
         // compiled bytecode on *this* VM (synchronous `from-list` emit) and
         // mutated captured-outer caller lexicals (`my $i; whenever ... { $i++ }`)
         // straight into `env` by name. Reconcile the caller's local slots from
-        // env so the slot stays coherent (same HashSlotRef / `!attr` per-slot
+        // env so the slot stays coherent (same HashEntryRef / `!attr` per-slot
         // skips); this is what keeps `$i` correct.
         for (i, name) in code.locals.iter().enumerate() {
-            if name.starts_with('!') || matches!(self.locals[i], Value::HashSlotRef { .. }) {
+            if name.starts_with('!') || matches!(self.locals[i], Value::HashEntryRef { .. }) {
                 continue;
             }
             let cur = self.env().get(name).cloned().or_else(|| {
@@ -1813,7 +1813,7 @@ impl Interpreter {
             // Armed only under boxing; the default build keeps the blanket pull.
             if let Some(name) = target_var
                 && let Some(slot) = self.find_local_slot(code, name)
-                && !matches!(self.locals[slot], Value::HashSlotRef { .. })
+                && !matches!(self.locals[slot], Value::HashEntryRef { .. })
                 && let Some(val) = self.env().get(name).cloned()
             {
                 self.locals[slot] = val;

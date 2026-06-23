@@ -84,7 +84,10 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
         Value::Nil | Value::Package(_) => false,
         Value::Slip(items) if items.is_empty() => false,
         Value::Instance { class_name, .. } if class_name == "Failure" => false,
-        Value::DeferredHashAccess { .. } => false,
+        // An unmaterialized deferred bind token reads as undefined until it is
+        // written THROUGH (a later external write to the path does not retro-bind
+        // it — see `t/phantom-entry-bind.t`), so do not read through here.
+        Value::HashEntryRef { .. } => false,
         // A `ContainerRef` cell (`:=`-alias, take-rw, promoted element) is
         // transparent to definedness: `$x // …` / `take-rw …[i] // next` must
         // test the *inner* value, not the wrapper, so an undefined element still

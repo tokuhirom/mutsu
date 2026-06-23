@@ -292,8 +292,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         | Value::CustomTypeInstance(_)
         | Value::LazyThunk(_)
         | Value::LazyIoLines { .. }
-        | Value::HashSlotRef { .. }
-        | Value::DeferredHashAccess { .. }
+        | Value::HashEntryRef { .. }
         | Value::ContainerRef(_) => Err(format!(
             "cannot serialize Value variant: {:?}",
             std::mem::discriminant(v)

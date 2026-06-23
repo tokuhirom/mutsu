@@ -2885,7 +2885,7 @@ impl Interpreter {
                 if armed {
                     for (i, name) in code.locals.iter().enumerate() {
                         if name.starts_with('!')
-                            || matches!(self.locals[i], Value::HashSlotRef { .. })
+                            || matches!(self.locals[i], Value::HashEntryRef { .. })
                         {
                             continue;
                         }
@@ -3370,7 +3370,7 @@ impl Interpreter {
                 // reverse `sync_locals_from_env` pull to refresh the caller's
                 // local slot. Write the receiver through to its slot here so it
                 // stays coherent without the pull. (`apply_pending_rw_writeback`
-                // mirrors the reverse pull's HashSlotRef-skip invariant.)
+                // mirrors the reverse pull's HashEntryRef-skip invariant.)
                 {
                     let target_name = Self::const_str(code, *target_name_idx);
                     if !target_name.is_empty() {

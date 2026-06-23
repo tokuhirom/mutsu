@@ -70,16 +70,16 @@ impl Interpreter {
     }
 
     /// Auto-vivifying index: creates intermediate Hash/Array entries and returns
-    /// a `HashSlotRef` (hash) or a shared `ContainerRef` cell (array element) so
+    /// a `HashEntryRef` (hash) or a shared `ContainerRef` cell (array element) so
     /// that `:=` bind to nested elements works.
-    /// Stack: [target, key] -> [HashSlotRef | ContainerRef]
+    /// Stack: [target, key] -> [HashEntryRef | ContainerRef]
     pub(super) fn exec_index_autovivify_op(&mut self) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
 
         // Resolve slot refs and Scalar containers to their underlying value for type dispatch.
         let resolved = match &target {
-            Value::HashSlotRef { .. } => target.hash_slot_read(),
+            Value::HashEntryRef { .. } => target.hash_entry_read(),
             Value::Scalar(inner) => inner.as_ref().clone(),
             other => other.clone(),
         };
@@ -133,12 +133,12 @@ impl Interpreter {
                     return self.exec_index_op_with_positional(true);
                 }
             }
-            // If the target is Nil/Any (not yet vivified) inside a HashSlotRef,
+            // If the target is Nil/Any (not yet vivified) inside a HashEntryRef,
             // create an empty hash and then auto-vivify the key.
-            _ if matches!(&target, Value::HashSlotRef { .. }) => {
+            _ if matches!(&target, Value::HashEntryRef { .. }) => {
                 let key = Value::hash_key_encode(&index);
                 let new_hash = Value::hash(std::collections::HashMap::new());
-                target.hash_slot_write(new_hash.clone());
+                target.hash_entry_write(new_hash.clone());
                 if let Some(slot_ref) = new_hash.hash_autovivify_cell(&key) {
                     self.stack.push(slot_ref);
                 } else {
@@ -155,7 +155,7 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Lazy variant of IndexAutovivify: returns a HashSlotRef without creating
+    /// Lazy variant of IndexAutovivify: returns a HashEntryRef without creating
     /// the hash entry if it doesn't exist. Used for `:=` bind expressions
     /// so that `my $b := %h<a><b>` doesn't autovivify until assignment.
     pub(super) fn exec_index_autovivify_lazy_op(
@@ -166,7 +166,7 @@ impl Interpreter {
         let target = self.stack.pop().unwrap();
 
         let resolved = match &target {
-            Value::HashSlotRef { .. } => target.hash_slot_read(),
+            Value::HashEntryRef { .. } => target.hash_entry_read(),
             Value::Scalar(inner) => inner.as_ref().clone(),
             other => other.clone(),
         };
@@ -176,7 +176,7 @@ impl Interpreter {
                 let key = Value::hash_key_encode(&index);
                 // Phase 2 Stage 1: promote an existing scalar leaf to a shared
                 // `ContainerRef` cell so deep `%h<a><b>` binds survive COW; an
-                // intermediate container keeps a lazy HashSlotRef, and a missing
+                // intermediate container keeps a lazy HashEntryRef, and a missing
                 // key stays lazy (no entry created). When `terminal` (outermost
                 // bind subscript), promote a container-valued leaf to a cell too.
                 if let Some(slot_ref) = resolved.hash_slot_ref(&key, terminal) {
@@ -200,7 +200,7 @@ impl Interpreter {
                     return self.exec_index_autovivify_op();
                 }
             }
-            // When resolved is an Array (e.g. reached through a HashSlotRef),
+            // When resolved is an Array (e.g. reached through a HashEntryRef),
             // descend via the non-lazy autoviv op so nested binding like
             // `$struct[1]<key><subkey>[1]` works (it promotes the element to a
             // shared `ContainerRef` cell).
@@ -209,15 +209,16 @@ impl Interpreter {
                 self.stack.push(index);
                 return self.exec_index_autovivify_op();
             }
-            // When the target is a HashSlotRef pointing to a non-existent key
-            // (resolved to Any/Nil), in lazy mode create a DeferredHashAccess
-            // that will autovivify on write.
-            _ if matches!(&target, Value::HashSlotRef { .. }) => {
+            // When the target is a HashEntryRef pointing to a non-existent key
+            // (resolved to Any/Nil), in lazy mode extend its `path` by one key so
+            // the deferred bind autovivifies the full path on write.
+            _ if matches!(&target, Value::HashEntryRef { .. }) => {
                 let key = Value::hash_key_encode(&index);
-                self.stack.push(Value::DeferredHashAccess {
-                    parent_slot: Box::new(target),
-                    key,
-                });
+                let Value::HashEntryRef { hash, mut path } = target else {
+                    unreachable!()
+                };
+                path.push(key);
+                self.stack.push(Value::HashEntryRef { hash, path });
             }
             _ => {
                 // Fallback to normal autovivify for non-hash targets
@@ -289,9 +290,9 @@ impl Interpreter {
             self.stack.push(Value::junction(kind.clone(), results));
             return Ok(());
         }
-        // If target is a HashSlotRef, resolve it to the actual value and re-index.
-        if let Value::HashSlotRef { .. } = &target {
-            let resolved = target.hash_slot_read();
+        // If target is a HashEntryRef, resolve it to the actual value and re-index.
+        if let Value::HashEntryRef { .. } = &target {
+            let resolved = target.hash_entry_read();
             // If the resolved value is a Hash, push it as the target for indexing.
             // This supports chained autovivification (e.g. %h<a><b><c>).
             self.stack.push(resolved);

@@ -581,8 +581,8 @@ impl Interpreter {
         if let Some(target) = lvalue_writeback_target
             && let Some(slot) = self.find_local_slot(code, &target)
             // Mirror the reverse pull's invariant: never clobber a live
-            // `HashSlotRef` binding slot with a plain env copy.
-            && !matches!(self.locals[slot], Value::HashSlotRef { .. })
+            // `HashEntryRef` binding slot with a plain env copy.
+            && !matches!(self.locals[slot], Value::HashEntryRef { .. })
             && let Some(val) = self.env().get(&target).cloned()
         {
             self.locals[slot] = val;
@@ -750,7 +750,7 @@ impl Interpreter {
 
         // Resolve slot refs to their underlying values before dispatch
         let target = match &target {
-            Value::HashSlotRef { .. } => target.hash_slot_read(),
+            Value::HashEntryRef { .. } => target.hash_entry_read(),
             _ => target,
         };
 

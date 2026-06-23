@@ -372,7 +372,7 @@ impl Compiler {
                 return;
             }
             // Mixed case: one side is a named variable (with a local slot holding
-            // a DeferredHashAccess from `:=` binding), the other is an Index expression.
+            // a HashEntryRef from `:=` binding), the other is an Index expression.
             // Use GetLocalRaw + IndexAutovivifyLazy + ContainerEqRaw.
             if let Some(slot) = self.container_eq_var_slot(left)
                 && matches!(right, Expr::Index { .. })

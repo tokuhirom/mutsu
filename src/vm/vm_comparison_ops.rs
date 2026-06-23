@@ -615,7 +615,7 @@ impl Interpreter {
     }
 
     /// Container identity (`=:=`) using raw container values.
-    /// Compares DeferredHashAccess and HashSlotRef values to check if they
+    /// Compares HashEntryRef values to check if they
     /// reference the same hash slot.
     pub(super) fn exec_container_eq_raw_op(&mut self) {
         let right = self.stack.pop().unwrap();
@@ -625,7 +625,7 @@ impl Interpreter {
         self.stack.push(Value::Bool(result));
     }
 
-    /// Check if two raw container values (DeferredHashAccess / HashSlotRef)
+    /// Check if two raw container values (HashEntryRef)
     /// point to the same hash slot.
     fn containers_same_slot(a: &Value, b: &Value) -> bool {
         // Phase 2 element container: a `ContainerRef` cell has container identity
@@ -637,14 +637,16 @@ impl Interpreter {
             (Value::ContainerRef(x), Value::ContainerRef(y)) => return Arc::ptr_eq(x, y),
             (Value::ContainerRef(cell), other) | (other, Value::ContainerRef(cell)) => {
                 // A `:=`-bound hash element is promoted to a `ContainerRef` cell
-                // (Phase 2 Stage 1). The OTHER side may still be a HashSlotRef /
-                // DeferredHashAccess pointing at that *same* element (e.g. a
+                // (Phase 2 Stage 1). The OTHER side may still be a HashEntryRef
+                // deferred token pointing at that *same* element (e.g. a
                 // deferred bind `my $b := %h<a><b>` whose element was later
                 // promoted when re-evaluated). They are the same container iff
                 // the element currently stored at that slot IS this cell.
                 if let Some((arc, key)) = Self::extract_hash_ref(other) {
-                    let ptr = Arc::as_ptr(arc);
-                    if let Some(Value::ContainerRef(elem_cell)) = unsafe { (*ptr).get(key) } {
+                    let ptr = Arc::as_ptr(&arc);
+                    if let Some(Value::ContainerRef(elem_cell)) =
+                        unsafe { (*ptr).get(key.as_str()) }
+                    {
                         return Arc::ptr_eq(cell, elem_cell);
                     }
                 }
@@ -656,39 +658,30 @@ impl Interpreter {
         let a_ref = Self::extract_hash_ref(a);
         let b_ref = Self::extract_hash_ref(b);
         if let (Some((a_arc, a_key)), Some((b_arc, b_key))) = (a_ref, b_ref) {
-            Arc::ptr_eq(a_arc, b_arc) && a_key == b_key
+            Arc::ptr_eq(&a_arc, &b_arc) && a_key == b_key
         } else {
             // Both are the same value identity (for non-hash-ref cases)
             crate::runtime::values_identical(a, b)
         }
     }
 
-    /// Extract the (hash Arc, key) from a HashSlotRef or DeferredHashAccess.
-    /// For DeferredHashAccess, resolves the parent_slot to find the inner hash.
-    fn extract_hash_ref(val: &Value) -> Option<(&Arc<crate::value::HashData>, &str)> {
-        match val {
-            Value::HashSlotRef { hash, key } => Some((hash, key.as_str())),
-            Value::DeferredHashAccess { parent_slot, key } => {
-                // The parent_slot is a HashSlotRef. Read its value to get the inner hash.
-                // But we need the Arc, not the resolved value. So we need to look
-                // at the hash pointed to by parent_slot, read its entry, and if that
-                // entry is a Hash, get its Arc.
-                if let Value::HashSlotRef {
-                    hash: parent_hash,
-                    key: parent_key,
-                } = parent_slot.as_ref()
-                {
-                    // Read the value at parent_key in parent_hash
-                    let ptr = Arc::as_ptr(parent_hash);
-                    let inner_val = unsafe { (*ptr).get(parent_key.as_str()) };
-                    if let Some(Value::Hash(inner_arc)) = inner_val {
-                        return Some((inner_arc, key.as_str()));
-                    }
-                }
-                None
+    /// Extract the `(terminal hash Arc, terminal key)` a `HashEntryRef` points
+    /// to, walking its `path` READ-ONLY. Returns `None` if any intermediate level
+    /// is missing or not a hash (the deferred path is not yet materialized, so it
+    /// has no stable container identity).
+    fn extract_hash_ref(val: &Value) -> Option<(Arc<crate::value::HashData>, String)> {
+        let Value::HashEntryRef { hash, path } = val else {
+            return None;
+        };
+        let mut cur = hash.clone();
+        for k in &path[..path.len() - 1] {
+            let ptr = Arc::as_ptr(&cur);
+            match unsafe { (*ptr).get(k.as_str()) } {
+                Some(Value::Hash(inner)) => cur = inner.clone(),
+                _ => return None,
             }
-            _ => None,
         }
+        Some((cur, path.last().unwrap().clone()))
     }
 
     /// For an encoded source like "@b\0idx\01" (or "%h\0idx\0k"), look up the

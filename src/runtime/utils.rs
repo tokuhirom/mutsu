@@ -1860,8 +1860,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             "Scalar"
         }
         Value::LazyIoLines { .. } => "Seq",
-        Value::HashSlotRef { .. } => "Scalar",
-        Value::DeferredHashAccess { .. } => "Any",
+        Value::HashEntryRef { .. } => value_type_name(&value.hash_entry_read()),
         Value::ContainerRef(_) => value.with_deref(value_type_name),
     }
 }
