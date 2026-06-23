@@ -770,7 +770,10 @@ impl Interpreter {
                         .and_then(|meta| meta.modified())
                         .map(Self::system_time_to_int)
                         .map_err(|err| {
-                            RuntimeError::new(format!("Failed to get changed time '{}': {}", p, err))
+                            RuntimeError::new(format!(
+                                "Failed to get changed time '{}': {}",
+                                p, err
+                            ))
                         })?;
                     Ok(Value::Int(ts))
                 }
