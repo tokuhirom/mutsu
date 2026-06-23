@@ -35,7 +35,8 @@
 > - **前提② 状態所有（state ownership）＝レジストリ／IO ハンドル／型メタを Interpreter から VM が真に所有する**
 >   （`docs/vm-interpreter-fallback-ledger.md` の ②③）
 
-∴ **優先すべきは前提①②の substrate（§C・§D）であり、それが B を前進させ、§C の grep-rw-view など A 残作業も解禁する。**
+∴ **優先すべきは前提①②の substrate（§C・§D）であり、それが B を前進させる。§C の grep-rw-view 撤去は
+完了（#3466）し、残るは「最終 SlotRef キル」のみ — read-deref chokepoint は grep 撤去で整備済みなので地ならし済み。**
 
 ### A. 単一ストア化（locals↔env 二重ストア統合）— ✅ **完了（2026-06-23）**
 
@@ -79,22 +80,21 @@ Stage 0〜2c 完了（Stage 3 = escape-aware cell 省略は perf 未正当化で
 
 - [ ] **Phase 2 Stage 2 slice 5（最終 SlotRef キル）**: 残る `HashSlotRef`/`DeferredHashAccess` 生成サイト
       （junction-bind / `is raw` reduce lvalue-read の autoviv）を cell 化し、variant を削除。
-- [x] **grep-rw-view 撤去（完了・2026-06-23）**: `for_grep_view`（Interpreter フィールド・vm.rs save/restore）＋
-      `GrepView`／`grep_source`（ArrayData 埋め込み）＋ index ベース writeback を全廃。`.grep` は matched source slot を
-      共有 `ContainerRef` cell に昇格し、結果が同じ cell を参照する（`for @a.grep(...){ $_++ }` は通常の要素 cell write
-      パスで @a に書き戻る）。`>>++`/`>>--` は hyper ループで cell を通して in-place inc。pin=`t/grep-cell-read-deref.t`。
-      **read-deref 未網羅は実測で次の箇所のみ（いずれも `:=`-bound 要素 cell の既存バグでもあった）**:
-      (1) `compare_values`（.sort/min/max）(2) `collect_minmax_candidates`（.minmax）(3) hyper メソッドループ（`>>.method`
-      の invocant）(4) `.join` の Instance 判定 3 箇所（fast-narg／runtime／0-arg）(5) **メソッド dispatch の invocant**
-      （`.grep(...).head.method` 等で cell が単要素抽出されメソッド受信側になる）＝`exec_call_method_op` で `ContainerRef`
-      invocant を `.VAR` 以外 decont。**★教訓: 「全 read パスが deref 必要」という事前調査は過大評価。実際は ~30 op を実測して
-      上記のみ欠けていた（say/map/gist/raku/reduce/flat/splice/Bag/Set/first/squish/index 等は既存 chokepoint で deref 済）。
-      ★最重要の中心修正＝CallMethod invocant の decont（読み専用なので安全・CallMethodMut は `:=`-bound 容器変異を壊すので
-      decont 不可）。これ 1 つで `.head.method`/`.first.method` 系の class 全体が解ける。**
-- [x] **★env↔locals cell 共有 — captured-outer cell 化／純 writeback コヒーレンス（A の律速・完了）**: slice 1〜1.20
-      ＋ S1〜S21 で nested callee／carrier／cross-thread の captured-mutated lexical を全て precise 化。台帳＝
-      [docs/captured-outer-cell-sharing.md](docs/captured-outer-cell-sharing.md)、グラインド詳細＝news/2026-06.md ＋ MEMORY
-      第45〜52。**残る OFF 依存は IO-Socket-Async.t の flaky のみ**。
+      **★生成サイト（起点）**: `HashSlotRef` は `hash_autovivify`（value/mod.rs:3196・他に :3255/:3301）が autoviv lvalue-read で
+      生成。`DeferredHashAccess` は `vm_var_index_ops.rs:217` で push。読み口は `hash_slot_read`/`deferred_hash_read`
+      （display.rs:984-985・vm_var_index_ops.rs:82・vm_call_func_ops.rs:753 等）。これらを `ContainerRef` cell に統一し
+      2 variant を削除する。
+      **★head-start（grep-rw-view 撤去 #3466 で整備済み）**: 要素 cell の read-deref chokepoint は実測 6 箇所のみで、
+      grep 撤去時に全て埋めた（`compare_values`／`collect_minmax_candidates`／hyper メソッドループ／`.join` ×3／
+      **CallMethod invocant decont**（`exec_call_method_op`・`.VAR` 除く）／`smart_match` LHS）。SlotRef を cell 化しても
+      同じ 6 箇所を踏むだけなので、新たな read-deref 作業はほぼ無い見込み。**★CallMethodMut は decont 不可**＝`:=`-bound
+      容器変異（`my @x := @src; @x.push`）が source に届かなくなる。read dispatch だけ decont する原則を踏襲。
+      設計の land 済み詳細＝[news/2026-06.md](news/2026-06.md)「grep-rw-view 側道機構の撤去」。
+- ✅ **grep-rw-view 撤去（#3466・2026-06-23）→ [news/2026-06.md](news/2026-06.md)**。`.grep` を第一級要素 cell 化し
+      `for_grep_view`/`GrepView`/`grep_source`/index-based writeback を全廃（-90 行）。
+- ✅ **env↔locals cell 共有 — captured-outer cell 化／純 writeback コヒーレンス（A の律速・完了）**: slice 1〜1.20
+      ＋ S1〜S21。台帳＝[docs/captured-outer-cell-sharing.md](docs/captured-outer-cell-sharing.md)、詳細＝news/2026-06.md
+      ＋ MEMORY 第45〜52。**残る OFF 依存は IO-Socket-Async.t の flaky のみ**。
 - [ ] follow-up（pre-existing・小）: `$x = @arr` 共有の method param 版（`method m($n){ $n.push }`）・`is copy` $-param。
       設計＝[docs/scalar-array-sharing.md](docs/scalar-array-sharing.md) §5。
 
