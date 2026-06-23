@@ -625,6 +625,12 @@ impl Interpreter {
         if let Some(result) = self.try_native_io_coercion(&target, method, &args) {
             return result;
         }
+        // Native `.encode` (Cool scalar -> Buf) / `.decode` (Buf/Blob -> Str) —
+        // pure transformation via the VM-owned encoding registry, no `io_handles`
+        // (ledger §D). Single impl shared with the interpreter catch-all.
+        if let Some(result) = self.try_native_encode_decode(&target, method, &args) {
+            return result;
+        }
         // TODO: compile to bytecode — native/Buf/Failure method fork (ledger §1).
         // User-defined Instance methods now always run as bytecode (compiled at
         // registration, or on demand above via `populate_uncompiled_method`), so
@@ -2128,6 +2134,12 @@ impl Interpreter {
         // (`$s.IO`) — builds a *new* IO::Path and never mutates the receiver, so no
         // writeback. Instance / non-IO Package / aggregate receivers fall through.
         if let Some(result) = self.try_native_io_coercion(&target, method, &args) {
+            return result;
+        }
+        // Native `.encode` (Cool scalar -> Buf) / `.decode` (Buf/Blob -> Str) for
+        // variable receivers (`$s.encode("utf-16")`) — same pure transformation as
+        // the non-mut path; returns a *new* Buf/Str, no writeback.
+        if let Some(result) = self.try_native_encode_decode(&target, method, &args) {
             return result;
         }
         // TODO: compile to bytecode — native/Buf/Failure method fork, mut (ledger §1).
