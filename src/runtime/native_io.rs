@@ -1092,6 +1092,77 @@ impl Interpreter {
         }
     }
 
+    /// Open a file handle for an `IO::Path` (`open`): allocate an `io_handles`
+    /// entry and return the `IO::Handle`. This is the one IO::Path FS method that
+    /// mutates VM-owned `io_handles` state (`&mut self`) — but the VM *owns* that
+    /// table (a shared `Arc<RwLock>`), so it dispatches `open` natively (ledger §D
+    /// ③) via the single shared `open_file_handle` the interpreter also uses, with
+    /// the same `:r`/`:w`/`:a`/`:rw`/`:bin`/`:enc`/`:create`/`:exclusive` flag
+    /// handling and the same Failure-on-error shaping. Path resolution
+    /// (`resolve_io_path_buf`) and flag parsing (`parse_io_flags_values`) are
+    /// `&self` reads returning owned values, so there is no borrow conflict with
+    /// the subsequent `&mut self` `open_file_handle`. Returns `None` for any other
+    /// method.
+    pub(crate) fn try_io_path_open(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if method != "open" {
+            return None;
+        }
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let path_buf = self.resolve_io_path_buf(attributes, &p);
+        let (
+            read,
+            write,
+            append,
+            bin,
+            line_chomp,
+            line_separators,
+            out_buffer_capacity,
+            nl_out,
+            enc,
+            create,
+            exclusive,
+        ) = self.parse_io_flags_values(args);
+        Some(
+            match self.open_file_handle(
+                &path_buf,
+                read,
+                write,
+                append,
+                bin,
+                line_chomp,
+                line_separators,
+                out_buffer_capacity,
+                nl_out,
+                enc,
+                create,
+                exclusive,
+            ) {
+                Ok(handle) => Ok(handle),
+                // Like the `open` sub, `IO::Path.open` returns a Failure (wrapping
+                // the exception) on error rather than throwing.
+                Err(err) => {
+                    let class_name = err
+                        .exception
+                        .as_deref()
+                        .and_then(|ex| match ex {
+                            Value::Instance { class_name, .. } => Some(class_name.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| "X::AdHoc".to_string());
+                    Ok(io_exception_failure(&class_name, err.message))
+                }
+            },
+        )
+    }
+
     pub(super) fn native_io_path(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -1128,6 +1199,12 @@ impl Interpreter {
         // `chmod`) — one-shot syscall, no `io_handles`, shared with the VM's
         // native dispatch via `try_io_path_fs_mutate`.
         if let Some(result) = self.try_io_path_fs_mutate(attributes, class_name, method, &args) {
+            return result;
+        }
+        // `open` allocates an `io_handles` entry and returns an `IO::Handle`. The
+        // VM owns `io_handles`, so it dispatches `open` natively via the shared
+        // `try_io_path_open` (ledger §D ③).
+        if let Some(result) = self.try_io_path_open(attributes, method, &args) {
             return result;
         }
         // The concrete class of the receiver (`IO::Path` or a SPEC-variant
@@ -1304,50 +1381,8 @@ impl Interpreter {
             }
             // `slurp` (whole-file content read) is handled above by the shared
             // `try_io_path_content_read`, which the VM also dispatches natively.
-            "open" => {
-                let (
-                    read,
-                    write,
-                    append,
-                    bin,
-                    line_chomp,
-                    line_separators,
-                    out_buffer_capacity,
-                    nl_out,
-                    enc,
-                    create,
-                    exclusive,
-                ) = self.parse_io_flags_values(&args);
-                match self.open_file_handle(
-                    &path_buf,
-                    read,
-                    write,
-                    append,
-                    bin,
-                    line_chomp,
-                    line_separators,
-                    out_buffer_capacity,
-                    nl_out,
-                    enc,
-                    create,
-                    exclusive,
-                ) {
-                    Ok(handle) => Ok(handle),
-                    // Like the `open` sub, `IO::Path.open` returns a Failure
-                    // (wrapping the exception) on error rather than throwing.
-                    Err(err) => {
-                        let class_name = err
-                            .exception
-                            .as_deref()
-                            .and_then(|ex| match ex {
-                                Value::Instance { class_name, .. } => Some(class_name.to_string()),
-                                _ => None,
-                            })
-                            .unwrap_or_else(|| "X::AdHoc".to_string());
-                        Ok(io_exception_failure(&class_name, err.message))
-                    }
-                }
-            }
+            // `open` (allocates an `io_handles` entry) is handled above by the
+            // shared `try_io_path_open`, which the VM also dispatches natively.
             "copy" => {
                 let dest = args
                     .first()
