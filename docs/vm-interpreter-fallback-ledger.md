@@ -353,6 +353,15 @@
   まとめて降ろす別スライス候補）。挙動不変（native==interpreter＝同一 `to_mixhash`）。pin `t/native-mixhash-coerce.t`(22,
   raku/mutsu 双方 PASS・Str 要素で `.WHICH` キー差を回避)。mix.t 244/244・set.t・categorize 緑。
   （bag.t 625 "Foo instance union" は BLOCKERS.md 記載の pre-existing で本変更と無関係。）
+- **2026-06-23 (§1 = QuantHash coercion を mut パスでも VM ネイティブ化)**: 上記 MixHash slice の follow-up。**変数受け手**
+  （`@a.Set`/`%h.MixHash`）は `CallMethodMut` にコンパイルされ非mut パスの `try_native_quanthash_coerce` を踏まず、
+  6 兄弟（`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/`.MixHash`）が一律 mut catch-all で interpreter fallback していた
+  （MixHash slice の「parity」注記参照）。`vm_call_method_compiled.rs` の **mut catch-all**（`try_compiled_method_mut_or_interpret`
+  末尾・`try_native_first` の後）に同じ `Self::try_native_quanthash_coerce` を追加。coercion は**新しい** Set/Bag/Mix 値を返し
+  受け手変数を変異させない（writeback 不要）ので非mut パスと完全同型＝挙動不変。Instance/Package 受け手は fall through。
+  実測: `@a.{Set,Bag,Mix,SetHash,BagHash,MixHash}` の fallback 6→0（残 `^name` は MOP）。pin
+  `t/native-quanthash-coerce-mut-path.t`(19, raku/mutsu 双方 PASS)。mix.t 244/244・set.t・categorize 緑。
+  （bag.t 252 / classify.t 40〔junction classify・非whitelist〕は stash 確認で main でも fail＝pre-existing・本変更と無関係。）
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
