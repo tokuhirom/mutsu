@@ -1,6 +1,35 @@
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 
+/// Build rakudo's `X::Str::Sprintf::Directives::Count` message: the directive
+/// count (`args_used`) is pluralized simply, the supplied count (`args_have`)
+/// renders `0` as "no argument was" / `1` as "1 argument was" / `n` as
+/// "n arguments were", the format is echoed after a newline, and the
+/// interpolated-`$` hint is appended when fewer arguments were supplied than
+/// directives expect.
+pub(crate) fn directives_count_message(fmt: &str, args_used: usize, args_have: usize) -> String {
+    let (have_count, have_unit, have_verb) = match args_have {
+        0 => ("no".to_string(), "argument", "was"),
+        1 => ("1".to_string(), "argument", "was"),
+        n => (n.to_string(), "arguments", "were"),
+    };
+    let hint = if args_have < args_used {
+        "  Are you using an interpolated '$'?"
+    } else {
+        ""
+    };
+    format!(
+        "Your printf-style directives specify {} argument{}, but {} {} {}\nsupplied to format '{}'.{}",
+        args_used,
+        if args_used == 1 { "" } else { "s" },
+        have_count,
+        have_unit,
+        have_verb,
+        fmt,
+        hint,
+    )
+}
+
 /// Count the number of arguments a sprintf-style format string consumes.
 /// This is the number of directives (excluding `%%`), counting `*` width/precision
 /// as additional sequential args, and using the highest positional index when
@@ -236,26 +265,12 @@ pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result
         sequential_args
     };
     if expected_args != arg_count {
+        let message = directives_count_message(fmt, expected_args, arg_count);
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("args-have".to_string(), Value::Int(arg_count as i64));
         attrs.insert("args-used".to_string(), Value::Int(expected_args as i64));
-        attrs.insert(
-            "message".to_string(),
-            Value::str(format!(
-                "Your printf-style directives specify {} arguments, but {} argument{} {} supplied",
-                expected_args,
-                arg_count,
-                if arg_count == 1 { "" } else { "s" },
-                if arg_count == 1 { "was" } else { "were" },
-            )),
-        );
-        let mut err = RuntimeError::new(format!(
-            "Your printf-style directives specify {} arguments, but {} argument{} {} supplied",
-            expected_args,
-            arg_count,
-            if arg_count == 1 { "" } else { "s" },
-            if arg_count == 1 { "was" } else { "were" },
-        ));
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let mut err = RuntimeError::new(message);
         err.exception = Some(Box::new(Value::make_instance(
             Symbol::intern("X::Str::Sprintf::Directives::Count"),
             attrs,
