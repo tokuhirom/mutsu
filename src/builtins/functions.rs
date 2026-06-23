@@ -1728,7 +1728,9 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                     crate::value::LazyList::new_cached(result),
                 ))))
             } else {
-                Some(Ok(Value::array(result)))
+                // `zip` returns a Seq (so `.^name` is Seq, `.raku` shows `.Seq`),
+                // matching Rakudo and the `Z` metaop n-ary path.
+                Some(Ok(Value::Seq(std::sync::Arc::new(result))))
             }
         }
         "flat" => {
