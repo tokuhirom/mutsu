@@ -633,7 +633,7 @@ impl Interpreter {
         return_type: Option<&String>,
         custom_traits: &[(String, Option<crate::ast::Expr>)],
     ) -> Result<(), RuntimeError> {
-        use crate::runtime::nativecall::{CType, NativeCallSpec};
+        use crate::runtime::nativecall::{CType, NativeCallSpec, ParamSpec};
 
         // Evaluate a trait's argument expression to a String, if present.
         let mut eval_trait_str = |trait_name: &str| -> Result<Option<String>, RuntimeError> {
@@ -665,7 +665,8 @@ impl Interpreter {
             let Some(ct) = CType::from_type_name(tc) else {
                 return Ok(());
             };
-            params.push(ct);
+            let is_rw = pd.traits.iter().any(|t| t == "rw");
+            params.push(ParamSpec { ct, is_rw });
         }
 
         let ret = match return_type {
