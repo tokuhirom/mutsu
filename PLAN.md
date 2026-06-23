@@ -129,7 +129,13 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
       (2) `m:g//` を `my @m` 代入後 `@m.gist` が `(…)` を返す（receiver の List-kind dual-store）。S05-capture/array-alias.t（30/37）。
 - [ ] 未実装演算子: `ff`/`fff`（flipflop 8 variants）/ `==>`・`<==`（feed precedence: `==>` が `=` より強く結合する差）/
       `~<`・`~>`（string bitwise shift・優先度低）。
-- [ ] メタ演算子: generalized negation meta（`!op`）/ hyper assignment（`@a >>+=>> 1`）。
+- [ ] メタ演算子: generalized negation meta（`!op`）/ hyper assignment（`@a >>+=>> 1`）/
+      **chained Z の Seq-ness バグ**: `(1 Z 2 Z 3)`（3-operand）が List を返す（raku=Seq）。2/4-operand は Seq で
+      **3-operand だけ** List＝binary-nested `Z` の型依存ラッピング非対称（`Seq Z scalar`→List だが `List Z scalar`→Seq）。
+      #3471（X/Z は Seq）の chained reduction への伝播漏れ。`t/chained-cross-zip.t` の期待値も #3471 以前のままで stale
+      （tests 1-2/19-20 が X chain の正しい `.Seq` 出力に対し旧 List 期待で fail＝t/ 非致命で隠れている）。修正時は
+      chained Z を n-ary Seq 化 + 全 `.raku` 期待値を raku 一致（`.Seq` 付き）へ更新する。`src/vm/vm_string_regex_ops.rs` の
+      binary Z パス（~2155）。
 - [ ] Phasers: rvalue caching（INIT/CHECK/BEGIN as rvalues）/ PRE/POST（contract programming）。
 - [ ] Signatures: type-check enforcement（X::TypeCheck）/ native int/uint overflow・bounds / 単一 sub の複数シグネチャ。
 - [ ] OOP: namespaced construction（`A::B.new`）/ `augment class` / parameterized role mixin。
