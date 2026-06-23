@@ -104,10 +104,22 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
 
 台帳＝[docs/vm-interpreter-fallback-ledger.md](docs/vm-interpreter-fallback-ledger.md) ②③。**B の律速。**
 
-- [ ] **レジストリ所有（②）**: クラス／ロール／enum／sub の宣言登録を VM 側へ。
-- [ ] **IO ハンドル・型メタ所有（③）**: `io_handles` / `register_container_type_metadata` / regex キャッシュを VM が所有。
-      これで Buf/Failure/IO native メソッドの catch-all フォールバック（`vm_call_method_compiled.rs:175/507/1543/1794`）が
-      native 化でき、`runtime/` の ~40% 純 tree-walk dispatch を削除可能になる。
+- [x] **レジストリ所有（②）= 完了**（#2760-2772、`docs/vm-registry-ownership.md`）。
+- [x] **IO native メソッド族（③ の一部）= 完了**。`io_handles` は `Arc<RwLock>` 共有フィールドで VM が所有しているので、
+      **IO::Path FS メソッド族（stat / content-read / fs-mutate / open〔io_handles 確保 capstone〕/ two-path / comb）が
+      100% VM ネイティブ化済**（2026-06-23、#3499/#3501/#3503/#3504/#3507/#3511）。`.encode`/`.decode`（#3509）/ coercion 全族
+      （scalar 受け手まで・#3497 他）も native。**clean な pure-value native-method ドレインは枯渇**＝残る catch-all バウンスは
+      全て別軸 or 構造的ブロッカー前提（下記）。
+- [ ] **次の §D ③ 候補（戦略的フォーク・次セッションで集中着手）**:
+  - **(a) 組込型 ctor の native 化**: `new` fallback の実体は **例外型（`X::…` の `.new`・S32-exceptions/misc.t で 16）/ Promise 等
+    並行型 / misc 組込型**（★`Buf.new` は既に native・ledger 旧記述は stale）。例外型 ctor は **F の「型付き例外」最優先項目と重なる**＝
+    一石二鳥。`is_native_default_constructible`/`build_native_default_instance`（methods_object.rs）は user class 限定なので、
+    組込型を native 構築するには別ゲートが要る。
+  - **(b) tree-walk dispatch chain 削除の substrate**: IO/coercion が native 化した今、`dispatch_method_by_name_*` チェーンと
+    catch-all バウンス（`vm_call_method_compiled.rs` 末尾）の構造的削除。残る到達カテゴリ＝MOP carrier（WHAT/name/can/HOW・反射で
+    撲滅対象外）/ landmine（Instance.Str/.Stringy/.raku/.gist・列挙不能で見送り済）/ block-exec slow path（map/grep・lever B/Phase 2）/
+    concurrency（Supply/tap・別軸）/ typed-array mutator（typed/shaped/shared・Phase 2/lever B）。**純粋に削れる残りは少なく、各々別軸の
+    前提が要る**＝substrate 着手は要設計。
 - [ ] **multi-dispatch の VM 化**: proto multi / where 制約評価を VM 側で（`vm_call_func_ops.rs:1051/1084`）。
 
 ---
