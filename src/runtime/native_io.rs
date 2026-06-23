@@ -890,6 +890,208 @@ impl Interpreter {
         }
     }
 
+    /// Single-path filesystem *mutations* on an `IO::Path`
+    /// (`spurt`/`mkdir`/`rmdir`/`unlink`/`chmod`): resolve the path against the
+    /// VM-owned cwd, then perform a one-shot syscall (`fs::write`/`create_dir_all`/
+    /// `remove_dir`/`remove_file`/`set_permissions`). They allocate **no
+    /// `io_handles`** — `spurt` opens, writes, and immediately drops its file
+    /// handle. Encoding lookup (`encode_with_encoding`, reading the VM-owned
+    /// encoding registry) is a `&self` read, so the VM dispatches these natively
+    /// (ledger §D): the single impl `native_io_path` also delegates to. Two-path
+    /// ops (`copy`/`rename`/`move`/`symlink`/`link`, which resolve a destination)
+    /// and handle-opening `open` return `None` and stay in `native_io_path`.
+    pub(crate) fn try_io_path_fs_mutate(
+        &self,
+        attributes: &HashMap<String, Value>,
+        class_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "spurt" | "mkdir" | "rmdir" | "unlink" | "chmod") {
+            return None;
+        }
+        Some(self.io_path_fs_mutate(attributes, class_name, method, args))
+    }
+
+    /// The fallible body of [`try_io_path_fs_mutate`] (the gate returns `Option`
+    /// so it cannot use `?`). Behavior-invariant with the arms `native_io_path`
+    /// previously held.
+    fn io_path_fs_mutate(
+        &self,
+        attributes: &HashMap<String, Value>,
+        class_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let path_buf = self.resolve_io_path_buf(attributes, &p);
+        match method {
+            "spurt" => {
+                let content_value = args
+                    .first()
+                    .cloned()
+                    .unwrap_or(Value::Str(String::new().into()));
+                let mut append = false;
+                let mut createonly = false;
+                let mut enc: Option<String> = None;
+                for arg in args.iter().skip(1) {
+                    if let Value::Pair(key, val) = arg {
+                        match key.as_str() {
+                            "append" => append = val.truthy(),
+                            "createonly" => createonly = val.truthy(),
+                            "enc" => enc = Some(val.to_string_value()),
+                            _ => {}
+                        }
+                    }
+                }
+                if createonly && path_buf.exists() {
+                    return Ok(io_exception_failure(
+                        "X::IO::Spurt",
+                        format!("Failed to spurt '{}': file already exists", p),
+                    ));
+                }
+                let is_buf = crate::runtime::Interpreter::is_buf_value(&content_value);
+                let write_result = if is_buf {
+                    let bytes = crate::runtime::Interpreter::extract_buf_bytes(&content_value);
+                    if append {
+                        use std::io::Write;
+                        fs::OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(&path_buf)
+                            .and_then(|mut file| file.write_all(&bytes))
+                    } else {
+                        fs::write(&path_buf, &bytes)
+                    }
+                } else {
+                    let content = content_value.to_string_value();
+                    let bytes = if let Some(ref enc_name) = enc {
+                        match self.encode_with_encoding(&content, enc_name) {
+                            Ok(mut b) => {
+                                // For utf16 (auto-endian), prepend BOM
+                                let enc_lower = enc_name.to_lowercase();
+                                if enc_lower == "utf-16" || enc_lower == "utf16" {
+                                    let bom: &[u8] = if cfg!(target_endian = "little") {
+                                        &[0xFF, 0xFE]
+                                    } else {
+                                        &[0xFE, 0xFF]
+                                    };
+                                    let mut with_bom = Vec::with_capacity(bom.len() + b.len());
+                                    with_bom.extend_from_slice(bom);
+                                    with_bom.append(&mut b);
+                                    with_bom
+                                } else {
+                                    b
+                                }
+                            }
+                            Err(e) => {
+                                return Ok(io_exception_failure("X::IO::Spurt", e.message));
+                            }
+                        }
+                    } else {
+                        content.into_bytes()
+                    };
+                    if append {
+                        use std::io::Write;
+                        fs::OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(&path_buf)
+                            .and_then(|mut file| file.write_all(&bytes))
+                    } else {
+                        fs::write(&path_buf, &bytes)
+                    }
+                };
+                match write_result {
+                    Ok(()) => Ok(Value::Bool(true)),
+                    Err(err) => Ok(io_exception_failure(
+                        "X::IO::Spurt",
+                        format!("Failed to spurt '{}': {}", p, err),
+                    )),
+                }
+            }
+            "mkdir" => match fs::create_dir_all(&path_buf) {
+                Ok(()) => Ok(Value::make_instance(
+                    Symbol::intern(class_name),
+                    attributes.clone(),
+                )),
+                Err(err) => {
+                    let msg = format!(
+                        "Failed to create directory '{}' with mode '0o777': Failed to mkdir: {}",
+                        p, err
+                    );
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str_from(&msg));
+                    ex_attrs.insert("path".to_string(), Value::str_from(&p));
+                    let ex = Value::make_instance(Symbol::intern("X::IO::Mkdir"), ex_attrs);
+                    let mut failure_attrs = HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ))
+                }
+            },
+            "rmdir" => match fs::remove_dir(&path_buf) {
+                Ok(()) => Ok(Value::Bool(true)),
+                Err(err) => {
+                    let msg = format!("Failed to remove the directory '{}': {}", p, err);
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str_from(&msg));
+                    ex_attrs.insert("path".to_string(), Value::str_from(&p));
+                    let ex = Value::make_instance(Symbol::intern("X::IO::Rmdir"), ex_attrs);
+                    let mut failure_attrs = HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ))
+                }
+            },
+            "unlink" => match fs::remove_file(&path_buf) {
+                Ok(()) => Ok(Value::Bool(true)),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::Bool(false)),
+                Err(err) => Err(RuntimeError::new(format!(
+                    "Failed to unlink '{}': {}",
+                    p, err
+                ))),
+            },
+            "chmod" => {
+                let mode_value = args
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new("chmod requires mode"))?;
+                let mode_int = match mode_value {
+                    Value::Int(i) => i as u32,
+                    Value::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
+                    other => {
+                        return Err(RuntimeError::new(format!(
+                            "Invalid mode: {}",
+                            other.to_string_value()
+                        )));
+                    }
+                };
+                #[cfg(unix)]
+                {
+                    let perms = PermissionsExt::from_mode(mode_int);
+                    fs::set_permissions(&path_buf, perms).map_err(|err| {
+                        RuntimeError::new(format!("Failed to chmod '{}': {}", p, err))
+                    })?;
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = mode_int;
+                    return Err(RuntimeError::new("chmod not supported on this platform"));
+                }
+                Ok(Value::Bool(true))
+            }
+            _ => unreachable!("io_path_fs_mutate called with non-mutation method"),
+        }
+    }
+
     pub(super) fn native_io_path(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -920,6 +1122,12 @@ impl Interpreter {
         // split/decode the bytes; no `io_handles`, shared with the VM's native
         // dispatch via `try_io_path_content_read`.
         if let Some(result) = self.try_io_path_content_read(attributes, method, &args) {
+            return result;
+        }
+        // Single-path filesystem mutations (`spurt`/`mkdir`/`rmdir`/`unlink`/
+        // `chmod`) — one-shot syscall, no `io_handles`, shared with the VM's
+        // native dispatch via `try_io_path_fs_mutate`.
+        if let Some(result) = self.try_io_path_fs_mutate(attributes, class_name, method, &args) {
             return result;
         }
         // The concrete class of the receiver (`IO::Path` or a SPEC-variant
@@ -1220,70 +1428,9 @@ impl Interpreter {
                 })?;
                 Ok(Value::Bool(true))
             }
-            "chmod" => {
-                let mode_value = args
-                    .first()
-                    .cloned()
-                    .ok_or_else(|| RuntimeError::new("chmod requires mode"))?;
-                let mode_int = match mode_value {
-                    Value::Int(i) => i as u32,
-                    Value::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
-                    other => {
-                        return Err(RuntimeError::new(format!(
-                            "Invalid mode: {}",
-                            other.to_string_value()
-                        )));
-                    }
-                };
-                #[cfg(unix)]
-                {
-                    let perms = PermissionsExt::from_mode(mode_int);
-                    fs::set_permissions(&path_buf, perms).map_err(|err| {
-                        RuntimeError::new(format!("Failed to chmod '{}': {}", p, err))
-                    })?;
-                }
-                #[cfg(not(unix))]
-                {
-                    let _ = mode_int;
-                    return Err(RuntimeError::new("chmod not supported on this platform"));
-                }
-                Ok(Value::Bool(true))
-            }
-            "mkdir" => match fs::create_dir_all(&path_buf) {
-                Ok(()) => Ok(Value::make_instance(io_path_class, attributes.clone())),
-                Err(err) => {
-                    let msg = format!(
-                        "Failed to create directory '{}' with mode '0o777': Failed to mkdir: {}",
-                        p, err
-                    );
-                    let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str_from(&msg));
-                    ex_attrs.insert("path".to_string(), Value::str_from(&p));
-                    let ex = Value::make_instance(Symbol::intern("X::IO::Mkdir"), ex_attrs);
-                    let mut failure_attrs = HashMap::new();
-                    failure_attrs.insert("exception".to_string(), ex);
-                    Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    ))
-                }
-            },
-            "rmdir" => match fs::remove_dir(&path_buf) {
-                Ok(()) => Ok(Value::Bool(true)),
-                Err(err) => {
-                    let msg = format!("Failed to remove the directory '{}': {}", p, err);
-                    let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str_from(&msg));
-                    ex_attrs.insert("path".to_string(), Value::str_from(&p));
-                    let ex = Value::make_instance(Symbol::intern("X::IO::Rmdir"), ex_attrs);
-                    let mut failure_attrs = HashMap::new();
-                    failure_attrs.insert("exception".to_string(), ex);
-                    Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    ))
-                }
-            },
+            // `chmod`/`mkdir`/`rmdir` (single-path FS mutations) are handled above
+            // by the shared `try_io_path_fs_mutate`, which the VM also dispatches
+            // natively.
             "dir" => {
                 let mut entries = Vec::new();
                 let requested = PathBuf::from(&p);
@@ -1319,98 +1466,8 @@ impl Interpreter {
                 }
                 Ok(Value::array(entries))
             }
-            "spurt" => {
-                let content_value = args
-                    .first()
-                    .cloned()
-                    .unwrap_or(Value::Str(String::new().into()));
-                let mut append = false;
-                let mut createonly = false;
-                let mut enc: Option<String> = None;
-                for arg in args.iter().skip(1) {
-                    if let Value::Pair(key, val) = arg {
-                        match key.as_str() {
-                            "append" => append = val.truthy(),
-                            "createonly" => createonly = val.truthy(),
-                            "enc" => enc = Some(val.to_string_value()),
-                            _ => {}
-                        }
-                    }
-                }
-                if createonly && path_buf.exists() {
-                    return Ok(io_exception_failure(
-                        "X::IO::Spurt",
-                        format!("Failed to spurt '{}': file already exists", p),
-                    ));
-                }
-                let is_buf = crate::runtime::Interpreter::is_buf_value(&content_value);
-                let write_result = if is_buf {
-                    let bytes = crate::runtime::Interpreter::extract_buf_bytes(&content_value);
-                    if append {
-                        use std::io::Write;
-                        fs::OpenOptions::new()
-                            .append(true)
-                            .create(true)
-                            .open(&path_buf)
-                            .and_then(|mut file| file.write_all(&bytes))
-                    } else {
-                        fs::write(&path_buf, &bytes)
-                    }
-                } else {
-                    let content = content_value.to_string_value();
-                    let bytes = if let Some(ref enc_name) = enc {
-                        match self.encode_with_encoding(&content, enc_name) {
-                            Ok(mut b) => {
-                                // For utf16 (auto-endian), prepend BOM
-                                let enc_lower = enc_name.to_lowercase();
-                                if enc_lower == "utf-16" || enc_lower == "utf16" {
-                                    let bom: &[u8] = if cfg!(target_endian = "little") {
-                                        &[0xFF, 0xFE]
-                                    } else {
-                                        &[0xFE, 0xFF]
-                                    };
-                                    let mut with_bom = Vec::with_capacity(bom.len() + b.len());
-                                    with_bom.extend_from_slice(bom);
-                                    with_bom.append(&mut b);
-                                    with_bom
-                                } else {
-                                    b
-                                }
-                            }
-                            Err(e) => {
-                                return Ok(io_exception_failure("X::IO::Spurt", e.message));
-                            }
-                        }
-                    } else {
-                        content.into_bytes()
-                    };
-                    if append {
-                        use std::io::Write;
-                        fs::OpenOptions::new()
-                            .append(true)
-                            .create(true)
-                            .open(&path_buf)
-                            .and_then(|mut file| file.write_all(&bytes))
-                    } else {
-                        fs::write(&path_buf, &bytes)
-                    }
-                };
-                match write_result {
-                    Ok(()) => Ok(Value::Bool(true)),
-                    Err(err) => Ok(io_exception_failure(
-                        "X::IO::Spurt",
-                        format!("Failed to spurt '{}': {}", p, err),
-                    )),
-                }
-            }
-            "unlink" => match fs::remove_file(&path_buf) {
-                Ok(()) => Ok(Value::Bool(true)),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::Bool(false)),
-                Err(err) => Err(RuntimeError::new(format!(
-                    "Failed to unlink '{}': {}",
-                    p, err
-                ))),
-            },
+            // `spurt`/`unlink` (single-path FS mutations) are handled above by the
+            // shared `try_io_path_fs_mutate`, which the VM also dispatches natively.
             "symlink" => {
                 // IO::Path.symlink($name, :$absolute = True)
                 // Creates a symlink named $name pointing to self (the target).

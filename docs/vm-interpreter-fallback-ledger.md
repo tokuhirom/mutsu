@@ -466,6 +466,20 @@
   slurp/lines/words・`:bin` Blob・utf-8 decode・limit・`:!chomp`・missing-path dies・raku/mutsu 双方 PASS)。S16-io/S32-io/slurp/
   lines whitelist 全緑（io-path.t `.SPEC`/`.CWD` 既存 fail は非whitelist・不変）。**残る IO native = `comb`（&mut）と handle 確保
   open/spurt＝③ の `io_handles` 所有本丸。**
+- **2026-06-23 (§D = `IO::Path` の単一パス FS 変異 `spurt`/`mkdir`/`rmdir`/`unlink`/`chmod` を VM ネイティブ化)**: content-read
+  スライスの **write 系 follow-up**（spurt 広がり 18 file）。これら 5 op は FS を**変異**するが `io_handles` を一切確保しない＝
+  path を VM 所有 cwd へ解決後 **一回限りの syscall**（`fs::write`/`create_dir_all`/`remove_dir`/`remove_file`/`set_permissions`）
+  を呼ぶだけ（`spurt` は open→write→即 drop でハンドルを残さない）。encoding lookup（`encode_with_encoding`＝VM 所有 registry
+  読み）は `&self`。新 `&self` ゲート `try_io_path_fs_mutate`（`Option` 返し）＋ fallible 本体 `io_path_fs_mutate`（`?` 用に分離・
+  `mkdir` は `class_name` で IO::Path を round-trip 返し）へ抽出。`native_io_path` は content 委譲の直後で委譲＝**1 操作 = 1 実装**
+  （5 arm を match から削除）。VM は content dispatch の隣（非mut/mut 両 path）で呼ぶ。**2-path op（`copy`/`rename`/`move`/`symlink`/
+  `link`・宛先 path 解決が必要）と handle-opening `open`（`io_handles` 確保＝`&mut self`）は `None` で `native_io_path` 維持**＝次の
+  ③ io_handles 本丸 capstone。新しい Bool/IO::Path/Failure を返し受け手非変異＝writeback 不要・behavior-invariant（同一 syscall +
+  `:append`/`:createonly`/`:enc`+BOM/Buf 全分岐保持）。実測: `$p.{spurt,mkdir,rmdir,unlink,chmod}` の fallback → 0。pin
+  `t/native-io-path-fs-mutate.t`(22, literal + 変数受け手〔mut path〕× 5 op・`:append`/`:createonly` Failure・Buf spurt・mkdir
+  recursive・非空 rmdir Failure・chmod mode・raku/mutsu 双方 PASS)。S16-io/S32-io/spurt/dir whitelist 全緑。（`.unlink` of missing
+  は mutsu=False/raku=True の別 pre-existing 差〔移動前 interpreter も `Err(NotFound)=>Bool(false)`〕で本スライス対象外＝pin 非対象。）
+  **残る IO native = `comb`（&mut）と `open`（`io_handles` 確保）＝③ の `io_handles` 所有 capstone。**
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`
