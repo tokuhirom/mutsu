@@ -985,7 +985,10 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
             if let Ok((r, _)) = parse_char(r, ']') {
                 return Ok((r, Expr::BracketArray(merge_sequence_seeds(items), true)));
             }
-            let (r, next) = expression(r)?;
+            // After a separator we need another element or a closing `]`.
+            // Hitting unparseable/end-of-input here means the array composer
+            // was never closed (e.g. `[1,`): X::Comp::FailGoal.
+            let (r, next) = expression(r).map_err(|_| array_fail_goal())?;
             items.push(next);
             rest = r;
         } else {
@@ -999,10 +1002,33 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
             if expression(r).is_ok() {
                 return Err(two_terms_confused());
             }
-            let (r, _) = parse_char(r, ']')?;
+            // We have parsed a valid array composer but cannot find the
+            // closing `]` (e.g. `[1,2` at end of input): X::Comp::FailGoal.
+            let (r, _) = parse_char(r, ']').map_err(|_| array_fail_goal())?;
             return Ok((r, Expr::BracketArray(merge_sequence_seeds(items), false)));
         }
     }
+}
+
+/// Build a fatal `X::Comp::FailGoal` parse error for an unterminated array
+/// composer (`[1,2` with no closing `]`).
+fn array_fail_goal() -> PError {
+    fail_goal_error("array composer", "']'")
+}
+
+/// Build a fatal `X::Comp::FailGoal` parse error: an opening bracket/quote
+/// construct (`dba`) was started but its terminator (`goal`) was never found.
+pub(super) fn fail_goal_error(dba: &str, goal: &str) -> PError {
+    let message = format!(
+        "Unable to parse expression in {}; couldn't find final {} (corresponding starter was at line 1)",
+        dba, goal
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("dba".to_string(), Value::str(dba.to_string()));
+    attrs.insert("goal".to_string(), Value::str(goal.to_string()));
+    let exception = Value::make_instance(Symbol::intern("X::Comp::FailGoal"), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
 }
 
 /// Build a fatal `X::Syntax::Confused` parse error with reason
