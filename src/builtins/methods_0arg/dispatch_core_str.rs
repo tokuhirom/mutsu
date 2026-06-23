@@ -42,6 +42,30 @@ pub(super) fn dispatch(
                 .collect();
             Some(Some(Ok(Value::Seq(Arc::new(lines)))))
         }
+        // `Str.Date` / `Str.DateTime` coerce an ISO-formatted string to a
+        // Date / DateTime (documented on Str). Str-only — `Int.Date` etc. are
+        // method-not-found in raku. Invalid/out-of-range strings surface the
+        // same X::Temporal::InvalidFormat / X::OutOfRange the constructors throw.
+        "Date" if matches!(target, Value::Str(_)) => {
+            let s = target.to_string_value();
+            Some(Some(
+                super::temporal::parse_date_string(&s)
+                    .map(|(y, m, d)| super::temporal::make_date(y, m, d)),
+            ))
+        }
+        "DateTime" if matches!(target, Value::Str(_)) => {
+            let s = target.to_string_value();
+            // A bare `yyyy-mm-dd` (no time component) becomes midnight UTC.
+            let result = if s.contains(['T', 't']) {
+                super::temporal::parse_datetime_string(&s).map(|(y, mo, d, h, mi, se, tz)| {
+                    super::temporal::make_datetime(y, mo, d, h, mi, se, tz)
+                })
+            } else {
+                super::temporal::parse_date_string(&s)
+                    .map(|(y, m, d)| super::temporal::make_datetime(y, m, d, 0, 0, 0.0, 0))
+            };
+            Some(Some(result))
+        }
         "trim" => Some(Some(Ok(Value::str(
             target.to_string_value().trim().to_string(),
         )))),
