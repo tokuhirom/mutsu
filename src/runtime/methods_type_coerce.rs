@@ -4,6 +4,12 @@ use crate::symbol::Symbol;
 impl Interpreter {
     /// Dispatch .Seq coercion method
     pub(super) fn dispatch_seq_coercion(&mut self, target: Value) -> Result<Value, RuntimeError> {
+        // Structural receivers (Seq/Array/Slip/Range/bare scalar) share the pure
+        // impl with the VM native path; Supply/LazyList/Instance need state and
+        // are handled below.
+        if let Some(seq) = crate::builtins::seq_coerce::to_seq_structural(&target) {
+            return Ok(seq);
+        }
         Ok(match target {
             Value::Seq(_) => target,
             Value::Array(items, ..) => Value::Seq(std::sync::Arc::new(items.to_vec())),

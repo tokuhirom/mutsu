@@ -526,6 +526,15 @@ impl Interpreter {
         {
             return result;
         }
+        // Native `.Seq` coercion over a structural receiver (Seq/Array/Slip/
+        // Range/bare scalar). Supply/LazyList/Instance need state and fall
+        // through to the interpreter.
+        if args.is_empty()
+            && method == "Seq"
+            && let Some(result) = crate::builtins::seq_coerce::to_seq_structural(&target)
+        {
+            return Ok(result);
+        }
         // Native `.iterator` construction over a plain receiver (Range/Set/Bag/
         // Mix/List/Array/...): builds the `Iterator` instance via the single
         // `builtins::iterator_construct` impl the interpreter also uses. `Seq`
@@ -1887,6 +1896,14 @@ impl Interpreter {
             && let Some(result) = Self::try_native_map_hash_coerce(&target, method)
         {
             return result;
+        }
+        // Native `.Seq` coercion for variable receivers (`@a.Seq`) — structural
+        // receivers only, same pure value op as the non-mut path.
+        if args.is_empty()
+            && method == "Seq"
+            && let Some(result) = crate::builtins::seq_coerce::to_seq_structural(&target)
+        {
+            return Ok(result);
         }
         // TODO: compile to bytecode — native/Buf/Failure method fork, mut (ledger §1).
         // User-defined methods run as bytecode (compiled at registration or on
