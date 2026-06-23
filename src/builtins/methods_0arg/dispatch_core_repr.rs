@@ -611,11 +611,10 @@ pub(super) fn dispatch(
             }
         }
         Value::BigInt(i) => {
-            if method == "raku" || method == "perl" {
-                Some(Ok(Value::str(format!("{i}.0"))))
-            } else {
-                Some(Ok(Value::str(i.to_string())))
-            }
+            // A BigInt is an integer (its `.^name` is `Int`); `.raku` must render
+            // the plain integer, not a float (`100000000000000000000`, not
+            // `100000000000000000000.0`), so it round-trips as an Int.
+            Some(Ok(Value::str(i.to_string())))
         }
         Value::Int(i) => Some(Ok(Value::str(format!("{}", i)))),
         Value::Num(f) => {

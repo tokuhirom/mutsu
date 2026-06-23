@@ -1025,9 +1025,10 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             if b.is_zero() {
                 return Err(RuntimeError::numeric_divide_by_zero());
             }
-            if (&a % &b).is_zero() {
-                return Ok(Value::from_bigint(a / b));
-            }
+            // `/` on integers always yields a Rat, even when it divides evenly:
+            // `555…555 / 5` is `Rat 111…111/1`, not an Int. Collapsing an
+            // exact big quotient to a BigInt here lost the Rat-ness (its
+            // `.WHAT` became `Int` and `.raku` dropped the trailing `.0`).
             return Ok(make_big_rat_arith(a, b));
         }
         if let (Some((an, ad)), Some((bn, bd))) =
