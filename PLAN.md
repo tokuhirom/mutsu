@@ -208,14 +208,13 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
     varref Capture / Scalar / ContainerRef を marshalling 前に unwrap（リテラルしか無かった MVP で潜在した
     「変数を渡すと 0 になる」バグも修正）。**実証: `sqlite3_open`/`exec`(CREATE/INSERT)/`errmsg`/`close` の
     完全往復が動作**（`:memory:` DB に表作成・挿入・エラー取得）。担保＝`t/nativecall-pointer.t`（posix_memalign）。
-  - **残（DBDish::SQLite に必要）**: ① Pointer **return**（`malloc`/`sqlite3_*` が `void*` を返す→ Pointer 化）/
-    ② `CArray[uint8]`・`CArray[Str]` / ③ `is repr('CStruct')` 構造体 / ④ callback（`sqlite3_exec` 行 cb）
-    または `sqlite3_prepare_v2`/`step`/`column_*`（prepared statement・out-pointer + text 取得）。
-  - **DBIish/DBDish**: 上記 NativeCall 拡張が揃えば原理的に動く（ドライバは `sqlite3_*` C API）。
-- [ ] **DB アクセス（NativeCall が揃うまでの代替）— sqlite3 CLI ラッパ（pure Raku）。**
-  - **代替**: `run`/`qqx` で `sqlite3`（`/usr/bin/sqlite3` 3.45.1）を呼ぶ薄い pure-Raku ラッパ。`sqlite3 -json` で
-    行を JSON 出力可。値エスケープ/1クエリ1プロセスは要注意。NativeCall 完成までの繋ぎ。
-  - **フォールバック**: flat-file `.raku`＋`EVALFILE`（mutsu で round-trip 確認済）。
+  - **✅ Pointer return + 実 SELECT（#TBD）**: `returns Pointer` が実 `Pointer` オブジェクトを返す（`malloc`→Pointer→free）。
+    **`sqlite3_prepare_v2`/`step`/`column_int`/`column_text`/`finalize` による prepared-statement SELECT で実際の
+    行データ（int+text）を読み取れる**（新規 Rust 不要・既存 marshalling で動作）。担保＝`t/nativecall-sqlite.t`
+    （libsqlite3 不在なら graceful skip）。**= mutsu から実 SQLite DB の完全な CRUD 往復が可能。**
+  - **残（より広いモジュール互換に）**: ① `CArray[uint8]`・`CArray[Str]` / ② `is repr('CStruct')` 構造体 /
+    ③ callback（汎用 C コールバック）。DBDish::SQLite 自体は上記 prepared-statement API で原理的に駆動可能。
+  - **DBIish/DBDish**: pure-Raku ドライバを上記 NativeCall sub 群で実装可能（次の有力タスク＝薄い DBDish::SQLite 互換層）。
 - **JSON は native 実装済み**（`to-json`/`from-json`・#3402・news 参照）。Template::Mustache 91/92-specs の残（別軸・
   本タスク外）= 実 spec の rendering ギャップ（delimiter 永続化／inheritable partials／lambda）＋ 最初の spec のみ
   `+$spec.value`=0 になる subtest/Seq-consumption 系バグ（itemization とは独立）。

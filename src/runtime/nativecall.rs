@@ -241,7 +241,7 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
             CType::U64 => Value::Int(cif.call::<u64>(code, &ffi_args) as i64),
             CType::F32 => Value::Num(cif.call::<f32>(code, &ffi_args) as f64),
             CType::F64 => Value::Num(cif.call::<f64>(code, &ffi_args)),
-            CType::Pointer => Value::Int(cif.call::<usize>(code, &ffi_args) as i64),
+            CType::Pointer => make_pointer_value(cif.call::<usize>(code, &ffi_args)),
             CType::Str => {
                 let ptr = cif.call::<*const std::ffi::c_char>(code, &ffi_args);
                 if ptr.is_null() {
@@ -264,6 +264,17 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     }
 
     Ok(result)
+}
+
+/// Build a `Pointer` object holding the given C address. Used to marshal a
+/// `void*` return value. The `Pointer` prelude class is registered whenever a
+/// program references `Pointer` (which a `returns Pointer` signature does), so
+/// method dispatch (`.Int`/`.gist`/…) on the result resolves.
+#[cfg(feature = "libffi")]
+fn make_pointer_value(addr: usize) -> Value {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("address".to_string(), Value::Int(addr as i64));
+    Value::make_instance(crate::symbol::Symbol::intern("Pointer"), attrs)
 }
 
 /// Read the C address carried by a NativeCall argument: a `Pointer` object's
