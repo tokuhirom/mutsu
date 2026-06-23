@@ -38,7 +38,9 @@ pub(super) fn match_raku_repr(attributes: &HashMap<String, Value>) -> String {
     {
         let items_raku: Vec<String> = items.iter().map(value_raku_repr).collect();
         let trailing = if items.len() == 1 { "," } else { "" };
-        parts.push(format!(":list(({}{})", items_raku.join(", "), trailing));
+        // `:list(( ... ))`: an outer paren for the `:list(...)` adverb plus an
+        // inner paren for the captured List literal — both must be closed.
+        parts.push(format!(":list(({}{}))", items_raku.join(", "), trailing));
     }
 
     // Named captures (:hash)
