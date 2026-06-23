@@ -382,6 +382,24 @@
   interpreter carrier で正しく drain。pin `t/native-seq-coerce.t`(16, raku/mutsu 双方 PASS)。S32-list/seq.t・S17-supply/Seq.t・
   integration/sequence.t 緑。**これで pure-coercion fallback カテゴリ（Set/Bag/Mix/MixHash/Map/Hash/List/Array/Slip/Seq）は
   実測ドレイン完了**＝残る coercion fallback は `.Setty`/`.Baggy`/`.Mixy`（型オブジェクト返し・niche）のみ。
+- **2026-06-23 (§D = 純 lexical `IO::Path` メソッドの VM ネイティブ化)**: coercion ドレイン後の実測駆動スライス。
+  `MUTSU_VM_STATS` の **広がり計測（distinct ファイル数）** で method-fallback の最大カテゴリが `parent`(66 file)/
+  `add`(65 file)＝temp-file/dir ヘルパー（`make-temp-dir`/`make-temp-file`）経由で 60+ ファイルに分散する **IO::Path の
+  パス操作メソッド**と判明（カウント最大の `AT-POS`=5816 は単一 `read-int.t` の Buf 受け手に集中＝広がり 7 file のみで不適）。
+  `IO::Path` の `native_io_path`（`&mut self`・FS/cwd 依存）のうち **パス文字列だけを操作する純 lexical メソッド**
+  （`parent`/`add`/`child`(非secure)/`sibling`/`basename`/`dirname`/`volume`/`cleanup`/`parts`/`extension`/`succ`/`pred`/
+  `starts-with`/`is-absolute`/`is-relative`/`Str`/`gist`/`IO`/`SPEC`）を新 associated fn `Interpreter::try_io_path_lexical`
+  （`&self` 不要＝FS/cwd/env を一切触らない・static `Self::io_path_*` ヘルパーのみ使用）へ抽出。**dedup**: `native_io_path`
+  は冒頭でこれに委譲し移動済み arm を削除＝**1 操作 = 1 実装**（`child`/`add` の join は共有ヘルパー `io_path_join_child`
+  に切り出し、`child :secure` の FS-resolve のみ `native_io_path` に残す）。VM は **非mut + mut 両方**の `is_native_method`
+  バウンス**直前**で `Self::is_io_path_lexical_class`（組込 `IO::Path`/`::Unix`/`::Win32`/`::Cygwin`/`::QNX` 限定）＋
+  `try_io_path_lexical` を呼ぶ（fallback 記録は `is_native_method` バウンス〔vm_call_method_compiled.rs:201/1652〕で起きていた
+  ため catch-all でなくここに配置）。coercion 同様 **新しい IO::Path/string/bool を返し受け手を変異しない**＝writeback 不要。
+  FS/cwd 依存（`e`/`f`/`slurp`/`spurt`/`absolute`/`relative`/`resolve`/`CWD`/`raku`）と numeric coercion・`child :secure` は
+  `None` で interpreter 維持＝behavior-invariant。実測: `$p.{parent,add,basename,dirname,sibling,…}` の fallback → 0
+  （残るのは `Str.IO` coercion〔別操作・Str 受け手〕と `IO::Path::*.new`〔③ ctor〕）。pin `t/native-io-path-lexical.t`(40,
+  literal `.IO` + 変数受け手〔mut path〕+ Win32 subclass round-trip・raku/mutsu 双方 PASS)。io-path.t の既存 fail 2
+  （`.SPEC`/`.CWD` attribute）は main でも fail＝本変更と無関係。S16-io/S32-io/tmpdir/cwd/dir whitelist 全緑。
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
