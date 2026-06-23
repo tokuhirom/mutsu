@@ -1163,6 +1163,180 @@ impl Interpreter {
         )
     }
 
+    /// Two-path filesystem operations on an `IO::Path`
+    /// (`copy`/`rename`/`move`/`symlink`/`link`): resolve both the receiver path
+    /// and the destination/link path against the VM-owned cwd, then perform a
+    /// one-shot syscall (`fs::copy`/`fs::rename`/`unix_fs::symlink`/
+    /// `fs::hard_link`). They allocate **no `io_handles`** and only read the
+    /// VM-owned cwd (`resolve_path`, `&self`), so the VM dispatches them natively
+    /// (ledger §D): the single impl `native_io_path` also delegates to. Returns
+    /// `None` for any other method.
+    pub(crate) fn try_io_path_two_path_op(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "copy" | "rename" | "move" | "symlink" | "link") {
+            return None;
+        }
+        Some(self.io_path_two_path_op(attributes, method, args))
+    }
+
+    /// The fallible body of [`try_io_path_two_path_op`] (the gate returns `Option`
+    /// so it cannot use `?`). Behavior-invariant with the arms `native_io_path`
+    /// previously held.
+    fn io_path_two_path_op(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let path_buf = self.resolve_io_path_buf(attributes, &p);
+        match method {
+            "copy" => {
+                let dest = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .ok_or_else(|| RuntimeError::new("copy requires destination"))?;
+                let createonly = Self::named_bool(args, "createonly");
+                let dest_buf = self.resolve_path(&dest);
+                // Check if source and destination are the same file
+                if path_buf == dest_buf
+                    || (path_buf.exists()
+                        && dest_buf.exists()
+                        && fs::canonicalize(&path_buf).ok() == fs::canonicalize(&dest_buf).ok())
+                {
+                    return Ok(io_exception_failure(
+                        "X::IO::Copy",
+                        format!(
+                            "Failed to copy '{}': source and destination are the same file",
+                            p
+                        ),
+                    ));
+                }
+                if createonly && dest_buf.exists() {
+                    return Ok(io_exception_failure(
+                        "X::IO::Copy",
+                        format!("Failed to copy '{}': destination already exists", p),
+                    ));
+                }
+                fs::copy(&path_buf, &dest_buf)
+                    .map_err(|err| RuntimeError::new(format!("Failed to copy '{}': {}", p, err)))?;
+                Ok(Value::Bool(true))
+            }
+            "rename" | "move" => {
+                let ex_type = if method == "rename" {
+                    "X::IO::Rename"
+                } else {
+                    "X::IO::Move"
+                };
+                let verb = if method == "rename" { "rename" } else { "move" };
+                let dest = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .ok_or_else(|| RuntimeError::new("rename/move requires destination"))?;
+                let createonly = Self::named_bool(args, "createonly");
+                let dest_buf = self.resolve_path(&dest);
+                // Check if source and destination are the same file
+                if path_buf == dest_buf
+                    || (path_buf.exists()
+                        && dest_buf.exists()
+                        && fs::canonicalize(&path_buf).ok() == fs::canonicalize(&dest_buf).ok())
+                {
+                    let ex = Value::make_instance(Symbol::intern(ex_type), HashMap::new());
+                    let mut failure_attrs = HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    failure_attrs.insert(
+                        "message".to_string(),
+                        Value::Str(
+                            format!(
+                                "Failed to {} '{}': source and destination are the same file",
+                                verb, p
+                            )
+                            .into(),
+                        ),
+                    );
+                    return Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ));
+                }
+                if createonly && dest_buf.exists() {
+                    return Err(io_exception(
+                        ex_type,
+                        format!("Failed to {} '{}': destination already exists", verb, p),
+                    ));
+                }
+                fs::rename(&path_buf, &dest_buf).map_err(|err| {
+                    io_exception(ex_type, format!("Failed to {} '{}': {}", verb, p, err))
+                })?;
+                Ok(Value::Bool(true))
+            }
+            "symlink" => {
+                // IO::Path.symlink($name, :$absolute = True)
+                // Creates a symlink named $name pointing to self (the target).
+                let link_name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .ok_or_else(|| RuntimeError::new("symlink requires a link name"))?;
+                // :absolute defaults to True; :!absolute uses the original path string.
+                let absolute = Self::named_value(args, "absolute")
+                    .map(|v| v.truthy())
+                    .unwrap_or(true);
+                let link_buf = self.resolve_path(&link_name);
+                let target_for_symlink = if absolute {
+                    path_buf.clone()
+                } else {
+                    std::path::PathBuf::from(&p)
+                };
+                #[cfg(unix)]
+                {
+                    match unix_fs::symlink(&target_for_symlink, &link_buf) {
+                        Ok(()) => Ok(Value::Bool(true)),
+                        Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
+                    }
+                }
+                #[cfg(windows)]
+                {
+                    let metadata = fs::metadata(&target_for_symlink);
+                    let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
+                        windows_fs::symlink_dir(&target_for_symlink, &link_buf)
+                    } else {
+                        windows_fs::symlink_file(&target_for_symlink, &link_buf)
+                    };
+                    match result {
+                        Ok(()) => Ok(Value::Bool(true)),
+                        Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
+                    }
+                }
+                #[cfg(not(any(unix, windows)))]
+                {
+                    Err(RuntimeError::new("symlink not supported on this platform"))
+                }
+            }
+            "link" => {
+                // IO::Path.link($name): creates a new hard link named $name
+                // pointing to self (the target). Fails with X::IO::Link.
+                let link_name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .ok_or_else(|| RuntimeError::new("link requires a link name"))?;
+                let link_buf = self.resolve_path(&link_name);
+                match fs::hard_link(&path_buf, &link_buf) {
+                    Ok(()) => Ok(Value::Bool(true)),
+                    Err(err) => Ok(Self::make_link_failure(&p, &link_name, &err)),
+                }
+            }
+            _ => unreachable!("io_path_two_path_op called with non-two-path method"),
+        }
+    }
+
     pub(super) fn native_io_path(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -1205,6 +1379,12 @@ impl Interpreter {
         // VM owns `io_handles`, so it dispatches `open` natively via the shared
         // `try_io_path_open` (ledger §D ③).
         if let Some(result) = self.try_io_path_open(attributes, method, &args) {
+            return result;
+        }
+        // Two-path FS ops (`copy`/`rename`/`move`/`symlink`/`link`) — resolve both
+        // paths against the VM-owned cwd, one-shot syscall, no `io_handles`, shared
+        // with the VM's native dispatch via `try_io_path_two_path_op`.
+        if let Some(result) = self.try_io_path_two_path_op(attributes, method, &args) {
             return result;
         }
         // The concrete class of the receiver (`IO::Path` or a SPEC-variant
@@ -1383,86 +1563,8 @@ impl Interpreter {
             // `try_io_path_content_read`, which the VM also dispatches natively.
             // `open` (allocates an `io_handles` entry) is handled above by the
             // shared `try_io_path_open`, which the VM also dispatches natively.
-            "copy" => {
-                let dest = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .ok_or_else(|| RuntimeError::new("copy requires destination"))?;
-                let createonly = Self::named_bool(&args, "createonly");
-                let dest_buf = self.resolve_path(&dest);
-                // Check if source and destination are the same file
-                if path_buf == dest_buf
-                    || (path_buf.exists()
-                        && dest_buf.exists()
-                        && fs::canonicalize(&path_buf).ok() == fs::canonicalize(&dest_buf).ok())
-                {
-                    return Ok(io_exception_failure(
-                        "X::IO::Copy",
-                        format!(
-                            "Failed to copy '{}': source and destination are the same file",
-                            p
-                        ),
-                    ));
-                }
-                if createonly && dest_buf.exists() {
-                    return Ok(io_exception_failure(
-                        "X::IO::Copy",
-                        format!("Failed to copy '{}': destination already exists", p),
-                    ));
-                }
-                fs::copy(&path_buf, &dest_buf)
-                    .map_err(|err| RuntimeError::new(format!("Failed to copy '{}': {}", p, err)))?;
-                Ok(Value::Bool(true))
-            }
-            "rename" | "move" => {
-                let ex_type = if method == "rename" {
-                    "X::IO::Rename"
-                } else {
-                    "X::IO::Move"
-                };
-                let verb = if method == "rename" { "rename" } else { "move" };
-                let dest = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .ok_or_else(|| RuntimeError::new("rename/move requires destination"))?;
-                let createonly = Self::named_bool(&args, "createonly");
-                let dest_buf = self.resolve_path(&dest);
-                // Check if source and destination are the same file
-                if path_buf == dest_buf
-                    || (path_buf.exists()
-                        && dest_buf.exists()
-                        && fs::canonicalize(&path_buf).ok() == fs::canonicalize(&dest_buf).ok())
-                {
-                    let ex = Value::make_instance(Symbol::intern(ex_type), HashMap::new());
-                    let mut failure_attrs = HashMap::new();
-                    failure_attrs.insert("exception".to_string(), ex);
-                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
-                    failure_attrs.insert(
-                        "message".to_string(),
-                        Value::Str(
-                            format!(
-                                "Failed to {} '{}': source and destination are the same file",
-                                verb, p
-                            )
-                            .into(),
-                        ),
-                    );
-                    return Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    ));
-                }
-                if createonly && dest_buf.exists() {
-                    return Err(io_exception(
-                        ex_type,
-                        format!("Failed to {} '{}': destination already exists", verb, p),
-                    ));
-                }
-                fs::rename(&path_buf, &dest_buf).map_err(|err| {
-                    io_exception(ex_type, format!("Failed to {} '{}': {}", verb, p, err))
-                })?;
-                Ok(Value::Bool(true))
-            }
+            // `copy`/`rename`/`move` (two-path FS ops) are handled above by the
+            // shared `try_io_path_two_path_op`, which the VM also dispatches natively.
             // `chmod`/`mkdir`/`rmdir` (single-path FS mutations) are handled above
             // by the shared `try_io_path_fs_mutate`, which the VM also dispatches
             // natively.
@@ -1503,67 +1605,8 @@ impl Interpreter {
             }
             // `spurt`/`unlink` (single-path FS mutations) are handled above by the
             // shared `try_io_path_fs_mutate`, which the VM also dispatches natively.
-            "symlink" => {
-                // IO::Path.symlink($name, :$absolute = True)
-                // Creates a symlink named $name pointing to self (the target).
-                let link_name = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .ok_or_else(|| RuntimeError::new("symlink requires a link name"))?;
-                // Check :absolute named arg (defaults to True)
-                // named_bool returns false if not present, so we invert the logic:
-                // :!absolute → Pair("absolute", false) → named_bool returns false → absolute=false
-                // :absolute  → Pair("absolute", true)  → named_bool returns true  → absolute=true
-                // absent     → named_bool returns false → but default should be true
-                let absolute = Self::named_value(&args, "absolute")
-                    .map(|v| v.truthy())
-                    .unwrap_or(true);
-                let link_buf = self.resolve_path(&link_name);
-                // Determine the target path: if :absolute (default), use the resolved
-                // absolute path; if :!absolute, use the original path string as-is.
-                let target_for_symlink = if absolute {
-                    path_buf.clone()
-                } else {
-                    std::path::PathBuf::from(&p)
-                };
-                #[cfg(unix)]
-                {
-                    match unix_fs::symlink(&target_for_symlink, &link_buf) {
-                        Ok(()) => Ok(Value::Bool(true)),
-                        Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
-                    }
-                }
-                #[cfg(windows)]
-                {
-                    let metadata = fs::metadata(&target_for_symlink);
-                    let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
-                        windows_fs::symlink_dir(&target_for_symlink, &link_buf)
-                    } else {
-                        windows_fs::symlink_file(&target_for_symlink, &link_buf)
-                    };
-                    match result {
-                        Ok(()) => Ok(Value::Bool(true)),
-                        Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
-                    }
-                }
-                #[cfg(not(any(unix, windows)))]
-                {
-                    Err(RuntimeError::new("symlink not supported on this platform"))
-                }
-            }
-            "link" => {
-                // IO::Path.link($name): creates a new hard link named $name
-                // pointing to self (the target). Fails with X::IO::Link.
-                let link_name = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .ok_or_else(|| RuntimeError::new("link requires a link name"))?;
-                let link_buf = self.resolve_path(&link_name);
-                match fs::hard_link(&path_buf, &link_buf) {
-                    Ok(()) => Ok(Value::Bool(true)),
-                    Err(err) => Ok(Self::make_link_failure(&p, &link_name, &err)),
-                }
-            }
+            // `symlink`/`link` (two-path FS ops) are handled above by the shared
+            // `try_io_path_two_path_op`, which the VM also dispatches natively.
             "watch" => {
                 let supply_id = super::native_methods::next_supply_id();
                 let (tx, rx) = std::sync::mpsc::channel();

@@ -255,6 +255,16 @@ impl Interpreter {
             {
                 return result;
             }
+            // Interpreter-native two-path FS ops (`copy`/`rename`/`move`/`symlink`/
+            // `link`): resolve both paths against the VM-owned cwd, one-shot syscall,
+            // no `io_handles` (ledger §D). Single impl shared with `native_io_path`.
+            if Self::is_io_path_lexical_class(&class)
+                && let Value::Instance { attributes, .. } = &target
+                && let Some(result) =
+                    self.try_io_path_two_path_op(&attributes.as_map(), method, &args)
+            {
+                return result;
+            }
             // A user-defined subclass of a builtin type may override an inherited
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the
@@ -1821,6 +1831,16 @@ impl Interpreter {
             if Self::is_io_path_lexical_class(&class)
                 && let Value::Instance { attributes, .. } = &target
                 && let Some(result) = self.try_io_path_open(&attributes.as_map(), method, &args)
+            {
+                return result;
+            }
+            // Interpreter-native two-path FS ops (`copy`/`rename`/`move`/`symlink`/
+            // `link`): resolve both paths against the VM-owned cwd, one-shot syscall,
+            // no `io_handles` (ledger §D). Single impl shared with `native_io_path`.
+            if Self::is_io_path_lexical_class(&class)
+                && let Value::Instance { attributes, .. } = &target
+                && let Some(result) =
+                    self.try_io_path_two_path_op(&attributes.as_map(), method, &args)
             {
                 return result;
             }

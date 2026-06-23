@@ -495,6 +495,17 @@
   変数受け手〔mut path〕× :r/:w/:a/:exclusive/:bin・missing/directory Failure・opened state・raku/mutsu 双方 PASS)。S16-io/S32-io/
   open whitelist 全緑（io-handle.t `.say` 既存 fail は main でも fail＝非whitelist・本変更と無関係）。**残る IO native = `comb`
   （regex/closure dispatch が `&mut self`）と 2-path op（copy/rename/move/symlink/link）のみ＝③ の IO native はほぼ完遂。**
+- **2026-06-23 (§D = `IO::Path` の 2-path FS ops `copy`/`rename`/`move`/`symlink`/`link` を VM ネイティブ化＝IO::Path FS 族の完結)**:
+  open capstone の follow-up＝IO::Path FS メソッド族の**最後の未 native**。これら 5 op は受け手 path と**宛先/リンク名 path の両方**を
+  VM 所有 cwd へ解決（`resolve_path`/`resolve_io_path_buf`・`&self`）後、一回限りの syscall（`fs::copy`/`fs::rename`/`unix_fs::symlink`/
+  `fs::hard_link`）を呼ぶだけ＝`io_handles` 不要・全 `&self`。新 `&self` ゲート `try_io_path_two_path_op`（`Option` 返し）＋ fallible
+  本体 `io_path_two_path_op`（`?` 用に分離）へ抽出。`native_io_path` は open 委譲の直後で委譲＝**1 操作 = 1 実装**（copy/rename|move/
+  symlink/link arm を match から削除・間の `dir`/`watch` は維持）。VM は open dispatch の隣（非mut/mut 両 path）で呼ぶ。同一/createonly
+  チェック・`X::IO::Copy`/`Rename`/`Move` Failure 整形・`:absolute` symlink・hard link 全分岐保持＝behavior-invariant。実測:
+  `$p.{copy,rename,move,symlink,link}` の fallback → 0。pin `t/native-io-path-two-path.t`(18, literal + 変数受け手〔mut path〕×
+  5 op・copy-onto-self/createonly Failure・symlink resolve・hard link・raku/mutsu 双方 PASS。stale ファイル混入を防ぐため毎回 dir を
+  クリーンに再生成)。S16-io/S32-io/copy/rename whitelist 全緑。**∴ IO::Path FS メソッド族（stat/content-read/fs-mutate/open/2-path）が
+  全て VM ネイティブ化完了＝§D ③ の IO native はほぼ完遂。残るは `comb`（regex/closure dispatch が `&mut self`・別軸）のみ。**
 - **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
   到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
   `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`
