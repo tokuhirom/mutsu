@@ -1749,6 +1749,24 @@ impl Interpreter {
                 Value::Int(super::native_methods::next_supplier_id() as i64),
             );
             Some(Ok(Value::make_instance(class_name, attrs)))
+        } else if cn == "Capture" {
+            // The default `Capture.new` produces an *empty* Capture: named args
+            // are dropped (Capture has no buildable public attributes — `bless`
+            // ignores them) and positional args are rejected (`Mu.new` is
+            // named-only). A *populated* Capture is built with the `\(...)`
+            // literal, not `.new`. A named arg reaches here as `Value::Pair`;
+            // anything else (a literal, a positional `"a" => 1` `ValuePair`) is
+            // positional and dies, exactly as raku does.
+            if args.iter().any(|a| !matches!(a, Value::Pair(..))) {
+                Some(Err(RuntimeError::new(
+                    "Default constructor for 'Capture' only takes named arguments",
+                )))
+            } else {
+                Some(Ok(Value::Capture {
+                    positional: Box::new(Vec::new()),
+                    named: Box::new(HashMap::new()),
+                }))
+            }
         } else if cn == "FakeScheduler" {
             Some(Ok(Self::build_native_fakescheduler_value()))
         } else if cn == "Proxy" {
