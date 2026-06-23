@@ -465,7 +465,11 @@ pub(super) fn dispatch(
                     Value::Int((n.as_ref() / d.as_ref()).to_i64().unwrap_or(i64::MAX))
                 }
                 Value::Str(s) => {
-                    if let Some(v) = parse_raku_int_from_str(s) {
+                    if s.trim().is_empty() {
+                        // An empty or whitespace-only string coerces to 0, like
+                        // `"".Numeric` (a defined-but-empty string, no warning).
+                        Value::Int(0)
+                    } else if let Some(v) = parse_raku_int_from_str(s) {
                         v
                     } else {
                         // Return a Failure (lazy exception) instead of throwing
@@ -525,6 +529,7 @@ pub(super) fn dispatch(
                 Value::Num(f) if f.is_finite() => Some(Value::Int(f.trunc() as i64)),
                 Value::Rat(n, d) if *d != 0 => Some(Value::Int(*n / *d)),
                 Value::Bool(b) => Some(Value::Int(if *b { 1 } else { 0 })),
+                Value::Str(s) if s.trim().is_empty() => Some(Value::Int(0)),
                 Value::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(s) {
                         Some(v)
@@ -626,14 +631,20 @@ pub(super) fn dispatch(
                 }
                 Value::Str(s) => {
                     let trimmed = s.trim();
-                    // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus
-                    let normalized = trimmed.replace('\u{2212}', "-");
-                    if let Ok(f) = normalized.parse::<f64>() {
-                        Value::Num(f)
+                    if trimmed.is_empty() {
+                        // An empty or whitespace-only string coerces to 0, like
+                        // `"".Numeric`.
+                        Value::Num(0.0)
                     } else {
-                        // An invalid string yields a lazy X::Str::Numeric Failure,
-                        // mirroring `.Int` (not an eager X::AdHoc RuntimeError).
-                        return Some(Some(Ok(str_numeric_failure(s))));
+                        // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus
+                        let normalized = trimmed.replace('\u{2212}', "-");
+                        if let Ok(f) = normalized.parse::<f64>() {
+                            Value::Num(f)
+                        } else {
+                            // An invalid string yields a lazy X::Str::Numeric Failure,
+                            // mirroring `.Int` (not an eager X::AdHoc RuntimeError).
+                            return Some(Some(Ok(str_numeric_failure(s))));
+                        }
                     }
                 }
                 Value::Bool(b) => Value::Num(if *b { 1.0 } else { 0.0 }),
