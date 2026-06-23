@@ -373,6 +373,15 @@
   Instance（Match の named captures / `__baggy_data__`）/ Package（型オブジェクト）/ lowercase `.hash` は interpreter 維持。
   挙動不変（`to_map` は embed して identity 保持＝`Map.Map === Map`、odd-count は `X::Hash::Store::OddNumber`）。pin
   `t/native-map-hash-coerce.t`(21, raku/mutsu 双方 PASS)。mix.t 244/244・set.t・hash.t・categorize・classify-list 緑。
+- **2026-06-23 (§1 = `.Seq` coercion の structural 分岐を VM ネイティブ化)**: coercion drainage の締め。`.Seq` は
+  `dispatch_seq_coercion`（`&mut self`）だが **structural 分岐（Seq/Array/Slip/Range/bare scalar）は pure**、
+  Supply（on-demand callback 駆動）/ LazyList（lazy bridge force）/ Instance（Buf/Blob byte 読み・generic wrap）のみ
+  carrier/state 依存。pure 分岐を新 `src/builtins/seq_coerce.rs::to_seq_structural(target) -> Option<Value>` へ抽出
+  （Supply/LazyList/**全 Instance** は `None` で interpreter へ）。interpreter の `dispatch_seq_coercion` は冒頭で委譲、
+  VM は非mut + mut 両 catch-all で `method == "Seq"` 時に呼ぶ＝**1 操作 = 1 実装**。gather/lazy の `.Seq` は引き続き
+  interpreter carrier で正しく drain。pin `t/native-seq-coerce.t`(16, raku/mutsu 双方 PASS)。S32-list/seq.t・S17-supply/Seq.t・
+  integration/sequence.t 緑。**これで pure-coercion fallback カテゴリ（Set/Bag/Mix/MixHash/Map/Hash/List/Array/Slip/Seq）は
+  実測ドレイン完了**＝残る coercion fallback は `.Setty`/`.Baggy`/`.Mixy`（型オブジェクト返し・niche）のみ。
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
