@@ -110,7 +110,7 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
       100% VM ネイティブ化済**（2026-06-23、#3499/#3501/#3503/#3504/#3507/#3511）。`.encode`/`.decode`（#3509）/ coercion 全族
       （scalar 受け手まで・#3497 他）も native。**clean な pure-value native-method ドレインは枯渇**＝残る catch-all バウンスは
       全て別軸 or 構造的ブロッカー前提（下記）。
-- [ ] **(a) 組込型 ctor の native 化 — 進行中（2026-06-24・4 スライス landed・clean な大物は消化）**: ③ ctor フォークに着手。
+- [x] **(a) 組込型 ctor の native 化 — clean 候補は枯渇（2026-06-24・7 スライス landed）**: ③ ctor フォーク。
   - `::`-namespaced クラス＋組込例外型（`X::AdHoc`/`X::TypeCheck::Binding` …）の `.new`（#3514）= `is_native_default_constructible`
     の `::` ガード撤去＋`has_attribute || is_exception` 緩和＋VM call site で `materialize_exception_message_in_result`。
   - `Lock`/`Lock::Async`/`Lock::Soft`（#3515）/ `Promise`/`Channel`/`Supplier`/`Supplier::Preserving`（#3517）= static
@@ -118,9 +118,14 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
   - **QuantHash 族（Set/SetHash/Bag/BagHash/Mix/MixHash）の `.new`（#3520）= 完了**。`&mut self`（element 計数＋parameterized 型 check
     ＋container metadata）なので dispatch_new の 3 arm（414 行）を新モジュール `methods_quanthash_ctor.rs` の helper
     `try_native_quanthash_construct` に**丸ごと抽出（真の単一 impl）**、VM 非mut/mut 両 path から `..._for_package` wrapper で呼ぶ。
-  - **残 ③ ctor 候補（小粒 or 別軸）**: `Capture.new`（**mutsu 未実装＝エラー・別途実装要＝ §F 機能**）/ `Proxy`（FETCH/STORE closure・
-    `&mut self`）/ `Match`/`FakeScheduler` 等の low-traffic static 候補（消化は容易だが payoff 小）/ `Array`/`Hash`（shaped/container
-    metadata でより複雑）。**clean な高価値 ctor backlog は枯渇。残りは小粒 or 未実装機能。**
+  - **`FakeScheduler`/`Proxy`/`Match` の `.new`（#3523）= 完了**。clean static 残（pure data / process-global counter）。per-type helper
+    抽出＋`dispatch_new` arm delegation で true single impl。
+  - **`Capture.new`（#3524）= 実装完了**。default ctor は empty Capture（named arg drop・positional reject）＝`Mu.new` named-only と一致。
+    populated は `\(...)`。残ギャップ＝Capture **instance** 受け手の `.new`（別軸の built-in value variant instance ctor 委譲）。
+  - **`Array`/`List`/`Positional`/`array`/`Hash`/`Map` の `.new`（#3526）= 完了**。`&mut self`（shaped/typed/metadata）なので QuantHash 同様
+    新モジュール `methods_aggregate_ctor.rs` に 2 arm（~310 行）丸ごと抽出＝true single impl。
+  - **clean な built-in ctor 候補は枯渇。** 残る `dispatch_new` arm は state/FS/process 依存（IO::Socket::INET・Distribution/CompUnit::Repository・
+    Proc::Async・Backtrace・Seq〔predictive iterator carrier〕）か error-only（HyperWhatever/Whatever/Instant）＝別軸 or 構造ブロッカー前提。
   - **(b) tree-walk dispatch chain 削除の substrate**: IO/coercion が native 化した今、`dispatch_method_by_name_*` チェーンと
     catch-all バウンス（`vm_call_method_compiled.rs` 末尾）の構造的削除。残る到達カテゴリ＝MOP carrier（WHAT/name/can/HOW・反射で
     撲滅対象外）/ landmine（Instance.Str/.Stringy/.raku/.gist・列挙不能で見送り済）/ block-exec slow path（map/grep・lever B/Phase 2）/

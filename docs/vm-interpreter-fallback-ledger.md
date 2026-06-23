@@ -585,6 +585,27 @@
   でゲートされず arm 1499 より前で interpreter 特殊処理されるため、`to_string_value()` で native 化すると壊れる（say.t/buf.t/
   attributes.t で回帰確認）。`has_user_method`/`has_public_accessor`/built-in 型除外を足しても landmine が次々顕在化＝列挙不能で
   安全に分離できないため見送り。clean な §D coercion 成果は IO::Path family（lexical/`.IO`/absolute-relative）で確定。
+- **2026-06-24 (§D ③ = `FakeScheduler`/`Proxy`/`Match` の `.new` を VM ネイティブ化)**: ③ ctor フォークの clean static 残掃き。3 つは
+  pure data assembly（`FakeScheduler` は process-global counter ＋ virtual-time 0.0 seed、`Proxy` は評価済み FETCH/STORE callable を包む、
+  `Match` は `orig[from..to]` を slice して positional/named captures を attribute 格納）＝env/registry/user code 不要。各構築を per-type
+  helper（`build_native_fakescheduler_value`/`build_native_proxy_value`/`build_native_match_value`）に抽出し、`try_native_builtin_construct`
+  と interpreter の `dispatch_new` arm の**両方が同 helper を呼ぶ**（true single impl・byte-identical）。実測 3 種とも `new` fallback → 0。
+  pin `t/native-misc-ctor.t`(14・Proxy/Match は raku parity 確認)。
+- **2026-06-24 (§D ③ = `Capture.new` を実装)**: `Capture` はそもそも constructor が無く `Capture.new` がエラーだった。raku セマンティクス
+  （検証済）＝default `Capture.new` は **empty Capture**。named arg は drop（Capture に buildable public 属性が無く `bless` が無視）、positional
+  arg は reject（named-only `Mu.new`＝"Default constructor for 'Capture' only takes named arguments"）。populated Capture は `\(...)` で作る。
+  named arg は `Value::Pair`、それ以外（リテラル・positional `"a" => 1` `ValuePair`）は positional で die。pure data ＝
+  `try_native_builtin_construct`。既知の不変ギャップ（非回帰）＝Capture **instance** 受け手の `.new`（`\(1).new`）は依然エラー＝built-in value
+  variant の instance `.new` 委譲という別軸の広いギャップ。pin `t/native-capture-ctor.t`(9・raku 双方 PASS)。
+- **2026-06-24 (§D ③ = `Array`/`List`/`Positional`/`array`/`Hash`/`Map` の `.new` を VM ネイティブ化)**: aggregate ctor のドレイン。pure-data
+  static と違い `&mut self`（shaped-dim 解析 `:shape(...)`＋`:data`/positional 投入＋X::Assignment shape エラー、Slip/Range/Seq flatten、
+  parameterized 型 check `Array[Int].new`/`Hash[Int].new`→`X::TypeCheck::Assignment`、container metadata tag）。QuantHash 同様、2 arm（~310 行）を
+  新モジュール `methods_aggregate_ctor.rs`（`try_native_array_construct`/`try_native_hash_construct`）に**丸ごと抽出**し、interpreter の
+  `dispatch_new` arm は delegation・VM は `try_native_aggregate_construct_for_package`（parametric 名→base+type_args 解決）経由で呼ぶ＝true single
+  impl・byte-identical。実測 6 種とも `new` fallback → 0。pin `t/native-aggregate-ctor.t`(16・raku parity subset。shaped/Hash-named-data の
+  mutsu 固有挙動は roast S02-types/array.t・hash.t・S09-typed-arrays/* がカバー)。**★これで `dispatch_new` の built-in 型 ctor のうち native 化
+  可能な clean 候補は枯渇。残る arm は state/FS/process 依存（IO::Socket::INET〔socket〕・Distribution/CompUnit::Repository〔FS〕・Proc::Async
+  〔process〕・Backtrace〔call stack〕・Seq〔predictive iterator carrier〕）か error-only（HyperWhatever/Whatever/Instant）。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
