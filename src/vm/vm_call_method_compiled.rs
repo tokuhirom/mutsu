@@ -207,6 +207,15 @@ impl Interpreter {
             {
                 return result;
             }
+            // Interpreter-native `.absolute` / `.relative` (path + cwd, lexical — no
+            // filesystem; the VM owns env/cwd). Single impl shared with `native_io_path`.
+            if Self::is_io_path_lexical_class(&class)
+                && let Value::Instance { attributes, .. } = &target
+                && let Some(result) =
+                    self.try_io_path_cwd_method(&attributes.as_map(), method, &args)
+            {
+                return result;
+            }
             // A user-defined subclass of a builtin type may override an inherited
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the
@@ -1706,6 +1715,15 @@ impl Interpreter {
                 && let Value::Instance { attributes, .. } = &target
                 && let Some(result) =
                     Self::try_io_path_lexical(&class, &attributes.as_map(), method, &args)
+            {
+                return result;
+            }
+            // Interpreter-native `.absolute` / `.relative` (path + cwd, lexical — no
+            // filesystem; the VM owns env/cwd). Single impl shared with `native_io_path`.
+            if Self::is_io_path_lexical_class(&class)
+                && let Value::Instance { attributes, .. } = &target
+                && let Some(result) =
+                    self.try_io_path_cwd_method(&attributes.as_map(), method, &args)
             {
                 return result;
             }

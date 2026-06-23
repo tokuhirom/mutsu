@@ -464,6 +464,135 @@ impl Interpreter {
         Some(result)
     }
 
+    /// `.absolute` / `.relative` on an `IO::Path`: like [`try_io_path_lexical`],
+    /// these derive a string from the path, but additionally depend on the
+    /// **cwd** (`$*CWD` / the instance `cwd` attribute / the process cwd) — read
+    /// through `&self` (`resolve_path`/`get_cwd_path`/`apply_chroot`), which are
+    /// purely lexical (no filesystem access). The VM owns env/cwd, so this is a
+    /// native dispatch; the single shared impl that `native_io_path` delegates to.
+    /// Returns `None` for any other method (`.resolve` canonicalizes against the
+    /// real filesystem and stays in `native_io_path`).
+    pub(crate) fn try_io_path_cwd_method(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "absolute" | "relative") {
+            return None;
+        }
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
+        let path_buf = if Path::new(&p).is_absolute() {
+            self.resolve_path(&p)
+        } else if let Some(cwd) = &instance_cwd {
+            self.apply_chroot(PathBuf::from(cwd).join(Path::new(&p)))
+        } else {
+            self.resolve_path(&p)
+        };
+        let cwd_path = self.get_cwd_path();
+        let original = Path::new(&p);
+        Some(match method {
+            "absolute" => {
+                if Self::is_win32_spec(attributes) {
+                    let base = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .or_else(|| instance_cwd.clone())
+                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                    let abs = if Self::io_path_is_absolute_win32(&p) {
+                        p.clone()
+                    } else {
+                        let sep = '\\';
+                        if base.ends_with('\\') || base.ends_with('/') {
+                            format!("{}{}", base, p)
+                        } else {
+                            format!("{}{}{}", base, sep, p)
+                        }
+                    };
+                    let cleaned = Self::canonpath_win32(&abs, false);
+                    Ok(Value::str(cleaned))
+                } else if Self::is_cygwin_spec(attributes) {
+                    let base = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .or_else(|| instance_cwd.clone())
+                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                    let pn = p.replace('\\', "/");
+                    let abs = if Self::io_path_is_absolute_win32(&pn) {
+                        pn
+                    } else {
+                        let bn = base.replace('\\', "/");
+                        if bn.ends_with('/') {
+                            format!("{}{}", bn, pn)
+                        } else {
+                            format!("{}/{}", bn, pn)
+                        }
+                    };
+                    Ok(Value::str(Self::canonpath_cygwin(&abs, false)))
+                } else {
+                    let base = args.first().map(|v| v.to_string_value());
+                    if let Some(base) = base {
+                        if original.is_absolute() {
+                            Ok(Value::str(p.clone()))
+                        } else {
+                            let joined = PathBuf::from(&base).join(&p);
+                            Ok(Value::str(Self::stringify_path(&joined)))
+                        }
+                    } else {
+                        let absolute = Self::stringify_path(&path_buf);
+                        Ok(Value::str(absolute))
+                    }
+                }
+            }
+            "relative" => {
+                if Self::is_win32_spec(attributes) {
+                    let base = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .or_else(|| instance_cwd.clone())
+                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                    let norm_p = p.replace('/', "\\");
+                    let norm_base = base.replace('/', "\\");
+                    let rel = norm_p
+                        .strip_prefix(&norm_base)
+                        .and_then(|r| r.strip_prefix('\\'))
+                        .unwrap_or(&norm_p);
+                    Ok(Value::str(rel.to_string()))
+                } else if Self::is_cygwin_spec(attributes) {
+                    let base = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .or_else(|| instance_cwd.clone())
+                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                    let norm_p = p.replace('\\', "/");
+                    let norm_base = base.replace('\\', "/");
+                    let rel = norm_p
+                        .strip_prefix(&norm_base)
+                        .and_then(|r| r.strip_prefix('/'))
+                        .unwrap_or(&norm_p);
+                    Ok(Value::str(rel.to_string()))
+                } else {
+                    let rel_base_arg = args.first().map(|v| v.to_string_value());
+                    let rel_base = rel_base_arg
+                        .as_ref()
+                        .map(PathBuf::from)
+                        .or_else(|| instance_cwd.as_ref().map(PathBuf::from))
+                        .unwrap_or_else(|| cwd_path.clone());
+                    let rel = path_buf
+                        .strip_prefix(&rel_base)
+                        .map(Self::stringify_path)
+                        .unwrap_or_else(|_| Self::stringify_path(&path_buf));
+                    Ok(Value::str(rel))
+                }
+            }
+            _ => unreachable!(),
+        })
+    }
+
     pub(super) fn native_io_path(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -476,6 +605,12 @@ impl Interpreter {
         // the bytecode VM dispatches natively). Only the filesystem / cwd-relative
         // forms below need `&self`.
         if let Some(result) = Self::try_io_path_lexical(class_name, attributes, method, &args) {
+            return result;
+        }
+        // `.absolute` / `.relative` derive a string from the path + cwd (lexical,
+        // no filesystem) — handled by the shared `try_io_path_cwd_method` the VM
+        // also dispatches natively.
+        if let Some(result) = self.try_io_path_cwd_method(attributes, method, &args) {
             return result;
         }
         // The concrete class of the receiver (`IO::Path` or a SPEC-variant
@@ -612,102 +747,6 @@ impl Interpreter {
                     }
                 }
                 Ok(child)
-            }
-            "absolute" => {
-                if Self::is_win32_spec(attributes) {
-                    let base = args
-                        .first()
-                        .map(|v| v.to_string_value())
-                        .or_else(|| instance_cwd.clone())
-                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                    let abs = if Self::io_path_is_absolute_win32(&p) {
-                        p.clone()
-                    } else {
-                        let sep = '\\';
-                        if base.ends_with('\\') || base.ends_with('/') {
-                            format!("{}{}", base, p)
-                        } else {
-                            format!("{}{}{}", base, sep, p)
-                        }
-                    };
-                    // Canonicalize the result
-                    let cleaned = Self::canonpath_win32(&abs, false);
-                    Ok(Value::str(cleaned))
-                } else if Self::is_cygwin_spec(attributes) {
-                    let base = args
-                        .first()
-                        .map(|v| v.to_string_value())
-                        .or_else(|| instance_cwd.clone())
-                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                    let pn = p.replace('\\', "/");
-                    let abs = if Self::io_path_is_absolute_win32(&pn) {
-                        pn
-                    } else {
-                        let bn = base.replace('\\', "/");
-                        if bn.ends_with('/') {
-                            format!("{}{}", bn, pn)
-                        } else {
-                            format!("{}/{}", bn, pn)
-                        }
-                    };
-                    Ok(Value::str(Self::canonpath_cygwin(&abs, false)))
-                } else {
-                    let base = args.first().map(|v| v.to_string_value());
-                    if let Some(base) = base {
-                        if original.is_absolute() {
-                            Ok(Value::str(p.clone()))
-                        } else {
-                            let joined = PathBuf::from(&base).join(&p);
-                            Ok(Value::str(Self::stringify_path(&joined)))
-                        }
-                    } else {
-                        let absolute = Self::stringify_path(&path_buf);
-                        Ok(Value::str(absolute))
-                    }
-                }
-            }
-            "relative" => {
-                if Self::is_win32_spec(attributes) {
-                    let base = args
-                        .first()
-                        .map(|v| v.to_string_value())
-                        .or_else(|| instance_cwd.clone())
-                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                    // Normalize separators for comparison
-                    let norm_p = p.replace('/', "\\");
-                    let norm_base = base.replace('/', "\\");
-                    let rel = norm_p
-                        .strip_prefix(&norm_base)
-                        .and_then(|r| r.strip_prefix('\\'))
-                        .unwrap_or(&norm_p);
-                    Ok(Value::str(rel.to_string()))
-                } else if Self::is_cygwin_spec(attributes) {
-                    let base = args
-                        .first()
-                        .map(|v| v.to_string_value())
-                        .or_else(|| instance_cwd.clone())
-                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                    // Normalize separators for comparison (Cygwin uses forward slashes).
-                    let norm_p = p.replace('\\', "/");
-                    let norm_base = base.replace('\\', "/");
-                    let rel = norm_p
-                        .strip_prefix(&norm_base)
-                        .and_then(|r| r.strip_prefix('/'))
-                        .unwrap_or(&norm_p);
-                    Ok(Value::str(rel.to_string()))
-                } else {
-                    let rel_base_arg = args.first().map(|v| v.to_string_value());
-                    let rel_base = rel_base_arg
-                        .as_ref()
-                        .map(PathBuf::from)
-                        .or_else(|| instance_cwd.as_ref().map(PathBuf::from))
-                        .unwrap_or_else(|| cwd_path.clone());
-                    let rel = path_buf
-                        .strip_prefix(&rel_base)
-                        .map(Self::stringify_path)
-                        .unwrap_or_else(|_| Self::stringify_path(&path_buf));
-                    Ok(Value::str(rel))
-                }
             }
             "resolve" => {
                 let completely = Self::named_bool(&args, "completely");
