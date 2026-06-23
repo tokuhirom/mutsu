@@ -1059,7 +1059,7 @@ impl Interpreter {
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
                 let raw_items: Vec<Value> = match &v {
                     Value::Array(items, _) => items.as_ref().clone().items,
-                    Value::Slip(items) => items.as_ref().clone(),
+                    Value::Seq(items) | Value::Slip(items) => items.as_ref().clone(),
                     Value::Hash(map) => map
                         .iter()
                         .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
