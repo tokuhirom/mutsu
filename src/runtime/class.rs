@@ -171,10 +171,17 @@ impl Interpreter {
                         continue;
                     }
                     checked.push(sig);
-                    // Find all methods with matching signature
+                    // Find all methods with matching signature. Identify each
+                    // candidate by its ORIGINAL defining role (diamond detection,
+                    // mirroring the non-multi path above): a multi method composed
+                    // transitively via several roles (`role R { multi method m }`,
+                    // `role S does R`, `class C does S`) traces back to the same
+                    // original role through every path and so is NOT a conflict.
+                    // Using `role_origin` (the immediate composition source) instead
+                    // would wrongly see it as `(S, R)` and demand resolution.
                     let mut roles_for_sig: Vec<String> = Vec::new();
                     let mut class_resolves = def_a.role_origin.is_none();
-                    if let Some(r) = &def_a.role_origin
+                    if let Some(r) = def_a.original_role.as_ref().or(def_a.role_origin.as_ref())
                         && !roles_for_sig.contains(r)
                     {
                         roles_for_sig.push(r.clone());
@@ -184,7 +191,8 @@ impl Interpreter {
                             if def_b.role_origin.is_none() {
                                 class_resolves = true;
                             }
-                            if let Some(r) = &def_b.role_origin
+                            if let Some(r) =
+                                def_b.original_role.as_ref().or(def_b.role_origin.as_ref())
                                 && !roles_for_sig.contains(r)
                             {
                                 roles_for_sig.push(r.clone());

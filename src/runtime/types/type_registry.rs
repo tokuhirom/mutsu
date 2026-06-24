@@ -442,6 +442,15 @@ impl Interpreter {
         if self.has_class(base) {
             return true;
         }
+        // Check user-defined roles (including forward-declared stub roles, e.g.
+        // `role Foo { ... }`). A role name is a valid type for a parameter /
+        // attribute constraint just like a class — without this, the classic
+        // mutual-reference pattern (`role Foo {...}` then `role Bar { method
+        // m(Foo $x) {...} }` then `role Foo does Bar {...}`) fails with
+        // "Invalid typename 'Foo'".
+        if self.has_role(base) {
+            return true;
+        }
         // Check if it starts with uppercase (heuristic for type names)
         // This handles cases like user-defined enum types that may not be registered as classes
         false
