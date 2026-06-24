@@ -205,6 +205,9 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             let after_gt = &after_lt[end + 1..];
             return Ok((after_gt, Expr::CaptureVar(name.to_string())));
         }
+        // `$<>` is the zen slice of the match variable: sugar for `$/<>`.
+        // Return `$/` and leave the `<>` for postfix zen-angle parsing.
+        return Ok((input, Expr::Var("/".to_string())));
     }
     // Handle $=finish and other Pod variables ($=pod, $=data, etc.)
     if let Some(after_eq) = input.strip_prefix('=') {
