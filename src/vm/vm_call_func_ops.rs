@@ -1231,7 +1231,13 @@ impl Interpreter {
         if def.empty_sig && !args.is_empty() {
             return None;
         }
-        if !Self::def_is_otf_compilable(&def) || Self::function_body_declares_state(&def.body) {
+        // A trivial-proto candidate is a genuine multi candidate (same caching
+        // profile in `compile_and_call_function_def` regardless of defaults), so a
+        // default param is safe to OTF here — see
+        // `def_is_otf_compilable_multi_candidate`.
+        if !Self::def_is_otf_compilable_multi_candidate(&def)
+            || Self::function_body_declares_state(&def.body)
+        {
             return None;
         }
         Some(def)
@@ -1370,7 +1376,13 @@ impl Interpreter {
         }
         if let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args)
             && (!def.empty_sig || args.is_empty())
-            && Self::def_is_otf_compilable(&def)
+            // A proto candidate is a genuine multi candidate: its caching profile
+            // in `compile_and_call_function_def` is identical with or without a
+            // default param (caching keys on `has_multi_candidates_cached`, not on
+            // defaults), so default-bearing candidates are as safe to OTF here as
+            // the non-default ones already are. Permit defaults (see
+            // `def_is_otf_compilable_multi_candidate`).
+            && Self::def_is_otf_compilable_multi_candidate(&def)
             && !Self::function_body_declares_state(&def.body)
         {
             // pending_call_arg_sources is still set (resolution only reads it);
