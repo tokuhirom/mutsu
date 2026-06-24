@@ -1456,6 +1456,42 @@ impl Interpreter {
                             self.stack.push(result);
                             return Ok(());
                         }
+                        // Non-mutating block list methods (`.map`/`.first`/
+                        // `.minmax`) dispatch through the same native helpers a
+                        // *plain* array uses on the backing storage, so an
+                        // `is Array` instance gets the same VM-native coverage
+                        // instead of bouncing to the tree-walk interpreter (ledger
+                        // §D / §C Phase-3). They borrow `&storage` and return a
+                        // fresh value, so they never mutate the instance. `.grep`
+                        // returns rw views into the source (a `for @s.grep { $_++ }`
+                        // writes back), and `.splice`/`ASSIGN-POS`/… mutate, so
+                        // those keep the fallback — they need the first-class
+                        // element-cell write-back the interpreter owns.
+                        if let Some(r) = self.try_native_array_map(None, &storage, &method, &args) {
+                            self.stack.push(r?);
+                            return Ok(());
+                        }
+                        if let Some(r) = self.try_native_first(&storage, &method, &args) {
+                            self.stack.push(r?);
+                            return Ok(());
+                        }
+                        if let Some(r) = self.try_native_minmax(&storage, &method, &args) {
+                            self.stack.push(r?);
+                            return Ok(());
+                        }
+                        // Other non-mutating, non-rw-view list methods
+                        // (`.sort`/`.reverse`/`.unique`/`.elems`/…) go through the
+                        // umbrella native dispatch on the backing storage. Gated to
+                        // a whitelist of methods that return fresh values (never an
+                        // rw view into, nor a mutation of, the source), so the
+                        // by-value `&storage` borrow is correct for the instance.
+                        if Self::is_array_storage_native_safe(&method)
+                            && let Some(r) =
+                                self.try_native_method(&storage, Symbol::intern(&method), &args)
+                        {
+                            self.stack.push(r?);
+                            return Ok(());
+                        }
                         // Perform the operation on the backing array
                         // TODO: compile to bytecode — Array-backed instance method
                         // (non-simple methods on `is Array` storage). See ledger §1.
@@ -1734,6 +1770,36 @@ impl Interpreter {
     /// method's result value is returned. Returns `None` (fall through to the
     /// interpreter) for any other method, a non-plain `ArrayKind`, or an
     /// arity-erroring `pop`/`shift` so the interpreter owns the richer cases.
+    /// Non-mutating, non-rw-view list methods that are safe to dispatch on an
+    /// `is Array` instance's backing storage via `try_native_method` (which
+    /// borrows the storage immutably and returns a fresh value). Excludes:
+    /// `map`/`first`/`minmax` (handled by their own helpers above), `grep` (its
+    /// result shares rw element cells with the source — `for @s.grep { $_++ }`
+    /// must write back), and the mutating methods (`splice`/`ASSIGN-POS`/
+    /// `DELETE-POS`/`BIND-POS`), which must update the instance via the fallback.
+    fn is_array_storage_native_safe(method: &str) -> bool {
+        matches!(
+            method,
+            "sort"
+                | "reverse"
+                | "rotate"
+                | "unique"
+                | "squish"
+                | "flat"
+                | "join"
+                | "elems"
+                | "end"
+                | "List"
+                | "Array"
+                | "Seq"
+                | "Slip"
+                | "AT-POS"
+                | "EXISTS-POS"
+                | "head"
+                | "tail"
+        )
+    }
+
     fn native_array_storage_mut(
         storage: &mut Value,
         method: &str,
