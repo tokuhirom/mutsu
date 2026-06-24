@@ -165,15 +165,16 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     where 除外を維持。実測 where-multi 3 種で fallback 77.8%→0%。pin=`t/multi-where-otf-dispatch.t`(20)。
     **★同 PR で nextsame/callsame 候補順序バグも修正**: `resolve_all_multi_candidates` が HashMap 順だったため、複数候補が同一引数に
     マッチ（重複 where + generic fallback）すると nextsame が広い候補を先に拾い狭い候補を脱落させた（hash-seed flake で defer-next.t を CI が捕捉）。specificity 順ソートで決定化。
-  - [x] **default param 値を持つ候補の OTF 化（genuine multi 候補のみ）= 完了（#TBD）→ [news/2026-06.md](news/2026-06.md)**。
+  - [x] **default param 値を持つ multi/proto 候補の OTF 化 = 完了（#3559 genuine-multi / #TBD proto 候補）→ [news/2026-06.md](news/2026-06.md)**。
     `def_is_otf_compilable` から `default.is_none()` を**全撤去**する単純版（PR #3546 close）は builtin-shadow パスで Test::Util
     `our sub run(Str, Str = '')` を OTF compile し name-keyed `otf_call_cache` を汚染→subtest 文脈で後続コア `run` を mis-bind
-    （release roast で env.t/system.t/cur-current-distribution.t 回帰）。**安全実装＝genuine multi 候補サイト（非proto multi fork・
-    `has_multi_candidates_cached(name)` ブランチ内）のみ default を許可**。そこは `compile_and_call_function_def` が name-cache しない
-    （`!has_multi_candidates_cached` ガードが false）ので汚染ハザードが構造的に起きない。新 `def_is_otf_compilable_multi_candidate`
-    （code_signature のみ除外）を line 1064 に適用。単一/builtin-shadow パスは `def_is_otf_compilable`（default 除外）維持。
-    回帰した env.t/system.t/cur-current-distribution.t + subtest/Test::Util 系ローカル全 PASS。pin=`t/multi-default-otf-dispatch.t`(11)。
-    **残**: proto 候補 / builtin-shadow 単一 / 非builtin 単一の default-OTF（name-cache 汚染リスクで除外維持）。
+    （release roast で env.t/system.t/cur-current-distribution.t 回帰）。**安全実装＝genuine multi/proto 候補サイトのみ default を許可**:
+    非proto multi fork（`has_multi_candidates_cached` ブランチ・#3559）＋ trivial/non-trivial proto 候補（`vm_resolve_trivial_proto_candidate`
+    ・`vm_call_proto_dispatch`・#TBD）。これらは `compile_and_call_function_def` の caching profile が default 有無で不変（非default 候補が
+    既に安全に OTF されている）＝汚染ハザードが構造的に起きない。新 `def_is_otf_compilable_multi_candidate`（code_signature のみ除外）を適用。
+    単一/builtin-shadow/非builtin 単一パスは `def_is_otf_compilable`（default 除外）維持。回帰した env.t/system.t/cur-current-distribution.t
+    + subtest/Test::Util 系ローカル全 PASS。pin=`t/multi-default-otf-dispatch.t`(14・proto default 含む)。
+    **残**: builtin-shadow 単一 / 非builtin 単一の default-OTF（name-cache 汚染リスクで除外維持）。
   - [x] **非trivial proto body の VM 化 = 完了（#3550 ①body compiled / #3552 ②候補 OTF）→ [news/2026-06.md](news/2026-06.md)**。
     `proto foo($x){ say "x"; {*} }` の body＋`{*}` 候補ディスパッチを両方 compiled 実行（`vm_try_run_nontrivial_proto_body`
     ＋`vm_call_proto_dispatch`）。実測 `t/proto-nontrivial-body-vm.t` で interpreter_fallbacks 50.1%→0.5%。
@@ -197,7 +198,7 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     callback / `&name` 渡し / outer 変数を閉包する callback まで byte-identical（pin=`t/multi-amp-param-otf-dispatch.t`(8)）。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ・`@a[1..*]` 再帰の immutable-List bug は §F）/
     `code_signature`〔`&cb:(Int)`〕param を持つ候補の OTF 化（依然除外・別軸で `&cb:(Int)` vs `&cb` の resolution ambiguity も要）/
-    default-param OTF の **proto 候補 / 単一候補** 版（name-cache 汚染リスクで除外維持）/ nextsame+rw チェーン（上記）。
+    default-param OTF の **単一候補（builtin-shadow / 非builtin）** 版（name-cache 汚染リスクで除外維持）/ nextsame+rw チェーン（上記）。
 
 ---
 

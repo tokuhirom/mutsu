@@ -10,7 +10,7 @@ use Test;
 # multi-cached), so that hazard cannot fire. Single / builtin-shadow candidates
 # keep the default exclusion.
 
-plan 11;
+plan 14;
 
 # literal default
 {
@@ -51,4 +51,14 @@ plan 11;
     multi gg(Int $x) { "second:$x" }
     is gg(3), "second:3", 'exact-arity candidate preferred over default-bearing one';
     is gg(3, 0), "first:3", 'default-bearing candidate selected for 2-arg call';
+}
+
+# proto-dispatched default-multi candidate (trivial proto)
+{
+    proto pp(|) {*}
+    multi pp(Int $x, Int $y = 10) { $x + $y }
+    multi pp(Str $s) { $s }
+    is pp(5), 15, 'proto default applied when omitted';
+    is pp(5, 20), 25, 'proto explicit value overrides default';
+    is pp("hi"), "hi", 'proto other candidate still selected';
 }
