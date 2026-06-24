@@ -606,6 +606,20 @@
   mutsu 固有挙動は roast S02-types/array.t・hash.t・S09-typed-arrays/* がカバー)。**★これで `dispatch_new` の built-in 型 ctor のうち native 化
   可能な clean 候補は枯渇。残る arm は state/FS/process 依存（IO::Socket::INET〔socket〕・Distribution/CompUnit::Repository〔FS〕・Proc::Async
   〔process〕・Backtrace〔call stack〕・Seq〔predictive iterator carrier〕）か error-only（HyperWhatever/Whatever/Instant）。**
+- **2026-06-24 (§D ③ = allomorph〔`IntStr`/`NumStr`/`RatStr`/`ComplexStr`〕＋`ObjAt`/`ValueObjAt` の `.new` を VM ネイティブ化)**: ③ ctor フォークの
+  再計測（全 whitelist の `new` fallback receiver を一時プローブで実測）で、aggregate 後も残る最頻 receiver が **`dispatch_new` ではなく
+  `dispatch_new_and_constructors`（slow-path method dispatch）に在る**ことが判明: `RatStr`(892)/`IntStr`(306)/`ComplexStr`(176)/`NumStr`(125)
+  ＝allomorph、`ObjAt`/`ValueObjAt`(計18)。これらは完全 **pure-static**（args→instance・`&self` 一切不要＝registry/env/FS も触らない）。
+  allomorph `.new(numeric, string)` は inner numeric（allomorphic `Mixin` 引数なら unwrap）を `Str` override 付き `Value::mixin` に、`ObjAt`/
+  `ValueObjAt` `.new(which)` は first positional の stringify を `WHICH` 属性に格納するだけ。**static `try_native_builtin_construct`（VM call site
+  vm_call_method_compiled.rs:160/1788 が呼び `method_dispatch_pure=true`）に 2 arm 追加**し、新 static helper `build_native_allomorph_value`/
+  `build_native_objat_value` を `dispatch_new_and_constructors`（インライン実装を撤去）と両方が呼ぶ＝**1 操作 = 1 実装**（FakeScheduler/Proxy/Match
+  と同パターン）。arity エラー文言は mutsu 固有（"requires two arguments" / "Too few positionals"＝raku と異なる pre-existing 差）を抽出時に保持＝
+  byte-identical。実測 `IntStr.new`/`RatStr.new`/`ObjAt.new` 等の `new` fallback → 0（val.t の `new` が histogram から消失）。pin
+  `t/native-allomorph-objat-ctor.t`(23・raku/mutsu 双方 PASS)。S32-str/val.t・S03-operators/set_union.t・S32-num/rounders.t・rat.t・S02-types/num.t
+  whitelist 全緑。（allomorphic.t 107/113 の既存 fail は main でも同一＝`.ACCEPTS`/`.Numeric` の別軸ギャップで本変更と無関係。）**残 `new` fallback receiver
+  ＝Proc::Async〔process〕/Failure〔`$!` env 読み〕/IO::Socket::INET〔socket〕/IO::Path family〔registry・別スライス候補〕/CallFrame〔call stack〕/
+  Seq〔iterator carrier〕＝いずれも state 依存 or 別軸。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

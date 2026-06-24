@@ -1636,6 +1636,57 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Match"), attrs)
     }
 
+    /// VM-native construction for an allomorph type (`IntStr`/`NumStr`/`RatStr`/
+    /// `ComplexStr`) — `.new(numeric, string)` is pure data assembly: the inner
+    /// numeric value (unwrapped from an allomorphic `Mixin` argument) is mixed
+    /// with a `Str` override carrying the string form. No env / registry / user
+    /// code. The interpreter's `dispatch_new_and_constructors` arm calls the same
+    /// helper, so the native path is byte-identical.
+    pub(crate) fn build_native_allomorph_value(
+        type_name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(format!(
+                "{}.new requires two arguments (numeric, string)",
+                type_name
+            )));
+        }
+        // Unwrap allomorphic (Mixin) arguments to get the inner numeric value.
+        let numeric = match &args[0] {
+            Value::Mixin(inner, _) => (**inner).clone(),
+            other => other.clone(),
+        };
+        let string = args[1].to_string_value();
+        let mut mixins = HashMap::new();
+        mixins.insert("Str".to_string(), Value::str(string));
+        Ok(Value::mixin(numeric, mixins))
+    }
+
+    /// VM-native construction for `ObjAt`/`ValueObjAt` — `.new(which)` is pure
+    /// data assembly: the first positional argument's stringification is stored
+    /// as the `WHICH` attribute. A missing positional is the same arity error the
+    /// interpreter raises. Shared with the interpreter's
+    /// `dispatch_new_and_constructors` arm so the native path is byte-identical.
+    pub(crate) fn build_native_objat_value(
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let positional = args
+            .iter()
+            .find(|a| !matches!(a, Value::Pair(_, _) | Value::ValuePair(_, _)));
+        match positional {
+            Some(val) => {
+                let mut attrs = HashMap::new();
+                attrs.insert("WHICH".to_string(), Value::str(val.to_string_value()));
+                Ok(Value::make_instance(class_name, attrs))
+            }
+            None => Err(RuntimeError::new(
+                "Too few positionals passed; expected 2 arguments but got 1".to_string(),
+            )),
+        }
+    }
+
     /// VM-native construction for a built-in type whose `.new(...)` is pure data
     /// assembly (no env / registry / user code): `Buf`/`Blob` (byte overlay),
     /// `utf8`/`utf16` (code units), `Uni` (codepoints), `Version`, `Duration`
@@ -1773,6 +1824,15 @@ impl Interpreter {
             Some(Ok(Self::build_native_proxy_value(args)))
         } else if cn == "Match" {
             Some(Ok(Self::build_native_match_value(args)))
+        } else if matches!(cn.as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr") {
+            // Allomorph `.new(numeric, string)` is pure data assembly (a numeric
+            // value mixed with a `Str` override) — shared with the interpreter's
+            // `dispatch_new_and_constructors` arm.
+            Some(Self::build_native_allomorph_value(&cn, args))
+        } else if matches!(cn.as_str(), "ObjAt" | "ValueObjAt") {
+            // `ObjAt`/`ValueObjAt` `.new(which)` stores the stringified first
+            // positional as the `WHICH` attribute — pure data assembly.
+            Some(Self::build_native_objat_value(class_name, args))
         } else {
             None
         }
