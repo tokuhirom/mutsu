@@ -1717,7 +1717,7 @@ impl Interpreter {
         remaining
     }
 
-    fn rewrite_proto_dispatch_stmts(body: &[Stmt]) -> Vec<Stmt> {
+    pub(crate) fn rewrite_proto_dispatch_stmts(body: &[Stmt]) -> Vec<Stmt> {
         body.iter().map(Self::rewrite_proto_dispatch_stmt).collect()
     }
 

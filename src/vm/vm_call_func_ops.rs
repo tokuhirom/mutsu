@@ -1016,6 +1016,17 @@ impl Interpreter {
                     // candidate still work because compile_and_call_function_def pushes
                     // the same multi-dispatch + samewith frames the interpreter would.
                     self.compile_and_call_function_def(&def, args, compiled_fns)
+                } else if self.has_proto(name)
+                    && let Some(result) =
+                        self.vm_try_run_nontrivial_proto_body(name, args.clone(), compiled_fns)
+                {
+                    // VM-native non-trivial proto body (ledger §D): a proto with a
+                    // real body (`proto foo($x) { say "x"; {*} }`) runs that body as
+                    // compiled bytecode instead of tree-walking it. The `{*}` inside
+                    // still redispatches to the winning multi candidate through the
+                    // existing proto-dispatch handler. Non-OTF-eligible protos return
+                    // None and fall through to the interpreter unchanged.
+                    result
                 } else if self.has_multi_candidates_cached(name) && !self.has_proto(name) {
                     // User-defined multi candidates take priority over builtins.
                     // Resolve the winning candidate Interpreter-side via the same resolver
@@ -1212,6 +1223,78 @@ impl Interpreter {
             return None;
         }
         Some(def)
+    }
+
+    /// Run a *non-trivial-body* proto (`proto foo($x) { say "x"; {*} }`) as
+    /// compiled bytecode instead of tree-walking its body through the interpreter
+    /// (ledger §D, multi-dispatch VM-ization). The proto body is rewritten so each
+    /// `{*}` becomes a `__PROTO_DISPATCH__()` call, then compiled and run like any
+    /// routine: its `{*}` redispatch still resolves and runs the winning multi
+    /// candidate through the existing proto-dispatch handler (reached from the
+    /// compiled body's `__PROTO_DISPATCH__` call), so behaviour — including the
+    /// candidate's `nextsame`/`callsame` — is byte-identical to the interpreter.
+    ///
+    /// Returns `None` (leaving the interpreter fallback in place) whenever the
+    /// bypass would not be safe / byte-identical:
+    /// - the name is interpreter-handled, or has no proto / a *trivial* body
+    ///   (handled by `vm_resolve_trivial_proto_candidate` instead);
+    /// - the args do not satisfy the proto's own signature (the interpreter then
+    ///   raises the proper `X::TypeCheck::Argument`);
+    /// - the proto's signature or (rewritten) body is not OTF-compilable, or the
+    ///   body declares `state` (whose shared-cell identity the fingerprint cache
+    ///   cannot preserve).
+    pub(super) fn vm_try_run_nontrivial_proto_body(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        use crate::ast::{Expr, Stmt};
+        if self.is_interpreter_handled_function(name) {
+            return None;
+        }
+        let proto = self.resolve_proto_function(name)?;
+        // Only handle *non-trivial* bodies here; the trivial (bodyless / `{*}`-only)
+        // case is the trivial resolver's job. A bodyless proto (`def.body.empty`)
+        // dispatches implicitly and must not be compiled here.
+        let significant: Vec<&Stmt> = proto
+            .body
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        let trivial = significant.is_empty()
+            || (significant.len() == 1 && matches!(significant[0], Stmt::Expr(Expr::Whatever)));
+        if trivial {
+            return None;
+        }
+        // The proto's OWN signature is a gate (same as the trivial path): bypassing
+        // to compiled code must still reject args the proto signature forbids.
+        if !proto.param_defs.is_empty() && !self.method_args_match(&args, &proto.param_defs) {
+            return None;
+        }
+        // Rewrite `{*}` -> `__PROTO_DISPATCH__()` and require the resulting body +
+        // the proto's own signature to be OTF-compilable. `state` in the proto body
+        // would break the body-fingerprint state cache, so exclude it too.
+        let rewritten = crate::runtime::Interpreter::rewrite_proto_dispatch_stmts(&proto.body);
+        let mut proto_def = proto.clone();
+        proto_def.body = rewritten;
+        if !Self::def_is_otf_compilable(&proto_def)
+            || Self::function_body_declares_state(&proto_def.body)
+        {
+            return None;
+        }
+        // Compile the proto body and run it like a routine. `{*}` redispatch reads
+        // the args from `proto_dispatch_stack` (the ORIGINAL proto args, matching
+        // the interpreter's `call_proto_function`), so push that before the body
+        // runs and pop after. No multi-dispatch frame is pushed for the proto body
+        // itself — it is the dispatcher, not a candidate; the candidate's own
+        // `nextsame` frame is set up by the proto-dispatch handler when `{*}` runs.
+        let cf = self.otf_compile_function_def(&proto_def);
+        let pkg = proto_def.package.resolve();
+        self.push_proto_dispatch_frame(name.to_string(), args.clone());
+        let result = self.call_compiled_function_named(&cf, args, compiled_fns, &pkg, name);
+        self.pop_proto_dispatch_frame();
+        Some(result)
     }
 
     pub(super) fn def_is_otf_compilable(def: &crate::ast::FunctionDef) -> bool {
