@@ -1687,6 +1687,179 @@ impl Interpreter {
         }
     }
 
+    /// VM-native gate for `IO::Path` family `.new(...)`. Returns `Some` only for
+    /// the built-in `IO::Path` classes (`IO::Path`, `IO::Path::Unix`/`::Win32`/
+    /// `::Cygwin`/`::QNX`), which never carry a user `new`; user subclasses fall
+    /// through to the interpreter's `dispatch_new` (where the broader MRO-based
+    /// `is_io_path_like` gate applies). The construction is pure path-string
+    /// assembly via the shared `build_io_path_instance` impl the interpreter's
+    /// `dispatch_new` arm also calls, so the native path is byte-identical. The
+    /// SPEC-variant subclass is registered (parent `IO::Path`) so reflection on
+    /// the result matches the interpreter, which registers it on `.new`.
+    pub(crate) fn try_native_io_path_construct(
+        &mut self,
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let cn_resolved = class_name.resolve();
+        if !Self::is_io_path_lexical_class(&cn_resolved) {
+            return None;
+        }
+        // SPEC-variant subclasses are registered (parent IO::Path) the first time
+        // they are constructed, mirroring the interpreter's `dispatch_new`.
+        if cn_resolved.starts_with("IO::Path::")
+            && !self.registry().classes.contains_key(cn_resolved.as_str())
+        {
+            self.registry_mut().classes.insert(
+                cn_resolved.to_string(),
+                ClassDef {
+                    parents: vec!["IO::Path".to_string()],
+                    attributes: Vec::new(),
+                    methods: HashMap::new(),
+                    native_methods: std::collections::HashSet::new(),
+                    mro: Vec::new(),
+                    attribute_types: HashMap::new(),
+                    attribute_smileys: HashMap::new(),
+                    attribute_built: HashMap::new(),
+                    wildcard_handles: Vec::new(),
+                    alias_attributes: HashSet::new(),
+                    class_level_attrs: HashMap::new(),
+                },
+            );
+        }
+        Some(self.build_io_path_instance(class_name, &cn_resolved, args))
+    }
+
+    /// Pure path-string assembly for an `IO::Path` family `.new(...)`: a
+    /// positional path (or an `IO::Path` instance whose `path` is reused), or a
+    /// `basename`/`dirname`/`volume` triple, joined with the SPEC-derived
+    /// separator, plus optional `CWD`/`SPEC` attributes. Reads only the registry
+    /// (`class_mro`, for the IO::Path-instance argument case) — no FS, no cwd, no
+    /// env, no user code. The single authoritative impl shared by the interpreter's
+    /// `dispatch_new` arm and the VM's `try_native_io_path_construct`.
+    pub(crate) fn build_io_path_instance(
+        &mut self,
+        class_name: Symbol,
+        cn_resolved: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut positional_path: Option<String> = None;
+        let mut basename_part: Option<String> = None;
+        let mut dirname_part: Option<String> = None;
+        let mut volume_part: Option<String> = None;
+        let mut cwd_attr: Option<String> = None;
+        let mut spec_attr: Option<Value> = None;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "CWD" => {
+                    cwd_attr = Some(value.to_string_value());
+                }
+                Value::Pair(key, value) if key == "SPEC" => {
+                    spec_attr = Some((**value).clone());
+                }
+                Value::Pair(key, value) if key == "basename" => {
+                    basename_part = Some(value.to_string_value());
+                }
+                Value::Pair(key, value) if key == "dirname" => {
+                    dirname_part = Some(value.to_string_value());
+                }
+                Value::Pair(key, value) if key == "volume" => {
+                    volume_part = Some(value.to_string_value());
+                }
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if positional_path.is_none()
+                    && self
+                        .class_mro(&class_name.resolve())
+                        .iter()
+                        .any(|n| n == "IO::Path") =>
+                {
+                    positional_path = Some(
+                        attributes
+                            .as_map()
+                            .get("path")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default(),
+                    );
+                    if cwd_attr.is_none() {
+                        cwd_attr = attributes.as_map().get("cwd").map(|v| v.to_string_value());
+                    }
+                }
+                Value::Pair(_, _) => {}
+                _ if positional_path.is_none() => {
+                    positional_path = Some(arg.to_string_value());
+                }
+                _ => {}
+            }
+        }
+        // Determine dir separator from SPEC (Win32 uses '\', others use '/')
+        let is_win32_spec = spec_attr
+            .as_ref()
+            .map(|s| {
+                let name = match s {
+                    Value::Package(n) => n.resolve().to_string(),
+                    Value::Instance { class_name, .. } => class_name.resolve().to_string(),
+                    _ => String::new(),
+                };
+                name == "IO::Spec::Win32" || name.ends_with("Win32")
+            })
+            .unwrap_or(false);
+        let dir_sep = if is_win32_spec { '\\' } else { '/' };
+        let path = if let Some(positional) = positional_path {
+            positional
+        } else if let Some(basename) = basename_part {
+            let mut built = match dirname_part {
+                Some(dirname) if !dirname.is_empty() => {
+                    if dirname.ends_with('/') || dirname.ends_with('\\') {
+                        format!("{dirname}{basename}")
+                    } else {
+                        format!("{dirname}{dir_sep}{basename}")
+                    }
+                }
+                _ => basename,
+            };
+            if let Some(volume) = volume_part
+                && !volume.is_empty()
+            {
+                if volume.ends_with('/') || volume.ends_with('\\') {
+                    built = format!("{volume}{built}");
+                } else {
+                    built = format!("{volume}{dir_sep}{built}");
+                }
+            }
+            built
+        } else {
+            String::new()
+        };
+        if path.is_empty() {
+            return Err(RuntimeError::new(
+                "Must specify a non-empty string as a path",
+            ));
+        }
+        if path.contains('\0') {
+            return Err(RuntimeError::new(
+                "X::IO::Null: Found null byte in pathname",
+            ));
+        }
+        let mut attrs = HashMap::new();
+        attrs.insert("path".to_string(), Value::str(path));
+        if let Some(cwd) = cwd_attr {
+            attrs.insert("cwd".to_string(), Value::str(cwd));
+        }
+        if cn_resolved.starts_with("IO::Path::") {
+            let spec_name = format!("IO::Spec::{}", cn_resolved.trim_start_matches("IO::Path::"));
+            attrs.insert(
+                "SPEC".to_string(),
+                Value::Package(Symbol::intern(&spec_name)),
+            );
+        } else if let Some(spec) = spec_attr {
+            attrs.insert("SPEC".to_string(), spec);
+        }
+        Ok(Value::make_instance(class_name, attrs))
+    }
+
     /// VM-native construction for a built-in type whose `.new(...)` is pure data
     /// assembly (no env / registry / user code): `Buf`/`Blob` (byte overlay),
     /// `utf8`/`utf16` (code units), `Uni` (codepoints), `Version`, `Duration`
@@ -2330,123 +2503,9 @@ impl Interpreter {
                     .iter()
                     .any(|name| name == "IO::Path");
             if is_io_path_like && !self.has_user_method(class_key, "new") {
-                let mut positional_path: Option<String> = None;
-                let mut basename_part: Option<String> = None;
-                let mut dirname_part: Option<String> = None;
-                let mut volume_part: Option<String> = None;
-                let mut cwd_attr: Option<String> = None;
-                let mut spec_attr: Option<Value> = None;
-                for arg in &args {
-                    match arg {
-                        Value::Pair(key, value) if key == "CWD" => {
-                            cwd_attr = Some(value.to_string_value());
-                        }
-                        Value::Pair(key, value) if key == "SPEC" => {
-                            spec_attr = Some((**value).clone());
-                        }
-                        Value::Pair(key, value) if key == "basename" => {
-                            basename_part = Some(value.to_string_value());
-                        }
-                        Value::Pair(key, value) if key == "dirname" => {
-                            dirname_part = Some(value.to_string_value());
-                        }
-                        Value::Pair(key, value) if key == "volume" => {
-                            volume_part = Some(value.to_string_value());
-                        }
-                        Value::Instance {
-                            class_name,
-                            attributes,
-                            ..
-                        } if positional_path.is_none()
-                            && self
-                                .class_mro(&class_name.resolve())
-                                .iter()
-                                .any(|n| n == "IO::Path") =>
-                        {
-                            positional_path = Some(
-                                attributes
-                                    .as_map()
-                                    .get("path")
-                                    .map(|v| v.to_string_value())
-                                    .unwrap_or_default(),
-                            );
-                            if cwd_attr.is_none() {
-                                cwd_attr =
-                                    attributes.as_map().get("cwd").map(|v| v.to_string_value());
-                            }
-                        }
-                        Value::Pair(_, _) => {}
-                        _ if positional_path.is_none() => {
-                            positional_path = Some(arg.to_string_value());
-                        }
-                        _ => {}
-                    }
-                }
-                // Determine dir separator from SPEC (Win32 uses '\', others use '/')
-                let is_win32_spec = spec_attr
-                    .as_ref()
-                    .map(|s| {
-                        let name = match s {
-                            Value::Package(n) => n.resolve().to_string(),
-                            Value::Instance { class_name, .. } => class_name.resolve().to_string(),
-                            _ => String::new(),
-                        };
-                        name == "IO::Spec::Win32" || name.ends_with("Win32")
-                    })
-                    .unwrap_or(false);
-                let dir_sep = if is_win32_spec { '\\' } else { '/' };
-                let path = if let Some(positional) = positional_path {
-                    positional
-                } else if let Some(basename) = basename_part {
-                    let mut built = match dirname_part {
-                        Some(dirname) if !dirname.is_empty() => {
-                            if dirname.ends_with('/') || dirname.ends_with('\\') {
-                                format!("{dirname}{basename}")
-                            } else {
-                                format!("{dirname}{dir_sep}{basename}")
-                            }
-                        }
-                        _ => basename,
-                    };
-                    if let Some(volume) = volume_part
-                        && !volume.is_empty()
-                    {
-                        if volume.ends_with('/') || volume.ends_with('\\') {
-                            built = format!("{volume}{built}");
-                        } else {
-                            built = format!("{volume}{dir_sep}{built}");
-                        }
-                    }
-                    built
-                } else {
-                    String::new()
-                };
-                if path.is_empty() {
-                    return Err(RuntimeError::new(
-                        "Must specify a non-empty string as a path",
-                    ));
-                }
-                if path.contains('\0') {
-                    return Err(RuntimeError::new(
-                        "X::IO::Null: Found null byte in pathname",
-                    ));
-                }
-                let mut attrs = HashMap::new();
-                attrs.insert("path".to_string(), Value::str(path));
-                if let Some(cwd) = cwd_attr {
-                    attrs.insert("cwd".to_string(), Value::str(cwd));
-                }
-                if cn_resolved.starts_with("IO::Path::") {
-                    let spec_name =
-                        format!("IO::Spec::{}", cn_resolved.trim_start_matches("IO::Path::"));
-                    attrs.insert(
-                        "SPEC".to_string(),
-                        Value::Package(Symbol::intern(&spec_name)),
-                    );
-                } else if let Some(spec) = spec_attr {
-                    attrs.insert("SPEC".to_string(), spec);
-                }
-                return Ok(Value::make_instance(*class_name, attrs));
+                // Pure path-string assembly (registry reads only) — shared with the
+                // VM's `try_native_io_path_construct`.
+                return self.build_io_path_instance(*class_name, &cn_resolved, &args);
             }
             match base_class_name {
                 "IterationBuffer" => {
