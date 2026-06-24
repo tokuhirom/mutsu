@@ -202,6 +202,13 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
 目標: **mutsu でウェブブログシステムが構築できる**。**Template::Mustache 完動（#3395）**。
 HTTP スタック/JSON/DB/ユーティリティは下記調査の通り NativeCall 非依存で動作可能、各々独立した一般機能の欠落待ち。
 
+**✅ Tubu — 同期 Sinatra/P6W ウェブフレームワーク完動（2026-06-24）**: `t/lib/Tubu*`（pure Raku・`get`/`post`/path
+param/query/form param/cookie/before フック/json/html/redirect/静的ファイル/同期 `IO::Socket::INET` runner）。CI-safe
+統合テスト＝`t/tubu-web-framework.t`。実ソケットで curl 応答も実証。現実的ブログ（Tubu + DBDishLite/SQLite + Mustache +
+JSON + cookie）が end-to-end で動作（`tmp/webframe/blog.raku`）。HTTP::Server::Tiny は完全非同期（`react`/`whenever
+IO::Socket::Async`）で `whenever … done` 並行ギャップ待ち＝同期 INET パスが本命。surfaced bugs: readonly-param
+フレーム間漏れ（#3539 修正）/ imported-sub shadows builtin（#3538 テスト）/ stored Regex `<$var>` lexical capture 喪失（未修正・別軸）。
+
 **✅ 完動／native 化したモジュール（詳細は news/2026-06.md ＋ memory）**: Template::Mustache（#3395）/ JSON `to-json`・
 `from-json` native（#3402）/ File::Temp 0.0.12（#3399）/ File::Directory::Tree 0.2 / HTTP::Parser 14/14（#3420/#3422/#3423）/
 MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user override 修正・own test 一部残）。これらに付随した一般機能
