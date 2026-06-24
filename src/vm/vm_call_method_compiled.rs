@@ -188,6 +188,19 @@ impl Interpreter {
             self.method_dispatch_pure = true;
             return result;
         }
+        // Native IO::Path family construction: `IO::Path`/`IO::Path::Unix`/`::Win32`/
+        // `::Cygwin`/`::QNX`.new(...) — pure path-string assembly (positional path
+        // or basename/dirname/volume/CWD/SPEC pairs), no FS / cwd / env / user code
+        // (registry reads + a one-time SPEC-subclass registration, which the VM
+        // owns). Built via the single `build_io_path_instance` impl the
+        // interpreter's `dispatch_new` arm also delegates to.
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && let Some(result) = self.try_native_io_path_construct(*class_name, &args)
+        {
+            self.method_dispatch_pure = true;
+            return result;
+        }
         // Native built-in *class* method (a pure type-object method other than
         // `.new`, e.g. `Instant.from-posix`) — built directly instead of routing
         // through the interpreter's class-method dispatch.
@@ -1801,6 +1814,14 @@ impl Interpreter {
             && let Value::Package(class_name) = &target
             && let Some(result) =
                 self.try_native_aggregate_construct_for_package(*class_name, &args)
+        {
+            self.method_dispatch_pure = true;
+            return result;
+        }
+        // Native IO::Path family construction (mut path twin of the above).
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && let Some(result) = self.try_native_io_path_construct(*class_name, &args)
         {
             self.method_dispatch_pure = true;
             return result;

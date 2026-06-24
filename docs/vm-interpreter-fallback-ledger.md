@@ -620,6 +620,18 @@
   whitelist 全緑。（allomorphic.t 107/113 の既存 fail は main でも同一＝`.ACCEPTS`/`.Numeric` の別軸ギャップで本変更と無関係。）**残 `new` fallback receiver
   ＝Proc::Async〔process〕/Failure〔`$!` env 読み〕/IO::Socket::INET〔socket〕/IO::Path family〔registry・別スライス候補〕/CallFrame〔call stack〕/
   Seq〔iterator carrier〕＝いずれも state 依存 or 別軸。**
+- **2026-06-24 (§D ③ = `IO::Path` family〔`IO::Path`/`::Unix`/`::Win32`/`::Cygwin`/`::QNX`〕の `.new` を VM ネイティブ化＝IO::Path ctor capstone)**:
+  IO::Path native 化テーマの締め＝メソッド族（stat/content-read/fs-mutate/open/2-path/comb・#3499〜3511）は 100% native 化済だが **ctor だけ
+  catch-all バウンス**していた（プローブ実測で `IO::Path::Win32`/`::Cygwin`/`::Unix`/`IO::Path` 計~112 occ）。`.new` は **pure path-string assembly**
+  ＝positional path / IO::Path instance（`path` 再利用）/ basename+dirname+volume の三つ組を SPEC 由来セパレータで join し、CWD/SPEC 属性を付与する
+  だけ。`&self` 依存は **registry 読み**（`class_mro`＝IO::Path-instance 引数判定）のみ＝VM 所有（phase ②）＝FS/cwd/env/user code 不要。`dispatch_new`
+  の IO::Path arm（~117 行）を新 `&mut self` helper `build_io_path_instance` に**丸ごと抽出**（interpreter arm は delegation・SPEC-variant subclass の
+  一回限り registry 登録も保持）。VM ゲート `try_native_io_path_construct` は **built-in IO::Path family のみ**（`is_io_path_lexical_class`＝lexical method
+  スライスと同一ゲート＝user subclass の custom new を侵さない）に絞り、非mut/mut 両 call site（aggregate ctor arm の直後・`method_dispatch_pure=true`）から
+  呼ぶ＝**1 操作 = 1 実装**・byte-identical。実測 `IO::Path.new`/`IO::Path::Win32.new` 等の `new` fallback → 0。pin `t/native-io-path-ctor.t`(19・
+  positional/triple/instance-arg/Win32-Unix-Cygwin subclass/CWD/empty-null dies・raku/mutsu 双方 PASS)。S32-io/S16-io/tmpdir/cwd/S11-compunit whitelist
+  全緑（io-path.t 34/35 の `.SPEC`/`.CWD` attribute 既存 fail は main でも同一＝非whitelist・本変更と無関係）。**残 `new` fallback＝Proc::Async/Failure
+  〔`$!` env〕/IO::Socket::INET/CallFrame/Seq＝state 依存 or 別軸。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
