@@ -133,9 +133,15 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
   - **`Failure.new($exception?)`（#TBD）= 完了**＝残 `new` fallback の最大カウント（2593）。VM 所有 state のみ読む pure data assembly（明示 exception /
     `$!` env / `X::AdHoc` default＋非例外値の `X::AdHoc` wrap・MRO 読み `mro_readonly`）。`dispatch_new_and_constructors` の arm を `build_native_failure_value`
     に丸ごと抽出し VM/interpreter 両方が呼ぶ＝true single impl。単一ストア化後 `self.env`（＝`$!`）は VM/interpreter 同一＝byte-identical。
-  - **pure-value / VM-owned-state な built-in ctor 候補は枯渇。** 残る `new` fallback receiver は state/process/socket 依存（IO::Socket::INET・Proc::Async・
-    Distribution/CompUnit::Repository・Backtrace・Seq〔predictive iterator carrier〕・CallFrame〔call stack〕）か error-only（HyperWhatever/Whatever/Instant）
-    ＝別軸 or 構造ブロッカー前提。
+  - **次の clean な ctor スライス（2 件・2026-06-24 実測訂正）**: 台帳が「state 依存」と分類していた 2 件は実は tractable。
+    - **`Proc::Async.new`（最も簡単・次セッション最初）**＝完全 pure data（プロセス spawn は `.start`・ctor は引数パース＋`next_supply_id()` 〔free fn〕
+      ＋`SharedPromise::new()`＋Supply 属性構築のみ・`&self` 依存ゼロ）。`build_native_proc_async_value` static helper を `try_native_builtin_construct` に
+      `Promise`/`Channel` と同型で wire。
+    - **`IO::Socket::INET.new`（medium・次）**＝`dispatch_socket_inet_new`（`&mut self`・実 bind/connect＋`insert_handle_state`）は **io_handles 依存だが
+      `IO::Path.open`（#3507 native 化済）と同型**（io_handles は VM 所有）。`try_native_socket_inet_construct` で両 catch-all から既存 helper へ委譲。
+  - **真に構造ブロック（上記 2 件 land 後に ctor-fork 完了）**: `CallFrame.new`〔call-stack carrier〕・`Seq.new(iterator)`〔predictive iterator carrier・
+    `predictive_seq_iters` field ＋ env 書き込みで impure〕・error-only（HyperWhatever/Whatever/Instant）。これら以後は §D の本丸＝(b) tree-walk dispatch-chain
+    削除 substrate or multi-dispatch VM 化（下記の唯一の `[ ]`）。
   - **(b) tree-walk dispatch chain 削除の substrate**: IO/coercion が native 化した今、`dispatch_method_by_name_*` チェーンと
     catch-all バウンス（`vm_call_method_compiled.rs` 末尾）の構造的削除。残る到達カテゴリ＝MOP carrier（WHAT/name/can/HOW・反射で
     撲滅対象外）/ landmine（Instance.Str/.Stringy/.raku/.gist・列挙不能で見送り済）/ block-exec slow path（map/grep・lever B/Phase 2）/
