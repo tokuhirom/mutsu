@@ -1708,7 +1708,30 @@ impl Interpreter {
                         )));
                     }
                 }
-                if self.strict_mode && !name.contains("::") && !self.env().contains_key(&name) {
+                // Attribute twigils (`$!x`/`@!x`/`%!x`/`$.x`/`@.x`/`%.x`) are not
+                // lexical variables — they are attribute accesses declared by the
+                // enclosing class and stored through the self-attribute cell, not
+                // `env`. `use strict` must not flag them as undeclared (it would
+                // wrongly reject e.g. `%!types := %types.Map` in a class method
+                // whenever strict was switched on by an outer module — MIME::Types
+                // loaded transitively under Humming-Bird's `use strict`).
+                let bare_no_sigil = name.trim_start_matches(['$', '@', '%', '&']);
+                let is_attr_twigil = (bare_no_sigil.starts_with('!')
+                    || bare_no_sigil.starts_with('.'))
+                    && bare_no_sigil.len() > 1
+                    && bare_no_sigil.as_bytes()[1].is_ascii_alphabetic();
+                // Synthetic compiler temporaries (rw index/argument desugaring,
+                // `with`/`without` topic temps `__with_tmp_*`, for-loop element
+                // sources, constant hoists, `__mutsu_*`, ...) are all named with a
+                // leading `__` and are stored straight into env at runtime — they
+                // are never user-declared, so `use strict` must skip them too.
+                let is_internal_temp = bare_no_sigil.starts_with("__");
+                if self.strict_mode
+                    && !is_attr_twigil
+                    && !is_internal_temp
+                    && !name.contains("::")
+                    && !self.env().contains_key(&name)
+                {
                     return Err(self.strict_undeclared_error(&name));
                 }
                 // Check readonly variables (e.g., $*USAGE).

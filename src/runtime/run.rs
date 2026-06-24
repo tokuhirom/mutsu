@@ -1621,15 +1621,26 @@ impl Interpreter {
     pub(crate) fn build_resources_for_package(&self) -> Value {
         use std::collections::HashMap;
 
-        // Priority 1: current_distribution (set during module loading)
-        if let Some(dist) = &self.current_distribution {
-            return Self::build_resources_from_dist(dist);
-        }
-        // Priority 2: Look up by current routine stack frames (innermost first)
+        // `%?RESOURCES` is lexically tied to the compilation unit whose source
+        // contains the token, i.e. the module of the *currently executing*
+        // routine — not whichever module is currently being loaded. So the
+        // innermost routine-stack frame whose package owns a distribution wins.
+        // This matters when one module's load-time code (e.g. a `constant`
+        // initializer) calls into another module whose method reads
+        // `%?RESOURCES` — MIME::Types.new being the canonical case: it runs
+        // while the *outer* module is still loading, so `current_distribution`
+        // would otherwise (incorrectly) point at the outer module's dist.
+        //
+        // Priority 1: the executing routine's defining package (innermost first).
         for frame in self.routine_stack.iter().rev() {
             if let Some(dist) = self.package_distributions.get(&frame.package) {
                 return Self::build_resources_from_dist(dist);
             }
+        }
+        // Priority 2: current_distribution (set during module loading) — the
+        // right answer for top-level module code that is not inside any routine.
+        if let Some(dist) = &self.current_distribution {
+            return Self::build_resources_from_dist(dist);
         }
         // Priority 3: Look up by current package
         if let Some(dist) = self.package_distributions.get(&self.current_package()) {
