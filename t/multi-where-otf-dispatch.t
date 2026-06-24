@@ -6,7 +6,7 @@ use Test;
 # re-check passes; behaviour must stay byte-identical to the interpreter.
 # (ledger §D, multi-dispatch VM-ization)
 
-plan 18;
+plan 20;
 
 # Same type, distinct where constraints — winner picked by `where`.
 multi sub classify(Int $n where * < 0) { "neg" }
@@ -65,3 +65,24 @@ multi sub greet(Str $s where *.chars > 3) { "long" }
 multi sub greet(Str $s) { "short" }
 is greet("hello"), "long", "string where long";
 is greet("hi"), "short", "string where short";
+
+# nextsame chain through OVERLAPPING where candidates + a generic fallback.
+# All three match foo(5); the nextsame chain must defer in dispatch-specificity
+# order (narrower `where` candidates before the generic), not arbitrary HashMap
+# order — otherwise the broader generic is wrongly picked first and the second
+# where candidate is dropped (S12-methods/defer-next.t regression; the order
+# must be deterministic across runs / hash seeds).
+{
+    my @order;
+    proto sub seq($) {*}
+    multi sub seq(Int $n where * > 0) { @order.push: '>0'; nextsame }
+    multi sub seq(Int $n where * < 10) { @order.push: '<10'; nextsame }
+    multi sub seq($n) { @order.push: 'generic' }
+    seq(5);
+    is @order, ['>0', '<10', 'generic'],
+        'nextsame defers through overlapping where candidates in order';
+    @order = [];
+    seq(5) for ^50;
+    is @order, [|('>0', '<10', 'generic') xx 50],
+        'nextsame+where order is deterministic across repeated calls';
+}

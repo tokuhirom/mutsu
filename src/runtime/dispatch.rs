@@ -1070,30 +1070,43 @@ impl Interpreter {
     /// arity or type matching.  Used to build the full candidate list for
     /// callwith(), which may re-dispatch with different arguments.
     pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<FunctionDef> {
-        let mut all = Vec::new();
+        let mut all: Vec<(String, FunctionDef)> = Vec::new();
         let prefixes = [
             format!("{}::{}/", self.current_package(), name),
             format!("GLOBAL::{}/", name),
         ];
         let mut seen_fps = Vec::new();
         for prefix in &prefixes {
-            let candidates: Vec<FunctionDef> = self
+            let candidates: Vec<(String, FunctionDef)> = self
                 .registry()
                 .functions
                 .iter()
                 .filter(|(k, _)| k.resolve().starts_with(prefix.as_str()))
-                .map(|(_, def)| def.clone())
+                .map(|(k, def)| (k.resolve(), def.clone()))
                 .collect();
-            for def in candidates {
+            for (key, def) in candidates {
                 let fp =
                     crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
                 if !seen_fps.contains(&fp) {
                     seen_fps.push(fp);
-                    all.push(def);
+                    all.push((key, def));
                 }
             }
         }
-        all
+        // Sort by dispatch specificity (most specific first). The callsame /
+        // nextsame consumers (`builtins_dispatch_next.rs`) pick the FIRST
+        // arg-matching candidate in this list's order, so it must reflect the
+        // real dispatch order rather than arbitrary HashMap iteration order.
+        // Without this, when several candidates match the same args — e.g.
+        // overlapping `where` constraints plus a generic fallback
+        // (`multi foo(Int $ where * > 0)`, `multi foo(Int $ where * < 10)`,
+        // `multi foo($)`) — a broader candidate appearing earlier in HashMap
+        // order is wrongly chosen before a narrower one, dropping the narrower
+        // candidate from the nextsame chain (hash-seed-dependent flake in
+        // S12-methods/defer-next.t `nextsame + multi + where`). Mirrors the
+        // deterministic winner resolution PR-4 added to `push_multi_dispatch_frame`.
+        self.sort_candidates_by_specificity(&mut all);
+        all.into_iter().map(|(_, def)| def).collect()
     }
 
     pub(super) fn eval_token_call_values(
