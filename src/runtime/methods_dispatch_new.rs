@@ -59,57 +59,9 @@ impl Interpreter {
                 Some(Self::build_native_allomorph_value(&type_name, &args))
             }
             "new" if matches!(target, Value::Package(name) if name == "Failure") => {
-                let default_exception = || {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str("Failed".to_string()));
-                    // `Failure.new` with no explicit exception defaults to
-                    // X::AdHoc in Raku, not the abstract base Exception.
-                    Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
-                };
-                let raw_exception = args
-                    .first()
-                    .cloned()
-                    .filter(|v| !matches!(v, Value::Nil))
-                    .or_else(|| {
-                        self.env
-                            .get("!")
-                            .cloned()
-                            .filter(|v| !matches!(v, Value::Nil))
-                    })
-                    .unwrap_or_else(default_exception);
-                // Wrap non-Exception values in X::AdHoc (Raku behavior)
-                let exception = if let Value::Instance { class_name, .. } = &raw_exception {
-                    let cn = class_name.resolve();
-                    if cn == "Exception"
-                        || cn.starts_with("X::")
-                        || cn.starts_with("CX::")
-                        || self.mro_readonly(&cn).iter().any(|p| {
-                            p == "Exception" || p.starts_with("X::") || p.starts_with("CX::")
-                        })
-                    {
-                        raw_exception
-                    } else {
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("payload".to_string(), raw_exception.clone());
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::str(raw_exception.to_string_value()),
-                        );
-                        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
-                    }
-                } else {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("payload".to_string(), raw_exception.clone());
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(raw_exception.to_string_value()),
-                    );
-                    Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
-                };
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("exception".to_string(), exception);
-                attrs.insert("handled".to_string(), Value::Bool(false));
-                Some(Ok(Value::make_instance(Symbol::intern("Failure"), attrs)))
+                // Pure data assembly (reads `$!` / MRO) — shared with the VM's
+                // `try_native_failure_construct`.
+                Some(Ok(self.build_native_failure_value(&args)))
             }
             "handled" if matches!(target, Value::Instance { class_name, .. } if class_name == "Failure") =>
             {

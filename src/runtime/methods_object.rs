@@ -1687,6 +1687,63 @@ impl Interpreter {
         }
     }
 
+    /// VM-native construction for `Failure.new($exception?)` — pure data assembly
+    /// reading only VM-owned state: the explicit exception argument (or `$!` from
+    /// env when omitted, or the `X::AdHoc("Failed")` default), wrapped into an
+    /// `X::AdHoc` if it is not already an `Exception`/`X::`/`CX::` (checked via the
+    /// MRO read `mro_readonly`). No FS / process / user code. The interpreter's
+    /// `dispatch_new_and_constructors` arm calls the same helper, so the native
+    /// path is byte-identical (the VM and interpreter are one struct, so `self.env`
+    /// — and thus `$!` — is identical at the call site).
+    pub(crate) fn build_native_failure_value(&self, args: &[Value]) -> Value {
+        let default_exception = || {
+            let mut attrs = HashMap::new();
+            // `Failure.new` with no explicit exception defaults to X::AdHoc in
+            // Raku, not the abstract base Exception.
+            attrs.insert("message".to_string(), Value::str("Failed".to_string()));
+            Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+        };
+        let raw_exception = args
+            .first()
+            .cloned()
+            .filter(|v| !matches!(v, Value::Nil))
+            .or_else(|| {
+                self.env
+                    .get("!")
+                    .cloned()
+                    .filter(|v| !matches!(v, Value::Nil))
+            })
+            .unwrap_or_else(default_exception);
+        // Wrap non-Exception values in X::AdHoc (Raku behavior).
+        let wrap_adhoc = |raw: Value| {
+            let mut attrs = HashMap::new();
+            attrs.insert("payload".to_string(), raw.clone());
+            attrs.insert("message".to_string(), Value::str(raw.to_string_value()));
+            Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+        };
+        let exception = if let Value::Instance { class_name, .. } = &raw_exception {
+            let cn = class_name.resolve();
+            if cn == "Exception"
+                || cn.starts_with("X::")
+                || cn.starts_with("CX::")
+                || self
+                    .mro_readonly(&cn)
+                    .iter()
+                    .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"))
+            {
+                raw_exception
+            } else {
+                wrap_adhoc(raw_exception)
+            }
+        } else {
+            wrap_adhoc(raw_exception)
+        };
+        let mut attrs = HashMap::new();
+        attrs.insert("exception".to_string(), exception);
+        attrs.insert("handled".to_string(), Value::Bool(false));
+        Value::make_instance(Symbol::intern("Failure"), attrs)
+    }
+
     /// VM-native gate for `IO::Path` family `.new(...)`. Returns `Some` only for
     /// the built-in `IO::Path` classes (`IO::Path`, `IO::Path::Unix`/`::Win32`/
     /// `::Cygwin`/`::QNX`), which never carry a user `new`; user subclasses fall
