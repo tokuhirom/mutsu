@@ -136,13 +136,14 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
   - **`Seq.new($iterator?)`（#3533）= 完了**。前回「iterator carrier＝別軸（impure）」と保守分類していたが carrier state 自体が VM 所有
     （`predictive_seq_iters` フィールド＋env 内部キー＋Seq Arc キーのグローバル deferred-iter 表）＝構築は eager pull せず VM 所有 state への登録のみ。
     `dispatch_new` の Seq arm を `try_native_seq_construct` に丸ごと抽出し VM/interpreter 両方が呼ぶ＝true single impl・byte-identical。
-  - **次の clean な ctor スライス（2 件・2026-06-24 実測訂正）**: 台帳が「state 依存」と分類していた 2 件は実は tractable。
-    - **`Proc::Async.new`（最も簡単・次セッション最初）**＝完全 pure data（プロセス spawn は `.start`・ctor は引数パース＋`next_supply_id()` 〔free fn〕
-      ＋`SharedPromise::new()`＋Supply 属性構築のみ・`&self` 依存ゼロ）。`build_native_proc_async_value` static helper を `try_native_builtin_construct` に
-      `Promise`/`Channel` と同型で wire。
-    - **`IO::Socket::INET.new`（medium・次）**＝`dispatch_socket_inet_new`（`&mut self`・実 bind/connect＋`insert_handle_state`）は **io_handles 依存だが
-      `IO::Path.open`（#3507 native 化済）と同型**（io_handles は VM 所有）。`try_native_socket_inet_construct` で両 catch-all から既存 helper へ委譲。
-  - **真に構造ブロック（上記 2 件 land 後に ctor-fork 完了）**: `CallFrame.new`〔call-stack carrier〕・error-only（HyperWhatever/Whatever/Instant）。
+  - **`Proc::Async.new(@cmd, :w, :enc)`（#3535）= 完了**。台帳が「state 依存」と分類していたが ctor は完全 pure data（実プロセス spawn は `.start`・
+    ctor は引数パース＋3 本の process-global supply id〔`next_supply_id` free fn〕＋空の stdout/stderr/merged `Supply` 構築のみ・`&self` 依存ゼロ）。
+    `dispatch_new` の arm を static `build_native_proc_async_value` に丸ごと抽出し、VM は `try_native_builtin_construct` に arm を `Promise`/`Channel` と
+    同型で wire＝true single impl・byte-identical。
+  - **次の clean な ctor スライス（残 1 件）**: **`IO::Socket::INET.new`（medium）**＝`dispatch_socket_inet_new`（`&mut self`・実 bind/connect＋
+    `insert_handle_state`）は **io_handles 依存だが `IO::Path.open`（#3507 native 化済）と同型**（io_handles は VM 所有）。`try_native_socket_inet_construct`
+    で両 catch-all から既存 helper へ委譲。
+  - **真に構造ブロック（上記 1 件 land 後に ctor-fork 完了）**: `CallFrame.new`〔call-stack carrier〕・error-only（HyperWhatever/Whatever/Instant）。
     これら以後は §D の本丸＝(b) tree-walk dispatch-chain 削除 substrate or multi-dispatch VM 化（下記の唯一の `[ ]`）。
   - **(b) tree-walk dispatch chain 削除の substrate**: IO/coercion が native 化した今、`dispatch_method_by_name_*` チェーンと
     catch-all バウンス（`vm_call_method_compiled.rs` 末尾）の構造的削除。残る到達カテゴリ＝MOP carrier（WHAT/name/can/HOW・反射で

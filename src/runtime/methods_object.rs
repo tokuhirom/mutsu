@@ -1989,6 +1989,79 @@ impl Interpreter {
     /// of these, else `None` so the caller falls through to the generic
     /// constructor. The interpreter's `dispatch_new` arms call the same per-type
     /// helpers, so the native path is byte-identical.
+    /// VM-native construction for `Proc::Async.new(@cmd, :w, :enc)`. Pure data
+    /// assembly: parse the positional command + `:w`/`:enc` flags, allocate three
+    /// fresh process-global supply ids (`next_supply_id`, a bare global counter),
+    /// and build empty stdout/stderr/merged `Supply` instances plus the
+    /// not-yet-started `Proc::Async` instance. No `&self` — the process is only
+    /// spawned later, by `.start`. The interpreter's `dispatch_new` arm delegates
+    /// here so the native VM fast path is byte-identical.
+    pub(crate) fn build_native_proc_async_value(class_name: Symbol, args: &[Value]) -> Value {
+        let mut positional = Vec::new();
+        let mut w_flag = false;
+        let mut enc = Value::str_from("utf-8");
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "w" => {
+                    w_flag = value.truthy();
+                }
+                Value::Pair(key, _value) if key == "out" => {}
+                Value::Pair(key, value) if key == "enc" => {
+                    enc = Value::str(value.to_string_value());
+                }
+                _ => positional.push(arg.clone()),
+            }
+        }
+        let stdout_id = super::native_methods::next_supply_id();
+        let stderr_id = super::native_methods::next_supply_id();
+        let supply_id = super::native_methods::next_supply_id();
+        let stdout_descriptor = SharedPromise::new();
+        let stderr_descriptor = SharedPromise::new();
+        let mut stdout_supply_attrs = HashMap::new();
+        stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+        stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        stdout_supply_attrs.insert("supply_id".to_string(), Value::Int(stdout_id as i64));
+        stdout_supply_attrs.insert("enc".to_string(), enc.clone());
+        stdout_supply_attrs.insert(
+            "native_descriptor_promise".to_string(),
+            Value::Promise(stdout_descriptor),
+        );
+        let mut stderr_supply_attrs = HashMap::new();
+        stderr_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+        stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        stderr_supply_attrs.insert("supply_id".to_string(), Value::Int(stderr_id as i64));
+        stderr_supply_attrs.insert("enc".to_string(), enc.clone());
+        stderr_supply_attrs.insert(
+            "native_descriptor_promise".to_string(),
+            Value::Promise(stderr_descriptor),
+        );
+        let mut merged_supply_attrs = HashMap::new();
+        merged_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+        merged_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        merged_supply_attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+
+        let mut attrs = HashMap::new();
+        attrs.insert("cmd".to_string(), Value::array(positional));
+        attrs.insert("started".to_string(), Value::Bool(false));
+        attrs.insert("enc".to_string(), enc);
+        attrs.insert(
+            "stdout".to_string(),
+            Value::make_instance(Symbol::intern("Supply"), stdout_supply_attrs),
+        );
+        attrs.insert(
+            "stderr".to_string(),
+            Value::make_instance(Symbol::intern("Supply"), stderr_supply_attrs),
+        );
+        attrs.insert(
+            "supply".to_string(),
+            Value::make_instance(Symbol::intern("Supply"), merged_supply_attrs),
+        );
+        if w_flag {
+            attrs.insert("w".to_string(), Value::Bool(true));
+        }
+        Value::make_instance(class_name, attrs)
+    }
+
     pub(crate) fn try_native_builtin_construct(
         class_name: Symbol,
         args: &[Value],
@@ -2093,6 +2166,12 @@ impl Interpreter {
                 Value::Int(super::native_methods::next_supplier_id() as i64),
             );
             Some(Ok(Value::make_instance(class_name, attrs)))
+        } else if cn == "Proc::Async" {
+            // `Proc::Async.new(@cmd, :w, :enc)` is pure data: arg parsing +
+            // process-global supply ids + empty Supply attributes. The process is
+            // only spawned later by `.start`. Shared with the interpreter's
+            // `dispatch_new` arm via the single `build_native_proc_async_value`.
+            Some(Ok(Self::build_native_proc_async_value(class_name, args)))
         } else if cn == "Capture" {
             // The default `Capture.new` produces an *empty* Capture: named args
             // are dropped (Capture has no buildable public attributes — `bless`
@@ -2928,72 +3007,11 @@ impl Interpreter {
                     return Ok(repo);
                 }
                 "Proc::Async" => {
-                    let mut positional = Vec::new();
-                    let mut w_flag = false;
-                    let mut enc = Value::str_from("utf-8");
-                    for arg in &args {
-                        match arg {
-                            Value::Pair(key, value) if key == "w" => {
-                                w_flag = value.truthy();
-                            }
-                            Value::Pair(key, _value) if key == "out" => {}
-                            Value::Pair(key, value) if key == "enc" => {
-                                enc = Value::str(value.to_string_value());
-                            }
-                            _ => positional.push(arg.clone()),
-                        }
-                    }
-                    let stdout_id = super::native_methods::next_supply_id();
-                    let stderr_id = super::native_methods::next_supply_id();
-                    let supply_id = super::native_methods::next_supply_id();
-                    let stdout_descriptor = SharedPromise::new();
-                    let stderr_descriptor = SharedPromise::new();
-                    let mut stdout_supply_attrs = HashMap::new();
-                    stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
-                    stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    stdout_supply_attrs
-                        .insert("supply_id".to_string(), Value::Int(stdout_id as i64));
-                    stdout_supply_attrs.insert("enc".to_string(), enc.clone());
-                    stdout_supply_attrs.insert(
-                        "native_descriptor_promise".to_string(),
-                        Value::Promise(stdout_descriptor),
-                    );
-                    let mut stderr_supply_attrs = HashMap::new();
-                    stderr_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
-                    stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    stderr_supply_attrs
-                        .insert("supply_id".to_string(), Value::Int(stderr_id as i64));
-                    stderr_supply_attrs.insert("enc".to_string(), enc.clone());
-                    stderr_supply_attrs.insert(
-                        "native_descriptor_promise".to_string(),
-                        Value::Promise(stderr_descriptor),
-                    );
-                    let mut merged_supply_attrs = HashMap::new();
-                    merged_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
-                    merged_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    merged_supply_attrs
-                        .insert("supply_id".to_string(), Value::Int(supply_id as i64));
-
-                    let mut attrs = HashMap::new();
-                    attrs.insert("cmd".to_string(), Value::array(positional));
-                    attrs.insert("started".to_string(), Value::Bool(false));
-                    attrs.insert("enc".to_string(), enc);
-                    attrs.insert(
-                        "stdout".to_string(),
-                        Value::make_instance(Symbol::intern("Supply"), stdout_supply_attrs),
-                    );
-                    attrs.insert(
-                        "stderr".to_string(),
-                        Value::make_instance(Symbol::intern("Supply"), stderr_supply_attrs),
-                    );
-                    attrs.insert(
-                        "supply".to_string(),
-                        Value::make_instance(Symbol::intern("Supply"), merged_supply_attrs),
-                    );
-                    if w_flag {
-                        attrs.insert("w".to_string(), Value::Bool(true));
-                    }
-                    return Ok(Value::make_instance(*class_name, attrs));
+                    // Shared single implementation with the VM's native fast
+                    // path (`try_native_builtin_construct`). Pure data assembly:
+                    // arg parsing + process-global supply ids + empty Supply
+                    // attributes. The process is only spawned later by `.start`.
+                    return Ok(Self::build_native_proc_async_value(*class_name, &args));
                 }
                 "utf8" | "utf16" => {
                     // Shared with the VM's native fast path (pure code-unit build).
