@@ -9,7 +9,7 @@ use Test;
 # dispatch matches the previous interpreter fallback), and that mutating methods
 # (push/pop) still work.
 
-plan 13;
+plan 28;
 
 class S is Array {}
 my $s = S.new;
@@ -34,3 +34,22 @@ is $s.elems, 4, 'pop mutates the instance';
 
 # the sort result must not have mutated the source order
 is $s.join(","), "3,1,2,4", 'non-mutating methods leave the instance untouched';
+
+# list-operation methods (previously missing from the is-Array delegation list,
+# so they wrongly treated the instance as a single element) now operate on the
+# backing storage, matching Rakudo.
+is $s.min, 1, 'min over is-Array elements';
+is $s.max, 4, 'max over is-Array elements';
+is $s.minmax.gist, "1..4", 'minmax over is-Array elements';
+is $s.sum, 10, 'sum over is-Array elements';
+is $s.reduce(* + *), 10, 'reduce over is-Array elements';
+is $s.keys.join(","), "0,1,2,3", 'keys (indices) of is-Array';
+is $s.values.join(","), "3,1,2,4", 'values of is-Array';
+is $s.kv.join(","), "0,3,1,1,2,2,3,4", 'kv of is-Array';
+is $s.pairs.map(*.value).join(","), "3,1,2,4", 'pairs of is-Array';
+is $s.antipairs.map(*.key).join(","), "3,1,2,4", 'antipairs of is-Array';
+is $s.classify({ $_ %% 2 })<True>.join(","), "2,4", 'classify over is-Array';
+is $s.rotor(2).map(*.join("")).join(","), "31,24", 'rotor over is-Array';
+is $s.combinations(4).elems, 1, 'combinations over is-Array';
+is $s.permutations.elems, 24, 'permutations over is-Array';
+is $s.all.so, True, 'all junction over is-Array';
