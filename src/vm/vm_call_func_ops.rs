@@ -1310,11 +1310,11 @@ impl Interpreter {
     /// original args and runs it as compiled bytecode via
     /// `compile_and_call_function_def` — the same path the trivial-proto fork uses —
     /// so the candidate body and its `nextsame`/`callsame`/`samewith` redispatch all
-    /// run VM-natively instead of tree-walking through interpreter `call_proto_dispatch`
-    /// + `run_block`. (The `is rw` writeback *through* a non-trivial proto body is a
-    /// separate pre-existing gap — the proto-dispatch frame carries the proto's
-    /// original args, not the caller's containers — and is unchanged here; it fails
-    /// identically on the interpreter path.)
+    /// run VM-natively instead of tree-walking through interpreter
+    /// `call_proto_dispatch` and `run_block`. (The `is rw` writeback *through* a
+    /// non-trivial proto body is a separate pre-existing gap — the proto-dispatch
+    /// frame carries the proto's original args, not the caller's containers — and is
+    /// unchanged here; it fails identically on the interpreter path.)
     ///
     /// Falls back to the interpreter's `call_proto_dispatch` (which owns the full
     /// `X::Multi::NoMatch` / `X::Multi::Ambiguous` reporting, `proto method`
