@@ -1427,6 +1427,34 @@ impl Interpreter {
                             | "EXISTS-POS"
                             | "DELETE-POS"
                             | "BIND-POS"
+                            // Numeric reductions / list folds over the elements.
+                            | "min"
+                            | "max"
+                            | "minmax"
+                            | "sum"
+                            | "reduce"
+                            | "produce"
+                            // Index/element views.
+                            | "kv"
+                            | "pairs"
+                            | "antipairs"
+                            | "keys"
+                            | "values"
+                            // Grouping and combinatorics.
+                            | "classify"
+                            | "categorize"
+                            | "combinations"
+                            | "permutations"
+                            | "rotor"
+                            | "batch"
+                            // Element selection (non-mutating).
+                            | "pick"
+                            | "roll"
+                            // Junction constructors over the elements.
+                            | "all"
+                            | "any"
+                            | "none"
+                            | "one"
                     );
                     if is_array_method
                         && !self.has_user_method(&cn, &method)
