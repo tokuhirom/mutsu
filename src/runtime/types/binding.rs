@@ -466,7 +466,7 @@ impl Interpreter {
                         format!("@{}", pd.name)
                     };
                     self.bind_param_value(&key, slurpy_value.clone());
-                    self.set_var_type_constraint(&key, pd.type_constraint.clone());
+                    self.bind_param_type_constraint(&key, pd.type_constraint.clone());
                 }
                 if let Some(sub_params) = &pd.sub_signature {
                     bind_sub_signature_from_value(self, sub_params, &slurpy_value)?;
@@ -504,7 +504,7 @@ impl Interpreter {
                     let capture_value = Value::capture(positional, named);
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, capture_value.clone());
-                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                     if let Some(sub_params) = &pd.sub_signature {
                         bind_sub_signature_from_value(self, sub_params, &capture_value)?;
@@ -523,7 +523,7 @@ impl Interpreter {
                     }
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, Value::hash(hash_items));
-                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                 } else if pd.double_slurpy {
                     // **@ (non-flattening slurpy): keep each argument as-is, skip Pairs
@@ -542,7 +542,7 @@ impl Interpreter {
                             format!("@{}", pd.name)
                         };
                         self.bind_param_value(&key, Value::real_array(items));
-                        self.set_var_type_constraint(&key, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&key, pd.type_constraint.clone());
                     }
                 } else if !pd.name.starts_with('@') {
                     // *$x -- slurpy scalar: captures what would otherwise be the
@@ -565,7 +565,7 @@ impl Interpreter {
                     }
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, value.clone());
-                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                 } else {
                     let mut items = Vec::new();
@@ -638,7 +638,7 @@ impl Interpreter {
                             format!("@{}", pd.name)
                         };
                         self.bind_param_value(&key, slurpy_value.clone());
-                        self.set_var_type_constraint(&key, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&key, pd.type_constraint.clone());
                     }
                     // Check where constraint for slurpy params
                     if let Some(where_expr) = &pd.where_constraint {
@@ -761,7 +761,7 @@ impl Interpreter {
                             rw_bindings.push((pd.name.clone(), source_name));
                         }
                         self.bind_param_value(&pd.name, bound_value);
-                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                         if let Some(sub_params) = &pd.sub_signature {
                             bind_named_rename_sub_signature(self, sub_params, &val)?;
                         }
@@ -785,7 +785,10 @@ impl Interpreter {
                                 && key == inner_key
                             {
                                 self.bind_param_value(&pd.name, *inner_val.clone());
-                                self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                                self.bind_param_type_constraint(
+                                    &pd.name,
+                                    pd.type_constraint.clone(),
+                                );
                                 bind_named_rename_sub_signature(self, sub_params, &inner_val)?;
                                 found = true;
                                 break;
@@ -892,11 +895,11 @@ impl Interpreter {
                         self.bind_type_capture(captured_name, &value);
                         if !pd.name.is_empty() {
                             self.bind_param_value(&pd.name, value.clone());
-                            self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                            self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                         }
                     } else if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, value.clone());
-                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                     // For renamed named params like :foo($y) = $x, also bind the
                     // sub-signature variable ($y) to the default value.
@@ -918,7 +921,7 @@ impl Interpreter {
                     if !self.env.contains_key(&pd.name) {
                         let value = Self::missing_optional_param_value(pd);
                         self.bind_param_value(&pd.name, value);
-                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                 }
             } else if pd.name == "__subsig__"
@@ -1491,7 +1494,10 @@ impl Interpreter {
                                 }
                             }
                             self.bind_param_value(&pd.name, Value::hash(map));
-                            self.set_var_type_constraint(&pd.name, bound_type_constraint.clone());
+                            self.bind_param_type_constraint(
+                                &pd.name,
+                                bound_type_constraint.clone(),
+                            );
                             if let Some(sub_params) = &pd.sub_signature {
                                 let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
                                 bind_sub_signature_from_value(self, sub_params, &target)?;
@@ -1522,7 +1528,7 @@ impl Interpreter {
                             rw_bindings.push((pd.name.clone(), source_name.clone()));
                         }
                         self.bind_param_value(&pd.name, value);
-                        self.set_var_type_constraint(&pd.name, bound_type_constraint.clone());
+                        self.bind_param_type_constraint(&pd.name, bound_type_constraint.clone());
                     }
                     if let Some(sub_params) = &pd.sub_signature {
                         let target = self
@@ -1544,7 +1550,7 @@ impl Interpreter {
                         self.bind_type_capture(captured_name, &value);
                     } else if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, value);
-                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                     if let Some(sub_params) = &pd.sub_signature {
                         let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
@@ -1576,7 +1582,7 @@ impl Interpreter {
                 } else if !pd.name.is_empty() {
                     // Optional parameters use typed empties/type objects when omitted.
                     self.bind_param_value(&pd.name, Self::missing_optional_param_value(pd));
-                    self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                    self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                 }
             }
         }
