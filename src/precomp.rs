@@ -14,7 +14,11 @@
 //!
 //! A cache entry is valid when ALL of the following match:
 //! - The source file modification time matches the stored mtime
-//! - The interpreter version matches the stored version stamp
+//! - The source content hash matches the stored hash
+//! - The interpreter version matches the stored version stamp. The stamp embeds
+//!   the running executable's mtime, so a rebuilt mutsu (with different parse /
+//!   prelude-injection / AST-lowering logic) never reuses an older build's cache
+//!   — the stored AST is post-transform, and those transforms live in the binary.
 //!
 //! ## Serialization
 //!
@@ -35,12 +39,36 @@ const CACHE_MAGIC: &[u8; 4] = b"MTSU";
 
 /// The interpreter version stamp embedded in cache files.
 /// Cache is invalidated whenever this changes.
-/// Includes both the crate version and a cache format version that should be
-/// bumped whenever the AST enum layout changes (adding/removing/reordering variants).
+/// Includes the crate version, a cache format version that should be bumped
+/// whenever the AST enum layout changes (adding/removing/reordering variants),
+/// and the running executable's modification time.
+///
+/// The executable mtime is essential: the cache stores the AST *after* compile-
+/// time transforms (`merge_unit_class`, the NativeCall `Pointer` / `Rational`
+/// prelude injection, roast-directive preprocessing). Those transforms live in
+/// the binary, not the source, so a rebuilt mutsu that changes any of them must
+/// not reuse a cache produced by an older build. The crate version is a fixed
+/// "0.1.0" across every dev build and CACHE_FORMAT_VERSION only tracks enum
+/// layout, so neither catches logic changes — which is why a stale post-injection
+/// AST could survive the prelude-injection fix and resurface as an undeclared
+/// `Pointer`. Stamping the exe mtime invalidates the cache on every rebuild,
+/// removing the need to manually `rm` the cache after parser/compiler changes.
 fn interpreter_version() -> String {
     // Bump CACHE_FORMAT_VERSION when Stmt/Expr/Value enum variants change
     const CACHE_FORMAT_VERSION: u32 = 6;
-    format!("{}+cf{}", env!("CARGO_PKG_VERSION"), CACHE_FORMAT_VERSION)
+    let exe_stamp = std::env::current_exe()
+        .and_then(fs::metadata)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!(
+        "{}+cf{}+exe{}",
+        env!("CARGO_PKG_VERSION"),
+        CACHE_FORMAT_VERSION,
+        exe_stamp
+    )
 }
 
 /// Compute a deterministic hash of a canonical file path for use as cache filename.
@@ -279,6 +307,64 @@ mod tests {
 
         // Cache should now be invalid
         assert!(load_cached_ast(&source).is_none());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn version_stamp_includes_exe_mtime() {
+        // The version stamp must embed the running executable's mtime so a
+        // rebuilt binary invalidates caches that hold post-transform ASTs.
+        // The test runner is a real on-disk binary, so the stamp must resolve
+        // to a non-zero value (a "+exe0" fallback would silently disable the
+        // protection).
+        let v = interpreter_version();
+        assert!(
+            v.contains("+exe"),
+            "version stamp must carry exe component: {v}"
+        );
+        assert!(
+            !v.ends_with("+exe0"),
+            "exe mtime should resolve to a real timestamp, got: {v}"
+        );
+    }
+
+    #[test]
+    fn cache_invalidated_on_version_mismatch() {
+        // A cache whose stored version no longer matches the current
+        // interpreter_version() (as happens when the binary is rebuilt with
+        // different parse/injection logic) must be rejected even when the
+        // source file is byte-for-byte unchanged.
+        let stmts = vec![Stmt::Say(vec![Expr::Literal(Value::Int(7))])];
+
+        let dir = tempdir("version");
+        let source = dir.join("test3.rakumod");
+        {
+            let mut f = fs::File::create(&source).unwrap();
+            writeln!(f, "say 7;").unwrap();
+        }
+
+        // Write a cache entry by hand with a stale version stamp.
+        let canonical = source.canonicalize().unwrap();
+        let cdir = cache_dir().unwrap();
+        let cache_file = cdir.join(format!("{}.bin", path_hash(&canonical)));
+        let meta = CacheMetadata {
+            mtime_nanos: source_mtime_nanos(&source).unwrap(),
+            source_hash: source_content_hash(&source),
+            version: "0.0.0+cf0+exe0".to_string(),
+        };
+        let meta_bytes = bincode::serialize(&meta).unwrap();
+        let ast_bytes = bincode::serialize(&stmts).unwrap();
+        let mut data = Vec::new();
+        data.extend_from_slice(CACHE_MAGIC);
+        data.extend_from_slice(&(meta_bytes.len() as u32).to_le_bytes());
+        data.extend_from_slice(&meta_bytes);
+        data.extend_from_slice(&ast_bytes);
+        fs::write(&cache_file, &data).unwrap();
+
+        // Stale version → cache must be rejected (and removed).
+        assert!(load_cached_ast(&source).is_none());
+        assert!(!cache_file.exists(), "stale cache file should be removed");
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -223,7 +223,12 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
     / `t/anon-param-trait.t`。**= 薄い DBDish::SQLite 互換層を pure-Raku モジュールとして書ける状態。**
   - **残（より広いモジュール互換に）**: ① `CArray[uint8]`・`CArray[Str]` / ② `is repr('CStruct')` 構造体 /
     ③ callback（汎用 C コールバック）。DBDish::SQLite 自体は上記 prepared-statement API で原理的に駆動可能。
-  - **DBIish/DBDish**: pure-Raku ドライバを上記 NativeCall sub 群で実装可能（次の有力タスク＝薄い DBDish::SQLite 互換層）。
+  - **✅ 薄い DBDish::SQLite 互換層（pure-Raku モジュール）が動作**: `t/lib/DBDishLite.rakumod`（`use`-可能・
+    `connect`→`Connection`・`.execute`→行ハッシュ配列・`.close`）が実 SQLite で CREATE/INSERT/ORDER BY/WHERE SELECT を
+    往復（担保＝`t/dbdish-lite.t`）。= ウェブブログの DB 層が再利用可能モジュールとして揃った。これを暴いた precomp
+    キャッシュ staleness バグ（注入後 AST をキャッシュするが version stamp が dev ビルド間で不変）は exe-mtime stamp で修正済。
+  - **DBIish/DBDish（off-the-shelf）**: 実配布版はまだ 3 機能待ち（regex "Unmatched (" parse / `Rakudo::Internals.REGISTER-DYNAMIC` /
+    `is encoded(...)` NativeCall param trait）。手書き互換層は上記の通り動く。
 - **JSON は native 実装済み**（`to-json`/`from-json`・#3402・news 参照）。Template::Mustache 91/92-specs の残（別軸・
   本タスク外）= 実 spec の rendering ギャップ（delimiter 永続化／inheritable partials／lambda）＋ 最初の spec のみ
   `+$spec.value`=0 になる subtest/Seq-consumption 系バグ（itemization とは独立）。
