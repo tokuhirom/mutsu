@@ -75,6 +75,20 @@ pub(super) fn keyword<'a>(kw: &str, input: &'a str) -> Option<&'a str> {
     }
 }
 
+/// True when `input` begins a `unit class`/`unit role`/`unit grammar`
+/// declaration (the semicolon, rest-of-unit form), whose following statements
+/// must be captured as the type's body. `unit module`/`unit package` are
+/// deliberately excluded — their package context is set compiler-side instead.
+fn starts_unit_class_role_grammar(input: &str) -> bool {
+    let Some(r) = keyword("unit", input) else {
+        return false;
+    };
+    let Ok((r, _)) = ws1(r) else {
+        return false;
+    };
+    keyword("class", r).is_some() || keyword("role", r).is_some() || keyword("grammar", r).is_some()
+}
+
 /// Parse an identifier (alphanumeric, _, -).
 /// Hyphen is only allowed when followed by an alphabetic char (not a digit).
 fn ident(input: &str) -> PResult<'_, String> {
@@ -636,6 +650,22 @@ fn stmt_list_with_mode(
                     .to_string(),
                 Some(r.len()),
             ));
+        }
+        // `unit class`/`unit role`/`unit grammar` (semicolon form): the rest of
+        // the compilation unit is the body of the declared type — capture it
+        // like `unit sub MAIN`. Without this, a top-level `has`/`method` after
+        // `unit class Foo;` is seen as outside any package and rejected with
+        // X::Attribute::NoPackage. (`unit module`/`unit package` are excluded:
+        // the compiler keeps their package context for the rest of the scope.)
+        if allow_mainline_capture && starts_unit_class_role_grammar(r) {
+            let (after_decl, mut decl) = class::unit_module_stmt(r)?;
+            let (tail_rest, tail_stmts) = stmt_list_with_mode(after_decl, false, emit_setline)?;
+            match &mut decl {
+                Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => *body = tail_stmts,
+                _ => {}
+            }
+            stmts.push(decl);
+            return Ok((tail_rest, stmts));
         }
         // Emit source line info for deprecation tracking and error reporting.
         let line = crate::parser::primary::current_line_number(r);

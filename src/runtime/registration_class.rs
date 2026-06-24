@@ -2895,7 +2895,12 @@ impl Interpreter {
         let mut role_def = RoleDef {
             attributes: Vec::new(),
             methods: HashMap::new(),
-            is_stub_role: false,
+            // A yada-body forward declaration (`role Foo { ... }`) is a stub role:
+            // mark it so the real definition that follows replaces it instead of
+            // being treated as a second, conflicting role of the same name (which
+            // made transitively-composed methods like `add_route` look like a
+            // cross-role X::Role::Composition::Conflict).
+            is_stub_role: is_stub_body,
             is_hidden: false,
             is_rw: role_is_rw,
             captured_env: None,

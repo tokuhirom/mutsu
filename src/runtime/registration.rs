@@ -163,7 +163,15 @@ impl Interpreter {
             let mut stubs = Vec::new();
             let mut concrete = Vec::new();
             for def in all_defs {
-                if Self::is_stub_method_def(&def) {
+                // Only a stub that came FROM A COMPOSED ROLE is a required method
+                // the class must implement. A stub declared directly in the class
+                // body (`class A { method foo {...} }`, role_origin == None) is an
+                // abstract method: the class definition succeeds and the stub stays
+                // a callable method that dies ("Stub code executed") only if invoked
+                // — it must NOT raise X::Role::Composition::Unimplemented. So keep
+                // class-direct stubs as concrete; only role-origin stubs are
+                // requirements.
+                if Self::is_stub_method_def(&def) && def.role_origin.is_some() {
                     stubs.push(def);
                 } else {
                     concrete.push(def);

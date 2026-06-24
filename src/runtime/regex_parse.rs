@@ -4043,8 +4043,11 @@ impl Interpreter {
                             }
                             continue;
                         }
-                        if ch == '\'' {
-                            // Single-quoted string — skip until closing quote
+                        if ch == '\'' && angle_depth == 0 {
+                            // Single-quoted string — skip until closing quote.
+                            // Inside a `<...>` assertion / char class (angle_depth>0)
+                            // a quote is a literal member (e.g. `<-['"]>`), not a
+                            // string delimiter, so it must not swallow the group.
                             group_pattern.push(ch);
                             for sq in chars.by_ref() {
                                 group_pattern.push(sq);
@@ -4054,8 +4057,12 @@ impl Interpreter {
                             }
                             continue;
                         }
-                        if ch == '"' {
-                            // Double-quoted string — skip until closing quote
+                        if ch == '"' && angle_depth == 0 {
+                            // Double-quoted string — skip until closing quote.
+                            // Inside a `<...>` assertion / char class (angle_depth>0)
+                            // a `"` is a literal member (e.g. `<-["]>`), not a string
+                            // delimiter — without this guard it swallowed the closing
+                            // `)` and produced a spurious "Unmatched ( in regex".
                             group_pattern.push(ch);
                             for dq in chars.by_ref() {
                                 group_pattern.push(dq);
