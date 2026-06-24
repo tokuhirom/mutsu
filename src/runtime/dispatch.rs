@@ -1240,7 +1240,7 @@ impl Interpreter {
         None
     }
 
-    pub(super) fn resolve_proto_function(&self, name: &str) -> Option<FunctionDef> {
+    pub(crate) fn resolve_proto_function(&self, name: &str) -> Option<FunctionDef> {
         if name.contains("::") {
             return self
                 .registry()
@@ -1708,7 +1708,7 @@ impl Interpreter {
         body.iter().map(Self::rewrite_proto_dispatch_stmt).collect()
     }
 
-    fn resolve_proto_candidate_with_types(
+    pub(crate) fn resolve_proto_candidate_with_types(
         &mut self,
         name: &str,
         arg_values: &[Value],
