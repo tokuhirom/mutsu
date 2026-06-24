@@ -2725,6 +2725,7 @@ impl Interpreter {
                         }),
                         'r' => RegexAtom::Literal('\r'),
                         'R' => RegexAtom::Newline, // \R matches any newline sequence
+                        'e' => RegexAtom::Literal('\u{001B}'), // escape (ESC)
                         'f' => RegexAtom::Literal('\u{000C}'), // form feed
                         'F' => RegexAtom::CharClass(CharClass {
                             negated: true,
@@ -5513,6 +5514,7 @@ impl Interpreter {
                     'n' => EscResult::Char('\n'),
                     't' => EscResult::Char('\t'),
                     'r' => EscResult::Char('\r'),
+                    'e' => EscResult::Char('\u{001B}'), // escape (ESC)
                     'f' => EscResult::Char('\u{000C}'),
                     'b' => EscResult::Char('\u{0008}'), // backspace
                     'B' => EscResult::NegChar('\u{0008}'), // not backspace
@@ -5959,6 +5961,7 @@ impl Interpreter {
                 'n' => Some('\n'),
                 't' => Some('\t'),
                 'r' => Some('\r'),
+                'e' => Some('\u{001B}'),
                 'f' => Some('\u{000C}'),
                 '0' => Some('\0'),
                 'c' => {

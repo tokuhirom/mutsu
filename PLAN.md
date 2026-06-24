@@ -253,15 +253,18 @@ JSON + cookie）が end-to-end で動作（`tmp/webframe/blog.raku`）。HTTP::S
 IO::Socket::Async`）で `whenever … done` 並行ギャップ待ち＝同期 INET パスが本命。surfaced bugs: readonly-param
 フレーム間漏れ（#3539 修正）/ imported-sub shadows builtin（#3538 テスト）/ stored Regex `<$var>` lexical capture 喪失（未修正・別軸）。
 
-**🔴 既存（off-the-shelf）フレームワークの律速＝非同期ソケットサーバ（2026-06-24 確定）**: Bailador（古い・同期 HTTP::Easy）は
-2019年製で**raku 自身でもコンパイル不可**＝メンテ停止。現行のメンテ済みフレームワーク（**Humming-Bird 4.0.0**・Cro）は**全て
-非同期サーバ**（`react whenever IO::Socket::Async.listen` ＋ `$conn.Supply(:bin)`）を使う。∴ **どのフレームワークを選んでも、mutsu の
-非同期ソケットサーバ（`react`/`whenever`/`IO::Socket::Async`）が完成するまで実 HTTP 配信はできない**＝これがフレームワーク選定では
-回避不能な本質的律速（別軸 §I の並行性キャンペーン）。`%?RESOURCES`（配布リソースファイル・MIME::Types が使用）も module-system ギャップ。
-既存フレームワーク互換の過程で **8 件の一般修正を landed**：#3542（Bailador 由来 6：`unit class/role`＋has・クラス yada スタブ・
-regex `<-["]>`・forward 宣言ロール型・`is_stub_role`・推移 multi role 競合）＋ #3544（Humming-Bird::Glue 由来 2：Hash は Map・
-ハッシュリテラル内 ternary 要素）。**Humming-Bird::Glue はパース可能に**。詳細＝memory `project-bailador-existing-framework`。
-次に既存フレームワークを実配信するなら §I の非同期サーバ着手が前提；server-less ルート dispatch なら Core ロード（`%?RESOURCES`）だけで可。
+**🟢 既存（off-the-shelf）フレームワーク Humming-Bird 4.0.0 が LOAD＋LISTEN＋accept＋decode まで動作（2026-06-24, #3549）**:
+maintained な現行フレームワーク。**Humming-Bird::Core がロードでき、サーバが実 TCP を bind/accept し `Request.decode` がリクエストを
+パースする**。付随して 6 件の一般修正を landed（#3549）: ① `CREATE` が宣言属性 slot を確保（`self.CREATE!SET-SELF`、MIME::Types）
+② `%?RESOURCES` は実行中ルーチンのパッケージ優先（ロード中外側モジュールでなく）③ `.Buf`/`.Blob` coercion ④ `use strict` が
+属性 twigil を未宣言扱いしない ⑤ `use strict` が `__`接頭の内部一時変数を未宣言扱いしない ⑥ regex の `\e`（ESC）。
+**重要な訂正**: 「非同期サーバが律速で配信不可」は**誤り** — 素の `react{whenever IO::Socket::Async.listen{whenever
+$conn.Supply(:bin){…}}}` は**実 curl に HTTP 配信できる**（`tmp/pcurl.raku` 実証）。完全配信まで残る 2 ブロッカー（別軸・深い）:
+**B1** = 型付きパラメータ→呼び出し元同名 lexical への `var_type_constraint` 漏れ（グローバル name-keyed HashMap、env-first→fallback の
+fallback が stale param 制約を返す。env-authoritative 化は subset-6e の EVAL 内 subset `where` 再代入を壊す＝fallback 必須。正攻法＝
+HashMap を呼び出し境界で scope し `my`宣言/subset 制約は残す）。**B2** = detach した `start{react{whenever $chan{}}}` が await されない限り駆動されない
+（HB の `!respond` ハンドラが発火しない）＝並行スケジューリング campaign。詳細＝memory `session-24-humming-bird-loads`。
+（先行して #3542 6 件＋#3544 2 件の一般修正も landed＝Bailador/Glue 由来。）
 
 **✅ 完動／native 化したモジュール（詳細は news/2026-06.md ＋ memory）**: Template::Mustache（#3395）/ JSON `to-json`・
 `from-json` native（#3402）/ File::Temp 0.0.12（#3399）/ File::Directory::Tree 0.2 / HTTP::Parser 14/14（#3420/#3422/#3423）/

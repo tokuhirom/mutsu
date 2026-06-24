@@ -70,6 +70,32 @@ pub(super) fn dispatch(
     if matches!(method, "Int" | "Numeric" | "Real" | "Num") && super::is_lazy_count_source(target) {
         return Some(super::range_elems_lazy_failure("elems"));
     }
+    // `.Buf` / `.Blob` on any byte-string (Buf/Blob/utf8/blob8/...) returns a
+    // value of the requested role carrying the same bytes. `utf8` (what
+    // `.encode` produces) does Blob, so `.Buf`/`.Blob` reinterpret those bytes
+    // as a plain `Buf[uint8]` / `Blob[uint8]`. Humming-Bird's HTTPServer uses
+    // `"\r\n".encode.Buf` to build its constant delimiters.
+    if matches!(method, "Buf" | "Blob")
+        && let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target
+        && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
+    {
+        let bytes = attributes
+            .as_map()
+            .get("bytes")
+            .cloned()
+            .unwrap_or_else(|| Value::array(Vec::new()));
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("bytes".to_string(), bytes);
+        let target_class = if method == "Buf" { "Buf" } else { "Blob" };
+        return Some(Some(Ok(Value::make_instance(
+            Symbol::intern(target_class),
+            attrs,
+        ))));
+    }
     match method {
         "self" => {
             // For unhandled Failures, .self throws the exception

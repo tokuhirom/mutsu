@@ -629,7 +629,10 @@ impl Interpreter {
     }
 
     /// Dispatch the CREATE method for CustomType and Package targets.
-    pub(super) fn dispatch_create(&self, target: &Value) -> Option<Result<Value, RuntimeError>> {
+    pub(super) fn dispatch_create(
+        &mut self,
+        target: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
         match target {
             Value::CustomType(c) => Some(Ok(Value::custom_type_instance(
                 c.id,
@@ -640,10 +643,44 @@ impl Interpreter {
                 crate::value::next_instance_id(),
             ))),
             Value::Package(class_name) => {
-                Some(Ok(Value::make_instance(*class_name, HashMap::new())))
+                // `CREATE` allocates a bare instance with all declared attribute
+                // slots present (in their type-default empty state). It does NOT
+                // run default-value expressions or BUILD/TWEAK — those belong to
+                // `bless`/`BUILDALL`. Allocating the slots is what makes a later
+                // `$!attr = ...` (e.g. in a `self.CREATE!SET-SELF: ...` private
+                // builder, as MIME::Types uses) persist: the attribute write-back
+                // only updates keys that already exist on the instance.
+                let attributes = self.create_default_attr_slots(&class_name.resolve());
+                Some(Ok(Value::make_instance(*class_name, attributes)))
             }
             _ => None,
         }
+    }
+
+    /// Build the attribute map for a freshly `CREATE`d instance: every declared
+    /// attribute keyed by its bare name with a type-default empty value (native
+    /// numerics → 0, `str` → "", everything else → `Nil`). Unlike `bless`, this
+    /// does not evaluate `has $.x = EXPR` default expressions.
+    fn create_default_attr_slots(&mut self, class_name: &str) -> HashMap<String, Value> {
+        let mut attributes = HashMap::new();
+        if self.registry().classes.contains_key(class_name) {
+            for (attr_name, _is_public, _default, _is_rw, _, _, _) in
+                self.collect_class_attributes(class_name)
+            {
+                let type_constraint = self.get_attr_type_constraint(class_name, &attr_name);
+                let val = match type_constraint.as_deref() {
+                    Some(
+                        "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+                        | "uint32" | "uint64" | "byte" | "atomicint",
+                    ) => Value::Int(0),
+                    Some("num" | "num32" | "num64") => Value::Num(0.0),
+                    Some("str") => Value::str("".to_string()),
+                    _ => Value::Nil,
+                };
+                attributes.insert(attr_name, val);
+            }
+        }
+        attributes
     }
 
     /// Dispatch the "now" method for DateTime subclasses.
