@@ -174,12 +174,25 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     stateful 文脈で後続コア `run` を mis-bind（subtest ブロックが `1..0`/`1..1` で早期終了）＝PR-2 の builtin-shadow hazard の default-param 版。
     **安全実装の方向**：builtin-shadow 単一候補パスは default-param を OTF しない（fallback 維持）まま、genuine multi 候補と非builtin 単一だけ許す
     ——narrow 化の安全確認には full roast 走が要る。fallback payoff 85.7%。impl + pin（`t/multi-default-otf-dispatch.t` 16）は branch `multi-dispatch-default-otf` に保存。
-  - [ ] **非trivial proto body の VM 化（次の本丸・設計メモ）**: `proto foo($x) { say "x"; {*} }` の body が `eval_block_value`
-    （tree-walk）で走る（実測 100% fallback）。VM 化の3要素＝①proto body（`rewrite_proto_dispatch_stmts` で `{*}`→
-    `__PROTO_DISPATCH__` call 済み）を `compile_and_call_function_def` 相当で compiled 実行 ②`__PROTO_DISPATCH__`（現 `builtins.rs:386`
-    →`call_proto_dispatch`・interpreter）を VM ネイティブ化し winner を OTF 実行 ③`proto_dispatch_stack`（`{*}` の args/method_ctx を保持）の
-    push/pop を VM 経路でも維持。難所＝proto body 内 `{*}` が compiled bytecode から `call_proto_dispatch` を呼ぶ際の env/routine_stack/
-    proto_dispatch_stack 整合と、候補側の rw-binding writeback。`vm_resolve_trivial_proto_candidate`（trivial 専用）を非trivial に拡張する形。
+  - [x] **非trivial proto body の VM 化（①proto body compiled = 完了・#TBD）**: `proto foo($x) { say "x"; {*} }` の body は
+    かつて `eval_block_value`（tree-walk・実測 100% fallback）で走っていた。①proto body（`rewrite_proto_dispatch_stmts` で `{*}`→
+    `__PROTO_DISPATCH__` call 済み）を `otf_compile_function_def`＋`call_compiled_function_named` で compiled 実行する
+    `vm_try_run_nontrivial_proto_body` を `dispatch_func_call_inner` の proto fork（trivial 解決の次）に追加。proto body は
+    dispatcher でありcandidateでないので multi-dispatch frame は push せず（`compile_and_call_function_def` は使わない）、
+    `proto_dispatch_stack` を push/pop（`push_proto_dispatch_frame`/`pop_proto_dispatch_frame` accessor 経由・args=ORIGINAL
+    proto args で interpreter `call_proto_function` と一致）するだけ。proto sig gate（`method_args_match`）＋`def_is_otf_compilable`
+    ＋非`state` を gate に、非適格 proto（class/role/start body・default/where/code-param sig）は None→interpreter fallback 維持。
+    `{*}`（compiled body 内の `__PROTO_DISPATCH__()`）は依然 interpreter `call_proto_dispatch`（builtins.rs:386 経由）に届くので
+    候補は tree-walk のまま＝②③は follow-up。実測 proto 名（p1-p4/fib/nm…）が fallback-by-name から消え `__PROTO_DISPATCH__` のみ残る。
+    pin=`t/proto-nontrivial-body-vm.t`(13)。env.t/system.t/cur-current-distribution.t＋S06-multi proto/syntax/lexical-multis ローカル全 PASS。
+    **★既知の別軸バグ（main でも同一・本スライスで不変）**: `is rw` proto param の writeback は非trivial proto body を越えて伝播しない
+    （`inc1($v)` が 10 のまま・interpreter path でも同じ）／複数 `{*}` を rvalue で使う body（`my $a={*}`）は Nil。候補側 rw-binding
+    writeback の真の修正は②③（候補 OTF 実行）と同時が筋。
+  - [ ] **②③候補 OTF 実行（follow-up・次の本丸）**: ②`__PROTO_DISPATCH__`（現 `builtins.rs:386`→`call_proto_dispatch`・interpreter）を
+    VM ネイティブ化（`dispatch_func_call_inner` 冒頭で `name=="__PROTO_DISPATCH__"` を intercept→`vm_call_proto_dispatch(compiled_fns)`）し
+    winner を `compile_and_call_function_def` で OTF 実行 ③その際の env/routine_stack/proto_dispatch_stack 整合と候補側 rw-binding writeback。
+    非OTF候補/no-match/ambiguity/proto-method（method_ctx）は interpreter `call_proto_dispatch` に委譲。builtin-shadow hazard は候補名が
+    proto名（multi 持ち）→`otf_call_cache` insert skip されるので非該当の見込み。
     **★default-OTF の教訓**: multi-dispatch 変更は make test + 局所 whitelist で緑でも release roast で broad 回帰しうる（[[project_multi_dispatch_otf_default_deferred]]）。
     実装時は env.t/system.t/cur-current-distribution.t（subprocess+Test::Util+subtest）を必ずローカル再現確認し、full roast を CI に委ねる。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）/

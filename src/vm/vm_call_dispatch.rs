@@ -81,6 +81,73 @@ impl Interpreter {
     /// Compile a FunctionDef on-the-fly to bytecode and execute via the Interpreter.
     /// This avoids the interpreter's tree-walking execution path.
     #[allow(dead_code)]
+    /// Compile a `FunctionDef` on-the-fly to a `CompiledFunction`, caching by the
+    /// body fingerprint (+ package, which scopes compile-time pseudo-variables
+    /// like `$?PACKAGE`). Caching is essential to preserve state-variable identity
+    /// across calls. Shared by `compile_and_call_function_def` and the non-trivial
+    /// proto-body runner (ledger §D, multi-dispatch VM-ization), so both go through
+    /// the same compile/cache path.
+    pub(super) fn otf_compile_function_def(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+    ) -> CompiledFunction {
+        let pkg = def.package.resolve();
+        let fingerprint =
+            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+        let cache_key = {
+            let mut hasher = std::hash::DefaultHasher::new();
+            std::hash::Hash::hash(&fingerprint, &mut hasher);
+            std::hash::Hash::hash(&pkg, &mut hasher);
+            std::hash::Hasher::finish(&hasher)
+        };
+        if let Some(cached) = self.otf_compile_cache.get(&cache_key) {
+            return cached.clone();
+        }
+        let cc = {
+            let mut compiler = crate::compiler::Compiler::new();
+            if !pkg.is_empty() && pkg != "GLOBAL" {
+                compiler.set_current_package(pkg.to_string());
+            }
+            // Resolve $?DISTRIBUTION from the function's defining package
+            compiler.current_distribution = self
+                .package_distributions
+                .get(&pkg)
+                .cloned()
+                .or_else(|| self.current_distribution.clone());
+            compiler.compile_routine_closure_body(&def.params, &def.param_defs, &def.body)
+        };
+        let deprecated_info = def.deprecated_message.as_ref().map(|msg| {
+            let kind = if def.is_method { "Method" } else { "Sub" };
+            (
+                kind.to_string(),
+                def.name.resolve(),
+                def.package.resolve(),
+                msg.clone(),
+            )
+        });
+        let mut cf = CompiledFunction {
+            code: cc,
+            params: def.params.clone(),
+            param_defs: def.param_defs.clone(),
+            return_type: def.return_type.clone(),
+            fingerprint,
+            empty_sig: def.empty_sig,
+            is_rw: def.is_rw,
+            is_raw: def.is_raw,
+            param_local_slots: None,
+            has_inner_subs: false,
+            named_param_slots: None,
+            deprecated_info,
+            declared_locals: None,
+        };
+        cf.precompute_param_local_slots();
+        cf.precompute_named_param_slots();
+        cf.detect_inner_subs();
+        cf.compute_declared_locals();
+        self.otf_compile_cache.insert(cache_key, cf.clone());
+        cf
+    }
+
     pub(super) fn compile_and_call_function_def(
         &mut self,
         def: &crate::ast::FunctionDef,
@@ -98,66 +165,7 @@ impl Interpreter {
         let name = def.name.resolve();
         let pkg = def.package.resolve();
 
-        let fingerprint =
-            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
-
-        // Use cached compilation if available, otherwise compile on-the-fly.
-        // Caching is essential to preserve state variable identity across calls.
-        // The cache key includes the package name because compile-time
-        // pseudo-variables like $?PACKAGE depend on the compilation context.
-        let cache_key = {
-            let mut hasher = std::hash::DefaultHasher::new();
-            std::hash::Hash::hash(&fingerprint, &mut hasher);
-            std::hash::Hash::hash(&pkg, &mut hasher);
-            std::hash::Hasher::finish(&hasher)
-        };
-        let cf = if let Some(cached) = self.otf_compile_cache.get(&cache_key) {
-            cached.clone()
-        } else {
-            let cc = {
-                let mut compiler = crate::compiler::Compiler::new();
-                if !pkg.is_empty() && pkg != "GLOBAL" {
-                    compiler.set_current_package(pkg.to_string());
-                }
-                // Resolve $?DISTRIBUTION from the function's defining package
-                compiler.current_distribution = self
-                    .package_distributions
-                    .get(&pkg)
-                    .cloned()
-                    .or_else(|| self.current_distribution.clone());
-                compiler.compile_routine_closure_body(&def.params, &def.param_defs, &def.body)
-            };
-            let deprecated_info = def.deprecated_message.as_ref().map(|msg| {
-                let kind = if def.is_method { "Method" } else { "Sub" };
-                (
-                    kind.to_string(),
-                    def.name.resolve(),
-                    def.package.resolve(),
-                    msg.clone(),
-                )
-            });
-            let mut cf = CompiledFunction {
-                code: cc,
-                params: def.params.clone(),
-                param_defs: def.param_defs.clone(),
-                return_type: def.return_type.clone(),
-                fingerprint,
-                empty_sig: def.empty_sig,
-                is_rw: def.is_rw,
-                is_raw: def.is_raw,
-                param_local_slots: None,
-                has_inner_subs: false,
-                named_param_slots: None,
-                deprecated_info,
-                declared_locals: None,
-            };
-            cf.precompute_param_local_slots();
-            cf.precompute_named_param_slots();
-            cf.detect_inner_subs();
-            cf.compute_declared_locals();
-            self.otf_compile_cache.insert(cache_key, cf.clone());
-            cf
-        };
+        let cf = self.otf_compile_function_def(def);
 
         // Cache by name for fast lookup in exec_call_func_op — but never for a
         // multi name. The name-keyed cache is type-blind, so caching one multi
