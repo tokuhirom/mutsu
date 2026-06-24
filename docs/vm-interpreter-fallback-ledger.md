@@ -656,6 +656,14 @@
   自名に解決され gate に掛からず interpreter 維持。pin `t/native-seq-ctor.t`(11・raku/mutsu 双方 PASS。`.raku` の `$(...)` itemization 差は pre-existing・
   無関係)。S32-list/seq.t(50)/skip.t/tail.t/rotor.t・S07-iterators/range-iterator.t(103) 全緑。**残 `new` fallback＝Proc::Async（pure・次）/
   IO::Socket::INET（io_handles・次）/CallFrame〔call stack carrier・別軸〕。**
+- **2026-06-24 (§D ③ = `Proc::Async.new(@cmd, :w, :enc)` を VM ネイティブ化, #3535)**: 前々エントリで「state 依存」と保守分類していた
+  `Proc::Async.new` を再評価し native 化。**ctor は完全 pure data**＝引数パース（positional command ＋ `:w`/`:enc` flag）＋3 本の
+  process-global supply id（`next_supply_id`＝bare global counter）＋空の stdout/stderr/merged `Supply` instance 構築のみ。**実プロセス spawn は
+  `.start` 側**＝ctor 時は env/registry/io_handles/user code を一切触らない（`&self` 依存ゼロ）。`dispatch_new` の Proc::Async arm（~66 行）を新 static
+  helper `build_native_proc_async_value(class_name, args)` に**丸ごと抽出**（interpreter arm は delegation）し、VM は既存の `try_native_builtin_construct`
+  に `cn=="Proc::Async"` arm を `Promise`/`Channel`/`Supplier` と同型で wire＝**1 操作 = 1 実装**・byte-identical。pin `t/native-proc-async-ctor.t`(8・
+  raku/mutsu 双方 PASS。実 echo/cat round-trip ＋ exit code ＋ `:w` stdin 込み)。t/proc-async.t(23)・roast/S17-procasync/basic.t(47)/print.t(16) 全緑。
+  **残 `new` fallback＝IO::Socket::INET（io_handles・次・`IO::Path.open` と同型）/CallFrame〔call stack carrier・別軸〕。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
