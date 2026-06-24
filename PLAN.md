@@ -215,6 +215,16 @@ JSON + cookie）が end-to-end で動作（`tmp/webframe/blog.raku`）。HTTP::S
 IO::Socket::Async`）で `whenever … done` 並行ギャップ待ち＝同期 INET パスが本命。surfaced bugs: readonly-param
 フレーム間漏れ（#3539 修正）/ imported-sub shadows builtin（#3538 テスト）/ stored Regex `<$var>` lexical capture 喪失（未修正・別軸）。
 
+**🔴 既存（off-the-shelf）フレームワークの律速＝非同期ソケットサーバ（2026-06-24 確定）**: Bailador（古い・同期 HTTP::Easy）は
+2019年製で**raku 自身でもコンパイル不可**＝メンテ停止。現行のメンテ済みフレームワーク（**Humming-Bird 4.0.0**・Cro）は**全て
+非同期サーバ**（`react whenever IO::Socket::Async.listen` ＋ `$conn.Supply(:bin)`）を使う。∴ **どのフレームワークを選んでも、mutsu の
+非同期ソケットサーバ（`react`/`whenever`/`IO::Socket::Async`）が完成するまで実 HTTP 配信はできない**＝これがフレームワーク選定では
+回避不能な本質的律速（別軸 §I の並行性キャンペーン）。`%?RESOURCES`（配布リソースファイル・MIME::Types が使用）も module-system ギャップ。
+既存フレームワーク互換の過程で **8 件の一般修正を landed**：#3542（Bailador 由来 6：`unit class/role`＋has・クラス yada スタブ・
+regex `<-["]>`・forward 宣言ロール型・`is_stub_role`・推移 multi role 競合）＋ #3544（Humming-Bird::Glue 由来 2：Hash は Map・
+ハッシュリテラル内 ternary 要素）。**Humming-Bird::Glue はパース可能に**。詳細＝memory `project-bailador-existing-framework`。
+次に既存フレームワークを実配信するなら §I の非同期サーバ着手が前提；server-less ルート dispatch なら Core ロード（`%?RESOURCES`）だけで可。
+
 **✅ 完動／native 化したモジュール（詳細は news/2026-06.md ＋ memory）**: Template::Mustache（#3395）/ JSON `to-json`・
 `from-json` native（#3402）/ File::Temp 0.0.12（#3399）/ File::Directory::Tree 0.2 / HTTP::Parser 14/14（#3420/#3422/#3423）/
 MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user override 修正・own test 一部残）。これらに付随した一般機能
