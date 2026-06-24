@@ -157,14 +157,21 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     （`vm_resolve_trivial_proto_candidate` が VM 所有レジストリで winner 候補を解決→`compile_and_call_function_def` で compiled 実行）。
     tree-walk な proto body＋`__PROTO_DISPATCH__` round-trip＋候補 body `run_block` を全てバイパス。proto sig は gate として検証
     （`method_args_match`）。非trivial body / 非OTF候補 は interpreter fallback 維持。実測 `proto factorial` で fallback 100%→0%。
-  - [x] **where 制約付き候補の OTF 化 = 完了（#TBD）**。`def_is_otf_compilable` の `where_constraint.is_none()` を撤去。
+  - [x] **where 制約付き候補の OTF 化 = 完了（#3543）**。`def_is_otf_compilable` の `where_constraint.is_none()` を撤去。
     安全性の根拠＝winner は `resolve_function_with_types`/`resolve_proto_candidate_with_types` が `args_match_param_types` 経由で
     where を評価して選ぶので解決済み def は既に where を満たす。compiled binding（`call_compiled_function_named`→`bind_function_args_values`）が
     where を再検証（単一候補の失敗は interpreter と同じ `X::TypeCheck::Binding::Parameter`）＋`&name` Sub の captured env を merge して
     閉包変数参照 where も解決＝byte-identical。`is_light_call_eligible`/`is_positional_light_call_eligible`（full binding を飛ばす fast path）は
-    where 除外を維持。実測 where-multi 3 種で fallback 77.8%→0%。pin=`t/multi-where-otf-dispatch.t`(18)。
+    where 除外を維持。実測 where-multi 3 種で fallback 77.8%→0%。pin=`t/multi-where-otf-dispatch.t`(20)。
+    **★同 PR で nextsame/callsame 候補順序バグも修正**: `resolve_all_multi_candidates` が HashMap 順だったため、複数候補が同一引数に
+    マッチ（重複 where + generic fallback）すると nextsame が広い候補を先に拾い狭い候補を脱落させた（hash-seed flake）。specificity 順ソートで決定化。
+  - [x] **default param 値を持つ候補の OTF 化 = 完了（#TBD）**。`def_is_otf_compilable` の `default.is_none()` を撤去。
+    default は compiled binding の `bind_function_args_values` が interpreter と同一手順で評価（literal / earlier-param 参照 / method-call /
+    閉包変数 / nested-scope lexical 全て raku 一致）。nextsame は元の引数を渡すので deferred 候補の default はその候補自身の default に解決（raku 一致）。
+    エスケープ閉包レキシカル参照 default（`&g` Callable 経由で scope 退出後呼び出し）の `Nil` は変更前から存在する別軸の既存ギャップ＝非回帰。
+    実測 default-multi 4 種で fallback 85.7%→0%。pin=`t/multi-default-otf-dispatch.t`(16)。
   - [ ] **残**: 非trivial proto body の VM 化 / bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）/
-    default param 値・`code_signature`・`&`-code param を持つ候補の OTF 化（依然除外）。
+    `code_signature`・`&`-code param を持つ候補の OTF 化（依然除外）/ `&g` Callable 経由 multi の escaped-closure default（別軸の既存ギャップ）。
 
 ---
 

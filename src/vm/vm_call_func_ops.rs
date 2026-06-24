@@ -1226,9 +1226,10 @@ impl Interpreter {
         // a `where` referencing closure variables resolves them — byte-identical
         // to the interpreter fallback (ledger §D, multi-dispatch VM-ization).
         !Self::function_body_needs_interpreter(&def.body)
-            && def.param_defs.iter().all(|pd| {
-                pd.default.is_none() && pd.code_signature.is_none() && !pd.name.starts_with('&')
-            })
+            && def
+                .param_defs
+                .iter()
+                .all(|pd| pd.code_signature.is_none() && !pd.name.starts_with('&'))
     }
 
     /// Check if a function body contains constructs that require
