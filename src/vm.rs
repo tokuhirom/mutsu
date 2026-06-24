@@ -3083,8 +3083,92 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            OpCode::SinkPop => {
+            OpCode::SinkPop(user_sink) => {
+                let user_sink = *user_sink;
                 if let Some(val) = self.stack.pop() {
+                    // A bare statement value whose class defines its own `sink`
+                    // method invokes it in sink context (Raku semantics:
+                    // `class C { method sink {...} }; C.new;` runs the sink).
+                    // Gated on:
+                    //  - `user_sink` (compile-time): the value is a fresh rvalue
+                    //    (method call / term), not a bare variable or function
+                    //    return that Raku keeps container-wrapped (mutsu decont's
+                    //    those before SinkPop, losing the distinction);
+                    //  - a user-defined `sink` method, so built-in / container
+                    //    sink behavior is untouched;
+                    //  - the class has no `STORE` method (a STORE class is itself
+                    //    a container — Raku sinks the container, not the inner;
+                    //    sink.t "we don't sink the result of thing().=method").
+                    // TODO: a normal (non-`is rw`) sub returning a fresh instance
+                    // should also sink it; that needs first-class container
+                    // identity to tell an `is rw` (container) return from a plain
+                    // one. Until then function-call returns are conservatively
+                    // not auto-sunk.
+                    let sink_class = if !user_sink {
+                        None
+                    } else if let Value::Instance { class_name, .. } = &val {
+                        let cn = class_name.resolve();
+                        if self.has_user_method(&cn, "sink") && !self.has_user_method(&cn, "STORE")
+                        {
+                            Some(cn)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(cn) = sink_class {
+                        let attrs = match &val {
+                            Value::Instance { attributes, .. } => attributes.to_map(),
+                            _ => std::collections::HashMap::new(),
+                        };
+                        // `sink` can mutate a captured-outer caller lexical by
+                        // name (`my @reg; method sink { @reg.push(...) }`) via
+                        // the slow path, which records nothing this site drains.
+                        // Snapshot slot-backing env before, reconcile after
+                        // (same dance as CallDefined).
+                        let pre_env: Vec<Option<Value>> = code
+                            .locals
+                            .iter()
+                            .map(|n| {
+                                self.env().get(n).cloned().or_else(|| {
+                                    n.strip_prefix('$')
+                                        .or_else(|| n.strip_prefix('@'))
+                                        .or_else(|| n.strip_prefix('%'))
+                                        .or_else(|| n.strip_prefix('&'))
+                                        .and_then(|b| self.env().get(b).cloned())
+                                })
+                            })
+                            .collect();
+                        let _ = self.vm_run_instance_method(
+                            &cn,
+                            attrs,
+                            "sink",
+                            Vec::new(),
+                            Some(val.clone()),
+                        );
+                        for (i, name) in code.locals.iter().enumerate() {
+                            if name.starts_with('!')
+                                || matches!(self.locals[i], Value::HashEntryRef { .. })
+                            {
+                                continue;
+                            }
+                            let cur = self.env().get(name).cloned().or_else(|| {
+                                name.strip_prefix('$')
+                                    .or_else(|| name.strip_prefix('@'))
+                                    .or_else(|| name.strip_prefix('%'))
+                                    .or_else(|| name.strip_prefix('&'))
+                                    .and_then(|b| self.env().get(b).cloned())
+                            });
+                            if let Some(cur) = cur
+                                && pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur))
+                            {
+                                self.locals[i] = cur;
+                            }
+                        }
+                        *ip += 1;
+                        return Ok(());
+                    }
                     match &val {
                         Value::LazyList(list) => {
                             self.force_lazy_list_vm(list)?;

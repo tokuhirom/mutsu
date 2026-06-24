@@ -412,11 +412,30 @@ impl Compiler {
         Some(vec![decl, for_stmt, writeback])
     }
 
+    /// Whether a bare statement expression yields a syntactically fresh rvalue
+    /// (a method call / `Foo.new`) whose value may invoke a user-defined `sink`
+    /// method in sink context. Bare variables (`$x;`) and function-call returns
+    /// (`frob();`, possibly `is rw` → container) are excluded: Raku keeps those
+    /// container-wrapped and does not auto-sink them, and mutsu decontainerizes
+    /// before `SinkPop` so the two cases are indistinguishable at runtime.
+    fn stmt_value_may_user_sink(expr: &Expr) -> bool {
+        match expr {
+            Expr::MethodCall { .. } => true,
+            Expr::DoStmt(inner) => match inner.as_ref() {
+                // `do { ... }` carries the value of its last statement.
+                Stmt::Expr(e) => Self::stmt_value_may_user_sink(e),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Expr(expr) => {
                 self.compile_condition_expr(expr);
-                self.code.emit(OpCode::SinkPop);
+                self.code
+                    .emit(OpCode::SinkPop(Self::stmt_value_may_user_sink(expr)));
             }
             Stmt::Block(stmts) => {
                 // Check for placeholder conflicts in blocks
@@ -657,7 +676,7 @@ impl Compiler {
                     {
                         // Emit a Nil instead of the Var to avoid forcing.
                         self.code.emit(OpCode::LoadNil);
-                        self.code.emit(OpCode::SinkPop);
+                        self.code.emit(OpCode::SinkPop(false));
                         continue;
                     }
                     self.compile_stmt(s);

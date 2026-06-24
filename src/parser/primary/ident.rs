@@ -1122,7 +1122,7 @@ fn is_unspace_before_postfix(input: &str) -> bool {
 
 /// Parse expression listop arguments: comma-separated full expressions.
 /// Stops at statement modifiers, semicolons, and closing brackets.
-fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
+pub(in crate::parser) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
     if name == "make" {
         // Use expression_no_sequence so that `make X => Y` parses the entire
         // Pair as the argument (fat-arrow has lower precedence than or_expr).

@@ -1859,12 +1859,27 @@ impl Interpreter {
                 return Ok(Value::make_instance(*class_name, attrs));
             }
         }
-        // Buf/Blob push/append/unshift/prepend on non-variable targets: validate args
+        // Buf/Blob push/append/unshift/prepend on non-variable (rvalue) targets,
+        // e.g. `Buf.new($s.encode).append: $body`. There is no container to
+        // write back to, so perform the mutation on a copy and return the new
+        // Buf. (The named-variable path goes through `buf_mutate_method`, which
+        // additionally writes the result back into the variable.)
         if matches!(method, "push" | "append" | "unshift" | "prepend")
-            && let Value::Instance { class_name, .. } = &target
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
         {
             let cn = class_name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                // Blob is immutable.
+                if crate::runtime::utils::is_blob_like_class(&cn) {
+                    return Err(RuntimeError::new(format!(
+                        "Cannot modify immutable {} with {}",
+                        cn, method
+                    )));
+                }
                 // Check for string args => X::TypeCheck
                 for a in &args {
                     if matches!(a, Value::Str(_)) {
@@ -1883,6 +1898,25 @@ impl Interpreter {
                         return Err(err);
                     }
                 }
+                let mut bytes =
+                    if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                        items.to_vec()
+                    } else {
+                        Vec::new()
+                    };
+                let new_items = Self::flatten_buf_args(args);
+                match method {
+                    "append" | "push" => bytes.extend(new_items),
+                    "prepend" | "unshift" => {
+                        let mut combined = new_items;
+                        combined.extend(bytes);
+                        bytes = combined;
+                    }
+                    _ => unreachable!(),
+                }
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("bytes".to_string(), Value::array(bytes));
+                return Ok(Value::make_instance(*class_name, attrs));
             }
         }
         // Buf/Blob pop/shift on non-variable targets (e.g. Buf.new.pop throws X::Cannot::Empty)

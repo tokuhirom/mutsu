@@ -969,7 +969,20 @@ impl Interpreter {
             {
                 return Ok(coerced);
             }
-            if !matches!(method, "Numeric" | "Real" | "Bridge")
+            // When the object has its OWN `Str` method, stringification must not
+            // be delegated through the numeric bridge: `.Stringy` (and `.Str`)
+            // should use that custom stringification, not the numeric value
+            // (e.g. HTTP::Status: `method Numeric { $!code }; method Str
+            // { $!title }` → `~$status` / `"$status"` is the title, not the
+            // code). A class that `does Real` with no custom `Str` keeps
+            // bridging `.Str`/`.gist` to its number (e.g. `class P does Real
+            // { method Bridge { $!n.Num } }` → `P.new(n=>7).gist` is "7").
+            let has_user_str = matches!(target, Value::Instance { class_name, .. }
+                if self.has_user_method(&class_name.resolve(), "Str"));
+            let is_numeric_coercion = matches!(method, "Numeric" | "Real" | "Bridge");
+            let is_own_stringify = has_user_str && matches!(method, "Str" | "Stringy");
+            if !is_numeric_coercion
+                && !is_own_stringify
                 && let Ok(coerced) = self
                     .call_method_with_values(target.clone(), "Numeric", vec![])
                     .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
