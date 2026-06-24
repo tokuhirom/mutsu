@@ -5934,6 +5934,21 @@ impl Interpreter {
             // in a called sub).
             let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
             self.env_mut().remove(&readonly_key);
+            // Clear any readonly-parameter flag inherited from a caller/outer
+            // scope. `readonly_vars` is keyed by bare name and is NOT cleared on
+            // function entry, so a caller's readonly param (`sub f(Str $x){...}`)
+            // would otherwise make a callee's freshly-declared `my $x` readonly
+            // ("Cannot assign to a readonly variable (x)"). A plain `my $x = ...`
+            // always creates a new writable binding (a readonly trait, if any, is
+            // re-applied by the trait op that follows). EXCLUDE `:=` binds: a
+            // literal-bound scalar (`my $y := 5`) is genuinely readonly and that
+            // marking is set as part of the bind — unmarking it here would let a
+            // subsequent `$y = 6` slip through. Strip the sigil to match the bare
+            // key form used by check_readonly_for_modify.
+            if !is_bind && !scalar_bind {
+                let bare = name.trim_start_matches(['$', '@', '%', '&']);
+                self.unmark_readonly(bare);
+            }
             // Replace stale ContainerRef in env with Nil so a new `my $var`
             // doesn't inherit a binding from an earlier scope. Keep the key
             // so saved frame propagation can still find it.
