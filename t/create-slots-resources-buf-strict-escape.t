@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 15;
+plan 19;
 
 # --- 1. CREATE allocates attribute slots so `$!attr = ...` in a private
 #        builder (`self.CREATE!SET-SELF`) persists. ---
@@ -85,4 +85,35 @@ plan 15;
     without %h<missing> { $seen ~= "-skipped" }
     with %h<missing> { $seen ~= "!" }
     is $seen, "with:1-skipped", "with/without under strict (internal temps exempt)";
+}
+
+# --- A typed routine parameter must not leak its constraint onto a same-named
+#     lexical in the caller (scalar param constraints are env-scoped, not stored
+#     in the global var_type_constraints map). ---
+{
+    enum Color <Red Green Blue>;
+    sub to-color(Str:D $name --> Color:D) {
+        given $name.lc { when 'red' { Red }; default { Blue } }
+    }
+    sub from-sub {
+        my $name = to-color('red');   # caller's `my $name` shares the param name
+        $name
+    }
+    is from-sub(), Red, "typed param does not leak onto same-named caller lexical (sub)";
+
+    class Parser {
+        method parse {
+            my $name = to-color('blue');   # same collision from inside a method body
+            $name
+        }
+    }
+    is Parser.new.parse, Blue, "typed param does not leak onto same-named caller lexical (method)";
+
+    # The parameter's own type constraint is still enforced (env-scoped).
+    sub needs-int(Int $x is copy) { $x = "oops"; $x }
+    dies-ok { needs-int(1) }, "scalar param type constraint is still enforced inside the callee";
+
+    # `my Type $x` (not a param) still type-checks via the global-map fallback.
+    my Int $n = 5;
+    dies-ok { $n = "x" }, "a real typed lexical still type-checks";
 }

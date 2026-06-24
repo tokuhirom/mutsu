@@ -4774,6 +4774,40 @@ impl Interpreter {
         }
     }
 
+    /// Register the type constraint of a *bound routine parameter*. For scalar
+    /// parameters the constraint is written ONLY to the `env`-keyed
+    /// `__mutsu_type::name` metadata (which is scoped — dropped when the callee's
+    /// env is restored) and NOT to the global, name-keyed `var_type_constraints`
+    /// map. This is what stops a typed parameter (`Str:D $x`) from leaking its
+    /// constraint onto a same-named lexical in the *caller* (`my $x = f(...)`,
+    /// where `f`'s parameter is also `$x`): the global map would otherwise retain
+    /// the entry after the callee returns, and the env-first/`var_type_constraints`-
+    /// fallback read would surface it. `my`-declared and `subset` constraints
+    /// still go through `set_var_type_constraint` (both stores), so the global-map
+    /// fallback remains available where the env entry isn't visible (e.g. an
+    /// `EVAL`'d re-assignment to a `subset`-typed lexical). Container parameters
+    /// (`@a`/`%h`) keep the full behaviour — their element/key-type metadata is
+    /// consulted via the global map / container metadata for element checks.
+    pub(crate) fn bind_param_type_constraint(&mut self, name: &str, constraint: Option<String>) {
+        if name.starts_with('@') || name.starts_with('%') {
+            self.set_var_type_constraint(name, constraint);
+            return;
+        }
+        let meta_key = format!("__mutsu_type::{}", name);
+        match constraint {
+            Some(c) => {
+                let info = Self::parse_container_constraint(name, &c);
+                if info.value_type == "atomicint" || c.contains("atomicint") {
+                    self.atomic_var_seen = true;
+                }
+                self.env.insert(meta_key, Value::str(info.value_type));
+            }
+            None => {
+                self.env.remove(&meta_key);
+            }
+        }
+    }
+
     pub(crate) fn var_type_constraint(&self, name: &str) -> Option<String> {
         let key = name;
         let meta_key = format!("__mutsu_type::{}", key);
