@@ -110,7 +110,8 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
       100% VM ネイティブ化済**（2026-06-23、#3499/#3501/#3503/#3504/#3507/#3511）。`.encode`/`.decode`（#3509）/ coercion 全族
       （scalar 受け手まで・#3497 他）も native。**clean な pure-value native-method ドレインは枯渇**＝残る catch-all バウンスは
       全て別軸 or 構造的ブロッカー前提（下記）。
-- [x] **(a) 組込型 ctor の native 化 — clean 候補は枯渇（2026-06-24・7 スライス landed）**: ③ ctor フォーク。
+- [x] **(a) 組込型 ctor の native 化 — ③ ctor フォーク完了（2026-06-24・10 スライス landed）**: pure-value / VM-owned-state な
+      built-in ctor は全て native 化済（IO::Socket::INET capstone #3536）。残 `new` fallback は CallFrame〔call stack〕・error-only のみ。
   - `::`-namespaced クラス＋組込例外型（`X::AdHoc`/`X::TypeCheck::Binding` …）の `.new`（#3514）= `is_native_default_constructible`
     の `::` ガード撤去＋`has_attribute || is_exception` 緩和＋VM call site で `materialize_exception_message_in_result`。
   - `Lock`/`Lock::Async`/`Lock::Soft`（#3515）/ `Promise`/`Channel`/`Supplier`/`Supplier::Preserving`（#3517）= static
@@ -140,11 +141,12 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     ctor は引数パース＋3 本の process-global supply id〔`next_supply_id` free fn〕＋空の stdout/stderr/merged `Supply` 構築のみ・`&self` 依存ゼロ）。
     `dispatch_new` の arm を static `build_native_proc_async_value` に丸ごと抽出し、VM は `try_native_builtin_construct` に arm を `Promise`/`Channel` と
     同型で wire＝true single impl・byte-identical。
-  - **次の clean な ctor スライス（残 1 件）**: **`IO::Socket::INET.new`（medium）**＝`dispatch_socket_inet_new`（`&mut self`・実 bind/connect＋
-    `insert_handle_state`）は **io_handles 依存だが `IO::Path.open`（#3507 native 化済）と同型**（io_handles は VM 所有）。`try_native_socket_inet_construct`
-    で両 catch-all から既存 helper へ委譲。
-  - **真に構造ブロック（上記 1 件 land 後に ctor-fork 完了）**: `CallFrame.new`〔call-stack carrier〕・error-only（HyperWhatever/Whatever/Instant）。
-    これら以後は §D の本丸＝(b) tree-walk dispatch-chain 削除 substrate or multi-dispatch VM 化（下記の唯一の `[ ]`）。
+  - **`IO::Socket::INET.new(...)`（#3536）= 完了＝③ ctor フォーク capstone**。実 bind/connect を行うが書き込み先は VM 所有 `io_handles`
+    （`insert_handle_state`＝native 化済 `IO::Path.open`〔#3507〕と同型）。既存 `&mut self` helper `dispatch_socket_inet_new` を `pub(crate)` に広げ、
+    VM の非mut/mut 両 catch dispatch から同じ helper を直接呼ぶ＝true single impl・byte-identical（新規コピー無し）。
+  - **∴ pure-value / VM-owned-state な built-in ctor は全て native 化済＝③ ctor フォーク完了**。残 `new` fallback receiver は `CallFrame.new`
+    〔call-stack carrier〕・error-only（HyperWhatever/Whatever/Instant）のみ＝別軸 or 構造ブロック。次は §D の本丸＝(b) tree-walk dispatch-chain
+    削除 substrate or multi-dispatch VM 化（下記の唯一の `[ ]`）。
   - **(b) tree-walk dispatch chain 削除の substrate**: IO/coercion が native 化した今、`dispatch_method_by_name_*` チェーンと
     catch-all バウンス（`vm_call_method_compiled.rs` 末尾）の構造的削除。残る到達カテゴリ＝MOP carrier（WHAT/name/can/HOW・反射で
     撲滅対象外）/ landmine（Instance.Str/.Stringy/.raku/.gist・列挙不能で見送り済）/ block-exec slow path（map/grep・lever B/Phase 2）/
