@@ -174,7 +174,15 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     stateful 文脈で後続コア `run` を mis-bind（subtest ブロックが `1..0`/`1..1` で早期終了）＝PR-2 の builtin-shadow hazard の default-param 版。
     **安全実装の方向**：builtin-shadow 単一候補パスは default-param を OTF しない（fallback 維持）まま、genuine multi 候補と非builtin 単一だけ許す
     ——narrow 化の安全確認には full roast 走が要る。fallback payoff 85.7%。impl + pin（`t/multi-default-otf-dispatch.t` 16）は branch `multi-dispatch-default-otf` に保存。
-  - [ ] **残**: 非trivial proto body の VM 化 / bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）/
+  - [ ] **非trivial proto body の VM 化（次の本丸・設計メモ）**: `proto foo($x) { say "x"; {*} }` の body が `eval_block_value`
+    （tree-walk）で走る（実測 100% fallback）。VM 化の3要素＝①proto body（`rewrite_proto_dispatch_stmts` で `{*}`→
+    `__PROTO_DISPATCH__` call 済み）を `compile_and_call_function_def` 相当で compiled 実行 ②`__PROTO_DISPATCH__`（現 `builtins.rs:386`
+    →`call_proto_dispatch`・interpreter）を VM ネイティブ化し winner を OTF 実行 ③`proto_dispatch_stack`（`{*}` の args/method_ctx を保持）の
+    push/pop を VM 経路でも維持。難所＝proto body 内 `{*}` が compiled bytecode から `call_proto_dispatch` を呼ぶ際の env/routine_stack/
+    proto_dispatch_stack 整合と、候補側の rw-binding writeback。`vm_resolve_trivial_proto_candidate`（trivial 専用）を非trivial に拡張する形。
+    **★default-OTF の教訓**: multi-dispatch 変更は make test + 局所 whitelist で緑でも release roast で broad 回帰しうる（[[project_multi_dispatch_otf_default_deferred]]）。
+    実装時は env.t/system.t/cur-current-distribution.t（subprocess+Test::Util+subtest）を必ずローカル再現確認し、full roast を CI に委ねる。
+  - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）/
     `code_signature`・`&`-code param を持つ候補の OTF 化（依然除外）/ default-param OTF（上記 DEFERRED・builtin-shadow gate 要）。
 
 ---
