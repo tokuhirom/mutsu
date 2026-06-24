@@ -183,10 +183,14 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     に対し mutsu=**99**（候補の書き込みが失われる）。真因＝raku の `{*}` は proto の**現在の（body で変異済・別名保持の）パラメータ**で
     再ディスパッチするが、mutsu は `proto_dispatch_stack` に保存した**入口時の original args（値）**を候補に渡す→候補は caller `$v` の
     コンテナへの別名を得られず rw write が消える。修正＝`vm_call_proto_dispatch`（と interpreter `call_proto_dispatch`）が proto の
-    param 名から現フレームの**現在のコンテナ値**を読んで候補へ渡す（`proto_dispatch_stack` に param 名 or 現在 binding を持たせる）。
-    これは VM 化でなく `{*}` 再ディスパッチ意味論の修正で、`is rw` writeback（`inc($v)`→10）も同時に直る。trivial proto は body を
-    bypass し元の呼び出し args（コンテナ）で候補を直呼びするので元から動く。複数 `{*}` rvalue（`my $a={*}`）の Nil は別系
-    （rewrite が statement 位置のみ対応）。
+    param 名から現フレームの**現在のコンテナ値**を読んで候補へ渡す。trivial proto は body を bypass し元の呼び出し args（コンテナ）
+    で候補を直呼びするので元から動く。複数 `{*}` rvalue（`my $a={*}`）の Nil は別系（rewrite が statement 位置のみ対応）。
+    **★試行で判明（2026-06-24・破棄済）= 「env[param 名] の値を読むだけ」では不成立**: 候補の rw が効くには引数が **varref コンテナ**
+    （proto の `$x` slot への別名）である必要があり（`vm_call_dispatch.rs:925` `arg_is_container_value`/`plain_container_with_source`）、
+    `env().get("x")` の返すプレーン値では候補が proto `$x` を別名参照できない（`helper($x)` 伝播は arg_sources 経由の name-based
+    writeback でコンテナ別名ではない）。∴ 正しい修正は **proto 現在パラメータを varref コンテナとして構築 or arg_sources=proto param 名を
+    `set_pending_call_arg_sources` で候補へ渡し name-based writeback を proto frame env 経由で caller までチェーンさせる**＝§C
+    container-identity substrate と絡む（当初想定より重い）。VM（`vm_call_proto_dispatch`）/ interpreter（`call_proto_dispatch`）両 path 要修正。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）/
     `code_signature`・`&`-code param を持つ候補の OTF 化（依然除外）/ default-param OTF（上記 DEFERRED・builtin-shadow gate 要）。
 
