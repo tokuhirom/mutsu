@@ -178,12 +178,15 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     `proto foo($x){ say "x"; {*} }` の body＋`{*}` 候補ディスパッチを両方 compiled 実行（`vm_try_run_nontrivial_proto_body`
     ＋`vm_call_proto_dispatch`）。実測 `t/proto-nontrivial-body-vm.t` で interpreter_fallbacks 50.1%→0.5%。
     pin=`t/proto-nontrivial-body-vm.t`(13)/`t/proto-candidate-otf-dispatch.t`(7)。
-  - [ ] **`is rw` proto-param writeback を非trivial proto body 越しに伝播（次スライス・別軸）**: `proto inc($x is rw){ {*} }`/
-    `multi inc(Int $x is rw){$x++}` で `inc($v)` が **10**（11 が正・main/①/② 全て同一・interpreter path でも壊れている）。
-    真因＝`proto_dispatch_stack` の args が proto の **original 値**で caller のコンテナ（別名）を運ばない→候補が `$x is rw` を
-    rebind しても caller `$v` に届かない。trivial proto は body を bypass し元の呼び出し args（コンテナ）で候補を直呼びするので動く。
-    修正は proto_dispatch_stack に caller コンテナ（or arg_sources）を運ぶ設計が要る。複数 `{*}` rvalue（`my $a={*}`）の Nil も
-    同系（rewrite が statement 位置のみ対応）。
+  - [ ] **`{*}` を proto の現在パラメータで再ディスパッチ（次スライス・別軸・semantic fix）**: `proto pr($x is rw){ $x=99; {*} }`/
+    `multi pr(Int $x is rw){ $x=$x+1 }` で `pr($v)`（$v=10）が raku=**100**（候補は body が変異した `$x`=99 を見て 100 を書き $v に伝播）
+    に対し mutsu=**99**（候補の書き込みが失われる）。真因＝raku の `{*}` は proto の**現在の（body で変異済・別名保持の）パラメータ**で
+    再ディスパッチするが、mutsu は `proto_dispatch_stack` に保存した**入口時の original args（値）**を候補に渡す→候補は caller `$v` の
+    コンテナへの別名を得られず rw write が消える。修正＝`vm_call_proto_dispatch`（と interpreter `call_proto_dispatch`）が proto の
+    param 名から現フレームの**現在のコンテナ値**を読んで候補へ渡す（`proto_dispatch_stack` に param 名 or 現在 binding を持たせる）。
+    これは VM 化でなく `{*}` 再ディスパッチ意味論の修正で、`is rw` writeback（`inc($v)`→10）も同時に直る。trivial proto は body を
+    bypass し元の呼び出し args（コンテナ）で候補を直呼びするので元から動く。複数 `{*}` rvalue（`my $a={*}`）の Nil は別系
+    （rewrite が statement 位置のみ対応）。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）/
     `code_signature`・`&`-code param を持つ候補の OTF 化（依然除外）/ default-param OTF（上記 DEFERRED・builtin-shadow gate 要）。
 
