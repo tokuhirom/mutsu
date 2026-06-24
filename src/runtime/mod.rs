@@ -904,6 +904,10 @@ pub struct Interpreter {
     routine_stack: Vec<RoutineFrame>,
     callframe_stack: Vec<CallFrameEntry>,
     method_class_stack: Vec<String>,
+    /// The class whose instance is currently being constructed, set only while
+    /// evaluating typed-attribute default type objects so a suppressed nested
+    /// class name resolves within its owning class (see `resolve_suppressed_type`).
+    constructing_class: Option<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,
     test_pending_callsite_line: Option<i64>,
     /// Number of active CONTROL handlers in the current VM stack. Tracked
@@ -3129,6 +3133,7 @@ impl Interpreter {
             routine_stack: Vec::new(),
             callframe_stack: Vec::new(),
             method_class_stack: Vec::new(),
+            constructing_class: None,
             pending_call_arg_sources: None,
             test_pending_callsite_line: None,
             control_handler_depth: 0,
@@ -3723,6 +3728,19 @@ impl Interpreter {
         }
         // Check method class stack
         for class_name in self.method_class_stack.iter().rev() {
+            let qualified = format!("{}::{}", class_name, name);
+            if self.has_type(&qualified) {
+                return Some(qualified);
+            }
+        }
+        // The class currently being constructed. A typed attribute's default
+        // type object (`has Inner $.x` defaults to `BareWord("Inner")`) is
+        // evaluated during construction with no method-class / package context,
+        // yet the nested name must resolve within its owning class. This is set
+        // only for the duration of attribute-default evaluation, so it does not
+        // leak the suppressed name into outer lexical scopes (where raku keeps it
+        // undeclared).
+        if let Some(class_name) = &self.constructing_class {
             let qualified = format!("{}::{}", class_name, name);
             if self.has_type(&qualified) {
                 return Some(qualified);
@@ -5891,6 +5909,7 @@ impl Interpreter {
             routine_stack: Vec::new(),
             callframe_stack: Vec::new(),
             method_class_stack: Vec::new(),
+            constructing_class: None,
             pending_call_arg_sources: None,
             test_pending_callsite_line: None,
             control_handler_depth: 0,
