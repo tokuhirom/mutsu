@@ -644,8 +644,18 @@
   ① **`Proc::Async.new`＝実は完全 pure data**（プロセス spawn は `.start`・ctor は引数パース＋`next_supply_id()` free fn＋`SharedPromise::new()`＋
   Supply 属性構築のみ・`&self` 依存ゼロ）＝`build_native_proc_async_value` static helper を `try_native_builtin_construct` に wire（Promise/Channel と同型・最易）。
   ② **`IO::Socket::INET.new`＝io_handles 依存だが `IO::Path.open`（#3507）と同型**（`dispatch_socket_inet_new` が `insert_handle_state` で VM 所有 io_handle 確保）
-  ＝`try_native_socket_inet_construct` で既存 helper へ委譲。**真に構造ブロック（②まで land 後に ctor-fork 完了）**: `CallFrame`〔call stack carrier〕・`Seq.new`
-  〔predictive iterator carrier＝`predictive_seq_iters` field＋env 書き込みで impure〕＝別軸。**∴ ctor-fork 残=Proc::Async（pure）＋IO::Socket::INET（io_handles）の 2 件のみ。**
+  ＝`try_native_socket_inet_construct` で既存 helper へ委譲。**真に構造ブロック（②まで land 後に ctor-fork 完了）**: `CallFrame`〔call stack carrier〕＝別軸。
+  （`Seq.new` は #3533 で native 化済＝下記。）**∴ ctor-fork 残=Proc::Async（pure）＋IO::Socket::INET（io_handles）の 2 件のみ。**
+- **2026-06-24 (§D ③ = `Seq.new($iterator?)` を VM ネイティブ化, #3533)**: 前エントリで「iterator carrier＝別軸（impure）」と保守的に分類していた `Seq.new` を再評価し
+  native 化。**carrier state 自体が VM 所有**（`predictive_seq_iters` フィールド ＋ env の `__mutsu_predictive_seq_iter::` 内部キー ＋ Seq の Arc を
+  キーにしたグローバル deferred-iter 副表）＝単一ストア化後 `self` は VM/interpreter 同一なので native gate から同じ書き込みができる。**構築は eager pull
+  しない**（PredictiveIterator は carrier に stash、materialized `items`/`stuff` instance は要素コピー、その他 iterator は deferred 登録、no-arg は
+  pre-consumed Seq）＝iterator 消費は後の consumption 時で構築とは別＝FS/process/user code 不要。`dispatch_new` の Seq arm（~46 行）を新 `&mut self`
+  helper `try_native_seq_construct` に**丸ごと抽出**（interpreter arm は delegation）。VM は非mut/mut 両 catch dispatch（Failure ctor arm の直後・
+  `class_name=="Seq"` gate・`method_dispatch_pure=true`）から呼ぶ＝**1 操作 = 1 実装**・byte-identical。user subclass（`class S is Seq`）は class_name が
+  自名に解決され gate に掛からず interpreter 維持。pin `t/native-seq-ctor.t`(11・raku/mutsu 双方 PASS。`.raku` の `$(...)` itemization 差は pre-existing・
+  無関係)。S32-list/seq.t(50)/skip.t/tail.t/rotor.t・S07-iterators/range-iterator.t(103) 全緑。**残 `new` fallback＝Proc::Async（pure・次）/
+  IO::Socket::INET（io_handles・次）/CallFrame〔call stack carrier・別軸〕。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
