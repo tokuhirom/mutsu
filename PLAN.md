@@ -178,21 +178,22 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     `proto foo($x){ say "x"; {*} }` の body＋`{*}` 候補ディスパッチを両方 compiled 実行（`vm_try_run_nontrivial_proto_body`
     ＋`vm_call_proto_dispatch`）。実測 `t/proto-nontrivial-body-vm.t` で interpreter_fallbacks 50.1%→0.5%。
     pin=`t/proto-nontrivial-body-vm.t`(13)/`t/proto-candidate-otf-dispatch.t`(7)。
-  - [ ] **`{*}` を proto の現在パラメータで再ディスパッチ（次スライス・別軸・semantic fix）**: `proto pr($x is rw){ $x=99; {*} }`/
-    `multi pr(Int $x is rw){ $x=$x+1 }` で `pr($v)`（$v=10）が raku=**100**（候補は body が変異した `$x`=99 を見て 100 を書き $v に伝播）
-    に対し mutsu=**99**（候補の書き込みが失われる）。真因＝raku の `{*}` は proto の**現在の（body で変異済・別名保持の）パラメータ**で
-    再ディスパッチするが、mutsu は `proto_dispatch_stack` に保存した**入口時の original args（値）**を候補に渡す→候補は caller `$v` の
-    コンテナへの別名を得られず rw write が消える。修正＝`vm_call_proto_dispatch`（と interpreter `call_proto_dispatch`）が proto の
-    param 名から現フレームの**現在のコンテナ値**を読んで候補へ渡す。trivial proto は body を bypass し元の呼び出し args（コンテナ）
-    で候補を直呼びするので元から動く。複数 `{*}` rvalue（`my $a={*}`）の Nil は別系（rewrite が statement 位置のみ対応）。
-    **★試行で判明（2026-06-24・破棄済）= 「env[param 名] の値を読むだけ」では不成立**: 候補の rw が効くには引数が **varref コンテナ**
-    （proto の `$x` slot への別名）である必要があり（`vm_call_dispatch.rs:925` `arg_is_container_value`/`plain_container_with_source`）、
-    `env().get("x")` の返すプレーン値では候補が proto `$x` を別名参照できない（`helper($x)` 伝播は arg_sources 経由の name-based
-    writeback でコンテナ別名ではない）。∴ 正しい修正は **proto 現在パラメータを varref コンテナとして構築 or arg_sources=proto param 名を
-    `set_pending_call_arg_sources` で候補へ渡し name-based writeback を proto frame env 経由で caller までチェーンさせる**＝§C
-    container-identity substrate と絡む（当初想定より重い）。VM（`vm_call_proto_dispatch`）/ interpreter（`call_proto_dispatch`）両 path 要修正。
+  - [x] **`{*}` を proto の現在パラメータで再ディスパッチ（scalar rw/raw proto sub）= 完了（#TBD）→ [news/2026-06.md](news/2026-06.md)**。
+    `proto pr($x is rw){ $x=99; {*} }`/`multi pr(Int $x is rw){ $x=$x+1 }` で `pr($v)`（$v=10）が raku=**100** に対し mutsu=**99**
+    （候補が body 変異済 `$x`=99 を見ず・候補の rw write が消える）だった。**★前回「§C varref container と絡む（重い）」と分類したが
+    arg_sources 機構で解決可と判明（terminator 同型の誤分類）**。修正＝`vm_call_proto_dispatch` に `proto_rw_redispatch_args`:
+    proto が scalar rw/raw positional param を持つ simple-positional sig のとき、`{*}` 時点の **proto param 現在値を live body locals
+    （`code.locals` slot・scalar rw param は mid-body slot-only で env 未 flush）から読んで rebuild**＋**arg_sources=proto param 名**を
+    resolution 前に `set_pending_call_arg_sources`。候補の `is rw` は plain 値でも arg_sources で writability チェックを通り
+    （`args_matching.rs:211` `has_arg_source`）、候補の writeback が proto frame env `$x` に着地→`__PROTO_DISPATCH__` call-site の
+    `apply_pending_rw_writeback` が proto body locals に書き戻し→proto exit の `apply_rw_bindings_to_env` が caller `$v` へ伝播。
+    pin=`t/proto-rw-redispatch-coherence.t`(9・proto param 名≠候補名/二項目 rw/is raw/非rw proto 不変 含む)。
+    **残ギャップ（別軸・本 PR 範囲外）**: ①**proto method** の rw redispatch（method_ctx は interpreter `call_proto_dispatch` に落ち
+    pre-existing で壊れる・要 interpreter path 同型修正）②**nextsame+rw チェーン**（first 候補の rw は伝播するが nextsame で次候補へ
+    渡る際の rw write は multi_dispatch_stack 別機構で消える・C ケース 40→41 改善も 1041 には未達）。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）/
-    `code_signature`・`&`-code param を持つ候補の OTF 化（依然除外）/ default-param OTF（上記 DEFERRED・builtin-shadow gate 要）。
+    `code_signature`・`&`-code param を持つ候補の OTF 化（依然除外）/ default-param OTF（上記 DEFERRED・builtin-shadow gate 要）/
+    proto **method** rw redispatch（interpreter path）/ nextsame+rw チェーン（上記 ①②）。
 
 ---
 

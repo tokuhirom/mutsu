@@ -900,7 +900,7 @@ impl Interpreter {
             // marker rewritten by `rewrite_proto_dispatch_stmts`. Resolve and run
             // the winning multi candidate VM-natively (compiled bytecode) instead
             // of bouncing through interpreter `call_proto_dispatch` + `run_block`.
-            return self.vm_call_proto_dispatch(compiled_fns);
+            return self.vm_call_proto_dispatch(code, compiled_fns);
         }
         if let Some(callable) = call_me_override {
             let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
@@ -1324,6 +1324,7 @@ impl Interpreter {
     /// a non-OTF-compilable / `state`-declaring candidate.
     pub(super) fn vm_call_proto_dispatch(
         &mut self,
+        code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
         let Some((proto_name, args, method_ctx)) = self.proto_dispatch_last() else {
@@ -1338,16 +1339,131 @@ impl Interpreter {
         // Clear any stale pending dispatch error (mirrors the trivial-proto fork)
         // so a prior call's ambiguity can't leak into this resolution.
         let _ = self.take_pending_dispatch_error();
+        // `{*}` rw-redispatch (ledger §D): when the proto declares a scalar
+        // `is rw`/`is raw` parameter, Rakudo redispatches `{*}` using the proto's
+        // CURRENT (body-mutated) parameter, so a candidate's own rw write chains
+        // back through the proto parameter to the caller. Rebuild the args from
+        // the proto's current parameter values (live body locals) and pass
+        // arg_sources naming the proto params, so the candidate's writeback lands
+        // in the proto frame and the proto's own rw binding propagates it to the
+        // caller at proto exit. `None` => unchanged (the common non-rw case).
+        let (args, rw_arg_sources) =
+            match self.proto_rw_redispatch_args(&proto_name, &args, Some(code)) {
+                Some((rebuilt, sources)) => (rebuilt, Some(sources)),
+                None => (args, None),
+            };
+        // For rw redispatch the rebuilt args are plain values; a candidate's
+        // `is rw` param requires a *writable* argument, which the multi-dispatch
+        // writability check satisfies from `pending_call_arg_sources` (a named
+        // source is as good as a VarRef). Set it before resolving so the rw
+        // candidate matches, and clear it again on any interpreter fallthrough.
+        let had_rw_sources = rw_arg_sources.is_some();
+        if had_rw_sources {
+            self.set_pending_call_arg_sources(rw_arg_sources);
+        }
         if let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args)
             && (!def.empty_sig || args.is_empty())
             && Self::def_is_otf_compilable(&def)
             && !Self::function_body_declares_state(&def.body)
         {
-            return self.compile_and_call_function_def(&def, args, compiled_fns);
+            // pending_call_arg_sources is still set (resolution only reads it);
+            // `compile_and_call_function_def`'s bind consumes it for the rw chain.
+            let result = self.compile_and_call_function_def(&def, args, compiled_fns);
+            if had_rw_sources {
+                self.set_pending_call_arg_sources(None);
+            }
+            return result;
         }
         // No candidate / ambiguous / empty-sig-with-args / non-OTF / state: the
         // interpreter re-resolves and produces the exact error or tree-walk result.
+        if had_rw_sources {
+            self.set_pending_call_arg_sources(None);
+        }
         self.loan_env_for(|i| i.call_proto_dispatch())
+    }
+
+    /// `{*}` rw-redispatch helper (ledger §D, multi-dispatch VM-ization): Rakudo
+    /// redispatches `{*}` using the proto's CURRENT parameter, so a candidate's
+    /// own `is rw` write chains back through the (possibly body-mutated) proto
+    /// parameter to the caller's container. mutsu instead passes the proto's
+    /// entry-time args, so a candidate's rw write either targets the caller
+    /// directly (colliding with the proto's own writeback) or is lost.
+    ///
+    /// When the proto declares a scalar `is rw`/`is raw` positional parameter and
+    /// its signature is a simple all-positional one, return rebuilt args (read
+    /// from the proto's current parameter values — the live body locals when
+    /// `code` is given, else env) and arg_sources naming the proto params, so the
+    /// candidate binds its rw param with `source = <proto param>` and its
+    /// writeback lands in the proto frame. Returns `None` (no rebuild, current
+    /// behavior) for protos without a scalar rw/raw param or with a non-simple
+    /// signature.
+    pub(crate) fn proto_rw_redispatch_args(
+        &self,
+        proto_name: &str,
+        orig_args: &[Value],
+        code: Option<&CompiledCode>,
+    ) -> Option<(Vec<Value>, Vec<Option<String>>)> {
+        let proto = self.resolve_proto_function(proto_name)?;
+        let positional: Vec<&crate::ast::ParamDef> = proto
+            .param_defs
+            .iter()
+            .filter(|pd| !pd.is_invocant)
+            .collect();
+        // Only a simple all-positional signature with arity matching the call.
+        if positional.len() != orig_args.len()
+            || positional.iter().any(|pd| {
+                pd.named || pd.slurpy || pd.double_slurpy || pd.onearg || pd.sub_signature.is_some()
+            })
+            || orig_args.iter().any(|a| {
+                matches!(
+                    crate::runtime::types::unwrap_varref_value(a.clone()),
+                    Value::Pair(..) | Value::ValuePair(..)
+                )
+            })
+        {
+            return None;
+        }
+        // A scalar param is stored sigil-less, so its name starts with an ASCII
+        // letter / `_` (not `@`/`%`/`&`). Require at least one scalar rw/raw param
+        // — the only case where the current value differs or a writeback link is
+        // needed; `@`/`%` rw params propagate in-place by name already.
+        let is_scalar_rw = |pd: &crate::ast::ParamDef| {
+            pd.traits.iter().any(|t| t == "rw" || t == "raw")
+                && pd.name != "_"
+                && pd
+                    .name
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+        };
+        if !positional.iter().any(|pd| is_scalar_rw(pd)) {
+            return None;
+        }
+        let mut new_args = Vec::with_capacity(positional.len());
+        let mut sources = Vec::with_capacity(positional.len());
+        for (pd, orig) in positional.iter().zip(orig_args.iter()) {
+            if is_scalar_rw(pd) {
+                // Rebuild from the proto's CURRENT parameter value: a scalar rw
+                // param is slot-only mid-body (not yet flushed to env), so read
+                // the live body local slot first, then env, then the entry-time
+                // arg as a last resort. arg_sources names the proto param so the
+                // candidate's writeback chains back through it.
+                let cur = code
+                    .and_then(|c| c.locals.iter().position(|n| n == &pd.name))
+                    .map(|slot| self.locals[slot].clone())
+                    .or_else(|| self.env().get(&pd.name).cloned())
+                    .unwrap_or_else(|| crate::runtime::types::unwrap_varref_value(orig.clone()));
+                new_args.push(crate::runtime::types::unwrap_varref_value(cur));
+                sources.push(Some(pd.name.clone()));
+            } else {
+                // Non-rw params keep their original argument (a VarRef / container
+                // carries the caller's aliasing for `@`/`%`/`is raw`-by-name
+                // params); rebuilding to a plain current value would sever it.
+                new_args.push(orig.clone());
+                sources.push(None);
+            }
+        }
+        Some((new_args, sources))
     }
 
     pub(super) fn def_is_otf_compilable(def: &crate::ast::FunctionDef) -> bool {
