@@ -481,7 +481,14 @@ impl Interpreter {
                     if self.has_class_scoped_subs(cn_resolved) {
                         self.set_current_package(cn_resolved.to_string());
                     }
+                    // Mark the class under construction so a bare nested-class
+                    // type name in the default (e.g. `has Inner $.x` whose default
+                    // is the `Inner` type object) resolves to `<Class>::Inner`,
+                    // even though no method-class / package context is active here.
+                    let saved_constructing = self.constructing_class.take();
+                    self.constructing_class = Some(cn_resolved.to_string());
                     let result = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())]);
+                    self.constructing_class = saved_constructing;
                     self.set_current_package(saved_package);
                     for (key, old_val) in saved_attr_env {
                         match old_val {
