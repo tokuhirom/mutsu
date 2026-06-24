@@ -254,6 +254,30 @@ impl Interpreter {
 
     /// Check if a type name is known (either a class, role, or enum).
     pub(crate) fn has_type(&self, name: &str) -> bool {
+        if self.has_type_direct(name) {
+            return true;
+        }
+        // A short-name import alias (`use Foo; my Bar:D $x` where `Bar` is
+        // `Foo::Bar`) is recorded in `env` as a `Value::Package` pointing at the
+        // fully-qualified class. Resolve that alias so the short name counts as a
+        // type — otherwise `my Bar:D $x` is wrongly rejected as a bare package
+        // ("insufficiently type-like") inside a method OTF-compiled in the
+        // importing module's scope. Humming-Bird's `Route.CALL-ME` does
+        // `my Response:D $res = ...` with `Response` imported from
+        // `Humming-Bird::Glue`.
+        if let Some(Value::Package(target)) = self.env.get(name) {
+            let resolved = target.resolve();
+            if resolved != name && self.has_type_direct(&resolved) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `has_type` without short-name alias resolution — checks the type
+    /// registries directly (classes/roles/enums/subsets, including parametric
+    /// base names).
+    fn has_type_direct(&self, name: &str) -> bool {
         self.registry().classes.contains_key(name)
             || self.registry().roles.contains_key(name)
             || self.registry().enum_types.contains_key(name)
