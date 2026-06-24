@@ -1439,7 +1439,12 @@ impl Interpreter {
             err.message = format!("Failed to parse module '{}': {}", module, err.message);
             err
         })?;
-        let stmts = Self::merge_unit_class(stmts);
+        let mut stmts = Self::merge_unit_class(stmts);
+        // A module that uses NativeCall and references `Pointer` needs the
+        // builtin `Pointer` prelude class too — the main-program injection only
+        // sees the main source, so a NativeCall binding distributed as a module
+        // would otherwise hit an undeclared `Pointer`.
+        Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
 
         // Save to precompilation cache when the module is eligible.
         if precomp_eligible {

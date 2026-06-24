@@ -217,6 +217,10 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
     **`sqlite3_prepare_v2`/`step`/`column_int`/`column_text`/`finalize` による prepared-statement SELECT で実際の
     行データ（int+text）を読み取れる**（新規 Rust 不要・既存 marshalling で動作）。担保＝`t/nativecall-sqlite.t`
     （libsqlite3 不在なら graceful skip）。**= mutsu から実 SQLite DB の完全な CRUD 往復が可能。**
+  - **✅ モジュール配布 + 無名パラメータ（#TBD）**: NativeCall バインディングを **`use`-可能なモジュールとして配布可能**に
+    （`Pointer` prelude を module 解析パス `parse_module_source` でも注入）。さらに無名（型のみ）パラメータにトレイト/where
+    を許可（`sub f(Str, Pointer is rw)` がパース可能に・`src/parser/stmt/sub_param.rs`）。担保＝`t/nativecall-in-module.t`
+    / `t/anon-param-trait.t`。**= 薄い DBDish::SQLite 互換層を pure-Raku モジュールとして書ける状態。**
   - **残（より広いモジュール互換に）**: ① `CArray[uint8]`・`CArray[Str]` / ② `is repr('CStruct')` 構造体 /
     ③ callback（汎用 C コールバック）。DBDish::SQLite 自体は上記 prepared-statement API で原理的に駆動可能。
   - **DBIish/DBDish**: pure-Raku ドライバを上記 NativeCall sub 群で実装可能（次の有力タスク＝薄い DBDish::SQLite 互換層）。
