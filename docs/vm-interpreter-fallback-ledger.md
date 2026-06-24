@@ -640,8 +640,12 @@
   delegation）。VM は非mut/mut 両 catch dispatch（IO::Path ctor arm の直後・`class_name=="Failure"` gate・`method_dispatch_pure=true`）から呼ぶ＝**1 操作 =
   1 実装**・byte-identical。実測 `Failure.new`（明示/string-wrap/`$!`/argless 全パス）の `new` fallback → 0。pin `t/native-failure-ctor.t`(11・raku/mutsu
   双方 PASS。`X::AdHoc` は `:payload` で構築＝`.message` が payload を読む pre-existing detail を回避)。S04-exceptions/S04-statement-modifiers/
-  S05-capture/named/S06-advanced whitelist 全緑。**残 `new` fallback＝Proc::Async〔process〕/IO::Socket::INET〔socket〕/CallFrame〔call stack〕/
-  Seq〔iterator carrier〕＝いずれも state 依存（process/socket/stack/iterator carrier）で別軸。pure-value/VM-owned-state ctor ドレインは枯渇。**
+  S05-capture/named/S06-advanced whitelist 全緑。**残 `new` fallback の次スライス候補（2026-06-24 実測訂正・「state 依存」分類を訂正）**:
+  ① **`Proc::Async.new`＝実は完全 pure data**（プロセス spawn は `.start`・ctor は引数パース＋`next_supply_id()` free fn＋`SharedPromise::new()`＋
+  Supply 属性構築のみ・`&self` 依存ゼロ）＝`build_native_proc_async_value` static helper を `try_native_builtin_construct` に wire（Promise/Channel と同型・最易）。
+  ② **`IO::Socket::INET.new`＝io_handles 依存だが `IO::Path.open`（#3507）と同型**（`dispatch_socket_inet_new` が `insert_handle_state` で VM 所有 io_handle 確保）
+  ＝`try_native_socket_inet_construct` で既存 helper へ委譲。**真に構造ブロック（②まで land 後に ctor-fork 完了）**: `CallFrame`〔call stack carrier〕・`Seq.new`
+  〔predictive iterator carrier＝`predictive_seq_iters` field＋env 書き込みで impure〕＝別軸。**∴ ctor-fork 残=Proc::Async（pure）＋IO::Socket::INET（io_handles）の 2 件のみ。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
