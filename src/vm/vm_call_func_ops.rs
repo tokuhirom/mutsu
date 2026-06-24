@@ -1215,12 +1215,19 @@ impl Interpreter {
     }
 
     pub(super) fn def_is_otf_compilable(def: &crate::ast::FunctionDef) -> bool {
+        // `where` constraints are NOT excluded: the winning multi candidate is
+        // resolved by `resolve_function_with_types` / `resolve_proto_candidate_with_types`,
+        // which already evaluate `where` (via `args_match_param_types`) to pick
+        // the winner, so the resolved def already satisfies its `where`. The
+        // compiled binding path (`call_compiled_function_named` ->
+        // `bind_function_args_values`) re-checks `where` and raises the same
+        // `X::TypeCheck::Binding::Parameter` the interpreter would on failure
+        // (for single candidates), and merges the `&name` Sub's captured env so
+        // a `where` referencing closure variables resolves them — byte-identical
+        // to the interpreter fallback (ledger §D, multi-dispatch VM-ization).
         !Self::function_body_needs_interpreter(&def.body)
             && def.param_defs.iter().all(|pd| {
-                pd.default.is_none()
-                    && pd.where_constraint.is_none()
-                    && pd.code_signature.is_none()
-                    && !pd.name.starts_with('&')
+                pd.default.is_none() && pd.code_signature.is_none() && !pd.name.starts_with('&')
             })
     }
 
