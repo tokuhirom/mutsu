@@ -1061,7 +1061,12 @@ impl Interpreter {
                     let _ = self.take_pending_dispatch_error();
                     if !self.is_interpreter_handled_function(name)
                         && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
-                        && Self::def_is_otf_compilable(&def)
+                        // A genuine multi candidate: the name is multi-cached, so
+                        // `compile_and_call_function_def` never name-caches this
+                        // candidate — a default param is safe here (unlike the
+                        // single/builtin-shadow paths). See
+                        // `def_is_otf_compilable_multi_candidate`.
+                        && Self::def_is_otf_compilable_multi_candidate(&def)
                         && !Self::function_body_declares_state(&def.body)
                     {
                         self.compile_and_call_function_def(&def, args, compiled_fns)
@@ -1500,6 +1505,22 @@ impl Interpreter {
                 .param_defs
                 .iter()
                 .all(|pd| pd.default.is_none() && pd.code_signature.is_none())
+    }
+
+    /// Like `def_is_otf_compilable`, but also permits a parameter with a default
+    /// value. Safe ONLY at a genuine *multi*-candidate dispatch site (the
+    /// `has_multi_candidates_cached` branch): there `compile_and_call_function_def`
+    /// does NOT name-cache the compiled candidate (the name is multi-cached, so
+    /// its `!has_multi_candidates_cached` guard is false), so a default-bearing
+    /// candidate cannot pollute the name-keyed `otf_call_cache` and mis-bind a
+    /// later same-named call — the builtin-shadow hazard that deferred the blanket
+    /// default-OTF (PR #3546: Test::Util's `our sub run(Str, Str = '')` shadowing
+    /// the `run` builtin). The compiled binding (`bind_function_args_values`)
+    /// evaluates defaults exactly as the interpreter does, so this is
+    /// byte-identical (ledger §D, multi-dispatch VM-ization).
+    pub(super) fn def_is_otf_compilable_multi_candidate(def: &crate::ast::FunctionDef) -> bool {
+        !Self::function_body_needs_interpreter(&def.body)
+            && def.param_defs.iter().all(|pd| pd.code_signature.is_none())
     }
 
     /// Check if a function body contains constructs that require
