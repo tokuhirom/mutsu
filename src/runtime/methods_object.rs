@@ -1695,6 +1695,62 @@ impl Interpreter {
     /// `dispatch_new_and_constructors` arm calls the same helper, so the native
     /// path is byte-identical (the VM and interpreter are one struct, so `self.env`
     /// — and thus `$!` — is identical at the call site).
+    /// VM-native construction for `Seq.new($iterator?)`. Construction reads and
+    /// writes only VM-owned state: a `PredictiveIterator` argument is stashed in
+    /// the `predictive_seq_iters` carrier table (plus an `__mutsu_*` env side
+    /// table so the association survives sub/block returns), a materialized
+    /// `items`/`stuff` instance is copied eagerly, any other iterator is
+    /// registered as a deferred (lazy) iterator keyed off the new Seq's own Arc,
+    /// and the no-arg form yields a pre-consumed Seq. No FS / process / user
+    /// code — pulling from the iterator happens later, on consumption. The
+    /// interpreter's `dispatch_new` arm delegates here, so the native VM fast
+    /// path is byte-identical (one struct, one `self`).
+    pub(crate) fn try_native_seq_construct(&mut self, args: &[Value]) -> Value {
+        // Seq.new(iterator)
+        if let Some(iterator) = args.first() {
+            if matches!(iterator, Value::Instance { .. })
+                && self.type_matches_value("PredictiveIterator", iterator)
+            {
+                let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
+                if let Value::Seq(items) = &seq {
+                    let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                    // Store off the scoped env so the association
+                    // survives sub/block returns (see field docs).
+                    self.predictive_seq_iters.insert(seq_id, iterator.clone());
+                    self.env.insert(
+                        format!("__mutsu_predictive_seq_iter::{seq_id}"),
+                        iterator.clone(),
+                    );
+                }
+                return seq;
+            }
+            if let Value::Instance { attributes, .. } = iterator {
+                let map = attributes.as_map();
+                if let Some(Value::Array(items, ..)) = map.get("items").or_else(|| map.get("stuff"))
+                {
+                    return Value::Seq(std::sync::Arc::new(items.to_vec()));
+                }
+            }
+            // Register deferred iterator: don't pull eagerly.
+            // Raku's Seq.new(iterator) creates a lazy Seq; pulling
+            // happens only when the Seq is actually consumed/iterated.
+            let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
+            if let Value::Seq(items) = &seq {
+                crate::value::seq_register_deferred_iter(items, iterator.clone());
+            }
+            return seq;
+        }
+        // Seq.new() with no args creates a pre-consumed Seq.
+        // This matches Raku: Seq.new() has no iterator, so it's
+        // immediately consumed. This is what .raku returns for
+        // consumed Seqs ("Seq.new()") so the EVAL roundtrip works.
+        let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
+        if let Value::Seq(items) = &seq {
+            let _ = crate::value::seq_consume(items);
+        }
+        seq
+    }
+
     pub(crate) fn build_native_failure_value(&self, args: &[Value]) -> Value {
         let default_exception = || {
             let mut attrs = HashMap::new();
@@ -2587,50 +2643,11 @@ impl Interpreter {
                     return Ok(Self::build_native_uni_value(&args));
                 }
                 "Seq" => {
-                    // Seq.new(iterator) — pull all items from the iterator
-                    if let Some(iterator) = args.first() {
-                        if matches!(iterator, Value::Instance { .. })
-                            && self.type_matches_value("PredictiveIterator", iterator)
-                        {
-                            let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
-                            if let Value::Seq(items) = &seq {
-                                let seq_id = std::sync::Arc::as_ptr(items) as usize;
-                                // Store off the scoped env so the association
-                                // survives sub/block returns (see field docs).
-                                self.predictive_seq_iters.insert(seq_id, iterator.clone());
-                                self.env.insert(
-                                    format!("__mutsu_predictive_seq_iter::{seq_id}"),
-                                    iterator.clone(),
-                                );
-                            }
-                            return Ok(seq);
-                        }
-                        if let Value::Instance { attributes, .. } = iterator {
-                            let map = attributes.as_map();
-                            if let Some(Value::Array(items, ..)) =
-                                map.get("items").or_else(|| map.get("stuff"))
-                            {
-                                return Ok(Value::Seq(std::sync::Arc::new(items.to_vec())));
-                            }
-                        }
-                        // Register deferred iterator: don't pull eagerly.
-                        // Raku's Seq.new(iterator) creates a lazy Seq; pulling
-                        // happens only when the Seq is actually consumed/iterated.
-                        let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
-                        if let Value::Seq(items) = &seq {
-                            crate::value::seq_register_deferred_iter(items, iterator.clone());
-                        }
-                        return Ok(seq);
-                    }
-                    // Seq.new() with no args creates a pre-consumed Seq.
-                    // This matches Raku: Seq.new() has no iterator, so it's
-                    // immediately consumed. This is what .raku returns for
-                    // consumed Seqs ("Seq.new()") so the EVAL roundtrip works.
-                    let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
-                    if let Value::Seq(items) = &seq {
-                        let _ = crate::value::seq_consume(items);
-                    }
-                    return Ok(seq);
+                    // Shared single implementation with the VM's native fast path
+                    // (`try_native_seq_construct`). Reads/writes only VM-owned state
+                    // (the `predictive_seq_iters` carrier table + the deferred-iter
+                    // side table keyed off the Seq's own Arc).
+                    return Ok(self.try_native_seq_construct(&args));
                 }
                 "Version" => {
                     let arg = args.first().cloned().unwrap_or(Value::Nil);

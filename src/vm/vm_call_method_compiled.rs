@@ -213,6 +213,19 @@ impl Interpreter {
             self.method_dispatch_pure = true;
             return Ok(self.build_native_failure_value(&args));
         }
+        // Native Seq construction: `Seq.new($iterator?)` — registers the
+        // iterator into the VM-owned predictive/deferred carrier tables (no
+        // eager pull, no FS / process / user code). Built via the single
+        // `try_native_seq_construct` impl the interpreter's `dispatch_new` arm
+        // also delegates to. (A user subclass `class S is Seq` resolves to its
+        // own class name and is left to the interpreter.)
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && class_name.resolve() == "Seq"
+        {
+            self.method_dispatch_pure = true;
+            return Ok(self.try_native_seq_construct(&args));
+        }
         // Native built-in *class* method (a pure type-object method other than
         // `.new`, e.g. `Instant.from-posix`) — built directly instead of routing
         // through the interpreter's class-method dispatch.
@@ -1845,6 +1858,14 @@ impl Interpreter {
         {
             self.method_dispatch_pure = true;
             return Ok(self.build_native_failure_value(&args));
+        }
+        // Native Seq construction (mut path twin of the above).
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && class_name.resolve() == "Seq"
+        {
+            self.method_dispatch_pure = true;
+            return Ok(self.try_native_seq_construct(&args));
         }
         // Native built-in class method (mut path twin of the above).
         if let Value::Package(class_name) = &target

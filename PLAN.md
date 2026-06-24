@@ -133,15 +133,17 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
   - **`Failure.new($exception?)`（#TBD）= 完了**＝残 `new` fallback の最大カウント（2593）。VM 所有 state のみ読む pure data assembly（明示 exception /
     `$!` env / `X::AdHoc` default＋非例外値の `X::AdHoc` wrap・MRO 読み `mro_readonly`）。`dispatch_new_and_constructors` の arm を `build_native_failure_value`
     に丸ごと抽出し VM/interpreter 両方が呼ぶ＝true single impl。単一ストア化後 `self.env`（＝`$!`）は VM/interpreter 同一＝byte-identical。
+  - **`Seq.new($iterator?)`（#3533）= 完了**。前回「iterator carrier＝別軸（impure）」と保守分類していたが carrier state 自体が VM 所有
+    （`predictive_seq_iters` フィールド＋env 内部キー＋Seq Arc キーのグローバル deferred-iter 表）＝構築は eager pull せず VM 所有 state への登録のみ。
+    `dispatch_new` の Seq arm を `try_native_seq_construct` に丸ごと抽出し VM/interpreter 両方が呼ぶ＝true single impl・byte-identical。
   - **次の clean な ctor スライス（2 件・2026-06-24 実測訂正）**: 台帳が「state 依存」と分類していた 2 件は実は tractable。
     - **`Proc::Async.new`（最も簡単・次セッション最初）**＝完全 pure data（プロセス spawn は `.start`・ctor は引数パース＋`next_supply_id()` 〔free fn〕
       ＋`SharedPromise::new()`＋Supply 属性構築のみ・`&self` 依存ゼロ）。`build_native_proc_async_value` static helper を `try_native_builtin_construct` に
       `Promise`/`Channel` と同型で wire。
     - **`IO::Socket::INET.new`（medium・次）**＝`dispatch_socket_inet_new`（`&mut self`・実 bind/connect＋`insert_handle_state`）は **io_handles 依存だが
       `IO::Path.open`（#3507 native 化済）と同型**（io_handles は VM 所有）。`try_native_socket_inet_construct` で両 catch-all から既存 helper へ委譲。
-  - **真に構造ブロック（上記 2 件 land 後に ctor-fork 完了）**: `CallFrame.new`〔call-stack carrier〕・`Seq.new(iterator)`〔predictive iterator carrier・
-    `predictive_seq_iters` field ＋ env 書き込みで impure〕・error-only（HyperWhatever/Whatever/Instant）。これら以後は §D の本丸＝(b) tree-walk dispatch-chain
-    削除 substrate or multi-dispatch VM 化（下記の唯一の `[ ]`）。
+  - **真に構造ブロック（上記 2 件 land 後に ctor-fork 完了）**: `CallFrame.new`〔call-stack carrier〕・error-only（HyperWhatever/Whatever/Instant）。
+    これら以後は §D の本丸＝(b) tree-walk dispatch-chain 削除 substrate or multi-dispatch VM 化（下記の唯一の `[ ]`）。
   - **(b) tree-walk dispatch chain 削除の substrate**: IO/coercion が native 化した今、`dispatch_method_by_name_*` チェーンと
     catch-all バウンス（`vm_call_method_compiled.rs` 末尾）の構造的削除。残る到達カテゴリ＝MOP carrier（WHAT/name/can/HOW・反射で
     撲滅対象外）/ landmine（Instance.Str/.Stringy/.raku/.gist・列挙不能で見送り済）/ block-exec slow path（map/grep・lever B/Phase 2）/
