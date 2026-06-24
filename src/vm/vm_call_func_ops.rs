@@ -1347,11 +1347,13 @@ impl Interpreter {
         // arg_sources naming the proto params, so the candidate's writeback lands
         // in the proto frame and the proto's own rw binding propagates it to the
         // caller at proto exit. `None` => unchanged (the common non-rw case).
-        let (args, rw_arg_sources) =
-            match self.proto_rw_redispatch_args(&proto_name, &args, Some(code)) {
-                Some((rebuilt, sources)) => (rebuilt, Some(sources)),
-                None => (args, None),
-            };
+        let (args, rw_arg_sources) = match self
+            .resolve_proto_function(&proto_name)
+            .and_then(|proto| self.proto_rw_redispatch_args(&proto.param_defs, &args, Some(code)))
+        {
+            Some((rebuilt, sources)) => (rebuilt, Some(sources)),
+            None => (args, None),
+        };
         // For rw redispatch the rebuilt args are plain values; a candidate's
         // `is rw` param requires a *writable* argument, which the multi-dispatch
         // writability check satisfies from `pending_call_arg_sources` (a named
@@ -1399,21 +1401,30 @@ impl Interpreter {
     /// signature.
     pub(crate) fn proto_rw_redispatch_args(
         &self,
-        proto_name: &str,
+        proto_param_defs: &[crate::ast::ParamDef],
         orig_args: &[Value],
         code: Option<&CompiledCode>,
     ) -> Option<(Vec<Value>, Vec<Option<String>>)> {
-        let proto = self.resolve_proto_function(proto_name)?;
-        let positional: Vec<&crate::ast::ParamDef> = proto
-            .param_defs
+        // The fixed positional params: drop the invocant and the variadic /
+        // named catch-alls (a `proto method` always carries an implicit `%_`),
+        // so a simple positional signature still qualifies. We only rebuild when
+        // these fixed params exactly consume the call's positional args.
+        let positional: Vec<&crate::ast::ParamDef> = proto_param_defs
             .iter()
-            .filter(|pd| !pd.is_invocant)
-            .collect();
-        // Only a simple all-positional signature with arity matching the call.
-        if positional.len() != orig_args.len()
-            || positional.iter().any(|pd| {
-                pd.named || pd.slurpy || pd.double_slurpy || pd.onearg || pd.sub_signature.is_some()
+            .filter(|pd| {
+                !pd.is_invocant
+                    && !pd.named
+                    && !pd.slurpy
+                    && !pd.double_slurpy
+                    && !pd.onearg
+                    && pd.sub_signature.is_none()
+                    && pd.name != "%_"
+                    && pd.name != "@_"
             })
+            .collect();
+        // All args must be positional, and the fixed positional params must
+        // exactly consume them (no slurpy mopping up extras).
+        if positional.len() != orig_args.len()
             || orig_args.iter().any(|a| {
                 matches!(
                     crate::runtime::types::unwrap_varref_value(a.clone()),

@@ -1544,7 +1544,29 @@ impl Interpreter {
         // candidate on the invocant. The one-shot `proto_method_skip` flag makes
         // the re-entry bypass proto interception so it reaches the real candidate.
         if let Some(ctx) = method_ctx {
+            // `{*}` rw-redispatch for a proto *method* (ledger §D): like the proto
+            // *sub* path (`vm_call_proto_dispatch`), Rakudo redispatches with the
+            // proto's CURRENT (body-mutated) parameter, and a candidate's `is rw`
+            // param needs a writable argument. The interpreter binds method params
+            // by name into env, so the current value lives in env (`code = None`).
+            // Rebuild the rw args + arg_sources so the candidate matches and its
+            // writeback chains back through the proto method param to the caller.
+            let invocant_class = match &ctx.invocant {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            };
+            let (args, rw_sources) = match invocant_class
+                .and_then(|cn| self.lookup_proto_method(&cn, &proto_name))
+                .and_then(|(_, proto)| {
+                    self.proto_rw_redispatch_args(&proto.param_defs, &args, None)
+                }) {
+                Some((rebuilt, sources)) => (rebuilt, Some(sources)),
+                None => (args, None),
+            };
             self.proto_method_skip = Some(proto_name.clone());
+            if rw_sources.is_some() {
+                self.set_pending_call_arg_sources(rw_sources);
+            }
             return self.call_method_with_values(ctx.invocant, &proto_name, args);
         }
         self.clear_pending_dispatch_error();

@@ -178,22 +178,22 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     `proto foo($x){ say "x"; {*} }` の body＋`{*}` 候補ディスパッチを両方 compiled 実行（`vm_try_run_nontrivial_proto_body`
     ＋`vm_call_proto_dispatch`）。実測 `t/proto-nontrivial-body-vm.t` で interpreter_fallbacks 50.1%→0.5%。
     pin=`t/proto-nontrivial-body-vm.t`(13)/`t/proto-candidate-otf-dispatch.t`(7)。
-  - [x] **`{*}` を proto の現在パラメータで再ディスパッチ（scalar rw/raw proto sub）= 完了（#TBD）→ [news/2026-06.md](news/2026-06.md)**。
+  - [x] **`{*}` を proto の現在パラメータで再ディスパッチ（scalar rw/raw・proto sub #3556 / proto method #TBD）= 完了 → [news/2026-06.md](news/2026-06.md)**。
     `proto pr($x is rw){ $x=99; {*} }`/`multi pr(Int $x is rw){ $x=$x+1 }` で `pr($v)`（$v=10）が raku=**100** に対し mutsu=**99**
     （候補が body 変異済 `$x`=99 を見ず・候補の rw write が消える）だった。**★前回「§C varref container と絡む（重い）」と分類したが
-    arg_sources 機構で解決可と判明（terminator 同型の誤分類）**。修正＝`vm_call_proto_dispatch` に `proto_rw_redispatch_args`:
-    proto が scalar rw/raw positional param を持つ simple-positional sig のとき、`{*}` 時点の **proto param 現在値を live body locals
-    （`code.locals` slot・scalar rw param は mid-body slot-only で env 未 flush）から読んで rebuild**＋**arg_sources=proto param 名**を
-    resolution 前に `set_pending_call_arg_sources`。候補の `is rw` は plain 値でも arg_sources で writability チェックを通り
-    （`args_matching.rs:211` `has_arg_source`）、候補の writeback が proto frame env `$x` に着地→`__PROTO_DISPATCH__` call-site の
-    `apply_pending_rw_writeback` が proto body locals に書き戻し→proto exit の `apply_rw_bindings_to_env` が caller `$v` へ伝播。
-    pin=`t/proto-rw-redispatch-coherence.t`(9・proto param 名≠候補名/二項目 rw/is raw/非rw proto 不変 含む)。
-    **残ギャップ（別軸・本 PR 範囲外）**: ①**proto method** の rw redispatch（method_ctx は interpreter `call_proto_dispatch` に落ち
-    pre-existing で壊れる・要 interpreter path 同型修正）②**nextsame+rw チェーン**（first 候補の rw は伝播するが nextsame で次候補へ
-    渡る際の rw write は multi_dispatch_stack 別機構で消える・C ケース 40→41 改善も 1041 には未達）。
+    arg_sources 機構で解決可と判明（terminator 同型の誤分類）**。修正＝`proto_rw_redispatch_args`（proto param_defs を取る）:
+    proto が scalar rw/raw fixed-positional param を持つとき（`%_`/`@_` catch-all は除外）、`{*}` 時点の **proto param 現在値**を
+    rebuild（VM sub=live body locals〔scalar rw param は mid-body slot-only で env 未 flush〕／interpreter method=env）＋
+    **arg_sources=proto param 名**を resolution 前に `set_pending_call_arg_sources`。候補の `is rw` は plain 値でも arg_sources で
+    writability チェックを通り（`args_matching.rs:211` `has_arg_source`）、候補の writeback が proto frame に着地→call-site の
+    writeback drain→proto exit の `apply_rw_bindings_to_env` が caller へ伝播。VM sub=`vm_call_proto_dispatch`（#3556）／
+    interpreter proto method=`call_proto_dispatch` の method_ctx 分岐（#TBD・`lookup_proto_method` で proto def 解決）。
+    pin=`t/proto-rw-redispatch-coherence.t`(9・sub) / `t/proto-method-rw-redispatch.t`(5・method)。
+    **残ギャップ（別軸）**: **nextsame+rw チェーン**（first 候補の rw は伝播するが nextsame で次候補へ渡る rw write は
+    `multi_dispatch_stack` 別機構で消える・2 候補ケース 40→41 改善も raku=1041 未達）。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）/
     `code_signature`・`&`-code param を持つ候補の OTF 化（依然除外）/ default-param OTF（上記 DEFERRED・builtin-shadow gate 要）/
-    proto **method** rw redispatch（interpreter path）/ nextsame+rw チェーン（上記 ①②）。
+    nextsame+rw チェーン（上記）。
 
 ---
 
