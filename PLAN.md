@@ -124,8 +124,12 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     populated は `\(...)`。残ギャップ＝Capture **instance** 受け手の `.new`（別軸の built-in value variant instance ctor 委譲）。
   - **`Array`/`List`/`Positional`/`array`/`Hash`/`Map` の `.new`（#3526）= 完了**。`&mut self`（shaped/typed/metadata）なので QuantHash 同様
     新モジュール `methods_aggregate_ctor.rs` に 2 arm（~310 行）丸ごと抽出＝true single impl。
-  - **clean な built-in ctor 候補は枯渇。** 残る `dispatch_new` arm は state/FS/process 依存（IO::Socket::INET・Distribution/CompUnit::Repository・
-    Proc::Async・Backtrace・Seq〔predictive iterator carrier〕）か error-only（HyperWhatever/Whatever/Instant）＝別軸 or 構造ブロッカー前提。
+  - **allomorph〔`IntStr`/`NumStr`/`RatStr`/`ComplexStr`〕＋`ObjAt`/`ValueObjAt` の `.new`（#TBD）= 完了**。`dispatch_new` ではなく
+    `dispatch_new_and_constructors`（slow-path）側に在った pure-static ctor。`new` fallback receiver の再計測で最頻（RatStr 892 等）と判明。
+    static `build_native_allomorph_value`/`build_native_objat_value` を `try_native_builtin_construct` と interpreter 両方が呼ぶ＝true single impl。
+  - **clean な built-in ctor 候補は枯渇。** 残る `new` fallback receiver は state/FS/process 依存（IO::Socket::INET・Proc::Async・Failure〔`$!` 読み〕・
+    Distribution/CompUnit::Repository・Backtrace・Seq〔predictive iterator carrier〕・IO::Path family〔registry・候補〕）か error-only（HyperWhatever/
+    Whatever/Instant）＝別軸 or 構造ブロッカー前提。
   - **(b) tree-walk dispatch chain 削除の substrate**: IO/coercion が native 化した今、`dispatch_method_by_name_*` チェーンと
     catch-all バウンス（`vm_call_method_compiled.rs` 末尾）の構造的削除。残る到達カテゴリ＝MOP carrier（WHAT/name/can/HOW・反射で
     撲滅対象外）/ landmine（Instance.Str/.Stringy/.raku/.gist・列挙不能で見送り済）/ block-exec slow path（map/grep・lever B/Phase 2）/

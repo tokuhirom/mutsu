@@ -42,49 +42,21 @@ impl Interpreter {
             }
             "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "ObjAt" | "ValueObjAt")) =>
             {
-                let class_name = if let Value::Package(n) = target {
-                    n.resolve()
-                } else {
-                    unreachable!()
+                // Pure data assembly — shared with the VM's `try_native_builtin_construct`.
+                let class_name = match target {
+                    Value::Package(n) => *n,
+                    _ => unreachable!(),
                 };
-                // Find the first non-Pair positional argument (Pairs are named args)
-                let positional = args
-                    .iter()
-                    .find(|a| !matches!(a, Value::Pair(_, _) | Value::ValuePair(_, _)));
-                match positional {
-                    Some(val) => {
-                        let which_str = val.to_string_value();
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("WHICH".to_string(), Value::str(which_str));
-                        Some(Ok(Value::make_instance(Symbol::intern(&class_name), attrs)))
-                    }
-                    None => Some(Err(RuntimeError::new(
-                        "Too few positionals passed; expected 2 arguments but got 1".to_string(),
-                    ))),
-                }
+                Some(Self::build_native_objat_value(class_name, &args))
             }
             "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr")) =>
             {
-                let type_name = if let Value::Package(n) = target {
-                    n.resolve()
-                } else {
-                    unreachable!()
+                // Pure data assembly — shared with the VM's `try_native_builtin_construct`.
+                let type_name = match target {
+                    Value::Package(n) => n.resolve(),
+                    _ => unreachable!(),
                 };
-                if args.len() < 2 {
-                    return Some(Err(RuntimeError::new(format!(
-                        "{}.new requires two arguments (numeric, string)",
-                        type_name
-                    ))));
-                }
-                // Unwrap allomorphic (Mixin) arguments to get the inner numeric value
-                let numeric = match &args[0] {
-                    Value::Mixin(inner, _) => (**inner).clone(),
-                    other => other.clone(),
-                };
-                let string = args[1].to_string_value();
-                let mut mixins = std::collections::HashMap::new();
-                mixins.insert("Str".to_string(), Value::str(string));
-                Some(Ok(Value::mixin(numeric, mixins)))
+                Some(Self::build_native_allomorph_value(&type_name, &args))
             }
             "new" if matches!(target, Value::Package(name) if name == "Failure") => {
                 let default_exception = || {
