@@ -1488,10 +1488,18 @@ impl Interpreter {
         // (for single candidates), and merges the `&name` Sub's captured env so
         // a `where` referencing closure variables resolves them — byte-identical
         // to the interpreter fallback (ledger §D, multi-dispatch VM-ization).
+        //
+        // A `&callback` parameter is also NOT excluded: it binds and is invoked
+        // (`cb()`, `cb($x)`) exactly like any compiled local, including blocks,
+        // `&name`-passed subs, and closures over outer lexicals. Only a `&cb` with
+        // an explicit code signature (`&cb:(Int)`, `code_signature`) and a param
+        // with a default value stay excluded (the former still has a separate
+        // resolution-ambiguity gap; the latter is the deferred default-OTF case).
         !Self::function_body_needs_interpreter(&def.body)
-            && def.param_defs.iter().all(|pd| {
-                pd.default.is_none() && pd.code_signature.is_none() && !pd.name.starts_with('&')
-            })
+            && def
+                .param_defs
+                .iter()
+                .all(|pd| pd.default.is_none() && pd.code_signature.is_none())
     }
 
     /// Check if a function body contains constructs that require

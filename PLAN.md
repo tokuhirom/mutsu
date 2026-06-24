@@ -191,9 +191,13 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     pin=`t/proto-rw-redispatch-coherence.t`(9・sub) / `t/proto-method-rw-redispatch.t`(5・method)。
     **残ギャップ（別軸）**: **nextsame+rw チェーン**（first 候補の rw は伝播するが nextsame で次候補へ渡る rw write は
     `multi_dispatch_stack` 別機構で消える・2 候補ケース 40→41 改善も raku=1041 未達）。
+  - [x] **`&`-code param を持つ候補の OTF 化 = 完了（#TBD）→ [news/2026-06.md](news/2026-06.md)**。`def_is_otf_compilable` の
+    `!pd.name.starts_with('&')` ガードを撤去（`code_signature`〔`&cb:(Int)`〕と default 値の除外は維持）。`multi f(&cb){…}` 候補が
+    bare multi / proto 経由とも compiled 実行され interpreter fallback を解消（proto `&cb` 経由 25%→0%）。block literal / 引数付き
+    callback / `&name` 渡し / outer 変数を閉包する callback まで byte-identical（pin=`t/multi-amp-param-otf-dispatch.t`(8)）。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）/
-    `code_signature`・`&`-code param を持つ候補の OTF 化（依然除外）/ default-param OTF（上記 DEFERRED・builtin-shadow gate 要）/
-    nextsame+rw チェーン（上記）。
+    `code_signature`〔`&cb:(Int)`〕param を持つ候補の OTF 化（依然除外・別軸で `&cb:(Int)` vs `&cb` の resolution ambiguity も要）/
+    default-param OTF（上記 DEFERRED・builtin-shadow gate 要）/ nextsame+rw チェーン（上記）。
 
 ---
 
