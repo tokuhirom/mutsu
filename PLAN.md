@@ -186,15 +186,16 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     候補は tree-walk のまま＝②③は follow-up。実測 proto 名（p1-p4/fib/nm…）が fallback-by-name から消え `__PROTO_DISPATCH__` のみ残る。
     pin=`t/proto-nontrivial-body-vm.t`(13)。env.t/system.t/cur-current-distribution.t＋S06-multi proto/syntax/lexical-multis ローカル全 PASS。
     **★既知の別軸バグ（main でも同一・本スライスで不変）**: `is rw` proto param の writeback は非trivial proto body を越えて伝播しない
-    （`inc1($v)` が 10 のまま・interpreter path でも同じ）／複数 `{*}` を rvalue で使う body（`my $a={*}`）は Nil。候補側 rw-binding
-    writeback の真の修正は②③（候補 OTF 実行）と同時が筋。
-  - [ ] **②③候補 OTF 実行（follow-up・次の本丸）**: ②`__PROTO_DISPATCH__`（現 `builtins.rs:386`→`call_proto_dispatch`・interpreter）を
+    （`inc1($v)` が 10 のまま・interpreter path でも同じ）／複数 `{*}` を rvalue で使う body（`my $a={*}`）は Nil。これは
+    proto_dispatch_stack args が rw コンテナを運ばない深い別軸（interpreter/VM 共通）で ②③ でも不変。
+  - [x] **②③候補 OTF 実行 = 完了（#TBD）**: ②`__PROTO_DISPATCH__`（旧 `builtins.rs:386`→`call_proto_dispatch`・interpreter）を
     VM ネイティブ化（`dispatch_func_call_inner` 冒頭で `name=="__PROTO_DISPATCH__"` を intercept→`vm_call_proto_dispatch(compiled_fns)`）し
-    winner を `compile_and_call_function_def` で OTF 実行 ③その際の env/routine_stack/proto_dispatch_stack 整合と候補側 rw-binding writeback。
-    非OTF候補/no-match/ambiguity/proto-method（method_ctx）は interpreter `call_proto_dispatch` に委譲。builtin-shadow hazard は候補名が
-    proto名（multi 持ち）→`otf_call_cache` insert skip されるので非該当の見込み。
-    **★default-OTF の教訓**: multi-dispatch 変更は make test + 局所 whitelist で緑でも release roast で broad 回帰しうる（[[project_multi_dispatch_otf_default_deferred]]）。
-    実装時は env.t/system.t/cur-current-distribution.t（subprocess+Test::Util+subtest）を必ずローカル再現確認し、full roast を CI に委ねる。
+    winner を `compile_and_call_function_def` で OTF 実行（trivial-proto fork と同一経路）。proto-method（method_ctx）/no-match/
+    ambiguity/empty-sig-with-args/非OTF/state は interpreter `call_proto_dispatch` に委譲（X::Multi::NoMatch/Ambiguous の生成と
+    proto_method_skip 整合は interpreter 所有のまま）。実測 `t/proto-nontrivial-body-vm.t` で interpreter_fallbacks 50.1%→0.5%
+    （`__PROTO_DISPATCH__` 188→0・残 callsame carrier と dies-ok エラー経路のみ）。builtin-shadow hazard 非該当（候補名=proto名で
+    `has_multi_candidates_cached`→`otf_call_cache` insert skip）。pin=`t/proto-candidate-otf-dispatch.t`(7・nextsame/samewith/callsame
+    chain＋nested proto)。env.t/system.t/cur-current-distribution.t＋S06-multi＋proto-含む roast 24 本 = 失敗数 main と完全一致（回帰ゼロ）。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）/
     `code_signature`・`&`-code param を持つ候補の OTF 化（依然除外）/ default-param OTF（上記 DEFERRED・builtin-shadow gate 要）。
 

@@ -930,6 +930,15 @@ impl Interpreter {
         self.proto_dispatch_stack.pop();
     }
 
+    /// Clone of the current proto-dispatch frame `(name, args, method_ctx)`, read
+    /// by the VM-native `{*}` redispatch handler. `None` outside a proto body.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn proto_dispatch_last(
+        &self,
+    ) -> Option<(String, Vec<Value>, Option<super::ProtoMethodCtx>)> {
+        self.proto_dispatch_stack.last().cloned()
+    }
+
     /// Push a samewith context for a multi sub dispatch.
     pub(crate) fn push_samewith_context(&mut self, name: &str, invocant: Option<Value>) {
         self.samewith_context_stack

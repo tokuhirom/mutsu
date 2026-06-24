@@ -1534,7 +1534,7 @@ impl Interpreter {
         Some(result)
     }
 
-    pub(super) fn call_proto_dispatch(&mut self) -> Result<Value, RuntimeError> {
+    pub(crate) fn call_proto_dispatch(&mut self) -> Result<Value, RuntimeError> {
         let (proto_name, args, method_ctx) = self
             .proto_dispatch_stack
             .last()
