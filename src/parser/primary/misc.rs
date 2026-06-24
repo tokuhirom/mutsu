@@ -238,6 +238,25 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
         "∘" => "o".to_string(),
         other => other.to_string(),
     };
+    // A `&callable` reduction operator requires the double-bracket form
+    // `[[&foo]]` (the inner `[&foo]` is itself the bracketed infix). A single
+    // `[&foo]` is an array literal containing the sub, NOT a reduction — in
+    // Raku `[&foo]` alone is a term (array literal), `2 [&foo] 3` is an infix,
+    // and only `[[&foo]] @a` is the reduction. Both forms flatten to op
+    // `&foo`, so distinguish by whether the raw inner was itself bracketed.
+    let meta = |c: char| c == 'R' || c == 'Z' || c == 'X' || c == '\\';
+    let is_callable_amp = |s: &str| {
+        s.strip_prefix('&')
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(|c| c.is_alphabetic() || c == '_')
+    };
+    if is_callable_amp(op.trim_start_matches(meta))
+        && !inner.trim_start().trim_start_matches(meta).starts_with('[')
+    {
+        return Err(PError::expected(
+            "callable reduction requires double-bracket form [[&op]]",
+        ));
+    }
     // Only accept known operators (after flattening) to avoid confusion with array literals.
     if !is_valid_reduction_op(&op) {
         return Err(PError::expected("known reduction operator"));
