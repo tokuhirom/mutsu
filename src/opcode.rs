@@ -401,8 +401,13 @@ pub(crate) enum OpCode {
     // -- Stack manipulation --
     Dup,
     Pop,
-    /// Pop with sink context — throws unhandled Failures when fatal_mode is active
-    SinkPop,
+    /// Pop with sink context — throws unhandled Failures when fatal_mode is active.
+    /// The bool is `true` when the sunk value is a syntactically fresh rvalue
+    /// (e.g. a method call / `Foo.new`) that may invoke a user-defined `sink`
+    /// method; `false` for bare variables / function-call returns whose values
+    /// are (or may be) container-wrapped and must not auto-sink (Raku does not
+    /// sink container-wrapped values).
+    SinkPop(bool),
     /// Peek the top of stack (without popping) and throw it if it is an
     /// unhandled Failure. Used at the tail of a try/CATCH body so a trailing
     /// `fail`/Failure value is thrown into the block's CATCH handler while a

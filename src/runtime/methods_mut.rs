@@ -4342,7 +4342,7 @@ impl Interpreter {
 
     /// Recursively flatten arguments for Buf mutate methods.
     /// Handles nested arrays, Seq, Slip, and Buf/Blob instances.
-    fn flatten_buf_args(args: Vec<Value>) -> Vec<Value> {
+    pub(in crate::runtime) fn flatten_buf_args(args: Vec<Value>) -> Vec<Value> {
         let mut result = Vec::new();
         for a in args {
             match &a {

@@ -607,6 +607,16 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
 
+    // `foo: args` where `foo` is a declared subroutine is a colon-listop call,
+    // not a label (Raku: `trim: "x"` calls `trim("x")`, while `LOOP: for ...`
+    // is a label). The loop/block label forms are handled above; only the
+    // generic `IDENT: <expr>` case is ambiguous, and a declared-sub name
+    // resolves it to a call. Parse the colon-listop argument list directly.
+    if crate::parser::stmt::simple::is_user_declared_sub(&label) {
+        let (r, call) = crate::parser::primary::ident::parse_expr_listop_args(rest, label.clone())?;
+        return Ok((r, Stmt::Expr(call)));
+    }
+
     // Generic labeled statement: LABEL: <statement>
     let (r, stmt) = statement(rest)?;
     Ok((
