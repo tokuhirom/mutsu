@@ -895,6 +895,13 @@ impl Interpreter {
         call_me_override: Option<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
+        if name == "__PROTO_DISPATCH__" {
+            // `{*}` inside a compiled proto body (ledger §D): the proto-dispatch
+            // marker rewritten by `rewrite_proto_dispatch_stmts`. Resolve and run
+            // the winning multi candidate VM-natively (compiled bytecode) instead
+            // of bouncing through interpreter `call_proto_dispatch` + `run_block`.
+            return self.vm_call_proto_dispatch(compiled_fns);
+        }
         if let Some(callable) = call_me_override {
             let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
             let result = result?;
@@ -1295,6 +1302,52 @@ impl Interpreter {
         let result = self.call_compiled_function_named(&cf, args, compiled_fns, &pkg, name);
         self.pop_proto_dispatch_frame();
         Some(result)
+    }
+
+    /// VM-native `{*}` redispatch (ledger §D, multi-dispatch VM-ization step ②③):
+    /// reached when a compiled proto body executes its rewritten `__PROTO_DISPATCH__()`
+    /// call. Resolves the winning multi candidate from the proto-dispatch frame's
+    /// original args and runs it as compiled bytecode via
+    /// `compile_and_call_function_def` — the same path the trivial-proto fork uses —
+    /// so the candidate body and its `nextsame`/`callsame`/`samewith` redispatch all
+    /// run VM-natively instead of tree-walking through interpreter
+    /// `call_proto_dispatch` and `run_block`. (The `is rw` writeback *through* a
+    /// non-trivial proto body is a separate pre-existing gap — the proto-dispatch
+    /// frame carries the proto's original args, not the caller's containers — and is
+    /// unchanged here; it fails identically on the interpreter path.)
+    ///
+    /// Falls back to the interpreter's `call_proto_dispatch` (which owns the full
+    /// `X::Multi::NoMatch` / `X::Multi::Ambiguous` reporting, `proto method`
+    /// invocant handling, and the tree-walk `run_block`) whenever a VM-native run
+    /// would not be byte-identical: a `proto method` `{*}` (invocant context), no
+    /// resolvable / ambiguous candidate, an empty-sig candidate called with args, or
+    /// a non-OTF-compilable / `state`-declaring candidate.
+    pub(super) fn vm_call_proto_dispatch(
+        &mut self,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        let Some((proto_name, args, method_ctx)) = self.proto_dispatch_last() else {
+            // `{*}` outside a proto — let the interpreter raise the proper error.
+            return self.loan_env_for(|i| i.call_proto_dispatch());
+        };
+        // `proto method` redispatch needs the invocant + one-shot `proto_method_skip`
+        // bookkeeping the interpreter owns; only proto *subs* run compiled here.
+        if method_ctx.is_some() {
+            return self.loan_env_for(|i| i.call_proto_dispatch());
+        }
+        // Clear any stale pending dispatch error (mirrors the trivial-proto fork)
+        // so a prior call's ambiguity can't leak into this resolution.
+        let _ = self.take_pending_dispatch_error();
+        if let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args)
+            && (!def.empty_sig || args.is_empty())
+            && Self::def_is_otf_compilable(&def)
+            && !Self::function_body_declares_state(&def.body)
+        {
+            return self.compile_and_call_function_def(&def, args, compiled_fns);
+        }
+        // No candidate / ambiguous / empty-sig-with-args / non-OTF / state: the
+        // interpreter re-resolves and produces the exact error or tree-walk result.
+        self.loan_env_for(|i| i.call_proto_dispatch())
     }
 
     pub(super) fn def_is_otf_compilable(def: &crate::ast::FunctionDef) -> bool {
