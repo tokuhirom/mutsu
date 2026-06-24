@@ -4803,7 +4803,18 @@ impl Interpreter {
                 self.env.insert(meta_key, Value::str(info.value_type));
             }
             None => {
+                // An untyped scalar parameter shadows any same-named lexical: it
+                // has NO constraint in the callee's scope. Clear both the env
+                // metadata AND a possibly-stale `var_type_constraints` entry left
+                // by an earlier `my Type $x` declaration whose block has exited
+                // (the global map is not block-scoped). Without this, reading the
+                // (Nil-defaulted) parameter would surface the stale constraint via
+                // the global-map fallback and return the type object instead of
+                // Nil — roast S02-types/nil.t f4. An enclosing typed lexical that
+                // is still in scope keeps its own env metadata, so its enforcement
+                // (read env-first) survives the callee's return.
                 self.env.remove(&meta_key);
+                self.var_type_constraints.remove(name);
             }
         }
     }
