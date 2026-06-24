@@ -226,6 +226,19 @@ impl Interpreter {
             self.method_dispatch_pure = true;
             return Ok(self.try_native_seq_construct(&args));
         }
+        // Native IO::Socket::INET construction: `IO::Socket::INET.new(...)` —
+        // the real bind/connect writes only VM-owned `io_handles` state (same
+        // shape as the native `IO::Path.open`). Built via the single
+        // `dispatch_socket_inet_new` impl the interpreter's `dispatch_new` arm
+        // also delegates to. (A user subclass resolves to its own class name and
+        // is left to the interpreter.)
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && class_name.resolve() == "IO::Socket::INET"
+        {
+            self.method_dispatch_pure = true;
+            return self.dispatch_socket_inet_new(&args);
+        }
         // Native built-in *class* method (a pure type-object method other than
         // `.new`, e.g. `Instant.from-posix`) — built directly instead of routing
         // through the interpreter's class-method dispatch.
@@ -1866,6 +1879,14 @@ impl Interpreter {
         {
             self.method_dispatch_pure = true;
             return Ok(self.try_native_seq_construct(&args));
+        }
+        // Native IO::Socket::INET construction (mut path twin of the above).
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && class_name.resolve() == "IO::Socket::INET"
+        {
+            self.method_dispatch_pure = true;
+            return self.dispatch_socket_inet_new(&args);
         }
         // Native built-in class method (mut path twin of the above).
         if let Value::Package(class_name) = &target

@@ -664,6 +664,16 @@
   に `cn=="Proc::Async"` arm を `Promise`/`Channel`/`Supplier` と同型で wire＝**1 操作 = 1 実装**・byte-identical。pin `t/native-proc-async-ctor.t`(8・
   raku/mutsu 双方 PASS。実 echo/cat round-trip ＋ exit code ＋ `:w` stdin 込み)。t/proc-async.t(23)・roast/S17-procasync/basic.t(47)/print.t(16) 全緑。
   **残 `new` fallback＝IO::Socket::INET（io_handles・次・`IO::Path.open` と同型）/CallFrame〔call stack carrier・別軸〕。**
+- **2026-06-24 (§D ③ = `IO::Socket::INET.new(...)` を VM ネイティブ化, #3536)**: ③ ctor フォークの clean ラスト。`IO::Socket::INET.new`（`:listen`
+  server / client 両モード）の ctor は実 bind/connect を行うが、**書き込み先は VM 所有の `io_handles`**（`insert_handle_state`＝既に native 化済の
+  `IO::Path.open`〔#3507〕と同型）＝env/registry/user code は触らない。既存の `&mut self` helper `dispatch_socket_inet_new`（interpreter の `dispatch_new`
+  arm が呼んでいた単一 impl）を `pub(in crate::runtime)`→`pub(crate)` に広げ、VM の非mut/mut 両 catch dispatch（Seq ctor arm の直後・
+  `class_name=="IO::Socket::INET"` gate・`method_dispatch_pure=true`）から**同じ helper を直接呼ぶ**＝**1 操作 = 1 実装**・byte-identical（新規コピー無し）。
+  user subclass は class_name が自名に解決され gate に掛からず interpreter 維持。pin `t/native-socket-inet-ctor.t`(7・raku/mutsu 双方 PASS。実 loopback
+  client/server round-trip ＋ invalid port/family dies ＋ 独立 listener)。t/socket.t(3)・roast/S32-io/IO-Socket-INET.t(32)/IO-Socket-INET-UNIX.t(8)/
+  socket-accept-and-working-threads.t(15)/socket-fail-invalid-values.t(4)/socket-host-port-split.t(2) 全緑。**∴ ③ ctor フォーク完了**＝pure-value/
+  VM-owned-state な built-in ctor は全て native 化済。**残 `new` fallback＝CallFrame〔call stack carrier〕・error-only（HyperWhatever/Whatever/Instant）＝
+  別軸 or 構造ブロック。** 次は §D の本丸＝(b) tree-walk dispatch-chain 削除 substrate or multi-dispatch VM 化。
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

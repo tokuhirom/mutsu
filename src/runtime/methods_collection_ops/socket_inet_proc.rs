@@ -2,7 +2,11 @@ use super::*;
 
 impl Interpreter {
     /// IO::Socket::INET.new — handles both :listen (server) and client modes.
-    pub(in crate::runtime) fn dispatch_socket_inet_new(
+    /// The real bind/connect writes only VM-owned `io_handles` state (via
+    /// `insert_handle_state`, the same shape as the already-native
+    /// `IO::Path.open`), so the VM's `.new` fast path calls this directly — one
+    /// implementation shared with the interpreter's `dispatch_new` arm.
+    pub(crate) fn dispatch_socket_inet_new(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {

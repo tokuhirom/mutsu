@@ -2800,6 +2800,9 @@ impl Interpreter {
                     return Ok(dt);
                 }
                 "IO::Socket::INET" => {
+                    // Shared single implementation with the VM's native fast
+                    // path. The real bind/connect writes only VM-owned
+                    // `io_handles` state (same shape as the native `IO::Path.open`).
                     return self.dispatch_socket_inet_new(&args);
                 }
                 "Promise" => {
