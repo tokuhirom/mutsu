@@ -535,11 +535,7 @@ impl Interpreter {
         result
     }
 
-    pub(in crate::runtime) fn method_args_match(
-        &mut self,
-        args: &[Value],
-        param_defs: &[ParamDef],
-    ) -> bool {
+    pub(crate) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
         let is_invocant_param =
             |p: &ParamDef| p.is_invocant || p.traits.iter().any(|t| t == "invocant");
         let all_invocant_only = param_defs.iter().all(is_invocant_param);

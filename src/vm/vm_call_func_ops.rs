@@ -1000,7 +1000,23 @@ impl Interpreter {
                 // paths above instead rely on their own scoped-overlay merge to
                 // signal env_dirty only when a captured-outer write happened, so
                 // a pure compiled call no longer forces a per-call locals pull.
-                if self.has_multi_candidates_cached(name) && !self.has_proto(name) {
+                if self.has_proto(name)
+                    && let Some(def) = self.vm_resolve_trivial_proto_candidate(name, &args)
+                {
+                    // VM-native proto dispatch (ledger §D, multi-dispatch VM-ization):
+                    // a trivial-body proto (`proto foo {*}` / bodyless) resolves its
+                    // winning multi candidate via the VM-owned registry (phase ②) and
+                    // runs it as compiled bytecode, bypassing the tree-walk proto body
+                    // + `__PROTO_DISPATCH__` round-trip and the candidate body's own
+                    // `run_block`. Non-trivial proto bodies, unresolved/ambiguous
+                    // candidates, and non-OTF-compilable candidates return None from
+                    // the resolver above and fall through to the interpreter, which
+                    // produces the proper dispatch result / X::Multi::NoMatch error.
+                    // `nextsame`/`callsame`/`callwith`/`samewith` from the selected
+                    // candidate still work because compile_and_call_function_def pushes
+                    // the same multi-dispatch + samewith frames the interpreter would.
+                    self.compile_and_call_function_def(&def, args, compiled_fns)
+                } else if self.has_multi_candidates_cached(name) && !self.has_proto(name) {
                     // User-defined multi candidates take priority over builtins.
                     // Resolve the winning candidate Interpreter-side via the same resolver
                     // call_function_fallback uses (③ PR-3, ledger §2). When the
@@ -1138,6 +1154,66 @@ impl Interpreter {
     /// interpreter): a plain body and no default/where/code-signature/`&`-code
     /// params. Shared by the non-shadow OTF branch and the builtin-shadow forks
     /// (③ PR-2) so the same compilability gate is applied consistently.
+    /// Resolve the winning multi candidate for a *trivial-body* proto so the VM
+    /// can run it as compiled bytecode instead of falling back to the tree-walk
+    /// proto body + `__PROTO_DISPATCH__` round-trip (ledger §D, multi-dispatch
+    /// VM-ization). Returns `None` — leaving the existing interpreter fallback in
+    /// place — whenever the bypass would not be byte-identical:
+    ///
+    /// - the name is interpreter-handled (e.g. a proto'd native Test routine);
+    /// - the proto has a *non-trivial* body (statements around `{*}`), which must
+    ///   still run;
+    /// - no candidate resolves, or resolution is ambiguous (the interpreter then
+    ///   raises the proper `X::Multi::NoMatch` / `X::Multi::Ambiguous`);
+    /// - the winning candidate is not OTF-compilable, or declares `state` (whose
+    ///   shared-cell identity the OTF body-fingerprint cache cannot preserve).
+    pub(super) fn vm_resolve_trivial_proto_candidate(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<crate::ast::FunctionDef> {
+        use crate::ast::{Expr, Stmt};
+        if self.is_interpreter_handled_function(name) {
+            return None;
+        }
+        let proto = self.resolve_proto_function(name)?;
+        // A trivial proto body is empty (bodyless proto) or exactly `{*}` — only
+        // then is bypassing the body safe. `{*}` parses to `Stmt::Expr(Whatever)`.
+        // The compiler prepends line-tracking `SetLine` markers (no runtime
+        // effect on dispatch), so ignore those when judging triviality.
+        let significant: Vec<&Stmt> = proto
+            .body
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        let trivial = significant.is_empty()
+            || (significant.len() == 1 && matches!(significant[0], Stmt::Expr(Expr::Whatever)));
+        if !trivial {
+            return None;
+        }
+        // The proto's OWN signature is a gate: `proto f(Int $x) {*}` rejects a
+        // `Str` arg even when a candidate (`multi f($)`) would accept it
+        // (S06-multi/proto.t: "proto signature is checked"). Bypassing the body
+        // would skip that check, so only proceed when the args satisfy the proto
+        // signature; otherwise fall back so the interpreter raises the proper
+        // X::TypeCheck::Argument. An empty proto signature accepts anything.
+        if !proto.param_defs.is_empty() && !self.method_args_match(args, &proto.param_defs) {
+            return None;
+        }
+        // Ambiguity is signalled by `None` + a pending dispatch error; clear any
+        // stale one first (mirrors the non-proto multi fork) so a prior call's
+        // ambiguity can't leak into this resolution.
+        let _ = self.take_pending_dispatch_error();
+        let def = self.resolve_proto_candidate_with_types(name, args)?;
+        if def.empty_sig && !args.is_empty() {
+            return None;
+        }
+        if !Self::def_is_otf_compilable(&def) || Self::function_body_declares_state(&def.body) {
+            return None;
+        }
+        Some(def)
+    }
+
     pub(super) fn def_is_otf_compilable(def: &crate::ast::FunctionDef) -> bool {
         !Self::function_body_needs_interpreter(&def.body)
             && def.param_defs.iter().all(|pd| {

@@ -152,7 +152,13 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     撲滅対象外）/ landmine（Instance.Str/.Stringy/.raku/.gist・列挙不能で見送り済）/ block-exec slow path（map/grep・lever B/Phase 2）/
     concurrency（Supply/tap・別軸）/ typed-array mutator（typed/shaped/shared・Phase 2/lever B）。**純粋に削れる残りは少なく、各々別軸の
     前提が要る**＝substrate 着手は要設計。
-- [ ] **multi-dispatch の VM 化**: proto multi / where 制約評価を VM 側で（`vm_call_func_ops.rs:1051/1084`）。
+- [ ] **multi-dispatch の VM 化**（着手済・proto sub の trivial-body 経路は #3541 で landed）:
+  - [x] **proto sub dispatch（trivial body）= 完了（#3541）**。`proto foo {*}` / bodyless proto を VM call site で直接ディスパッチ
+    （`vm_resolve_trivial_proto_candidate` が VM 所有レジストリで winner 候補を解決→`compile_and_call_function_def` で compiled 実行）。
+    tree-walk な proto body＋`__PROTO_DISPATCH__` round-trip＋候補 body `run_block` を全てバイパス。proto sig は gate として検証
+    （`method_args_match`）。非trivial body / 非OTF候補 / where 候補は interpreter fallback 維持。実測 `proto factorial` で fallback 100%→0%。
+  - [ ] **残**: where 制約付き候補の OTF 化（候補側 `def_is_otf_compilable` が where を除外）/ 非trivial proto body の VM 化 /
+    bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ）。`vm_call_func_ops.rs:1084` の where 緩和も候補。
 
 ---
 

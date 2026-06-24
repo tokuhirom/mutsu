@@ -48,6 +48,7 @@
 | ~~`vm_var_get_ops.rs` pkg-qualified~~ | ~~`Module::func` を term 位置で~~ | — | **✅消化 (PR3)**: 同上 |
 | `vm_call_func_ops.rs` builtin-shadow（slip + 通常 2 サイト） | ユーザ sub が同名 builtin を shadow | 部分消化 | **✅単一候補の compilable 分は ③ PR-2 で OTF compile 化**（proto/multi/複雑 sig は call_function_fallback 維持） |
 | `vm_call_func_ops.rs` multi-dispatch fork / final else | 非proto multi / `call_function` 末端 | 部分消化 | **✅非proto multi の unambiguous/OTF-compilable/非state 候補は ③ PR-4 で OTF compile 化**（ambiguity/where/state-alternate/proto/末端は fallback 維持） |
+| `vm_call_func_ops.rs` proto sub dispatch（trivial body） | `proto foo {*}` / bodyless proto の `{*}` ディスパッチ | 部分消化 | **✅消化 (#3541)**: VM call site で `vm_resolve_trivial_proto_candidate`→`compile_and_call_function_def`。tree-walk proto body＋`__PROTO_DISPATCH__`＋候補 `run_block` を全バイパス。proto sig は `method_args_match` で gate。非trivial body / 非OTF候補 / where候補は fallback 維持 |
 | `vm_call_dispatch.rs` catch-all | `call_function_compiled_first` 末端（実測でほぼ枯渇＝下記 PR-6 注記） | HARD | ③（残=lexical-alias-to-builtin / `__mutsu_*` 内部 / 並行〔lever B〕/ no-match エラー生成） |
 | ~~`vm_dispatch_helpers.rs` Routine call_function~~ | ~~Routine 値の関数解決~~ | — | **✅消化 (③ PR-1)**: 3 サイトを統一 compiled-first へ（builtin 名 Routine は builtin 優先維持） |
 
@@ -674,6 +675,21 @@
   socket-accept-and-working-threads.t(15)/socket-fail-invalid-values.t(4)/socket-host-port-split.t(2) 全緑。**∴ ③ ctor フォーク完了**＝pure-value/
   VM-owned-state な built-in ctor は全て native 化済。**残 `new` fallback＝CallFrame〔call stack carrier〕・error-only（HyperWhatever/Whatever/Instant）＝
   別軸 or 構造ブロック。** 次は §D の本丸＝(b) tree-walk dispatch-chain 削除 substrate or multi-dispatch VM 化。
+- **2026-06-24 (§D multi-dispatch = proto sub dispatch（trivial body）の VM 化, #3541)**: ③ ctor 完了後の §D 次本丸＝multi-dispatch VM 化に着手。
+  実測（S06 sample・`MUTSU_VM_STATS`）で **bare multi は 0 fallback**（PR-4 で OTF 化済）だが **proto multi は 100% fallback**（2 層: proto sub 呼び出し自体
+  ＋内部 `__PROTO_DISPATCH__`、各候補 body は `call_proto_dispatch`→`run_block` で tree-walk）と判明。**trivial-body proto（`proto foo {*}` / bodyless）を
+  VM call site で直接ディスパッチ**: `dispatch_func_call_inner` の else ブロック先頭に proto fast-path を追加し、新ヘルパー `vm_resolve_trivial_proto_candidate`
+  が ① interpreter-handled 名を除外 ② proto def を `resolve_proto_function` で取得し body が trivial（`SetLine` marker 除外後に空 or `[Expr(Whatever)]`）か検証
+  ③ **proto 自身の sig を `method_args_match` で gate**（`proto f(Int) {*}` が Str を弾く・S06-multi/proto.t subtest 26 が捕捉した回帰を修正）④ `resolve_proto_candidate_with_types`
+  で winner 候補を解決（VM 所有レジストリ＝phase ②）⑤ OTF-compilable かつ非state なら返す。返れば `compile_and_call_function_def` で **候補 body を compiled 実行**
+  （tree-walk proto body＋`__PROTO_DISPATCH__` round-trip＋候補 `run_block` を全バイパス）。`nextsame`/`samewith`/`callwith` は同関数の `push_multi_dispatch_frame`＋
+  samewith context で動作（PR-4 で検証済の機構）。非trivial body / 非OTF候補 / where候補 / sig 不一致は `None` で従来の interpreter fallback 維持＝byte-identical。
+  可視性: `resolve_proto_candidate_with_types`/`resolve_proto_function`/`method_args_match` を `pub(crate)` に拡大。実測 `proto factorial` で fallback 100%→0%、
+  S06 sample の `__PROTO_DISPATCH__` 50→30（残 30 は where候補/非trivial body/非OTF候補で正しく fallback）。pin `t/proto-vm-dispatch.t`(12・raku/mutsu 双方 PASS=
+  recursion/型別候補/samewith/nextsame/proto-sig gate〔EVAL ラップ〕/非trivial body guard)。whitelisted S06 全 87 件＋roast/S06-multi/proto.t(27) 全緑、make test 11202。
+  **残 multi-dispatch fallback**: where 制約付き候補の OTF 化（候補側 `def_is_otf_compilable` が where 除外）/ 非trivial proto body の VM 化 / `@_` slurpy recursive
+  plain sub（別カテゴリ）。**★教訓: `{*}` proto body は登録時に `SetLine` marker が前置され body.len=2 になる＝trivial 判定は marker 除外が必須。proto 自身の sig は
+  候補 sig と独立の gate＝バイパス時は `method_args_match` で必ず検証（さもないと `proto f(Int)` の型検査が抜ける）。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
