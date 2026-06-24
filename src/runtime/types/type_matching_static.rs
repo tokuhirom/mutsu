@@ -247,6 +247,13 @@ impl Interpreter {
         {
             return true;
         }
+        // Map: a Hash IS-A Map in Raku's type hierarchy (Hash subclasses Map), so
+        // a Hash value satisfies a `Map` / `Map:D` constraint. Only Hash (and Map
+        // itself, matched by the exact-name check above) — NOT Pair/Set/Bag/Mix,
+        // which do Associative but are not Map subtypes.
+        if constraint == "Map" && matches!(value_type, "Hash") {
+            return true;
+        }
         // Buf/Blob type hierarchy:
         // Blob is the immutable base; Buf extends Blob (mutable)
         // utf8 is a subtype of Blob

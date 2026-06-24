@@ -1896,8 +1896,16 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                         // Odd element becomes a pending key
                         pending_key = Some(hash_key_from_expr(elems[i].clone())?);
                     }
-                } else {
+                } else if matches!(other, Expr::Literal(_) | Expr::BareWord(_)) {
                     pending_key = Some(hash_key_from_expr(other)?);
+                } else {
+                    // A complex expression that is neither a `=>` pair nor a
+                    // simple key (e.g. a ternary `$x ?? :$x !! ()` used as a
+                    // hash element) is a BARE element: raku flattens it into the
+                    // initializer (warning about odd counts only at runtime).
+                    // Route it through the hash() builder via spread_args instead
+                    // of failing with "expected hash key".
+                    spread_args.push(other);
                 }
             }
         }
