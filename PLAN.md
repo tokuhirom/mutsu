@@ -127,12 +127,15 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
   - **allomorph〔`IntStr`/`NumStr`/`RatStr`/`ComplexStr`〕＋`ObjAt`/`ValueObjAt` の `.new`（#3528）= 完了**。`dispatch_new` ではなく
     `dispatch_new_and_constructors`（slow-path）側に在った pure-static ctor。`new` fallback receiver の再計測で最頻（RatStr 892 等）と判明。
     static `build_native_allomorph_value`/`build_native_objat_value` を `try_native_builtin_construct` と interpreter 両方が呼ぶ＝true single impl。
-  - **`IO::Path` family〔`IO::Path`/`::Unix`/`::Win32`/`::Cygwin`/`::QNX`〕の `.new`（#TBD）= 完了**＝IO::Path native 化の ctor capstone。
+  - **`IO::Path` family〔`IO::Path`/`::Unix`/`::Win32`/`::Cygwin`/`::QNX`〕の `.new`（#3529）= 完了**＝IO::Path native 化の ctor capstone。
     pure path-string assembly（registry 読みのみ・FS/cwd/env 不要）。`dispatch_new` の IO::Path arm（~117 行）を `build_io_path_instance` に丸ごと抽出、
     VM ゲート `try_native_io_path_construct` は `is_io_path_lexical_class`（built-in family のみ）に絞って非mut/mut 両 call site から呼ぶ＝true single impl。
-  - **clean な built-in ctor 候補は枯渇。** 残る `new` fallback receiver は state/FS/process 依存（IO::Socket::INET・Proc::Async・Failure〔`$!` 読み〕・
-    Distribution/CompUnit::Repository・Backtrace・Seq〔predictive iterator carrier〕・CallFrame〔call stack〕）か error-only（HyperWhatever/
-    Whatever/Instant）＝別軸 or 構造ブロッカー前提。
+  - **`Failure.new($exception?)`（#TBD）= 完了**＝残 `new` fallback の最大カウント（2593）。VM 所有 state のみ読む pure data assembly（明示 exception /
+    `$!` env / `X::AdHoc` default＋非例外値の `X::AdHoc` wrap・MRO 読み `mro_readonly`）。`dispatch_new_and_constructors` の arm を `build_native_failure_value`
+    に丸ごと抽出し VM/interpreter 両方が呼ぶ＝true single impl。単一ストア化後 `self.env`（＝`$!`）は VM/interpreter 同一＝byte-identical。
+  - **pure-value / VM-owned-state な built-in ctor 候補は枯渇。** 残る `new` fallback receiver は state/process/socket 依存（IO::Socket::INET・Proc::Async・
+    Distribution/CompUnit::Repository・Backtrace・Seq〔predictive iterator carrier〕・CallFrame〔call stack〕）か error-only（HyperWhatever/Whatever/Instant）
+    ＝別軸 or 構造ブロッカー前提。
   - **(b) tree-walk dispatch chain 削除の substrate**: IO/coercion が native 化した今、`dispatch_method_by_name_*` チェーンと
     catch-all バウンス（`vm_call_method_compiled.rs` 末尾）の構造的削除。残る到達カテゴリ＝MOP carrier（WHAT/name/can/HOW・反射で
     撲滅対象外）/ landmine（Instance.Str/.Stringy/.raku/.gist・列挙不能で見送り済）/ block-exec slow path（map/grep・lever B/Phase 2）/

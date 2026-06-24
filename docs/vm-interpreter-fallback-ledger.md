@@ -632,6 +632,16 @@
   positional/triple/instance-arg/Win32-Unix-Cygwin subclass/CWD/empty-null dies・raku/mutsu 双方 PASS)。S32-io/S16-io/tmpdir/cwd/S11-compunit whitelist
   全緑（io-path.t 34/35 の `.SPEC`/`.CWD` attribute 既存 fail は main でも同一＝非whitelist・本変更と無関係）。**残 `new` fallback＝Proc::Async/Failure
   〔`$!` env〕/IO::Socket::INET/CallFrame/Seq＝state 依存 or 別軸。**
+- **2026-06-24 (§D ③ = `Failure.new($exception?)` を VM ネイティブ化)**: 残 `new` fallback の**最大カウント**（プローブ実測 2593・`fail`/明示構築駆動）。
+  `Failure.new` は **VM 所有 state のみ読む pure data assembly**＝明示 exception 引数（無ければ `$!` を env から、それも無ければ `X::AdHoc("Failed")`
+  デフォルト）を、既に `Exception`/`X::`/`CX::`（MRO 読み `mro_readonly`）でなければ `X::AdHoc` に wrap して `{exception, handled:false}` instance を作るだけ。
+  `&self` 依存は **env 読み（`$!`）＋ registry 読み（`mro_readonly`）**＝VM 所有（単一ストア化後 `self.env` は VM/interpreter で同一）＝FS/process/socket/
+  user code 不要。`dispatch_new_and_constructors` の Failure arm（~52 行）を新 `&self` helper `build_native_failure_value` に**丸ごと抽出**（interpreter arm は
+  delegation）。VM は非mut/mut 両 catch dispatch（IO::Path ctor arm の直後・`class_name=="Failure"` gate・`method_dispatch_pure=true`）から呼ぶ＝**1 操作 =
+  1 実装**・byte-identical。実測 `Failure.new`（明示/string-wrap/`$!`/argless 全パス）の `new` fallback → 0。pin `t/native-failure-ctor.t`(11・raku/mutsu
+  双方 PASS。`X::AdHoc` は `:payload` で構築＝`.message` が payload を読む pre-existing detail を回避)。S04-exceptions/S04-statement-modifiers/
+  S05-capture/named/S06-advanced whitelist 全緑。**残 `new` fallback＝Proc::Async〔process〕/IO::Socket::INET〔socket〕/CallFrame〔call stack〕/
+  Seq〔iterator carrier〕＝いずれも state 依存（process/socket/stack/iterator carrier）で別軸。pure-value/VM-owned-state ctor ドレインは枯渇。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

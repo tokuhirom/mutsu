@@ -201,6 +201,18 @@ impl Interpreter {
             self.method_dispatch_pure = true;
             return result;
         }
+        // Native Failure construction: `Failure.new($exception?)` — pure data
+        // assembly reading only VM-owned state (`$!` from env, the exception's MRO
+        // from the registry), no FS / process / user code. Built via the single
+        // `build_native_failure_value` impl the interpreter's
+        // `dispatch_new_and_constructors` arm also delegates to.
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && class_name.resolve() == "Failure"
+        {
+            self.method_dispatch_pure = true;
+            return Ok(self.build_native_failure_value(&args));
+        }
         // Native built-in *class* method (a pure type-object method other than
         // `.new`, e.g. `Instant.from-posix`) — built directly instead of routing
         // through the interpreter's class-method dispatch.
@@ -1825,6 +1837,14 @@ impl Interpreter {
         {
             self.method_dispatch_pure = true;
             return result;
+        }
+        // Native Failure construction (mut path twin of the above).
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && class_name.resolve() == "Failure"
+        {
+            self.method_dispatch_pure = true;
+            return Ok(self.build_native_failure_value(&args));
         }
         // Native built-in class method (mut path twin of the above).
         if let Value::Package(class_name) = &target
