@@ -499,6 +499,18 @@ fn consume_raw_braced_body(input: &str) -> PResult<'_, Vec<Stmt>> {
 fn parse_token_like_name(input: &str) -> PResult<'_, String> {
     let (mut rest, mut name) = ident(input)?;
     loop {
+        // `::`-qualified name segments (e.g. `does DBDish::ErrorHandling`).
+        // Handle these before the single-`:` adverb logic so a qualified role
+        // name parses as one token rather than failing on the second segment.
+        if rest.starts_with("::") && !rest[2..].starts_with('(') {
+            if let Ok((r, seg)) = ident(&rest[2..]) {
+                name.push_str("::");
+                name.push_str(&seg);
+                rest = r;
+                continue;
+            }
+            break;
+        }
         if !rest.starts_with(':') {
             break;
         }
