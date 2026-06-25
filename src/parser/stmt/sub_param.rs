@@ -65,7 +65,7 @@ pub(super) fn mark_params_as_invocant(params: &mut [ParamDef]) {
 }
 
 /// Helper to construct a default ParamDef with only required fields.
-fn make_param(name: String) -> ParamDef {
+pub(crate) fn make_param(name: String) -> ParamDef {
     ParamDef {
         name,
         default: None,
