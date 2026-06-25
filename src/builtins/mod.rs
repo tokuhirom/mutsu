@@ -94,6 +94,7 @@ pub(crate) use functions::{deitemize_flat_operand, flat_val};
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{
     native_contains_with_options, native_method_1arg, native_method_2arg,
+    native_prefix_suffix_with_options, native_substr_eq_with_options,
 };
 pub(crate) use unicode::{samecase_string, samemark_string, unicode_titlecase_first};
 

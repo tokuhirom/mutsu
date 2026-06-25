@@ -224,6 +224,25 @@ impl Interpreter {
         {
             return Some(result);
         }
+        // `.starts-with`/`.ends-with`/`.substr-eq` with `:i`/`:ignorecase` markings
+        // (and, for substr-eq, a start position) carry a Pair / 3rd arg that pushes
+        // them past the arity-keyed dispatch below. Handle the case-insensitive forms
+        // natively (mirror dispatch_prefix_suffix_check / dispatch_substr_eq); the bare
+        // forms keep their 1-/2-arg arms, and `:m`/out-of-range fall through.
+        if matches!(method_name.as_str(), "starts-with" | "ends-with")
+            && let Some(result) = crate::builtins::native_prefix_suffix_with_options(
+                target,
+                args,
+                method_name == "starts-with",
+            )
+        {
+            return Some(result);
+        }
+        if method_name == "substr-eq"
+            && let Some(result) = crate::builtins::native_substr_eq_with_options(target, args)
+        {
+            return Some(result);
+        }
         let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
         } else if args.len() == 1 {
