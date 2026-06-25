@@ -571,7 +571,7 @@ impl Interpreter {
         // .resume / .throw / .rethrow on instances of user-defined Exception
         // subclasses (the builtin fast path only handles Exception/X::*/CX::*/
         // Failure by name).
-        if matches!(method, "resume" | "throw" | "rethrow")
+        if matches!(method, "resume" | "throw" | "rethrow" | "fail")
             && args.is_empty()
             && let Value::Instance {
                 class_name,
@@ -590,6 +590,12 @@ impl Interpreter {
             if is_exception || does_x_control {
                 if method == "resume" {
                     return Err(crate::value::RuntimeError::resume_signal());
+                }
+                // `$exc.fail` is `fail $exc`: return a Failure carrying the
+                // exception (which throws only when sunk/used unhandled), not an
+                // immediate throw like `.throw`.
+                if method == "fail" {
+                    return self.builtin_fail(std::slice::from_ref(&target));
                 }
                 // throw / rethrow: build a RuntimeError carrying this exception.
                 let msg = attributes
