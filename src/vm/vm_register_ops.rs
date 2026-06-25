@@ -1684,6 +1684,10 @@ impl Interpreter {
             if has_trait_mod && (!custom_traits.is_empty() || !role_deferred.is_empty()) {
                 let type_obj = Value::Package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {
+                    // Skip internal markers (e.g. `__my_scoped`); they are not real `is` traits.
+                    if trait_name.starts_with("__") {
+                        continue;
+                    }
                     let trait_value = if let Some(arg_expr) = trait_arg {
                         self.vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
                     } else {

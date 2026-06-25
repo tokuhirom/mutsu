@@ -2801,6 +2801,14 @@ impl Interpreter {
                 Stmt::ClassDecl { .. } => None,
                 Stmt::SubsetDecl { .. } => Some("subset"),
                 Stmt::EnumDecl { .. } => Some("enum"),
+                // A `my role` is lexically scoped and private to the role body, which
+                // is allowed (like `my class`); only an implicitly our-scoped `role` is
+                // forbidden.
+                Stmt::RoleDecl { custom_traits, .. }
+                    if custom_traits.iter().any(|(t, _)| t == "__my_scoped") =>
+                {
+                    None
+                }
                 Stmt::RoleDecl { .. } => Some("role"),
                 Stmt::VarDecl {
                     is_our: true,
