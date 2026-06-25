@@ -2330,7 +2330,21 @@ impl Interpreter {
             return self.buf_mutate_method(target_var, target, method, args);
         }
 
-        if target_var.starts_with('@') {
+        // `.splice` on a *scalar* variable holding a real array
+        // (`my $n = [1,2,3]; $n.splice(1,1)`) writes back through the same array
+        // path as `@a.splice`. The plain scalar array-mutator fast path covers
+        // push/pop/shift/unshift/append/prepend but not splice, so those reached
+        // here only via an `@`-sigiled name; route a scalar-held splice through
+        // the `@` block too. (`env.insert(key, …)` below keys on the bare
+        // `target_var`, so a scalar name is written back correctly; the metadata
+        // lookups return `None` for an untyped scalar, which is a no-op.) This
+        // also fixes `is Array`-instance splice, which delegates through a
+        // scalar-named (`__mutsu_array_tmp`) temp binding.
+        let scalar_holds_real_array = !target_var.starts_with('@')
+            && !target_var.starts_with('%')
+            && !target_var.starts_with('&')
+            && matches!(&target, Value::Array(_, crate::value::ArrayKind::Array));
+        if target_var.starts_with('@') || (method == "splice" && scalar_holds_real_array) {
             // Check for shaped (multidimensional) arrays - these don't support
             // mutating operations like push/pop/shift/unshift/splice/append/prepend
             if matches!(
