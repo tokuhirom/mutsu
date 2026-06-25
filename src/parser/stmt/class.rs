@@ -1713,6 +1713,9 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     check_pseudo_package_in_decl(&name)?;
+    // Consume optional type adverbs (`:ver<...>`, etc.) on the grammar name
+    // before the `is`/`does` parent clauses (e.g. `grammar Foo:ver<1> is Bar`).
+    let (rest, _traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let mut r = rest;
     let mut parents = Vec::new();
@@ -1992,6 +1995,11 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
         check_pseudo_package_in_decl(&name)?;
+        // Consume optional type adverbs (`:ver<...>`, `:auth<...>`, `:api<...>`)
+        // on the grammar name before the `is`/`does` parent clauses, e.g.
+        // `unit grammar Foo:ver<0.3.8> is Bar;`. Without this, the adverb blocks
+        // the `is Bar` parent from being parsed (parent silently dropped).
+        let (r, _traits) = parse_declarator_traits(r)?;
         let (r, _) = ws(r)?;
         let mut r = r;
         let mut parents = Vec::new();

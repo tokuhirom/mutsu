@@ -2383,6 +2383,23 @@ impl Interpreter {
             }
         }
 
+        // The block runs inline in the current env, so a free variable it
+        // assigns (`$x = 99` where `$x` is a captured outer lexical) is written
+        // via SetGlobal straight into env — never as a block-local, so the
+        // writeback_bindings loop below (which only handles block-locals) misses
+        // it. Reconcile the *outer frame's* local slot for each such free-var
+        // write from env, so the caller sees the mutation (e.g. a value assigned
+        // inside `$lock.protect: { ... }`).
+        for sym in &block_cc.free_var_writes {
+            sym.with_str(|name| {
+                if let Some(outer_slot) = outer_local_slots.get(name)
+                    && let Some(val) = self.env().get(name).cloned()
+                    && let Some(target) = saved_locals.get_mut(*outer_slot)
+                {
+                    *target = val;
+                }
+            });
+        }
         // Sync locals back to env
         if let Some(captured) = captured_env {
             for (slot, name) in writeback_bindings.iter() {
