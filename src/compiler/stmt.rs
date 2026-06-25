@@ -2575,7 +2575,19 @@ impl Compiler {
                 };
                 self.code.emit(OpCode::UseModule { name_idx, tags_idx });
             }
-            Stmt::Use { module, tags, .. } => {
+            // `use if;` — the bare `if` pragma module itself is a no-op; it only
+            // provides the `:if(...)` adverb handled below.
+            Stmt::Use {
+                module,
+                condition: None,
+                ..
+            } if module == "if" => {}
+            Stmt::Use {
+                module,
+                tags,
+                condition,
+                ..
+            } => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 let tags_idx = if tags.is_empty() {
                     None
@@ -2583,7 +2595,17 @@ impl Compiler {
                     let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
                     Some(self.code.add_constant(Value::array(entries)))
                 };
-                self.code.emit(OpCode::UseModule { name_idx, tags_idx });
+                // `use Foo:if(EXPR)` (the `if` pragma): load the module only when
+                // EXPR is true at runtime, evaluated here so platform-conditional
+                // imports (`use Foo:if($*DISTRO.is-win)`) pick the right branch.
+                if let Some(cond) = condition {
+                    self.compile_expr(cond);
+                    let skip = self.code.emit(OpCode::JumpIfFalse(0));
+                    self.code.emit(OpCode::UseModule { name_idx, tags_idx });
+                    self.code.patch_jump(skip);
+                } else {
+                    self.code.emit(OpCode::UseModule { name_idx, tags_idx });
+                }
             }
             Stmt::Import { module, tags } => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
