@@ -100,6 +100,58 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
     result
 }
 
+/// Like [`expression`] but does NOT consume a trailing simple/compound
+/// assignment. Used for signature `where` constraints so that a following `=`
+/// introduces the parameter default instead of being parsed as an assignment to
+/// the constraint expression. Applies the same fat-arrow and WhateverCode
+/// wrapping as [`expression`].
+pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> {
+    let (rest, mut expr) = precedence::ternary_no_assign(input)?;
+    let (r, _) = ws(rest)?;
+    if r.starts_with("=>") && !r.starts_with("==>") {
+        let r = &r[2..];
+        let (r, _) = ws(r)?;
+        let (r, value) = parse_fat_arrow_value(r)?;
+        let consumed = &input[..input.len() - rest.len()];
+        let is_bareword = matches!(&expr, Expr::BareWord(_));
+        let left = match expr {
+            Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
+                Expr::Literal(Value::str(name.clone()))
+            }
+            _ => expr,
+        };
+        let pair = Expr::Binary {
+            left: Box::new(left),
+            op: TokenKind::FatArrow,
+            right: Box::new(value),
+        };
+        let result = if is_bareword {
+            pair
+        } else {
+            Expr::PositionalPair(Box::new(pair))
+        };
+        return Ok((r, result));
+    }
+    expr = wrap_composition_operands(expr);
+    if should_wrap_whatevercode(&expr) {
+        expr = match expr {
+            Expr::CallOn { target, args }
+                if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
+            {
+                Expr::CallOn {
+                    target: Box::new(wrap_whatevercode(&target)),
+                    args,
+                }
+            }
+            ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
+                try_wrap_whatevercode_call_chain(&expr).unwrap()
+            }
+            other => wrap_whatevercode(&other),
+        };
+    }
+    Ok((rest, expr))
+}
+
 pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
     // Same as expression but skip memo and don't include sequence
     let (rest, mut expr) = precedence::ternary_mode(input, operators::ExprMode::NoSequence)?;

@@ -42,13 +42,15 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
         let mut variants = Vec::new();
         let mut r = r;
         loop {
-            let (r2, _) = take_while_opt(r, |c: char| c == ' ' || c == '\t');
+            let (r2, _) =
+                take_while_opt(r, |c: char| c == ' ' || c == '\t' || c == '\n' || c == '\r');
             if let Some(r2) = r2.strip_prefix('>') {
                 r = r2;
                 break;
             }
-            let (r2, word) =
-                take_while1(r2, |c: char| c != '>' && c != ' ' && c != '\t' && c != '\n')?;
+            let (r2, word) = take_while1(r2, |c: char| {
+                c != '>' && c != ' ' && c != '\t' && c != '\n' && c != '\r'
+            })?;
             variants.push((word.to_string(), None));
             r = r2;
         }
@@ -263,13 +265,15 @@ pub(super) fn parse_enum_decl_body_with_type(
         let mut variants = Vec::new();
         let mut r = r;
         loop {
-            let (r2, _) = take_while_opt(r, |c: char| c == ' ' || c == '\t');
+            let (r2, _) =
+                take_while_opt(r, |c: char| c == ' ' || c == '\t' || c == '\n' || c == '\r');
             if let Some(r2) = r2.strip_prefix('>') {
                 r = r2;
                 break;
             }
-            let (r2, word) =
-                take_while1(r2, |c: char| c != '>' && c != ' ' && c != '\t' && c != '\n')?;
+            let (r2, word) = take_while1(r2, |c: char| {
+                c != '>' && c != ' ' && c != '\t' && c != '\n' && c != '\r'
+            })?;
             variants.push((word.to_string(), None));
             r = r2;
         }
