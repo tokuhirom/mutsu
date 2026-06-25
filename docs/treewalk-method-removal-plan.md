@@ -155,7 +155,7 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   `eval_truthy` (`if $obj`/`?$obj` Bool). The three reverted tests (junction-invocant /
   grammar-dynvar / `$calls++` coercion) all pass — no closure-env rooting was needed.
   pin=`t/coercion-method-captured-writeback.t`(10).
-- **Slice 1b (render redispatch) — DONE (#TBD): string-render writeback coherence.**
+- **Slice 1b (render redispatch) — DONE (#3617): string-render writeback coherence.**
   The same drain applied to the user-`.Str`/`.Stringy` render sites that, like the
   coercion ops, run a user method with no surrounding CallMethod op: `exec_string_concat_op`
   (interpolation `"…$obj…"`), `exec_put_op` (`put`), `exec_print_op` (`print`). `say`/
@@ -190,6 +190,31 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   catch-all-miss path feeding `dispatch_instance_and_fallback:867`).
 - **Slice 3 — construction submethods (BUILD/TWEAK/new, ~60).** Run `.new`'s BUILD/TWEAK
   as compiled bytecode.
+  **★Pre-existing blocker found (2026-06-26) — BUILDALL sibling writeback clobber.** A
+  *nested method dispatch inside one BUILD clobbers a sibling BUILD's captured-outer
+  writeback*. Minimal repro:
+  ```raku
+  my $pc = 0;
+  class S { method Str { "z" } }
+  class P { submethod BUILD { $pc++ } }
+  class C is P { submethod BUILD { my $x = S.new } }   # any nested dispatch
+  C.new;
+  say $pc;   # raku: 1   mutsu: 0
+  ```
+  With an *empty* or non-dispatching Child.BUILD (`$pc;`) it is correct (pc=1); only a
+  nested method dispatch (`S.new`, `S.new.Str`, `+$obj`, `@a[$obj]`, …) inside Child.BUILD
+  loses Parent.BUILD's `$pc++`. **Ruled out:** it is NOT the `call_compiled_method`
+  entry `clear()` of `pending_rw_writeback_sources` — moving those leftovers to the
+  retain-on-miss list at entry did NOT fix it (BUILD runs via the interpreter
+  `run_instance_method_resolved` tree-walk, methods_dispatch_new.rs:335, so Parent.BUILD's
+  write goes to env, not `pending_rw_writeback_sources`). The nested dispatch's env
+  save/restore (or a slot reconcile) appears to overwrite `env["pc"]`/the top-level slot
+  with a stale value mid-construction. Needs targeted tracing (MUTSU_DBG eprintln on
+  set_env / merge_method_env / the .new op reconcile). This is the same *class* of bug as
+  the coercion/render redispatch writeback (Slice 1a/1b, #3615/#3617) but on the
+  tree-walk BUILD path, and gates landing the index/render fixes for the
+  `nested-dispatch-inside-sibling-BUILD` shape. Pre-existing (reproduces on 81a729c8,
+  before this session) — not a regression from the Slice 1 work.
 - **Slice 4 (capstone) — `samewith`/`nextsame`/`callsame` method redispatch (the `m`
   91%).** Compile the `method_dispatch_stack` candidate dispatch. Coordinate with the
   PLAN nextsame+rw substrate (rw-param slot coherence across the redispatch boundary).
