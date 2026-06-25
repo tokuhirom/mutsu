@@ -734,9 +734,17 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         type_smiley
     };
 
-    // Enforce type smiley constraints at parse time
+    // Enforce type smiley constraints at parse time. A `:D` smiley on an array
+    // (`@`) or hash (`%`) attribute constrains the ELEMENTS, not the container —
+    // the container itself defaults to an empty (defined) Array/Hash, so it needs
+    // no initializer. Only scalar-like attributes (`$`, `&`) must be initialized.
     let effective_smiley = type_smiley.as_deref().unwrap_or("_");
-    if effective_smiley == "D" && !has_explicit_default && is_required.is_none() {
+    if effective_smiley == "D"
+        && sigil != b'@'
+        && sigil != b'%'
+        && !has_explicit_default
+        && is_required.is_none()
+    {
         // :D attribute without a default or `is required` → X::Syntax::Variable::MissingInitializer
         let twigil = if is_public { "." } else { "!" };
         let tc_display = if let Some(ref tc) = type_constraint {
