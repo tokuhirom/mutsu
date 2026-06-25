@@ -1157,6 +1157,18 @@ impl Interpreter {
                     // caller env (scoped_child) and the captured-env merge is
                     // or_insert (parent-chain aware), so it never shadows them.
                     self.vm_call_on_value(callable, args, Some(compiled_fns))
+                } else if let Some(result) = self.try_native_io_function(name, &args) {
+                    // File/FS builtin function (`slurp`/`open`/`unlink`/…). Every
+                    // user-sub resolution path (compiled_fns / multi / user_function_
+                    // matches / OTF) was tried above, so a user `sub slurp` still wins;
+                    // reaching here means the builtin operating on the VM-owned
+                    // io_handles store + filesystem. Dispatch it natively instead of
+                    // recording a tree-walk fallback (§D state ownership ③, function
+                    // forms). The `builtin_*` impls are exactly what call_function
+                    // routes to (no arg-sources: FS routines have no rw params) =>
+                    // byte-identical.
+                    let result = result?;
+                    loan_env!(self, maybe_fetch_rw_proxy(result, true))
                 } else if let Some(op) = name
                     .strip_prefix("infix:<")
                     .and_then(|s| s.strip_suffix('>'))

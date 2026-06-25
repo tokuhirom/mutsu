@@ -799,6 +799,16 @@
   全 t/(11765)・whitelist operator/metaops/junction 79 ファイル回帰ゼロ・20 infix 形 byte-identical to raku。pin `t/infix-function-native-dispatch.t`(22)。**★`call_infix_routine` を `pub(crate)` に拡大。
   ★教訓: 直接 Call は `dispatch_func_call_inner`・hyper/reduce 等は `call_function_compiled_first` と fallback 記録サイトが 2 系統あるので、両方に同じ arm を置く要がある。user-override 系演算子の native 化は
   「全 user 解決ブランチの後・fallback 記録の前」に挿入するのが鍵（先頭に置くと user 演算子を shadow する）。`<`/`>` を含む演算子名（`infix:«<»`）は別パーサ問題で CALL-ME エラー＝pin から除外。**
+- **2026-06-25 (§D 状態所有 ③ = file/FS builtin *関数* 形の VM ネイティブ dispatch)**: IO native **メソッド**族は drain 済（2026-06-23 群）だったが、**関数形**（`slurp($p)`/`open($p,:r)`/`unlink($p)`/
+  `spurt`/`close`/`dir`/`copy`/`rename`/`move`/`chmod`/`mkdir`/`rmdir`/`link`/`symlink`）は `call_function` fallback 経由のままだった（survey: unlink 1172/open 1017/slurp 569 他・計 ~3000）。これらは VM 所有
+  `io_handles` store ＋ filesystem への `&mut self`/`&self` 操作で、`builtin_*` impl が既に state を所有。**修正**＝新 `try_native_io_function(name,args)`（`builtins_io.rs`・`call_function` の IO arm を 1:1 ミラー）を
+  **infix と同じく user-override 安全な位置**で呼ぶ: `dispatch_func_call_inner` は全 user 解決後（lexical-amp の後・infix arm の前）の else-if、`call_function_compiled_first` は OTF 後・record 前。
+  **`try_native_function` には入れない**（call_function_compiled_first では user 解決〔OTF〕より前に走るので非compiled user `sub slurp` を shadow する＝atomic は `__mutsu_*` で user 定義不可だったので安全だった差）。
+  **除外**＝`indir`（callback block 実行）・`chdir`/`tmpdir`/`homedir`（process cwd/env 副状態）・`print`/`say`/`note`/`warn`/`sink`（出力/block）。FS 関数は rw param 無しなので arg_sources 不要・`maybe_fetch_rw_proxy(true)`
+  は terminal else と同一＝byte-identical。**実測 builtin IO 関数呼び 0 fallback**・user `sub slurp`/`sub unlink` は上位解決で正しく shadow（pin 検証）。全 t/(11806)・whitelist S32-io/S16-io 64 ファイル回帰ゼロ・
+  14 IO 形 byte-identical to raku。pin `t/io-function-native-dispatch.t`(14)。**★教訓: user-definable な builtin 名（IO/operator）の native 化は `try_native_function`（早すぎ）でなく、両 dispatch 経路の
+  「user 解決後・fallback record 前」に置く。`__mutsu_*` 内部マーカー（atomic）だけが `try_native_function` 先頭に置ける（user 定義不可ゆえ）。残 function-fallback＝concurrency（await/start・start は
+  `sync_env_from_locals` 要で別軸・flaky）/ MOP（samewith）/ heterogeneous 内部マーカー（feed/assign-lvalue・context-sensitive）＝clean homogeneous drain は枯渇。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

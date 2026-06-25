@@ -85,6 +85,14 @@ impl Interpreter {
             let normalized = if op == "\u{2212}" { "-" } else { op };
             return self.call_infix_routine(normalized, &args);
         }
+        // File/FS builtin function (`slurp`/`open`/…): user subs were resolved above
+        // (compiled_fns / OTF), so dispatch the builtin natively on the VM-owned
+        // io_handles + filesystem instead of recording a tree-walk fallback
+        // (§D state ownership ③, function forms). Byte-identical to call_function's
+        // IO arms (same `builtin_*` impls, same `self`).
+        if let Some(result) = self.try_native_io_function(name, &args) {
+            return result;
+        }
         // CARRIER (EVAL/pseudo-package) vs TODO: compile to bytecode (else branch =
         // true tree-walk function fallback). See ledger §2/§C.
         if Self::is_interpreter_carrier_function(name) {

@@ -118,6 +118,41 @@ impl Interpreter {
         matched
     }
 
+    /// VM-native dispatch for the file/FS builtin *functions* (`slurp`/`open`/
+    /// `unlink`/…). These read or mutate the filesystem and the VM-owned `io_handles`
+    /// store; the `builtin_*` impls already own that state, but the only path reaching
+    /// them was the generic `call_function` name-match fallback (§D state ownership ③
+    /// — IO native methods were already drained; this drains the function forms).
+    /// Dispatched after all user-sub resolution (so a user `sub slurp` still wins),
+    /// mirroring the `call_function` IO arms 1:1 — same args, same `self`, byte-identical.
+    ///
+    /// Deliberately excludes `indir` (runs a callback block), `chdir`/`tmpdir`/
+    /// `homedir` (process-cwd/env side state), and the output routines
+    /// (`print`/`say`/`note`/`warn`/`sink`) — those keep their existing dispatch.
+    pub(crate) fn try_native_io_function(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let r = match name {
+            "slurp" => self.builtin_slurp(args),
+            "spurt" => self.builtin_spurt(args),
+            "unlink" => self.builtin_unlink(args),
+            "open" => self.builtin_open(args),
+            "close" => self.builtin_close(args),
+            "dir" => self.builtin_dir(args),
+            "copy" => self.builtin_copy(args),
+            "rename" | "move" => self.builtin_rename(name, args),
+            "chmod" => self.builtin_chmod(args),
+            "mkdir" => self.builtin_mkdir(args),
+            "rmdir" => self.builtin_rmdir(args),
+            "link" => self.builtin_link(args),
+            "symlink" => self.builtin_symlink(args),
+            _ => return None,
+        };
+        Some(r)
+    }
+
     pub(super) fn builtin_slurp(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Check if first arg is a named pair (not a positional path)
         let first_is_pair = args.first().is_none_or(|v| matches!(v, Value::Pair(_, _)));
