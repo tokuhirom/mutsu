@@ -245,6 +245,7 @@ fn strip_marks_token(token: &RegexToken) -> RegexToken {
         named_capture: token.named_capture.clone(),
         secondary_named_capture: token.secondary_named_capture.clone(),
         hash_capture: token.hash_capture.clone(),
+        force_list_capture: token.force_list_capture,
         ratchet: token.ratchet,
         frugal: token.frugal,
         separator: token.separator.as_ref().map(|s| {

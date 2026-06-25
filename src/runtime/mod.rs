@@ -683,6 +683,11 @@ struct RegexToken {
     secondary_named_capture: Option<String>,
     /// Hash aliasing: `%<name>=(...)` captures build a hash
     hash_capture: Option<String>,
+    /// Array-sigil capture alias (`@<name>=(...)`): forces the named capture
+    /// into list context, so even a single (non-quantified) match yields a
+    /// one-element List rather than a bare Match. Mirrors Raku's `@`-sigil
+    /// declaration semantics for hypothetical capture variables.
+    force_list_capture: bool,
     ratchet: bool,
     /// Frugal (non-greedy) quantifier modifier: `*?`, `+?`, `??`
     frugal: bool,

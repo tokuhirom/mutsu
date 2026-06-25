@@ -602,6 +602,7 @@ fn rewrite_tilde_tokens(
                     named_capture: None,
                     hash_capture: None,
                     secondary_named_capture: None,
+                    force_list_capture: false,
                     ratchet: false,
                     frugal: false,
                     separator: None,
@@ -629,6 +630,7 @@ fn rewrite_tilde_tokens(
                 named_capture: None,
                 hash_capture: None,
                 secondary_named_capture: None,
+                force_list_capture: false,
                 ratchet: false,
                 frugal: false,
                 separator: None,
@@ -755,6 +757,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
                 named_capture: None,
                 hash_capture: None,
                 secondary_named_capture: None,
+                force_list_capture: false,
                 ratchet: false,
                 frugal: false,
                 separator: None,
@@ -2102,6 +2105,7 @@ impl Interpreter {
                         named_capture: None,
                         hash_capture: None,
                         secondary_named_capture: None,
+                        force_list_capture: false,
                         ratchet: false,
                         frugal: false,
                         separator: None,
@@ -2150,6 +2154,7 @@ impl Interpreter {
                         named_capture: None,
                         hash_capture: None,
                         secondary_named_capture: None,
+                        force_list_capture: false,
                         ratchet: false,
                         frugal: false,
                         separator: None,
@@ -2184,6 +2189,11 @@ impl Interpreter {
         // per-iteration (Raku yields a List of Matches for `<foo=[bao]>+`), like
         // a builtin subrule; the sigil form captures the whole quantified span.
         let mut pending_named_capture_is_angle_alias = false;
+        // Set when `pending_named_capture` came from an array-sigil alias
+        // (`@<name>=...`). The `@` sigil forces the named capture into list
+        // context, so even a single non-quantified match becomes a one-element
+        // List rather than a bare Match.
+        let mut pending_named_capture_is_array = false;
         let mut pending_builtin_named_capture: Option<String> = None;
         let mut pending_hash_capture: Option<String> = None;
         while let Some(c) = chars.next() {
@@ -2204,6 +2214,7 @@ impl Interpreter {
                                 named_capture: None,
                                 hash_capture: None,
                                 secondary_named_capture: None,
+                                force_list_capture: false,
                                 ratchet,
                                 frugal: false,
                                 separator: None,
@@ -2231,6 +2242,7 @@ impl Interpreter {
                             named_capture: None,
                             hash_capture: None,
                             secondary_named_capture: None,
+                            force_list_capture: false,
                             ratchet,
                             frugal: false,
                             separator: None,
@@ -2258,6 +2270,7 @@ impl Interpreter {
                         named_capture: None,
                         hash_capture: None,
                         secondary_named_capture: None,
+                        force_list_capture: false,
                         ratchet,
                         frugal: false,
                         separator: None,
@@ -2277,6 +2290,7 @@ impl Interpreter {
                     named_capture: None,
                     hash_capture: None,
                     secondary_named_capture: None,
+                    force_list_capture: false,
                     ratchet,
                     frugal: false,
                     separator: None,
@@ -2320,6 +2334,7 @@ impl Interpreter {
                         named_capture: pending_named_capture.take(),
                         hash_capture: None,
                         secondary_named_capture: None,
+                        force_list_capture: false,
                         ratchet,
                         frugal: false,
                         separator: None,
@@ -2356,11 +2371,48 @@ impl Interpreter {
                     named_capture: None,
                     hash_capture: None,
                     secondary_named_capture: None,
+                    force_list_capture: false,
                     ratchet,
                     frugal: false,
                     separator: None,
                 });
                 continue;
+            }
+            // `@<name>=(...)` — array capture alias. Behaves like the scalar
+            // `$<name>=` alias (routes the following atom's capture to `name`),
+            // but the `@` sigil is the list-context form: applied to a capturing
+            // group (`@<foo>=(.(.))+`) it yields a List of the group's Matches,
+            // one per iteration. This is recognized only when a trailing `=`
+            // follows `<name>`; a bare `@var` is array interpolation (handled
+            // below / during interpolation).
+            if c == '@' && chars.peek() == Some(&'<') {
+                let mut probe = chars.clone();
+                probe.next(); // consume '<'
+                let mut capture_name = String::new();
+                let mut closed = false;
+                for ch in probe.by_ref() {
+                    if ch == '>' {
+                        closed = true;
+                        break;
+                    }
+                    capture_name.push(ch);
+                }
+                if closed && !capture_name.is_empty() {
+                    while probe.peek().is_some_and(|ch| ch.is_whitespace()) {
+                        probe.next();
+                    }
+                    if probe.peek() == Some(&'=') {
+                        probe.next(); // consume '='
+                        while probe.peek().is_some_and(|ch| ch.is_whitespace()) {
+                            probe.next();
+                        }
+                        chars = probe;
+                        pending_named_capture = Some(capture_name);
+                        pending_named_capture_is_array = true;
+                        continue;
+                    }
+                }
+                // Not an alias — fall through to generic `@` handling below.
             }
             // Validate mode handling of `$` / `@` that was NOT recognized as an
             // anchor (`$$`, trailing `$`) or backreference (`$0`, `$<name>`)
@@ -2375,6 +2427,7 @@ impl Interpreter {
                         named_capture: None,
                         hash_capture: None,
                         secondary_named_capture: None,
+                        force_list_capture: false,
                         ratchet,
                         frugal: false,
                         separator: None,
@@ -2430,6 +2483,7 @@ impl Interpreter {
                         named_capture: None,
                         hash_capture: None,
                         secondary_named_capture: None,
+                        force_list_capture: false,
                         ratchet,
                         frugal: false,
                         separator: None,
@@ -2528,6 +2582,7 @@ impl Interpreter {
                         named_capture: pending_named_capture.take(),
                         hash_capture: None,
                         secondary_named_capture: None,
+                        force_list_capture: false,
                         ratchet,
                         frugal: false,
                         separator: None,
@@ -2881,6 +2936,7 @@ impl Interpreter {
                                         named_capture: None,
                                         hash_capture: None,
                                         secondary_named_capture: None,
+                                        force_list_capture: false,
                                         ratchet: false,
                                         frugal: false,
                                         separator: None,
@@ -3216,6 +3272,7 @@ impl Interpreter {
                                         named_capture: None,
                                         hash_capture: None,
                                         secondary_named_capture: None,
+                                        force_list_capture: false,
                                         ratchet: false,
                                         frugal: false,
                                         separator: None,
@@ -3471,6 +3528,7 @@ impl Interpreter {
                                                     named_capture: None,
                                                     hash_capture: None,
                                                     secondary_named_capture: None,
+                                                    force_list_capture: false,
                                                     ratchet: false,
                                                     frugal: false,
                                                     separator: None,
@@ -3633,6 +3691,7 @@ impl Interpreter {
                                                             named_capture: None,
                                                             hash_capture: None,
                                                             secondary_named_capture: None,
+                                                            force_list_capture: false,
                                                             ratchet: false,
                                                             frugal: false,
                                                             separator: None,
@@ -3650,6 +3709,7 @@ impl Interpreter {
                                                             named_capture: None,
                                                             hash_capture: None,
                                                             secondary_named_capture: None,
+                                                            force_list_capture: false,
                                                             ratchet: false,
                                                             frugal: false,
                                                             separator: None,
@@ -3675,6 +3735,7 @@ impl Interpreter {
                                                     named_capture: None,
                                                     hash_capture: None,
                                                     secondary_named_capture: None,
+                                                    force_list_capture: false,
                                                     ratchet: false,
                                                     frugal: false,
                                                     separator: None,
@@ -3938,6 +3999,7 @@ impl Interpreter {
                                                             named_capture: None,
                                                             hash_capture: None,
                                                             secondary_named_capture: None,
+                                                            force_list_capture: false,
                                                             ratchet: false,
                                                             frugal: false,
                                                             separator: None,
@@ -3955,6 +4017,7 @@ impl Interpreter {
                                                             named_capture: None,
                                                             hash_capture: None,
                                                             secondary_named_capture: None,
+                                                            force_list_capture: false,
                                                             ratchet: false,
                                                             frugal: false,
                                                             separator: None,
@@ -4183,6 +4246,7 @@ impl Interpreter {
                                     named_capture: None,
                                     hash_capture: None,
                                     secondary_named_capture: None,
+                                    force_list_capture: false,
                                     ratchet: false,
                                     frugal: false,
                                     separator: None,
@@ -4645,6 +4709,8 @@ impl Interpreter {
             let user_alias = pending_named_capture.take();
             let user_alias_is_angle = pending_named_capture_is_angle_alias;
             pending_named_capture_is_angle_alias = false;
+            let user_alias_is_array = pending_named_capture_is_array;
+            pending_named_capture_is_array = false;
             let primary_is_user_alias = user_alias.is_some();
             let secondary_named = if primary_is_user_alias {
                 // Alias takes precedence; builtin name (if any) becomes secondary capture.
@@ -4671,8 +4737,16 @@ impl Interpreter {
             // `<bar=:Letter>+`) is the builtin case, not the sigil case: Raku
             // quantifies the class per-iteration and yields a List, so it must NOT
             // be wrapped (only the sigil-prefix alias `$<foo>=...` wraps).
+            //
+            // A sigil alias on a *capturing group* (`$<x>=(\w)+`, `@<x>=(.(.))+`)
+            // is ALSO the per-iteration-list case: Raku quantifies the group and
+            // aliases each iteration's Match, so `$<x>` is a List of group Matches
+            // (`[«a» «b» «c»]`), each preserving the group's inner captures. Only a
+            // sigil alias on a non-grouping quantified atom (`$<x>=\w+`,
+            // `$<x>=[\w]+`) wraps to capture the whole span as one Match.
             let wrap_named_quant = primary_is_user_alias
                 && !user_alias_is_angle
+                && !matches!(atom, RegexAtom::CaptureGroup(_))
                 && hash_capture.is_none()
                 && token_separator.is_none()
                 && matches!(
@@ -4686,6 +4760,7 @@ impl Interpreter {
                     named_capture: None,
                     hash_capture: None,
                     secondary_named_capture: None,
+                    force_list_capture: false,
                     ratchet: token_ratchet,
                     frugal: token_frugal,
                     separator: None,
@@ -4702,6 +4777,7 @@ impl Interpreter {
                     named_capture: primary_named,
                     hash_capture: None,
                     secondary_named_capture: secondary_named,
+                    force_list_capture: user_alias_is_array,
                     ratchet: token_ratchet,
                     frugal: token_frugal,
                     separator: None,
@@ -4713,6 +4789,7 @@ impl Interpreter {
                     named_capture: primary_named,
                     hash_capture,
                     secondary_named_capture: secondary_named,
+                    force_list_capture: user_alias_is_array,
                     ratchet: token_ratchet,
                     frugal: token_frugal,
                     separator: token_separator,

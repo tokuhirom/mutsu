@@ -760,6 +760,24 @@ impl Interpreter {
                     Some(Ok(Value::Nil))
                 }
             }
+            // `$match.AT-KEY("name")` — named-capture lookup, mirroring the
+            // `$match<name>` postcircumfix. Routed here by hyper method calls such
+            // as `@<chars>».<spaces>`, which dispatch `.AT-KEY` per element.
+            (
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                idx,
+            ) if class_name == "Match" => {
+                let key = idx.to_string_value();
+                if let Some(Value::Hash(named)) = attributes.as_map().get("named") {
+                    Some(Ok(named.get(key.as_str()).cloned().unwrap_or(Value::Nil)))
+                } else {
+                    Some(Ok(Value::Nil))
+                }
+            }
             _ => None,
         }
     }

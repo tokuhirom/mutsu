@@ -540,6 +540,12 @@ impl Interpreter {
                 .entry(name.clone())
                 .or_default()
                 .push(captured.clone());
+            // `@<name>=` array-sigil alias forces list context: mark the name as
+            // quantified so the Match builder always presents it as a List, even
+            // for a single non-quantified capture (`@<foo>=(.(.))` → `[«bc»]`).
+            if token.force_list_capture {
+                updated.named_quantified.insert(name.clone());
+            }
             // Record a minimal sub-capture carrying the exact (from, to) span so
             // the Match object gets the right offsets even for a zero-width match
             // (e.g. `$<delim>=<[a..z]>*` matching empty). Without this the Match
