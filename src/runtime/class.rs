@@ -738,6 +738,7 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        crate::vm::vm_stats::record_tree_walk_method(method_name);
         let inv_value = if let Some(inv) = &invocant {
             inv.clone()
         } else if attributes.is_empty() {
