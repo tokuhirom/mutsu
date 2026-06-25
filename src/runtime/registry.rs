@@ -240,6 +240,30 @@ impl Registry {
             let builtin_mro: Option<Vec<&str>> = match class_name {
                 "Match" => Some(vec!["Match", "Capture", "Cool", "Any", "Mu"]),
                 "Capture" => Some(vec!["Capture", "Any", "Mu"]),
+                "IO::Spec" => Some(vec!["IO::Spec", "Any", "Mu"]),
+                "IO::Spec::Unix" => Some(vec!["IO::Spec::Unix", "IO::Spec", "Any", "Mu"]),
+                // Win32/Cygwin/QNX specialize the Unix spec (Raku MRO).
+                "IO::Spec::Win32" => Some(vec![
+                    "IO::Spec::Win32",
+                    "IO::Spec::Unix",
+                    "IO::Spec",
+                    "Any",
+                    "Mu",
+                ]),
+                "IO::Spec::Cygwin" => Some(vec![
+                    "IO::Spec::Cygwin",
+                    "IO::Spec::Unix",
+                    "IO::Spec",
+                    "Any",
+                    "Mu",
+                ]),
+                "IO::Spec::QNX" => Some(vec![
+                    "IO::Spec::QNX",
+                    "IO::Spec::Unix",
+                    "IO::Spec",
+                    "Any",
+                    "Mu",
+                ]),
                 "Distribution::Path" => {
                     Some(vec!["Distribution::Path", "Distribution", "Any", "Mu"])
                 }

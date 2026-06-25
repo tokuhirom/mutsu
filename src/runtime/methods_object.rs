@@ -1992,6 +1992,17 @@ impl Interpreter {
             );
         } else if let Some(spec) = spec_attr {
             attrs.insert("SPEC".to_string(), spec);
+        } else if let Some(spec) = self
+            .env
+            .get("$*SPEC")
+            .or_else(|| self.env.get("*SPEC"))
+            .cloned()
+            .or_else(|| self.get_dynamic_var("*SPEC").ok())
+        {
+            // No explicit `:SPEC` — default to the dynamic `$*SPEC` (Raku:
+            // `IO::Path.new('.').SPEC eqv $*SPEC`), so a `temp $*SPEC = ...`
+            // override is honored by the constructor too.
+            attrs.insert("SPEC".to_string(), spec);
         }
         Ok(Value::make_instance(class_name, attrs))
     }

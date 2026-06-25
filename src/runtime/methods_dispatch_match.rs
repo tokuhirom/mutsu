@@ -187,7 +187,17 @@ impl Interpreter {
                     self.dispatch_comb_with_args(target, &args)
                 }
             }
-            "IO" if args.is_empty() => {
+            // `.IO` takes only named adverbs (`:CWD`, `:SPEC`); accept and IGNORE
+            // them. Per Raku, `'.'.IO(:CWD($x))` does NOT forward `:CWD` to the
+            // resulting IO::Path (unlike `IO::Path.new('.', :CWD($x))`), so the
+            // path keeps the current `$*CWD`/`$*SPEC`.
+            "IO" if args.is_empty()
+                || args.iter().all(|a| {
+                    matches!(a, Value::Pair(k, _) if k == "CWD" || k == "SPEC")
+                        || matches!(a, Value::ValuePair(k, _)
+                                if k.to_string_value() == "CWD" || k.to_string_value() == "SPEC")
+                }) =>
+            {
                 // `.IO` on an IO::Path (sub)class type object returns the type
                 // object itself, so `IO::Path::Unix === IO::Path::Unix.IO`.
                 if let Value::Package(name) = &target {
