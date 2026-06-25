@@ -159,7 +159,20 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   The same drain applied to the user-`.Str`/`.Stringy` render sites that, like the
   coercion ops, run a user method with no surrounding CallMethod op: `exec_string_concat_op`
   (interpolation `"…$obj…"`), `exec_put_op` (`put`), `exec_print_op` (`print`). `say`/
-  `note` already did this for `.gist`. pin=`t/render-method-captured-writeback.t`(6).
+  `note` already did this for `.gist`. pin=`t/render-method-captured-writeback.t`(8).
+  **★Critical subtlety — retain-on-miss:** an internal redispatch can fire *inside another
+  method body that has not yet returned* (e.g. a `submethod BUILD`'s `$gather ~= "($a)"`
+  interpolation runs while a *sibling* BUILD's captured-outer write `$parent-counter++` is
+  still queued in `pending_rw_writeback_sources` for the outer `.new` call site to drain).
+  The drop-on-miss `apply_pending_rw_writeback` would *consume and discard* that sibling
+  write here (its slot is in the outer frame, not the BUILD frame), so the `.new` drain
+  finds nothing → caller slot stays stale (roast `S12-construction/BUILD.t` "Called
+  Parent's BUILD method once" caught this). Fix = a dedicated
+  `reconcile_caller_after_internal_dispatch` that **retains** a miss instead of dropping
+  it. ALL the op-level internal-redispatch reconciles (this slice's render sites + #3615's
+  coercion sites + `say`/`note`) use it; only the genuine lazy-force reify keeps the
+  drop-on-miss `reconcile_caller_after_lazy_force` (its pending entries are always its own
+  callee's).
   **Remaining same-shape sites (deferred, lower traffic):** `sprintf`/`.fmt` `%s`
   formatting drops the `.Str` writeback too (it also calls `.Str` a surprising number of
   times — a separate count quirk that complicates a clean pin); and `value ~~ $instance`

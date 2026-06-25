@@ -8,7 +8,7 @@ use Test;
 # writeback fix (t/coercion-method-captured-writeback.t); `say`/`note` were already
 # handled.
 
-plan 6;
+plan 8;
 
 # --- string interpolation calls .Str ---
 {
@@ -51,4 +51,22 @@ plan 6;
     $s ~= "$c" for ^4;
     is $n, 4, 'accumulating .Str write coherent across loop';
     is $s, "zzzz", 'interpolated value correct each iteration';
+}
+
+# --- interpolation inside a sibling submethod BUILD must NOT consume another
+#     BUILD's pending captured-outer writeback (retain-on-miss reconcile) ---
+{
+    my $parent-counter = 0;
+    my $child-counter = 0;
+    class Parent {
+        submethod BUILD (:$a) { $parent-counter++ }
+    }
+    class Child is Parent {
+        # the interpolation here previously drained Parent.BUILD's pending
+        # `$parent-counter` writeback (drop-on-miss), losing it
+        submethod BUILD (:$a, :$b) { $child-counter++; my $ignore = "x=$a" }
+    }
+    Child.new(:b(5), :a(7));
+    is $parent-counter, 1, "sibling BUILD's captured write survives child interpolation";
+    is $child-counter, 1, "child BUILD ran once";
 }

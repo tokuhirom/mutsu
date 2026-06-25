@@ -356,7 +356,7 @@ impl Interpreter {
                 parts.push(runtime::gist_value(&v));
             }
         }
-        self.reconcile_caller_after_lazy_force(caller_code);
+        self.reconcile_caller_after_internal_dispatch(caller_code);
         let line = parts.join("");
         loan_env!(self, write_to_named_handle("$*OUT", &line, true))?;
         Ok(())
@@ -379,7 +379,7 @@ impl Interpreter {
                     parts.push(runtime::gist_value(v));
                 }
             }
-            self.reconcile_caller_after_lazy_force(caller_code);
+            self.reconcile_caller_after_internal_dispatch(caller_code);
             parts.join("")
         };
         loan_env!(self, write_to_named_handle("$*ERR", &content, true))?;
@@ -418,7 +418,7 @@ impl Interpreter {
                 content.push_str(&v.to_str_context());
             }
         }
-        self.reconcile_caller_after_lazy_force(caller_code);
+        self.reconcile_caller_after_internal_dispatch(caller_code);
         loan_env!(self, write_to_named_handle("$*OUT", &content, true))?;
         Ok(())
     }
@@ -435,7 +435,7 @@ impl Interpreter {
             // For Junctions, thread: call .Str on each element recursively
             self.collect_str_threaded(v, &mut content)?;
         }
-        self.reconcile_caller_after_lazy_force(caller_code);
+        self.reconcile_caller_after_internal_dispatch(caller_code);
         loan_env!(self, write_to_named_handle("$*OUT", &content, false))?;
         Ok(())
     }

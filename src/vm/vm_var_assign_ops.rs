@@ -1536,7 +1536,7 @@ impl Interpreter {
             }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
-        self.reconcile_caller_after_lazy_force(caller_code);
+        self.reconcile_caller_after_internal_dispatch(caller_code);
         if result.is_ascii() {
             self.stack.push(Value::str(result));
         } else {

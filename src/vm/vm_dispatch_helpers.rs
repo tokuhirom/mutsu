@@ -202,7 +202,7 @@ impl Interpreter {
         // list stays empty).
         let caller_code = self.current_code;
         let r = loan_env!(self, coerce_infix_operand_numeric(value));
-        self.reconcile_caller_after_lazy_force(caller_code);
+        self.reconcile_caller_after_internal_dispatch(caller_code);
         r
     }
 
@@ -245,7 +245,7 @@ impl Interpreter {
                     // writeback to the caller's slot (see coerce_numeric_bridge_value).
                     let caller_code = self.current_code;
                     let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
-                    self.reconcile_caller_after_lazy_force(caller_code);
+                    self.reconcile_caller_after_internal_dispatch(caller_code);
                     if let Ok(result) = result {
                         return result.truthy();
                     }
@@ -257,7 +257,7 @@ impl Interpreter {
                 if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some() {
                     let caller_code = self.current_code;
                     let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
-                    self.reconcile_caller_after_lazy_force(caller_code);
+                    self.reconcile_caller_after_internal_dispatch(caller_code);
                     if let Ok(result) = result {
                         return result.truthy();
                     }

@@ -659,6 +659,52 @@ impl Interpreter {
         }
     }
 
+    /// Reconcile after an *internal redispatch* (a user coercion/render method run
+    /// mid-opcode without a surrounding CallMethod op: `+$obj`/`~$obj`/`if $obj`,
+    /// string interpolation, `put`/`print`, …). Like
+    /// [`Self::reconcile_caller_after_lazy_force`] it drains the captured-outer
+    /// writeback into the caller frame's local slots, BUT it **retains** any
+    /// `pending_rw_writeback_sources` entry whose name is not a slot of
+    /// `caller_code` instead of dropping it.
+    ///
+    /// The retain matters because an internal redispatch can fire *inside another
+    /// method body that has not yet returned* — e.g. a `submethod BUILD`'s
+    /// `$gather ~= "($a)"` interpolation runs while a *sibling* `BUILD`'s
+    /// captured-outer write (`$parent-counter++`) is still sitting in
+    /// `pending_rw_writeback_sources`, queued for the outer `.new` call site to
+    /// drain. The drop-on-miss `apply_pending_rw_writeback` would consume and
+    /// discard that sibling write here (its slot lives in the outer frame, not the
+    /// BUILD frame), so the outer `.new` drain finds nothing and the caller's slot
+    /// stays stale. Retaining the miss leaves it for the frame that actually owns
+    /// the slot.
+    pub(super) fn reconcile_caller_after_internal_dispatch(&mut self, caller_code: usize) {
+        self.current_code = caller_code;
+        if caller_code == 0 {
+            return;
+        }
+        // SAFETY: see `reconcile_caller_after_lazy_force` — `caller_code` is the
+        // live ancestor frame's `CompiledCode` address.
+        let code = unsafe { &*(caller_code as *const CompiledCode) };
+        if !self.pending_rw_writeback_sources.is_empty() {
+            let sources = std::mem::take(&mut self.pending_rw_writeback_sources);
+            let mut retained = Vec::new();
+            for source in sources {
+                if let Some(slot) = self.find_local_slot(code, &source) {
+                    if !matches!(self.locals[slot], Value::HashEntryRef { .. })
+                        && let Some(val) = self.env().get(&source).cloned()
+                    {
+                        self.locals[slot] = val;
+                    }
+                    // matched (slot in this frame) → applied, do not retain
+                } else {
+                    retained.push(source);
+                }
+            }
+            self.pending_rw_writeback_sources = retained;
+        }
+        self.apply_pending_caller_var_writeback(code);
+    }
+
     fn force_lazy_list_vm_n_inner(
         &mut self,
         list: &LazyList,
