@@ -748,6 +748,17 @@
   （`."$name"()`）には 2 つの専用 opcode（`CallMethodDynamic`〔BareWord/literal target〕/`CallMethodDynamicMut`〔`$`/`@`/`%`-var target〕）があり、後者は native fast path を一切試さない
   ＝static 名で native 化済のメソッドも動的名だと全バウンス。動的名で呼ばれる native メソッド族を drain するには両 dynamic op に fast-path 呼び出しを足す要あり。instance mutator の non-mut
   動的形は writeback 先 var が無くても shared attribute cell（`commit_attrs`）への in-place commit で `\sigilless`-bound に伝播する（env insert 不要）。**
+- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = `Str.contains($needle, $pos?, :i/:m?)` の named-arg/position 形の VM ネイティブ化)**: starts-with/substr-eq で
+  「named-arg 形は slow path 維持」と保守的に deferred していた string-method 族の **named-arg 形を初めて native 化**。`S32-str/contains.t`(survey 278) は全テストが
+  `invocant.contains(|c)` で **markings named-arg（`:i`/`:ignorecase`/`:!i`…）を必ず付ける**ため、無印 1-arg native 形（`native_method_1arg`）にほぼ到達せず、Pair 付き 2-arg or
+  position+Pair の 3-arg で arity-keyed dispatch（`native_method_2arg` 止まり・3arg path 無し）を素通りして 100% interpreter にバウンスしていた。**修正**＝新 variadic helper
+  `native_contains_with_options(target, args)` が positional/named を分離し、needle=positional[0]・start=positional[1]（Int/Num/Str-parse）・`i`/`ignorecase`/`m`/`ignoremark`
+  を全て lowercase 比較に畳む（`Interpreter::dispatch_contains` を厳密ミラー）。`try_native_method` の arity dispatch 直前に wire。**フォールスルー維持**＝非Str 受け手（**Match invocant** は
+  別軸の Match→Str coercion・instance-bypass 相互作用で defer）/Package needle/BigInt position（overflow→X::OutOfRange は interpreter）/負数・範囲外 position（X::OutOfRange Failure）/
+  未知 named arg。junction needle は `contains_value_recursive[_ci]` で thread。**実測 contains.t fallback 272→140**（残 140＝Match invocant・別軸）。全 t/(11610)・contains 11 形 byte-identical
+  （unicode CI・Str position 含む）・roast contains 系サンプル回帰ゼロ。pin `t/contains-options-native.t`(22)。**★教訓: starts-with/substr-eq で「named-arg は deferred」としたが、
+  named-arg 形こそが実テストの主トラフィックのことがある（contains.t は全形 markings 付き）。variadic helper（positional/named 分離→interpreter dispatch ミラー）を arity dispatch 前に
+  wire すれば named-arg 形も drain できる。受け手が Str 以外（Match 等 coercion 要）の半分は別軸で残る。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

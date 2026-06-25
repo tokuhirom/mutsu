@@ -214,6 +214,16 @@ impl Interpreter {
         {
             return None;
         }
+        // `.contains($needle, $pos?, :i/:m?)` — the positioned / case-insensitive
+        // forms carry a Pair or a 3rd arg, so they never reach the arity-keyed
+        // native_method_*arg dispatch below. Handle them natively (pure Str search,
+        // mirrors Interpreter::dispatch_contains). The bare single-needle form keeps
+        // its native_method_1arg arm; out-of-range / BigInt positions fall through.
+        if method_name == "contains"
+            && let Some(result) = crate::builtins::native_contains_with_options(target, args)
+        {
+            return Some(result);
+        }
         let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
         } else if args.len() == 1 {

@@ -453,6 +453,82 @@ fn contains_value_recursive(hay: &str, needle: &Value) -> Value {
     }
 }
 
+fn contains_value_recursive_ci(hay_lc: &str, needle: &Value) -> Value {
+    match needle {
+        Value::Junction { kind, values } => {
+            let mapped = values
+                .iter()
+                .map(|v| contains_value_recursive_ci(hay_lc, v))
+                .collect::<Vec<_>>();
+            Value::junction(kind.clone(), mapped)
+        }
+        _ => Value::Bool(hay_lc.contains(&needle.to_string_value().to_lowercase())),
+    }
+}
+
+/// `.contains($needle, $pos?, :i/:ignorecase/:m/:ignoremark?)` on a `Str` receiver —
+/// the forms that carry a start position and/or the case-/mark-insensitive named
+/// markings. These never reach the arity-keyed `native_method_*arg` dispatch (a Pair
+/// or a 3rd arg pushes them past it), so they previously bounced to the interpreter.
+/// Mirrors `Interpreter::dispatch_contains` (runtime/methods_string.rs) exactly: named
+/// `i`/`ignorecase`/`m`/`ignoremark` all fold to a lowercase compare, and the start
+/// position is taken from the second positional (Int/Num/Str-parsed).
+///
+/// Returns `None` (fall through to the interpreter) for: non-Str receivers, a Package
+/// (type-object) needle, a `BigInt` position (overflow → X::OutOfRange handled by the
+/// interpreter), and out-of-range / negative positions (X::OutOfRange Failure). The
+/// plain single-needle form (`contains($needle)`) keeps its `native_method_1arg` arm.
+pub(crate) fn native_contains_with_options(
+    target: &Value,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    if !matches!(target, Value::Str(_)) {
+        return None;
+    }
+    let mut positional: Vec<&Value> = Vec::new();
+    let mut ignore_case = false;
+    for arg in args {
+        if let Value::Pair(key, value) = arg {
+            if matches!(key.as_str(), "i" | "ignorecase" | "m" | "ignoremark") {
+                ignore_case = value.truthy();
+            } else {
+                // An unexpected named arg: let the interpreter own the semantics.
+                return None;
+            }
+        } else {
+            positional.push(arg);
+        }
+    }
+    // Only the positioned / named forms are handled here; the bare single needle
+    // (`contains($needle)`) stays on the existing 1-arg native arm.
+    let needle: &Value = positional.first().copied()?;
+    if positional.len() == 1 && args.len() == 1 {
+        return None;
+    }
+    if let Value::Package(_) = needle {
+        return None;
+    }
+    let start = match positional.get(1).copied() {
+        Some(Value::Int(i)) => *i,
+        Some(Value::Num(f)) => *f as i64,
+        Some(Value::Str(s)) => s.parse::<i64>().ok()?,
+        Some(_) => return None,
+        None => 0,
+    };
+    let text = target.to_string_value();
+    let len = text.chars().count() as i64;
+    if start < 0 || start > len {
+        return None;
+    }
+    let hay: String = text.chars().skip(start as usize).collect();
+    let result = if ignore_case {
+        contains_value_recursive_ci(&hay.to_lowercase(), needle)
+    } else {
+        contains_value_recursive(&hay, needle)
+    };
+    Some(Ok(result))
+}
+
 fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
     let mut total = 0.0;
     for weight in items.values() {
