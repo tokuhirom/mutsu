@@ -86,10 +86,30 @@ pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
 }
 
 /// Check if an expression ends with a block body (e.g., `try { ... }`,
-/// `do { ... }`, `gather { ... }`). Such expressions should not have
-/// statement modifiers attached across a newline.
+/// `do { ... }`, `gather { ... }`, or a call whose final argument is a bare
+/// block such as `$lock.protect: { ... }` / `@a.map: { ... }`). Such
+/// expressions should not have statement modifiers attached across a newline:
+/// in Raku a statement ending in a `}` block at end of line is self-terminating.
 fn expr_ends_with_block(expr: &Expr) -> bool {
-    matches!(expr, Expr::Try { .. } | Expr::Gather(_))
+    match expr {
+        Expr::Try { .. } | Expr::Gather(_) => true,
+        Expr::MethodCall { args, .. }
+        | Expr::HyperMethodCall { args, .. }
+        | Expr::DynamicMethodCall { args, .. }
+        | Expr::Call { args, .. } => {
+            matches!(args.last(), Some(Expr::AnonSub { is_block: true, .. }))
+        }
+        _ => false,
+    }
+}
+
+/// After a statement-modifier keyword's condition, a `{` block (or `-> ... {`
+/// pointy header) means this is actually a full control statement (`if COND
+/// { ... }`), not a postfix modifier — modifiers never take a block. Mirrors
+/// the guard the `for`/`with` modifiers already apply to their own headers.
+fn block_follows_modifier_condition(r: &str) -> bool {
+    let r = r.trim_start();
+    r.starts_with('{') || r.starts_with("->")
 }
 
 /// Parse statement modifier (postfix if/unless/for/while/until/given/when).
@@ -155,6 +175,13 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
+        // A `{` block after the condition means this is a full `if COND { ... }`
+        // control statement, not a postfix modifier (modifiers take no block).
+        // This arises after a block-final statement on the previous line whose
+        // trailing newline was consumed (`$lock.protect: { ... }` then `if ...`).
+        if block_follows_modifier_condition(r) {
+            return Ok(None);
+        }
         check_two_terms_across_lines(r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         return Ok(Some((
@@ -177,6 +204,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
+        if block_follows_modifier_condition(r) {
+            return Ok(None);
+        }
         check_two_terms_across_lines(r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         return Ok(Some((
@@ -293,6 +323,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
+        if block_follows_modifier_condition(r) {
+            return Ok(None);
+        }
         return Ok(Some((
             r,
             Stmt::While {
@@ -312,6 +345,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
+        if block_follows_modifier_condition(r) {
+            return Ok(None);
+        }
         return Ok(Some((
             r,
             Stmt::While {
@@ -334,6 +370,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
+        if block_follows_modifier_condition(r) {
+            return Ok(None);
+        }
         let given_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &topic);
         return Ok(Some((
             r,

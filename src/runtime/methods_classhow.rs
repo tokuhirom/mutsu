@@ -2105,6 +2105,19 @@ impl Interpreter {
                 });
             }
         }
+        // Grammars inherit parse/subparse/parsefile from the built-in Grammar
+        // type. These are dispatched natively (no ClassDef.methods entry), so the
+        // MRO walk above misses them — probe the grammar-ness of the target.
+        if results.is_empty()
+            && matches!(method_name, "parse" | "subparse" | "parsefile")
+            && self.package_looks_like_grammar(&class_name)
+        {
+            results.push(Value::Routine {
+                package: Symbol::intern(&class_name),
+                name: Symbol::intern(method_name),
+                is_regex: false,
+            });
+        }
         // Built-in exception instances (X::...) expose their attributes as
         // accessor methods (e.g. X::Undeclared.suggestions, .symbol). The HOW
         // metamodel has no user class def for these, so probe the instance's own

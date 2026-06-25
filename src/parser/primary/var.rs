@@ -312,7 +312,9 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
-        || (input.starts_with('.') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
+        || (input.starts_with('.')
+            && input.len() > 1
+            && (input.as_bytes()[1].is_ascii_alphabetic() || input.as_bytes()[1] == b'_'))
         || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
     {
         (&input[1..], &input[..1])
