@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 # `.^ver` on a type with no declared version is `Mu` (an undefined type object),
 # not an error. Rakudo returns Mu; mutsu previously threw X::Method::NotFound.
@@ -44,4 +44,12 @@ plan 8;
     class Driver2 does Driver { }
     ok Driver2.new.Version === Mu,
         'role-composed ::?CLASS.^ver is Mu for an unversioned class';
+}
+
+# A bare `package` has no `.^ver` at all (PackageHOW): it must still throw,
+# even though an unversioned *class* returns Mu.
+{
+    my package P:ver<1.2.3> { };
+    throws-like { P.^ver }, X::Method::NotFound,
+        '.^ver on a package is absent (not Mu)';
 }
