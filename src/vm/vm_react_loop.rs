@@ -234,18 +234,25 @@ impl Interpreter {
                                 consumer_cb: callback.clone(),
                                 done: false,
                             });
+                            let stream_idx = self.supply_stream_consumers.len() - 1;
                             let (od_res, emitted, body_ran_done) = loan_env!(
                                 self,
                                 run_on_demand_body(on_demand_cb.clone(), Some(emitter_supplier_id),)
                             );
+                            // Peek `done` (don't pop yet): the streaming consumer
+                            // must stay registered while we replay any finite inner
+                            // `whenever` sources below, so that `emit`s from those
+                            // inner subscriptions route back to this consumer (the
+                            // outer whenever's callback) via `try_stream_emit`.
                             let streamed_done = self
                                 .supply_stream_consumers
-                                .pop()
+                                .get(stream_idx)
                                 .map(|c| c.done)
                                 .unwrap_or(false);
                             if let Err(od_err) = od_res
                                 && !od_err.is_react_done
                             {
+                                self.supply_stream_consumers.truncate(stream_idx);
                                 return Err(crate::runtime::Interpreter::wrap_react_died(od_err));
                             }
                             // If the streaming consumer signalled `done`, the
@@ -253,6 +260,7 @@ impl Interpreter {
                             // its LAST callbacks and stop (don't set up the inner
                             // subscriptions or keep polling).
                             if streamed_done {
+                                self.supply_stream_consumers.truncate(stream_idx);
                                 let last_cbs = items
                                     .get(2)
                                     .and_then(crate::runtime::Interpreter::value_array_items)
@@ -266,10 +274,18 @@ impl Interpreter {
                                 return Ok(());
                             }
                             // The emitted items may include subscription registrations
-                            // from `whenever` inside the supply body. Convert them to
-                            // ReactSubscriptions for the event loop, tagging each with
-                            // the done-signal promise so the loop can complete them
-                            // when the supply body calls `done`.
+                            // from `whenever` inside the supply body. Live sources
+                            // (channel / supplier_id) become ReactSubscriptions polled
+                            // by the event loop. A finite source (`Supply.from-list`)
+                            // has neither, so `value_to_react_subscription` returns
+                            // None — replay it inline now. The streaming consumer is
+                            // still registered, so `emit`s from the inner whenever body
+                            // (an `emit` re-routed to the supply's emitter) reach the
+                            // outer whenever's callback via `try_stream_emit`. This is
+                            // what makes a `supply { whenever $up { emit ... } }`
+                            // transform actually pass values downstream (e.g. Cro
+                            // pipelines).
+                            let mut early_done = false;
                             for v in emitted {
                                 if crate::runtime::Interpreter::is_supply_subscription_registration(
                                     &v,
@@ -277,10 +293,19 @@ impl Interpreter {
                                     if let Some(mut rsub) = self.value_to_react_subscription(&v) {
                                         rsub.on_demand_done = Some(done_promise.clone());
                                         react_subs.push(rsub);
+                                    } else if self.replay_inner_static_subscription(&v)?
+                                        == Some(true)
+                                    {
+                                        early_done = true;
+                                        break;
                                     }
                                 } else {
                                     let _ = self.call_react_callback(&callback.clone(), vec![v]);
                                 }
+                            }
+                            self.supply_stream_consumers.truncate(stream_idx);
+                            if early_done {
+                                return Ok(());
                             }
                             // Supply.on-demand(..., closing => { ... }): the
                             // `closing` callback runs when the supply is closed.
@@ -754,6 +779,159 @@ impl Interpreter {
     /// whenever early. This whenever's LAST phasers are fired here — with the
     /// triggering value as topic when stopped via `last`, otherwise with no
     /// topic on natural completion. Returns `Ok(true)` iff `done` was signalled.
+    /// Replay an inner `whenever` subscription registration
+    /// `[Supply, callback, last?, quit?]` whose source has no live channel or
+    /// supplier id (so `value_to_react_subscription` returned None) — a finite
+    /// `Supply.from-list` source, or a chained `supply { ... }` transform.
+    /// Returns `Some(true)` if a body signalled react `done`, `Some(false)` after
+    /// a normal replay, or `None` if `v` is not such a Supply registration.
+    fn replay_inner_static_subscription(
+        &mut self,
+        v: &Value,
+    ) -> Result<Option<bool>, RuntimeError> {
+        let Value::Array(inner_items, ..) = v else {
+            return Ok(None);
+        };
+        let Some(source @ Value::Instance { class_name, .. }) = inner_items.first() else {
+            return Ok(None);
+        };
+        if class_name != "Supply" {
+            return Ok(None);
+        }
+        let source = source.clone();
+        let inner_cb = inner_items.get(1).cloned().unwrap_or(Value::Nil);
+        let inner_last = inner_items
+            .get(2)
+            .and_then(crate::runtime::Interpreter::value_array_items)
+            .unwrap_or_default();
+        self.drive_inner_supply_to_consumer(&source, &inner_cb, &inner_last)
+            .map(Some)
+    }
+
+    /// Synchronously drive a finite `Supply` `source`, delivering each value to
+    /// `consumer_cb`. Handles two shapes that the polling event loop cannot:
+    /// a `values`-backed source (`Supply.from-list`) replayed directly, and a
+    /// chained `supply { whenever <upstream> { emit ... } }` transform whose
+    /// `whenever` source is itself an on-demand supply (recursed into). For the
+    /// on-demand case a streaming consumer is registered so the body's `emit`s
+    /// reach `consumer_cb` via `try_stream_emit`; inner registrations are driven
+    /// recursively, which is what lets a multi-stage Cro pipeline pass values all
+    /// the way through. Returns `true` if any body signalled react `done`.
+    fn drive_inner_supply_to_consumer(
+        &mut self,
+        source: &Value,
+        consumer_cb: &Value,
+        last_callbacks: &[Value],
+    ) -> Result<bool, RuntimeError> {
+        let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = source
+        else {
+            return Ok(false);
+        };
+        if class_name != "Supply" {
+            return Ok(false);
+        }
+        // Guard against runaway nesting. A pipeline that reuses the *same*
+        // `supply { ... }` transform sub more than once shares one emitter
+        // variable name (assigned per parse-site), which a deeper fix to lexical
+        // emitter capture would remove; until then a same-sub-twice chain can
+        // loop. Bail gracefully instead of overflowing the stack.
+        if self.supply_stream_consumers.len() > 256 {
+            return Err(RuntimeError::new(
+                "supply pipeline nested too deeply (a transform sub reused in the \
+                 same pipeline shares an emitter binding)",
+            ));
+        }
+        let attrs = attributes.as_map();
+        // A `supply { ... }` block carries both an (empty) `values` array and an
+        // `on_demand_callback`; a `Supply.from-list` carries only `values`. Prefer
+        // the on-demand body when present so a chained transform is driven, not
+        // mistaken for an empty static source.
+        let on_demand_cb = match attrs.get("on_demand_callback").cloned() {
+            Some(cb) => cb,
+            None => {
+                if attrs.contains_key("values") {
+                    return self.replay_static_supply(&attrs, consumer_cb, last_callbacks);
+                }
+                // A channel-backed or otherwise live source cannot be replayed here.
+                return Ok(false);
+            }
+        };
+        let sid = next_supplier_id();
+        self.supply_stream_consumers.push(StreamConsumer {
+            supplier_id: sid,
+            consumer_cb: consumer_cb.clone(),
+            done: false,
+        });
+        let idx = self.supply_stream_consumers.len() - 1;
+        let (res, emitted, _) = loan_env!(self, run_on_demand_body(on_demand_cb, Some(sid)));
+        let mut reached = self
+            .supply_stream_consumers
+            .get(idx)
+            .map(|c| c.done)
+            .unwrap_or(false);
+        if let Err(e) = res
+            && !e.is_react_done
+        {
+            self.supply_stream_consumers.truncate(idx);
+            return Err(crate::runtime::Interpreter::wrap_react_died(e));
+        }
+        if !reached {
+            for v in emitted {
+                if crate::runtime::Interpreter::is_supply_subscription_registration(&v) {
+                    if let Value::Array(inner, ..) = &v
+                        && let Some(inner_src @ Value::Instance { .. }) = inner.first()
+                    {
+                        let inner_src = inner_src.clone();
+                        let inner_cb = inner.get(1).cloned().unwrap_or(Value::Nil);
+                        let inner_last = inner
+                            .get(2)
+                            .and_then(crate::runtime::Interpreter::value_array_items)
+                            .unwrap_or_default();
+                        if self.drive_inner_supply_to_consumer(
+                            &inner_src,
+                            &inner_cb,
+                            &inner_last,
+                        )? {
+                            reached = true;
+                            break;
+                        }
+                    }
+                } else {
+                    // A plain value buffered by the body (no active stream route):
+                    // deliver it to the consumer directly.
+                    match self.call_react_callback(&consumer_cb.clone(), vec![v]) {
+                        Err(e) if e.is_react_done => {
+                            reached = true;
+                            break;
+                        }
+                        other => {
+                            other?;
+                        }
+                    }
+                }
+            }
+        }
+        self.supply_stream_consumers.truncate(idx);
+        if !reached {
+            for cb in last_callbacks {
+                match self.call_react_callback(&cb.clone(), Vec::new()) {
+                    Err(e) if e.is_react_done => {
+                        reached = true;
+                        break;
+                    }
+                    other => {
+                        other?;
+                    }
+                }
+            }
+        }
+        Ok(reached)
+    }
+
     fn replay_static_supply(
         &mut self,
         attributes: &HashMap<String, Value>,
