@@ -389,6 +389,11 @@ impl Interpreter {
             }
             return self.call_method_with_values(*inner, method, args);
         }
+        // `Rakudo::Internals::JSON.from-json` / `.to-json`: a core Rakudo class
+        // routed to the native JSON implementation (used by OpenSSL, JSON::JWT).
+        if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {
+            return result;
+        }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
             return result;

@@ -33,6 +33,35 @@ impl Interpreter {
             _ => None,
         }
     }
+
+    /// Dispatch `Rakudo::Internals::JSON.from-json` / `.to-json`. Unlike the
+    /// module-provided `to-json`/`from-json` subs, this is a core Rakudo class
+    /// always available (used by e.g. OpenSSL's `%?RESOURCES` loading and
+    /// JSON::JWT), so it is not gated on a JSON module being loaded. Returns
+    /// `Some` when the invocant is the `Rakudo::Internals::JSON` type object and
+    /// the method is one of the two JSON routines.
+    pub(crate) fn try_rakudo_internals_json_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "to-json" | "from-json") {
+            return None;
+        }
+        let Value::Package(name) = target else {
+            return None;
+        };
+        if name.resolve() != "Rakudo::Internals::JSON" {
+            return None;
+        }
+        let (clean_args, _) = self.sanitize_call_args(args);
+        Some(match method {
+            "to-json" => native_to_json(&clean_args),
+            "from-json" => native_from_json(&clean_args),
+            _ => unreachable!(),
+        })
+    }
 }
 
 fn native_to_json(args: &[Value]) -> Result<Value, RuntimeError> {
