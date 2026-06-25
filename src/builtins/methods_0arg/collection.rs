@@ -361,7 +361,16 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(Value::hash(std::collections::HashMap::new())))
             }
             _ => {
-                let items = crate::runtime::utils::value_to_list(target);
+                // Iterate an Array/Seq/Slip's own elements as the hash
+                // initializer, even when the value is itemized (`$(:a, :b).hash`):
+                // `value_to_list` would treat an itemized list as one opaque
+                // element and wrongly raise "Odd number of elements". This mirrors
+                // the `my %h = $list` assignment path.
+                let items = match target {
+                    Value::Array(items, _) => items.iter().cloned().collect(),
+                    Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
+                    _ => crate::runtime::utils::value_to_list(target),
+                };
                 Some(crate::runtime::utils::build_hash_from_items(items))
             }
         },
