@@ -92,7 +92,7 @@ pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
 /// in Raku a statement ending in a `}` block at end of line is self-terminating.
 fn expr_ends_with_block(expr: &Expr) -> bool {
     match expr {
-        Expr::Try { .. } | Expr::Gather(_) => true,
+        Expr::Try { .. } | Expr::Gather(_) | Expr::DoBlock { .. } | Expr::DoStmt(_) => true,
         Expr::MethodCall { args, .. }
         | Expr::HyperMethodCall { args, .. }
         | Expr::DynamicMethodCall { args, .. }
@@ -164,6 +164,12 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
 
 /// Try to parse a single statement modifier. Returns None if no modifier matched.
 fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>, PError> {
+    // Whether the statement being modified itself ends in a `{ ... }` block
+    // (`$lock.protect: { ... }`). Only then does a `{` after the modifier's
+    // condition mean "this `if` starts a new control statement" rather than a
+    // postfix modifier. For a non-block statement (`die X if COND { ... }`) the
+    // `if` IS a modifier and the trailing block is a separate statement.
+    let modified_ends_block = matches!(&stmt, Stmt::Expr(e) if expr_ends_with_block(e));
     // Try statement modifiers
     if let Some(r) = keyword("if", rest) {
         let (r, _) = ws1(r)?;
@@ -179,7 +185,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         // control statement, not a postfix modifier (modifiers take no block).
         // This arises after a block-final statement on the previous line whose
         // trailing newline was consumed (`$lock.protect: { ... }` then `if ...`).
-        if block_follows_modifier_condition(r) {
+        if modified_ends_block && block_follows_modifier_condition(r) {
             return Ok(None);
         }
         check_two_terms_across_lines(r)?;
@@ -204,7 +210,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if block_follows_modifier_condition(r) {
+        if modified_ends_block && block_follows_modifier_condition(r) {
             return Ok(None);
         }
         check_two_terms_across_lines(r)?;
@@ -323,7 +329,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if block_follows_modifier_condition(r) {
+        if modified_ends_block && block_follows_modifier_condition(r) {
             return Ok(None);
         }
         return Ok(Some((
@@ -345,7 +351,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if block_follows_modifier_condition(r) {
+        if modified_ends_block && block_follows_modifier_condition(r) {
             return Ok(None);
         }
         return Ok(Some((
@@ -370,7 +376,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if block_follows_modifier_condition(r) {
+        if modified_ends_block && block_follows_modifier_condition(r) {
             return Ok(None);
         }
         let given_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &topic);
