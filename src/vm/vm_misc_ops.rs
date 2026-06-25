@@ -767,7 +767,7 @@ impl Interpreter {
             // coerce_numeric_bridge_value).
             let caller_code = self.current_code;
             let result = self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![]);
-            self.reconcile_caller_after_lazy_force(caller_code);
+            self.reconcile_caller_after_internal_dispatch(caller_code);
             if let Ok(result) = result {
                 self.stack.push(result);
                 return Ok(());
@@ -866,14 +866,14 @@ impl Interpreter {
             // coerce_numeric_bridge_value).
             let caller_code = self.current_code;
             let stringy = self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![]);
-            self.reconcile_caller_after_lazy_force(caller_code);
+            self.reconcile_caller_after_internal_dispatch(caller_code);
             if let Ok(result) = stringy {
                 self.stack.push(result);
                 return Ok(());
             }
             let caller_code = self.current_code;
             let str_r = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![]);
-            self.reconcile_caller_after_lazy_force(caller_code);
+            self.reconcile_caller_after_internal_dispatch(caller_code);
             if let Ok(result) = str_r {
                 self.stack.push(result);
                 return Ok(());

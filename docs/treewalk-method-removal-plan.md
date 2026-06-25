@@ -139,7 +139,7 @@ does. Until that lands, `run_instance_method` stays. This mirrors the function-s
 `nextsame+rw` blocker (PLAN §2-D): same root cause (writeback across a redispatch
 frame boundary), now confirmed for the method-coercion redispatch path too.
 
-- **Slice 1a (revised) — DONE (#TBD): coercion-redispatch writeback coherence.**
+- **Slice 1a (revised) — DONE (#3615): coercion-redispatch writeback coherence.**
   The reverted Slice 1's premise (that `dispatch_compiled_method` fails to *link* the
   callee frame to the caller env) was **wrong about the mechanism**. The captured-outer
   write *does* reach the caller env: `call_compiled_method`'s `merge_method_env`
@@ -155,13 +155,36 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   `eval_truthy` (`if $obj`/`?$obj` Bool). The three reverted tests (junction-invocant /
   grammar-dynvar / `$calls++` coercion) all pass — no closure-env rooting was needed.
   pin=`t/coercion-method-captured-writeback.t`(10).
-- **Slice 1b (next) — generalize the drain to the remaining `call_method_with_values`
-  internal redispatches** (the numeric bridge `.Bridge`/`.Int`/`.Real`, `.COERCE`,
-  render `.gist`/`.Str` reached via paths other than `say`/`note`), each at its own
-  op-handler boundary with `current_code` + `reconcile_caller_after_lazy_force`. THEN the
-  coerce/render *routing* (original Slice 1: route tree-walked `dispatch_instance_and_
-  fallback` user methods through `dispatch_compiled_method`) becomes safe, because the
-  drain point exists.
+- **Slice 1b (render redispatch) — DONE (#TBD): string-render writeback coherence.**
+  The same drain applied to the user-`.Str`/`.Stringy` render sites that, like the
+  coercion ops, run a user method with no surrounding CallMethod op: `exec_string_concat_op`
+  (interpolation `"…$obj…"`), `exec_put_op` (`put`), `exec_print_op` (`print`). `say`/
+  `note` already did this for `.gist`. pin=`t/render-method-captured-writeback.t`(8).
+  **★Critical subtlety — retain-on-miss:** an internal redispatch can fire *inside another
+  method body that has not yet returned* (e.g. a `submethod BUILD`'s `$gather ~= "($a)"`
+  interpolation runs while a *sibling* BUILD's captured-outer write `$parent-counter++` is
+  still queued in `pending_rw_writeback_sources` for the outer `.new` call site to drain).
+  The drop-on-miss `apply_pending_rw_writeback` would *consume and discard* that sibling
+  write here (its slot is in the outer frame, not the BUILD frame), so the `.new` drain
+  finds nothing → caller slot stays stale (roast `S12-construction/BUILD.t` "Called
+  Parent's BUILD method once" caught this). Fix = a dedicated
+  `reconcile_caller_after_internal_dispatch` that **retains** a miss instead of dropping
+  it. ALL the op-level internal-redispatch reconciles (this slice's render sites + #3615's
+  coercion sites + `say`/`note`) use it; only the genuine lazy-force reify keeps the
+  drop-on-miss `reconcile_caller_after_lazy_force` (its pending entries are always its own
+  callee's).
+  **Remaining same-shape sites (deferred, lower traffic):** `sprintf`/`.fmt` `%s`
+  formatting drops the `.Str` writeback too (it also calls `.Str` a surprising number of
+  times — a separate count quirk that complicates a clean pin); and `value ~~ $instance`
+  / `$instance ~~ (key => …)` do not even *dispatch* the user `ACCEPTS`/key method today
+  (`smart_match` bottoms out at `(_, Instance) => false`), so they are a missing-dispatch
+  bug, not a writeback one — out of scope for this slice.
+- **Slice 1c (next) — generalize the drain to the remaining `call_method_with_values`
+  internal redispatches** (the numeric bridge `.Bridge`/`.Int`/`.Real`, `.COERCE`),
+  each at its own op-handler boundary with `current_code` + `reconcile_caller_after_lazy_force`.
+  THEN the coerce/render *routing* (original Slice 1: route tree-walked
+  `dispatch_instance_and_fallback` user methods through `dispatch_compiled_method`)
+  becomes safe, because the drain point exists.
 - **Slice 2 — generalize the lever** to all user-method calls in
   `call_method_with_values` (cat 1 misc user methods abs/succ/foo/…, and the
   catch-all-miss path feeding `dispatch_instance_and_fallback:867`).

@@ -356,7 +356,7 @@ impl Interpreter {
                 parts.push(runtime::gist_value(&v));
             }
         }
-        self.reconcile_caller_after_lazy_force(caller_code);
+        self.reconcile_caller_after_internal_dispatch(caller_code);
         let line = parts.join("");
         loan_env!(self, write_to_named_handle("$*OUT", &line, true))?;
         Ok(())
@@ -379,7 +379,7 @@ impl Interpreter {
                     parts.push(runtime::gist_value(v));
                 }
             }
-            self.reconcile_caller_after_lazy_force(caller_code);
+            self.reconcile_caller_after_internal_dispatch(caller_code);
             parts.join("")
         };
         loan_env!(self, write_to_named_handle("$*ERR", &content, true))?;
@@ -404,6 +404,10 @@ impl Interpreter {
         }
         // Otherwise concatenate every argument's `.Str` into a single line plus a
         // trailing newline (`put 1, 2, 3` => "123\n"), like `print` with a newline.
+        // Slice F: a user `.Str` closure run below can mutate a captured-outer
+        // caller lexical; capture the caller frame's code and reconcile after (see
+        // exec_say_op).
+        let caller_code = self.current_code;
         let mut content = String::new();
         for v in &values {
             let v = loan_env!(self, auto_fetch_proxy(v))?;
@@ -414,6 +418,7 @@ impl Interpreter {
                 content.push_str(&v.to_str_context());
             }
         }
+        self.reconcile_caller_after_internal_dispatch(caller_code);
         loan_env!(self, write_to_named_handle("$*OUT", &content, true))?;
         Ok(())
     }
@@ -422,12 +427,15 @@ impl Interpreter {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
+        // Slice F: see exec_put_op — reconcile after a user `.Str` closure.
+        let caller_code = self.current_code;
         let mut content = String::new();
         for v in &values {
             check_rat_divide_by_zero(v)?;
             // For Junctions, thread: call .Str on each element recursively
             self.collect_str_threaded(v, &mut content)?;
         }
+        self.reconcile_caller_after_internal_dispatch(caller_code);
         loan_env!(self, write_to_named_handle("$*OUT", &content, false))?;
         Ok(())
     }
