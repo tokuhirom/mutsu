@@ -107,10 +107,45 @@ tractable categories first; they share the same structural lever.
   the safe case (Instance receiver, resolves to a compilable single/non-redispatch user
   method) and keep `run_instance_method` as the fallback for everything else.
 
-- **Slice 1 — coerce/render redispatch (Bridge/Numeric/Int/Num/Rat/COERCE/Str/gist,
-  ~460, the largest *tractable* bucket).** Apply the structural lever, scoped to the
-  numeric-bridge + render/coerce redispatch sites. Validates the lever on the
-  next-biggest category with bounded blast radius.
+### 4a. Slice 1 ATTEMPTED + REVERTED — the lever is blocked on env/writeback coherence
+
+Slice 1 was implemented (route a resolved, compilable, non-multi user method at the
+tree-walk site `methods_instance_ops.rs:867` through `dispatch_compiled_method` instead
+of `run_instance_method`) and **reverted**. Findings (the real substrate, confirmed
+empirically — this is *why* PLAN said "要設計"):
+
+- **`dispatch_compiled_method` is NOT byte-identical to `run_instance_method` for a
+  method that mutates outer state.** It commits the receiver's *attributes* and fetches
+  a returned Proxy identically, but when invoked from this deep internal-redispatch
+  context it does **not** link the method body's **captured-outer / closure env** back
+  to the caller's lexicals. A method like `method Numeric { $calls++; $.x }` (closing
+  over a `my $calls`) **loses the `$calls++` write** — the counter stays 0. The
+  tree-walk `run_instance_method` sets up the env so that write propagates.
+- The general (un-gated) version additionally broke **junction-invocant eigenstate
+  writeback** (`class { method a { $n1++ } }` on `JC1 | JC2`, t/junction-invocant-
+  autothread-writeback-coherence.t) and **reduce-time dynamic-var scoping** in grammar
+  action methods (`method delim { $*L = '<' }`, t/grammar-reduce-time-dynvar.t).
+- Even a **name-gated** version (only `Numeric`/`Bridge`/`Int`/`Num`/`Rat`/`Real`)
+  passed `make test` + 228 roast files, but a focused pin (`method Numeric { $calls++ }`)
+  exposed the same captured-outer write loss — so it is a *latent* correctness bug, not
+  safe to ship.
+
+**∴ the real §D(b) substrate is not the dispatch routing — it is extending the
+captured-outer / closure-env writeback coherence (the `docs/captured-outer-cell-sharing.md`
+machinery) to the compiled-method redispatch boundary**, so that a method run via
+`dispatch_compiled_method` propagates writes to closed-over caller lexicals, junction
+eigenstate `our`-vars, and reduce-time dynamic vars exactly as `run_instance_method`
+does. Until that lands, `run_instance_method` stays. This mirrors the function-side
+`nextsame+rw` blocker (PLAN §2-D): same root cause (writeback across a redispatch
+frame boundary), now confirmed for the method-coercion redispatch path too.
+
+- **Slice 1 (revised) — env/writeback-coherence at the compiled-redispatch boundary.**
+  Make `dispatch_compiled_method` (or its `call_compiled_method` core), when invoked as
+  an internal redispatch, root the callee frame at the live caller env (`scoped_child` +
+  parent-chain-aware merge, as `call_compiled_closure` already does for lexical `&name`
+  callables) and record captured-outer writebacks. Validate against the three reverted
+  tests (junction-invocant / grammar-dynvar / `$calls++` coercion) BEFORE re-enabling the
+  routing. THEN the coerce/render routing (original Slice 1) becomes safe.
 - **Slice 2 — generalize the lever** to all user-method calls in
   `call_method_with_values` (cat 1 misc user methods abs/succ/foo/…, and the
   catch-all-miss path feeding `dispatch_instance_and_fallback:867`).
