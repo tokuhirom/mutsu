@@ -1613,6 +1613,12 @@ impl Interpreter {
         !def.is_test_assertion
             && !def.is_rw
             && !def.is_raw
+            // A return type — especially a coercion return (`--> Foo:D()`) or a
+            // definite/subset constraint — drives extra return-time dispatch
+            // (COERCE / type-check) that the standalone OTF compile does not
+            // reproduce identically when several such subs coexist
+            // (roast/S12-coercion/coercion-return.t). Keep them on the interpreter.
+            && def.return_type.is_none()
             && def.param_defs.iter().all(|pd| {
                 pd.code_signature.is_none()
                     && !pd.sigilless

@@ -202,10 +202,12 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     `def_is_otf_compilable`（strict・default 除外）／非builtin は新 `def_is_otf_compilable_module_single`（default 許可）」に分岐。
     **非builtin single の default は name-cache 安全**（同名 builtin が無く mis-bind 不可・single 候補は常に同 def 解決・light-call fast path は
     default 除外で slow binding が default 評価）。**保守ゲート**＝state（並行共有セル）・sigilless/`is rw`/`is raw`/code-sig/sub-sig/trait 付き param・
-    nested routine decl・`subtest`/`CATCH`/`CONTROL`/phaser・`start`/`EVAL`/`EVALFILE`（CALLER context）・`is test-assertion` を全除外
-    （`module_otf_body_needs_interpreter` 再帰スキャン）＝interpreter 結合構文は fallback 維持。実測 module `greet($n,$g="Hello")` 100%→0%。
-    回帰 3 件を捕捉・修正（concurrent-state-var＝state 共有／sigilless-params＝EVAL 経由 alias writeback／throws-like-any＝subtest+CATCH+EVAL）。
-    pin=`t/module-sub-otf-dispatch.t`(14)。
+    戻り型（coercion `--> Foo:D()`/definite/subset の戻り時 COERCE）・nested routine decl・`subtest`/`CATCH`/`CONTROL`/phaser・`start`/`EVAL`/`EVALFILE`
+    （CALLER context）・`is test-assertion` を全除外（`module_otf_body_needs_interpreter` 再帰スキャン）＝interpreter 結合構文は fallback 維持。
+    実測 module `greet($n,$g="Hello")` 100%→0%。**回帰 5 件を捕捉・修正**: ローカル 3（concurrent-state-var＝state 共有／sigilless-params＝
+    EVAL 経由 alias writeback／throws-like-any＝subtest+CATCH+EVAL）＋ CI roast 2（S11-modules/lexical＝**`pop_import_scope` が `fn_resolve_gen`
+    を bump せず otf_call_cache が字句スコープ越えで stale 化→汎用バグとして bump 追加**／S12-coercion/coercion-return＝戻り型 coercion 除外）。
+    pin=`t/module-sub-otf-dispatch.t`(14)＋`t/module-sub-otf-lexical-scope.t`(3)。リスク表面 whitelist 513 本 sweep 全 PASS。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ・`@a[1..*]` 再帰の immutable-List bug は §F）/
     `code_signature`〔`&cb:(Int)`〕param を持つ候補の OTF 化（依然除外・別軸で `&cb:(Int)` vs `&cb` の resolution ambiguity も要）/
     default-param OTF の **builtin-shadow 単一候補**（name-cache 汚染リスクで除外維持・PR #3546）/ nextsame+rw チェーン（上記）/
