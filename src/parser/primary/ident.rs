@@ -1653,7 +1653,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {
-        "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" => {
+        "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" | "trait_mod" => {
             // `infix:(...)` adverbs the operator declarator with a signature
             // literal, which is illegal -> X::Syntax::Adverb ("You can't adverb
             // :(...)"). Operator names use `:<...>`/`:sym<...>`, never `:(...)`.
