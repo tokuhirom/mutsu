@@ -1436,12 +1436,7 @@ impl Interpreter {
             // `self`, so a following `$!attr = ...` would see a type-object self
             // and wrongly die "Cannot look up attributes in a ... type object".
             // `?CLASS`/`?ROLE`/`__ANON_STATE__` are likewise per-method context.
-            if k == "_"
-                || k == "self"
-                || k == "?CLASS"
-                || k == "?ROLE"
-                || k == "__ANON_STATE__"
-            {
+            if k == "_" || k == "self" || k == "?CLASS" || k == "?ROLE" || k == "__ANON_STATE__" {
                 continue;
             }
             if saved_env.contains_key_sym(*k) {

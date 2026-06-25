@@ -984,10 +984,38 @@ impl Interpreter {
                 if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
                     let len = bytes.len() as i64;
                     let (start, end_incl) = match idx {
-                        Value::Range(a, b) => (a, if Self::range_end_is_unbounded(b) { len - 1 } else { b }),
-                        Value::RangeExcl(a, b) => (a, if Self::range_end_is_unbounded(b) { len - 1 } else { b - 1 }),
-                        Value::RangeExclStart(a, b) => (a + 1, if Self::range_end_is_unbounded(b) { len - 1 } else { b }),
-                        Value::RangeExclBoth(a, b) => (a + 1, if Self::range_end_is_unbounded(b) { len - 1 } else { b - 1 }),
+                        Value::Range(a, b) => (
+                            a,
+                            if Self::range_end_is_unbounded(b) {
+                                len - 1
+                            } else {
+                                b
+                            },
+                        ),
+                        Value::RangeExcl(a, b) => (
+                            a,
+                            if Self::range_end_is_unbounded(b) {
+                                len - 1
+                            } else {
+                                b - 1
+                            },
+                        ),
+                        Value::RangeExclStart(a, b) => (
+                            a + 1,
+                            if Self::range_end_is_unbounded(b) {
+                                len - 1
+                            } else {
+                                b
+                            },
+                        ),
+                        Value::RangeExclBoth(a, b) => (
+                            a + 1,
+                            if Self::range_end_is_unbounded(b) {
+                                len - 1
+                            } else {
+                                b - 1
+                            },
+                        ),
                         _ => unreachable!(),
                     };
                     let start = start.max(0);
