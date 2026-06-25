@@ -2154,9 +2154,16 @@ fn parse_param_list_with_return_inner(input: &str) -> PResult<'_, (Vec<ParamDef>
         rest = r;
     }
     if let Some((r, _invocant_type)) = parse_implicit_invocant_marker(rest) {
+        let (r, _) = ws(r)?;
         rest = r;
         if rest.starts_with(')') {
             return Ok((rest, (params, return_type)));
+        }
+        // A typed invocant may be followed directly by the return constraint:
+        // `method m(Foo:D: --> Str)` has no positional params after the invocant.
+        if let Some(stripped) = rest.strip_prefix("-->") {
+            let (r, rt) = parse_return_type_annotation(stripped)?;
+            return Ok((r, (params, Some(rt))));
         }
         let (r, mut p) = parse_single_param(rest)?;
         p.multi_invocant = multi_invocant;

@@ -503,7 +503,14 @@ fn parse_token_like_name(input: &str) -> PResult<'_, String> {
             break;
         }
         let r = &rest[1..];
-        let (r, part) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        // `:sym<value>` has an identifier part; `:<value>` (shorthand for
+        // `:sym<value>`) has the colon immediately followed by `<...>` with no
+        // part name. Allow an empty part in that case.
+        let (r, part) = if r.starts_with('<') || r.starts_with("<<") || r.starts_with('\u{ab}') {
+            (r, "")
+        } else {
+            take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?
+        };
         name.push(':');
         name.push_str(part);
         let mut r2 = r;

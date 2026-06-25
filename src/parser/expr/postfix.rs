@@ -1038,6 +1038,29 @@ fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Expr> {
         };
         return Ok((r_final, result));
     }
+    // `.= &sub` / `.= $meth` — mutating method-call-via-sub or dynamic method
+    // name (`$x .= &f` means `$x = $x.&f`). The name is a sigiled expression.
+    if r.starts_with('&') || r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+        let (r_name, name_expr) = crate::parser::primary::primary(r)?;
+        let (r_after, _) = ws(r_name)?;
+        let (r_final, args) = if r_after.starts_with('(') {
+            let (r2, _) = parse_char(r_after, '(')?;
+            let (r2, _) = ws(r2)?;
+            let (r2, a) = parse_call_arg_list(r2)?;
+            let (r2, _) = ws(r2)?;
+            let (r2, _) = parse_char(r2, ')')?;
+            (r2, a)
+        } else {
+            (r_name, vec![])
+        };
+        let result = wrap_dot_assign(expr, |target| Expr::DynamicMethodCall {
+            target: Box::new(target),
+            name_expr: Box::new(name_expr.clone()),
+            args: args.clone(),
+            modifier: None,
+        });
+        return Ok((r_final, result));
+    }
     // Parse regular method name
     let (r, method_name) = crate::parser::primary::var::parse_ident_with_hyphens(r)?;
     let r_before_ws = r;
