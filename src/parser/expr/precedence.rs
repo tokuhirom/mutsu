@@ -1134,7 +1134,12 @@ fn and_and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         };
         let r = &r[len..];
         let (r, _) = ws(r)?;
-        let (r, right) = if mode == ExprMode::Full {
+        // `A && not B` / `A && so B`: loose unary `not`/`so` on the RHS of a
+        // tight operator binds LOOSELY (`A && (not (B ...))`), so delegate to the
+        // loose-unary parser instead of the tighter comparison operand.
+        let (r, right) = if is_loose_not_or_so_prefix(r) {
+            not_expr_mode(r, mode)?
+        } else if mode == ExprMode::Full {
             comparison_expr_mode(r, mode).map_err(|err| {
                 enrich_expected_error(err, "expected expression after '&&'", r.len())
             })?
