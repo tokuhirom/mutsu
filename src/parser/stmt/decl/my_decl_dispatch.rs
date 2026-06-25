@@ -194,7 +194,14 @@ pub(super) fn try_keyword_dispatch(
     }
     // my role Name[...] { ... }
     if keyword("role", rest).is_some() {
-        return role_decl(rest).map(Some);
+        let (r, mut stmt) = role_decl(rest)?;
+        // A `my role` is lexically scoped (private to its declaring scope). Mark it
+        // so the role-body forbidden-declaration check allows it inside another role,
+        // mirroring how `my class` is permitted inside a role.
+        if !is_our && let Stmt::RoleDecl { custom_traits, .. } = &mut stmt {
+            custom_traits.push(("__my_scoped".to_string(), None));
+        }
+        return Ok(Some((r, stmt)));
     }
     // my module Name { ... }
     if keyword("module", rest).is_some() {
