@@ -809,6 +809,13 @@
   14 IO 形 byte-identical to raku。pin `t/io-function-native-dispatch.t`(14)。**★教訓: user-definable な builtin 名（IO/operator）の native 化は `try_native_function`（早すぎ）でなく、両 dispatch 経路の
   「user 解決後・fallback record 前」に置く。`__mutsu_*` 内部マーカー（atomic）だけが `try_native_function` 先頭に置ける（user 定義不可ゆえ）。残 function-fallback＝concurrency（await/start・start は
   `sync_env_from_locals` 要で別軸・flaky）/ MOP（samewith）/ heterogeneous 内部マーカー（feed/assign-lvalue・context-sensitive）＝clean homogeneous drain は枯渇。**
+- **2026-06-25 (§D(b) = 純 list/coercion builtin *関数* 形〔`val`/`list`/`slip`/`hash`〕の VM ネイティブ dispatch)**: IO 関数形と同パターンの follow-up。`val`(pure free-fn)/`list`/`slip`/`hash`(`&self`)は
+  collection constructor で、`call_function` fallback 経由のままだった（survey: slip 3824〔S07-hyperrace stress〕/val 1555/list 720/hash 336・計 ~6400）。新 `try_native_collection_function(name,args)`
+  （`builtins_collection.rs`・`call_function` arm を 1:1 ミラー）を **IO/infix と同じ user-override 安全位置**（`dispatch_func_call_inner` の IO arm の後・infix arm の前／`call_function_compiled_first` の IO arm の後）で呼ぶ。
+  pure/`&self` で rw param 無し＝byte-identical。**実測 builtin val/list/slip/hash 呼び 0 fallback**・user `sub list` は正しく shadow（pin 検証）。全 t/(11834)・whitelist S02/S07-slip/S32-list 132 ファイル回帰ゼロ・
+  raku byte-identical。pin `t/collection-function-native-dispatch.t`(14)。**★pin で判明した別軸（mutsu 既存挙動・本変更と無関係）: `list((1,2),3)` を mutsu の `builtin_list` は flatten するが raku は `((1,2),3)`（非flatten）/
+  block-scoped `sub list` が mutsu では outer に leak（raku は block-scope）＝両方 pin から除外。★function-fallback の clean drain（state-owning: atomic/IO ＋ pure dispatch: infix/collection）は実質枯渇。残＝concurrency
+  （await/start/Supply/tap・Promise/scheduler state・flaky）/ MOP（samewith・反射）/ user-class 構築（new/bless・構造 substrate 要設計）。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
