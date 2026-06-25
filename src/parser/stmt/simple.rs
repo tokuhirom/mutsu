@@ -45,6 +45,11 @@ struct InlineModuleExport {
     name: String,
     precedence: Option<i32>,
     associativity: Option<String>,
+    /// True when the exported sub is declared `is test-assertion`. The importer
+    /// must re-register it so calls to it in the using file get the caller-line
+    /// marker attached at parse time (matching Rakudo's caller-line reporting for
+    /// assertion helpers like Test::Assuming's `is-primed-sig`).
+    is_test_assertion: bool,
 }
 
 pub(in crate::parser) type InlineModuleExportSpec =
@@ -1029,6 +1034,7 @@ pub(in crate::parser) fn register_module_exports(module: &str) {
                 name: (*s).to_string(),
                 precedence: None,
                 associativity: None,
+                is_test_assertion: false,
             })
             .collect()
     } else if module == "JSON::Fast" || module == "JSON::Tiny" {
@@ -1040,6 +1046,7 @@ pub(in crate::parser) fn register_module_exports(module: &str) {
                 name: (*s).to_string(),
                 precedence: None,
                 associativity: None,
+                is_test_assertion: false,
             })
             .collect()
     } else {
@@ -1072,6 +1079,16 @@ pub(in crate::parser) fn register_module_exports(module: &str) {
             if let Some(assoc) = export.associativity.as_deref() {
                 register_user_infix_assoc(&export.name, assoc);
             }
+        }
+        // Recognize a `is test-assertion` export in the using file's parse so its
+        // calls take the same parse path as a locally-declared assertion helper
+        // (`known_call_stmt` / `attach_test_callsite_line`, gated on
+        // `is_test_assertion_callable`). This routes them through the OTF-compilable
+        // dispatch path (§D fallback reduction) and attaches the caller-line
+        // marker. (The marker's line value is still subject to the pre-existing
+        // ORIGINAL_SOURCE-clobber-on-`use` bug, fixed separately.)
+        if export.is_test_assertion {
+            register_user_test_assertion_sub(&export.name);
         }
     }
     SCOPES.with(|s| {
@@ -1116,6 +1133,10 @@ pub(in crate::parser) fn register_inline_module_exports(
                 name,
                 precedence,
                 associativity,
+                // Inline `module Foo { ... }` test-assertion subs are registered
+                // in scope when their SubDecl is parsed in the same file; the spec
+                // tuple does not carry the trait, so default false here.
+                is_test_assertion: false,
             }
         })
         .collect();
@@ -1240,6 +1261,7 @@ fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
                 export_tags,
                 associativity,
                 precedence_trait,
+                is_test_assertion,
                 ..
             } if *is_export => {
                 // Only include subs that are in the DEFAULT or MANDATORY export tags.
@@ -1263,6 +1285,7 @@ fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
                             name: resolved,
                             precedence,
                             associativity: associativity.clone(),
+                            is_test_assertion: *is_test_assertion,
                         },
                     );
                 }
@@ -1279,6 +1302,7 @@ fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
                         name: resolved,
                         precedence: None,
                         associativity: None,
+                        is_test_assertion: false,
                     });
             }
             _ => {}
@@ -1286,11 +1310,12 @@ fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
     }
     // Fallback scan for modules that use syntax not yet fully covered by parse_program_partial.
     // This keeps imported exported-callables discoverable for statement-call parsing.
-    for name in extract_exported_names_fallback(source) {
+    for (name, is_test_assertion) in extract_exported_names_fallback(source) {
         exports.entry(name.clone()).or_insert(InlineModuleExport {
             name,
             precedence: None,
             associativity: None,
+            is_test_assertion,
         });
     }
 
@@ -1299,37 +1324,40 @@ fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
     result
 }
 
-fn extract_exported_names_fallback(source: &str) -> Vec<String> {
+fn extract_exported_names_fallback(source: &str) -> Vec<(String, bool)> {
     // `sub foo(...) is export`
     // `multi sub foo(...) is export`
     // `proto sub foo(|) is export`
-    // We capture the name and the text after `is export` to check for tag lists.
+    // Group 2 captures the declaration text between the name and `is export`,
+    // which may include a `is test-assertion` trait; group 3 is the export tag list.
     let sub_re = Regex::new(
-        r"\b(?:our\s+)?(?:proto\s+|multi\s+)?sub\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b[^;{]*\bis\s+export\b(\s*\([^)]*\))?",
+        r"\b(?:our\s+)?(?:proto\s+|multi\s+)?sub\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b([^;{]*)\bis\s+export\b(\s*\([^)]*\))?",
     )
     .expect("valid exported-sub regex");
     // `proto foo(|) is export` (without the `sub` keyword)
-    let proto_re =
-        Regex::new(r"\bproto\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b[^;{]*\bis\s+export\b(\s*\([^)]*\))?")
-            .expect("valid exported-proto regex");
+    let proto_re = Regex::new(
+        r"\bproto\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b([^;{]*)\bis\s+export\b(\s*\([^)]*\))?",
+    )
+    .expect("valid exported-proto regex");
 
-    let mut names = HashSet::new();
-    for caps in sub_re.captures_iter(source) {
-        if let Some(name) = caps.get(1)
-            && is_default_export_from_regex_match(&caps)
-        {
-            names.insert(name.as_str().to_string());
+    let test_assertion_re =
+        Regex::new(r"\bis\s+test-assertion\b").expect("valid test-assertion regex");
+
+    let mut names: HashMap<String, bool> = HashMap::new();
+    for re in [&sub_re, &proto_re] {
+        for caps in re.captures_iter(source) {
+            if let Some(name) = caps.get(1)
+                && is_default_export_from_regex_match_group(&caps, 3)
+            {
+                let prefix = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+                let is_ta = test_assertion_re.is_match(prefix);
+                let entry = names.entry(name.as_str().to_string()).or_insert(false);
+                *entry = *entry || is_ta;
+            }
         }
     }
-    for caps in proto_re.captures_iter(source) {
-        if let Some(name) = caps.get(1)
-            && is_default_export_from_regex_match(&caps)
-        {
-            names.insert(name.as_str().to_string());
-        }
-    }
 
-    let mut names: Vec<String> = names.into_iter().collect();
+    let mut names: Vec<(String, bool)> = names.into_iter().collect();
     names.sort();
     names
 }
@@ -1337,8 +1365,8 @@ fn extract_exported_names_fallback(source: &str) -> Vec<String> {
 /// Check if an `is export(...)` match should be included in the DEFAULT import set.
 /// If no tag list is present (`is export` bare), it's DEFAULT.
 /// If a tag list is present, include only if it mentions DEFAULT or MANDATORY.
-fn is_default_export_from_regex_match(caps: &regex::Captures) -> bool {
-    match caps.get(2) {
+fn is_default_export_from_regex_match_group(caps: &regex::Captures, group: usize) -> bool {
+    match caps.get(group) {
         None => true, // bare `is export` → DEFAULT
         Some(tag_match) => {
             let tag_text = tag_match.as_str();

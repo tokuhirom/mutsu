@@ -692,6 +692,20 @@
   **残 multi-dispatch fallback**: where 制約付き候補の OTF 化（候補側 `def_is_otf_compilable` が where 除外）/ 非trivial proto body の VM 化 / `@_` slurpy recursive
   plain sub（別カテゴリ）。**★教訓: `{*}` proto body は登録時に `SetLine` marker が前置され body.len=2 になる＝trivial 判定は marker 除外が必須。proto 自身の sig は
   候補 sig と独立の gate＝バイパス時は `method_args_match` で必ず検証（さもないと `proto f(Int)` の型検査が抜ける）。**
+- **2026-06-25 (§D = imported `is test-assertion` sub の OTF 化)**: `def_is_otf_compilable_module_single` の `!def.is_test_assertion` 除外を撤去
+  （`call_compiled_function_named` が test-assertion line context を push するので OTF compile しても assertion 失敗の caller 行報告は interpreter と同一）。
+  **ただし除外撤去だけでは効果ゼロ**: Test::Assuming/Test::Util の `is-primed-sig` 等は imported function として `Expr::Call` 経由で parse され、`Capture |cap` の
+  sub_signature で OTF ゲートに弾かれ続けていた。**鍵＝imported `is test-assertion` sub を using scope に再登録**（新 `InlineModuleExport.is_test_assertion`
+  フィールド・SubDecl から伝播・fallback regex も `is test-assertion` 検出）し、ローカル宣言の assertion helper と同じ parse 経路（`known_call_stmt`→`Stmt::Call`）に
+  載せる＝OTF-compilable dispatch に到達。実測 S06-currying の function-fallback 195（is-primed-sig=171/is-primed-call=21/priming-fails-bind-ok=3）→2。
+  `priming-fails-bind-ok`（body の `try`/`CATCH`）は保守ゲートに正しく残り byte-identical。pin `t/test-assertion-module-otf.t`(7)。make test 11471 PASS。
+  **★分離した別バグ（本 PR に含めず・要別作業）= `use` の export スキャン（`extract_exported_names`→`parse_program_partial`→`set_original_source(module_src)`）が
+  parser の `ORIGINAL_SOURCE` を module 一時 String（直後 drop）に上書き→dangling 化→以後 using ファイルの `current_line_number` が全 1 に潰れる汎用バグ。**
+  これを `snapshot_source_state`/`restore_source_state` で直すと caller 行は raku 一致になるが、**行番号正常化が「clobber 由来の行 1 で偶然 PASS していた」既存の
+  潜在バグを露出させる**（実測 2 件: S04-phasers/enter-leave.t#28〔`sub f(){ ENTER 'X' }` の ENTER-rvalue が Nil〕・keep-undo.t#10〔UNDO〕。standalone repro でも
+  Nil＝行番号非依存の真の phaser バグだが、テストは clobber された行 1 でだけ PASS していた）。blast-radius 不明（roast 全体に calibration-by-clobber が潜む可能性）なので
+  ORIGINAL_SOURCE 修正＋露出 phaser バグ群は本 PR から分離して別途対応。**★教訓: nested parse は SCOPES だけでなく `ORIGINAL_SOURCE` も clobber する。修正自体は正しいが、
+  長年 clobber に calibrate された「偶然 PASS」テスト群を露出させるので段階的に。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

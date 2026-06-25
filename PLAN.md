@@ -208,10 +208,18 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     EVAL 経由 alias writeback／throws-like-any＝subtest+CATCH+EVAL）＋ CI roast 2（S11-modules/lexical＝**`pop_import_scope` が `fn_resolve_gen`
     を bump せず otf_call_cache が字句スコープ越えで stale 化→汎用バグとして bump 追加**／S12-coercion/coercion-return＝戻り型 coercion 除外）。
     pin=`t/module-sub-otf-dispatch.t`(14)＋`t/module-sub-otf-lexical-scope.t`(3)。リスク表面 whitelist 513 本 sweep 全 PASS。
+  - [x] **imported `is test-assertion` sub の OTF 化 = 完了（#TBD）→ [news/2026-06.md](news/2026-06.md)**。
+    `def_is_otf_compilable_module_single` の `!def.is_test_assertion` 除外を撤去＋imported test-assertion sub を using scope に再登録
+    （`InlineModuleExport.is_test_assertion`・SubDecl 伝播・fallback regex 検出）して `known_call_stmt`→`Stmt::Call` の OTF-compilable 経路に載せる。
+    S06-currying fallback 195→2（is-primed-sig=171 等）。pin=`t/test-assertion-module-otf.t`(7)。
+  - [ ] **分離済み別軸（要別作業）= `use` の `ORIGINAL_SOURCE` clobber バグ**: export スキャン（`parse_program_partial`→`set_original_source`）が
+    module 一時 String を指したまま残り、using ファイルの `current_line_number`（caller-line / callframe marker）が全 1 に潰れる。`snapshot_source_state`/
+    `restore_source_state` で直せるが、**行番号正常化が「clobber 行 1 で偶然 PASS」していた潜在バグ（S04-phasers の ENTER-rvalue / UNDO 等）を露出**させるため、
+    露出 phaser バグ群の修正と合わせて段階的に対応する。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ・`@a[1..*]` 再帰の immutable-List bug は §F）/
     `code_signature`〔`&cb:(Int)`〕param を持つ候補の OTF 化（依然除外・別軸で `&cb:(Int)` vs `&cb` の resolution ambiguity も要）/
     default-param OTF の **builtin-shadow 単一候補**（name-cache 汚染リスクで除外維持・PR #3546）/ nextsame+rw チェーン（上記）/
-    モジュール sub OTF の interpreter 結合構文（state/EVAL/CATCH/sigilless 等）＝保守ゲートで除外中・compiled_fns 拡充が本筋。
+    モジュール sub OTF の残 interpreter 結合構文（state/EVAL/CATCH/sigilless/rw/raw/code-sig/sub-sig/戻り型 coercion）＝保守ゲートで除外中・compiled_fns 拡充が本筋。
 
 ---
 

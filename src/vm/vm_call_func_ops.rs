@@ -1609,10 +1609,13 @@ impl Interpreter {
     /// signatures that pass this gate compile and run identically OTF vs
     /// precompiled (ledger §D, multi-dispatch VM-ization). Being too strict here
     /// is harmless — it just keeps the sub on the interpreter fallback.
+    ///
+    /// `is test-assertion` IS allowed: `call_compiled_function_named` pushes the
+    /// test-assertion line context, so an assertion failing inside an OTF-compiled
+    /// helper reports the same caller line the interpreter path would (whatever
+    /// the parser stamped on the call's caller-line marker).
     pub(super) fn def_is_otf_compilable_module_single(def: &crate::ast::FunctionDef) -> bool {
-        !def.is_test_assertion
-            && !def.is_rw
-            && !def.is_raw
+        !def.is_rw && !def.is_raw
             // A return type — especially a coercion return (`--> Foo:D()`) or a
             // definite/subset constraint — drives extra return-time dispatch
             // (COERCE / type-check) that the standalone OTF compile does not
