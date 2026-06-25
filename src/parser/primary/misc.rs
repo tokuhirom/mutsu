@@ -1219,7 +1219,14 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // Sub-signature destructuring: -> (:key($var), :value($var2)) { body }
+    // Sub-signature destructuring: -> ($a, $b) { body }.
+    // In Raku, `-> ($a, $b)` is ONE parameter that binds a single list/Capture
+    // argument and unpacks it — NOT two separate parameters (`-> $a, $b`). So a
+    // multi-element parenthesized signature must become a single destructuring
+    // `__subsig__` param (matching `sub f(($a,$b))`), so `.map(-> ($k,$v){...})`
+    // destructures each list element instead of chunking the list 2-at-a-time.
+    // A single-element paren (`-> ($a)`) keeps the existing behavior of a lone
+    // param (mirrors the capture sub-sig `len == 1` special case in sub_param.rs).
     if r.starts_with('(') {
         let (r, _) = parse_char(r, '(')?;
         let (r, _) = ws(r)?;
@@ -1234,12 +1241,19 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         if is_rw_block {
             inject_rw_trait(&mut sub_params);
         }
-        let params: Vec<String> = sub_params.iter().map(|p| p.name.clone()).collect();
+        let param_defs = if sub_params.len() > 1 {
+            let mut p = super::super::stmt::sub_param::make_param("__subsig__".to_string());
+            p.sub_signature = Some(sub_params);
+            vec![p]
+        } else {
+            sub_params
+        };
+        let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
         return Ok((
             r,
             Expr::AnonSubParams {
                 params,
-                param_defs: sub_params,
+                param_defs,
                 return_type,
                 body,
                 is_rw: false,
