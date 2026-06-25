@@ -2673,13 +2673,16 @@ impl Interpreter {
     }
 
     pub(super) fn make_io_spec_instance(&self) -> Value {
-        let attrs = HashMap::new();
+        // `$*SPEC` is the platform IO::Spec *type object* (Raku: `$*SPEC.DEFINITE`
+        // is False), not an instance. IO::Spec methods are class methods, and the
+        // value must be `===` / `is-deeply` identical to `IO::Path.SPEC` (which
+        // returns the same type object), so represent it as a Package.
         let class_name = if cfg!(target_os = "windows") {
             "IO::Spec::Win32"
         } else {
             "IO::Spec::Unix"
         };
-        Value::make_instance(Symbol::intern(class_name), attrs)
+        Value::Package(Symbol::intern(class_name))
     }
 
     pub(super) fn make_distro_instance() -> Value {

@@ -727,7 +727,11 @@ impl Interpreter {
             attributes,
             ..
         } = &effective_arg
-            && class_name == "IO::Path"
+            && (class_name == "IO::Path"
+                || self
+                    .class_mro(&class_name.resolve())
+                    .iter()
+                    .any(|n| n == "IO::Path"))
         {
             requested = attributes
                 .as_map()

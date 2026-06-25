@@ -796,6 +796,20 @@ impl Interpreter {
                 ));
             }
         }
+        // IO::Path read-only accessors (`.SPEC`, `.CWD`) are not `rw`: assigning
+        // to them raises X::Assignment::RO referencing the current value, matching
+        // Raku (`'.'.IO.SPEC = ...` / `'.'.IO.CWD = ...`).
+        if method_args.is_empty()
+            && matches!(method, "SPEC" | "CWD")
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "IO::Path")
+        {
+            let cur = self
+                .call_method_with_values(target.clone(), method, vec![])
+                .unwrap_or(Value::Nil);
+            let typename = crate::value::what_type_name(&cur);
+            let repr = cur.to_string_value();
+            return Err(RuntimeError::assignment_ro_typename(&typename, &repr));
+        }
         // Handle AT-POS lvalue assignment: @arr.AT-POS(idx...) = v  =>  ASSIGN-POS(idx..., v)
         if method == "AT-POS" && !method_args.is_empty() && matches!(&target, Value::Array(..)) {
             let mut assign_args = method_args.clone();

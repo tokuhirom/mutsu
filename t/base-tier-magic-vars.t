@@ -16,7 +16,7 @@ ok $*KERNEL.defined,         '$*KERNEL is defined';
 ok $*DISTRO.defined,         '$*DISTRO is defined';
 ok $*EXECUTABLE.defined,     '$*EXECUTABLE is defined';
 ok $*EXECUTABLE-NAME.defined,'$*EXECUTABLE-NAME is defined';
-ok $*SPEC.defined,           '$*SPEC is defined';
+ok $*SPEC ~~ IO::Spec,       '$*SPEC is an IO::Spec type object';
 ok $*PID ~~ Int,             '$*PID is an Int';
 
 # Underscore alias for the kebab-case name.
