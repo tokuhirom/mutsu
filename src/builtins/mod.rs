@@ -92,7 +92,9 @@ pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
 pub(crate) use functions::{deitemize_flat_operand, flat_val};
 pub(crate) use methods_0arg::native_method_0arg;
-pub(crate) use methods_narg::{native_method_1arg, native_method_2arg};
+pub(crate) use methods_narg::{
+    native_contains_with_options, native_method_1arg, native_method_2arg,
+};
 pub(crate) use unicode::{samecase_string, samemark_string, unicode_titlecase_first};
 
 /// Convert a floating-point number to a Rat using a continued fraction algorithm.
