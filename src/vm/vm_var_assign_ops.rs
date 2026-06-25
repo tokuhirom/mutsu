@@ -1491,6 +1491,13 @@ impl Interpreter {
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut result = String::new();
         for v in values {
+            // Interpolating an unhandled Failure into a string throws its underlying
+            // exception (Raku: a Failure is an "unthrown exception" that explodes on
+            // use as a value). Mirrors the prefix:<~> stringify path; without this,
+            // `"$f"` would silently render "Failure()" and hide real errors.
+            if let Some(err) = self.failure_to_runtime_error_if_unhandled(&v) {
+                return Err(err);
+            }
             // Buf/Blob instances with "bytes" attribute: call .Str which throws X::Buf::AsStr
             // Blob type objects (no "bytes" attr, e.g. $*DISTRO.signature) stringify to ""
             if let Value::Instance { attributes, .. } = &v
