@@ -1105,7 +1105,10 @@ impl Interpreter {
             .iter()
             .any(|pd| pd.slurpy && pd.name == "%_")
         {
-            Some(Self::implicit_method_named_slurpy(&method_def.param_defs, &args))
+            Some(Self::implicit_method_named_slurpy(
+                &method_def.param_defs,
+                &args,
+            ))
         } else {
             None
         };
