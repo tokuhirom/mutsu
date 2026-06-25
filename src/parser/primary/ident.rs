@@ -71,13 +71,22 @@ fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
 }
 
 fn supply_method_call(body: Vec<Stmt>) -> Expr {
-    const EMITTER_NAME: &str = "__mutsu_supply_emitter";
-    let lowered_body = rewrite_supply_body(body, EMITTER_NAME);
+    // Each `supply { ... }` block gets a UNIQUE emitter variable name. The
+    // emitter is bound as the on-demand lambda's parameter and `emit` is
+    // rewritten to `$emitter.emit(...)`. A shared name would be clobbered when
+    // supply blocks nest at runtime: a chained transform
+    // `supply { whenever (supply { ... }) { emit ... } }` runs the inner block
+    // inside the outer's frame, and with one shared name the outer's `emit`
+    // would resolve to the inner emitter (an infinite emit loop). A per-parse
+    // unique name keeps each block's `emit` bound to its own emitter.
+    let id = SUPPLY_EMITTER_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let emitter_name = format!("__mutsu_supply_emitter_{id}");
+    let lowered_body = rewrite_supply_body(body, &emitter_name);
     Expr::MethodCall {
         target: Box::new(Expr::BareWord("Supply".to_string())),
         name: Symbol::intern("on-demand"),
         args: vec![Expr::Lambda {
-            param: EMITTER_NAME.to_string(),
+            param: emitter_name,
             body: lowered_body,
             is_whatever_code: false,
         }],
@@ -85,6 +94,8 @@ fn supply_method_call(body: Vec<Stmt>) -> Expr {
         quoted: false,
     }
 }
+
+static SUPPLY_EMITTER_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn rewrite_supply_body(stmts: Vec<Stmt>, emitter_name: &str) -> Vec<Stmt> {
     // Phasers are set up at block entry, not when control textually reaches them.
