@@ -1688,6 +1688,34 @@ impl Interpreter {
         Ok(rw_bindings)
     }
 
+    /// Compute the implicit `*%_` slurpy of a method: a Hash of the named
+    /// arguments not consumed by an explicit named parameter (an empty Hash when
+    /// there are none). Every method exposes `%_` so its body can reference it --
+    /// e.g. forwarding `|%_` -- without declaring it, and so `%_` reads as an
+    /// empty Hash rather than `Any` (which would otherwise splat as a stray
+    /// positional). A method that declares its own hash slurpy (`*%foo`)
+    /// replaces `*%_`; callers skip this then.
+    pub(crate) fn implicit_method_named_slurpy(param_defs: &[ParamDef], args: &[Value]) -> Value {
+        let mut implicit_named = std::collections::HashMap::new();
+        for arg in args.iter() {
+            if let Value::Pair(key, val) = unwrap_varref_value(arg.clone()) {
+                if key.is_empty() {
+                    continue;
+                }
+                let consumed = param_defs.iter().any(|pd| {
+                    (pd.named && pd.name == key)
+                        || pd.name == format!(":{}", key)
+                        || (pd.named
+                            && (pd.name == format!("@{}", key) || pd.name == format!("%{}", key)))
+                });
+                if !consumed {
+                    implicit_named.insert(key.to_string(), *val);
+                }
+            }
+        }
+        Value::hash(implicit_named)
+    }
+
     /// Check shape constraint for array parameters in signatures.
     fn check_shape_constraint(
         &mut self,
