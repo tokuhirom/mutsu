@@ -466,6 +466,14 @@ impl Interpreter {
                     let temp_self = Value::make_instance(class_name, attrs.clone());
                     let old_self = self.env.get("self").cloned();
                     let old_anon = self.env.get("__ANON_STATE__").cloned();
+                    // `::?CLASS` in a default (e.g. `has $.v = ::?CLASS.^ver`)
+                    // resolves through `?CLASS`; bind it to the class being built
+                    // (it is otherwise unset here, leaving `::?CLASS` as `Any`).
+                    let old_class = self.env.get("?CLASS").cloned();
+                    self.env.insert(
+                        "?CLASS".to_string(),
+                        Value::Package(crate::symbol::Symbol::intern(cn_resolved)),
+                    );
                     self.env.insert("self".to_string(), temp_self.clone());
                     self.env.insert("__ANON_STATE__".to_string(), temp_self);
                     let mut saved_attr_env: Vec<(String, Option<Value>)> = Vec::new();
@@ -514,6 +522,14 @@ impl Interpreter {
                         }
                         None => {
                             self.env.remove("__ANON_STATE__");
+                        }
+                    }
+                    match old_class {
+                        Some(v) => {
+                            self.env.insert("?CLASS".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("?CLASS");
                         }
                     }
                     let val = match result {
@@ -3709,6 +3725,12 @@ impl Interpreter {
                             let temp_self = Value::make_instance(*class_name, attrs.clone());
                             let old_self = self.env.get("self").cloned();
                             self.env.insert("self".to_string(), temp_self);
+                            // `::?CLASS` in a default (e.g. `has $.Version =
+                            // ::?CLASS.^ver` composed from a role) resolves through
+                            // `?CLASS`; bind it to the class being built.
+                            let old_class = self.env.get("?CLASS").cloned();
+                            self.env
+                                .insert("?CLASS".to_string(), Value::Package(*class_name));
                             // Set !attr_name and .attr_name in env so that $!a / $.a
                             // references in default expressions resolve to already-
                             // initialized attributes (e.g. `has $.c = $!a + $!b`).
@@ -3740,6 +3762,11 @@ impl Interpreter {
                                 self.env.insert("self".to_string(), old);
                             } else {
                                 self.env.remove("self");
+                            }
+                            if let Some(old) = old_class {
+                                self.env.insert("?CLASS".to_string(), old);
+                            } else {
+                                self.env.remove("?CLASS");
                             }
                             let val = result?;
                             Self::coerce_attr_value_by_sigil(val, sigil)

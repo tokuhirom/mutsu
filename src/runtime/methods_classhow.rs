@@ -355,9 +355,15 @@ impl Interpreter {
                 if invocant_name == "Grammar" {
                     return Ok(Self::version_from_value(Value::str_from("6.e")));
                 }
-                Err(RuntimeError::new(
-                    "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
-                ))
+                // A type with no declared version: `.^ver` is `Mu` (an undefined
+                // type object), not an error -- matching Rakudo. Reached e.g. when
+                // the `:ver(...)` adverb is an expression mutsu does not evaluate at
+                // registration (`unit class C:ver($?DISTRIBUTION.meta<ver>)`), or a
+                // plain unversioned class. (`has $.V = ::?CLASS.^ver` then sets V to
+                // Mu rather than throwing X::Method::NotFound.)
+                // TODO: evaluate expression-form `:ver(...)` adverbs at class
+                // registration and store the result in type_metadata.
+                Ok(Value::Package(crate::symbol::Symbol::intern("Mu")))
             }
             "auth" if args.len() == 1 => {
                 let invocant_name = match &args[0] {
