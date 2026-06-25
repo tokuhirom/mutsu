@@ -802,7 +802,7 @@ impl Interpreter {
         ))
     }
 
-    pub(super) fn call_infix_routine(
+    pub(crate) fn call_infix_routine(
         &mut self,
         op: &str,
         args: &[Value],

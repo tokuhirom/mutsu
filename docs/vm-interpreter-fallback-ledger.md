@@ -790,6 +790,15 @@
   pin `t/atomic-ops-native-dispatch.t`(20)。**★教訓: method-fallback だけでなく function-fallback survey も §D の宝庫。`__mutsu_*` 内部マーカー（atomic/cas/hyper-prefix）は「pure でない（`&mut self`）」ため
   `try_native_function`→`native_function`(pure) を素通りし generic `call_function` fallback に全部落ちていた。`try_native_function` 冒頭に `&mut self` builtin への直接 dispatch arm を足せば、巨大 stress 系の
   fallback を一掃できる（state 所有は既に VM 側＝挙動不変の経路短絡）。**
+- **2026-06-25 (§D 状態所有 = builtin operator-as-function `infix:<op>(...)` の VM ネイティブ dispatch)**: atomic 後の function-fallback 集計で `infix:<op>` 族＝**44 演算子で計 ~5400 fallback**
+  （`&infix:<+>`・`[+]`/`[*]` reduce・`>>+>>` hyper・`reduce &infix:<…>` が lower する routine 形）。builtin operator は native Rust の `call_infix_routine`（`&mut self`・hyper/assignment-metaop/set-op/
+  全 binary op を dispatch）が impl だが、到達経路が `call_function_fallback` の infix arm 経由（tree-walk fallback 記録）だけだった。**修正**＝`dispatch_func_call_inner`（直接 Call 経路）と
+  `call_function_compiled_first`（hyper/reduce/string-regex 経路）の両方で、**全 user 演算子解決（compiled_fns / 非proto multi fork / `user_function_matches_call` / OTF）を試した後・terminal fallback の直前**に
+  `infix:<op>` を捕捉して `call_infix_routine(op,args)` を直接呼ぶ（U+2212 minus は `-` に正規化・arg_sources と `maybe_fetch_rw_proxy` は terminal else と同一処理＝byte-identical）。**user-override 厳守**＝
+  user `sub/multi infix:<…>` は上位ブランチで解決されるので native arm に到達せず（pin で `infix:<plus>`=103・`multi infix:<%%%>`=custom を検証）。**実測 直接 infix 呼び 100%→0**（user multi は正しく fallback 維持）。
+  全 t/(11765)・whitelist operator/metaops/junction 79 ファイル回帰ゼロ・20 infix 形 byte-identical to raku。pin `t/infix-function-native-dispatch.t`(22)。**★`call_infix_routine` を `pub(crate)` に拡大。
+  ★教訓: 直接 Call は `dispatch_func_call_inner`・hyper/reduce 等は `call_function_compiled_first` と fallback 記録サイトが 2 系統あるので、両方に同じ arm を置く要がある。user-override 系演算子の native 化は
+  「全 user 解決ブランチの後・fallback 記録の前」に挿入するのが鍵（先頭に置くと user 演算子を shadow する）。`<`/`>` を含む演算子名（`infix:«<»`）は別パーサ問題で CALL-ME エラー＝pin から除外。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
