@@ -4,9 +4,11 @@ impl Compiler {
     pub(super) fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
         // A `do {}` block does not take a signature, so a placeholder variable
         // used directly inside it cannot be captured -> X::Placeholder::Block.
+        // Exception: inside a method, the legacy argument variables `%_` / `@_`
+        // refer to the method's implicit `*%_` / `*@_` slurpy and are valid here.
         if let Some(ph) = crate::ast::collect_unattached_placeholders(body)
             .into_iter()
-            .next()
+            .find(|ph| !(self.lexically_in_method && (ph == "%_" || ph == "@_")))
         {
             let err = Self::placeholder_scope_error("block", &ph);
             let idx = self.code.add_constant(err);

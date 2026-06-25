@@ -65,6 +65,13 @@ pub(crate) struct Compiler {
     /// Used to decide whether `return` in a non-routine block should perform
     /// a non-local return (via CX::Return) or throw X::ControlFlow::Return.
     pub(crate) lexically_in_routine: bool,
+    /// Whether the enclosing routine is a `method` (or submethod). A method
+    /// always carries an implicit `*%_` / `*@_` slurpy, so the legacy argument
+    /// variables `%_` / `@_` are valid lexicals throughout its body — including
+    /// inside a nested `do {}` block that does not itself take a signature. A
+    /// plain `sub` has no such implicit slurpy, so `%_` there only works as a
+    /// per-block placeholder and may not appear in a nested signature-less block.
+    pub(crate) lexically_in_method: bool,
     /// When true, the current VarDecl is from a `:=` bind declaration.
     bind_vardecl: bool,
     /// When true, Index expressions should emit IndexAutovivify instead of
@@ -150,6 +157,7 @@ impl Compiler {
             accessed_dynamic_vars: std::collections::HashSet::new(),
             is_routine: false,
             lexically_in_routine: false,
+            lexically_in_method: false,
             bind_vardecl: false,
             scalar_bind_autovivify: false,
             bind_terminal: false,
