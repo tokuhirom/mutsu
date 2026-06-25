@@ -212,10 +212,14 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     `def_is_otf_compilable_module_single` の `!def.is_test_assertion` 除外を撤去＋imported test-assertion sub を using scope に再登録
     （`InlineModuleExport.is_test_assertion`・SubDecl 伝播・fallback regex 検出）して `known_call_stmt`→`Stmt::Call` の OTF-compilable 経路に載せる。
     S06-currying fallback 195→2（is-primed-sig=171 等）。pin=`t/test-assertion-module-otf.t`(7)。
-  - [ ] **分離済み別軸（要別作業）= `use` の `ORIGINAL_SOURCE` clobber バグ**: export スキャン（`parse_program_partial`→`set_original_source`）が
-    module 一時 String を指したまま残り、using ファイルの `current_line_number`（caller-line / callframe marker）が全 1 に潰れる。`snapshot_source_state`/
-    `restore_source_state` で直せるが、**行番号正常化が「clobber 行 1 で偶然 PASS」していた潜在バグ（S04-phasers の ENTER-rvalue / UNDO 等）を露出**させるため、
-    露出 phaser バグ群の修正と合わせて段階的に対応する。
+  - [x] **`use` の `ORIGINAL_SOURCE` clobber バグ＋露出 phaser バグ群 = 完了（#TBD）→ [news/2026-06.md](news/2026-06.md)**。
+    export スキャン（`parse_program_partial`→`set_original_source`）が module 一時 String を指したまま残り using ファイルの
+    `current_line_number` が全 1 に潰れる汎用バグを `snapshot_source_state`/`restore_source_state`（`parse_program_partial` が caller の
+    source state を save/restore）で修正。露出した phaser バグは **行番号非依存の真のバグ**で、phaser ブロック値セマンティクスの一般修正:
+    ①trailing ENTER phaser がブロック/サブ/クロージャ/do-block の値になる（`PushEnterResult`/`LoadEnterResult` で ENTER section の
+    値を body 末尾に橋渡し）②trailing `SetLine` マーカーを値決定文から除外（phaser-only ブロックが偽 `True`→KEEP 誤発火していたのを
+    UNDO に修正）。5 つに重複していた BlockScope phaser 圧縮を共有 `compile_phaser_block_scope`（topic/stack 両モード）に集約。
+    pin=`t/enter-phaser-rvalue.t`(18)。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ・`@a[1..*]` 再帰の immutable-List bug は §F）/
     `code_signature`〔`&cb:(Int)`〕param を持つ候補の OTF 化（依然除外・別軸で `&cb:(Int)` vs `&cb` の resolution ambiguity も要）/
     default-param OTF の **builtin-shadow 単一候補**（name-cache 汚染リスクで除外維持・PR #3546）/ nextsame+rw チェーン（上記）/

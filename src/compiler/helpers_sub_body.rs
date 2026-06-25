@@ -222,14 +222,43 @@ impl Compiler {
                     _ => body_main.push(stmt.clone()),
                 }
             }
-            // Compile ENTER phaser bodies. If body_main is empty and
-            // this is a value-producing context (not sink), compile
-            // the last ENTER body to leave its value on the stack.
-            let enter_is_return = body_main.is_empty() && !sink_last_expr;
+            // When the textually-last statement of the routine body is an ENTER
+            // phaser (value-producing context), its entry-time value becomes the
+            // routine's implicit return value (Raku semantics). The value must be
+            // captured in the ENTER section and re-materialized at the end of the
+            // body section: the ENTER section runs before `stack_base` is recorded
+            // in `exec_block_scope_op`, so a value left directly on the stack there
+            // would not be detected as the block result. Use the ENTER-result stack
+            // (PushEnterResult / LoadEnterResult) to bridge the two sections.
+            let last_is_enter = matches!(
+                body.iter().rev().find(|s| !matches!(s, Stmt::SetLine(_))),
+                Some(Stmt::Phaser {
+                    kind: PhaserKind::Enter,
+                    ..
+                })
+            ) && !sink_last_expr;
             for (i, enter_body) in enter_bodies.iter().enumerate() {
                 let is_last_enter = i == enter_bodies.len() - 1;
-                if is_last_enter && enter_is_return {
-                    sub_compiler.compile_block_inline(enter_body);
+                if is_last_enter && last_is_enter {
+                    if enter_body.is_empty() {
+                        sub_compiler.compile_expr(&Expr::Literal(Value::Nil));
+                    } else {
+                        for (j, inner) in enter_body.iter().enumerate() {
+                            if j == enter_body.len() - 1 {
+                                match inner {
+                                    Stmt::Expr(expr) => sub_compiler.compile_expr(expr),
+                                    _ => {
+                                        sub_compiler.compile_stmt(inner);
+                                        sub_compiler
+                                            .compile_expr(&Expr::Literal(Value::Bool(true)));
+                                    }
+                                }
+                            } else {
+                                sub_compiler.compile_stmt(inner);
+                            }
+                        }
+                    }
+                    sub_compiler.code.emit(OpCode::PushEnterResult);
                 } else {
                     for inner in enter_body {
                         sub_compiler.compile_stmt(inner);
@@ -237,7 +266,16 @@ impl Compiler {
                 }
             }
             sub_compiler.code.patch_block_enter_end(idx);
-            Self::compile_routine_body_stmts(&mut sub_compiler, &body_main, sink_last_expr);
+            if last_is_enter {
+                // The trailing ENTER provides the return value; the (earlier)
+                // non-phaser body statements run in sink context.
+                for stmt in &body_main {
+                    sub_compiler.compile_stmt(stmt);
+                }
+                sub_compiler.code.emit(OpCode::LoadEnterResult);
+            } else {
+                Self::compile_routine_body_stmts(&mut sub_compiler, &body_main, sink_last_expr);
+            }
             sub_compiler.code.patch_block_body_end(idx);
             sub_compiler.code.patch_block_keep_start(idx);
             {
@@ -544,15 +582,54 @@ impl Compiler {
             });
             Self::compile_pre_phasers(&mut sub_compiler, body);
             sub_compiler.code.patch_block_pre_end(idx);
+            // A trailing ENTER phaser (ignoring `SetLine` markers) provides the
+            // closure's implicit return value (Raku semantics). Capture it in the
+            // ENTER section and re-materialize it on the value stack at the end of
+            // the body (the closure returns its value via the stack, not the topic).
+            let last_is_enter = matches!(
+                body.iter().rev().find(|s| !matches!(s, Stmt::SetLine(_))),
+                Some(Stmt::Phaser {
+                    kind: PhaserKind::Enter,
+                    ..
+                })
+            );
+            let enter_last_idx = body
+                .iter()
+                .rposition(|s| !matches!(s, Stmt::SetLine(_)))
+                .unwrap_or(usize::MAX);
             // ENTER phasers
-            for stmt in body.iter() {
+            for (i, stmt) in body.iter().enumerate() {
                 if let Stmt::Phaser {
                     kind: PhaserKind::Enter,
                     body: ph_body,
                 } = stmt
                 {
-                    for inner in ph_body {
-                        sub_compiler.compile_stmt(inner);
+                    if last_is_enter && i == enter_last_idx {
+                        if ph_body.is_empty() {
+                            sub_compiler.emit_nil_value();
+                        } else {
+                            for (j, inner) in ph_body.iter().enumerate() {
+                                if j == ph_body.len() - 1 {
+                                    match inner {
+                                        Stmt::Expr(expr) => {
+                                            sub_compiler.with_escape(true, |c| c.compile_expr(expr))
+                                        }
+                                        _ => {
+                                            sub_compiler.compile_stmt(inner);
+                                            sub_compiler
+                                                .compile_expr(&Expr::Literal(Value::Bool(true)));
+                                        }
+                                    }
+                                } else {
+                                    sub_compiler.compile_stmt(inner);
+                                }
+                            }
+                        }
+                        sub_compiler.code.emit(OpCode::PushEnterResult);
+                    } else {
+                        for inner in ph_body {
+                            sub_compiler.compile_stmt(inner);
+                        }
                     }
                 }
             }
@@ -575,15 +652,19 @@ impl Compiler {
                     )
                 })
                 .collect();
+            // The value-producing statement is the last non-`SetLine` statement;
+            // trailing markers must not become the closure's value.
+            let last_value_idx = body_stmts
+                .iter()
+                .rposition(|s| !matches!(s, Stmt::SetLine(_)));
             for (i, stmt) in body_stmts.iter().enumerate() {
-                let is_last = i == body_stmts.len() - 1;
-                if is_last && let Stmt::Expr(expr) = stmt {
-                    // Tail expression becomes the block value -> closure escapes.
+                let is_value = !last_is_enter && Some(i) == last_value_idx;
+                if is_value && let Stmt::Expr(expr) = stmt {
+                    // Tail expression = implicit return -> closure escapes.
                     sub_compiler.with_escape(true, |c| c.compile_expr(expr));
-                    sub_compiler.code.emit(OpCode::SetTopic);
                     continue;
                 }
-                if is_last && let Stmt::Call { name, args } = stmt {
+                if is_value && let Stmt::Call { name, args } = stmt {
                     let positional: Option<Vec<Expr>> = args
                         .iter()
                         .map(|arg| match arg {
@@ -596,11 +677,17 @@ impl Compiler {
                             name: *name,
                             args: positional_args,
                         });
-                        sub_compiler.code.emit(OpCode::SetTopic);
                         continue;
                     }
                 }
                 sub_compiler.compile_stmt(stmt);
+            }
+            if last_is_enter {
+                sub_compiler.code.emit(OpCode::LoadEnterResult);
+            } else if last_value_idx.is_none() {
+                // No value-producing statement (phaser-only closure body): the
+                // implicit return is Nil.
+                sub_compiler.emit_nil_value();
             }
             sub_compiler.code.patch_block_body_end(idx);
             sub_compiler.code.patch_block_keep_start(idx);

@@ -2911,6 +2911,10 @@ impl Interpreter {
             .push(std::collections::HashSet::new());
         // Push saved locals for $OUTER:: variable access.
         self.outer_scope_locals.push(saved_locals.clone());
+        // Baseline for the ENTER-result stack: any value captured by this block's
+        // ENTER section (PushEnterResult) must be cleared on exit even if the body
+        // throws before reaching LoadEnterResult, so no stale value leaks upward.
+        let enter_result_base = self.enter_result_stack.len();
 
         // Run PRE phasers first (before ENTER)
         self.run_range(code, pre_start, enter_start, compiled_fns)?;
@@ -3141,6 +3145,7 @@ impl Interpreter {
         self.pop_lexical_class_scope();
         self.pop_block_scope_depth();
         self.pop_once_scope();
+        self.enter_result_stack.truncate(enter_result_base);
 
         if let Err(e) = post_res {
             // POST failure overrides successful body and return-value body exits

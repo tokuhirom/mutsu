@@ -779,7 +779,7 @@ impl Compiler {
             self.compile_try(stmts, &None);
             self.code.emit(OpCode::Pop);
         } else if self.is_routine && Self::has_block_enter_leave_phasers(stmts) {
-            self.compile_toplevel_block_scope(stmts);
+            self.compile_phaser_block_scope(stmts, false);
         } else {
             for (i, stmt) in stmts.iter().enumerate() {
                 let is_last = i == stmts.len() - 1;
@@ -851,7 +851,17 @@ impl Compiler {
         (self.code, self.compiled_functions)
     }
 
-    fn compile_toplevel_block_scope(&mut self, stmts: &[Stmt]) {
+    /// Compile a lexical block scope containing ENTER/LEAVE/KEEP/UNDO/PRE/POST
+    /// phasers (`OpCode::BlockScope`). Shared by the top-level routine body,
+    /// `Stmt::Block` statements, and `do`-block expressions so the phaser/value
+    /// semantics (trailing ENTER as block value, `SetLine`-marker handling) stay
+    /// in one place.
+    ///
+    /// `result_on_stack` selects how the block's value is delivered: `false`
+    /// (statement context) routes it through the topic (`SetTopic`, stack-neutral);
+    /// `true` (expression context, e.g. `do { ... }`) leaves it on the value stack
+    /// for the enclosing `DoBlockExpr` to consume.
+    pub(super) fn compile_phaser_block_scope(&mut self, stmts: &[Stmt], result_on_stack: bool) {
         let idx = self.code.emit(OpCode::BlockScope {
             pre_end: 0,
             enter_end: 0,
@@ -863,14 +873,53 @@ impl Compiler {
         });
         Self::compile_pre_phasers(self, stmts);
         self.code.patch_block_pre_end(idx);
-        for s in stmts {
+        // When the textually-last statement of the block is an ENTER phaser, its
+        // entry-time value becomes the block's result value (Raku semantics).
+        // Capture that value in the ENTER section via PushEnterResult and load it
+        // back as the block result at the end of the body via LoadEnterResult.
+        // Ignore trailing `SetLine` markers when locating the last statement.
+        let last_idx = stmts
+            .iter()
+            .rposition(|s| !matches!(s, Stmt::SetLine(_)))
+            .unwrap_or(usize::MAX);
+        let last_is_enter = matches!(
+            stmts.get(last_idx),
+            Some(Stmt::Phaser {
+                kind: PhaserKind::Enter,
+                ..
+            })
+        );
+        for (i, s) in stmts.iter().enumerate() {
             if let Stmt::Phaser {
                 kind: PhaserKind::Enter,
                 body,
             } = s
             {
-                for inner in body {
-                    self.compile_stmt(inner);
+                if last_is_enter && i == last_idx {
+                    // Compile so the body's final statement leaves its value on the
+                    // stack, then move it onto the ENTER-result stack.
+                    if body.is_empty() {
+                        self.compile_expr(&Expr::Literal(Value::Nil));
+                    } else {
+                        for (j, inner) in body.iter().enumerate() {
+                            if j == body.len() - 1 {
+                                match inner {
+                                    Stmt::Expr(expr) => self.compile_expr(expr),
+                                    _ => {
+                                        self.compile_stmt(inner);
+                                        self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                    }
+                                }
+                            } else {
+                                self.compile_stmt(inner);
+                            }
+                        }
+                    }
+                    self.code.emit(OpCode::PushEnterResult);
+                } else {
+                    for inner in body {
+                        self.compile_stmt(inner);
+                    }
                 }
             }
         }
@@ -892,12 +941,40 @@ impl Compiler {
                 )
             })
             .collect();
-        for (i, s) in body_stmts.iter().enumerate() {
-            let is_last = i == body_stmts.len() - 1;
-            if is_last {
-                self.compile_last_stmt_as_topic(s);
-            } else {
+        if last_is_enter {
+            // The block result comes from the trailing ENTER phaser, so none of the
+            // (earlier) non-phaser body statements provide the value; compile them
+            // all in sink context and materialize the captured ENTER value.
+            for s in body_stmts.iter() {
                 self.compile_stmt(s);
+            }
+            self.code.emit(OpCode::LoadEnterResult);
+            if !result_on_stack {
+                self.code.emit(OpCode::SetTopic);
+            }
+        } else {
+            // The value-producing statement is the last *non-marker* statement:
+            // trailing `SetLine` markers (emitted between statements once real line
+            // numbers differ) must not become the block's value, or a phaser-only
+            // block would yield a spurious `True` and run KEEP instead of UNDO.
+            let last_value_idx = body_stmts
+                .iter()
+                .rposition(|s| !matches!(s, Stmt::SetLine(_)));
+            for (i, s) in body_stmts.iter().enumerate() {
+                if Some(i) == last_value_idx {
+                    if result_on_stack {
+                        self.compile_last_stmt_as_value(s);
+                    } else {
+                        self.compile_last_stmt_as_topic(s);
+                    }
+                } else {
+                    self.compile_stmt(s);
+                }
+            }
+            // A phaser-only block (no value-producing statement) in expression
+            // context still needs a value on the stack for the consumer.
+            if result_on_stack && last_value_idx.is_none() {
+                self.emit_nil_value();
             }
         }
         self.code.patch_block_body_end(idx);

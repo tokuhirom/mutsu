@@ -29,6 +29,7 @@ thread_local! {
 static PRIMARY_MEMO: ParseMemo<Expr> = ParseMemo::new(&PRIMARY_MEMO_TLS, &PRIMARY_MEMO_STATS_TLS);
 
 /// A leaked string region from heredoc parsing, with a line-number jump.
+#[derive(Clone)]
 struct LeakedRegion {
     ptr: usize,
     len: usize,
@@ -46,6 +47,29 @@ pub(super) fn set_original_source(source: &str) {
         *s.borrow_mut() = (source.as_ptr() as usize, source.len());
     });
     LEAKED_REGIONS.with(|r| r.borrow_mut().clear());
+}
+
+/// Opaque snapshot of the parser's source-location state (the `$?LINE` origin
+/// pointer plus any registered heredoc leaked regions). Used to save/restore
+/// around nested sub-parses (`parse_program_partial`) so a best-effort module
+/// or `EVAL` parse does not leave `ORIGINAL_SOURCE` dangling at a dropped buffer
+/// — which would collapse the enclosing parse's line numbers to 1.
+pub(in crate::parser) struct SourceState {
+    original: (usize, usize),
+    leaked: Vec<LeakedRegion>,
+}
+
+/// Snapshot the current source-location state.
+pub(in crate::parser) fn snapshot_source_state() -> SourceState {
+    let original = ORIGINAL_SOURCE.with(|s| *s.borrow());
+    let leaked = LEAKED_REGIONS.with(|r| r.borrow().clone());
+    SourceState { original, leaked }
+}
+
+/// Restore a previously-snapshotted source-location state.
+pub(in crate::parser) fn restore_source_state(state: SourceState) {
+    ORIGINAL_SOURCE.with(|s| *s.borrow_mut() = state.original);
+    LEAKED_REGIONS.with(|r| *r.borrow_mut() = state.leaked);
 }
 
 /// Register a leaked string region from heredoc parsing with a line-jump.
