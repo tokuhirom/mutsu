@@ -1795,8 +1795,14 @@ fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> {
             }
         }
 
-        // Collect the variable name for this param
-        all_var_names.push(display_name);
+        // Collect the variable name for this param. For a *renamed* named param
+        // (`:key($key)`), the outer `p.name` ("key") is only the external
+        // argument key — the bound variable is the inner sub-signature param
+        // (`$key`), collected below. Counting both made `:key($key)` look like a
+        // self-redeclaration of `$key`.
+        if !(p.named && p.sub_signature.is_some()) {
+            all_var_names.push(display_name);
+        }
 
         // For named params with sub-signature (renamed params like :foo($x)),
         // also collect the inner variable names
