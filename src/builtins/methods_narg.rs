@@ -2818,6 +2818,40 @@ pub(crate) fn native_method_2arg(
         return None;
     }
 
+    // `.substr-eq($needle, $pos)` with a plain non-negative Int position is a
+    // pure substring comparison on a Str receiver. Whatever / negative /
+    // out-of-range positions and the case-/mark-insensitive named-arg forms
+    // (`:i`/`:m`, which arrive as an extra Pair argument) keep the interpreter's
+    // position resolution + Failure semantics (runtime/methods_string.rs).
+    if method == "substr-eq"
+        && let Value::Str(_) = &target
+    {
+        if let Value::Package(type_name) = arg1 {
+            return Some(Err(RuntimeError::new(format!(
+                "Cannot resolve caller substr-eq({}:U)",
+                type_name
+            ))));
+        }
+        let Value::Int(pos) = arg2.descalarize() else {
+            return None;
+        };
+        if *pos < 0 {
+            return None;
+        }
+        let text = target.to_string_value();
+        let len = text.chars().count() as i64;
+        if *pos > len {
+            return None;
+        }
+        let needle = arg1.to_string_value();
+        let substr: String = text
+            .chars()
+            .skip(*pos as usize)
+            .take(needle.chars().count())
+            .collect();
+        return Some(Ok(Value::Bool(substr == needle)));
+    }
+
     if method == "split" {
         if let Value::Instance { class_name, .. } = target
             && (class_name == "Supply" || class_name == "IO::Handle" || class_name == "IO::Pipe")
