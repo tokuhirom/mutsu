@@ -388,7 +388,20 @@ impl Interpreter {
                         if sym_key.is_some() {
                             has_proto = true;
                         }
-                        if let Some(parsed) = self.parse_regex(sub_pat) {
+                        // Parse the candidate's body in its OWN package so that
+                        // nested unqualified token references (notably char-class
+                        // `<+name>` items) resolve against the grammar that
+                        // defines them, not the outer caller's package.
+                        let saved_pkg = self.current_package();
+                        let switch_pkg = saved_pkg.as_str() != sub_pkg.as_str();
+                        if switch_pkg {
+                            self.set_current_package_shared(sub_pkg.clone());
+                        }
+                        let parsed_opt = self.parse_regex(sub_pat);
+                        if switch_pkg {
+                            self.set_current_package_shared(saved_pkg);
+                        }
+                        if let Some(parsed) = parsed_opt {
                             let all_matches =
                                 self.regex_match_ends_from_caps_in_pkg(&parsed, &tail, 0, sub_pkg);
                             // all_matches: HIGHEST FIRST.

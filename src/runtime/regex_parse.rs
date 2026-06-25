@@ -3568,6 +3568,17 @@ impl Interpreter {
                                     } else {
                                         continue;
                                     }
+                                } else if trimmed.starts_with('[')
+                                    && Self::bracket_class_has_combination_tail(trimmed)
+                                {
+                                    // A bracket class combined with named classes:
+                                    // `[a..z] +digit`, `[\-._~] +alpha +digit`. The
+                                    // leading bracket is an implicit positive item.
+                                    if let Some(atom) = self.parse_combined_class(trimmed, mode) {
+                                        atom
+                                    } else {
+                                        continue;
+                                    }
                                 } else if trimmed == "?" {
                                     // <?>  null assertion: matches zero-width at any position
                                     RegexAtom::ZeroWidth
@@ -6023,9 +6034,15 @@ impl Interpreter {
         let mut positive_items: Vec<ClassItem> = Vec::new();
         let mut negative_items: Vec<ClassItem> = Vec::new();
         let mut remaining = input.trim();
+        // A leading bracket class with no sign (`[a..z] +digit`) is an implicit
+        // positive first item: the `+`/`-` only separates the subsequent parts.
+        let mut implicit_first = remaining.starts_with('[');
         while !remaining.is_empty() {
             let adding;
-            if remaining.starts_with('+') {
+            if implicit_first {
+                adding = true;
+                implicit_first = false;
+            } else if remaining.starts_with('+') {
                 adding = true;
                 remaining = remaining[1..].trim_start();
             } else if remaining.starts_with('-') {
@@ -6124,6 +6141,21 @@ impl Interpreter {
                 negative: negative_items,
             })
         }
+    }
+
+    /// Whether a bracket-class string (`[a..z] +digit`) is followed by a
+    /// `+`/`-` named-class combination after its closing `]`. Used to route
+    /// `<[...] +name>` enumerated classes to `parse_combined_class`.
+    fn bracket_class_has_combination_tail(s: &str) -> bool {
+        let Some(after_open) = s.strip_prefix('[') else {
+            return false;
+        };
+        let bracket_end = Self::find_bracket_end(after_open);
+        if bracket_end >= after_open.len() {
+            return false; // unterminated bracket
+        }
+        let tail = after_open[bracket_end + 1..].trim_start();
+        tail.starts_with('+') || tail.starts_with('-')
     }
 
     /// Find the end of a named class part in a combined class expression.

@@ -1510,6 +1510,14 @@ impl Interpreter {
         *self.current_package.write().unwrap() = pkg;
     }
 
+    /// Interior-mutable variant for the `&self` regex matcher: the package is
+    /// stored behind a RwLock, so a temporary switch (e.g. into a cross-package
+    /// grammar subrule's defining package while parsing its body) does not need
+    /// `&mut self`.
+    pub(crate) fn set_current_package_shared(&self, pkg: String) {
+        *self.current_package.write().unwrap() = pkg;
+    }
+
     fn stash_symbol_key_from_env_tail(rest: &str) -> String {
         if rest.starts_with('$')
             || rest.starts_with('@')
