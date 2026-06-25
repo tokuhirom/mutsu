@@ -1489,6 +1489,12 @@ impl Interpreter {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = self.stack.drain(start..).collect();
+        // Slice F: a user `.Str`/`.Stringy` method run during interpolation can
+        // mutate a captured-outer caller lexical (`my $c; method Str {$c++; ...}`);
+        // this op has no surrounding CallMethod op to drain the writeback, so
+        // capture the caller frame's code and reconcile after the loop (see
+        // coerce_numeric_bridge_value / exec_say_op).
+        let caller_code = self.current_code;
         let mut result = String::new();
         for v in values {
             // Interpolating an unhandled Failure into a string throws its underlying
@@ -1530,6 +1536,7 @@ impl Interpreter {
             }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
+        self.reconcile_caller_after_lazy_force(caller_code);
         if result.is_ascii() {
             self.stack.push(Value::str(result));
         } else {
