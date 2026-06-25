@@ -1535,13 +1535,18 @@ impl Interpreter {
                     _ => None,
                 };
                 if let Some(name) = num_name {
+                    // A bare type object (no user `.Numeric`/`.Real`, and not one of
+                    // the concrete numeric types handled on the fast path) inherits
+                    // Mu's coercion: warn "uninitialized ... in numeric context" and
+                    // return 0. Roles keep their existing silent 0 for back-compat.
                     if self.registry().roles.contains_key(&name) {
                         Ok(Value::Int(0))
                     } else {
-                        Err(RuntimeError::new(format!(
-                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                            method
-                        )))
+                        let msg = format!(
+                            "Use of uninitialized value of type {} in numeric context",
+                            name
+                        );
+                        Err(RuntimeError::warn_signal_with_resume(msg, Value::Int(0)))
                     }
                 } else {
                     Err(RuntimeError::new(format!(
