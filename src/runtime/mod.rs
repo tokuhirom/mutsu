@@ -3808,6 +3808,14 @@ impl Interpreter {
             self.strict_mode = strict_mode;
             self.fatal_mode = fatal_mode;
             self.monkey_typing = monkey_typing;
+            // Removing imported functions when a lexical import scope pops must
+            // invalidate the name-keyed function-resolution caches: a sub that
+            // was OTF-compiled and cached under its bare name while in scope
+            // (otf_call_cache) would otherwise still be reachable after the
+            // scope exits — e.g. `{ use Foo } EVAL('foo()')` must die, not hit
+            // the stale cache (roast/S11-modules/lexical.t). Registration bumps
+            // fn_resolve_gen; the matching un-registration here must too.
+            self.fn_resolve_gen += 1;
         }
     }
 
