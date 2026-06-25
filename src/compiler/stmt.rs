@@ -1957,7 +1957,19 @@ impl Compiler {
                         target,
                         index,
                         is_positional,
-                    } => Self::container_var_name(target).map(|c| (c, index, *is_positional)),
+                    } => Self::container_var_name(target)
+                        // The element-source writeback optimization looks the
+                        // container up by name in the locals store. An instance
+                        // attribute (`%!h`, `@!a`, twigil `!`/`.`) lives in the
+                        // instance attribute store, not in locals, so the lookup
+                        // would read an empty container and bind `$_` to Nil.
+                        // Fall through to evaluating the element value directly
+                        // (read-only, but correct) for attribute containers.
+                        .filter(|c| {
+                            let after_sigil = c.strip_prefix(['$', '@', '%']).unwrap_or(c);
+                            !after_sigil.starts_with(['!', '.'])
+                        })
+                        .map(|c| (c, index, *is_positional)),
                     _ => None,
                 };
                 let topic_readonly;

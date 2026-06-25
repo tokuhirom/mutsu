@@ -965,6 +965,73 @@ impl Interpreter {
                     result
                 }
             }
+            // Buf/Blob slice by a Range: `$buf[0..7]` / `$buf[2..^5]`. The bytes
+            // live in the instance's `bytes` array; a single-Int index is served
+            // by `AT-POS` above, but a Range index has no AT-POS arm and would
+            // otherwise fall through to Nil. Return the list of bytes in range
+            // (Raku yields a List of the byte values).
+            (
+                Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                },
+                idx @ (Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)),
+            ) if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
+                    let len = bytes.len() as i64;
+                    let (start, end_incl) = match idx {
+                        Value::Range(a, b) => (
+                            a,
+                            if Self::range_end_is_unbounded(b) {
+                                len - 1
+                            } else {
+                                b
+                            },
+                        ),
+                        Value::RangeExcl(a, b) => (
+                            a,
+                            if Self::range_end_is_unbounded(b) {
+                                len - 1
+                            } else {
+                                b - 1
+                            },
+                        ),
+                        Value::RangeExclStart(a, b) => (
+                            a + 1,
+                            if Self::range_end_is_unbounded(b) {
+                                len - 1
+                            } else {
+                                b
+                            },
+                        ),
+                        Value::RangeExclBoth(a, b) => (
+                            a + 1,
+                            if Self::range_end_is_unbounded(b) {
+                                len - 1
+                            } else {
+                                b - 1
+                            },
+                        ),
+                        _ => unreachable!(),
+                    };
+                    let start = start.max(0);
+                    let mut slice = Vec::new();
+                    let mut i = start;
+                    while i <= end_incl {
+                        if i >= 0 && i < len {
+                            slice.push(bytes[i as usize].clone());
+                        }
+                        i += 1;
+                    }
+                    Value::array(slice)
+                } else {
+                    Value::Nil
+                }
+            }
             (instance @ Value::Instance { .. }, Value::Array(keys, ..)) => {
                 let mut results = Vec::with_capacity(keys.len());
                 for k in keys.iter().cloned() {

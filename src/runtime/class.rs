@@ -1428,8 +1428,15 @@ impl Interpreter {
         }
         let mut merged_env = saved_env.clone();
         for (k, v) in self.env.iter() {
-            // $_ is method-local; don't bleed the method's $_ back to the caller
-            if k == "_" {
+            // These keys are method-local execution context, not outer lexicals:
+            // bleeding them back to the caller corrupts the caller's own context.
+            // `self` is the worst offender — a callee invoked on a *type object*
+            // (e.g. `CALL-ME` on `T:U:`) sets the method's `self` to that type
+            // object; merging it back would overwrite the caller's instance
+            // `self`, so a following `$!attr = ...` would see a type-object self
+            // and wrongly die "Cannot look up attributes in a ... type object".
+            // `?CLASS`/`?ROLE`/`__ANON_STATE__` are likewise per-method context.
+            if k == "_" || k == "self" || k == "?CLASS" || k == "?ROLE" || k == "__ANON_STATE__" {
                 continue;
             }
             if saved_env.contains_key_sym(*k) {
