@@ -301,11 +301,16 @@ impl Interpreter {
             let mut best_sym: Option<String> = None;
             let mut best_prefix_match: usize = 0;
             for (sub_pat, sub_pkg, sym_key) in filtered {
+                // Switch into the subrule's defining package *before* parsing its
+                // pattern: a nested char-class token reference (e.g. the RFC URI
+                // grammar's `<+unenc-pchar>`) must resolve in the grammar's
+                // package, not the caller's (`URI::Query` invoking
+                // `<IETF::RFC_Grammar::URI::query>`).
+                let saved_pkg = self.current_package();
+                self.set_current_package(sub_pkg);
                 let prefix_match_len = self
                     .declarative_prefix_match_len(&sub_pat, text)
                     .unwrap_or(0);
-                let saved_pkg = self.current_package();
-                self.set_current_package(sub_pkg);
                 let mut caps = self.regex_match_with_captures(&sub_pat, text);
                 self.set_current_package(saved_pkg);
                 if let Some(mut caps) = caps.take() {
