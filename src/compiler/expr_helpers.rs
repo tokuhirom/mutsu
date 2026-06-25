@@ -327,6 +327,13 @@ impl Compiler {
         }
     }
 
+    /// Whether the left operand of `xx` must be re-evaluated on each repetition.
+    /// Raku's `LHS xx N` evaluates `LHS` afresh N times. mutsu re-evaluates a
+    /// known set of non-deterministic / side-effecting calls (so `rand xx 3`
+    /// yields three values and `@a.push(0) xx 2` pushes twice); plain values and
+    /// pure calls are replicated once. (A fully general re-evaluation is blocked
+    /// by the thunk-result capture path discarding a value-returning user sub's
+    /// result in sink context — tracked separately.)
     pub(super) fn xx_lhs_needs_reeval(expr: &Expr) -> bool {
         matches!(
             expr,
@@ -340,6 +347,13 @@ impl Compiler {
                     || name == "take"
                     || name == "shift"
                     || name == "pop"
+                    // Mutating methods whose side effect must happen each
+                    // repetition (e.g. `@tree.push(0) xx 2` builds two slots).
+                    || name == "push"
+                    || name == "append"
+                    || name == "unshift"
+                    || name == "prepend"
+                    || name == "splice"
                     || name == "readchars"
                     || name == "receive"
                     || name == "getc"
