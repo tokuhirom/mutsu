@@ -337,7 +337,7 @@ impl Interpreter {
                     &role_name,
                     method_def,
                     attributes.clone(),
-                    Vec::new(),
+                    args.clone(),
                     Some(Value::make_instance(class_name, attributes.clone())),
                 )?;
                 attributes = updated;
@@ -362,16 +362,17 @@ impl Interpreter {
                     mro_class,
                     attributes.clone(),
                     "BUILD",
-                    Vec::new(),
+                    args.clone(),
                     Some(Value::make_instance(class_name, attributes.clone())),
                 )?;
                 attributes = updated;
             }
         }
-        // `self.bless(...)` runs BUILD/TWEAK with no extra args (the named
-        // attributes were already folded into `attributes` above); preserve
-        // that by passing an empty TWEAK arg list.
-        let attributes = self.run_tweak_phase(class_name, attributes, &[])?;
+        // `bless` passes its named arguments through to BUILD and TWEAK (as
+        // `BUILDALL` does), so a `submethod BUILD(:$!attr!)` with a required named
+        // parameter binds -- the args are also pre-folded into `attributes` above
+        // for the common no-explicit-BUILD case.
+        let attributes = self.run_tweak_phase(class_name, attributes, &args)?;
         Ok(Value::make_instance(class_name, attributes))
     }
 
