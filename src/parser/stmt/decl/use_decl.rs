@@ -29,6 +29,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 module: "v6".to_string(),
                 arg: Some(Expr::Literal(Value::str(version))),
                 tags: Vec::new(),
+                condition: None,
             },
         ));
     }
@@ -57,6 +58,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 module,
                 arg: Some(arg),
                 tags: Vec::new(),
+                condition: None,
             },
         ));
     }
@@ -64,12 +66,30 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     // Collect adverbs/colonpairs on use (e.g. `use Foo :ALL`, `use Foo :tag1, :tag2`)
     let mut rest = rest;
     let mut use_tags: Vec<String> = Vec::new();
+    let mut condition: Option<Box<Expr>> = None;
     loop {
         if rest.starts_with(':') && !rest.starts_with("::") {
             let r = &rest[1..];
             // :!name
             let r = r.strip_prefix('!').unwrap_or(r);
             if let Ok((r, tag_name)) = ident(r) {
+                // The `if` pragma's `:if(EXPR)` adverb (`use Foo:if($cond)`) loads
+                // the module only when EXPR is true at runtime. It is NOT an import
+                // tag; capture the condition expression instead.
+                if tag_name == "if" && r.starts_with('(') {
+                    let inner = &r[1..];
+                    let (after_expr, cond) = expression(inner)?;
+                    let (after_expr, _) = ws(after_expr)?;
+                    let after = after_expr
+                        .strip_prefix(')')
+                        .ok_or_else(|| PError::expected("closing ')' in :if() adverb"))?;
+                    condition = Some(Box::new(cond));
+                    let (after, _) = ws(after)?;
+                    let after = after.strip_prefix(',').unwrap_or(after);
+                    let (after, _) = ws(after)?;
+                    rest = after;
+                    continue;
+                }
                 // Version/auth/api selectors (`:ver<...>`, `:auth<...>`, `:api<...>`)
                 // are NOT import tags — they refine which distribution to load.
                 // Consume their `<...>` value and discard, instead of treating the
@@ -130,6 +150,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             module,
             arg,
             tags: use_tags,
+            condition,
         },
     ))
 }
@@ -271,6 +292,7 @@ fn parse_use_smiley_pragma<'a>(input: &'a str, pragma_name: &'a str) -> PResult<
             module: pragma_name.to_string(),
             arg: Some(Expr::Literal(Value::str(format!(":{}", smiley)))),
             tags: Vec::new(),
+            condition: None,
         },
     ))
 }
