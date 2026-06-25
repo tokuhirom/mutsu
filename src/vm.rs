@@ -2226,6 +2226,16 @@ impl Interpreter {
                 self.env_mut().insert("_".to_string(), val);
                 *ip += 1;
             }
+            OpCode::PushEnterResult => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                self.enter_result_stack.push(val);
+                *ip += 1;
+            }
+            OpCode::LoadEnterResult => {
+                let val = self.enter_result_stack.pop().unwrap_or(Value::Nil);
+                self.stack.push(val);
+                *ip += 1;
+            }
             OpCode::SaveTopic => {
                 let current = self.env().get("_").cloned().unwrap_or(Value::Nil);
                 self.topic_save_stack.push(current);

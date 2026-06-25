@@ -706,6 +706,17 @@
   Nil＝行番号非依存の真の phaser バグだが、テストは clobber された行 1 でだけ PASS していた）。blast-radius 不明（roast 全体に calibration-by-clobber が潜む可能性）なので
   ORIGINAL_SOURCE 修正＋露出 phaser バグ群は本 PR から分離して別途対応。**★教訓: nested parse は SCOPES だけでなく `ORIGINAL_SOURCE` も clobber する。修正自体は正しいが、
   長年 clobber に calibrate された「偶然 PASS」テスト群を露出させるので段階的に。**
+- **2026-06-25 (§D = `ORIGINAL_SOURCE` clobber 修正 ＋ 露出 phaser ブロック値バグの一般修正)**: 前エントリで分離した別バグを解消。
+  **(1)** `parse_program_partial`（module export スキャン / EVAL / pseudo-package の best-effort nested parse）が `primary::snapshot_source_state`/
+  `restore_source_state`（`ORIGINAL_SOURCE` + heredoc `LEAKED_REGIONS`）で caller の source state を save/restore するよう変更＝clobber 解消・
+  using ファイルの `current_line_number` が raku 一致に。**(2)** 露出した phaser バグ（**行番号非依存の真のバグ**）を一般修正: ①trailing ENTER phaser
+  がブロック/サブ/クロージャ/do-block の値になる（新 OpCode `PushEnterResult`/`LoadEnterResult` + VM `enter_result_stack`＝ENTER section の値を body
+  末尾に橋渡し。ENTER は value-result baseline 記録前に走るのでスタック直置きでは検出されない）②値決定文を「最後の非 `SetLine` 文」に変更（行番号正常化で
+  文間 `SetLine` が入り phaser-only ブロックの末尾 `SetLine` が偽 `True`→KEEP 誤発火していたのを UNDO に修正）。**(3)** 5 重複していた BlockScope phaser
+  圧縮（top-level / `Stmt::Block` / do-block / sub body / closure）を共有 `compile_phaser_block_scope(stmts, result_on_stack)` に集約（statement=topic /
+  do-block=stack の 2 モード）。pin `t/enter-phaser-rvalue.t`(18)。全 t/(11502)・S04-phasers whitelist(17)・`use Test::Util` whitelist 270 本・roast 1/3
+  サンプル 428 本いずれも回帰ゼロ。**★教訓: phaser ブロックの値は ENTER section とは別フェーズで実体化が要る（専用スタックで body 末尾に橋渡し）。do-block は
+  値をスタックで返す（`DoBlockExpr` が pop）が statement 文脈は topic 経由＝同じヘルパーをモードで分岐。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

@@ -326,6 +326,12 @@ pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) 
         stmt::reset_statement_memo();
     }
     stmt::reset_user_subs();
+    // This is a best-effort nested sub-parse (module export scan / EVAL / pseudo
+    // package). It must not leave `ORIGINAL_SOURCE` pointing at `input` — once
+    // `input` (often a temporary module String) is dropped, the enclosing parse's
+    // `current_line_number` would fall back to 1 for every statement. Snapshot the
+    // caller's source state and restore it before returning.
+    let saved_source_state = primary::snapshot_source_state();
     primary::set_original_source(input);
     let (source, finish_content) = if let Some(idx) = input.find("\n=finish") {
         let content = &input[idx + "\n=finish".len()..];
@@ -339,6 +345,7 @@ pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) 
         (input, None)
     };
     let (stmts, _) = stmt::stmt_list_partial(source);
+    primary::restore_source_state(saved_source_state);
     (stmts, finish_content)
 }
 

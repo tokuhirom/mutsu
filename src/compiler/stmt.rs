@@ -454,102 +454,7 @@ impl Compiler {
                     self.compile_try(stmts, &None);
                     self.code.emit(OpCode::Pop);
                 } else if Self::has_block_enter_leave_phasers(stmts) {
-                    let idx = self.code.emit(OpCode::BlockScope {
-                        pre_end: 0,
-                        enter_end: 0,
-                        body_end: 0,
-                        keep_start: 0,
-                        undo_start: 0,
-                        post_start: 0,
-                        end: 0,
-                    });
-                    // PRE phasers (forward order, before ENTER)
-                    Self::compile_pre_phasers(self, stmts);
-                    self.code.patch_block_pre_end(idx);
-                    for s in stmts {
-                        if let Stmt::Phaser {
-                            kind: PhaserKind::Enter,
-                            body,
-                        } = s
-                        {
-                            for inner in body {
-                                self.compile_stmt(inner);
-                            }
-                        }
-                    }
-                    self.code.patch_block_enter_end(idx);
-                    let body_stmts: Vec<&Stmt> = stmts
-                        .iter()
-                        .filter(|s| {
-                            !matches!(
-                                s,
-                                Stmt::Phaser {
-                                    kind: PhaserKind::Enter
-                                        | PhaserKind::Leave
-                                        | PhaserKind::Keep
-                                        | PhaserKind::Undo
-                                        | PhaserKind::Pre
-                                        | PhaserKind::Post,
-                                    ..
-                                }
-                            )
-                        })
-                        .collect();
-                    for (i, s) in body_stmts.iter().enumerate() {
-                        let is_last = i == body_stmts.len() - 1;
-                        if is_last {
-                            self.compile_last_stmt_as_topic(s);
-                        } else {
-                            self.compile_stmt(s);
-                        }
-                    }
-                    self.code.patch_block_body_end(idx);
-                    self.code.patch_block_keep_start(idx);
-                    {
-                        let mut prev_guard: Option<usize> = None;
-                        for s in stmts.iter().rev() {
-                            if let Stmt::Phaser { kind, body } = s
-                                && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
-                            {
-                                if let Some(pg) = prev_guard {
-                                    self.code.patch_leave_guard_next(pg);
-                                }
-                                let guard_idx = self.code.emit(OpCode::LeaveGuard { next: 0 });
-                                for inner in body {
-                                    self.compile_stmt(inner);
-                                }
-                                prev_guard = Some(guard_idx);
-                            }
-                        }
-                        if let Some(pg) = prev_guard {
-                            self.code.patch_leave_guard_next(pg);
-                        }
-                    }
-                    self.code.patch_block_undo_start(idx);
-                    {
-                        let mut prev_guard: Option<usize> = None;
-                        for s in stmts.iter().rev() {
-                            if let Stmt::Phaser { kind, body } = s
-                                && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
-                            {
-                                if let Some(pg) = prev_guard {
-                                    self.code.patch_leave_guard_next(pg);
-                                }
-                                let guard_idx = self.code.emit(OpCode::LeaveGuard { next: 0 });
-                                for inner in body {
-                                    self.compile_stmt(inner);
-                                }
-                                prev_guard = Some(guard_idx);
-                            }
-                        }
-                        if let Some(pg) = prev_guard {
-                            self.code.patch_leave_guard_next(pg);
-                        }
-                    }
-                    // POST phasers (reverse order, after LEAVE)
-                    self.code.patch_block_post_start(idx);
-                    Self::compile_post_phasers(self, stmts);
-                    self.code.patch_loop_end(idx);
+                    self.compile_phaser_block_scope(stmts, false);
                 } else if Self::has_let_deep(stmts) {
                     // Block contains `let`/`temp` — wrap in LetBlock for save/restore
                     let idx = self.code.emit(OpCode::LetBlock { body_end: 0 });
@@ -2852,6 +2757,20 @@ impl Compiler {
                 self.compile_stmt(stmt);
                 self.compile_expr(&Expr::Literal(Value::Bool(true)));
                 self.code.emit(OpCode::SetTopic);
+            }
+        }
+    }
+
+    /// Like [`compile_last_stmt_as_topic`], but leaves the statement's value on
+    /// the value stack instead of routing it through the topic. Used for the
+    /// final statement of a block compiled in expression context (e.g. a `do`
+    /// block), whose value the enclosing `DoBlockExpr` pops off the stack.
+    pub(super) fn compile_last_stmt_as_value(&mut self, stmt: &Stmt) {
+        match stmt {
+            Stmt::Expr(expr) => self.compile_expr(expr),
+            _ => {
+                self.compile_stmt(stmt);
+                self.compile_expr(&Expr::Literal(Value::Bool(true)));
             }
         }
     }

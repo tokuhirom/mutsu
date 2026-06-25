@@ -1315,6 +1315,11 @@ pub struct Interpreter {
     pub(crate) loop_local_saved_env: Vec<HashMap<String, Value>>,
     pub(crate) loop_cond_active: bool,
     pub(crate) outer_scope_locals: Vec<Vec<Value>>,
+    /// Stack of captured ENTER-phaser values for blocks whose textually-last
+    /// statement is an ENTER phaser (its entry-time value becomes the block
+    /// result). Pushed by `PushEnterResult` in the ENTER section and popped by
+    /// `LoadEnterResult` at the end of the block body.
+    pub(crate) enter_result_stack: Vec<Value>,
     pub(crate) pending_alias_bind_names: Vec<(String, String)>,
     pub(crate) otf_call_cache: HashMap<Symbol, CompiledFunction>,
     pub(crate) otf_call_cache_gen: u64,
@@ -3471,6 +3476,7 @@ impl Interpreter {
             loop_local_saved_env: Vec::new(),
             loop_cond_active: false,
             outer_scope_locals: Vec::new(),
+            enter_result_stack: Vec::new(),
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: HashMap::new(),
             otf_call_cache_gen: 0,
@@ -6137,6 +6143,7 @@ impl Interpreter {
             loop_local_saved_env: Vec::new(),
             loop_cond_active: false,
             outer_scope_locals: Vec::new(),
+            enter_result_stack: Vec::new(),
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: HashMap::new(),
             otf_call_cache_gen: 0,

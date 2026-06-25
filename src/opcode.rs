@@ -561,6 +561,17 @@ pub(crate) enum OpCode {
     LeaveGuard {
         next: u32,
     },
+    /// Pop the top of the value stack and push it onto the ENTER-result stack.
+    /// Emitted at the end of the ENTER section for an ENTER phaser that is the
+    /// textually-last statement of its block, so the phaser's entry-time value
+    /// can later become the block's result value (Raku semantics: a trailing
+    /// `ENTER` phaser provides the block return value).
+    PushEnterResult,
+    /// Pop the top of the ENTER-result stack and push it onto the value stack.
+    /// Emitted at the end of the block body when the block's textually-last
+    /// statement is an ENTER phaser, materializing its captured value as the
+    /// block result.
+    LoadEnterResult,
     DoBlockExpr {
         body_end: u32,
         label: Option<String>,
