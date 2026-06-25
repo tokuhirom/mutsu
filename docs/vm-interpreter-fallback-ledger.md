@@ -769,6 +769,15 @@
   3 ファイル proper-harness PASS・10 named 形 byte-identical to raku（unicode CI・Str position 含む）・whitelist 回帰ゼロ。pin `t/starts-ends-substr-eq-named-native.t`(21)。**★教訓:
   raku 参照実装は `"abc".ends-with("", :i)` で "Iteration past end of grapheme iterator" を投げる（空 needle+ci のバグ）が mutsu は正しく True を返す＝pin から該当形を除外（mutsu の方が正しい）。
   ★string-method の `:m`/`:ignoremark` は `strip_marks`（NFD→combining-mark filter）で別処理だが、これらの roast テストは backend≠moar ゲートで `:m` 形を skip するので native 化不要・defer で十分。**
+- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = string-search 4 メソッドの Match invocant の VM ネイティブ化)**: 前 3 slice（contains/starts-with・ends-with・substr-eq）で
+  「Match invocant は別軸（Match→Str coercion・instance-bypass 相互作用）」と deferred していたが、精査で **低リスクな gate 緩和のみで解決可**と判明。①`is_native_method("Match", …)` は
+  **エントリ無し→false**＝Match.contains 等は instance-bypass block を通過し variadic helper（arity dispatch 直前）に到達する ②各 helper は既に `text = target.to_string_value()` で text を取得
+  ＝Match なら matched substring（`Cool.Str` と同一）。∴ 受け手 gate を `Value::Str(_)` のみ → 新述語 `is_str_or_match_receiver`（Str or `Instance{class_name=="Match"}`）に緩和するだけで
+  4 メソッド全形の Match invocant を drain。**失敗 match は `Any`/`Nil`（Match instance でない）→ gate 不通過→interpreter が "No such method" を raise**（byte-identical）。**実測 contains.t 140→6・
+  starts-with.t 42→8・ends-with.t 42→8・substr-eq.t 48→14**（残＝bare Match 形〔markings 無し・1-/2-arg arm が Str-gate〕＋テスト自身の `.match`/`$*PERL.compiler`）。全 t/(11710)・4 ファイル
+  proper-harness PASS・9 Match-invocant 形 byte-identical to raku（position・unicode CI 含む）・whitelist 回帰ゼロ。pin `t/str-search-match-invocant-native.t`(18)。**★教訓: 「別軸」と分類した
+  defer も、bypass 順序（`is_native_method` テーブルに対象クラスが無ければ通過）と既存の coercion（helper が `to_string_value` で text 取得）を精査すると 1 述語の gate 緩和に圧縮できることがある。
+  4 連続 string-search slice で `S32-str/{contains,starts-with,ends-with,substr-eq}.t` の method-fallback はほぼ枯渇（各 ≤14＝bare Match 形のみ）。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
