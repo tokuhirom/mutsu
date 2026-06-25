@@ -190,31 +190,29 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   catch-all-miss path feeding `dispatch_instance_and_fallback:867`).
 - **Slice 3 — construction submethods (BUILD/TWEAK/new, ~60).** Run `.new`'s BUILD/TWEAK
   as compiled bytecode.
-  **★Pre-existing blocker found (2026-06-26) — BUILDALL sibling writeback clobber.** A
-  *nested method dispatch inside one BUILD clobbers a sibling BUILD's captured-outer
-  writeback*. Minimal repro:
+  **★Pre-existing blocker — BUILDALL sibling writeback clobber — FIXED (#3620).** A
+  *nested method dispatch inside one BUILD clobbered a sibling BUILD's captured-outer
+  writeback*:
   ```raku
   my $pc = 0;
-  class S { method Str { "z" } }
   class P { submethod BUILD { $pc++ } }
   class C is P { submethod BUILD { my $x = S.new } }   # any nested dispatch
-  C.new;
-  say $pc;   # raku: 1   mutsu: 0
+  C.new; say $pc;   # raku: 1   mutsu before: 0
   ```
-  With an *empty* or non-dispatching Child.BUILD (`$pc;`) it is correct (pc=1); only a
-  nested method dispatch (`S.new`, `S.new.Str`, `+$obj`, `@a[$obj]`, …) inside Child.BUILD
-  loses Parent.BUILD's `$pc++`. **Ruled out:** it is NOT the `call_compiled_method`
-  entry `clear()` of `pending_rw_writeback_sources` — moving those leftovers to the
-  retain-on-miss list at entry did NOT fix it (BUILD runs via the interpreter
-  `run_instance_method_resolved` tree-walk, methods_dispatch_new.rs:335, so Parent.BUILD's
-  write goes to env, not `pending_rw_writeback_sources`). The nested dispatch's env
-  save/restore (or a slot reconcile) appears to overwrite `env["pc"]`/the top-level slot
-  with a stale value mid-construction. Needs targeted tracing (MUTSU_DBG eprintln on
-  set_env / merge_method_env / the .new op reconcile). This is the same *class* of bug as
-  the coercion/render redispatch writeback (Slice 1a/1b, #3615/#3617) but on the
-  tree-walk BUILD path, and gates landing the index/render fixes for the
-  `nested-dispatch-inside-sibling-BUILD` shape. Pre-existing (reproduces on 81a729c8,
-  before this session) — not a regression from the Slice 1 work.
+  **Root cause (confirmed by MUTSU_DBG tracing of `apply_pending_rw_writeback`):** the
+  method-call op-tail drain is **drop-on-miss**. BUILDALL runs Parent.BUILD (records `$pc`
+  into `pending_rw_writeback_sources`, owned by the outer `.new` caller's frame), then a
+  nested `S.new` inside Child.BUILD reaches that drain at a frame where `$pc` is NOT a
+  slot (`find_local_slot == None`) → drop-on-miss discards it; the outer `.new` drain then
+  finds nothing. (Earlier hypothesis — the `call_compiled_method` entry `clear()` — was
+  WRONG; BUILD writes via the `run_instance_method_resolved` env merge, and the loss is at
+  the nested call's drain, not the clear. **Lesson: locate the actual drain site by
+  tracing before hypothesising.**) **Fix:** when `apply_pending_rw_writeback` finds a
+  source whose slot is not in the current frame, MOVE it to the retain-on-miss
+  `pending_caller_var_writeback` list instead of dropping it, so the owning frame drains
+  it. pin=`t/build-sibling-writeback-coherence.t`(6). This was the same retain-on-miss
+  principle as Slice 1b, now applied to the real method-call op tail, and it unblocks the
+  nested-dispatch-inside-BUILD shape for coercion/render (and a future index-coercion).
 - **Slice 4 (capstone) — `samewith`/`nextsame`/`callsame` method redispatch (the `m`
   91%).** Compile the `method_dispatch_stack` candidate dispatch. Coordinate with the
   PLAN nextsame+rw substrate (rw-param slot coherence across the redispatch boundary).
