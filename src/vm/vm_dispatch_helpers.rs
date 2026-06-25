@@ -190,7 +190,20 @@ impl Interpreter {
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        loan_env!(self, coerce_infix_operand_numeric(value))
+        // Slice F (compiled-method redispatch coherence): a user `Numeric`/`Bridge`
+        // method run by this internal coercion can mutate a captured-outer caller
+        // lexical (`my $c; method Numeric { $c++; ... }`). `call_compiled_method`
+        // records that write into `pending_rw_writeback_sources`, but — unlike an
+        // explicit `$obj.Numeric` call op — this internal redispatch has no
+        // surrounding op to drain it, so the caller's local slot stays stale.
+        // Capture the caller frame's code before the dispatch (which clobbers
+        // `current_code`) and reconcile after, mirroring `say`/`note`'s `.gist`
+        // closure handling. No-op when the coercion ran no user method (pending
+        // list stays empty).
+        let caller_code = self.current_code;
+        let r = loan_env!(self, coerce_infix_operand_numeric(value));
+        self.reconcile_caller_after_lazy_force(caller_code);
+        r
     }
 
     pub(super) fn coerce_numeric_bridge_pair(
@@ -226,21 +239,28 @@ impl Interpreter {
         match val {
             Value::Package(name) => {
                 let class_name = name.resolve().to_string();
-                if loan_env!(self, resolve_method_with_owner(&class_name, "Bool", &[])).is_some()
-                    && let Ok(result) =
-                        self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
-                {
-                    return result.truthy();
+                if loan_env!(self, resolve_method_with_owner(&class_name, "Bool", &[])).is_some() {
+                    // Slice F: a user `Bool` method run by this internal coercion
+                    // can mutate a captured-outer caller lexical; drain its
+                    // writeback to the caller's slot (see coerce_numeric_bridge_value).
+                    let caller_code = self.current_code;
+                    let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
+                    self.reconcile_caller_after_lazy_force(caller_code);
+                    if let Ok(result) = result {
+                        return result.truthy();
+                    }
                 }
                 val.truthy()
             }
             Value::Instance { class_name, .. } => {
                 let cn = class_name.resolve().to_string();
-                if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
-                    && let Ok(result) =
-                        self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
-                {
-                    return result.truthy();
+                if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some() {
+                    let caller_code = self.current_code;
+                    let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
+                    self.reconcile_caller_after_lazy_force(caller_code);
+                    if let Ok(result) = result {
+                        return result.truthy();
+                    }
                 }
                 val.truthy()
             }

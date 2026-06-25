@@ -139,13 +139,29 @@ does. Until that lands, `run_instance_method` stays. This mirrors the function-s
 `nextsame+rw` blocker (PLAN §2-D): same root cause (writeback across a redispatch
 frame boundary), now confirmed for the method-coercion redispatch path too.
 
-- **Slice 1 (revised) — env/writeback-coherence at the compiled-redispatch boundary.**
-  Make `dispatch_compiled_method` (or its `call_compiled_method` core), when invoked as
-  an internal redispatch, root the callee frame at the live caller env (`scoped_child` +
-  parent-chain-aware merge, as `call_compiled_closure` already does for lexical `&name`
-  callables) and record captured-outer writebacks. Validate against the three reverted
-  tests (junction-invocant / grammar-dynvar / `$calls++` coercion) BEFORE re-enabling the
-  routing. THEN the coerce/render routing (original Slice 1) becomes safe.
+- **Slice 1a (revised) — DONE (#TBD): coercion-redispatch writeback coherence.**
+  The reverted Slice 1's premise (that `dispatch_compiled_method` fails to *link* the
+  callee frame to the caller env) was **wrong about the mechanism**. The captured-outer
+  write *does* reach the caller env: `call_compiled_method`'s `merge_method_env`
+  propagates it and records the changed caller-visible names into
+  `pending_rw_writeback_sources` (vm_method_dispatch.rs:682). The break is purely that an
+  **internal coercion redispatch has no surrounding CallMethod op to drain that list**
+  into the caller's local *slot*, so the slot stays stale (env is correct, slot is not —
+  the dual-store gap). Fix = drain at each op-level coercion redispatch site using the
+  existing `current_code` + `reconcile_caller_after_lazy_force` machinery (the same
+  pattern `say`/`note` already use for a `.gist` closure). Sites covered:
+  `exec_num_coerce_op` (`+$obj`), `exec_str_coerce_op` (`~$obj`, `.Stringy`/`.Str`),
+  `coerce_numeric_bridge_value` (infix arith + numeric comparison coercion), and
+  `eval_truthy` (`if $obj`/`?$obj` Bool). The three reverted tests (junction-invocant /
+  grammar-dynvar / `$calls++` coercion) all pass — no closure-env rooting was needed.
+  pin=`t/coercion-method-captured-writeback.t`(10).
+- **Slice 1b (next) — generalize the drain to the remaining `call_method_with_values`
+  internal redispatches** (the numeric bridge `.Bridge`/`.Int`/`.Real`, `.COERCE`,
+  render `.gist`/`.Str` reached via paths other than `say`/`note`), each at its own
+  op-handler boundary with `current_code` + `reconcile_caller_after_lazy_force`. THEN the
+  coerce/render *routing* (original Slice 1: route tree-walked `dispatch_instance_and_
+  fallback` user methods through `dispatch_compiled_method`) becomes safe, because the
+  drain point exists.
 - **Slice 2 — generalize the lever** to all user-method calls in
   `call_method_with_values` (cat 1 misc user methods abs/succ/foo/…, and the
   catch-all-miss path feeding `dispatch_instance_and_fallback:867`).
