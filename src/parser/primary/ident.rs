@@ -2223,17 +2223,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
         "quietly" => {
             let (r, _) = ws(rest)?;
-            // quietly expr — defer evaluation so quietly can control warning behavior
+            // `quietly EXPR` — pass the raw expression so the compiler can run it
+            // INLINE in the current scope under a warning-suppression frame
+            // (so `quietly my $x = ...` leaks `$x`, matching Raku). A block form
+            // `quietly { ... }` arrives as an AnonSub and is handled there too.
             let (r, expr) = expression(r)?;
-            let wrapped = match expr {
-                Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => expr,
-                other => make_anon_sub(vec![Stmt::Expr(other)]),
-            };
             return Ok((
                 r,
                 Expr::Call {
                     name: Symbol::intern(&name),
-                    args: vec![wrapped],
+                    args: vec![expr],
                 },
             ));
         }

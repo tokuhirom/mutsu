@@ -3093,6 +3093,14 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            OpCode::WarnSuppressPush => {
+                self.push_warn_suppression();
+                *ip += 1;
+            }
+            OpCode::WarnSuppressPop => {
+                self.pop_warn_suppression();
+                *ip += 1;
+            }
             OpCode::SinkPop(user_sink) => {
                 let user_sink = *user_sink;
                 if let Some(val) = self.stack.pop() {

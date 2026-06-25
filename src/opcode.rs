@@ -408,6 +408,16 @@ pub(crate) enum OpCode {
     /// are (or may be) container-wrapped and must not auto-sink (Raku does not
     /// sink container-wrapped values).
     SinkPop(bool),
+    /// Statement-prefix `quietly`: push a warning-suppression frame so any
+    /// warning raised while evaluating the following expression is silenced
+    /// (the warn still resumes in place with its resume value, matching Raku's
+    /// CONTROL/CX::Warn `.resume`). Balanced by `WarnSuppressPop`. Unlike the
+    /// `quietly(&block)` builtin, this runs the guarded expression INLINE in the
+    /// current lexical scope, so `quietly my $x = ...` leaks `$x` to the
+    /// enclosing scope as Raku requires.
+    WarnSuppressPush,
+    /// Pop the warning-suppression frame pushed by `WarnSuppressPush`.
+    WarnSuppressPop,
     /// Peek the top of stack (without popping) and throw it if it is an
     /// unhandled Failure. Used at the tail of a try/CATCH body so a trailing
     /// `fail`/Failure value is thrown into the block's CATCH handler while a
