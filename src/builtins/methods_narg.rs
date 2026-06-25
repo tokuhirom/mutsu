@@ -937,8 +937,28 @@ pub(crate) fn native_method_1arg(
             let s = target.to_string_value();
             Some(Ok(contains_value_recursive(&s, arg)))
         }
-        // starts-with and ends-with are handled in runtime/methods.rs
-        // to support named args (:i, :ignorecase, :m, :ignoremark)
+        // starts-with / ends-with: the plain `.starts-with($needle)` form (a
+        // single positional argument) is a pure prefix/suffix check on a Str
+        // receiver, so handle it natively here. The case-/mark-insensitive forms
+        // (`:i`/`:ignorecase`/`:m`/`:ignoremark`) carry a second (Pair) argument
+        // and so never reach this 1-arg path — they keep falling through to the
+        // interpreter's `dispatch_prefix_suffix_check` (runtime/methods_string.rs).
+        "starts-with" | "ends-with" if matches!(target, Value::Str(_)) => {
+            if let Value::Package(type_name) = arg {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cannot resolve caller {}({}:U)",
+                    method, type_name
+                ))));
+            }
+            let text = target.to_string_value();
+            let needle = arg.to_string_value();
+            let ok = if method == "starts-with" {
+                text.starts_with(needle.as_str())
+            } else {
+                text.ends_with(needle.as_str())
+            };
+            Some(Ok(Value::Bool(ok)))
+        }
         "samemark" => {
             let target_str = target.to_string_value();
             let source_str = arg.to_string_value();
