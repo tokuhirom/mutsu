@@ -726,6 +726,13 @@
   全 t/(11572)・S32-str/starts-with.t・ends-with.t・文字列 roast 70・1/5 roast サンプル 257 回帰ゼロ。**★教訓: named-arg 対応で slow path に置かれた純メソッドは、
   named-arg が arity を増やして別 path に行くので「無印 1-arg ケースだけ」を native gate（受け手型で限定）すれば安全に drain できる。`substr-eq`(87・位置解決 Whatever/負数/Failure で複雑)
   は次スライス候補。**
+- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = `.substr-eq($needle, Int $pos)` の VM ネイティブ化)**: starts-with と同パターンの 2 スライス目。`.substr-eq` は
+  named-arg（`:i`/`:m`）と Whatever/負数/範囲外の位置解決（Failure 生成）対応のため slow path（`dispatch_substr_eq`）に在った。**plain 2 引数形＋非負 in-bounds Int 位置＋Str
+  受け手**は純 substring 比較なので `native_method_2arg` に arm 追加。それ以外は全てフォールスルー: Whatever/非Int 位置（`arg2` が `Int` でない）→ interpreter 解決／負数・範囲外 →
+  interpreter Failure／named-arg 形（Pair 追加で arity 3）→ 2-arg native path 不到達／user 定義 `.substr-eq` は native 前に解決＝非shadow。1 引数形（位置 0 デフォルト）は稀でフォールスルー維持。
+  pin `t/substr-eq-native.t`(16)。全 t/(11566)・S32-str/substr-eq.t・indices.t・index.t 回帰ゼロ。**★残る clean な string drain は枯渇**: `comb` 単純形は既に native（survey の 93 は
+  regex/named-arg 形）、`trans`(65) は range（spec 文字列内 `a..z`）/list-pair/regex で複雑、`Int`/`Num`/`Str.new` は ctor 完了済み領域。残カテゴリ＝iterator protocol 群（lazy・別軸）/
+  MOP carrier（反射・撲滅対象外）/concurrency（tap/emit・別軸）で、いずれも §D(b) の純 drain でなく別 substrate 前提。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
