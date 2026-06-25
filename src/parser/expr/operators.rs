@@ -410,6 +410,10 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
             || crate::builtins::unicode::unicode_rat_value(c).is_some()
             || crate::builtins::unicode::unicode_numeric_int_value(c).is_some()
     };
+    // A symbolic prefix (`+`, `-`, `~`) may be followed by ANOTHER prefix
+    // operator: `+!$x` is `+(!$x)`, `-?$x` is `-(?$x)`. Without this the leading
+    // `+`/`-`/`~` falls through to numeric-literal parsing and fails on the `!`.
+    let starts_another_prefix = |s: &str| parse_prefix_unary_op(s.trim_start()).is_some();
     if input.starts_with('!')
         && !input.starts_with("!!")
         && !input.starts_with("!~~")
@@ -430,6 +434,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && !input.starts_with("->")
         && (starts_hyper_prefix_marker(&input[1..])
             || starts_user_prefix_op(&input[1..])
+            || starts_another_prefix(&input[1..])
             || (matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.' || c == '\u{221E}')))
     // topic call / ∞
     {
@@ -443,6 +448,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && !input.starts_with("++")
         && (starts_hyper_prefix_marker(&input[1..])
             || starts_user_prefix_op(&input[1..])
+            || starts_another_prefix(&input[1..])
             || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.' || c == '\u{221E}'))
     {
         Some((PrefixUnaryOp::Positive, 1))
@@ -451,6 +457,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     } else if input.starts_with('~')
         && !input.starts_with("~~")
         && (starts_hyper_prefix_marker(&input[1..])
+            || starts_another_prefix(&input[1..])
             || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.'))
     {
         Some((PrefixUnaryOp::Stringify, 1))
