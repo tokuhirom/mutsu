@@ -717,6 +717,15 @@
   do-block=stack の 2 モード）。pin `t/enter-phaser-rvalue.t`(18)。全 t/(11502)・S04-phasers whitelist(17)・`use Test::Util` whitelist 270 本・roast 1/3
   サンプル 428 本いずれも回帰ゼロ。**★教訓: phaser ブロックの値は ENTER section とは別フェーズで実体化が要る（専用スタックで body 末尾に橋渡し）。do-block は
   値をスタックで返す（`DoBlockExpr` が pop）が statement 文脈は topic 経由＝同じヘルパーをモードで分岐。**
+- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = `.starts-with`/`.ends-with`〔無印形〕の VM ネイティブ化)**: method-fallback の名前別実測で
+  `starts-with`(513) が catch-all バウンス上位（`name`/`WHAT`/`WHY`/`can`=MOP 反射・撲滅対象外、`tap`/`stdout`=concurrency 別軸、iterator protocol 群=lazy 別軸を除く）。
+  原因＝`starts-with`/`ends-with` は named-arg（`:i`/`:ignorecase`/`:m`/`:ignoremark`）対応のため slow path（`dispatch_prefix_suffix_check`）に置かれ、**named arg を持たない
+  `.starts-with($needle)` 一般形まで interpreter にバウンス**していた。`(false,false)` ケースは純 prefix/suffix 判定なので `native_method_1arg`（methods_narg.rs）に
+  Str-receiver gated arm を追加。named-arg 形は **2 引数（positional + Pair）なので 1-arg native path に到達せず**自然に slow path へフォールスルー＝byte-identical。
+  user 定義 `.starts-with` は VM が native 前に解決するため非shadow（既存 `contains` arm と同保証）。実測 `$s.starts-with` fallback 2→0。pin `t/starts-ends-with-native.t`(22)。
+  全 t/(11572)・S32-str/starts-with.t・ends-with.t・文字列 roast 70・1/5 roast サンプル 257 回帰ゼロ。**★教訓: named-arg 対応で slow path に置かれた純メソッドは、
+  named-arg が arity を増やして別 path に行くので「無印 1-arg ケースだけ」を native gate（受け手型で限定）すれば安全に drain できる。`substr-eq`(87・位置解決 Whatever/負数/Failure で複雑)
+  は次スライス候補。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
