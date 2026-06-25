@@ -1123,7 +1123,11 @@ impl Interpreter {
             };
             match &val {
                 EnumValue::Int(i) => {
-                    next_int_value = i + 1;
+                    // Wrap instead of panicking when an enum's running counter
+                    // passes i64::MAX (e.g. `enum E (A => 2**63-1, ...)`). The
+                    // auto-increment past MAX is degenerate, but it must not abort
+                    // the interpreter.
+                    next_int_value = i.wrapping_add(1);
                 }
                 EnumValue::Str(_) | EnumValue::Generic(_) => {}
             }
