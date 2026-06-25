@@ -989,6 +989,11 @@ impl Interpreter {
                         .or(def.role_origin.as_deref())
                         .unwrap_or(package_name);
                     compiler.set_current_package(method_package.to_string());
+                    // A method always carries an implicit `*%_` / `*@_` slurpy, so
+                    // `%_` / `@_` are valid lexicals throughout the body (including a
+                    // nested signature-less `do {}` block). Mark the method context so
+                    // the do-block placeholder check permits them.
+                    compiler.lexically_in_method = true;
                     let mut method_params = vec![
                         "self".to_string(),
                         "__ANON_STATE__".to_string(),

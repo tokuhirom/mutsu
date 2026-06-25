@@ -100,6 +100,10 @@ impl Compiler {
         let mut sub_compiler = Compiler::new();
         sub_compiler.is_routine = true;
         sub_compiler.lexically_in_routine = true;
+        // A method body carries the synthetic `?CLASS` parameter injected by the
+        // MethodDecl lowering. Methods always provide an implicit `*%_` / `*@_`
+        // slurpy, so `%_` / `@_` are valid lexicals anywhere in the body.
+        sub_compiler.lexically_in_method = params.iter().any(|p| p == "?CLASS");
         // Propagate last_source_line so the sub body knows which line
         // the sub was defined at (for backtraces).
         sub_compiler.last_source_line = self.last_source_line;
@@ -532,6 +536,11 @@ impl Compiler {
         // already is, or the parent itself is a routine.
         sub_compiler.lexically_in_routine =
             is_routine || self.is_routine || self.lexically_in_routine;
+        // `%_` / `@_` from an enclosing method stay visible inside nested
+        // closures (e.g. a `do {}` block inside a `.protect: { ... }` block),
+        // so carry the method context down. A nested *named sub* is not a method
+        // and gets a fresh compiler via compile_sub_body, so it correctly resets.
+        sub_compiler.lexically_in_method = self.lexically_in_method;
         // Propagate last_source_line so closures inside blocks that
         // lack their own SetLine can still inherit the line from the
         // enclosing statement.
