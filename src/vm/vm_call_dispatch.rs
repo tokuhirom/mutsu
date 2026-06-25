@@ -68,6 +68,23 @@ impl Interpreter {
         if let Some(result) = self.try_native_test_function(name, &args) {
             return result;
         }
+        // Builtin operator-as-function `infix:<op>(...)` (e.g. `&infix:<+>`, the
+        // routine `[+]`/hyper/`reduce` lower to). Any user-defined operator was
+        // already resolved above (compiled_fns / OTF), so reaching here means the
+        // builtin operator — dispatch it straight to the native `call_infix_routine`
+        // handler instead of recording a tree-walk fallback. This mirrors
+        // `call_function_fallback`'s infix arm exactly (the big `call_function` match
+        // has no infix arm, so both reach the same `call_infix_routine` on the same
+        // `self`); `sanitize_call_args` only strips the Test callsite marker, which
+        // operator routines never carry, so the result is byte-identical. §D state
+        // ownership: the operator handlers are native Rust on the VM's own state.
+        if let Some(op) = name
+            .strip_prefix("infix:<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
+            let normalized = if op == "\u{2212}" { "-" } else { op };
+            return self.call_infix_routine(normalized, &args);
+        }
         // CARRIER (EVAL/pseudo-package) vs TODO: compile to bytecode (else branch =
         // true tree-walk function fallback). See ledger §2/§C.
         if Self::is_interpreter_carrier_function(name) {

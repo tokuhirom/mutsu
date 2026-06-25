@@ -1157,6 +1157,27 @@ impl Interpreter {
                     // caller env (scoped_child) and the captured-env merge is
                     // or_insert (parent-chain aware), so it never shadows them.
                     self.vm_call_on_value(callable, args, Some(compiled_fns))
+                } else if let Some(op) = name
+                    .strip_prefix("infix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                {
+                    // Builtin operator-as-function `infix:<op>(...)` (what `&infix:<+>`,
+                    // `[+]`, hyper and `reduce` lower to). Every user-defined operator
+                    // path (compiled_fns / multi / user_function_matches / OTF) was
+                    // tried above, so reaching here means the builtin operator —
+                    // dispatch it straight to the native `call_infix_routine` handler
+                    // instead of recording a tree-walk fallback. This mirrors
+                    // `call_function_fallback`'s infix arm exactly (the big
+                    // `call_function` match has no infix arm, so both reach the same
+                    // `call_infix_routine` on the same `self`), with the same
+                    // arg-sources + rw-proxy handling => byte-identical. §D state
+                    // ownership: the operator handlers are native Rust on VM state.
+                    let normalized = if op == "\u{2212}" { "-" } else { op };
+                    self.set_pending_call_arg_sources(arg_sources);
+                    let result = self.call_infix_routine(normalized, &args);
+                    self.set_pending_call_arg_sources(None);
+                    let result = result?;
+                    loan_env!(self, maybe_fetch_rw_proxy(result, true))
                 } else {
                     // Sync Interpreter locals to env before spawning threads so closures capture them
                     if name == "start" {
