@@ -733,6 +733,21 @@
   pin `t/substr-eq-native.t`(16)。全 t/(11566)・S32-str/substr-eq.t・indices.t・index.t 回帰ゼロ。**★残る clean な string drain は枯渇**: `comb` 単純形は既に native（survey の 93 は
   regex/named-arg 形）、`trans`(65) は range（spec 文字列内 `a..z`）/list-pair/regex で複雑、`Int`/`Num`/`Str.new` は ctor 完了済み領域。残カテゴリ＝iterator protocol 群（lazy・別軸）/
   MOP carrier（反射・撲滅対象外）/concurrency（tap/emit・別軸）で、いずれも §D(b) の純 drain でなく別 substrate 前提。**
+- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = `Buf.write-int*`/`.write-uint*`/`.write-num*` 族の VM ネイティブ化)**: method-fallback 再計測（全1285 whitelist
+  集計）で string drain 枯渇後の **最頻 clean-drain カテゴリ**が判明＝`write-int8/16/32/64/128`(各 3852) ＋ `write-uint*`(各 2220) ＋ `write-num32/64`(各 492)＝計 ~3 万 fallback。
+  発生源は **S03-buf/write-int.t / write-num.t**（`existing."$write"($off,$val[,$endian])` の `\sigilless` instance 形と `buf8."$write"(...)` の type-object 形＝両方 `"$write"`
+  **動的メソッド名**）。既存 native 化は **mut-bound `$`-var の static 名**（`try_native_buf_mut`・CallMethodMut）のみで、(1) type-object 形（`Value::Package` 受け手＝fresh buf 返し）
+  (2) `\sigilless`/`BareWord` instance 形（non-mut 動的 op `exec_call_method_dynamic_op`→`try_native_method` 経由・writeback 先 var 無し）(3) `$`-var 動的名（mut 動的 op
+  `exec_call_method_dynamic_mut_op`＝native fast path を一切試さず直接 `vm_call_method_mut_with_values`）の 3 経路が全て interpreter にバウンスしていた。**修正**＝新 pure helper
+  `buf_write_int::try_native_buf_write(target, method, args)` が type-object（fresh `make_buf_value`）と instance（shared cell へ `write_back_sharing`→`commit_attrs` で in-place commit
+  →全 binding が観測）の両形を 1 impl で扱う（byte transform は既存共有 `apply_write_int`/`apply_write_num`）。これを **`try_native_method` 冒頭**に wire（arity-keyed `native_method_*arg` は
+  3 引数〔offset,value,endian〕を dispatch 不可なので専用分岐が必須）→ 経路(1)(2) を drain。経路(3) は `exec_call_method_dynamic_mut_op` で generic fork 前に `try_native_buf_mut` を呼んで drain。
+  **フォールスルー維持**＝`Blob`/`blob8`（type-object はメソッド無し・instance は immutable で interpreter が "Cannot modify immutable Blob" を raise・現挙動 byte-identical）/非Int offset
+  （Whatever 位置解決）/負数・範囲外（`apply_write_int` が Err→`dies-ok` 維持）/arity≠2,3。**実測 write-int.t fallback 20240→0・write-num.t 656→0**（両 method-call fallback 完全消滅）。
+  全 t/(11615 PASS)・S03-buf 全緑・roast 108 サンプル回帰ゼロ。pin `t/buf-write-native.t`(27・type-object/scalar/sigilless 動的名/round-trip/error 全形)。**★教訓: 動的メソッド名
+  （`."$name"()`）には 2 つの専用 opcode（`CallMethodDynamic`〔BareWord/literal target〕/`CallMethodDynamicMut`〔`$`/`@`/`%`-var target〕）があり、後者は native fast path を一切試さない
+  ＝static 名で native 化済のメソッドも動的名だと全バウンス。動的名で呼ばれる native メソッド族を drain するには両 dynamic op に fast-path 呼び出しを足す要あり。instance mutator の non-mut
+  動的形は writeback 先 var が無くても shared attribute cell（`commit_attrs`）への in-place commit で `\sigilless`-bound に伝播する（env insert 不要）。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

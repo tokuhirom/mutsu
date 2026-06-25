@@ -295,6 +295,15 @@ impl Interpreter {
             call_args.push(target);
             call_args.extend(args);
             self.vm_call_on_value(name_val, call_args, None)
+        } else if modifier.is_none()
+            && let Some(result) = self.try_native_buf_mut(&target_name, &target, &method, &args)
+        {
+            // Native fast path for mutating Buf write methods (`write-int*`/`write-uint*`/
+            // `write-num*`/`write-bits`) reached via a *dynamic* method name
+            // (`$buf."$write"(...)`) on a mutable Buf instance — mirror the static
+            // CallMethodMut path (ledger §D(b)). Type-object / non-Buf receivers and
+            // bad arity fall through to the generic fork unchanged.
+            result
         } else {
             // TODO: compile to bytecode — generic mut method fork (ledger §1).
             self.vm_call_method_mut_with_values(&target_name, target, &method, args)

@@ -78,6 +78,17 @@ impl Interpreter {
         if method_sym == "squish" || method_sym == "tail" {
             return None;
         }
+        // Buf write methods (`write-int*`/`write-uint*`/`write-num*`) on a type object
+        // (`buf8.write-int32($off, $val, [$endian])` → fresh buf) or a non-mut-bound
+        // instance (`\sigilless`/`(buf8.new).write-...` → mutate the shared cell). Pure
+        // value / VM-owned shared-cell mutation, no interpreter state. Handle natively
+        // (2-or-3-arg form, which the arity-keyed native_method_*arg dispatch below
+        // cannot cover for 3 args). Blob and bad arity fall through to the interpreter.
+        if let Some(result) =
+            crate::builtins::buf_write_int::try_native_buf_write(target, &method_name, args)
+        {
+            return Some(result);
+        }
         // Mixin role method bypass
         if self.mixin_role_has_method(target, &method_name) {
             return None;
