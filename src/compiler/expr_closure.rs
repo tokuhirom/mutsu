@@ -367,7 +367,7 @@ impl Compiler {
             return;
         }
         if let Expr::PseudoStash(stash_name) = target
-            && stash_name == "MY::"
+            && (stash_name == "MY::" || stash_name == "PROCESS::")
             && let Expr::Literal(Value::Str(key_name)) = index
         {
             self.compile_expr(value);
