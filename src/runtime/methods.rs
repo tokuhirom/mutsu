@@ -394,6 +394,42 @@ impl Interpreter {
         if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {
             return result;
         }
+        // `Rakudo::Internals.REGISTER-DYNAMIC: '$*name', { ... }` installs a
+        // default for a process dynamic variable by running the initializer
+        // block (which typically does `PROCESS::<$name> = ...`). Real Rakudo runs
+        // it lazily on first access; running it eagerly here is sufficient for the
+        // modules that use it (e.g. DBIish's `$*DBI-DEFS`).
+        if method == "REGISTER-DYNAMIC"
+            && matches!(&target, Value::Package(name) if name.resolve() == "Rakudo::Internals")
+        {
+            let (clean_args, _) = self.sanitize_call_args(&args);
+            let name = clean_args
+                .iter()
+                .find(|a| matches!(a, Value::Str(_)))
+                .map(|v| v.to_string_value());
+            let block = clean_args
+                .iter()
+                .find(|a| matches!(a, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }))
+                .cloned();
+            if let Some(block) = block {
+                // Run the initializer block. Its `PROCESS::<$name> = ...` writes
+                // into the block's own frame (lost on return), so also bind the
+                // dynamic var in the caller's scope from the block's result — the
+                // assignment's value — keyed by the supplied name. `$*name`
+                // (env key `*name`) then resolves.
+                let result = self.call_sub_value(block, Vec::new(), false)?;
+                if let Some(name) = name {
+                    let env_key = match name.strip_prefix("$*").or_else(|| name.strip_prefix('$')) {
+                        Some(bare) => format!("*{bare}"),
+                        None => format!("*{name}"),
+                    };
+                    if self.env().get(&env_key).is_none() {
+                        self.env_mut().insert(env_key, result);
+                    }
+                }
+            }
+            return Ok(Value::Nil);
+        }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
             return result;

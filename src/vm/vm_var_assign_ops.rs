@@ -4300,6 +4300,35 @@ impl Interpreter {
         key_name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let stash_name = Self::const_str(code, stash_name_idx);
+        // `PROCESS::<$name> = value` sets the process-level dynamic variable, so
+        // a later `$*name` (stored in the env as `*name`) resolves to it. This is
+        // how `Rakudo::Internals.REGISTER-DYNAMIC` installs defaults (e.g.
+        // DBIish's `$*DBI-DEFS`).
+        if stash_name == "PROCESS::" {
+            let raw_key = Self::const_str(code, key_name_idx).to_string();
+            // Map the sigiled stash key to the env dynamic-var key:
+            //   $name → *name, @name → @*name, %name → %*name, name → *name
+            let env_key = match raw_key.chars().next() {
+                Some('$') => format!("*{}", &raw_key[1..]),
+                Some('@') => format!("@*{}", &raw_key[1..]),
+                Some('%') => format!("%*{}", &raw_key[1..]),
+                _ => format!("*{raw_key}"),
+            };
+            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let val = if env_key.starts_with('@') {
+                runtime::coerce_to_array(val)
+            } else if env_key.starts_with('%') {
+                self.coerce_hash_var_value(&env_key, val)?
+            } else {
+                Self::normalize_scalar_assignment_value(val)
+            };
+            self.env_mut().insert(env_key, val.clone());
+            // An assignment is an expression: leave the assigned value on the
+            // stack so `Rakudo::Internals.REGISTER-DYNAMIC`'s block (whose body is
+            // `PROCESS::<$x> = ...`) returns it.
+            self.stack.push(val);
+            return Ok(());
+        }
         if stash_name != "MY::" {
             return Err(RuntimeError::new(format!(
                 "Unsupported pseudo-stash assignment target {stash_name}"
