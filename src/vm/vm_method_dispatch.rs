@@ -1094,6 +1094,33 @@ impl Interpreter {
             }
         }
 
+        // Bind the method's implicit `*%_` slurpy (a Hash of the leftover named
+        // args, empty when none). The compiler adds a `*%_` param to every method;
+        // the slow `bind_function_args_values` path fills it, but this fast path
+        // binds positionals by index and skips slurpy params, leaving `%_` as
+        // `Any` -- so `|%_` would splat a stray positional. Compute it here and let
+        // the locals-init loop fill the `%_` slot.
+        let implicit_named_slurpy: Option<Value> = if method_def
+            .param_defs
+            .iter()
+            .any(|pd| pd.slurpy && pd.name == "%_")
+        {
+            Some(Self::implicit_method_named_slurpy(
+                &method_def.param_defs,
+                &args,
+            ))
+        } else {
+            None
+        };
+
+        // Bind the implicit `*%_` into env so a `%_` read finds it there first
+        // (its method local is stored sigiled as "%_", which the bare-name local
+        // lookup -- it strips the sigil and searches "_" -- can't resolve, falling
+        // back to the topic `$_`).
+        if let Some(slurpy) = &implicit_named_slurpy {
+            self.env_mut().insert("%_".to_string(), slurpy.clone());
+        }
+
         // Raku: routine parameters are read-only by default (`method m($x) { $x = 5 }`
         // dies). The slow path does this in `bind_function_args_values`; the fast
         // path binds params directly, so mark `$` scalar params read-only here.
