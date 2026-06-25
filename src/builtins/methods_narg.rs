@@ -482,7 +482,7 @@ pub(crate) fn native_contains_with_options(
     target: &Value,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    if !matches!(target, Value::Str(_)) {
+    if !is_str_or_match_receiver(target) {
         return None;
     }
     let mut positional: Vec<&Value> = Vec::new();
@@ -529,6 +529,17 @@ pub(crate) fn native_contains_with_options(
     Some(Ok(result))
 }
 
+/// The string-search methods (`contains` / `starts-with` / `ends-with` / `substr-eq`)
+/// accept a `Str` receiver or a (successful) `Match`. A Match coerces to its matched
+/// substring via `to_string_value()` exactly as `Cool.Str` would, so the same native
+/// search applies — the `text = target.to_string_value()` in each helper yields the
+/// matched substring. A failed match is `Any`/`Nil` (not a Match instance) and so is
+/// not accepted here; the interpreter raises its "No such method" for that.
+fn is_str_or_match_receiver(target: &Value) -> bool {
+    matches!(target, Value::Str(_))
+        || matches!(target, Value::Instance { class_name, .. } if class_name == "Match")
+}
+
 /// Separate `(needle, …)`-style positional args from the `:i`/`:ignorecase`/
 /// `:m`/`:ignoremark` named markings shared by `contains` / `starts-with` /
 /// `ends-with` / `substr-eq`. Returns `None` if an *unexpected* named arg is
@@ -567,7 +578,7 @@ pub(crate) fn native_prefix_suffix_with_options(
     args: &[Value],
     is_prefix: bool,
 ) -> Option<Result<Value, RuntimeError>> {
-    if !matches!(target, Value::Str(_)) {
+    if !is_str_or_match_receiver(target) {
         return None;
     }
     let (positional, ignore_case, ignore_mark) = split_string_match_args(args)?;
@@ -610,7 +621,7 @@ pub(crate) fn native_substr_eq_with_options(
     target: &Value,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    if !matches!(target, Value::Str(_)) {
+    if !is_str_or_match_receiver(target) {
         return None;
     }
     let (positional, ignore_case, ignore_mark) = split_string_match_args(args)?;
