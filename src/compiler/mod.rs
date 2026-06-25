@@ -215,6 +215,14 @@ impl Compiler {
     }
 
     pub(crate) fn qualify_package_name(&self, name: &str) -> String {
+        // `GLOBAL` is the implicit root namespace: `package GLOBAL::X::Y` declares
+        // `X::Y` absolutely, regardless of the enclosing package. Strip the leading
+        // `GLOBAL::` and do NOT prepend the current package (otherwise a nested
+        // `package GLOBAL::X::DBIish` inside `unit class DBIish` would wrongly
+        // become `DBIish::X::DBIish`).
+        if let Some(absolute) = name.strip_prefix("GLOBAL::") {
+            return absolute.to_string();
+        }
         if self.current_package == "GLOBAL" || self.current_package.contains("::&") {
             name.to_string()
         } else {
