@@ -759,12 +759,19 @@ impl Interpreter {
             ));
         }
         // If the value is an Instance, try calling the Numeric method
-        if let Value::Instance { .. } = &val
-            && let Ok(result) =
-                self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![])
-        {
-            self.stack.push(result);
-            return Ok(());
+        if let Value::Instance { .. } = &val {
+            // Slice F: a user `Numeric` method can mutate a captured-outer caller
+            // lexical (`my $c; method Numeric { $c++; ... }`); this op-level
+            // redispatch has no surrounding CallMethod op to drain the writeback,
+            // so capture the caller frame's code and reconcile after (see
+            // coerce_numeric_bridge_value).
+            let caller_code = self.current_code;
+            let result = self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![]);
+            self.reconcile_caller_after_lazy_force(caller_code);
+            if let Ok(result) = result {
+                self.stack.push(result);
+                return Ok(());
+            }
         }
         // Force a lazy IO words/lines iterator so numeric coercion counts its
         // elements (e.g. `+$fh.words` / `+$fh.lines`) rather than yielding 0.
@@ -854,13 +861,20 @@ impl Interpreter {
         }
         // If the value is an Instance, try calling the Stringy method, then Str
         if let Value::Instance { .. } = &val {
-            if let Ok(result) =
-                self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![])
-            {
+            // Slice F: a user `Stringy`/`Str` method can mutate a captured-outer
+            // caller lexical; reconcile its writeback to the caller's slot (see
+            // coerce_numeric_bridge_value).
+            let caller_code = self.current_code;
+            let stringy = self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![]);
+            self.reconcile_caller_after_lazy_force(caller_code);
+            if let Ok(result) = stringy {
                 self.stack.push(result);
                 return Ok(());
             }
-            if let Ok(result) = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![]) {
+            let caller_code = self.current_code;
+            let str_r = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![]);
+            self.reconcile_caller_after_lazy_force(caller_code);
+            if let Ok(result) = str_r {
                 self.stack.push(result);
                 return Ok(());
             }
