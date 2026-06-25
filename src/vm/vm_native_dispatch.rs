@@ -371,6 +371,19 @@ impl Interpreter {
         name_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // Atomic var/element RMW markers (`__mutsu_atomic_*` / `__mutsu_cas_*`) for the
+        // `⚛`-operators. Dispatch them here directly so they don't fall through to the
+        // generic `call_function` name-match (§D state ownership). Checked before the
+        // Instance-arg bail below because a cas/store value may legitimately be an
+        // Instance (e.g. `cas($x, $old, $obj)`).
+        {
+            let name = name_sym.resolve();
+            if (name.starts_with("__mutsu_atomic_") || name.starts_with("__mutsu_cas_"))
+                && let Some(result) = self.try_native_atomic_function(name.as_str(), args)
+            {
+                return Some(result);
+            }
+        }
         if args.iter().any(|arg| matches!(arg, Value::Instance { .. })) {
             // Junction constructors wrap their arguments verbatim regardless of
             // type, so an Instance argument is safe to handle natively; every

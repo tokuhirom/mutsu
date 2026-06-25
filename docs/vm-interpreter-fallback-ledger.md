@@ -778,6 +778,18 @@
   proper-harness PASS・9 Match-invocant 形 byte-identical to raku（position・unicode CI 含む）・whitelist 回帰ゼロ。pin `t/str-search-match-invocant-native.t`(18)。**★教訓: 「別軸」と分類した
   defer も、bypass 順序（`is_native_method` テーブルに対象クラスが無ければ通過）と既存の coercion（helper が `to_string_value` で text 取得）を精査すると 1 述語の gate 緩和に圧縮できることがある。
   4 連続 string-search slice で `S32-str/{contains,starts-with,ends-with,substr-eq}.t` の method-fallback はほぼ枯渇（各 ≤14＝bare Match 形のみ）。**
+- **2026-06-25 (§D 状態所有 = atomic var/element RMW（`__mutsu_atomic_*`/`__mutsu_cas_*`）の VM ネイティブ dispatch)**: method-fallback の clean drain 枯渇後、**function-fallback** を全 whitelist 集計したところ
+  `__mutsu_atomic_add_var`(640001)/`__mutsu_atomic_post_inc_var`(320038)/`pre_inc`/`post_dec`/`pre_dec`(各 320001)/`__mutsu_cas_var`(282337)/`cas_hash_elem`(30000)/`cas_array_elem`(29420)＝
+  **計 ~250 万 fallback で function-fallback 全体を圧倒的に支配**（concurrency stress＝`⚛`-operators 駆動）。これは §D「状態所有」の直撃カテゴリ＝atomic op は VM 共有の `shared_vars`（`RwLock`）store と
+  per-attribute cell-CAS state（Phase 3）への RMW。既存 `builtin_atomic_*`/`builtin_cas_*` impl が既にその state を所有・操作しているが、**到達経路が generic な `call_function`（`vm_call_function`→`loan_env_for`→
+  ~数百 arm の名前 match）fallback だけ**だった（`try_native_function` は pure な `native_function` のみ呼ぶため `&mut self` の atomic op は素通り）。**修正**＝新 `try_native_atomic_function(name,args)`（`builtins_atomic.rs`・
+  `builtins.rs` の atomic arm 群を 1:1 ミラー・`cas_*` は `args.to_vec()`）を `try_native_function` 冒頭（Instance-arg bail より前＝`cas($x,$old,$obj)` の Instance 値も dispatch 可）で
+  `name.starts_with("__mutsu_atomic_"|"__mutsu_cas_")` 時に呼ぶ。`loan_env_for` は CP-3 collapse 後 `f(self)` の薄い passthrough＝env は両経路で同一 `self.env`・builtin は同一＝byte-identical。
+  **実測 atomic-ops.t/atomic.t の function-fallback：atomic markers が完全消滅**（cas.t stress=95003 opcodes 中 fallback 61＝残は `start`/`await`〔concurrency 別軸〕＋user-facing `cas`）。
+  全 t/(11725)・S17-lowlevel/{cas,cas-loop,cas-loop-int,atomic,atomic-ops}.t 全 PASS（atomic.t 34/34・atomic-ops.t 28/28＝debug は `for ^20000` stress で遅いが完走）・20 atomic 形 byte-identical to raku。
+  pin `t/atomic-ops-native-dispatch.t`(20)。**★教訓: method-fallback だけでなく function-fallback survey も §D の宝庫。`__mutsu_*` 内部マーカー（atomic/cas/hyper-prefix）は「pure でない（`&mut self`）」ため
+  `try_native_function`→`native_function`(pure) を素通りし generic `call_function` fallback に全部落ちていた。`try_native_function` 冒頭に `&mut self` builtin への直接 dispatch arm を足せば、巨大 stress 系の
+  fallback を一掃できる（state 所有は既に VM 側＝挙動不変の経路短絡）。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは

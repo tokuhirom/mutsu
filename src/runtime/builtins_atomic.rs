@@ -6,6 +6,39 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub(super) static ATOMIC_VAR_KEY_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 impl Interpreter {
+    /// VM-native dispatch for the atomic var/element RMW markers (`__mutsu_atomic_*`
+    /// / `__mutsu_cas_*`) the parser emits for the `⚛`-operators (`⚛=`/`⚛+=`/`⚛++`/
+    /// `--⚛`/`cas`). These reached the interpreter only through the generic
+    /// `call_function` name-match fallback; the `builtin_atomic_*` / `builtin_cas_*`
+    /// impls already own the VM-shared `shared_vars` store and the per-attribute
+    /// cell-CAS state, so the VM dispatches them directly here without the
+    /// `call_function` round-trip (§D state ownership — byte-identical, the
+    /// `call_function` arms call these exact impls on the same `self`). Returns
+    /// `None` for every other name so the caller falls through to the rest of native
+    /// dispatch.
+    pub(crate) fn try_native_atomic_function(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let r = match name {
+            "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(args),
+            "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(args),
+            "__mutsu_atomic_add_var" => self.builtin_atomic_add_var(args),
+            "__mutsu_atomic_fetch_add_var" => self.builtin_atomic_fetch_add_var(args),
+            "__mutsu_atomic_post_inc_var" => self.builtin_atomic_post_inc_var(args),
+            "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(args),
+            "__mutsu_atomic_post_dec_var" => self.builtin_atomic_post_dec_var(args),
+            "__mutsu_atomic_pre_dec_var" => self.builtin_atomic_pre_dec_var(args),
+            "__mutsu_cas_var" => self.builtin_cas_var(args.to_vec()),
+            "__mutsu_cas_array_elem" => self.builtin_cas_array_elem(args.to_vec()),
+            "__mutsu_cas_array_multidim" => self.builtin_cas_array_multidim(args.to_vec()),
+            "__mutsu_cas_hash_elem" => self.builtin_cas_hash_elem(args.to_vec()),
+            _ => return None,
+        };
+        Some(r)
+    }
+
     pub(super) fn canonical_atomic_var_name(
         &self,
         raw_name: &str,
