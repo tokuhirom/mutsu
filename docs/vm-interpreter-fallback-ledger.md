@@ -759,6 +759,16 @@
   （unicode CI・Str position 含む）・roast contains 系サンプル回帰ゼロ。pin `t/contains-options-native.t`(22)。**★教訓: starts-with/substr-eq で「named-arg は deferred」としたが、
   named-arg 形こそが実テストの主トラフィックのことがある（contains.t は全形 markings 付き）。variadic helper（positional/named 分離→interpreter dispatch ミラー）を arity dispatch 前に
   wire すれば named-arg 形も drain できる。受け手が Str 以外（Match 等 coercion 要）の半分は別軸で残る。**
+- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = `Str.starts-with`/`.ends-with`/`.substr-eq` の `:i` named-arg 形の VM ネイティブ化)**: contains slice で確立した
+  variadic-helper パターンを兄弟 string-method に横展開。`S32-str/{starts-with,ends-with,substr-eq}.t` も全形に markings named-arg を付ける（contains.t と同型）ため、無印
+  native 形（starts-with=1arg・substr-eq=2arg）が drain 済でも `:i` 付き形（Pair で arity 超過）は 100% interpreter にバウンスしていた。**修正**＝新ヘルパー `native_prefix_suffix_with_options`
+  （starts-with/ends-with）/ `native_substr_eq_with_options`（substr-eq）が共有 `split_string_match_args`（positional/named 分離・`i`/`ignorecase`=ci・`m`/`ignoremark`=mark・未知 named は
+  defer）で markings を解釈し、`dispatch_prefix_suffix_check`/`dispatch_substr_eq` を厳密ミラー。`try_native_method` の arity dispatch 直前（contains arm の隣）に wire。**フォールスルー維持**＝
+  非Str 受け手（**Match invocant**＝別軸）/Package needle/`:m`/`:ignoremark`（`strip_marks` decomposition は interpreter）/substr-eq の非Int-非Str position（Whatever resolution）・負数・範囲外
+  （X::OutOfRange Failure）/無印形（既存 1-/2-arg arm 維持）。**実測 starts-with.t 80→42・ends-with.t 80→42・substr-eq.t 86→48**（残＝Match invocant `:i` 形・別軸）。全 t/(11692)・
+  3 ファイル proper-harness PASS・10 named 形 byte-identical to raku（unicode CI・Str position 含む）・whitelist 回帰ゼロ。pin `t/starts-ends-substr-eq-named-native.t`(21)。**★教訓:
+  raku 参照実装は `"abc".ends-with("", :i)` で "Iteration past end of grapheme iterator" を投げる（空 needle+ci のバグ）が mutsu は正しく True を返す＝pin から該当形を除外（mutsu の方が正しい）。
+  ★string-method の `:m`/`:ignoremark` は `strip_marks`（NFD→combining-mark filter）で別処理だが、これらの roast テストは backend≠moar ゲートで `:m` 形を skip するので native 化不要・defer で十分。**
 
 ### 重要な現状認識（2026-06-08, PR-3 時点）
 **「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
