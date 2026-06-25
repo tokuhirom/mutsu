@@ -253,6 +253,11 @@ pub(super) fn parse_enum_decl_body_with_type(
         if trait_name == "export" {
             is_export = true;
         }
+        // Consume an optional parenthesized trait argument, e.g.
+        // `is export(:traits)` — without this, the variant parser mistakes the
+        // `(:traits)` for the enum's `(...)` body and the real `<values>` list
+        // after it is left dangling.
+        let r = super::super::super::helpers::skip_balanced_parens(r);
         let (r, _) = ws(r)?;
         rest = r;
     }
