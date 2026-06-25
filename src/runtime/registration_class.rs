@@ -1908,20 +1908,32 @@ impl Interpreter {
                         } else {
                             // Check for duplicate non-multi method definition.
                             // Only error if the existing method was defined in
-                            // this class (not composed from a role).
+                            // this class (not composed from a role) AND shares the
+                            // same privacy: a private `method !foo` and a public
+                            // `method foo` live in separate namespaces and do not
+                            // collide (they are stored together but dispatch filters
+                            // on `is_private`).
+                            let new_is_private = def.is_private;
                             if let Some(existing) = class_def.methods.get(&resolved_method_name) {
-                                let all_from_role =
-                                    existing.iter().all(|m| m.role_origin.is_some());
-                                if !all_from_role {
+                                let conflicts = existing.iter().any(|m| {
+                                    m.role_origin.is_none() && m.is_private == new_is_private
+                                });
+                                if conflicts {
                                     return Err(RuntimeError::new(format!(
                                         "Package '{}' already has a method '{}' (did you mean to declare a multi method?)",
                                         name, resolved_method_name
                                     )));
                                 }
                             }
-                            class_def
+                            // A non-multi method replaces prior same-privacy
+                            // candidates but must preserve methods of the OTHER
+                            // privacy stored under the same name.
+                            let entry = class_def
                                 .methods
-                                .insert(resolved_method_name.clone(), vec![def]);
+                                .entry(resolved_method_name.clone())
+                                .or_default();
+                            entry.retain(|m| m.is_private != new_is_private);
+                            entry.push(def);
                         }
                     }
                     // A method declared `is export` is recorded as an export of
