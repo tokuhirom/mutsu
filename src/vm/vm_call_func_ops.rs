@@ -1169,6 +1169,13 @@ impl Interpreter {
                     // byte-identical.
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
+                } else if let Some(result) = self.try_native_collection_function(name, &args) {
+                    // Pure list/coercion builtin function (`val`/`list`/`slip`/`hash`).
+                    // User subs resolved above, so this is the builtin — dispatch
+                    // natively instead of the tree-walk fallback (§D(b) dispatch
+                    // chain). Same builtin_* impls as call_function => byte-identical.
+                    let result = result?;
+                    loan_env!(self, maybe_fetch_rw_proxy(result, true))
                 } else if let Some(op) = name
                     .strip_prefix("infix:<")
                     .and_then(|s| s.strip_suffix('>'))

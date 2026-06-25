@@ -93,6 +93,12 @@ impl Interpreter {
         if let Some(result) = self.try_native_io_function(name, &args) {
             return result;
         }
+        // Pure list/coercion builtin function (`val`/`list`/`slip`/`hash`): user subs
+        // resolved above, so dispatch the builtin natively instead of a tree-walk
+        // fallback (§D(b) dispatch chain). Byte-identical to call_function's arms.
+        if let Some(result) = self.try_native_collection_function(name, &args) {
+            return result;
+        }
         // CARRIER (EVAL/pseudo-package) vs TODO: compile to bytecode (else branch =
         // true tree-walk function fallback). See ledger §2/§C.
         if Self::is_interpreter_carrier_function(name) {

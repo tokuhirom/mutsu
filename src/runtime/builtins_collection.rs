@@ -264,6 +264,28 @@ impl Interpreter {
         }
     }
 
+    /// VM-native dispatch for the pure list/coercion builtin *functions*
+    /// (`val`/`list`/`slip`/`hash`) — collection constructors that reached the
+    /// interpreter only via the generic `call_function` name-match fallback. They are
+    /// pure / `&self` (no tree-walk, no mutable interpreter state beyond reading
+    /// `self`), so the VM dispatches them straight to the existing `builtin_*` impls.
+    /// Mirrors the `call_function` arms 1:1 — same args, same `self` => byte-identical.
+    /// Dispatched after all user-sub resolution (so a user `sub list` still wins).
+    pub(crate) fn try_native_collection_function(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let r = match name {
+            "val" => Ok(builtin_val(args)),
+            "list" => self.builtin_list(args),
+            "slip" | "Slip" => self.builtin_slip(args),
+            "hash" => self.builtin_hash(args),
+            _ => return None,
+        };
+        Some(r)
+    }
+
     pub(super) fn builtin_hash(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut flat_values = Vec::new();
         for arg in args {
