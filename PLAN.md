@@ -196,9 +196,20 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     `!pd.name.starts_with('&')` ガードを撤去（`code_signature`〔`&cb:(Int)`〕と default 値の除外は維持）。`multi f(&cb){…}` 候補が
     bare multi / proto 経由とも compiled 実行され interpreter fallback を解消（proto `&cb` 経由 25%→0%）。block literal / 引数付き
     callback / `&name` 渡し / outer 変数を閉包する callback まで byte-identical（pin=`t/multi-amp-param-otf-dispatch.t`(8)）。
+  - [x] **非builtin モジュール/動的 single sub の OTF 化（default-param 含む）= 完了（#TBD）→ [news/2026-06.md](news/2026-06.md)**。
+    `use Mod; greet(...)` のような **importing scope の compiled_fns に無い** non-builtin single sub は `user_function_matches_call`
+    ブランチ経由で常に tree-walk していた（module sub は 100% interpreter fallback）。`is_builtin_function` ゲートを「builtin-shadow は
+    `def_is_otf_compilable`（strict・default 除外）／非builtin は新 `def_is_otf_compilable_module_single`（default 許可）」に分岐。
+    **非builtin single の default は name-cache 安全**（同名 builtin が無く mis-bind 不可・single 候補は常に同 def 解決・light-call fast path は
+    default 除外で slow binding が default 評価）。**保守ゲート**＝state（並行共有セル）・sigilless/`is rw`/`is raw`/code-sig/sub-sig/trait 付き param・
+    nested routine decl・`subtest`/`CATCH`/`CONTROL`/phaser・`start`/`EVAL`/`EVALFILE`（CALLER context）・`is test-assertion` を全除外
+    （`module_otf_body_needs_interpreter` 再帰スキャン）＝interpreter 結合構文は fallback 維持。実測 module `greet($n,$g="Hello")` 100%→0%。
+    回帰 3 件を捕捉・修正（concurrent-state-var＝state 共有／sigilless-params＝EVAL 経由 alias writeback／throws-like-any＝subtest+CATCH+EVAL）。
+    pin=`t/module-sub-otf-dispatch.t`(14)。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ・`@a[1..*]` 再帰の immutable-List bug は §F）/
     `code_signature`〔`&cb:(Int)`〕param を持つ候補の OTF 化（依然除外・別軸で `&cb:(Int)` vs `&cb` の resolution ambiguity も要）/
-    default-param OTF の **単一候補（builtin-shadow / 非builtin）** 版（name-cache 汚染リスクで除外維持）/ nextsame+rw チェーン（上記）。
+    default-param OTF の **builtin-shadow 単一候補**（name-cache 汚染リスクで除外維持・PR #3546）/ nextsame+rw チェーン（上記）/
+    モジュール sub OTF の interpreter 結合構文（state/EVAL/CATCH/sigilless 等）＝保守ゲートで除外中・compiled_fns 拡充が本筋。
 
 ---
 

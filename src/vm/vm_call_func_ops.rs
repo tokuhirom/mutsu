@@ -703,11 +703,19 @@ impl Interpreter {
             // construct). proto / multi keep going through call_function_fallback so
             // candidate dispatch stays correct. Must not fall through to the native
             // arm below (the shadowed builtin).
-            if crate::runtime::Interpreter::is_builtin_function(&name)
-                && !self.has_proto(&name)
+            if !self.has_proto(&name)
                 && !self.has_multi_candidates_cached(&name)
                 && let Some(def) = loan_env!(self, resolve_function_with_types(&name, &args))
-                && Self::def_is_otf_compilable(&def)
+                && if crate::runtime::Interpreter::is_builtin_function(&name) {
+                    // Genuine builtin shadow: strict gate (no default param —
+                    // name-cache pollution hazard, PR #3546).
+                    Self::def_is_otf_compilable(&def)
+                } else {
+                    // Non-builtin module/dynamic single sub: defaults are
+                    // name-cache-safe here (no builtin to mis-bind); interpreter-
+                    // coupled bodies/signatures stay excluded.
+                    Self::def_is_otf_compilable_module_single(&def)
+                }
             {
                 let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
                 self.stack.push(result);
@@ -1096,11 +1104,19 @@ impl Interpreter {
                     // the interpreter (e.g. a nested `sub` whose `when` control flow
                     // must not escape the enclosing routine — Test::Util's
                     // is-deeply-junction). Those keep tree-walking unchanged.
-                    if crate::runtime::Interpreter::is_builtin_function(name)
-                        && !self.has_proto(name)
+                    if !self.has_proto(name)
                         && !self.has_multi_candidates_cached(name)
                         && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
-                        && Self::def_is_otf_compilable(&def)
+                        && if crate::runtime::Interpreter::is_builtin_function(name) {
+                            // Genuine builtin shadow: strict gate (no default —
+                            // name-cache pollution hazard, PR #3546).
+                            Self::def_is_otf_compilable(&def)
+                        } else {
+                            // Non-builtin module/dynamic single sub: defaults are
+                            // name-cache-safe here (no builtin to mis-bind), but
+                            // interpreter-coupled bodies/signatures stay excluded.
+                            Self::def_is_otf_compilable_module_single(&def)
+                        }
                     {
                         self.compile_and_call_function_def(&def, args, compiled_fns)
                     } else {
@@ -1529,7 +1545,10 @@ impl Interpreter {
     /// default-OTF (PR #3546: Test::Util's `our sub run(Str, Str = '')` shadowing
     /// the `run` builtin). The compiled binding (`bind_function_args_values`)
     /// evaluates defaults exactly as the interpreter does, so this is
-    /// byte-identical (ledger §D, multi-dispatch VM-ization).
+    /// byte-identical (ledger §D, multi-dispatch VM-ization). (For non-builtin
+    /// single module/dynamic subs, the name-cache is also safe — see
+    /// `def_is_otf_compilable_module_single`, which carries extra body/signature
+    /// gates those subs need.)
     pub(super) fn def_is_otf_compilable_multi_candidate(def: &crate::ast::FunctionDef) -> bool {
         !Self::function_body_needs_interpreter(&def.body)
             && def.param_defs.iter().all(|pd| pd.code_signature.is_none())
@@ -1561,6 +1580,114 @@ impl Interpreter {
             Expr::Call { name, args } => {
                 // start blocks need the interpreter for proper thread spawning
                 name.resolve() == "start" || args.iter().any(Self::expr_needs_interpreter)
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether a *non-builtin* single module/dynamic sub (reached via the
+    /// `user_function_matches_call` branch) is safe to OTF-compile to bytecode
+    /// instead of tree-walking through `call_function_fallback`.
+    ///
+    /// A genuine builtin shadow is gated by `def_is_otf_compilable` (PR-2), but
+    /// an ordinary module sub may contain interpreter-coupled constructs that
+    /// `def_is_otf_compilable` does not catch, whose semantics are NOT preserved
+    /// when the def is compiled standalone on-the-fly:
+    ///   - a nested routine decl whose non-local control flow must target the
+    ///     nested routine, not escape it (Test::Util's `is-deeply-junction`'s
+    ///     nested `junction-guts` + `when`),
+    ///   - a `state` variable shared across `start` threads (a routine's state
+    ///     lives in a shared cell that the tree-walk path owns — t/concurrent-state-var),
+    ///   - `EVAL`/`EVALFILE` with a `CALLER::` context, `subtest`, `CATCH`/
+    ///     `CONTROL` handlers, phasers, `start` (all couple to the interpreter's
+    ///     caller / test / dispatch context — Test::Util's `throws-like-any`),
+    ///   - `is rw`/`is raw`/sigilless params whose alias writeback to the caller
+    ///     must survive across an `EVAL` boundary (t/sigilless-params).
+    ///
+    /// Defaults ARE allowed (name-cache-safe: no same-named builtin to mis-bind,
+    /// and a single candidate always resolves to this def). Bodies and
+    /// signatures that pass this gate compile and run identically OTF vs
+    /// precompiled (ledger §D, multi-dispatch VM-ization). Being too strict here
+    /// is harmless — it just keeps the sub on the interpreter fallback.
+    pub(super) fn def_is_otf_compilable_module_single(def: &crate::ast::FunctionDef) -> bool {
+        !def.is_test_assertion
+            && !def.is_rw
+            && !def.is_raw
+            && def.param_defs.iter().all(|pd| {
+                pd.code_signature.is_none()
+                    && !pd.sigilless
+                    && pd.sub_signature.is_none()
+                    && pd.traits.is_empty()
+            })
+            && !Self::function_body_declares_state(&def.body)
+            && !Self::module_otf_body_needs_interpreter(&def.body)
+    }
+
+    /// Recursively detect interpreter-coupled statements/expressions in a module
+    /// sub body that block standalone OTF compilation (see
+    /// `def_is_otf_compilable_module_single`). Conservative: any unrecognized
+    /// nesting that could hide a risky construct keeps the sub on the
+    /// interpreter, so a missed case only costs a fallback, never correctness.
+    fn module_otf_body_needs_interpreter(body: &[crate::ast::Stmt]) -> bool {
+        body.iter().any(Self::module_otf_stmt_needs_interpreter)
+    }
+
+    fn module_otf_stmt_needs_interpreter(stmt: &crate::ast::Stmt) -> bool {
+        use crate::ast::Stmt;
+        match stmt {
+            // Nested decls, subtests, catch/control handlers, and phasers couple
+            // to the interpreter's dispatch / caller / test context.
+            Stmt::ClassDecl { .. }
+            | Stmt::RoleDecl { .. }
+            | Stmt::SubDecl { .. }
+            | Stmt::ProtoDecl { .. }
+            | Stmt::TokenDecl { .. }
+            | Stmt::Subtest { .. }
+            | Stmt::Catch(_)
+            | Stmt::Control(_)
+            | Stmt::Phaser { .. } => true,
+            Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                Self::module_otf_body_needs_interpreter(then_branch)
+                    || Self::module_otf_body_needs_interpreter(else_branch)
+            }
+            Stmt::While { body, .. }
+            | Stmt::For { body, .. }
+            | Stmt::Loop { body, .. }
+            | Stmt::Given { body, .. }
+            | Stmt::When { body, .. }
+            | Stmt::Whenever { body, .. }
+            | Stmt::React { body, .. } => Self::module_otf_body_needs_interpreter(body),
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Default(body) => {
+                Self::module_otf_body_needs_interpreter(body)
+            }
+            Stmt::Expr(e) => Self::module_otf_expr_needs_interpreter(e),
+            _ => false,
+        }
+    }
+
+    fn module_otf_expr_needs_interpreter(expr: &crate::ast::Expr) -> bool {
+        use crate::ast::Expr;
+        match expr {
+            Expr::PhaserExpr { .. } | Expr::Once { .. } => true,
+            Expr::DoStmt(stmt) => Self::module_otf_stmt_needs_interpreter(stmt),
+            Expr::Block(body) => Self::module_otf_body_needs_interpreter(body),
+            Expr::MethodCall { target, args, .. } => {
+                Self::module_otf_expr_needs_interpreter(target)
+                    || args.iter().any(Self::module_otf_expr_needs_interpreter)
+            }
+            Expr::Call { name, args } => {
+                let n = name.resolve();
+                // start spawns a thread; EVAL/EVALFILE run on a sub-Interpreter
+                // with a CALLER:: context that the standalone OTF compile cannot
+                // reconstruct.
+                n == "start"
+                    || n == "EVAL"
+                    || n == "EVALFILE"
+                    || args.iter().any(Self::module_otf_expr_needs_interpreter)
             }
             _ => false,
         }
