@@ -50,6 +50,16 @@ fn function_carrier_by_name() -> &'static Mutex<HashMap<String, u64>> {
     static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
     BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
 }
+
+/// Per-name histogram of method calls that reached *genuine AST tree-walking* of a
+/// user-defined method body (`run_instance_method` / `run_instance_method_resolved`),
+/// as opposed to native handlers reached via the catch-all (which `record_method_fallback`
+/// over-counts). This is the authoritative measure for the §D(b) tree-walk removal:
+/// only these calls keep `run_instance_method` alive.
+fn tree_walk_method_by_name() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
+}
 // Dual-store (locals <-> env) sync cost. See docs/vm-dual-store.md.
 static CLONE_ENV: AtomicU64 = AtomicU64::new(0);
 static ENV_DEEP_COPY: AtomicU64 = AtomicU64::new(0);
@@ -69,6 +79,17 @@ pub(crate) fn enabled() -> bool {
 pub(crate) fn record_method_dispatch() {
     if enabled() {
         METHOD_TOTAL.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record that a method call reached genuine AST tree-walking of a user method body
+/// (`run_instance_method[_resolved]`). The authoritative §D(b) removal target.
+#[inline]
+pub(crate) fn record_tree_walk_method(name: &str) {
+    if enabled()
+        && let Ok(mut map) = tree_walk_method_by_name().lock()
+    {
+        *map.entry(name.to_string()).or_insert(0) += 1;
     }
 }
 
@@ -220,6 +241,24 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] method-fallback by name (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    if let Ok(map) = tree_walk_method_by_name().lock()
+        && !map.is_empty()
+    {
+        let total: u64 = map.values().sum();
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] tree-walk method bodies total={} by name (top {}): {}",
+            total,
             top.len(),
             top.join(" ")
         );
