@@ -245,6 +245,23 @@ fn call_arg_ternary_expr(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
+/// Parse a ternary-level expression that does NOT consume a trailing simple or
+/// compound assignment (`=`, `+=`, ...). Used for signature `where` constraints,
+/// where a following `=` introduces the parameter default rather than an
+/// assignment to the constraint expression. `ternary_mode` cannot be reused here
+/// because its no-`??` fallback (`or_expr_mode`) includes assignment, which would
+/// swallow the default value (e.g. `$x where Int = 9`).
+pub(super) fn ternary_no_assign(input: &str) -> PResult<'_, Expr> {
+    let (rest, cond) = or_expr_no_assign_mode(input, ExprMode::Full)?;
+    let (rest_ws, _) = ws(rest)?;
+    if rest_ws.starts_with("??") {
+        // A conditional constraint: the full ternary parser is safe because a
+        // top-level `=` only appears after the complete `?? !!` expression.
+        return ternary_mode(input, ExprMode::Full);
+    }
+    Ok((rest, cond))
+}
+
 pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (rest, cond) = or_expr_no_assign_mode(input, mode)?;
     let (rest_ws, _) = ws(rest)?;

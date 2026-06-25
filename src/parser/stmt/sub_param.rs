@@ -296,7 +296,10 @@ fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    expression(input)
+    // Parse the constraint without consuming a trailing `=` default value: in a
+    // signature `$x where <constraint> = <default>`, the `=` introduces the
+    // parameter default, not an assignment to the constraint expression.
+    crate::parser::expr::expression_no_assign(input)
 }
 
 fn malformed_double_closure_error() -> PError {
