@@ -2104,7 +2104,12 @@ pub(super) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
                 brace_depth -= 1;
                 idx += 1;
             }
-            b',' if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => break,
+            // A `,` or `;` at signature-depth ends the return constraint. Since a
+            // `-->` return constraint must be the LAST element of the signature,
+            // anything after the break is a stray parameter — the caller then
+            // fails with a malformed-signature error (return constraints only
+            // allowed at the end), matching Raku's X::Syntax::Malformed.
+            b',' | b';' if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => break,
             _ => idx += 1,
         }
     }
