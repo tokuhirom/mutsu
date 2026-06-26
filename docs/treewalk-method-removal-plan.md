@@ -253,12 +253,21 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
      With that merge + gate off, `build-sibling-writeback-coherence`,
      `render-method-captured-writeback`, `native-build-construct`, and
      `coercion-method-captured-writeback` all pass.
-  2. **Hyper-rw attribute (STILL FAILS — separate blocker).** `@objs».inc` where
-     `method inc { $.count++ }` — `parallel-dispatch-regression.t` test 1. `$.count` (a
-     public rw accessor) is mis-classified into the body's `free_var_writes`; the merge then
-     propagates `"count"` as a *caller-var* writeback, corrupting the hyper-rw attribute
-     update. Needs the attribute accessor excluded from `free_var_writes`, or the hyper-rw
-     attribute commit handled, before the gate can be removed.
+  2. **Hyper-rw attribute (STILL FAILS — separate, DEEPER blocker).** `@objs».inc` where
+     `method inc { $.count++ }` — `parallel-dispatch-regression.t` test 1. `$.count` is
+     mis-classified into `free_var_writes` as `.count` (confirmed via dump). **Tried the
+     narrowest safe relaxation** (2026-06-26): gate on `free_var_writes.all(|n| n starts
+     with '.'/'!')` (attribute-accessors only) + filter `.`/`!` names out of the merged
+     pending list (so they're not propagated as caller-var). Build/render/native-build/
+     coercion + the merge cases pass, **but `@objs».inc` STILL gives `1,2,3` not `2,3,4`** —
+     when `inc` runs compiled via the helper, the **hyper dispatch path does not commit the
+     compiled method's attribute mutation back to the array element** (the tree-walk
+     `run_instance_method_resolved` path did). So the blocker is NOT just `free_var_writes`
+     classification or pending propagation — it is the **hyper (and likely junction-
+     autothread) dispatch's attribute-writeback contract** assuming the tree-walk executor.
+     This must be fixed in the hyper/autothread op's commit-of-`updated`-attrs before any
+     attribute-mutating method may run compiled there. **Reverted — do NOT relax the gate
+     until the hyper/autothread attribute commit is unified.**
   3. **Resolution caching is unsound naively.** Multi dispatch depends on arg *types* AND
      `where`/value clauses, so a `(class, method, arg-type)` cache is wrong for where/literal
      candidates — any cache must exclude those (or key on more).
