@@ -570,6 +570,8 @@ impl Interpreter {
             self.method_resolve_cache.clear();
             self.last_method_resolve = None;
             self.fast_method_cache.clear();
+            self.multi_resolve_cache.clear();
+            self.multi_type_cacheable.clear();
             // Record `&`-sigil parameter names so calls to a same-named routine
             // inside this sub bypass the name-keyed light-call caches (the param
             // can shadow a package sub of the same name).
@@ -822,6 +824,8 @@ impl Interpreter {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.multi_resolve_cache.clear();
+        self.multi_type_cacheable.clear();
         // A module load writes imported symbols into env by name; flag the env so
         // the next GetLocal barrier reconciles them into locals. (An eager
         // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
@@ -855,6 +859,8 @@ impl Interpreter {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.multi_resolve_cache.clear();
+        self.multi_type_cacheable.clear();
         // Slice F: write imported symbols through to the caller's local slots
         // (import_module recorded their names); keeps an imported `constant c`
         // coherent without the reverse pull. This op holds the outer `code`.
@@ -879,6 +885,8 @@ impl Interpreter {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.multi_resolve_cache.clear();
+        self.multi_type_cacheable.clear();
         // A module load writes imported symbols into env by name; flag the env so
         // the next GetLocal barrier reconciles them into locals. (An eager
         // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
@@ -899,6 +907,8 @@ impl Interpreter {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.multi_resolve_cache.clear();
+        self.multi_type_cacheable.clear();
         // A module load writes imported symbols into env by name; flag the env so
         // the next GetLocal barrier reconciles them into locals. (An eager
         // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
@@ -1365,6 +1375,17 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        // Registering a class can shadow a same-named earlier class (`my class A`
+        // in a fresh lexical scope) with different method bodies/candidates, so the
+        // method-resolution caches — keyed on the class NAME symbol — must be
+        // invalidated, or a cached resolution from the old class would be reused for
+        // the new one. (The multi-resolution cache made this observable:
+        // S12-methods/multi.t reuses `my class A`/`B` with multi submethods.)
+        self.method_resolve_cache.clear();
+        self.last_method_resolve = None;
+        self.fast_method_cache.clear();
+        self.multi_resolve_cache.clear();
+        self.multi_type_cacheable.clear();
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::ClassDecl {
             name,

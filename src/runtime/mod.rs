@@ -1332,6 +1332,19 @@ pub struct Interpreter {
     #[allow(clippy::type_complexity)]
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, String, Arc<MethodDef>)>,
     pub(crate) fast_method_cache: HashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
+    /// Sound multi-method resolution cache (§B): for a multi whose dispatch is
+    /// purely type+arity based (no `where` / literal / subset / `:D`/`:U` smiley /
+    /// coercion candidate), the resolved candidate is a function of the receiver
+    /// class + method + the runtime types of the positional args, so it is cached
+    /// here keyed on `(class, method, arg-type-keys)`. Cleared with the other
+    /// method caches when the registry changes.
+    #[allow(clippy::type_complexity)]
+    pub(crate) multi_resolve_cache:
+        HashMap<(Symbol, Symbol, Vec<Symbol>), Option<(String, Arc<MethodDef>)>>,
+    /// Memoized `(class, method) -> is this multi's dispatch type+arity deterministic`
+    /// (i.e. cacheable in `multi_resolve_cache`). Computed once by scanning the MRO
+    /// candidates for value-dependent constraints.
+    pub(crate) multi_type_cacheable: HashMap<(Symbol, Symbol), bool>,
     pub(crate) block_declared_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_saved_env: Vec<HashMap<String, Value>>,
@@ -3493,6 +3506,8 @@ impl Interpreter {
             method_resolve_cache: HashMap::new(),
             last_method_resolve: None,
             fast_method_cache: HashMap::new(),
+            multi_resolve_cache: HashMap::new(),
+            multi_type_cacheable: HashMap::new(),
             block_declared_vars: Vec::new(),
             loop_local_vars: Vec::new(),
             loop_local_saved_env: Vec::new(),
@@ -6160,6 +6175,8 @@ impl Interpreter {
             method_resolve_cache: HashMap::new(),
             last_method_resolve: None,
             fast_method_cache: HashMap::new(),
+            multi_resolve_cache: HashMap::new(),
+            multi_type_cacheable: HashMap::new(),
             block_declared_vars: Vec::new(),
             loop_local_vars: Vec::new(),
             loop_local_saved_env: Vec::new(),

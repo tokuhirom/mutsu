@@ -96,6 +96,125 @@ impl Interpreter {
     /// stringification (`"$obj"` → `StringConcat` → this) leaves the caller's
     /// `self` pointing at `$obj`, breaking a later `self` read in an enclosing
     /// nested sub (which resolves `self` from env via `GetSelfOrNoSelf`).
+    /// Build a per-positional-arg type key for the sound multi-resolution cache.
+    /// Returns `None` (do not cache) when any arg is value-/identity-dependent or
+    /// autothreads (`Junction`), or is a container/named-pair arg, so dispatch can
+    /// not be keyed on the positional types alone.
+    fn multi_arg_type_keys(args: &[Value]) -> Option<Vec<crate::symbol::Symbol>> {
+        let mut keys = Vec::with_capacity(args.len());
+        for a in args {
+            let key = match a {
+                Value::Instance { class_name, .. } => *class_name,
+                Value::Junction { .. }
+                | Value::Mixin(..)
+                | Value::Scalar(_)
+                | Value::ContainerRef(_)
+                | Value::Pair(..)
+                | Value::ValuePair(..)
+                | Value::Capture { .. } => return None,
+                other => {
+                    crate::symbol::Symbol::intern(crate::runtime::utils::value_type_name(other))
+                }
+            };
+            keys.push(key);
+        }
+        Some(keys)
+    }
+
+    /// Whether a `(class, method)` is a MULTI whose dispatch is purely type+arity
+    /// based — i.e. the resolved candidate is a function of the receiver class +
+    /// method + positional arg types, so it is safe to cache in
+    /// `multi_resolve_cache`. False for non-multi methods (the existing
+    /// `method_resolve_cache` handles those) and for any multi with a value-/
+    /// identity-dependent candidate (`where` / literal / subset / `:D`/`:U` smiley /
+    /// coercion). Memoized per `(class, method)`.
+    fn multi_dispatch_type_cacheable(
+        &mut self,
+        class_sym: crate::symbol::Symbol,
+        method_sym: crate::symbol::Symbol,
+        class_name: &str,
+        method_name: &str,
+    ) -> bool {
+        if let Some(&c) = self.multi_type_cacheable.get(&(class_sym, method_sym)) {
+            return c;
+        }
+        let mro = self.class_mro(class_name);
+        let mut any_multi = false;
+        let mut value_dependent = false;
+        'outer: for cn in &mro {
+            let Some(overloads) = self.registry().get_method_overloads(cn, method_name) else {
+                continue;
+            };
+            for def in &overloads {
+                if def.is_multi {
+                    any_multi = true;
+                }
+                for pd in &def.param_defs {
+                    if pd.where_constraint.is_some() || pd.literal_value.is_some() {
+                        value_dependent = true;
+                        break 'outer;
+                    }
+                    if let Some(tc) = &pd.type_constraint {
+                        // `:D`/`:U`/`:_` smiley or `Int(Str)` coercion => value/identity
+                        // dependent; a subset type carries an implicit `where`.
+                        if tc.contains(':') || tc.contains('(') {
+                            value_dependent = true;
+                            break 'outer;
+                        }
+                        let base = tc.split(['[', ' ']).next().unwrap_or(tc.as_str());
+                        if self.registry().subsets.contains_key(base) {
+                            value_dependent = true;
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+        let cacheable = any_multi && !value_dependent;
+        self.multi_type_cacheable
+            .insert((class_sym, method_sym), cacheable);
+        cacheable
+    }
+
+    /// Resolve a method, consulting the sound multi-resolution cache for a
+    /// type+arity-deterministic multi (avoids the per-call MRO/specificity walk).
+    /// Non-multi / uncacheable / un-keyable calls resolve fresh (the non-multi
+    /// caches live at the call sites). An AMBIGUOUS multi resolution is never
+    /// cached — it must re-raise `X::Multi::Ambiguous` on every call (a cache hit
+    /// would not set `dispatch_ambiguous`).
+    fn resolve_method_cached(
+        &mut self,
+        cn: &str,
+        method: &str,
+        class_sym: crate::symbol::Symbol,
+        method_sym: crate::symbol::Symbol,
+        args: &[Value],
+        target: &Value,
+    ) -> Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> {
+        if let Some(arg_keys) = Self::multi_arg_type_keys(args)
+            && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
+        {
+            let mkey = (class_sym, method_sym, arg_keys);
+            if let Some(hit) = self.multi_resolve_cache.get(&mkey) {
+                return hit.clone();
+            }
+            let resolved = loan_env!(
+                self,
+                resolve_method_with_owner_invocant(cn, method, args, target)
+            );
+            let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
+            if !self.dispatch_ambiguous {
+                self.multi_resolve_cache.insert(mkey, resolved_arc.clone());
+            }
+            return resolved_arc;
+        }
+        loan_env!(
+            self,
+            resolve_method_with_owner_invocant(cn, method, args, target)
+        )
+        .map(|(o, d)| (o, std::sync::Arc::new(d)))
+    }
+
     pub(super) fn try_compiled_method_or_interpret(
         &mut self,
         target: Value,
@@ -564,6 +683,30 @@ impl Interpreter {
                             && !def.is_multi
                         {
                             hit.clone()
+                        } else if let Some(arg_keys) = Self::multi_arg_type_keys(&args)
+                            && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
+                        {
+                            // Sound multi-method resolution cache (§B): a type+arity-
+                            // deterministic multi resolves as a function of (class,
+                            // method, positional arg types), so key it on those types
+                            // rather than re-running the MRO/specificity walk per call.
+                            let mkey = (class_sym, method_sym, arg_keys);
+                            if let Some(hit) = self.multi_resolve_cache.get(&mkey) {
+                                hit.clone()
+                            } else {
+                                let resolved = loan_env!(
+                                    self,
+                                    resolve_method_with_owner_invocant(cn, method, &args, &target)
+                                );
+                                let resolved_arc =
+                                    resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
+                                // Never cache an ambiguous multi resolution — it must
+                                // re-raise X::Multi::Ambiguous on every call.
+                                if !self.dispatch_ambiguous {
+                                    self.multi_resolve_cache.insert(mkey, resolved_arc.clone());
+                                }
+                                resolved_arc
+                            }
                         } else {
                             let resolved = loan_env!(
                                 self,
@@ -2140,10 +2283,11 @@ impl Interpreter {
             _ => None,
         };
         if let Some(cn) = class_name
-            && let Some((owner_class, method_def)) = loan_env!(
-                self,
-                resolve_method_with_owner_invocant(&cn, method, &args, &target)
-            )
+            && let Some((owner_class, method_def)) = {
+                let class_sym = crate::symbol::Symbol::intern(&cn);
+                let method_sym = crate::symbol::Symbol::intern(method);
+                self.resolve_method_cached(&cn, method, class_sym, method_sym, &args, &target)
+            }
         {
             // Ambiguous multi dispatch: two or more candidates matched equally
             // well. Raise X::Multi::Ambiguous instead of silently picking one.
@@ -2167,7 +2311,7 @@ impl Interpreter {
             // tree-walking. None → native receiver, keep interpreter fallback.
             let resolved: Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> =
                 if method_def.compiled_code.is_some() {
-                    Some((owner_class, std::sync::Arc::new(method_def)))
+                    Some((owner_class, method_def))
                 } else if !method_def.body.is_empty() {
                     self.populate_uncompiled_method(&cn, &owner_class, method, &args, &target)
                 } else {
