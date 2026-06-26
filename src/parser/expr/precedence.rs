@@ -302,13 +302,15 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             return Err(conditional_precedence_too_loose_error());
         }
         if let Expr::Binary { left, op, right } = cond {
+            // The loose word-logicals (`andthen`/`notandthen`/`or`/`orelse`) are
+            // LOOSER than the conditional `?? !!`, so when one was greedily folded
+            // into the condition the ternary must re-associate to bind tighter
+            // (its right operand). The tight `&&`/`||` are TIGHTER than `?? !!`,
+            // so they must NOT re-associate: `$a && $b ?? $c !! $d` is
+            // `($a && $b) ?? $c !! $d`, handled by the fall-through below.
             if matches!(
                 op,
-                TokenKind::AndAnd
-                    | TokenKind::AndThen
-                    | TokenKind::NotAndThen
-                    | TokenKind::OrWord
-                    | TokenKind::OrElse
+                TokenKind::AndThen | TokenKind::NotAndThen | TokenKind::OrWord | TokenKind::OrElse
             ) {
                 return Ok((
                     input,
