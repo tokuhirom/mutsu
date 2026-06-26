@@ -960,23 +960,22 @@ impl Interpreter {
     }
 
     /// §B: run an already-resolved method/submethod candidate as compiled bytecode
-    /// (`call_compiled_method`) when writeback-safe, else fall back to the tree-walk
-    /// `run_instance_method_resolved` (which `run_block`-recompiles the body each call
-    /// but merges captured-outer caller writes through the shared `env`). Same
-    /// `(result, attrs-to-commit)` contract as `run_instance_method_resolved`, so it is
-    /// a drop-in at every resolved-candidate call site (the `run_instance_method`
-    /// general dispatch and the construction/destruction BUILD/TWEAK/DESTROY runners).
+    /// (`call_compiled_method`). A candidate with no `compiled_code` is compiled
+    /// on-demand in place first (`compile_method_def_in_place`), so the only thing that
+    /// still reaches `run_instance_method_resolved` is a `handles`-delegation forwarder
+    /// (#3658 — its former tree-walk method-execution arm has been deleted). Same
+    /// `(result, attrs-to-commit)` contract at every resolved-candidate call site (the
+    /// `run_instance_method` general dispatch and the construction/destruction
+    /// BUILD/TWEAK/DESTROY runners).
     ///
-    /// Writeback-safety gate (else tree-walk): the body writes no captured-outer (free)
-    /// vars — `call_compiled_method` queues those in `pending_rw_writeback_sources` for
-    /// a surrounding *call op* to drain, which an interpreter-context caller lacks — and
-    /// it is not a delegation forwarder. `pending_rw_writeback_sources` is saved/restored
-    /// around the call (it clears on entry) so a sibling `submethod BUILD { $o++ }` write
-    /// queued for an outer `.new` survives a nested `.new` (#3620). A `submethod` that
-    /// `fail`ed comes back as an unhandled Failure *value*; re-raise it as `Err(is_fail)`
-    /// so the construction sites' fail-to-Failure handling is unchanged (a non-submethod
-    /// keeps a Failure as a legitimate return). Attributes are committed from the live
-    /// cell unless `:=`-adjusted.
+    /// `pending_rw_writeback_sources` is merged (not restored) around the call so a
+    /// sibling `submethod BUILD { $o++ }` write queued for an outer `.new` survives a
+    /// nested `.new` (#3620) and the body's own captured-outer writes also propagate. A
+    /// `submethod` that `fail`ed comes back as an unhandled Failure *value*; re-raise it
+    /// as `Err(is_fail)` so the construction sites' fail-to-Failure handling is unchanged
+    /// (a non-submethod keeps a Failure as a legitimate return). Attributes are committed
+    /// from the live cell (unwrapping a `Value::Mixin` self to its inner instance) unless
+    /// `:=`-adjusted.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn run_resolved_method_compiled_or_treewalk(
         &mut self,
@@ -1087,12 +1086,17 @@ impl Interpreter {
         }
     }
 
+    /// Forward a `handles`-delegation method to its delegate. (§B #3658: the former
+    /// tree-walk method-execution arm — the `run_block` of the user method body —
+    /// has been deleted. Every non-delegation candidate is now compiled on-demand by
+    /// its caller (`compile_method_def_in_place`) before reaching here, so this only
+    /// handles delegation forwarders.)
     pub(super) fn run_instance_method_resolved(
         &mut self,
         receiver_class_name: &str,
         owner_class: &str,
         method_def: MethodDef,
-        mut attributes: HashMap<String, Value>,
+        attributes: HashMap<String, Value>,
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
@@ -1163,477 +1167,16 @@ impl Interpreter {
             }
             return Ok((result, attributes));
         }
-        // For type-object calls (no attributes), use Package so self.new works
-        let mut base = if let Some(invocant) = invocant {
-            invocant
-        } else if attributes.is_empty() {
-            Value::Package(Symbol::intern(receiver_class_name))
-        } else {
-            Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
-        };
-        let saved_env = self.env.clone();
-        let saved_var_bindings = self.var_bindings.clone();
-        let saved_readonly = self.save_readonly_vars();
-        self.method_class_stack.push(owner_class.to_string());
-        let role_context = if self.registry().roles.contains_key(owner_class) {
-            Some(owner_class.to_string())
-        } else {
-            method_def.role_origin.clone()
-        };
-        // Set ::?CLASS / ::?ROLE compile-time variable for the method body
-        self.env.insert(
-            "?CLASS".to_string(),
-            Value::Package(Symbol::intern(owner_class)),
-        );
-        if let Some(role_name) = role_context {
-            self.env.insert(
-                "?ROLE".to_string(),
-                Value::Package(Symbol::intern(&role_name)),
-            );
-        } else {
-            self.env.remove("?ROLE");
-        }
-        self.env.insert("self".to_string(), base.clone());
-        // Also set __ANON_STATE__ for `$.foo` compound-assignment desugaring
-        self.env.insert("__ANON_STATE__".to_string(), base.clone());
-        // In Raku, methods do NOT set $_ to the invocant by default.
-        // $_ in a method body is Any unless the invocant is explicitly named $_
-        // (e.g. `method foo ($_: ) { ... }`). The invocant binding loop below
-        // will set $_ back to self if the invocant param is named "_".
-        self.env
-            .insert("_".to_string(), Value::Package(Symbol::intern("Any")));
-        // Clone the bindings out under a single guard, then write env (the guard
-        // borrows *self, so it must drop before mutating self.env).
-        let role_bindings = {
-            let registry = self.registry();
-            registry
-                .class_role_param_bindings
-                .get(owner_class)
-                .or_else(|| registry.class_role_param_bindings.get(receiver_class_name))
-                .cloned()
-        };
-        if let Some(role_bindings) = role_bindings {
-            for (name, value) in &role_bindings {
-                self.env.insert(name.clone(), value.clone());
-            }
-        }
-
-        let mut bind_params = Vec::new();
-        let mut bind_param_defs = Vec::new();
-        for (idx, param_name) in method_def.params.iter().enumerate() {
-            let is_invocant = method_def
-                .param_defs
-                .get(idx)
-                .map(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
-                .unwrap_or(false);
-            if is_invocant {
-                if let Some(pd) = method_def.param_defs.get(idx)
-                    && let Some(constraint) = &pd.type_constraint
-                {
-                    if let Some(captured_name) = constraint.strip_prefix("::") {
-                        self.bind_type_capture(captured_name, &base);
-                    } else {
-                        let coercion_target = if let Some(open) = constraint.find('(') {
-                            if constraint.ends_with(')') && open > 0 {
-                                Some(&constraint[..open])
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        };
-                        let expected = coercion_target.unwrap_or(constraint.as_str());
-                        if coercion_target.is_some() {
-                            let mut candidate = self
-                                .try_coerce_value_for_constraint(constraint, base.clone())
-                                .unwrap_or_else(|_| base.clone());
-                            if !self.type_matches_value(expected, &candidate)
-                                && let Ok(coerced) =
-                                    self.call_method_with_values(base.clone(), expected, vec![])
-                            {
-                                candidate = coerced;
-                            }
-                            if self.type_matches_value(expected, &candidate) {
-                                base = candidate;
-                                self.env.insert("self".to_string(), base.clone());
-                            }
-                        } else if !self.type_matches_value(constraint, &base)
-                            && let Ok(coerced) =
-                                self.try_coerce_value_for_constraint(constraint, base.clone())
-                        {
-                            base = coerced;
-                            self.env.insert("self".to_string(), base.clone());
-                        }
-                        if !self.type_matches_value(expected, &base) {
-                            self.method_class_stack.pop();
-                            self.env = saved_env;
-                            self.var_bindings = saved_var_bindings;
-                            self.restore_readonly_vars(saved_readonly);
-                            // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
-                            if constraint.ends_with(":D") || constraint.ends_with(":U") {
-                                let (base_type, _) = super::types::strip_type_smiley(constraint);
-                                let should_be_concrete = constraint.ends_with(":D");
-                                let routine = self
-                                    .samewith_context_stack
-                                    .last()
-                                    .map(|(name, _)| name.as_str())
-                                    .unwrap_or("<method>");
-                                return Err(RuntimeError::parameter_invalid_concreteness(
-                                    base_type,
-                                    base_type,
-                                    routine,
-                                    &format!("${}", param_name),
-                                    should_be_concrete,
-                                    pd.is_invocant,
-                                ));
-                            }
-                            return Err(RuntimeError::typecheck_binding_parameter(
-                                param_name,
-                                constraint,
-                                super::value_type_name(&base),
-                                None,
-                            ));
-                        }
-                    }
-                }
-                self.env.insert(param_name.clone(), base.clone());
-                continue;
-            }
-            bind_params.push(param_name.clone());
-            if let Some(pd) = method_def.param_defs.get(idx) {
-                bind_param_defs.push(pd.clone());
-            }
-        }
-
-        for (attr_name, attr_val) in &attributes {
-            // Skip class-qualified private attribute keys (ClassName\0attrName)
-            if attr_name.contains('\0') {
-                continue;
-            }
-            // Handle attribute alias metadata (from `$!attr := outer_var` bindings).
-            // e.g. "__mutsu_attr_alias::pulled" -> "pulled" means $!pulled was bound
-            // to sigilless var `pulled`. Re-establish the sigilless alias in env so
-            // that increment/decrement ops can propagate changes to the aliased var.
-            const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
-            if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
-                if let Value::Str(source_name) = attr_val {
-                    // A sigilless attribute is in play — enable cell-direct
-                    // alias-table routing (Phase 3 Stage 2c (ii)).
-                    self.sigilless_attrs_active = true;
-                    // Set up: !attr → source_name alias (for write propagation)
-                    self.env.insert(
-                        format!("__mutsu_sigilless_alias::!{}", actual_attr),
-                        Value::str(source_name.to_string()),
-                    );
-                    self.env.insert(
-                        format!("__mutsu_sigilless_readonly::!{}", actual_attr),
-                        Value::Bool(false),
-                    );
-                    // Reverse: source_name → !attr alias
-                    self.env.insert(
-                        format!("__mutsu_sigilless_alias::{}", source_name),
-                        Value::str(format!("!{}", actual_attr)),
-                    );
-                    // Also populate source_name with current attribute value
-                    if let Some(attr_value) = attributes.get(actual_attr) {
-                        self.env.insert(source_name.to_string(), attr_value.clone());
-                    }
-                }
-                continue;
-            }
-            // For private attributes, prefer the class-qualified value from
-            // the method's owner class (so Parent's $!priv != Child's $!priv).
-            let qualified_key = format!("{}\0{}", owner_class, attr_name);
-            let private_val = attributes.get(&qualified_key).unwrap_or(attr_val);
-            self.env
-                .insert(format!("!{}", attr_name), private_val.clone());
-            self.env.insert(format!(".{}", attr_name), attr_val.clone());
-            // Also bind sigil-prefixed keys for @/% attributes so that
-            // `@.attr` / `%.attr` accessors (and their mutating ops like
-            // `push @.attr, ...`) resolve correctly and are written back.
-            match private_val {
-                Value::Array(..) => {
-                    self.env
-                        .insert(format!("@!{}", attr_name), private_val.clone());
-                    self.env
-                        .insert(format!("@.{}", attr_name), attr_val.clone());
-                }
-                Value::Hash(..) => {
-                    self.env
-                        .insert(format!("%!{}", attr_name), private_val.clone());
-                    self.env
-                        .insert(format!("%.{}", attr_name), attr_val.clone());
-                }
-                _ => {}
-            }
-            self.var_bindings
-                .insert(attr_name.clone(), format!("!{}", attr_name));
-            self.var_bindings.insert(
-                format!("{}::{}", owner_class, attr_name),
-                format!("!{}", attr_name),
-            );
-        }
-        // Method signatures must support full parameter binding semantics
-        // (coercions, slurpy params, defaults, and named args) for both
-        // type-object and instance invocations.
-        let rw_bindings =
-            match self.bind_function_args_values(&bind_param_defs, &bind_params, &args) {
-                Ok(bindings) => bindings,
-                Err(e) => {
-                    self.method_class_stack.pop();
-                    self.env = saved_env;
-                    self.var_bindings = saved_var_bindings;
-                    self.restore_readonly_vars(saved_readonly);
-                    return Err(e);
-                }
-            };
-        for p in &bind_params {
-            self.var_bindings.remove(p);
-        }
-        // When the method body is re-compiled by run_block, the compiler
-        // qualifies bare variable names with current_package (e.g. "m" →
-        // "G::m").  Mirror bound params under their qualified names so the
-        // generated GetGlobal lookup succeeds.
-        let pkg = self.current_package();
-        if pkg != "GLOBAL" {
-            for p in &bind_params {
-                if !p.contains("::")
-                    && !p.starts_with('_')
-                    && !p.starts_with('/')
-                    && !p.starts_with('!')
-                    && !p.starts_with('?')
-                    && !p.starts_with('*')
-                    && !p.starts_with('.')
-                    && !p.starts_with('=')
-                    && !p.starts_with('$')
-                    && !p.starts_with('@')
-                    && !p.starts_with('%')
-                    && !p.starts_with('&')
-                    && let Some(v) = self.env.get(p).cloned()
-                {
-                    self.env.insert(format!("{}::{}", pkg, p), v);
-                }
-            }
-        }
-        // Push onto routine_stack so that `return` inside the method body
-        // compiles as `Return` (not `ReturnFromNonRoutine`), and so that
-        // `&?ROUTINE` can find the current method name.
-        let method_name_for_stack = self
-            .samewith_context_stack
-            .last()
-            .map(|(n, _)| n.clone())
-            .unwrap_or_default();
-        self.routine_stack.push(RoutineFrame {
-            package: owner_class.to_string(),
-            name: method_name_for_stack,
-            line: None,
-            file: None,
-            is_method: true,
-            is_block: false,
-        });
-        // Set current_package to the receiver class so that the compiler
-        // qualifies function calls with the correct package prefix,
-        // allowing class-scoped subs (e.g. `sub helper` in a class body)
-        // to be found by methods in the same class.
-        // Set current_package so the compiler qualifies function calls
-        // with the class name, allowing class-scoped subs to be found.
-        let saved_package = self.current_package();
-        if self.has_class_scoped_subs(receiver_class_name) {
-            self.set_current_package(receiver_class_name.to_string());
-        } else if self.current_package() != "GLOBAL" {
-            // Reset to GLOBAL so class-level `my` variables are not falsely
-            // qualified with the caller's package (e.g. grammar name).
-            self.set_current_package("GLOBAL".to_string());
-        }
-        let block_result = self.run_block(&method_def.body);
-        self.set_current_package(saved_package);
-        self.routine_stack.pop();
-        let implicit_return = self.env.get("_").cloned();
-        let result = match block_result {
-            Ok(()) => Ok(implicit_return.unwrap_or(Value::Nil)),
-            Err(e) if e.return_value.is_some() && e.return_target_callable_id.is_some() => {
-                // Targeted non-local return: propagate to the correct routine
-                Err(e)
-            }
-            Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
-            Err(e) => Err(e),
-        };
-        // Apply return type spec (e.g. `--> 5` returns literal 5 from empty body)
-        let result = if let Some(ref return_spec) = method_def.return_type {
-            let effective_return_spec = self.resolved_type_capture_name(return_spec);
-            self.finalize_return_with_spec(result, Some(effective_return_spec.as_str()))
-        } else {
-            result
-        };
-        // If `self` in the env was updated (e.g. by an in-place write into its shared
-        // attribute cell after a nested method call like `self.some-method(...)`),
-        // sync the attribute env
-        // variables (!attr, .attr) from `self`'s updated attributes. Without this,
-        // attribute mutations made by nested method calls on `self` would be lost during
-        // the writeback below, because the env variables still hold the pre-call values.
-        if let Some(Value::Instance {
-            attributes: self_attrs,
-            ..
-        }) = self.env.get("self")
-        {
-            let self_attrs_snapshot: Vec<(String, Value)> = self_attrs
-                .as_map()
-                .iter()
-                .filter(|(k, _)| !k.contains('\0'))
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-            for (attr_name, attr_val) in self_attrs_snapshot {
-                let env_key = format!("!{}", attr_name);
-                let public_env_key = format!(".{}", attr_name);
-                let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
-                let private_unchanged = self.env.get(&env_key).is_some_and(|v| *v == original);
-                let public_unchanged = self
-                    .env
-                    .get(&public_env_key)
-                    .is_some_and(|v| *v == original);
-                // Only sync if neither the private nor public env variable
-                // was modified by the method body. This preserves direct
-                // mutations like `$.count++` (which modifies .count) while
-                // still propagating changes from nested method calls.
-                if private_unchanged && public_unchanged {
-                    self.env.insert(env_key, attr_val.clone());
-                    self.env.insert(public_env_key, attr_val.clone());
-                }
-                // Mirror the sync onto the sigil-prefixed @/% bindings. These
-                // take precedence during writeback below, so if a nested method
-                // call (e.g. `self.reg-DESTROY` doing `push @!attr, ...`) mutated
-                // the attribute, the stale sigil keys must be refreshed too —
-                // otherwise they would clobber the change with their entry value.
-                for (priv_key, pub_key) in [
-                    (format!("@!{}", attr_name), format!("@.{}", attr_name)),
-                    (format!("%!{}", attr_name), format!("%.{}", attr_name)),
-                ] {
-                    let priv_present = self.env.get(&priv_key).is_some_and(|v| *v == original);
-                    let pub_present = self.env.get(&pub_key).is_some_and(|v| *v == original);
-                    if priv_present {
-                        self.env.insert(priv_key, attr_val.clone());
-                    }
-                    if pub_present {
-                        self.env.insert(pub_key, attr_val.clone());
-                    }
-                }
-            }
-        }
-        for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
-            // Skip class-qualified private attribute keys
-            if attr_name.contains('\0') {
-                continue;
-            }
-            let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
-            let env_key = format!("!{}", attr_name);
-            let public_env_key = format!(".{}", attr_name);
-            let env_array_private_key = format!("@!{}", attr_name);
-            let env_array_public_key = format!("@.{}", attr_name);
-            let env_hash_private_key = format!("%!{}", attr_name);
-            let env_hash_public_key = format!("%.{}", attr_name);
-            let env_private = self.env.get(&env_key).cloned();
-            let env_public = self.env.get(&public_env_key).cloned();
-            let env_array_private = self.env.get(&env_array_private_key).cloned();
-            let env_array_public = self.env.get(&env_array_public_key).cloned();
-            let env_hash_private = self.env.get(&env_hash_private_key).cloned();
-            let env_hash_public = self.env.get(&env_hash_public_key).cloned();
-            // Sigil-prefixed @/% keys take precedence: mutating ops on
-            // `@.attr` / `%.attr` (e.g. `push @.attr, ...`) write through
-            // these bindings, not the plain `!attr` / `.attr` ones.
-            if let (Some(private_val), Some(public_val)) = (&env_array_private, &env_array_public) {
-                if *private_val == original && *public_val != original {
-                    attributes.insert(attr_name, public_val.clone());
-                } else {
-                    attributes.insert(attr_name, private_val.clone());
-                }
-                continue;
-            }
-            if let (Some(private_val), Some(public_val)) = (&env_hash_private, &env_hash_public) {
-                if *private_val == original && *public_val != original {
-                    attributes.insert(attr_name, public_val.clone());
-                } else {
-                    attributes.insert(attr_name, private_val.clone());
-                }
-                continue;
-            }
-            if let (Some(private_val), Some(public_val)) = (&env_private, &env_public) {
-                // `$.attr` aliases (public) should still write back when only the
-                // public mirror changed (e.g. `$.count++`).
-                if *private_val == original && *public_val != original {
-                    attributes.insert(attr_name, public_val.clone());
-                } else {
-                    attributes.insert(attr_name, private_val.clone());
-                }
-                continue;
-            }
-            if let Some(val) = env_array_private.or(env_hash_private).or(env_private) {
-                attributes.insert(attr_name, val);
-                continue;
-            }
-            if let Some(val) = env_array_public.or(env_hash_public).or(env_public) {
-                attributes.insert(attr_name, val);
-            }
-        }
-        let mut merged_env = saved_env.clone();
-        for (k, v) in self.env.iter() {
-            // These keys are method-local execution context, not outer lexicals:
-            // bleeding them back to the caller corrupts the caller's own context.
-            // `self` is the worst offender — a callee invoked on a *type object*
-            // (e.g. `CALL-ME` on `T:U:`) sets the method's `self` to that type
-            // object; merging it back would overwrite the caller's instance
-            // `self`, so a following `$!attr = ...` would see a type-object self
-            // and wrongly die "Cannot look up attributes in a ... type object".
-            // `?CLASS`/`?ROLE`/`__ANON_STATE__` are likewise per-method context.
-            if k == "_" || k == "self" || k == "?CLASS" || k == "?ROLE" || k == "__ANON_STATE__" {
-                continue;
-            }
-            if saved_env.contains_key_sym(*k) {
-                merged_env.insert_sym(*k, v.clone());
-            }
-            if (k.starts_with("&") && !k.starts_with("&?"))
-                || k.starts_with("__mutsu_method_value::")
-            {
-                merged_env.insert_sym(*k, v.clone());
-            }
-        }
-        // Propagate sigilless attribute alias writes back to the caller's env.
-        // This handles `$!attr := outer_var` bindings: if the method modified
-        // $!attr, the change flows back to the aliased outer variable.
-        self.merge_sigilless_alias_writes(&mut merged_env, &self.env);
-        // Apply `is rw` parameter writebacks so that changes to `is rw`
-        // params inside the method body propagate back to the caller's
-        // variables.
-        // The method body is compiled with the class as current_package,
-        // so sigilless params like "x" are stored as "C::x" at runtime.
-        // Check both the bare param name and the package-qualified name.
-        for (param_name, source_name) in &rw_bindings {
-            let updated = self.env.get(param_name).cloned().or_else(|| {
-                let qualified = format!("{}::{}", owner_class, param_name);
-                self.env.get(&qualified).cloned()
-            });
-            if let Some(val) = updated {
-                merged_env.insert(source_name.clone(), val);
-            }
-        }
-        self.method_class_stack.pop();
-        self.env = merged_env;
-        self.var_bindings = saved_var_bindings;
-        self.restore_readonly_vars(saved_readonly);
-        result.map(|v| {
-            let adjusted = match (&base, &v) {
-                (
-                    Value::Instance {
-                        class_name,
-                        attributes: base_attrs,
-                        id: base_id,
-                    },
-                    Value::Instance { id: ret_id, .. },
-                ) if base_id == ret_id => {
-                    Value::write_back_sharing(base_attrs, *class_name, attributes.clone(), *base_id)
-                }
-                _ => v,
-            };
-            (adjusted, attributes)
-        })
+        // §B (#3658): the non-delegation tree-walk method-execution arm (the
+        // `run_block` of the user method body) has been DELETED. Every caller now
+        // compiles a non-delegation candidate on-demand
+        // (`compile_method_def_in_place`) before reaching here, so this function is
+        // only entered for a delegation forwarder (handled above). A non-delegation
+        // method reaching this point would be an internal invariant violation.
+        let _ = (&owner_class, &attributes, &args, &invocant);
+        Err(RuntimeError::new(format!(
+            "internal error: run_instance_method_resolved reached the deleted tree-walk arm for non-delegation method on '{}' (should have been compiled on-demand)",
+            receiver_class_name
+        )))
     }
 }
