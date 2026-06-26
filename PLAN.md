@@ -145,21 +145,20 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     （`insert_handle_state`＝native 化済 `IO::Path.open`〔#3507〕と同型）。既存 `&mut self` helper `dispatch_socket_inet_new` を `pub(crate)` に広げ、
     VM の非mut/mut 両 catch dispatch から同じ helper を直接呼ぶ＝true single impl・byte-identical（新規コピー無し）。
   - **∴ pure-value / VM-owned-state な built-in ctor は全て native 化済＝③ ctor フォーク完了**。残 `new` fallback receiver は `CallFrame.new`
-    〔call-stack carrier〕・error-only（HyperWhatever/Whatever/Instant）のみ＝別軸 or 構造ブロック。次は §D の本丸＝(b) tree-walk dispatch-chain
-    削除 substrate or multi-dispatch VM 化（下記の唯一の `[ ]`）。
-  - **(b) tree-walk dispatch chain 削除の substrate** — **着手済み・計測で精密化（2026-06-26、設計＝[docs/treewalk-method-removal-plan.md](docs/treewalk-method-removal-plan.md)）**:
-    `dispatch_method_by_name_*` 等は全て native Rust（残す）。**唯一の真のユーザーコード tree-walk は `run_instance_method[_resolved]`**
-    （class.rs・`run_block(method_def.body)`）。新計測カウンタ（`MUTSU_VM_STATS` の `tree-walk method bodies`・#3606）で全1285 whitelist を測ると
-    **tree-walk するのは 81 ファイルのみ・総 10983 イベント＝`run_instance_method` はほぼ vestigial**。**91%（`m`=10005）は1構文**＝
-    `S12-methods/defer-next.t` の `samewith` multi-method redispatch（`for ^10000` で増幅）＝PLAN 既出の深い blocker（method `method_dispatch_stack`
-    redispatch・nextsame+rw）＝capstone。残 ~978 が tractable（coerce/render redispatch ~460・construction BUILD/TWEAK ~60・各種）。
-    **★Slice 1（compiled dispatch へ routing）試行→revert で判明（#3609）: `dispatch_compiled_method` は属性 commit/Proxy は同等だが、
-    internal-redispatch context で呼ぶと method body の captured-outer/closure-env writeback を caller lexical に伝播しない**
-    （`method Numeric{$calls++}` の `$calls++` が消える・junction-invocant eigenstate writeback・grammar reduce-time dynvar も同様）。
-    **★narrow: explicit `$obj.method` は catch-all 経由で writeback 保持・redispatch context のみ喪失** → 修正は「redispatch 呼び出し点で
-    compiled method の closure env を正しいスコープに root する」（`call_compiled_closure` の `scoped_child` 機構）。**∴ 真の §D(b) substrate ＝
-    captured-outer/closure-env writeback coherence（`docs/captured-outer-cell-sharing.md` 機構）を compiled-method redispatch 境界へ拡張する**
-    （関数側 nextsame+rw と同根）＝要設計の deep 多スライス work。MOP carrier / landmine(.Str/.gist) / block-exec(map/grep) / concurrency / typed-array は別軸（撲滅対象外 or 別前提）。
+    〔call-stack carrier〕・error-only（HyperWhatever/Whatever/Instant）のみ＝別軸 or 構造ブロック。**§D 本丸の (b) tree-walk dispatch-chain
+    削除は完了（下記 [x]）**＝ユーザコード tree-walk 消滅。残は multi-dispatch VM化 の保守ゲート除外ケースのみ（下記）。
+  - [x] **(b) tree-walk dispatch chain 削除 = 完了（2026-06-26・#3664〜#3680・設計＝[docs/treewalk-method-removal-plan.md](docs/treewalk-method-removal-plan.md)）**。
+    **唯一の真のユーザーコード tree-walk だった `run_instance_method_resolved` の非-delegation arm（`run_block(method_def.body)`・~470行）を削除**。
+    bytecode VM がユーザメソッド body の**唯一の実行エンジン**に（ユーザコードの tree-walk 消滅）。de-risk 順に 11 PR で land:
+    ① `pending_rw_writeback_sources` を merge 化（#3664）→ ② attribute twigil を free_var_writes から除外＋slotless attr inc/dec の cell RMW（#3666）→
+    ③ captured-outer lexical 書き込みメソッドを compiled 化（#3668）→ ④ `can_skip_merge` の `has_calls` 欠落バグ修正＝nested-closure dynvar 損失（#3670）→
+    ⑤ free_var_writes gate filter 完全除去（#3672）→ ⑥ qualified-call/`.*` walk/proto dispatch を helper 経由 compiled に（#3674）→
+    ⑦ Mixin self attribute writeback fix（`self_instance_attrs` で `Value::Mixin`→inner cell に unwrap）＋on-demand compile 無条件化（#3677）→
+    ⑧ 空 body も compile（fallback を delegation-only 化）＋compiled fast-path arity validation 修正（named/missing-required→full path）（#3678）→
+    ⑨ `builtins_dispatch_next` も on-demand compile→`MUTSU_PROBE_TREEWALK` で t/+roast 両方 非-delegation 到達ゼロ確認→**arm 削除**（#3680）。
+    `run_instance_method_resolved` は現在 delegation forwarder のみ（非-delegation entry は防御的 Err）。
+    **残（別軸・optional）**: `run_instance_method_resolved`→`forward_resolved_delegation` の cosmetic rename。
+    別 pre-existing gap: hyper `@objs».meth` の captured-outer lexical writeback（別軸・撲滅対象外）。
 - [ ] **multi-dispatch の VM 化**（着手済・proto sub の trivial-body 経路は #3541 で landed）:
   - [x] **proto sub dispatch（trivial body）= 完了（#3541）**。`proto foo {*}` / bodyless proto を VM call site で直接ディスパッチ
     （`vm_resolve_trivial_proto_candidate` が VM 所有レジストリで winner 候補を解決→`compile_and_call_function_def` で compiled 実行）。
