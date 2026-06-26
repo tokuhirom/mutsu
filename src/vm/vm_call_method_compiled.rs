@@ -1792,7 +1792,12 @@ impl Interpreter {
                     && !pd.named
             })
             .count();
-        let can_skip_merge = !cc.has_env_writes;
+        // Also gate on `cc.has_calls`: a body that invokes a CLOSURE
+        // (`$f()` — `CallOnValue`/`CallOnCodeVar`) or a CallDefined/ExecCallSlip can
+        // write a dynamic var / captured-outer lexical / global into this frame's
+        // env (those call ops are NOT in `has_env_writes`). Skipping the merge would
+        // drop that write — e.g. `method go { my $f = { $*x = 1 }; $f() }`. #3658.
+        let can_skip_merge = !cc.has_env_writes && !cc.has_calls;
         let has_defaults = method_def.param_defs.iter().any(|pd| {
             !pd.is_invocant && !pd.traits.iter().any(|t| t == "invocant") && pd.default.is_some()
         });

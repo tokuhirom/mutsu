@@ -89,10 +89,20 @@ impl Interpreter {
         // mirroring how `has_aliasable_container_params` handles `@`/`%` params.
         let shares_scalar_container =
             self.method_shares_container_into_scalar_param(method_def, &args);
+        // `cc.has_calls` (not just `has_env_writes`): a body that calls a CLOSURE
+        // (`my $f = { $*x = 1 }; $f()` — `CallOnValue`/`CallOnCodeVar`) or any other
+        // call op NOT listed in `has_env_writes` (CallDefined/ExecCallSlip) can
+        // write a captured-outer lexical, dynamic var, or global into this frame's
+        // env. Skipping the merge would silently drop that write (e.g. a grammar
+        // action `method delim { my $f = { $*L = '<' }; $f() }` — the dynamic-var
+        // change is lost). The closure dispatch already gates on
+        // `has_calls || has_env_writes` (vm_closure_dispatch.rs); the method fast
+        // path dropped `has_calls`. #3658.
         let can_skip_merge = !has_rw_params
             && !has_aliasable_container_params
             && !shares_scalar_container
-            && !cc.has_env_writes;
+            && !cc.has_env_writes
+            && !cc.has_calls;
 
         // Fast path: bypass env entirely and populate locals directly from
         // source data. Avoids the ~12μs Arc::make_mut deep clone that the
