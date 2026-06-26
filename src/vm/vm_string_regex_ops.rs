@@ -87,6 +87,11 @@ pub(crate) fn apply_subst_case_transforms(
     sigspace: bool,
     samespace: bool,
 ) -> String {
+    // In Raku, `:sigspace` (and therefore `:samespace`, which implies `:sigspace`,
+    // and the `ss///` operator) also implies `:samemark`: the matched text's
+    // combining marks are copied onto the replacement. `:samecase` is NOT implied
+    // by sigspace, so only fold samemark in here.
+    let samemark = samemark || sigspace;
     // `:samecase` and `:samemark` are independent transforms and can be combined
     // (e.g. `s:ii:mm///`). Apply case first, then transfer marks onto the
     // case-adjusted text. Using `else if` here would silently drop samemark
