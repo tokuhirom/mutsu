@@ -409,6 +409,5 @@ pub(in crate::parser::stmt) fn no_stmt(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
-    let _ = arg;
-    Ok((rest, Stmt::No { module }))
+    Ok((rest, Stmt::No { module, arg }))
 }

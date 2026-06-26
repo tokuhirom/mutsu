@@ -2649,7 +2649,7 @@ impl Compiler {
                 };
                 self.code.emit(OpCode::ImportModule { name_idx, tags_idx });
             }
-            Stmt::No { module } => {
+            Stmt::No { module, .. } => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 self.code.emit(OpCode::NoModule(name_idx));
             }

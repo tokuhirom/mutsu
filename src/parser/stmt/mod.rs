@@ -956,7 +956,7 @@ mod tests {
         let (rest, stmts) = program("no strict;").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
-        assert!(matches!(&stmts[0], Stmt::No { module } if module == "strict"));
+        assert!(matches!(&stmts[0], Stmt::No { module, .. } if module == "strict"));
     }
 
     #[test]
