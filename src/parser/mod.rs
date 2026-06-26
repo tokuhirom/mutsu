@@ -590,7 +590,7 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
         let stmts = filter_setline(stmts);
         match &stmts[1] {
             Stmt::Expr(Expr::Binary { left, op, right }) => {
-                assert_eq!(*op, crate::token_kind::TokenKind::AndAnd);
+                assert_eq!(*op, crate::token_kind::TokenKind::AndWord);
                 match left.as_ref() {
                     Expr::Call { name, args } => {
                         assert_eq!(name.resolve(), "isfive");

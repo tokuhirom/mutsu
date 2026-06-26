@@ -347,7 +347,7 @@ impl LogicalOp {
     pub(super) fn token_kind(self) -> TokenKind {
         match self {
             LogicalOp::Or => TokenKind::OrWord,
-            LogicalOp::And => TokenKind::AndAnd,
+            LogicalOp::And => TokenKind::AndWord,
             LogicalOp::OrOr => TokenKind::OrOr,
             LogicalOp::AndAnd => TokenKind::AndAnd,
             LogicalOp::XorXor => TokenKind::XorXor,

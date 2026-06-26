@@ -1548,7 +1548,7 @@ mod tests {
         assert!(matches!(
             expr,
             Expr::Binary {
-                op: TokenKind::AndAnd,
+                op: TokenKind::AndWord,
                 ..
             }
         ));
