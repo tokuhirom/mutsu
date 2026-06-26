@@ -632,6 +632,29 @@ impl Compiler {
                 }
             }
         }
+        // quietly: suppress warnings raised while evaluating the expression, but
+        // run it INLINE in the current scope (so `quietly my $x = ...` leaks $x),
+        // unlike the `quietly(&block)` builtin which runs the block in its own
+        // frame. The guarded warn still resumes in place with its resume value.
+        else if name == "quietly" && args.len() == 1 {
+            match &args[0] {
+                Expr::AnonSub { body, .. } | Expr::AnonSubParams { body, .. } => {
+                    // `quietly { ... }` -- run the block body inline as a do-block.
+                    self.code.emit(OpCode::WarnSuppressPush);
+                    let do_block = Expr::DoBlock {
+                        body: body.clone(),
+                        label: None,
+                    };
+                    self.compile_expr(&do_block);
+                    self.code.emit(OpCode::WarnSuppressPop);
+                }
+                _ => {
+                    self.code.emit(OpCode::WarnSuppressPush);
+                    self.compile_expr(&args[0]);
+                    self.code.emit(OpCode::WarnSuppressPop);
+                }
+            }
+        }
         // Rewrite indir($path, { ... }) body into a callable block value so
         // call_function("indir", ...) can execute it after switching $*CWD.
         else if name == "indir" && args.len() >= 2 {
