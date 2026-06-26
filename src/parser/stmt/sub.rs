@@ -1725,6 +1725,18 @@ fn reject_attr_params_in_sub(params: &[ParamDef]) -> Result<(), PError> {
     Ok(())
 }
 
+/// Build an `X::Parameter::InvalidType` for a `:D`/`:U`/`:_` smiley that trails
+/// a parameter after whitespace (`$x :D`) instead of attaching to a type
+/// (`Int:D $x`). Raku reports the smiley letter as a bogus typename.
+fn invalid_param_smiley_error(smiley: &str) -> PError {
+    let msg = format!("Invalid typename '{}' in parameter declaration.", smiley);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("typename".to_string(), Value::str(smiley.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Parameter::InvalidType"), attrs);
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
 fn reject_invocant_in_sub(params: &[ParamDef]) -> Result<(), PError> {
     if params
         .iter()
@@ -1950,6 +1962,19 @@ fn parse_param_list_inner(input: &str) -> PResult<'_, Vec<ParamDef>> {
             params.push(p);
             rest = r;
             continue;
+        }
+        // A `:D`/`:U`/`:_` definedness smiley must attach to a TYPE
+        // (`Int:D $x`), never trail a parameter after whitespace (`$x :D` or
+        // `Int $x :D`). Such a trailing smiley is X::Parameter::InvalidType
+        // ("Invalid typename '<X>'"), not an invocant `:` marker — catch it
+        // before the invocant handling below would mis-read the `:`.
+        if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))
+            && r[2..]
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_alphanumeric() && c != '_')
+        {
+            return Err(invalid_param_smiley_error(&r[1..2]));
         }
         // Handle invocant marker ':'
         if let Some(r) = r.strip_prefix(':') {
@@ -2229,6 +2254,19 @@ fn parse_param_list_with_return_inner(input: &str) -> PResult<'_, (Vec<ParamDef>
             params.push(p);
             rest = r;
             continue;
+        }
+        // A `:D`/`:U`/`:_` definedness smiley must attach to a TYPE
+        // (`Int:D $x`), never trail a parameter after whitespace (`$x :D` or
+        // `Int $x :D`). Such a trailing smiley is X::Parameter::InvalidType
+        // ("Invalid typename '<X>'"), not an invocant `:` marker — catch it
+        // before the invocant handling below would mis-read the `:`.
+        if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))
+            && r[2..]
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_alphanumeric() && c != '_')
+        {
+            return Err(invalid_param_smiley_error(&r[1..2]));
         }
         if let Some(r) = r.strip_prefix(':') {
             // Mark all params parsed so far as invocant
