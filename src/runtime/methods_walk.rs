@@ -311,9 +311,10 @@ impl Interpreter {
             else {
                 continue;
             };
-            let call = self.run_instance_method_resolved(
+            let call = self.run_resolved_method_compiled_or_treewalk(
                 &receiver_class,
                 &owner,
+                &method_name,
                 method_def,
                 attributes_map.clone(),
                 args.clone(),
