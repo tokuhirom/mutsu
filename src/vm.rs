@@ -2413,7 +2413,7 @@ impl Interpreter {
 
             // -- String --
             OpCode::Concat => {
-                self.exec_concat_op();
+                self.exec_concat_op()?;
                 *ip += 1;
             }
 

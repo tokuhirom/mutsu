@@ -1762,7 +1762,7 @@ impl Interpreter {
             B::Div => self.exec_div_op()?,
             B::Mod => self.exec_mod_op()?,
             B::Pow => self.exec_pow_op()?,
-            B::Concat => self.exec_concat_op(),
+            B::Concat => self.exec_concat_op()?,
             B::BitAnd => self.exec_bit_and_op(),
             B::BitOr => self.exec_bit_or_op(),
             B::BitXor => self.exec_bit_xor_op(),
