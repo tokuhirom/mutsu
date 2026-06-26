@@ -6,7 +6,7 @@ impl Interpreter {
     /// Call a compiled method body (MethodDef with compiled_code).
     /// Mirrors `Interpreter::run_instance_method_resolved` but executes bytecode.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn call_compiled_method(
+    pub(crate) fn call_compiled_method(
         &mut self,
         receiver_class_name: &str,
         owner_class: &str,
