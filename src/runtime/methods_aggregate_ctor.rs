@@ -58,7 +58,7 @@ impl Interpreter {
             } else {
                 data
             };
-            let mut shaped = Self::make_shaped_array(&dims);
+            let mut shaped = Self::make_shaped_array(&dims)?;
             if let Some(ref data_val) = data
                 && let Some(source_shape) = crate::runtime::utils::shaped_array_shape(data_val)
                 && source_shape != dims

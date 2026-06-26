@@ -384,6 +384,18 @@ impl Interpreter {
             Some(v) => super::to_int(v) as usize,
             None => 0,
         };
+        // Guard the allocation up front: every branch below builds a
+        // `size`-element `Vec<Value>`. A fallible probe turns an absurd size
+        // (`Buf.allocate(1e15)`) into a catchable `X::` instead of an
+        // uncatchable `handle_alloc_error` abort. (raku aborts here too.)
+        {
+            let mut probe: Vec<Value> = Vec::new();
+            probe.try_reserve(size).map_err(|_| {
+                RuntimeError::new(format!(
+                    "Cannot allocate buffer of {size} elements: memory allocation failed"
+                ))
+            })?;
+        }
         let fill_arg = args.get(1);
         let byte_vals: Vec<Value> = if let Some(fill) = fill_arg {
             match fill {

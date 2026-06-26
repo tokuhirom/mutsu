@@ -1019,21 +1019,35 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn make_shaped_array(dims: &[usize]) -> Value {
+    /// Build a (possibly multidimensional) shaped array of the given dims.
+    /// Each dimension allocates `dims[i]` slots via a fallible reservation, so
+    /// an absurd declared shape (`my @a[1e15]` = `Array.new(:shape(1e15))`)
+    /// yields a catchable `X::` instead of an uncatchable `handle_alloc_error`
+    /// abort. (raku aborts with a MoarVM panic on the same input.)
+    pub(super) fn make_shaped_array(dims: &[usize]) -> Result<Value, RuntimeError> {
         if dims.is_empty() {
-            return Value::Nil;
+            return Ok(Value::Nil);
         }
         let len = dims[0];
         if dims.len() == 1 {
-            let value = Value::shaped_array(vec![Value::Nil; len]);
+            let mut items = Vec::new();
+            Self::autoviv_resize(&mut items, len, Value::Nil)?;
+            let value = Value::shaped_array(items);
             crate::runtime::utils::mark_shaped_array(&value, Some(dims));
-            return value;
+            return Ok(value);
         }
-        let child = Self::make_shaped_array(&dims[1..]);
+        let child = Self::make_shaped_array(&dims[1..])?;
         crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
-        let value = Value::shaped_array((0..len).map(|_| child.clone()).collect());
+        let mut items = Vec::new();
+        items.try_reserve(len).map_err(|_| {
+            RuntimeError::new(format!(
+                "Cannot allocate shaped array of {len} elements: memory allocation failed"
+            ))
+        })?;
+        items.extend((0..len).map(|_| child.clone()));
+        let value = Value::shaped_array(items);
         crate::runtime::utils::mark_shaped_array(&value, Some(dims));
-        value
+        Ok(value)
     }
 
     pub(super) fn infer_array_shape(value: &Value) -> Option<Vec<usize>> {

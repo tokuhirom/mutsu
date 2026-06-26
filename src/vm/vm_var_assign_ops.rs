@@ -47,7 +47,10 @@ impl Interpreter {
     /// index (e.g. `@a[9999999999999] = 1`) yields a catchable `X::` instead of
     /// an uncatchable `handle_alloc_error` abort that `try {}` cannot recover
     /// from. (raku aborts with a MoarVM panic on the same input.)
-    fn autoviv_resize(
+    ///
+    /// `pub(crate)` so other fallible allocation sites (e.g. shaped-array
+    /// construction in `make_shaped_array`) can reuse the same guard.
+    pub(crate) fn autoviv_resize(
         items: &mut Vec<Value>,
         new_len: usize,
         fill: Value,
