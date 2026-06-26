@@ -75,6 +75,31 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 || after_tc_ws.starts_with('&')
                 || after_tc_ws.starts_with('\\')
             {
+                // An outer declaration type (`my Int (...)`) and an inner element
+                // type (`Str $x`) that disagree are X::Syntax::Variable::ConflictingTypes.
+                if let Some(outer) = &type_constraint
+                    && outer != &tc
+                {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert(
+                        "outer".to_string(),
+                        crate::value::Value::Package(crate::symbol::Symbol::intern(outer)),
+                    );
+                    attrs.insert(
+                        "inner".to_string(),
+                        crate::value::Value::Package(crate::symbol::Symbol::intern(&tc)),
+                    );
+                    let msg = format!(
+                        "X::Syntax::Variable::ConflictingTypes: Variable definition of type {} (from declaration) conflicts with type {} (from inner declaration)",
+                        outer, tc
+                    );
+                    attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+                    let exception = crate::value::Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Syntax::Variable::ConflictingTypes"),
+                        attrs,
+                    );
+                    return Err(PError::fatal_with_exception(msg, Box::new(exception)));
+                }
                 per_var_type_constraint = Some(tc);
                 r = after_tc_ws;
             }

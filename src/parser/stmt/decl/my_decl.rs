@@ -361,6 +361,32 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         &mut hash_key_constraint,
     )?;
 
+    // A colonpair adverb directly on a declaration (`my $x :a`) is illegal —
+    // you can't adverb a variable. `:=` (bind) and `::` are not adverbs.
+    if let Some(after_colon) = rest.strip_prefix(':')
+        && !after_colon.starts_with('=')
+        && !after_colon.starts_with(':')
+        && after_colon
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_' || c == '!')
+    {
+        let sigil = if is_array {
+            "@"
+        } else if is_hash {
+            "%"
+        } else if is_code {
+            "&"
+        } else {
+            "$"
+        };
+        return Err(illegal_my_var_error(
+            "X::Syntax::Adverb",
+            &format!("You can't adverb {}{}", sigil, name),
+            &[],
+        ));
+    }
+
     // Delegate to assignment/binding handler
     my_decl_assign_or_default(rest, state)
 }
