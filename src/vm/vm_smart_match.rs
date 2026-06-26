@@ -578,6 +578,24 @@ impl Interpreter {
     /// Perform a smart match, trying pure value matching first, falling back to
     /// the interpreter for complex cases (regex, callable, type checks, etc.).
     pub(super) fn vm_smart_match(&mut self, left: &Value, right: &Value) -> bool {
+        // `$x ~~ $obj` where $obj's class defines a user `ACCEPTS` dispatches
+        // `$obj.ACCEPTS($x)` — the core smartmatch protocol. Check this BEFORE
+        // `pure_smart_match`, whose generic Instance~~Instance arm would otherwise
+        // short-circuit to an identity check and never reach the dispatch. Junction
+        // LHS is excluded so junction autothreading still applies. Mirrors the
+        // interpreter `smart_match` arm (the grep/given paths reach that one).
+        if let Value::Instance { class_name, .. } = right
+            && !matches!(left, Value::Junction { .. })
+            && self.has_user_method(&class_name.resolve(), "ACCEPTS")
+        {
+            match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
+                Ok(v) => return v.truthy(),
+                Err(e) => {
+                    self.set_pending_dispatch_error(e);
+                    return false;
+                }
+            }
+        }
         // Try pure matching first
         if let Some(result) = pure_smart_match(left, right) {
             return result;

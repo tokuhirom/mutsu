@@ -46,6 +46,24 @@ impl Interpreter {
         match (left, right) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
             (_, Value::Whatever) => true,
+            // `$x ~~ $obj` where $obj's class defines a user `ACCEPTS` method
+            // dispatches `$obj.ACCEPTS($x)` — the core smartmatch protocol.
+            // Built-in types (IO::Path / Signature / Buf / Date…) carry native
+            // ACCEPTS semantics in the specific arms below and report no *user*
+            // method here, so they are unaffected. Junction LHS is excluded so
+            // junction autothreading (the arm below) still wins.
+            (_, Value::Instance { class_name, .. })
+                if !matches!(left, Value::Junction { .. })
+                    && self.has_user_method(&class_name.resolve(), "ACCEPTS") =>
+            {
+                match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
+                    Ok(v) => v.truthy(),
+                    Err(e) => {
+                        self.set_pending_dispatch_error(e);
+                        false
+                    }
+                }
+            }
             (
                 Value::Instance {
                     class_name: left_class,
