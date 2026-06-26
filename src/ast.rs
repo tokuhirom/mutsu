@@ -623,6 +623,9 @@ pub(crate) enum Stmt {
     /// `no Module ...;` — disable pragma/module effects for current lexical scope.
     No {
         module: String,
+        /// Positional argument (e.g. `no Module BareWord`), if any. Mirrors
+        /// `Use { arg }`; used for undeclared-symbol detection.
+        arg: Option<Expr>,
     },
     /// `need Module;` — load module without importing exports
     Need {
