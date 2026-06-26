@@ -194,7 +194,13 @@ fn parse_static_enum_variants(input: &str) -> PResult<'_, Vec<(String, Option<Ex
 fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     let (rest, expr) = expression(input)?;
     match expr {
-        Expr::BareWord(name) => Ok((rest, (name, None))),
+        // A *bare identifier* inside the parenthesised `(...)` enum body is a
+        // term reference, not an autoquoted key (only the `<...>` word-list form
+        // autoquotes). If it is not a declared symbol it is X::Undeclared — so
+        // reject it here and let the dynamic-expression fallback re-parse the
+        // body as a value expression, which the undeclared-names check scans.
+        // (Pairs like `A => 1` keep their bare LHS as an autoquoted key below.)
+        Expr::BareWord(_) => Err(PError::expected("enum value (use <...> to autoquote keys)")),
         Expr::Literal(Value::Str(name)) => Ok((rest, (name.to_string(), None))),
         Expr::Binary {
             left,

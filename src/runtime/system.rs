@@ -1002,6 +1002,15 @@ impl Interpreter {
             Stmt::When { cond, .. } => {
                 self.find_undeclared_name_in_expr(cond, local_classes, declared)
             }
+            // `enum E (Foo, Bar)` with bare *terms* in the parenthesised body
+            // (parsed as a single `__DYNAMIC__` value expression) references
+            // undeclared symbols — `<Foo Bar>` is the autoquoting form. Scan the
+            // value expressions for undeclared barewords.
+            Stmt::EnumDecl { variants, .. } => variants.iter().find_map(|(_, vexpr)| {
+                vexpr
+                    .as_ref()
+                    .and_then(|e| self.find_undeclared_name_in_expr(e, local_classes, declared))
+            }),
             _ => None,
         }
     }
@@ -1148,6 +1157,11 @@ impl Interpreter {
                 }
                 None
             }
+            // A list/array literal (e.g. the parenthesised `(Foo, Bar)` body of an
+            // enum) — scan each element for an undeclared bareword term.
+            Expr::ArrayLiteral(items) => items
+                .iter()
+                .find_map(|e| self.find_undeclared_name_in_expr(e, local_classes, declared)),
             _ => None,
         }
     }
