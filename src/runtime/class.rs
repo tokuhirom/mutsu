@@ -1004,6 +1004,23 @@ impl Interpreter {
         // A delegation forwarder is synthesized with `compiled_code = None`, and an
         // uncompiled method likewise has none, so both fall through to the tree-walk
         // `run_instance_method_resolved` (the remaining reason it still exists).
+        // On-demand compile (§B, #3658): a resolved candidate reached before its
+        // owner's registration compile pass — or one added at runtime (a role method
+        // punned via `does`, a custom-HOW method) — can still have no `compiled_code`.
+        // Compile this exact candidate's body IN PLACE (not via re-resolution, which
+        // would mis-pick an override for a qualified `$obj.Class::meth` call) so it
+        // runs compiled instead of tree-walked. Only a genuinely body-less method
+        // (stub / delegation forwarder) then stays on the tree-walk path. The
+        // compiled-execution Mixin/instance attribute writeback is handled by
+        // `self_instance_attrs` (unwraps a `Value::Mixin` self to the inner cell) in
+        // the attr ops and the `final_attrs` commit below.
+        let mut method_def = method_def;
+        if method_def.compiled_code.is_none()
+            && method_def.delegation.is_none()
+            && !method_def.body.is_empty()
+        {
+            Self::compile_method_def_in_place(&mut method_def, owner_class);
+        }
         let writeback_safe_compiled =
             method_def.compiled_code.is_some() && method_def.delegation.is_none();
         if !writeback_safe_compiled {
@@ -1054,11 +1071,14 @@ impl Interpreter {
                     err.is_fail = true;
                     return Err(err);
                 }
+                // Read the committed attribute map from the live cell of `self`,
+                // unwrapping a `Value::Mixin` invocant to its inner instance (so a
+                // runtime-`does` mixin method's attribute mutations are captured, not
+                // the stale pre-call `updated` map). `adjusted` keeps the `:=`-recovered
+                // snapshot.
                 let final_attrs = if adjusted {
                     updated
-                } else if let Some(Value::Instance {
-                    attributes: cell, ..
-                }) = &inv_for_cell
+                } else if let Some(cell) = inv_for_cell.as_ref().and_then(Self::self_instance_attrs)
                 {
                     cell.to_map()
                 } else {

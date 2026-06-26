@@ -989,49 +989,46 @@ impl Interpreter {
     }
 
     /// Compile all uncompiled method bodies in a method map.
+    /// Compile a single method/submethod body to bytecode in place if it has a
+    /// non-empty body and is not already compiled. Shared by the bulk registration
+    /// pass and the on-demand compile in `run_resolved_method_compiled_or_treewalk`.
+    pub(crate) fn compile_method_def_in_place(def: &mut super::MethodDef, package_name: &str) {
+        if def.compiled_code.is_some() || def.body.is_empty() {
+            return;
+        }
+        let mut compiler = crate::compiler::Compiler::new();
+        let method_package = def
+            .original_role
+            .as_deref()
+            .or(def.role_origin.as_deref())
+            .unwrap_or(package_name);
+        compiler.set_current_package(method_package.to_string());
+        // A method always carries an implicit `*%_` / `*@_` slurpy, so `%_` / `@_`
+        // are valid lexicals throughout the body (including a nested signature-less
+        // `do {}` block). Mark the method context so the do-block placeholder check
+        // permits them.
+        compiler.lexically_in_method = true;
+        let mut method_params = vec![
+            "self".to_string(),
+            "__ANON_STATE__".to_string(),
+            "?CLASS".to_string(),
+            "?ROLE".to_string(),
+        ];
+        method_params.extend(def.params.iter().cloned());
+        let mut cc =
+            compiler.compile_routine_closure_body(&method_params, &def.param_defs, &def.body);
+        cc.compute_may_capture_outer_vars();
+        cc.compute_needs_env_sync();
+        def.compiled_code = Some(std::sync::Arc::new(cc));
+    }
+
     fn compile_methods_for_map(
         methods: &mut HashMap<String, Vec<super::MethodDef>>,
         package_name: &str,
     ) {
-        let mut to_compile = Vec::new();
-        for (method_name, overloads) in methods.iter() {
-            for (idx, def) in overloads.iter().enumerate() {
-                if def.compiled_code.is_none() && !def.body.is_empty() {
-                    let mut compiler = crate::compiler::Compiler::new();
-                    let method_package = def
-                        .original_role
-                        .as_deref()
-                        .or(def.role_origin.as_deref())
-                        .unwrap_or(package_name);
-                    compiler.set_current_package(method_package.to_string());
-                    // A method always carries an implicit `*%_` / `*@_` slurpy, so
-                    // `%_` / `@_` are valid lexicals throughout the body (including a
-                    // nested signature-less `do {}` block). Mark the method context so
-                    // the do-block placeholder check permits them.
-                    compiler.lexically_in_method = true;
-                    let mut method_params = vec![
-                        "self".to_string(),
-                        "__ANON_STATE__".to_string(),
-                        "?CLASS".to_string(),
-                        "?ROLE".to_string(),
-                    ];
-                    method_params.extend(def.params.iter().cloned());
-                    let mut cc = compiler.compile_routine_closure_body(
-                        &method_params,
-                        &def.param_defs,
-                        &def.body,
-                    );
-                    cc.compute_may_capture_outer_vars();
-                    cc.compute_needs_env_sync();
-                    to_compile.push((method_name.clone(), idx, std::sync::Arc::new(cc)));
-                }
-            }
-        }
-        for (method_name, idx, arc_cc) in to_compile {
-            if let Some(overloads) = methods.get_mut(&method_name)
-                && let Some(def) = overloads.get_mut(idx)
-            {
-                def.compiled_code = Some(arc_cc);
+        for overloads in methods.values_mut() {
+            for def in overloads.iter_mut() {
+                Self::compile_method_def_in_place(def, package_name);
             }
         }
     }
