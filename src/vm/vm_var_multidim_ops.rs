@@ -124,6 +124,12 @@ impl Interpreter {
         let dim = &dims[0];
         let rest = &dims[1..];
 
+        // Hash targets index by key (string), recursing into the nested value
+        // for the remaining dimensions: `%h{"a";"b";"c"}`.
+        if let Value::Hash(map, ..) = target {
+            return self.multi_dim_hash_read(map, dim, rest);
+        }
+
         match dim {
             Value::Whatever => {
                 // Iterate all elements at this level
@@ -215,6 +221,75 @@ impl Interpreter {
                     }
                 }
             }
+        }
+    }
+
+    /// Read from a hash using one multi-dim dimension, recursing for the rest.
+    /// The dimension may be a single key (scalar), a list of keys (slice), or
+    /// `*` (all values). A missing key reads as `Nil`.
+    fn multi_dim_hash_read(
+        &mut self,
+        map: &std::collections::HashMap<String, Value>,
+        dim: &Value,
+        rest: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // Look up one key and recurse into the nested value for `rest`.
+        // A missing key reads as the `Any` type object (raku hash semantics),
+        // and short-circuits any remaining dimensions.
+        let read_key =
+            |this: &mut Self, key: &str, rest: &[Value]| -> Result<Value, RuntimeError> {
+                match map.get(key) {
+                    Some(v) => {
+                        // Decontainerize a Scalar-wrapped nested value before recursing.
+                        let inner = match v {
+                            Value::Scalar(b) => (**b).clone(),
+                            other => other.clone(),
+                        };
+                        this.multi_dim_index_read(&inner, rest)
+                    }
+                    None => Ok(Value::Package(crate::symbol::Symbol::intern("Any"))),
+                }
+            };
+
+        match dim {
+            // `*` — all values at this level.
+            Value::Whatever => {
+                let has_more_multi = rest
+                    .iter()
+                    .any(|v| matches!(v, Value::Whatever | Value::Array(..)));
+                let mut out = Vec::with_capacity(map.len());
+                for v in map.values() {
+                    let inner = match v {
+                        Value::Scalar(b) => (**b).clone(),
+                        other => other.clone(),
+                    };
+                    let result = self.multi_dim_index_read(&inner, rest)?;
+                    if has_more_multi && let Value::Array(items, ..) = &result {
+                        out.extend(items.iter().cloned());
+                    } else {
+                        out.push(result);
+                    }
+                }
+                Ok(Value::array(out))
+            }
+            // A list of keys — slice.
+            Value::Array(keys, ..) => {
+                let has_more_multi = rest
+                    .iter()
+                    .any(|v| matches!(v, Value::Whatever | Value::Array(..)));
+                let mut out = Vec::with_capacity(keys.len());
+                for key in keys.iter() {
+                    let result = read_key(self, &key.to_string_value(), rest)?;
+                    if has_more_multi && let Value::Array(items, ..) = &result {
+                        out.extend(items.iter().cloned());
+                    } else {
+                        out.push(result);
+                    }
+                }
+                Ok(Value::array(out))
+            }
+            // A single key.
+            _ => read_key(self, &dim.to_string_value(), rest),
         }
     }
 
