@@ -33,14 +33,16 @@ impl Interpreter {
         };
         super::sprintf::validate_sprintf_directives(&fmt, actual_args.len())?;
         super::sprintf::validate_sprintf_arg_types(&fmt, &actual_args)?;
-        // A `%s` directive stringifies via `.Str` (Raku uses `.Str` only — not
-        // `.Stringy`); the pure formatter only knows `to_string_value`/`.gist`,
-        // so dispatch a user-defined `Str` method on Instance/Package args first
-        // and substitute the result. Any captured-outer write the method makes is
-        // recorded for the surrounding `sprintf` call op's
-        // `apply_pending_rw_writeback` to drain into the caller's slot (same as
-        // every other user-method call).
-        for idx in super::sprintf::sprintf_str_arg_indices(&fmt) {
+        // The pure formatter only knows `to_string_value`/`.gist`/numeric unbox,
+        // so a directive whose arg is a user object must first dispatch the user's
+        // coercion method matching the directive: `%s` → `.Str` (Raku uses `.Str`
+        // only, not `.Stringy`); integer directives (`%d %i %u %b %o %x %X %c`) →
+        // `.Int`; float directives (`%e %f %g`) → `.Numeric`. The coerced value
+        // replaces the arg (a string for `%s`, the numeric value otherwise). Any
+        // captured-outer write the method makes is recorded for the surrounding
+        // `sprintf` call op's `apply_pending_rw_writeback` to drain into the
+        // caller's slot (same as every other user-method call).
+        for (idx, spec) in super::sprintf::sprintf_arg_specs(&fmt) {
             let Some(arg) = actual_args.get(idx) else {
                 continue;
             };
@@ -50,12 +52,22 @@ impl Interpreter {
                 _ => None,
             };
             let Some(cn) = class_name else { continue };
-            if !self.has_user_method(&cn, "Str") {
+            let method = match spec.to_ascii_lowercase() {
+                's' => "Str",
+                'd' | 'i' | 'u' | 'b' | 'o' | 'x' | 'c' => "Int",
+                'e' | 'f' | 'g' => "Numeric",
+                _ => continue,
+            };
+            if !self.has_user_method(&cn, method) {
                 continue;
             }
             let arg_clone = actual_args[idx].clone();
-            if let Ok(v) = self.call_method_with_values(arg_clone, "Str", vec![]) {
-                actual_args[idx] = Value::str(v.to_string_value());
+            if let Ok(v) = self.call_method_with_values(arg_clone, method, vec![]) {
+                actual_args[idx] = if method == "Str" {
+                    Value::str(v.to_string_value())
+                } else {
+                    v
+                };
             }
         }
         let rendered = if z_mode {

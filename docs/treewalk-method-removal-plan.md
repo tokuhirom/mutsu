@@ -183,6 +183,12 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   builtin records the write; the VM call op consumes it). mutsu calls `.Str` once per use;
   Rakudo's double-call-per-sprintf quirk is not reproduced (pin asserts the value + that the
   write propagates, not the exact count). pin=`t/sprintf-user-str-dispatch.t`(8, raku-validated).
+  **`sprintf` numeric directives — DONE (#TBD).** Generalized the same mechanism to numeric
+  directives: integer (`%d %i %u %b %o %x %X %c`) → user `.Int`, float (`%e %f %g`) →
+  user `.Numeric` (the `sprintf_str_arg_indices` helper became `sprintf_arg_specs`, returning
+  `(arg_index, spec)`). `%d` prefers `.Int` over `.Numeric` (Rakudo behavior). The coerced
+  numeric value (not a string) replaces the arg so the formatter renders it. pin=
+  `t/sprintf-numeric-coerce.t`(10, raku-validated).
   **Remaining same-shape sites (deferred, lower traffic):** `.fmt` `%s`
   formatting drops the `.Str` writeback too; and `value ~~ $instance`
   / `$instance ~~ (key => …)` do not even *dispatch* the user `ACCEPTS`/key method today

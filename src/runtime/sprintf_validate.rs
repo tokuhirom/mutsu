@@ -388,12 +388,14 @@ pub(crate) fn validate_sprintf_arg_types(fmt: &str, args: &[Value]) -> Result<()
     Ok(())
 }
 
-/// Collect the argument indices consumed by `%s` (string) directives, so the
-/// caller can dispatch a user-defined `.Str`/`.Stringy` method on Instance args
-/// before the pure formatter (which only knows `to_string_value`/`.gist`) runs.
-/// Mirrors `validate_sprintf_arg_types`' directive walk (flags/width/precision/
-/// `*`/positional `N$`), returning the effective arg index for each `s` spec.
-pub(crate) fn sprintf_str_arg_indices(fmt: &str) -> Vec<usize> {
+/// Collect `(arg_index, conversion_spec)` for each value-consuming directive, so
+/// the caller can dispatch a user-defined coercion method on Instance/Package args
+/// before the pure formatter (which only knows `to_string_value`/`.gist`/numeric
+/// unbox) runs: `%s` → `.Str`, integer directives → `.Int`, float directives →
+/// `.Numeric`. Mirrors `validate_sprintf_arg_types`' directive walk (flags/width/
+/// precision/`*`/positional `N$`); a `*` width/precision arg is counted (so the
+/// effective index stays aligned) but reported with spec `*` for the caller to skip.
+pub(crate) fn sprintf_arg_specs(fmt: &str) -> Vec<(usize, char)> {
     let bytes = fmt.as_bytes();
     let len = bytes.len();
     let mut pos = 0usize;
@@ -465,9 +467,7 @@ pub(crate) fn sprintf_str_arg_indices(fmt: &str) -> Vec<usize> {
             '?'
         };
         let effective_index = positional_arg.unwrap_or(arg_index);
-        if spec == 's' {
-            out.push(effective_index);
-        }
+        out.push((effective_index, spec));
         if positional_arg.is_none() {
             arg_index += 1;
         }
