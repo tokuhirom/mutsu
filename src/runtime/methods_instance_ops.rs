@@ -103,9 +103,10 @@ impl Interpreter {
                             caller_class.as_deref().unwrap_or("GLOBAL"),
                         ));
                     }
-                    let (result, updated) = self.run_instance_method_resolved(
+                    let (result, updated) = self.run_resolved_method_compiled_or_treewalk(
                         &class_name.resolve(),
                         &resolved_owner,
+                        pm_name,
                         method_def,
                         attributes.to_map(),
                         args,
@@ -1187,9 +1188,10 @@ impl Interpreter {
                         ));
                     }
                     let attrs = HashMap::new();
-                    let (result, _updated) = self.run_instance_method_resolved(
+                    let (result, _updated) = self.run_resolved_method_compiled_or_treewalk(
                         &name.resolve(),
                         &resolved_owner,
+                        pm_name,
                         method_def,
                         attrs,
                         args,
