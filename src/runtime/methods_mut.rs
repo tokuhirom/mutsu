@@ -2008,8 +2008,13 @@ impl Interpreter {
                 Value::Bool(self.is_var_dynamic(target_var)),
             );
             // Add .default: explicit `is default(...)` value, or type object
-            // for typed variables, or (Any) for untyped.
-            let default_val = if let Some(def) = self.var_default(target_var) {
+            // for typed variables, or (Any) for untyped. Prefer the value-carried
+            // default (HashData/ArrayData) so it survives raw-parameter binding
+            // and list construction, where the name-keyed `var_defaults` lookup
+            // (the variable's original name) no longer resolves.
+            let default_val = if let Some(def) = Self::value_carried_default(&target) {
+                def
+            } else if let Some(def) = self.var_default(target_var) {
                 def.clone()
             } else if let Some(tc) = self.var_type_constraint(target_var) {
                 Value::Package(Symbol::intern(&tc))

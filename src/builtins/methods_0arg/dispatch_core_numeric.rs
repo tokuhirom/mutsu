@@ -164,6 +164,11 @@ pub(super) fn dispatch(
         }
         "default" => {
             let result = match target {
+                // A value-carried `is default(...)` (embedded in HashData/
+                // ArrayData) takes priority over the type default, so it survives
+                // raw-parameter binding and list construction.
+                Value::Array(a, _) if a.default.is_some() => a.default.as_deref().cloned().unwrap(),
+                Value::Hash(h) if h.default.is_some() => h.default.as_deref().cloned().unwrap(),
                 Value::Array(..) | Value::Hash(..) => Value::Package(Symbol::intern("Any")),
                 Value::Set(..) => Value::Bool(false),
                 Value::Bag(..) | Value::Mix(..) => Value::Int(0),

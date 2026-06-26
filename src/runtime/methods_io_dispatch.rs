@@ -276,7 +276,23 @@ impl Interpreter {
         None
     }
 
+    /// The value-carried `is default(...)` of a Hash/Array, if any. Embedded in
+    /// `HashData`/`ArrayData` so it travels with the value through copy-on-write,
+    /// raw-parameter binding, and list construction — unlike the name-keyed
+    /// `var_defaults` table, which only resolves for a value still held under its
+    /// original variable name.
+    pub(crate) fn value_carried_default(target: &Value) -> Option<Value> {
+        match target {
+            Value::Hash(h) => h.default.as_deref().cloned(),
+            Value::Array(a, _) => a.default.as_deref().cloned(),
+            _ => None,
+        }
+    }
+
     pub(super) fn dispatch_default(target: &Value) -> Option<Result<Value, RuntimeError>> {
+        if let Some(def) = Self::value_carried_default(target) {
+            return Some(Ok(def));
+        }
         if matches!(target, Value::Array(..)) {
             return Some(Ok(Value::Package(Symbol::intern("Any"))));
         }

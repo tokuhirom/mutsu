@@ -128,15 +128,20 @@ impl Interpreter {
                 if hash_arc.has_type_meta() {
                     return None;
                 }
+                // A `:delete` of an absent key yields the hash's `is default(...)`
+                // value (Raku semantics), not Nil. Capture it before the env
+                // borrow is released for the mutating remove below.
+                let container_default = hash_arc.default.as_deref().cloned();
                 let key = idx.to_string_value();
                 if let Some(slot) = local_slot {
                     self.locals[slot] = Value::Nil;
                 }
                 let removed = if let Some(Value::Hash(hash)) = self.env_mut().get_mut(var_name) {
-                    Arc::make_mut(hash).remove(&key).unwrap_or(Value::Nil)
+                    Arc::make_mut(hash).remove(&key)
                 } else {
-                    Value::Nil
+                    None
                 };
+                let removed = removed.or(container_default).unwrap_or(Value::Nil);
                 if let Some(slot) = local_slot
                     && let Some(env_val) = self.env().get(var_name).cloned()
                 {
@@ -271,13 +276,14 @@ impl Interpreter {
         // for this variable: Arc pointers can be reused across
         // allocations, so a stale pointer-keyed entry from a freed
         // same-named container must not leak into the new container.
-        let saved_default = if self.var_default(&var_name).is_some() {
-            self.env()
-                .get(&var_name)
-                .and_then(|v| self.container_default(v).cloned())
-        } else {
-            None
-        };
+        // Prefer the value-carried default (HashData/ArrayData) so `:delete` of
+        // an absent key yields the default even when the container arrived via a
+        // parameter (whose name is not in the name-keyed `var_defaults` table).
+        let saved_default = self
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.container_default(v).cloned())
+            .or_else(|| self.var_default(&var_name).cloned());
         // Resolve WhateverCode indices (e.g. *-1) for array targets
         let idx = if let Some(container) = self.env().get(&var_name).cloned() {
             self.resolve_delete_index_for_array(idx, &container)
