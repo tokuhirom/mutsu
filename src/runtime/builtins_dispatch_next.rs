@@ -167,7 +167,7 @@ impl Interpreter {
         if !self.method_dispatch_stack.is_empty() {
             let frame_idx = self.method_dispatch_stack.len() - 1;
             let is_override = override_args.is_some();
-            let (receiver_class, invocant, mut call_args, owner_class, method_def, rw_params) = {
+            let (receiver_class, invocant, mut call_args, owner_class, mut method_def, rw_params) = {
                 let frame = &mut self.method_dispatch_stack[frame_idx];
                 let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {
                     if tail_call {
@@ -205,6 +205,13 @@ impl Interpreter {
                     rw_params,
                 )
             };
+            // §B: compile the next MRO candidate on-demand if it has no compiled code
+            // (a runtime-added / not-yet-compiled body), so the dispatch below runs it
+            // compiled instead of via the tree-walk `run_instance_method_resolved`.
+            // Delegation forwarders keep their synthesized empty body uncompiled.
+            if method_def.compiled_code.is_none() && method_def.delegation.is_none() {
+                Self::compile_method_def_in_place(&mut method_def, &owner_class);
+            }
             // nextsame/callsame+rw chaining for methods (§D capstone): the stored
             // method args are plain values (no varref), so without an arg source the
             // next candidate's `is rw` param dies with X::Parameter::RW. Forward the

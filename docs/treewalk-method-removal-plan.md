@@ -366,11 +366,27 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
       of forwarding (`S14-roles/composition.t` `handles`-from-role tests 27/30). Fix =
       `compile_method_def_in_place` skips `delegation.is_some()`. pin=
       `t/empty-body-method-compiled.t`(7). `make test` 12278 green.
-     **Next: the non-delegation tree-walk arm of `run_instance_method_resolved` is DEAD from the
-     helper** — the remaining capstone PR: (a) make `builtins_dispatch_next` (nextsame/callsame
-     compiled_code=None candidates) compile on-demand too; (b) extract the delegation-forwarding
-     branch (class.rs:1055-1148) into its own `forward_delegation_method`; (c) delete the
-     non-delegation tree-walk method-execution arm (the `run_block` of the body, class.rs:1149+).
+  11. **Compiled-method arity validation — DONE (#3678).** Compiling empty bodies exposed a
+      pre-existing fast-path gap: a named arg (`X(:a)` → a `Pair`) was bound to a positional
+      param, and a missing required positional was silently bound to Nil, where the tree-walk
+      died (`S13-overloading/typecasting-long.t` `(:U, $)` arity checks). Fix: the fast path is
+      skipped (→ the validating full path) when the call carries a Pair/ValuePair or leaves a
+      required positional unfilled. pin=`t/compiled-method-arity-validation.t`(8).
+  12. **NON-DELEGATION TREE-WALK ARM DELETED — DONE (#TBD).** `builtins_dispatch_next` now also
+      compiles its nextsame/callsame candidate on-demand. A `MUTSU_PROBE_TREEWALK` pass over the
+      full `t/` suite AND a broad roast OOP sweep both showed **ZERO** non-delegation candidates
+      reaching `run_instance_method_resolved`. So the ~470-line non-delegation tree-walk
+      method-execution arm (the `run_block` of the user method body) was **deleted**;
+      `run_instance_method_resolved` is now a delegation-only forwarder (a defensive `Err` guards
+      the proven-unreachable non-delegation entry). **§D(b) GOAL ACHIEVED: the bytecode VM is now
+      the only execution engine for user method bodies — there is no remaining tree-walk of user
+      method-body code.** `make test` 12286 green; delegation (`S14-roles/composition.t`) +
+      arity (`S13-overloading/typecasting-long.t`) green.
+     **Remaining (separate, optional, not user-code tree-walk):** the `run_instance_method`
+     general-dispatch wrapper and the delegation-forwarding logic still live in `class.rs`; they
+     route/forward natively (no `run_block`). A future cleanup could rename
+     `run_instance_method_resolved` → `forward_resolved_delegation` and fold the defensive guard,
+     but that is cosmetic. The §C/`env_dirty` dual-store paydown is the other open axis.
   **★Separate pre-existing gap (NOT a regression, orthogonal):** hyper dispatch `@objs».meth`
   of a method writing a captured-outer *lexical* (`method touch { $seen++ }`) does not
   propagate the write — the hyper internal temp-target redispatch has no op-level drain of
