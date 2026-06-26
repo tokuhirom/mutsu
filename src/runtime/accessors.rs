@@ -2159,6 +2159,19 @@ impl Interpreter {
                 registry.functions.insert(key, def);
             }
         }
+        drop(registry);
+        // The routine registry just changed: a lexical (`my sub`) registered
+        // inside the block was removed. Invalidate the name-keyed resolution
+        // caches so a subsequent call to that name re-resolves against the
+        // restored registry rather than returning the now-out-of-scope
+        // CompiledFunction the first in-block call cached (the compiled-function
+        // map is program-global and still contains the lexical sub's body).
+        self.fn_resolve_gen += 1;
+        self.method_resolve_cache.clear();
+        self.last_method_resolve = None;
+        self.fast_method_cache.clear();
+        self.multi_resolve_cache.clear();
+        self.multi_type_cacheable.clear();
     }
 
     pub(crate) fn push_block_scope_depth(&mut self) {
