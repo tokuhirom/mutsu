@@ -198,23 +198,20 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     writeback drain→proto exit の `apply_rw_bindings_to_env` が caller へ伝播。VM sub=`vm_call_proto_dispatch`（#3556）／
     interpreter proto method=`call_proto_dispatch` の method_ctx 分岐（#TBD・`lookup_proto_method` で proto def 解決）。
     pin=`t/proto-rw-redispatch-coherence.t`(9・sub) / `t/proto-method-rw-redispatch.t`(5・method)。
-    **残ギャップ（別軸・深い substrate ブロック・2026-06-25 精査）**: **nextsame+rw チェーン**。
-    `multi pr(Int $x is rw){$x=$x+1; nextsame} multi pr($x is rw){$x=$x+1000}` で `pr($v)`（$v=10）が raku=**1011**
-    に対し mutsu=**11**（次候補の rw write が消える）。精査で判明した真の blocker は **VM↔interpreter の rw-param スロット
-    コヒーレンス**で、3 経路すべてに跨る:
-    - **function VM/OTF 経路**: バレ multi は OTF コンパイルされ VM で走る。`nextsame`（control-flow builtin）は
-      interpreter `dispatch_next_candidate` の `multi_dispatch_stack` 経路に落ち、次候補を `call_function_def`（interpreter）で
-      呼ぶが、(1) 次候補に渡す現在値が **VM ローカルスロット**（$x=11）でなく stale env（$x=10）/ (2) 次候補の rw writeback は
-      env に書くが、**最初の候補の `call_compiled_function_named` 末尾（vm_call_dispatch.rs:2006-2016）が rw-param ローカル
-      スロット（11）を env に flush し直して上書き**するので消える。修正には①次候補に現在スロット値を渡す②次候補の結果を
-      **最初の候補の VM スロット**へ書き戻す（env だけでは flush に潰される）の両方が要る＝§C cell coherence と同根。
-    - **function interpreter 経路**: `multi_dispatch_stack` 経路。`dispatch_next_candidate` に arg_sources 再設定＋現在 rw 値
-      再読みを追加すれば部分的に解けるが、現状すべて OTF 化されるため到達せず単体検証困難。
-    - **method 経路**: `multi method` は `method_dispatch_stack` 経路（dispatch.rs:131-217）で、次候補の rw param に
-      arg_sources が無く **`X::Parameter::RW` で die**（raku は成功）。別機構の修正が要る。
-    試行（4-tuple に現候補 param_defs を追加し interpreter 経路で再読み＋arg_sources 設定）は VM スロット潰し（②）に阻まれ
-    headline repro を直せず revert 済。**結論=単一スライス不可・§C の env↔locals/VM-frame cell 共有を redispatch 境界へ広げる
-    substrate 作業**（要設計）。repro=`tmp/nextsame_rw.raku`（function）/`tmp/nextsame_rw2.raku`（method・die）。
+    **nextsame+rw チェーン = 完了（#TBD・§D(b) capstone）**。
+    `multi pr(Int $x is rw){$x=$x+1; nextsame} multi pr($x is rw){$x=$x+1000}` で `pr($v)`（$v=10）が function/method とも
+    raku=**1011** に一致（method は以前 `X::Parameter::RW` で die）。callsame 継続（最初の候補が再開して chained 値を読む→**1016**）・
+    3 候補チェーン（→**1106**）も raku 一致。pin=`t/nextsame-rw-redispatch.t`(11・raku 検証済)。実装:
+    `multi_dispatch_stack` の 4 要素目に **最初の（勝者・compiled）候補の scalar rw param**を `Vec<(positional_index, param_name)>`
+    （`MultiDispatchEntry`/`rw_scalar_positional_params`）で保持（param 名は VM スロット位置の特定に必要・チェーン中 FIXED）。
+    `MethodDispatchFrame` も同 `rw_params` フィールド。`dispatch_next_candidate` で redispatch 前に各 rw param の**現在値**を
+    `env[first_param]`（body 変異済の live 値=11）から読み `call_args[pos]` を再構築（function は varref source 維持・method は
+    varref 無しなので `set_pending_call_arg_sources` で source 命名）。redispatch 後にチェーン最終値を **最初の候補の VM ローカル
+    スロット**（`self.current_code` 経由）AND `env[first_param]` へ書き戻す→exit flush がスロットを読むので clobber 回避、callsame
+    継続は env で名前読み。**鍵=「flush を抑止」でなく「flush が読むスロットを chained 値に更新」**＝callsame 継続・N 段チェーンと
+    自然に合成。旧 4-tuple 試行は env のみ書き compiled exit flush が読むスロットを更新しなかったため失敗。`!rw_params.is_empty()`
+    ガードで非 rw nextsame/callsame/callwith は byte-identical。対象外（不変）: `nextwith`/`callwith`+rw（override 引数・raku 自身が
+    literal→rw を拒否）。
   - [x] **`&`-code param を持つ候補の OTF 化 = 完了（#TBD）→ [news/2026-06.md](news/2026-06.md)**。`def_is_otf_compilable` の
     `!pd.name.starts_with('&')` ガードを撤去（`code_signature`〔`&cb:(Int)`〕と default 値の除外は維持）。`multi f(&cb){…}` 候補が
     bare multi / proto 経由とも compiled 実行され interpreter fallback を解消（proto `&cb` 経由 25%→0%）。block literal / 引数付き
@@ -245,7 +242,7 @@ HoH 深い共有が全て raku 一致（pin=`t/container-identity-phase2-complet
     pin=`t/enter-phaser-rvalue.t`(18)。
   - [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ・`@a[1..*]` 再帰の immutable-List bug は §F）/
     `code_signature`〔`&cb:(Int)`〕param を持つ候補の OTF 化（依然除外・別軸で `&cb:(Int)` vs `&cb` の resolution ambiguity も要）/
-    default-param OTF の **builtin-shadow 単一候補**（name-cache 汚染リスクで除外維持・PR #3546）/ nextsame+rw チェーン（上記）/
+    default-param OTF の **builtin-shadow 単一候補**（name-cache 汚染リスクで除外維持・PR #3546）/
     モジュール sub OTF の残 interpreter 結合構文（state/EVAL/CATCH/sigilless/rw/raw/code-sig/sub-sig/戻り型 coercion）＝保守ゲートで除外中・compiled_fns 拡充が本筋。
 
 ---

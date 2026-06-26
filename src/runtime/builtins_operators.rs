@@ -402,8 +402,14 @@ impl Interpreter {
                 .collect();
             let pushed_dispatch = !remaining.is_empty();
             if pushed_dispatch {
-                self.multi_dispatch_stack
-                    .push((name.to_string(), remaining, args.to_vec()));
+                let rw_params =
+                    super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
+                self.multi_dispatch_stack.push((
+                    name.to_string(),
+                    remaining,
+                    args.to_vec(),
+                    rw_params,
+                ));
             }
             self.samewith_context_stack.push((name.to_string(), None));
             if def.empty_sig && !args.is_empty() {

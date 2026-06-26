@@ -218,32 +218,37 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   PLAN nextsame+rw substrate (rw-param slot coherence across the redispatch boundary).
   This is the deep one; do it last, after the volume from Slices 1-3 confirms the
   approach and after the function-side multi-redispatch lessons.
-  **★Scoped implementation path (2026-06-26, after Slices 1a/1b/3 landed).** Current
-  state: function `multi pr(Int $x is rw){$x=$x+1;nextsame} multi pr($x is rw){$x=$x+1000}`
-  with `pr($v)` ($v=10) → mutsu **11**, raku **1011** (next candidate's rw write lost);
-  the *method* form **dies** `X::Parameter::RW`. Root mechanism in
-  `dispatch_next_candidate` (builtins_dispatch_next.rs:218-251, function path): the next
-  candidate is invoked `call_function_def(&next_def, &call_args)` where `call_args` is the
-  **value snapshot** stored in `multi_dispatch_stack` (`(name, Vec<FunctionDef>,
-  Vec<Value>)`, mod.rs:1140) — so (a) it sees the STALE original value (10, not the first
-  candidate's mutated 11), and (b) it has no arg *source*, so its `is rw` writeback has
-  nowhere to land. **Lever = the `arg_sources` mechanism that already solved proto `{*}`
-  rw-redispatch (#3556):** `set_pending_call_arg_sources(Some(vec![Some("v")]))` before
-  the next-candidate call lets the candidate's `is rw` param bind writable to `$v`
-  (`args_matching.rs` `has_arg_source`), and its writeback chains to the caller. The
-  concrete multi-part change: (1) extend `multi_dispatch_stack`'s tuple to carry the
-  original arg *sources* (`Vec<Option<String>>`) alongside the values — touches
-  `push_multi_dispatch_frame` (accessors.rs:878) and the 3 stack-write sites; (2) in
-  `dispatch_next_candidate`, rebuild `call_args` from the *current* rw-param values (read
-  the live slot/env, not the stale snapshot) and `set_pending_call_arg_sources` from the
-  stored sources before `call_function_def`; (3) ensure the first (VM/OTF) candidate's
-  `call_compiled_function_named` exit flush does not overwrite the rw-param slot with its
-  own value after the nested candidate wrote it (the VM-frame↔interpreter-frame slot
-  coherence — §C cell sharing across the redispatch boundary). The *method* path
-  (method_dispatch_stack, lines 130-217) additionally needs the next candidate's `is rw`
-  param to receive an arg_source so it stops dying with `X::Parameter::RW`. A prior 4-tuple
-  attempt was reverted on (3); the retain-on-miss + arg_sources machinery now in place
-  (Slices 1a/1b/#3620) is the substrate this builds on.
+  **★DONE — nextsame+rw redispatch (2026-06-26, #TBD).** Both the function path
+  (`pr($v)` → **1011**) and the method path (no longer dies `X::Parameter::RW`, → **1011**)
+  now chain the rw write through the redispatch, including `callsame` continuations
+  (first candidate resumes and reads the chained value, → **1016**) and 3+ candidate
+  chains (→ **1106**). pin=`t/nextsame-rw-redispatch.t`(11, validated against raku).
+  **How it landed** (close to the scoped plan, with two refinements found while building):
+  (1) `multi_dispatch_stack`'s tuple gained a 4th element — NOT the raw arg sources, but
+  the FIRST (winning, compiled) candidate's scalar rw params as `Vec<(positional_index,
+  param_name)>` (`MultiDispatchEntry`, `rw_scalar_positional_params`). The first
+  candidate's param name (not the caller source) is what locates its VM slot for the
+  writeback, so it is what must be stored; it stays FIXED across the chain (always the
+  first candidate's slots). `MethodDispatchFrame` gained the same `rw_params` field.
+  (2) In `dispatch_next_candidate`, before the redispatch: read each rw param's CURRENT
+  value from `env[first_param]` (the body-mutated live value, e.g. 11), rebuild
+  `call_args[pos]` with it (keeping the varref source for the function path; the method
+  path has none, so `set_pending_call_arg_sources` names the source). (3) AFTER the
+  redispatch: the chain's final value is in env; write it back into the first candidate's
+  VM local slot via `self.current_code` (the live ancestor compiled frame) AND into
+  `env[first_param]` — the slot so the exit flush reads the chained value (not the
+  candidate's own pre-nextsame value, the §C clobber), the env so a `callsame` body that
+  resumes after the redispatch reads the chained value by name. The function path routes
+  the next candidate's writeback through the caller source (varref name); the method path
+  routes it through the first candidate's param name (`source = first_param`), because
+  method args carry no varref. **Refinements vs the plan:** the stored element is the
+  first candidate's *param name* (for slot location), not the caller arg source; and the
+  fix is NOT "prevent the exit flush from clobbering" but "update the slot the flush reads
+  to the chained value", which composes cleanly with `callsame` continuations and N-level
+  chains. The prior reverted 4-tuple attempt failed because it wrote env only; the slot is
+  what the compiled exit flush reads. Guarded entirely behind `!rw_params.is_empty()` so
+  non-rw `nextsame`/`callsame`/`callwith` are byte-identical. Out of scope (unchanged):
+  `nextwith`/`callwith`+rw (override args; raku itself rejects a literal into an rw param).
 - **Out of scope (stay / separate axis):** user `Iterator` `pull-one`/`skip-one`/
   `count-only` (lever B / Phase 2), custom-HOW Metamodel methods (`find_method`/
   `accepts_type`/`name` — MOP reflection), `method FALLBACK` (missing-method semantics).

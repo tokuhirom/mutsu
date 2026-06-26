@@ -1635,8 +1635,14 @@ impl Interpreter {
         let remaining = self.resolve_remaining_proto_candidates(&proto_name, &args, &def);
         let pushed_dispatch = !remaining.is_empty();
         if pushed_dispatch {
-            self.multi_dispatch_stack
-                .push((proto_name.clone(), remaining, args.clone()));
+            let rw_params =
+                super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
+            self.multi_dispatch_stack.push((
+                proto_name.clone(),
+                remaining,
+                args.clone(),
+                rw_params,
+            ));
         }
         self.samewith_context_stack.push((proto_name.clone(), None));
         self.routine_stack.push(RoutineFrame {

@@ -405,12 +405,22 @@ pub(crate) struct ProtoMethodCtx {
     pub(crate) invocant: Value,
 }
 
+/// One entry of `multi_dispatch_stack`: (function_name, remaining_candidates,
+/// original_args, first_candidate_rw_params). See the field doc on
+/// `Interpreter::multi_dispatch_stack`.
+type MultiDispatchEntry = (String, Vec<FunctionDef>, Vec<Value>, Vec<(usize, String)>);
+
 #[derive(Debug, Clone)]
 struct MethodDispatchFrame {
     receiver_class: String,
     invocant: Value,
     args: Vec<Value>,
     remaining: Vec<(String, MethodDef)>,
+    /// The FIRST (winning) candidate's scalar `is rw`/`is raw` positional params
+    /// as (positional_arg_index, sigil-less_param_name). Stays fixed across the
+    /// MRO chain so a `nextsame`+rw redispatch can forward the rw param's current
+    /// value and route the next candidate's writeback through it (§D capstone).
+    rw_params: Vec<(usize, String)>,
 }
 
 /// Frame for navigating through wrapper chain during callsame/callwith.
@@ -1136,8 +1146,15 @@ pub struct Interpreter {
     /// Set when reading a Proxy subclass attribute; consumed by subsequent .push/.pop etc.
     pub(crate) pending_proxy_subclass_attr: Option<(crate::value::ProxySubclassAttrs, String)>,
     /// Stack of remaining multi dispatch candidates for callsame/nextsame/nextcallee.
-    /// Each entry is (function_name, remaining_candidates, original_args).
-    multi_dispatch_stack: Vec<(String, Vec<FunctionDef>, Vec<Value>)>,
+    /// Each entry is (function_name, remaining_candidates, original_args,
+    /// first_candidate_rw_params). The 4th element lists the FIRST (winning,
+    /// compiled) candidate's scalar `is rw`/`is raw` positional params as
+    /// (positional_arg_index, sigil-less_param_name); it stays fixed across the
+    /// redispatch chain so a `nextsame`+rw redispatch can (a) pass the rw param's
+    /// CURRENT value to the next candidate and (b) write the chain's final value
+    /// back into the first candidate's VM local slot, instead of the first
+    /// candidate's exit flush clobbering it with its own stale value (§D capstone).
+    multi_dispatch_stack: Vec<MultiDispatchEntry>,
     method_dispatch_stack: Vec<MethodDispatchFrame>,
     /// Stack of samewith dispatch contexts.
     /// Each entry is (function_or_method_name, optional_invocant).
