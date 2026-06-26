@@ -387,3 +387,90 @@ pub(crate) fn validate_sprintf_arg_types(fmt: &str, args: &[Value]) -> Result<()
     }
     Ok(())
 }
+
+/// Collect the argument indices consumed by `%s` (string) directives, so the
+/// caller can dispatch a user-defined `.Str`/`.Stringy` method on Instance args
+/// before the pure formatter (which only knows `to_string_value`/`.gist`) runs.
+/// Mirrors `validate_sprintf_arg_types`' directive walk (flags/width/precision/
+/// `*`/positional `N$`), returning the effective arg index for each `s` spec.
+pub(crate) fn sprintf_str_arg_indices(fmt: &str) -> Vec<usize> {
+    let bytes = fmt.as_bytes();
+    let len = bytes.len();
+    let mut pos = 0usize;
+    let mut arg_index = 0usize;
+    let mut out = Vec::new();
+    while pos < len {
+        if bytes[pos] != b'%' {
+            pos += 1;
+            continue;
+        }
+        pos += 1;
+        if pos < len && bytes[pos] == b'%' {
+            pos += 1;
+            continue;
+        }
+        let mut positional_arg: Option<usize> = None;
+        {
+            let start = pos;
+            while pos < len && bytes[pos].is_ascii_digit() {
+                pos += 1;
+            }
+            if pos > start && pos < len && bytes[pos] == b'$' {
+                let n: usize = fmt[start..pos].parse().unwrap_or(1);
+                positional_arg = Some(n - 1);
+                pos += 1;
+            } else {
+                pos = start;
+            }
+        }
+        // Skip flags
+        while pos < len {
+            let b = bytes[pos];
+            if b == b'-' || b == b'+' || b == b' ' || b == b'#' || b == b'0' {
+                pos += 1;
+            } else {
+                break;
+            }
+        }
+        // Skip width (a `*` consumes an arg)
+        if pos < len && bytes[pos] == b'*' {
+            pos += 1;
+            if positional_arg.is_none() {
+                arg_index += 1;
+            }
+        } else {
+            while pos < len && bytes[pos].is_ascii_digit() {
+                pos += 1;
+            }
+        }
+        // Skip precision (a `.*` consumes an arg)
+        if pos < len && bytes[pos] == b'.' {
+            pos += 1;
+            if pos < len && bytes[pos] == b'*' {
+                pos += 1;
+                if positional_arg.is_none() {
+                    arg_index += 1;
+                }
+            } else {
+                while pos < len && bytes[pos].is_ascii_digit() {
+                    pos += 1;
+                }
+            }
+        }
+        let spec = if pos < len {
+            let s = fmt[pos..].chars().next().unwrap();
+            pos += s.len_utf8();
+            s
+        } else {
+            '?'
+        };
+        let effective_index = positional_arg.unwrap_or(arg_index);
+        if spec == 's' {
+            out.push(effective_index);
+        }
+        if positional_arg.is_none() {
+            arg_index += 1;
+        }
+    }
+    out
+}

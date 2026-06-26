@@ -10,7 +10,7 @@ impl Interpreter {
     // method, the single source of truth in methods_0arg/dispatch_core_unicode).
     // flip / lc / uc / tc / trim / chars removed (Slice 6.3 dedup) — same.
     pub(super) fn builtin_sprintf(
-        &self,
+        &mut self,
         args: &[Value],
         z_mode: bool,
     ) -> Result<Value, RuntimeError> {
@@ -21,22 +21,47 @@ impl Interpreter {
         // Flatten array arguments (Raku: sprintf("%d", [42]) treats array elements as args)
         let rest = &args[1..];
         let flattened: Vec<Value>;
-        let actual_args = if rest.len() == 1 {
+        let mut actual_args: Vec<Value> = if rest.len() == 1 {
             if let Value::Array(items, ..) = &rest[0] {
                 flattened = items.as_ref().clone().items;
-                &flattened
+                flattened
             } else {
-                rest
+                rest.to_vec()
             }
         } else {
-            rest
+            rest.to_vec()
         };
         super::sprintf::validate_sprintf_directives(&fmt, actual_args.len())?;
-        super::sprintf::validate_sprintf_arg_types(&fmt, actual_args)?;
+        super::sprintf::validate_sprintf_arg_types(&fmt, &actual_args)?;
+        // A `%s` directive stringifies via `.Str` (Raku uses `.Str` only — not
+        // `.Stringy`); the pure formatter only knows `to_string_value`/`.gist`,
+        // so dispatch a user-defined `Str` method on Instance/Package args first
+        // and substitute the result. Any captured-outer write the method makes is
+        // recorded for the surrounding `sprintf` call op's
+        // `apply_pending_rw_writeback` to drain into the caller's slot (same as
+        // every other user-method call).
+        for idx in super::sprintf::sprintf_str_arg_indices(&fmt) {
+            let Some(arg) = actual_args.get(idx) else {
+                continue;
+            };
+            let class_name = match arg {
+                Value::Instance { class_name, .. } => Some(class_name.resolve().to_string()),
+                Value::Package(name) => Some(name.resolve().to_string()),
+                _ => None,
+            };
+            let Some(cn) = class_name else { continue };
+            if !self.has_user_method(&cn, "Str") {
+                continue;
+            }
+            let arg_clone = actual_args[idx].clone();
+            if let Ok(v) = self.call_method_with_values(arg_clone, "Str", vec![]) {
+                actual_args[idx] = Value::str(v.to_string_value());
+            }
+        }
         let rendered = if z_mode {
-            super::sprintf::format_zprintf_args(&fmt, actual_args)
+            super::sprintf::format_zprintf_args(&fmt, &actual_args)
         } else {
-            super::sprintf::format_sprintf_args(&fmt, actual_args)
+            super::sprintf::format_sprintf_args(&fmt, &actual_args)
         };
         Ok(Value::str(rendered))
     }
