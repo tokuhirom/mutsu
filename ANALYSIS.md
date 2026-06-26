@@ -20,7 +20,8 @@
 > - **メインスレッドの panic→`X::` 変換境界不在** → `run`/`run_inner`/`run_range_guarded` で変換 (#3045)。
 > - **worker thread の panic→`X::` 変換境界** → `start{}`/`Promise` は `guard_worker_panic` で、
 >   `hyper`/`race` は #3214 で同経路に統一済み。catchable な Rust panic はもうプロセスを落とさない。
->   残る唯一の **uncatchable** な abort は配列 autoviv の巨大 index によるアロケーション失敗 (§5、別課題)。
+>   残る **uncatchable** な abort はユーザ指定サイズの明示的確保失敗 (shaped 配列宣言・`Buf.allocate` 等)。
+>   配列 autoviv の巨大 index と文字列リピートは `try_reserve` でガード済み (§5、別課題は §7-1)。
 
 ---
 
@@ -34,8 +35,9 @@ mutsu は Rust 製の minimal Raku 互換インタプリタで、roast 通過は
 tree-walk 実行も撤去** (§B #3680・bytecode VM が唯一の実行エンジン) され、いずれも解消済み。
 以下に残る課題は、いずれも **正しさのクラッシュではなく設計・健全性・衛生レベル**の負債である。
 catchable な Rust panic はメイン/worker いずれのスレッドでも `X::` へ変換されプロセスを落とさない。
-唯一プロセスを abort させ得るのは、catch_unwind では捕捉不能な**アロケーション失敗 abort**
-(配列 autoviv の巨大 index 等。main/worker 問わず発生し、raku も同条件で `MoarVM panic`、§5)。
+プロセスを abort させ得るのは、catch_unwind では捕捉不能な**アロケーション失敗 abort** のみ
+(配列 autoviv の巨大 index と文字列リピートは `try_reserve` でガード済み・残は shaped 配列宣言や
+`Buf.allocate` 等の明示的確保。main/worker 問わず発生し、raku も同条件で `MoarVM panic`、§5)。
 
 ---
 
