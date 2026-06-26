@@ -98,6 +98,7 @@ impl Interpreter {
                 self.check_eval_undeclared_type_args(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
                 self.check_eval_undeclared_names(&stmts)?;
+                self.check_eval_begin_forward_calls(&stmts)?;
                 self.check_eval_param_type_constraints(&stmts)?;
                 // When EVAL is called inside a class body, MethodDecl statements
                 // should be added to the enclosing class rather than lowered to subs.
@@ -997,6 +998,108 @@ impl Interpreter {
     /// Walks the AST looking for BareWord expressions that start with uppercase
     /// and aren't known types, classes, or packages. This mirrors Raku's
     /// compile-time check for undeclared symbols.
+    /// A `BEGIN { ... }` block runs at compile time, so it can only see routines
+    /// declared *before* it. Calling a sub that is declared *later* in the same
+    /// unit (`BEGIN { ohnoes() }; sub ohnoes() {}`) is X::Undeclared::Symbols at
+    /// BEGIN time, even though the sub exists by the end of the unit.
+    pub(crate) fn check_eval_begin_forward_calls(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        // All sub names declared at this level (forward + backward).
+        let mut all_subs: HashSet<String> = HashSet::new();
+        for s in stmts {
+            if let Stmt::SubDecl { name, .. } = s {
+                all_subs.insert(name.resolve());
+            }
+        }
+        if all_subs.is_empty() {
+            return Ok(());
+        }
+        let mut declared_before: HashSet<String> = HashSet::new();
+        for s in stmts {
+            match s {
+                Stmt::SubDecl { name, .. } => {
+                    declared_before.insert(name.resolve());
+                }
+                Stmt::Phaser {
+                    kind: PhaserKind::Begin,
+                    body,
+                } => {
+                    let mut calls: HashSet<String> = HashSet::new();
+                    Self::collect_call_names_in_stmts(body, &mut calls);
+                    // A call to a sub declared only *after* this BEGIN.
+                    if let Some(fwd) = calls
+                        .iter()
+                        .find(|c| all_subs.contains(*c) && !declared_before.contains(*c))
+                    {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("symbol".to_string(), Value::str(fwd.clone()));
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!("Undeclared routine:\n    {} used at line 1", fwd)),
+                        );
+                        return Err(RuntimeError::typed("X::Undeclared::Symbols", attrs));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Collect the names of bare function calls (`foo(...)`) appearing anywhere
+    /// in `stmts`, recursing into nested expressions and block bodies.
+    fn collect_call_names_in_stmts(stmts: &[Stmt], out: &mut HashSet<String>) {
+        for s in stmts {
+            match s {
+                Stmt::Expr(e) => Self::collect_call_names_in_expr(e, out),
+                Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+                    Self::collect_call_names_in_expr(expr, out)
+                }
+                Stmt::Say(es) | Stmt::Print(es) | Stmt::Put(es) | Stmt::Note(es) => {
+                    for e in es {
+                        Self::collect_call_names_in_expr(e, out);
+                    }
+                }
+                Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                    Self::collect_call_names_in_stmts(body, out)
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn collect_call_names_in_expr(expr: &Expr, out: &mut HashSet<String>) {
+        match expr {
+            Expr::Call { name, args } => {
+                out.insert(name.resolve());
+                for a in args {
+                    Self::collect_call_names_in_expr(a, out);
+                }
+            }
+            Expr::Binary { left, right, .. } => {
+                Self::collect_call_names_in_expr(left, out);
+                Self::collect_call_names_in_expr(right, out);
+            }
+            Expr::Unary { expr, .. } | Expr::Grouped(expr) => {
+                Self::collect_call_names_in_expr(expr, out)
+            }
+            Expr::MethodCall { target, args, .. } => {
+                Self::collect_call_names_in_expr(target, out);
+                for a in args {
+                    Self::collect_call_names_in_expr(a, out);
+                }
+            }
+            Expr::StringInterpolation(parts) => {
+                for p in parts {
+                    Self::collect_call_names_in_expr(p, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn check_eval_undeclared_names(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         // Collect class/role names and locally-declared variables/subs from
         // this EVAL code. Both are valid references so they should not be
