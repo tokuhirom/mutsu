@@ -1,6 +1,42 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Extract `(positional_arg_index, sigil-less_param_name)` for each scalar
+/// `is rw`/`is raw` positional parameter of a multi candidate's signature.
+/// Used by the nextsame/callsame+rw redispatch chain (§D capstone) to locate the
+/// FIRST (winning, compiled) candidate's rw params: their CURRENT value is
+/// forwarded to the next candidate, and the chain's final value is written back
+/// into the first candidate's VM local slot so its exit flush propagates it
+/// rather than clobbering it with its own pre-nextsame value.
+pub(super) fn rw_scalar_positional_params(
+    param_defs: &[crate::ast::ParamDef],
+) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    for pd in param_defs {
+        if pd.is_invocant || pd.named {
+            continue;
+        }
+        let is_scalar = pd.name != "_"
+            && pd
+                .name
+                .as_bytes()
+                .first()
+                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
+        let is_rw = pd.traits.iter().any(|t| t == "rw" || t == "raw");
+        if is_scalar && is_rw && !pd.slurpy && !pd.double_slurpy && !pd.onearg {
+            out.push((pos, pd.name.clone()));
+        }
+        // Slurpy params consume the remaining positionals; positional indexing
+        // past one is ambiguous, but rw scalars always precede a slurpy, so the
+        // indices collected above stay correct.
+        if !pd.slurpy && !pd.double_slurpy {
+            pos += 1;
+        }
+    }
+    out
+}
+
 impl Interpreter {
     pub(super) fn no_dispatcher_error(func_name: &str) -> RuntimeError {
         let mut attrs = HashMap::new();
@@ -130,7 +166,8 @@ impl Interpreter {
         // Try method dispatch stack
         if !self.method_dispatch_stack.is_empty() {
             let frame_idx = self.method_dispatch_stack.len() - 1;
-            let (receiver_class, invocant, call_args, owner_class, method_def) = {
+            let is_override = override_args.is_some();
+            let (receiver_class, invocant, mut call_args, owner_class, method_def, rw_params) = {
                 let frame = &mut self.method_dispatch_stack[frame_idx];
                 let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {
                     if tail_call {
@@ -142,6 +179,7 @@ impl Interpreter {
                     return Ok(Value::Nil);
                 };
                 frame.remaining.remove(0);
+                let rw_params = frame.rw_params.clone();
                 let call_args = if let Some(new_args) = override_args {
                     // Update the frame's args so subsequent callsame uses the new args
                     frame.args = new_args.clone();
@@ -164,44 +202,94 @@ impl Interpreter {
                     call_args,
                     owner_class,
                     method_def,
+                    rw_params,
                 )
             };
-            let (result, updated_invocant) = match &invocant {
+            // nextsame/callsame+rw chaining for methods (§D capstone): the stored
+            // method args are plain values (no varref), so without an arg source the
+            // next candidate's `is rw` param dies with X::Parameter::RW. Forward the
+            // first candidate's CURRENT rw value and name the FIRST candidate's param
+            // as the source, so the next candidate writes back into it (env-only, all
+            // method candidates run via the interpreter) and the first candidate's own
+            // exit writeback then propagates the chained result to the caller.
+            let mut rw_sources: Vec<Option<String>> = Vec::new();
+            let mut have_rw_source = false;
+            if !rw_params.is_empty() && !is_override {
+                rw_sources = vec![None; call_args.len()];
+                for (pos, first_param) in &rw_params {
+                    if *pos >= call_args.len() {
+                        continue;
+                    }
+                    if let Some(cur) = self.env.get(first_param).cloned() {
+                        call_args[*pos] = crate::runtime::types::unwrap_varref_value(cur);
+                    }
+                    rw_sources[*pos] = Some(first_param.clone());
+                    have_rw_source = true;
+                }
+            }
+            if have_rw_source {
+                self.set_pending_call_arg_sources(Some(rw_sources));
+            }
+            // The first method candidate runs as compiled bytecode (VM slots), so
+            // its exit flush reads its rw-param slot. Capture its frame code now to
+            // write the chain's final value into that slot after the redispatch.
+            let caller_code = self.current_code;
+            let dispatch_result = match &invocant {
                 Value::Instance {
                     class_name,
                     attributes,
                     id: target_id,
-                } => {
-                    let (result, updated) = self.run_instance_method_resolved(
+                } => self
+                    .run_instance_method_resolved(
                         &receiver_class,
                         &owner_class,
                         method_def,
                         attributes.to_map(),
                         call_args,
                         Some(invocant.clone()),
-                    )?;
-                    (
-                        result,
-                        Some(Value::write_back_sharing(
-                            attributes,
-                            *class_name,
-                            updated,
-                            *target_id,
-                        )),
                     )
-                }
-                _ => {
-                    let (result, _) = self.run_instance_method_resolved(
+                    .map(|(result, updated)| {
+                        (
+                            result,
+                            Some(Value::write_back_sharing(
+                                attributes,
+                                *class_name,
+                                updated,
+                                *target_id,
+                            )),
+                        )
+                    }),
+                _ => self
+                    .run_instance_method_resolved(
                         &receiver_class,
                         &owner_class,
                         method_def,
                         HashMap::new(),
                         call_args,
                         Some(invocant.clone()),
-                    )?;
-                    (result, None)
-                }
+                    )
+                    .map(|(result, _)| (result, None)),
             };
+            if have_rw_source {
+                self.set_pending_call_arg_sources(None);
+            }
+            let (result, updated_invocant) = dispatch_result?;
+            // Write the chain's final value (now in env under each first-candidate
+            // param name) back into the first (compiled) candidate's VM local slot
+            // so its exit flush propagates it instead of its own pre-nextsame value.
+            if caller_code != 0 && have_rw_source {
+                // SAFETY: caller_code is the address of the CompiledCode of the
+                // first (compiled) method candidate, the live ancestor frame
+                // currently executing this nextsame/callsame.
+                let code = unsafe { &*(caller_code as *const crate::opcode::CompiledCode) };
+                for (_pos, first_param) in &rw_params {
+                    if let Some(slot) = code.locals.iter().position(|n| n == first_param)
+                        && let Some(val) = self.env.get(first_param).cloned()
+                    {
+                        self.locals[slot] = val;
+                    }
+                }
+            }
             if let Some(new_invocant) = updated_invocant
                 && let Some(frame) = self.method_dispatch_stack.get_mut(frame_idx)
             {
@@ -216,8 +304,49 @@ impl Interpreter {
             return Ok(result);
         }
         // Try multi dispatch stack
-        if let Some((_name, candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() {
-            let call_args = override_args.unwrap_or(orig_args);
+        if let Some((_name, candidates, orig_args, rw_params)) =
+            self.multi_dispatch_stack.last().cloned()
+        {
+            let is_override = override_args.is_some();
+            let mut call_args = override_args.unwrap_or(orig_args);
+            // nextsame/callsame+rw chaining (§D capstone): forward each scalar rw
+            // param's CURRENT value (it was mutated by the first candidate's body
+            // before it called nextsame) to the next candidate, and record the
+            // caller source + first candidate slot so the chain's final value is
+            // written back into the first (compiled) candidate's VM local slot —
+            // its exit flush reads that slot, so without this the first
+            // candidate's own pre-nextsame value clobbers the chained result.
+            let caller_code = self.current_code;
+            let mut rw_writebacks: Vec<(String, String)> = Vec::new();
+            let mut rw_sources: Vec<Option<String>> = Vec::new();
+            let mut have_rw_source = false;
+            if !rw_params.is_empty() && !is_override {
+                rw_sources = vec![None; call_args.len()];
+                for (pos, first_param) in &rw_params {
+                    let Some(arg) = call_args.get(*pos).cloned() else {
+                        continue;
+                    };
+                    let caller_source =
+                        crate::runtime::types::indexed_varref_from_value(&arg).map(|(n, _, _)| n);
+                    // The first candidate's live (body-mutated) param value.
+                    if let Some(cur) = self.env.get(first_param).cloned() {
+                        call_args[*pos] =
+                            match crate::runtime::types::indexed_varref_from_value(&arg) {
+                                Some((name, _, index)) => {
+                                    crate::runtime::types::make_varref_value(name, cur, index)
+                                }
+                                None => cur,
+                            };
+                    }
+                    if let Some(src) = caller_source {
+                        if *pos < rw_sources.len() {
+                            rw_sources[*pos] = Some(src.clone());
+                        }
+                        rw_writebacks.push((src, first_param.clone()));
+                        have_rw_source = true;
+                    }
+                }
+            }
             // Find the first candidate whose signature matches the (possibly new) args.
             let mut matched_idx = None;
             for (i, cand) in candidates.iter().enumerate() {
@@ -239,8 +368,43 @@ impl Interpreter {
             let next_def = candidates[idx].clone();
             let remaining = candidates[idx + 1..].to_vec();
             let stack_len = self.multi_dispatch_stack.len();
-            self.multi_dispatch_stack[stack_len - 1] = (_name, remaining, call_args.clone());
-            let result = self.call_function_def(&next_def, &call_args)?;
+            // Keep rw_params fixed: it always identifies the FIRST candidate's
+            // slots, even as the chain advances through later candidates.
+            self.multi_dispatch_stack[stack_len - 1] =
+                (_name, remaining, call_args.clone(), rw_params.clone());
+            if have_rw_source {
+                self.set_pending_call_arg_sources(Some(rw_sources));
+            }
+            let result = self.call_function_def(&next_def, &call_args);
+            if have_rw_source {
+                self.set_pending_call_arg_sources(None);
+            }
+            let result = result?;
+            // Write the chain's final value (now in env under each caller source)
+            // back into the first candidate's VM local slot so its exit flush
+            // propagates it instead of its own pre-nextsame value.
+            if !rw_writebacks.is_empty() {
+                // SAFETY: caller_code is the address of the CompiledCode of the
+                // first (compiled) candidate, which is the live ancestor frame
+                // currently executing this nextsame/callsame.
+                let code = (caller_code != 0)
+                    .then(|| unsafe { &*(caller_code as *const crate::opcode::CompiledCode) });
+                for (caller_source, first_param) in &rw_writebacks {
+                    let Some(val) = self.env.get(caller_source).cloned() else {
+                        continue;
+                    };
+                    // Update the first candidate's param both as a VM local slot
+                    // (its exit flush reads the slot) and in env (a callsame body
+                    // that resumes after the redispatch may read the param by
+                    // name), so the chain's final value survives both routes.
+                    if let Some(code) = code
+                        && let Some(slot) = code.locals.iter().position(|n| n == first_param)
+                    {
+                        self.locals[slot] = val.clone();
+                    }
+                    self.env.insert(first_param.clone(), val);
+                }
+            }
             if tail_call {
                 return Err(RuntimeError {
                     return_value: Some(result),
@@ -302,7 +466,9 @@ impl Interpreter {
         // Check method dispatch stack
         // (not yet implemented for methods — return Nil)
         // Check multi dispatch stack
-        let Some((_name, candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() else {
+        let Some((_name, candidates, orig_args, rw_params)) =
+            self.multi_dispatch_stack.last().cloned()
+        else {
             return Ok(Value::Nil);
         };
         // Find the first candidate that matches the original arguments,
@@ -323,7 +489,7 @@ impl Interpreter {
         // Remove this candidate and all before it from the remaining list
         let remaining = candidates[idx + 1..].to_vec();
         let stack_len = self.multi_dispatch_stack.len();
-        self.multi_dispatch_stack[stack_len - 1] = (_name, remaining, orig_args);
+        self.multi_dispatch_stack[stack_len - 1] = (_name, remaining, orig_args, rw_params);
         // Return as a callable Sub value
         Ok(Value::make_sub(
             next_def.package,

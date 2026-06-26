@@ -800,11 +800,18 @@ impl Interpreter {
         }
         let pushed = !remaining.is_empty();
         if pushed {
+            let rw_params = chosen
+                .as_ref()
+                .map(|(_, def)| {
+                    super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs)
+                })
+                .unwrap_or_default();
             self.method_dispatch_stack.push(super::MethodDispatchFrame {
                 receiver_class: receiver_class.to_string(),
                 invocant,
                 args: args.to_vec(),
                 remaining,
+                rw_params,
             });
         }
         pushed
@@ -907,8 +914,16 @@ impl Interpreter {
             .collect();
         let pushed = !remaining.is_empty();
         if pushed {
+            // Capture the FIRST (winning) candidate's scalar rw params so a
+            // nextsame+rw redispatch can chain the rw value through it (§D).
+            let rw_params = self
+                .resolve_function_with_alias(name, args)
+                .map(|def| {
+                    super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs)
+                })
+                .unwrap_or_default();
             self.multi_dispatch_stack
-                .push((name.to_string(), remaining, args.to_vec()));
+                .push((name.to_string(), remaining, args.to_vec(), rw_params));
         }
         pushed
     }

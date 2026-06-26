@@ -848,11 +848,15 @@ impl Interpreter {
             self.samewith_context_stack
                 .push((method_name.to_string(), Some(invocant_for_dispatch.clone())));
             if pushed_dispatch {
+                let rw_params = super::builtins_dispatch_next::rw_scalar_positional_params(
+                    &method_def.param_defs,
+                );
                 self.method_dispatch_stack.push(MethodDispatchFrame {
                     receiver_class: receiver_class_name.to_string(),
                     invocant: invocant_for_dispatch,
                     args: args.clone(),
                     remaining,
+                    rw_params,
                 });
             }
             let mut orig_env = crate::env::Env::new();
@@ -913,11 +917,14 @@ impl Interpreter {
         self.samewith_context_stack
             .push((method_name.to_string(), Some(invocant_for_dispatch.clone())));
         if pushed_dispatch {
+            let rw_params =
+                super::builtins_dispatch_next::rw_scalar_positional_params(&method_def.param_defs);
             self.method_dispatch_stack.push(MethodDispatchFrame {
                 receiver_class: receiver_class_name.to_string(),
                 invocant: invocant_for_dispatch,
                 args: args.clone(),
                 remaining,
+                rw_params,
             });
         }
         // Check for `is DEPRECATED` trait on the method
