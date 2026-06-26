@@ -25,7 +25,7 @@ all "reference rakudo also fails / roast test bug" files into a single
 
 - ここに並んでいるのは「失敗したテスト名の羅列」ではなく、**根本原因ごとのグループ**。
 - 優先度は「その修正が何ファイルをまとめて動かすか」と
-  「main track と衝突しにくいか」の両方で決めている。
+  「本流の作業と衝突しにくいか」の両方で決めている。
 - `§D Blocked on the main track` にある項目は、原則として先に触らない。
   基盤側が進むまで、局所修正で前進しにくい。
 - `§F Unpassable` は、mutsu 側で追っても whitelist の前進につながらない項目。
@@ -35,12 +35,11 @@ all "reference rakudo also fails / roast test bug" files into a single
 
 ## Status — final stretch
 
-What this means in practice:
+この状況を実務的に言い換えると、次の意味になる。
 
-- There are not many cheap one-file whitelist wins left.
-- Most remaining failures collapse onto a small number of hard architectural gaps.
-- The document is most useful as a routing table: once one blocker lands, it tells
-  you which test files are likely to move next.
+- 1 ファイルだけ直して whitelist を大きく伸ばせるような安い仕事は、もうあまり残っていない。
+- いま残っている失敗の多くは、少数の重い設計課題に集約される。
+- この文書は「次にどこへ進むか」を決めるための地図として使うのが一番役に立つ。
 
 Essentially every remaining file is gated on one of a small set of **Hard
 architectural blockers**; there are no more cheap whitelist wins to cherry-pick.
@@ -63,26 +62,25 @@ The blockers, in rough order of how many files they gate:
 - **A long tail of distinct compile-time `X::` exception types** thrown at the
   exact right place (the misc.t-style campaign).
 
-The highest-leverage work is the **architectural tracks in PLAN.md**.
-Historically that meant Interpreter-execution-path removal plus first-class
-containers; today, the remaining leverage is mostly on container identity,
-real lazy arrays, and a few typed-exception campaigns.
+いちばん効果が大きいのは、`PLAN.md` にある基盤側のトラック。
+以前は Interpreter 実行経路の撤去と第一級コンテナが中心だったが、
+いま効いているのは主にコンテナの実体性、真の lazy 配列、型付き例外の追加実装である。
 
-The per-file analysis below is the *map*: when one of those blockers lands, it
-shows which files should unblock next.
+以下のファイル別メモは、そのための地図。
+どれか 1 つのブロッカーが解消したときに、次にどのテストファイルが動き始めるかを追えるようにしてある。
 
 ## ▶ Pickup order — least main-track conflict first
 
-If you are choosing a task for a parallel branch, read this section first.
-The ordering is intentionally about **merge/conflict risk**, not just
-"theoretically important features."
+並列ブランチで触る作業を選ぶときは、まずこの節を見る。
+この順番は「理論上どれが大事か」ではなく、
+**いま触っても本流の作業とぶつかりにくいか** を優先している。
 
-The **main track** (PLAN.md) used to be CP-1 env-loan / Interpreter-removal plus
-the **🟣 first-class-container** work (Track B). Interpreter-removal is largely
-done, but the conflict model still matters because container identity, dispatch,
-and `Value` representation remain sensitive areas.
+`PLAN.md` の **main track** は、以前は CP-1 env-loan / Interpreter-removal と
+**🟣 first-class-container**（Track B）が中心だった。
+Interpreter-removal 自体はほぼ終わっているが、
+コンテナの実体性、dispatch、`Value` 表現は今も衝突しやすい領域のまま。
 
-To run a roast session *in parallel* without colliding, pick from the **top**:
+そのため、roast 作業を並列で進めるなら、下の一覧は**上から選ぶ**のが安全。
 
 1. **§A Isolated subsystems** (regex engine / unicode / IO / Buf / format / shaped
    arrays) — **zero** main-track conflict; live entirely in `runtime/regex*`,

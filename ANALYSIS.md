@@ -93,7 +93,7 @@ CP-3 collapse で VM と Interpreter の二重構造は消えた。
 つまり、§B の本質課題だった
 「tree-walk **実行**を bytecode 化する」は達成済み。
 残りは宣言登録の bytecode 化と dispatch overhead の削減であり、
-いずれも perf / cleanup の話であって、ユーザコード本体の tree-walk 実行ではない。
+どちらも性能改善や後片づけの話であって、ユーザコード本体の tree-walk 実行ではない。
 
 ### 1.2 二重変数ストア（`locals ↔ env`）— 単一権威ストア化で解消済み
 
