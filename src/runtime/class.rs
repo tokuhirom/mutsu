@@ -948,16 +948,17 @@ impl Interpreter {
         //    records those in `pending_rw_writeback_sources` for a surrounding *call op*
         //    to drain, but an interpreter-context caller (BUILDALL, coercion/render
         //    redispatch, `samewith`) has none (render-method captured-write coherence);
-        //  - it is not a submethod — `submethod BUILD`/`TWEAK` run through the
-        //    construction machinery with its own writeback + `fail`-to-Failure handling.
+        //  - it is not a delegation forwarder (synthesized, `compiled_code = None`).
         // A pure body (the common multi-method / accessor / `samewith` case, e.g.
-        // S12-methods/defer-next.t method `m` x10000) records nothing, so it is safe.
+        // S12-methods/defer-next.t method `m` x10000, and §B Slice 3 `submethod
+        // BUILD`/`TWEAK` construction) records nothing, so it is safe. Submethods are
+        // included (Slice 3): the construction call sites' `fail`-to-Failure handling
+        // is preserved by re-raising an unhandled-Failure submethod result below.
         let writeback_safe_compiled = method_def
             .compiled_code
             .as_ref()
             .is_some_and(|cc| cc.free_var_writes.is_empty())
-            && method_def.delegation.is_none()
-            && !method_def.is_submethod;
+            && method_def.delegation.is_none();
         let result = if writeback_safe_compiled {
             let cc = method_def.compiled_code.clone().unwrap();
             let inv_for_cell = invocant.clone();
@@ -982,25 +983,41 @@ impl Interpreter {
                 &empty_fns,
             );
             self.pending_rw_writeback_sources = saved_pending;
-            call_result.map(|(v, updated, adjusted)| {
-                // `run_instance_method`'s contract is `(result, attrs-to-commit)`;
-                // the caller commits the returned map. `call_compiled_method` only
-                // marks `adjusted` on a `:=` recovery — otherwise the shared cell
-                // already holds the in-place mutations, so return those (the
-                // caller's commit becomes a no-op) rather than the stale baseline
-                // snapshot, which would clobber them.
-                let final_attrs = if adjusted {
-                    updated
-                } else if let Some(Value::Instance {
-                    attributes: cell, ..
-                }) = &inv_for_cell
-                {
-                    cell.to_map()
-                } else {
-                    updated
-                };
-                (v, final_attrs)
-            })
+            match call_result {
+                Ok((v, updated, adjusted)) => {
+                    // §B Slice 3: a `submethod BUILD`/`TWEAK` that `fail`ed comes back
+                    // as an unhandled Failure *value* (`call_compiled_method` converts
+                    // `fail` to a value), but the construction call sites
+                    // (BUILDALL / `run_build_phase`) drive their `fail`-to-Failure
+                    // behaviour off `Err(is_fail)`. Re-raise it so that handling is
+                    // unchanged. A non-submethod keeps a Failure as a legitimate return.
+                    if method_def.is_submethod
+                        && let Some(mut err) = self.failure_to_runtime_error_if_unhandled(&v)
+                    {
+                        err.is_fail = true;
+                        Err(err)
+                    } else {
+                        // `run_instance_method`'s contract is `(result, attrs-to-commit)`;
+                        // the caller commits the returned map. `call_compiled_method` only
+                        // marks `adjusted` on a `:=` recovery — otherwise the shared cell
+                        // already holds the in-place mutations, so return those (the
+                        // caller's commit becomes a no-op) rather than the stale baseline
+                        // snapshot, which would clobber them.
+                        let final_attrs = if adjusted {
+                            updated
+                        } else if let Some(Value::Instance {
+                            attributes: cell, ..
+                        }) = &inv_for_cell
+                        {
+                            cell.to_map()
+                        } else {
+                            updated
+                        };
+                        Ok((v, final_attrs))
+                    }
+                }
+                Err(e) => Err(e),
+            }
         } else {
             self.run_instance_method_resolved(
                 receiver_class_name,
