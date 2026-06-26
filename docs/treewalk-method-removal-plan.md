@@ -356,10 +356,21 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
      limitations left (both tree-walk + compiled, unchanged):** role-ADDED `$.x` attributes (live
      in the Mixin `overrides`, not the inner cell → read `Nil`), `self.^name` on a mixin (`Plain`
      not `Plain+{Named}`), and the `.map`-attribute-vs-builtin-`.map` accessor shadowing.
-     **Next: the tree-walk `run_instance_method_resolved` non-delegation body is now (near-)dead**
-     — re-run `MUTSU_PROBE_TREEWALK` to confirm only body-less / delegation candidates remain,
-     then delete the tree-walk method-execution arm and extract the delegation-forwarding branch
-     to its own function.
+  10. **Empty-body methods compile too — DONE (#TBD).** `compile_method_def_in_place` no longer
+      skips empty bodies (`submethod BUILD {}`, `method foo {}`), so they compile to a trivial
+      Nil/self-returning body instead of tree-walking. A `MUTSU_PROBE_TREEWALK` pass now shows the
+      helper's tree-walk fallback fires for **only delegation forwarders** (`handles`, e.g.
+      `H.AT-KEY` — 2 cases; zero non-delegation). **★Caught by roast, not t/:** a delegation
+      forwarder has a synthesized empty body; compiling it set `compiled_code`, and the paths that
+      check `compiled_code.is_some()` *before* `delegation` then ran the empty body (→ Nil) instead
+      of forwarding (`S14-roles/composition.t` `handles`-from-role tests 27/30). Fix =
+      `compile_method_def_in_place` skips `delegation.is_some()`. pin=
+      `t/empty-body-method-compiled.t`(7). `make test` 12278 green.
+     **Next: the non-delegation tree-walk arm of `run_instance_method_resolved` is DEAD from the
+     helper** — the remaining capstone PR: (a) make `builtins_dispatch_next` (nextsame/callsame
+     compiled_code=None candidates) compile on-demand too; (b) extract the delegation-forwarding
+     branch (class.rs:1055-1148) into its own `forward_delegation_method`; (c) delete the
+     non-delegation tree-walk method-execution arm (the `run_block` of the body, class.rs:1149+).
   **★Separate pre-existing gap (NOT a regression, orthogonal):** hyper dispatch `@objs».meth`
   of a method writing a captured-outer *lexical* (`method touch { $seen++ }`) does not
   propagate the write — the hyper internal temp-target redispatch has no op-level drain of
