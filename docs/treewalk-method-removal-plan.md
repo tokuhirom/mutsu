@@ -218,6 +218,32 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   PLAN nextsame+rw substrate (rw-param slot coherence across the redispatch boundary).
   This is the deep one; do it last, after the volume from Slices 1-3 confirms the
   approach and after the function-side multi-redispatch lessons.
+  **★Scoped implementation path (2026-06-26, after Slices 1a/1b/3 landed).** Current
+  state: function `multi pr(Int $x is rw){$x=$x+1;nextsame} multi pr($x is rw){$x=$x+1000}`
+  with `pr($v)` ($v=10) → mutsu **11**, raku **1011** (next candidate's rw write lost);
+  the *method* form **dies** `X::Parameter::RW`. Root mechanism in
+  `dispatch_next_candidate` (builtins_dispatch_next.rs:218-251, function path): the next
+  candidate is invoked `call_function_def(&next_def, &call_args)` where `call_args` is the
+  **value snapshot** stored in `multi_dispatch_stack` (`(name, Vec<FunctionDef>,
+  Vec<Value>)`, mod.rs:1140) — so (a) it sees the STALE original value (10, not the first
+  candidate's mutated 11), and (b) it has no arg *source*, so its `is rw` writeback has
+  nowhere to land. **Lever = the `arg_sources` mechanism that already solved proto `{*}`
+  rw-redispatch (#3556):** `set_pending_call_arg_sources(Some(vec![Some("v")]))` before
+  the next-candidate call lets the candidate's `is rw` param bind writable to `$v`
+  (`args_matching.rs` `has_arg_source`), and its writeback chains to the caller. The
+  concrete multi-part change: (1) extend `multi_dispatch_stack`'s tuple to carry the
+  original arg *sources* (`Vec<Option<String>>`) alongside the values — touches
+  `push_multi_dispatch_frame` (accessors.rs:878) and the 3 stack-write sites; (2) in
+  `dispatch_next_candidate`, rebuild `call_args` from the *current* rw-param values (read
+  the live slot/env, not the stale snapshot) and `set_pending_call_arg_sources` from the
+  stored sources before `call_function_def`; (3) ensure the first (VM/OTF) candidate's
+  `call_compiled_function_named` exit flush does not overwrite the rw-param slot with its
+  own value after the nested candidate wrote it (the VM-frame↔interpreter-frame slot
+  coherence — §C cell sharing across the redispatch boundary). The *method* path
+  (method_dispatch_stack, lines 130-217) additionally needs the next candidate's `is rw`
+  param to receive an arg_source so it stops dying with `X::Parameter::RW`. A prior 4-tuple
+  attempt was reverted on (3); the retain-on-miss + arg_sources machinery now in place
+  (Slices 1a/1b/#3620) is the substrate this builds on.
 - **Out of scope (stay / separate axis):** user `Iterator` `pull-one`/`skip-one`/
   `count-only` (lever B / Phase 2), custom-HOW Metamodel methods (`find_method`/
   `accepts_type`/`name` — MOP reflection), `method FALLBACK` (missing-method semantics).
