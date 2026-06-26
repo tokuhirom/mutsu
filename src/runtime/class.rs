@@ -1015,10 +1015,7 @@ impl Interpreter {
         // `self_instance_attrs` (unwraps a `Value::Mixin` self to the inner cell) in
         // the attr ops and the `final_attrs` commit below.
         let mut method_def = method_def;
-        if method_def.compiled_code.is_none()
-            && method_def.delegation.is_none()
-            && !method_def.body.is_empty()
-        {
+        if method_def.compiled_code.is_none() && method_def.delegation.is_none() {
             Self::compile_method_def_in_place(&mut method_def, owner_class);
         }
         let writeback_safe_compiled =

@@ -989,11 +989,18 @@ impl Interpreter {
     }
 
     /// Compile all uncompiled method bodies in a method map.
-    /// Compile a single method/submethod body to bytecode in place if it has a
-    /// non-empty body and is not already compiled. Shared by the bulk registration
-    /// pass and the on-demand compile in `run_resolved_method_compiled_or_treewalk`.
+    /// Compile a single method/submethod body to bytecode in place if it is not
+    /// already compiled. Shared by the bulk registration pass and the on-demand
+    /// compile in `run_resolved_method_compiled_or_treewalk`. An empty body is
+    /// compiled too (to a trivial body returning Nil/self) so that empty `BUILD`/
+    /// `TWEAK`/`method foo {}` stubs no longer fall through to the tree-walk
+    /// `run_instance_method_resolved` — leaving only delegation forwarders there.
     pub(crate) fn compile_method_def_in_place(def: &mut super::MethodDef, package_name: &str) {
-        if def.compiled_code.is_some() || def.body.is_empty() {
+        // A delegation forwarder (`handles`) has a synthesized/empty body and must
+        // keep its delegation routing — compiling its empty body would make paths
+        // that check `compiled_code.is_some()` run the empty body (returning Nil)
+        // instead of forwarding.
+        if def.compiled_code.is_some() || def.delegation.is_some() {
             return;
         }
         let mut compiler = crate::compiler::Compiler::new();
