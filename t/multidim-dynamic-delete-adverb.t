@@ -6,7 +6,7 @@ use Test;
 # that resolved the container by name via `self.env.get`, which missed an outer
 # hash assigned inside a sub (returning Nil instead of the value).
 
-plan 5;
+plan 8;
 
 # Hash assigned indirectly via a sub (the failure mode).
 my %hash;
@@ -16,6 +16,14 @@ set-up;
 my $no = False;
 my $r1 = %hash{"a";"b";"c"}:$no;
 is $r1, 42, 'dynamic :delete(False) reads the value (sub-assigned hash)';
+
+# Combined static adverb + dynamic :delete(False) on a sub-assigned hash.
+my $e = %hash{"a";"b";"c"}:exists:$no;
+ok $e, 'dynamic :exists:delete(False) reads (sub-assigned hash)';
+my $kv = %hash{"a";"b";"c"}:kv:$no;
+is-deeply $kv, (("a", "b", "c"), 42), 'dynamic :kv:delete(False) reads (sub-assigned hash)';
+my $vv = %hash{"a";"b";"c"}:v:$no;
+is $vv, 42, 'dynamic :v:delete(False) reads (sub-assigned hash)';
 
 # In a for loop with bound keys (the roast multislice shape).
 for "a", "b", "c", 42 -> $a, $b, $c, $result {

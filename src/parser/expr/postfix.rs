@@ -2959,14 +2959,19 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     if name == "__mutsu_multidim_subscript_adverb"
                     || name == "__mutsu_multidim_exists_adverb")
                 {
-                    // Wrap adverb calls: inject delete flag into the call
-                    // by converting to a combined handler
+                    // Wrap adverb calls: inject delete flag into the call by
+                    // converting to a combined handler. Like the bare `:$delete`
+                    // case, lower to a Ternary so the no-delete branch keeps the
+                    // *original* static-adverb call (which passes the evaluated
+                    // target expression and so resolves the container normally);
+                    // only the delete branch falls back to the by-name `_dyn`
+                    // builtin (it must mutate the variable).
+                    let original_expr = expr.clone();
                     if let Expr::Call {
                         name: inner_name,
                         mut args,
                     } = expr
                     {
-                        // Insert dynamic delete flag after adverb name
                         // Original args: [target_expr, adverb_name, dim0, dim1, ...]
                         // New args: [var_name_str, adverb_name, delete_var, dim0, dim1, ...]
                         let target = args.remove(0);
@@ -2984,9 +2989,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         } else {
                             "__mutsu_multidim_exists_adverb_dyn"
                         };
-                        expr = Expr::Call {
+                        let delete_expr = Expr::Call {
                             name: Symbol::intern(fn_name),
                             args: new_args,
+                        };
+                        expr = Expr::Ternary {
+                            cond: Box::new(Expr::Var(adverb_var.to_string())),
+                            then_expr: Box::new(delete_expr),
+                            else_expr: Box::new(original_expr),
                         };
                     } else {
                         unreachable!()
@@ -2998,12 +3008,16 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     ..
                 } = &expr
                 {
-                    // :$delete on Exists { target: MultiDimIndex }
+                    // :$delete on Exists { target: MultiDimIndex }. Lower to a
+                    // Ternary so the no-delete branch keeps the original `Exists`
+                    // expr (which resolves the container via the normal opcode);
+                    // only the delete branch uses the by-name `_dyn` builtin.
                     if let Expr::MultiDimIndex {
                         target: mdt,
                         dimensions: dims,
                     } = target.as_ref()
                     {
+                        let original_expr = expr.clone();
                         let var_name = multidim_target_var_name(mdt);
                         let adverb_str = match exists_adv {
                             ExistsAdverb::Kv => "kv",
@@ -3021,9 +3035,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             Expr::Literal(Value::str(adverb_str.to_string())),
                         ];
                         new_args.extend(dims);
-                        expr = Expr::Call {
+                        let delete_expr = Expr::Call {
                             name: Symbol::intern("__mutsu_multidim_exists_adverb_dyn"),
                             args: new_args,
+                        };
+                        expr = Expr::Ternary {
+                            cond: Box::new(Expr::Var(adverb_var.to_string())),
+                            then_expr: Box::new(delete_expr),
+                            else_expr: Box::new(original_expr),
                         };
                     } else {
                         expr = Expr::Call {
