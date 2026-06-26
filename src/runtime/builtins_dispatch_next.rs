@@ -207,8 +207,9 @@ impl Interpreter {
             };
             // §B: compile the next MRO candidate on-demand if it has no compiled code
             // (a runtime-added / not-yet-compiled body), so the dispatch below runs it
-            // compiled instead of via the tree-walk `run_instance_method_resolved`.
-            // Delegation forwarders keep their synthesized empty body uncompiled.
+            // compiled rather than tree-walked — the non-delegation tree-walk arm of
+            // `forward_resolved_delegation` was deleted (#3680). Delegation forwarders
+            // keep their synthesized empty body uncompiled.
             if method_def.compiled_code.is_none() && method_def.delegation.is_none() {
                 Self::compile_method_def_in_place(&mut method_def, &owner_class);
             }
@@ -242,11 +243,11 @@ impl Interpreter {
             // write the chain's final value into that slot after the redispatch.
             let caller_code = self.current_code;
             // §B: run the next MRO candidate as compiled bytecode (`call_compiled_method`)
-            // when it has compiled code, instead of the tree-walk
-            // `run_instance_method_resolved` recompile-each-call path. Both leave the
-            // active `method_dispatch_stack` frame in place (neither pushes a new one),
-            // so a further `nextsame`/`callsame` inside the candidate continues this
-            // same MRO chain. Methods without compiled code (rare; added post-compile)
+            // when it has compiled code (always, after the on-demand compile above,
+            // except a delegation forwarder). Both leave the active
+            // `method_dispatch_stack` frame in place (neither pushes a new one), so a
+            // further `nextsame`/`callsame` inside the candidate continues this same MRO
+            // chain. Methods without compiled code (a delegation forwarder)
             // keep the interpreter path.
             let method_name_for_dispatch = self
                 .samewith_context_stack
@@ -291,7 +292,7 @@ impl Interpreter {
                             (result, Some(new_inv))
                         })
                     } else {
-                        self.run_instance_method_resolved(
+                        self.forward_resolved_delegation(
                             &receiver_class,
                             &owner_class,
                             method_def,
@@ -327,7 +328,7 @@ impl Interpreter {
                         )
                         .map(|(result, _, _)| (result, None))
                     } else {
-                        self.run_instance_method_resolved(
+                        self.forward_resolved_delegation(
                             &receiver_class,
                             &owner_class,
                             method_def,
