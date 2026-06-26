@@ -930,7 +930,24 @@ impl Interpreter {
             ));
         };
         let n = n_raw.max(0) as usize;
-        let repeated = crate::runtime::utils::coerce_to_str(&left).repeat(n);
+        let src = crate::runtime::utils::coerce_to_str(&left);
+        // Guard the allocation: `str::repeat` aborts the process via
+        // `handle_alloc_error` on an absurd count (e.g. `"x" x 1e15`), which
+        // `try {}` cannot recover from. Reserve fallibly first so the same
+        // input yields a catchable `X::` instead. (raku aborts here too.)
+        let total = src
+            .len()
+            .checked_mul(n)
+            .ok_or_else(|| RuntimeError::new("Cannot repeat string: length overflow"))?;
+        let mut repeated = String::new();
+        repeated.try_reserve(total).map_err(|_| {
+            RuntimeError::new(format!(
+                "Cannot repeat string to {total} bytes: memory allocation failed"
+            ))
+        })?;
+        for _ in 0..n {
+            repeated.push_str(&src);
+        }
         let result = if repeated.is_ascii() {
             Value::str(repeated)
         } else {

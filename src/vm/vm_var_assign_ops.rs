@@ -42,6 +42,27 @@ impl Interpreter {
         }
     }
 
+    /// Auto-vivify `items` to at least `new_len` elements, filling new slots
+    /// with `fill`. Uses fallible reservation (`try_reserve`) so an absurd
+    /// index (e.g. `@a[9999999999999] = 1`) yields a catchable `X::` instead of
+    /// an uncatchable `handle_alloc_error` abort that `try {}` cannot recover
+    /// from. (raku aborts with a MoarVM panic on the same input.)
+    fn autoviv_resize(
+        items: &mut Vec<Value>,
+        new_len: usize,
+        fill: Value,
+    ) -> Result<(), RuntimeError> {
+        if new_len > items.len() {
+            items.try_reserve(new_len - items.len()).map_err(|_| {
+                RuntimeError::new(format!(
+                    "Cannot autovivify array to {new_len} elements: memory allocation failed"
+                ))
+            })?;
+            items.resize(new_len, fill);
+        }
+        Ok(())
+    }
+
     pub(super) fn delegated_mixin_attr_key(
         &self,
         mixins: &std::collections::HashMap<String, Value>,
@@ -55,7 +76,7 @@ impl Interpreter {
         idx: &Value,
         val: &Value,
         range_slice: &Option<(Vec<usize>, Vec<Value>)>,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         match attr_value {
             Value::Array(items, kind) if !matches!(idx, Value::Str(_)) => {
                 let mut updated = (**items).clone();
@@ -63,53 +84,67 @@ impl Interpreter {
                     if let Some(max_idx) = slice_indices.last().copied()
                         && max_idx >= updated.len()
                     {
-                        updated.resize(max_idx + 1, Value::Package(Symbol::intern("Any")));
+                        Self::autoviv_resize(
+                            &mut updated,
+                            max_idx + 1,
+                            Value::Package(Symbol::intern("Any")),
+                        )?;
                     }
                     for (offset, i) in slice_indices.iter().enumerate() {
                         updated[*i] = vals.get(offset).cloned().unwrap_or(Value::Nil);
                     }
                 } else if let Some(i) = Self::index_to_usize(idx) {
-                    if i >= updated.len() {
-                        updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
-                    }
+                    Self::autoviv_resize(
+                        &mut updated,
+                        i + 1,
+                        Value::Package(Symbol::intern("Any")),
+                    )?;
                     updated[i] = val.clone();
                 } else {
-                    return false;
+                    return Ok(false);
                 }
                 *attr_value = Value::Array(Arc::new(updated), *kind);
-                true
+                Ok(true)
             }
             Value::Hash(hash) if matches!(idx, Value::Str(_)) => {
                 let mut updated = (**hash).clone();
                 updated.insert(idx.to_string_value(), val.clone());
                 *attr_value = Value::Hash(Value::hash_arc(updated));
-                true
+                Ok(true)
             }
             Value::Nil if !matches!(idx, Value::Str(_)) => {
                 let mut updated = Vec::new();
                 if let Some((slice_indices, vals)) = range_slice {
                     if let Some(max_idx) = slice_indices.last().copied() {
-                        updated.resize(max_idx + 1, Value::Package(Symbol::intern("Any")));
+                        Self::autoviv_resize(
+                            &mut updated,
+                            max_idx + 1,
+                            Value::Package(Symbol::intern("Any")),
+                        )?;
                     }
                     for (offset, i) in slice_indices.iter().enumerate() {
                         updated[*i] = vals.get(offset).cloned().unwrap_or(Value::Nil);
                     }
                 } else if let Some(i) = Self::index_to_usize(idx) {
-                    updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                    Self::autoviv_resize(
+                        &mut updated,
+                        i + 1,
+                        Value::Package(Symbol::intern("Any")),
+                    )?;
                     updated[i] = val.clone();
                 } else {
-                    return false;
+                    return Ok(false);
                 }
                 *attr_value = Value::real_array(updated);
-                true
+                Ok(true)
             }
             Value::Nil if matches!(idx, Value::Str(_)) => {
                 let mut updated = std::collections::HashMap::new();
                 updated.insert(idx.to_string_value(), val.clone());
                 *attr_value = Value::Hash(Value::hash_arc(updated));
-                true
+                Ok(true)
             }
-            _ => false,
+            _ => Ok(false),
         }
     }
 
@@ -178,9 +213,7 @@ impl Interpreter {
                 };
                 if let Value::Array(items, ..) = container {
                     let arr = Arc::make_mut(items);
-                    if i >= arr.len() {
-                        arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
-                    }
+                    Self::autoviv_resize(arr, i + 1, Value::Package(Symbol::intern("Any")))?;
                     arr[i] = value;
                     return Ok(());
                 }
@@ -200,9 +233,7 @@ impl Interpreter {
                 return Err(RuntimeError::assignment_ro(None));
             };
             let arr = Arc::make_mut(items);
-            if i >= arr.len() {
-                arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
-            }
+            Self::autoviv_resize(arr, i + 1, Value::Package(Symbol::intern("Any")))?;
             arr[i] = value;
             return Ok(());
         }
@@ -2180,9 +2211,7 @@ impl Interpreter {
                 Value::Array(arr, ..) => {
                     if let Ok(i) = key.parse::<usize>() {
                         let a = Arc::make_mut(arr);
-                        while a.len() <= i {
-                            a.push(Value::Nil);
-                        }
+                        Self::autoviv_resize(a, i + 1, Value::Nil)?;
                         a[i] = new_val.clone();
                     }
                 }
@@ -2341,9 +2370,7 @@ impl Interpreter {
                         // placeholders), or 0/0.0/"" for native arrays.
                         let fill =
                             Self::native_fill_for_constraint(declared_constraint_incdec.as_deref());
-                        while a.len() <= i {
-                            a.push(fill.clone());
-                        }
+                        Self::autoviv_resize(a, i + 1, fill)?;
                         a[i] = new_val.clone();
                         true
                     } else {
@@ -3314,10 +3341,7 @@ impl Interpreter {
                     // (descend through any `:=`-bound cell, same as the hash arm).
                     if let Some(Value::Array(items, ..)) = self.env_root_descended_mut(&var_name) {
                         let arr = Arc::make_mut(items);
-                        if idx_usize >= arr.len() {
-                            let fill = native_fill.clone();
-                            arr.resize(idx_usize + 1, fill);
-                        }
+                        Self::autoviv_resize(arr, idx_usize + 1, native_fill.clone())?;
                         arr[idx_usize] = v;
                     }
                 }
@@ -3386,10 +3410,7 @@ impl Interpreter {
                             .unwrap_or(0);
                         if let Value::Array(items, ..) = container {
                             let arr = Arc::make_mut(items);
-                            if max_idx >= arr.len() {
-                                let fill = native_fill.clone();
-                                arr.resize(max_idx + 1, fill);
-                            }
+                            Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
                         }
                         // Assign each value to the corresponding index
                         for (i, key) in keys.iter().enumerate() {
@@ -3705,8 +3726,12 @@ impl Interpreter {
                     if let Some(attr_key) = delegated_attr_key
                         && let Some(attr_value) = updated_mixins.get_mut(&attr_key)
                     {
-                        assigned_object_slot =
-                            Self::assign_mixin_container_slot(attr_value, &idx, &val, &range_slice);
+                        assigned_object_slot = Self::assign_mixin_container_slot(
+                            attr_value,
+                            &idx,
+                            &val,
+                            &range_slice,
+                        )?;
                     }
                     if !assigned_object_slot {
                         for (key, attr_value) in updated_mixins.iter_mut() {
@@ -3718,7 +3743,7 @@ impl Interpreter {
                                 &idx,
                                 &val,
                                 &range_slice,
-                            ) {
+                            )? {
                                 assigned_object_slot = true;
                                 break;
                             }
@@ -4008,10 +4033,11 @@ impl Interpreter {
                                     if let Some(max_idx) = slice_indices.last().copied()
                                         && max_idx >= arr.len()
                                     {
-                                        arr.resize(
+                                        Self::autoviv_resize(
+                                            arr,
                                             max_idx + 1,
                                             Value::Package(Symbol::intern("Any")),
-                                        );
+                                        )?;
                                     }
                                 }
                                 for (offset, i) in slice_indices.iter().enumerate() {
@@ -4042,10 +4068,7 @@ impl Interpreter {
                                     } else {
                                         Arc::make_mut(items)
                                     };
-                                    if i >= arr.len() {
-                                        let fill = native_fill.clone();
-                                        arr.resize(i + 1, fill);
-                                    }
+                                    Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
                                     if bind_mode && let Some((source_install, cell)) = &bind_cell {
                                         // Phase 2 Stage 2: a `:=`-bound element
                                         // holds a shared `ContainerRef` cell (no
@@ -4559,10 +4582,7 @@ impl Interpreter {
             && let Ok(inner_i) = inner_key.parse::<usize>()
         {
             let arr = Arc::make_mut(outer_arr);
-            if inner_i >= arr.len() {
-                let fill = native_fill.clone();
-                arr.resize(inner_i + 1, fill);
-            }
+            Self::autoviv_resize(arr, inner_i + 1, native_fill.clone())?;
             // Autovivify the slot if it's not already a container. A
             // `:=`-bound element is a shared `ContainerRef` cell holding a
             // container — descend through it (below) instead of clobbering it.
@@ -4582,7 +4602,7 @@ impl Interpreter {
                 // mutation reaches the aliased container (`@h[i] := @inner;
                 // @h[i][j] = v` updates `@inner[j]`).
                 Value::ContainerRef(_) => {
-                    Self::assign_into_nested_container(&mut arr[inner_i], &outer_key, val.clone());
+                    Self::assign_into_nested_container(&mut arr[inner_i], &outer_key, val.clone())?;
                 }
                 Value::Array(inner_arr, _) => {
                     if let Ok(j) = outer_key.parse::<usize>() {
@@ -4592,16 +4612,11 @@ impl Interpreter {
                             // SAFETY: aliased in-place mutation of a shared array
                             // (strong_count > 1); see `arc_contents_mut`.
                             let v = &mut unsafe { crate::value::arc_contents_mut(inner_arr) }.items;
-                            while v.len() <= j {
-                                v.push(Value::Nil);
-                            }
+                            Self::autoviv_resize(v, j + 1, Value::Nil)?;
                             Value::assign_element_slot(&mut v[j], val.clone());
                         } else {
                             let inner = Arc::make_mut(inner_arr);
-                            if j >= inner.len() {
-                                let fill = native_fill.clone();
-                                inner.resize(j + 1, fill);
-                            }
+                            Self::autoviv_resize(inner, j + 1, native_fill.clone())?;
                             Value::assign_element_slot(&mut inner[j], val.clone());
                         }
                     }
@@ -4658,7 +4673,7 @@ impl Interpreter {
                     Value::hash(std::collections::HashMap::new())
                 }
             });
-            Self::assign_into_nested_container(inner_val, &outer_key, val.clone());
+            Self::assign_into_nested_container(inner_val, &outer_key, val.clone())?;
         }
         if let Some(updated) = self.get_env_with_main_alias(&var_name) {
             self.update_local_if_exists(code, &var_name, &updated);
@@ -4672,11 +4687,15 @@ impl Interpreter {
     /// assign so that a write to a container-valued bound element
     /// (`%h<key><inner> = ...` where `%h<key>` is a cell) mutates the shared,
     /// held container in place instead of being silently dropped.
-    pub(super) fn assign_into_nested_container(target: &mut Value, outer_key: &str, val: Value) {
+    pub(super) fn assign_into_nested_container(
+        target: &mut Value,
+        outer_key: &str,
+        val: Value,
+    ) -> Result<(), RuntimeError> {
         match target {
             Value::ContainerRef(cell) => {
                 let mut guard = cell.lock().unwrap();
-                Self::assign_into_nested_container(&mut guard, outer_key, val);
+                Self::assign_into_nested_container(&mut guard, outer_key, val)?;
             }
             Value::Array(arr, _) => {
                 if let Ok(i) = outer_key.parse::<usize>() {
@@ -4684,15 +4703,11 @@ impl Interpreter {
                         // SAFETY: aliased in-place mutation of a shared array
                         // (strong_count > 1); see `arc_contents_mut`.
                         let v = &mut unsafe { crate::value::arc_contents_mut(arr) }.items;
-                        while v.len() <= i {
-                            v.push(Value::Nil);
-                        }
+                        Self::autoviv_resize(v, i + 1, Value::Nil)?;
                         Value::assign_element_slot(&mut v[i], val);
                     } else {
                         let a = Arc::make_mut(arr);
-                        if i >= a.len() {
-                            a.resize(i + 1, Value::Nil);
-                        }
+                        Self::autoviv_resize(a, i + 1, Value::Nil)?;
                         Value::assign_element_slot(&mut a[i], val);
                     }
                 }
@@ -4702,6 +4717,7 @@ impl Interpreter {
             }
             _ => {}
         }
+        Ok(())
     }
 
     /// Follow `current` through any chain of `:=`-bound container cells
@@ -4882,10 +4898,7 @@ impl Interpreter {
                         Value::Array(arr_arc, _) => {
                             if let Ok(i) = key.parse::<usize>() {
                                 let arr = Arc::make_mut(arr_arc);
-                                if i >= arr.len() {
-                                    let fill = native_fill.clone();
-                                    arr.resize(i + 1, fill);
-                                }
+                                Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
                                 // Autovivify if needed. A `ContainerRef` is a
                                 // `:=`-bound cell that holds (and is descended to)
                                 // a container on the next iteration; treating it
@@ -4928,12 +4941,11 @@ impl Interpreter {
                                 Value::Array(arr_arc, _) => {
                                     if let Ok(i) = key.parse::<usize>() {
                                         let arr = Arc::make_mut(arr_arc);
-                                        if i >= arr.len() {
-                                            arr.resize(
-                                                i + 1,
-                                                Value::Package(Symbol::intern("Any")),
-                                            );
-                                        }
+                                        Self::autoviv_resize(
+                                            arr,
+                                            i + 1,
+                                            Value::Package(Symbol::intern("Any")),
+                                        )?;
                                         arr[i] = if next_positional {
                                             Value::real_array(Vec::new())
                                         } else {
@@ -4971,10 +4983,7 @@ impl Interpreter {
                         Value::Array(arr_arc, _) => {
                             if let Ok(i) = key.parse::<usize>() {
                                 let arr = Arc::make_mut(arr_arc);
-                                if i >= arr.len() {
-                                    let fill = native_fill.clone();
-                                    arr.resize(i + 1, fill);
-                                }
+                                Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
                                 if bind_cell.is_some() {
                                     arr[i] = leaf_val;
                                 } else {
@@ -4995,8 +5004,7 @@ impl Interpreter {
                             if is_positional {
                                 let mut arr = Vec::new();
                                 if let Ok(i) = key.parse::<usize>() {
-                                    let fill = native_fill.clone();
-                                    arr.resize(i + 1, fill);
+                                    Self::autoviv_resize(&mut arr, i + 1, native_fill.clone())?;
                                     arr[i] = leaf_val;
                                 }
                                 *current = Value::real_array(arr);
@@ -5125,7 +5133,7 @@ impl Interpreter {
                 };
                 for (i, k) in keys.iter().enumerate() {
                     let v = vals.get(i).cloned().unwrap_or(Value::Nil);
-                    self.assign_into_computed_target(&resolved, k, v);
+                    self.assign_into_computed_target(&resolved, k, v)?;
                 }
                 self.stack.push(val);
                 return Ok(());
@@ -5177,9 +5185,7 @@ impl Interpreter {
                     // change is visible to all holders of the same Arc; see
                     // `arc_contents_mut`.
                     let v = &mut unsafe { crate::value::arc_contents_mut(arc) }.items;
-                    while v.len() <= i {
-                        v.push(Value::Nil);
-                    }
+                    Self::autoviv_resize(v, i + 1, Value::Nil)?;
                     match &bind_cell {
                         // Bind mode installs the shared cell at the element;
                         // the same cell is written back to the source var
@@ -5256,7 +5262,12 @@ impl Interpreter {
     /// `ContainerRef` cell. Used by junction/slice autothreading in the generic
     /// index-assign op, where the target is a resolved inner container reached
     /// through a nested subscript (`%h<x>{...}`).
-    fn assign_into_computed_target(&self, target: &Value, key: &Value, val: Value) {
+    fn assign_into_computed_target(
+        &self,
+        target: &Value,
+        key: &Value,
+        val: Value,
+    ) -> Result<(), RuntimeError> {
         match target {
             Value::Hash(arc) => {
                 let k = Value::hash_key_encode(key);
@@ -5270,14 +5281,13 @@ impl Interpreter {
                     // SAFETY: aliased in-place mutation of a shared array; see
                     // `arc_contents_mut`.
                     let v = &mut unsafe { crate::value::arc_contents_mut(arc) }.items;
-                    while v.len() <= i {
-                        v.push(Value::Nil);
-                    }
+                    Self::autoviv_resize(v, i + 1, Value::Nil)?;
                     Value::assign_element_slot(&mut v[i], val);
                 }
             }
             _ => {}
         }
+        Ok(())
     }
 
     /// Phase 2 phantom-entry: materialize a missing-key `:=` bind on the first
@@ -6594,7 +6604,7 @@ impl Interpreter {
                 let item_count = items.len();
                 let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
                 if item_count < shape[0] {
-                    shaped_items.resize(shape[0], Value::Nil);
+                    Self::autoviv_resize(&mut shaped_items, shape[0], Value::Nil)?;
                 }
                 assigned = Value::Array(
                     std::sync::Arc::new(crate::value::ArrayData::new(shaped_items)),
