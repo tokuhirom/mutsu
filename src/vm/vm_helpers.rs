@@ -411,7 +411,7 @@ impl Interpreter {
 
     /// Force a LazyList by running its compiled bytecode in the Interpreter.
     /// Falls back to interpreter if no compiled code is available.
-    pub(super) fn force_lazy_list_vm(
+    pub(crate) fn force_lazy_list_vm(
         &mut self,
         list: &LazyList,
     ) -> Result<Vec<Value>, RuntimeError> {
