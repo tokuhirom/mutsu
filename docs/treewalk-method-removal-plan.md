@@ -200,11 +200,33 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   THEN the coerce/render *routing* (original Slice 1: route tree-walked
   `dispatch_instance_and_fallback` user methods through `dispatch_compiled_method`)
   becomes safe, because the drain point exists.
-- **Slice 2 — generalize the lever** to all user-method calls in
-  `call_method_with_values` (cat 1 misc user methods abs/succ/foo/…, and the
-  catch-all-miss path feeding `dispatch_instance_and_fallback:867`).
-- **Slice 3 — construction submethods (BUILD/TWEAK/new, ~60).** Run `.new`'s BUILD/TWEAK
-  as compiled bytecode.
+- **Slice 2 — generalize the lever to all user-method calls — DONE (#3645).** The
+  `run_instance_method` wrapper (reached for multi-method dispatch and `samewith`
+  re-dispatch through `call_method_with_values` → `dispatch_instance_and_fallback`,
+  e.g. roast S12-methods/defer-next.t method `m` ×10000) executed the resolved candidate
+  through `run_instance_method_resolved`, which `run_block`-recompiles the body on every
+  call. It now runs the candidate via the cached VM-native `call_compiled_method` when
+  **writeback-safe** (~2.3× faster on a 50k multi-method+samewith loop). The MRO frame is
+  already pushed in `run_instance_method`, so the candidate's own redispatch continues the
+  chain. **Writeback-safety gate** (else keep the env-merging tree-walk): body writes no
+  captured-outer (free) vars; not a submethod; not a delegation forwarder. The pending
+  writeback list is saved/restored around the call (it clears on entry) so a sibling
+  BUILD write survives a nested `.new`; the returned attrs are the live cell unless
+  `:=`-adjusted (no clobber of an in-place `self.attr ~= …`). pin=
+  `t/multi-method-compiled-dispatch.t`(6). **★The `record_tree_walk_method` counter fires
+  at `run_instance_method` ENTRY (resolution), not at execution, so it does NOT drop after
+  this conversion — measure the win by wall-clock, not the counter.**
+- **Slice 3 (next) — construction submethods (BUILD/TWEAK, ~60).** Run `.new`'s
+  BUILD/TWEAK as compiled bytecode. **Currently excluded** by the Slice 2 `!is_submethod`
+  gate, so BUILD/TWEAK still tree-walk (`run_instance_method_resolved` at
+  methods_dispatch_new.rs:335/445/545 and `run_instance_method` at :361, threading
+  `current_attrs = updated` through the MRO). Reuse the Slice 2 pattern: convert a BUILD
+  submethod with `compiled_code` and **empty `free_var_writes`** to `call_compiled_method`
+  (saving/restoring `pending_rw_writeback_sources` for the #3620 sibling-write case);
+  BUILDs that write captured-outer (`$outer++`) stay tree-walk for the env merge. The hard
+  parts are the attribute-threading commit and `fail`-inside-BUILD → Failure semantics
+  (`t/native-build-construct.t` tests 8-9) — verify those plus
+  `t/build-sibling-writeback-coherence.t` and S12-construction roast before landing.
   **★Pre-existing blocker — BUILDALL sibling writeback clobber — FIXED (#3620).** A
   *nested method dispatch inside one BUILD clobbered a sibling BUILD's captured-outer
   writeback*:
@@ -228,11 +250,15 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   it. pin=`t/build-sibling-writeback-coherence.t`(6). This was the same retain-on-miss
   principle as Slice 1b, now applied to the real method-call op tail, and it unblocks the
   nested-dispatch-inside-BUILD shape for coercion/render (and a future index-coercion).
-- **Slice 4 (capstone) — `samewith`/`nextsame`/`callsame` method redispatch (the `m`
-  91%).** Compile the `method_dispatch_stack` candidate dispatch. Coordinate with the
-  PLAN nextsame+rw substrate (rw-param slot coherence across the redispatch boundary).
-  This is the deep one; do it last, after the volume from Slices 1-3 confirms the
-  approach and after the function-side multi-redispatch lessons.
+- **Slice 4 (capstone) — `nextsame`/`callsame` method redispatch — DONE (#3640).** The
+  `method_dispatch_stack` candidate dispatch in `dispatch_next_candidate` ran the next MRO
+  candidate through `run_instance_method_resolved`; it now uses `call_compiled_method` when
+  the candidate has compiled code (the active MRO frame stays in place, so a further
+  `nextsame` continues the chain). Commits the attr snapshot only when `attrs_adjusted`
+  (else the shared cell already holds the in-place mutation). The §D nextsame+rw chaining
+  (slot writeback via `current_code`) is preserved. (`samewith` re-dispatch is covered by
+  Slice 2, since it routes through `call_method_with_values`.) pin=
+  `t/method-redispatch-compiled.t`(8); `t/nextsame-rw-redispatch.t` still green.
   **★DONE — nextsame+rw redispatch (2026-06-26, #TBD).** Both the function path
   (`pr($v)` → **1011**) and the method path (no longer dies `X::Parameter::RW`, → **1011**)
   now chain the rw write through the redispatch, including `callsame` continuations
