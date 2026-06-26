@@ -1851,6 +1851,45 @@ impl Interpreter {
         r
     }
 
+    /// Read-modify-write a scalar attribute that has NO local slot — the public
+    /// accessor twigil form `$.count++` / `--$.count`. The private `$!count` form
+    /// binds a local slot and is handled by the slot + cell-mirror path; the public
+    /// form compiles to a raw name op (`.count`) with no slot, so without this the
+    /// increment lands only in `env` and never reaches `self`'s shared attribute
+    /// cell — losing the rw-attribute update under compiled dispatch (the hyper-rw
+    /// `@objs».inc` of `method inc { $.count++ }`, #3658). Returns `Some(result)`
+    /// when it handled a slotless scalar attribute, `None` otherwise (the caller
+    /// continues its normal env path). `is_pre` selects whether the NEW (pre) or
+    /// OLD (post) value is pushed onto the stack.
+    pub(super) fn try_slotless_attr_incdec(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        is_increment: bool,
+        is_pre: bool,
+    ) -> Option<Result<(), RuntimeError>> {
+        if Self::attr_twigil_base(name).is_none() || self.find_local_slot(code, name).is_some() {
+            return None;
+        }
+        let cur = self.read_self_attr_cell(name)?;
+        let result = (|| {
+            self.check_readonly_for_increment(name)?;
+            let val = self.normalize_incdec_source_with_type(name, cur);
+            let new_val = if is_increment {
+                self.increment_value_smart(&val)?
+            } else {
+                self.decrement_value_smart(&val)?
+            };
+            self.check_incdec_type_constraint(name, &new_val)?;
+            self.write_self_attr_cell(name, new_val.clone());
+            // Keep env coherent for a later same-frame read of the accessor name.
+            self.set_env_with_main_alias(name, new_val.clone());
+            self.stack.push(if is_pre { new_val } else { val });
+            Ok(())
+        })();
+        Some(result)
+    }
+
     fn exec_post_increment_op_inner(
         &mut self,
         code: &CompiledCode,
@@ -1867,6 +1906,9 @@ impl Interpreter {
             loan_env!(self, set_caller_var(&bare_name, depth, new_val))?;
             self.stack.push(val);
             return Ok(());
+        }
+        if let Some(r) = self.try_slotless_attr_incdec(code, name, true, false) {
+            return r;
         }
         self.check_readonly_for_increment(name)?;
         if name.starts_with('!')
@@ -1953,6 +1995,9 @@ impl Interpreter {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        if let Some(r) = self.try_slotless_attr_incdec(code, name, false, false) {
+            return r;
+        }
         self.check_readonly_for_increment(name)?;
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)

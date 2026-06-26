@@ -1458,25 +1458,7 @@ impl CompiledCode {
                     continue;
                 }
                 // Skip known method-specific/internal names
-                if name == "self"
-                    || name == "__ANON_STATE__"
-                    || name == "?CLASS"
-                    || name == "?ROLE"
-                    || name == "_"
-                    || name == "!"
-                    || name == "/"
-                    || name == "__mutsu_callable_id"
-                    || name.starts_with('!')
-                    || name.starts_with('.')
-                    || name.starts_with("@!")
-                    || name.starts_with("@.")
-                    || name.starts_with("%!")
-                    || name.starts_with("%.")
-                    || name.starts_with("__mutsu_")
-                    || name.starts_with('*')
-                    || name.starts_with("?")
-                    || name.starts_with('^')
-                {
+                if Self::is_non_lexical_name(name) {
                     continue;
                 }
                 self.may_capture_outer_vars = true;
@@ -1634,6 +1616,52 @@ impl CompiledCode {
     /// `captured_mutated_locals`. NOTE: declaration (`SetLocal` after
     /// `MarkVarDeclContext`) and own-local reassignment (`AssignExprLocal`) are
     /// slot-based and handled separately by the caller.
+    /// A name that is NOT a lexical free variable: an attribute accessor
+    /// (`$.x` → `.x`, `$!x` → `!x`, `@.x`/`@!x`/`%.x`/`%!x`), `self`, a special
+    /// twigil var (`$*foo`, `$?FILE`, `$^a`), or a compiler-internal temporary.
+    /// Such names resolve via `self`/dynamic scope/internals, never the
+    /// enclosing lexical env, so they must be excluded from the free-var
+    /// read/write classification (otherwise e.g. `method inc { $.count++ }`
+    /// mis-records `.count` as a captured-outer write and the redispatch
+    /// writeback corrupts the rw attribute update — #3658).
+    pub(crate) fn is_non_lexical_name(name: &str) -> bool {
+        name == "self"
+            || name == "__ANON_STATE__"
+            || name == "?CLASS"
+            || name == "?ROLE"
+            || name == "_"
+            || name == "!"
+            || name == "/"
+            || name == "__mutsu_callable_id"
+            || name.starts_with('!')
+            || name.starts_with('.')
+            || name.starts_with("@!")
+            || name.starts_with("@.")
+            || name.starts_with("%!")
+            || name.starts_with("%.")
+            || name.starts_with("__mutsu_")
+            || name.starts_with('*')
+            || name.starts_with('?')
+            || name.starts_with('^')
+    }
+
+    /// A name that names an instance attribute via its twigil (`$!x` → `!x`,
+    /// `$.x` → `.x`, and the `@!`/`@.`/`%!`/`%.` array/hash forms). These resolve
+    /// through `self`, never the enclosing lexical env, so a *write* to one is an
+    /// attribute mutation — NOT a captured-outer free-var write. Narrower than
+    /// `is_non_lexical_name`: it deliberately does NOT cover dynamic (`$*x`) or
+    /// special (`$?x`/`$^x`) vars, which must stay in `free_var_writes` to keep
+    /// the redispatch writeback gate (#3658).
+    fn is_attribute_accessor_name(name: &str) -> bool {
+        name == "self"
+            || name.starts_with('!')
+            || name.starts_with('.')
+            || name.starts_with("@!")
+            || name.starts_with("@.")
+            || name.starts_with("%!")
+            || name.starts_with("%.")
+    }
+
     fn op_name_write_const_idx(op: &OpCode) -> Option<u32> {
         match op {
             OpCode::SetGlobal(idx)
@@ -1733,7 +1761,16 @@ impl CompiledCode {
             {
                 if own.contains(name.as_str()) {
                     self_mutated.insert(Symbol::intern(name));
-                } else {
+                } else if !Self::is_attribute_accessor_name(name) {
+                    // Attribute accessors (`$.count++` → name `.count`, `$!x`, the
+                    // `@.`/`@!`/`%.`/`%!` forms) resolve via `self`, NOT the
+                    // enclosing lexical env, so they must not count as free-var
+                    // writes — else the redispatch writeback mis-propagates the
+                    // attribute name as a caller var (#3658). Dynamic vars (`$*x`)
+                    // and special twigils stay in `free_var_writes` deliberately:
+                    // they still need the writeback gate (reduce-time dynamic-var
+                    // scoping in grammar actions, t/grammar-reduce-time-dynvar.t),
+                    // so they are NOT excluded here.
                     free_writes.insert(Symbol::intern(name));
                 }
             }
