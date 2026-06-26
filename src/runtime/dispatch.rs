@@ -1455,9 +1455,10 @@ impl Interpreter {
                 invocant: invocant.clone(),
             }),
         ));
-        let result = self.run_instance_method_resolved(
+        let result = self.run_resolved_method_compiled_or_treewalk(
             receiver_class,
             owner_class,
+            method_name,
             method_def,
             attributes,
             args,

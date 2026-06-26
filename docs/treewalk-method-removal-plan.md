@@ -289,13 +289,25 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
      the closure dispatch, which already did). This is a general correctness fix — it also
      fixed the same bug for DIRECT calls through the catch-all. pin=
      `t/method-closure-env-write-merge.t`(7).
-  5. **`free_var_writes` gate filter REMOVED — DONE (#TBD).** With #3670 in place the gate's
+  5. **`free_var_writes` gate filter REMOVED — DONE (#3672).** With #3670 in place the gate's
      dynamic/special-twigil exception is no longer needed: `run_resolved_method_compiled_or_treewalk`
      now runs ANY candidate with `compiled_code.is_some() && delegation.is_none()` compiled,
      regardless of free-var writes. `grammar-reduce-time-dynvar.t` passes compiled; `make test`
-     (12240) green. `run_instance_method_resolved` is now reached ONLY for `compiled_code = None`
-     candidates — delegation forwarders and any method that failed to compile.
-  6. **Resolution caching is unsound naively.** Multi dispatch depends on arg *types* AND
+     (12240) green.
+  6. **Direct-caller routing through the helper — DONE (#TBD).** A `MUTSU_PROBE_TREEWALK`
+     instrumentation pass at the non-delegation entry of `run_instance_method_resolved` revealed
+     that **compiled** candidates were still tree-walked when reached via callers that bypass the
+     helper: qualified method calls (`$obj.Class::meth`, `dispatch_qualified_instance_method` /
+     `dispatch_qualified_mixin_method` ×4), the `.*` / `.+` method walk (`methods_walk.rs`), and
+     proto `{*}` dispatch (`dispatch.rs`). All six now call
+     `run_resolved_method_compiled_or_treewalk` (drop-in: same contract, plus the method-name
+     arg), so a compiled candidate runs compiled there too. (`builtins_dispatch_next` already
+     dispatches compiled when `compiled_code.is_some()`, so it was left as-is.) pin=
+     `t/qualified-walk-compiled-dispatch.t`(9). After this, `run_instance_method_resolved` is
+     reached ONLY for `compiled_code = None` candidates — delegation forwarders and the residual
+     uncompiled methods (anonymous role methods, custom-HOW submethods, etc. — the probe's
+     `compiled=false` rows).
+  7. **Resolution caching is unsound naively.** Multi dispatch depends on arg *types* AND
      `where`/value clauses, so a `(class, method, arg-type)` cache is wrong for where/literal
      candidates — any cache must exclude those (or key on more).
   **★Separate pre-existing gap (NOT a regression, orthogonal):** hyper dispatch `@objs».meth`

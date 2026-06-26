@@ -167,9 +167,10 @@ impl Interpreter {
                 {
                     let attrs_map = attributes.to_map();
                     let inst_cn = inst_cn_str.to_string();
-                    let (result, updated) = match self.run_instance_method_resolved(
+                    let (result, updated) = match self.run_resolved_method_compiled_or_treewalk(
                         &inst_cn,
                         qualifier,
+                        actual_method,
                         def,
                         attrs_map,
                         args,
@@ -200,9 +201,10 @@ impl Interpreter {
                 if !def.is_private && self.method_args_match(&args, &def.param_defs) {
                     let attrs_map = attributes.to_map();
                     let inst_cn = inst_cn_str.to_string();
-                    let (result, updated) = match self.run_instance_method_resolved(
+                    let (result, updated) = match self.run_resolved_method_compiled_or_treewalk(
                         &inst_cn,
                         qualifier,
+                        actual_method,
                         def.clone(),
                         attrs_map,
                         args,
@@ -353,9 +355,10 @@ impl Interpreter {
                     saved.push((name.clone(), self.env.get(name).cloned()));
                     self.env.insert(name.clone(), value.clone());
                 }
-                let res = self.run_instance_method_resolved(
+                let res = self.run_resolved_method_compiled_or_treewalk(
                     qualifier,
                     qualifier,
+                    actual_method,
                     def,
                     role_attrs,
                     args,
@@ -413,9 +416,10 @@ impl Interpreter {
                 } else {
                     HashMap::new()
                 };
-                let res = self.run_instance_method_resolved(
+                let res = self.run_resolved_method_compiled_or_treewalk(
                     &inst_cn_str,
                     qualifier,
+                    actual_method,
                     def,
                     attrs_map,
                     args,
