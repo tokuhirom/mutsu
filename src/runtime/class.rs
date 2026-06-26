@@ -932,14 +932,85 @@ impl Interpreter {
             let cl = self.test_pending_callsite_line;
             self.check_deprecation_for_method_with_line(method_name, &owner_class, msg, cl);
         }
-        let result = self.run_instance_method_resolved(
-            receiver_class_name,
-            &owner_class,
-            method_def,
-            attributes,
-            args,
-            invocant,
-        );
+        // §B: run the resolved (non-wrapped) candidate as compiled bytecode via the
+        // VM-native `call_compiled_method` instead of the tree-walk
+        // `run_instance_method_resolved` recompile-each-call path. The MRO frame is
+        // already pushed above, so the candidate's own `nextsame`/`callsame`
+        // continues this chain. This is the hot path for multi-method dispatch and
+        // `samewith` re-dispatch reached through `call_method_with_values`
+        // (roast S12-methods/defer-next.t: method `m` x10000). Delegation forwarders
+        // (synthesized, `compiled_code = None`) and any other uncompiled method keep
+        // the interpreter path.
+        // Only take the compiled path when it is writeback-safe; otherwise keep the
+        // tree-walk `run_instance_method_resolved`, which merges captured-outer
+        // caller writes back through the shared `env`:
+        //  - the body writes no captured-outer (free) variables — `call_compiled_method`
+        //    records those in `pending_rw_writeback_sources` for a surrounding *call op*
+        //    to drain, but an interpreter-context caller (BUILDALL, coercion/render
+        //    redispatch, `samewith`) has none (render-method captured-write coherence);
+        //  - it is not a submethod — `submethod BUILD`/`TWEAK` run through the
+        //    construction machinery with its own writeback + `fail`-to-Failure handling.
+        // A pure body (the common multi-method / accessor / `samewith` case, e.g.
+        // S12-methods/defer-next.t method `m` x10000) records nothing, so it is safe.
+        let writeback_safe_compiled = method_def
+            .compiled_code
+            .as_ref()
+            .is_some_and(|cc| cc.free_var_writes.is_empty())
+            && method_def.delegation.is_none()
+            && !method_def.is_submethod;
+        let result = if writeback_safe_compiled {
+            let cc = method_def.compiled_code.clone().unwrap();
+            let inv_for_cell = invocant.clone();
+            let empty_fns: HashMap<String, crate::opcode::CompiledFunction> = HashMap::new();
+            // `call_compiled_method` clears `pending_rw_writeback_sources` on entry;
+            // a writeback-safe (free-var-write-free) body records none of its own, so
+            // save and restore the list around the call to preserve any sibling write
+            // already queued for an outer frame to drain (the #3620 BUILDALL case:
+            // a nested `.new` here must not drop a parent `submethod BUILD { $o++ }`
+            // write). Without this the hot path would have to fall back whenever the
+            // list is non-empty, losing the speedup.
+            let saved_pending = std::mem::take(&mut self.pending_rw_writeback_sources);
+            let call_result = self.call_compiled_method(
+                receiver_class_name,
+                &owner_class,
+                method_name,
+                &method_def,
+                &cc,
+                attributes,
+                args,
+                invocant,
+                &empty_fns,
+            );
+            self.pending_rw_writeback_sources = saved_pending;
+            call_result.map(|(v, updated, adjusted)| {
+                // `run_instance_method`'s contract is `(result, attrs-to-commit)`;
+                // the caller commits the returned map. `call_compiled_method` only
+                // marks `adjusted` on a `:=` recovery — otherwise the shared cell
+                // already holds the in-place mutations, so return those (the
+                // caller's commit becomes a no-op) rather than the stale baseline
+                // snapshot, which would clobber them.
+                let final_attrs = if adjusted {
+                    updated
+                } else if let Some(Value::Instance {
+                    attributes: cell, ..
+                }) = &inv_for_cell
+                {
+                    cell.to_map()
+                } else {
+                    updated
+                };
+                (v, final_attrs)
+            })
+        } else {
+            self.run_instance_method_resolved(
+                receiver_class_name,
+                &owner_class,
+                method_def,
+                attributes,
+                args,
+                invocant,
+            )
+        };
         self.samewith_context_stack.pop();
         if pushed_dispatch {
             self.method_dispatch_stack.pop();
