@@ -574,6 +574,17 @@ impl Interpreter {
             "Set" if !args.is_empty() => self.builtin_set(&args),
             "Bag" if !args.is_empty() => self.builtin_bag(&args),
             "Mix" if !args.is_empty() => self.builtin_mix(&args),
+            // The mutable `*Hash` coercion functions share the immutable
+            // builders, then flip the mutability flag on the result.
+            "SetHash" if !args.is_empty() => self
+                .builtin_set(&args)
+                .map(|v| crate::runtime::utils::with_set_mutability(v, true)),
+            "BagHash" if !args.is_empty() => self
+                .builtin_bag(&args)
+                .map(|v| crate::runtime::utils::with_set_mutability(v, true)),
+            "MixHash" if !args.is_empty() => self
+                .builtin_mix(&args)
+                .map(|v| crate::runtime::utils::with_set_mutability(v, true)),
             "set" => self.builtin_set(&args),
             "bag" => self.builtin_bag(&args),
             "mix" => self.builtin_mix(&args),
