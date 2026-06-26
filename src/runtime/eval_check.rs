@@ -65,13 +65,16 @@ fn walk_validate_sub_param_types(
                 param_defs,
                 body,
                 return_type,
+                custom_traits,
                 ..
             } => {
                 interp.validate_param_type_constraints(param_defs, declared, packages, classes)?;
+                let via_trait = custom_traits.iter().any(|(t, _)| t == "__return_via_trait");
                 interp.validate_return_type_constraint(
                     return_type.as_deref(),
                     param_defs,
                     declared,
+                    via_trait,
                 )?;
                 walk_validate_sub_param_types(interp, body, declared, packages, classes)?;
             }

@@ -1540,6 +1540,12 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             let (r, type_name) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
             return_type = Some(type_name.to_string());
+            // Mark that the return type came from a `returns`/`of` trait (not a
+            // `-->` signature arrow): an undeclared one is X::InvalidType, while
+            // an undeclared `-->` type is X::Undeclared.
+            if !custom_traits.iter().any(|(t, _)| t == "__return_via_trait") {
+                custom_traits.push(("__return_via_trait".to_string(), None));
+            }
             input = r;
             continue;
         }
@@ -1553,6 +1559,9 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 Some(base) if !base.contains('[') => format!("{base}[{type_name}]"),
                 _ => type_name.to_string(),
             });
+            if !custom_traits.iter().any(|(t, _)| t == "__return_via_trait") {
+                custom_traits.push(("__return_via_trait".to_string(), None));
+            }
             input = r;
             continue;
         }

@@ -229,6 +229,7 @@ impl Interpreter {
         return_type: Option<&str>,
         param_defs: &[ParamDef],
         declared_types: &std::collections::HashSet<String>,
+        via_trait: bool,
     ) -> Result<(), RuntimeError> {
         let Some(rt) = return_type else {
             return Ok(());
@@ -264,13 +265,6 @@ impl Interpreter {
             return Ok(());
         }
         let suggestions = self.suggest_type_names(rt);
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("what".to_string(), Value::str("Type".to_string()));
-        attrs.insert("symbol".to_string(), Value::str(rt.to_string()));
-        attrs.insert(
-            "suggestions".to_string(),
-            Value::array(suggestions.iter().cloned().map(Value::str).collect()),
-        );
         let mut message = format!("Type '{}' is not declared", rt);
         if suggestions.len() == 1 {
             message.push_str(&format!(". Did you mean '{}'?", suggestions[0]));
@@ -281,8 +275,23 @@ impl Interpreter {
                 quoted.join(", ")
             ));
         }
+        let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message));
-        Err(RuntimeError::typed("X::Undeclared", attrs))
+        attrs.insert(
+            "suggestions".to_string(),
+            Value::array(suggestions.iter().cloned().map(Value::str).collect()),
+        );
+        // A `returns`/`of` trait naming an undeclared type is X::InvalidType
+        // (with `typename`); a `-->` signature arrow is X::Undeclared (with
+        // `what` => "Type", `symbol`).
+        if via_trait {
+            attrs.insert("typename".to_string(), Value::str(rt.to_string()));
+            Err(RuntimeError::typed("X::InvalidType", attrs))
+        } else {
+            attrs.insert("what".to_string(), Value::str("Type".to_string()));
+            attrs.insert("symbol".to_string(), Value::str(rt.to_string()));
+            Err(RuntimeError::typed("X::Undeclared", attrs))
+        }
     }
 
     fn validate_static_default_typechecks(
