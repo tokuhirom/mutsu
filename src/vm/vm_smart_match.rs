@@ -620,6 +620,11 @@ impl Interpreter {
                     | Value::Seq(_)
                     | Value::Slip(_)
                     | Value::LazyList(_)
+                    // A Pair LHS has its own Pair-vs-Pair smartmatch (key AND value
+                    // equality), NOT method-key dispatch — `("a"=>"b") ~~ ("a"=>"b")`
+                    // must compare, not call method `a` on the left Pair.
+                    | Value::Pair(..)
+                    | Value::ValuePair(..)
             )
         {
             // Route the key-method call through the Interpreter's unified compiled-first

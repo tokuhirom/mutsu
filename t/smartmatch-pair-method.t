@@ -1,5 +1,5 @@
 use Test;
-plan 9;
+plan 13;
 
 # `$x ~~ (key => val)` runs `$x.key` and compares booleans: ?($x.key) === ?val
 # (S03 Pair smartmatch). `key => val` literals build a ValuePair, which the
@@ -29,4 +29,18 @@ plan 9;
 {
     my %h = a => 1, b => 2;
     is (%h ~~ (a => 1)), True, 'Hash ~~ Pair checks key+value, not method';
+}
+
+# A Pair LHS uses Pair-vs-Pair equality (key AND value), NOT method-key dispatch
+# (regression: must not call method named by the RHS key on the left Pair).
+{
+    is (("a" => "b") ~~ ("a" => "b")), True,  'Pair ~~ Pair: equal key+value';
+    is (("a" => "b") ~~ ("a" => "c")), False, 'Pair ~~ Pair: differing value';
+    is (("a" => "b") ~~ ("x" => "b")), False, 'Pair ~~ Pair: differing key';
+}
+
+# A BagHash whose key is a Pair smartmatches that Pair (no method dispatch).
+{
+    my $b = BagHash.new( (a => "b") );
+    is ($b.keys[0] ~~ ("a" => "b")), True, 'BagHash Pair key ~~ Pair';
 }
