@@ -120,9 +120,10 @@ impl Interpreter {
                         method_attrs.insert(attr.to_string(), value.clone());
                     }
                 }
-                let method_result = self.run_instance_method_resolved(
+                let method_result = self.run_resolved_method_compiled_or_treewalk(
                     &role_name,
                     &role_name,
+                    lookup_name,
                     def,
                     method_attrs,
                     args,
