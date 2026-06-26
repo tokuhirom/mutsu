@@ -1071,6 +1071,13 @@ impl Interpreter {
                     .as_ref()
                     .and_then(|e| self.find_undeclared_name_in_expr(e, local_classes, declared))
             }),
+            // `use Module BareWord` — a bare identifier as a positional import
+            // argument is a term reference, not an import symbol (those are
+            // strings / `<...>` / `:tags`). An undeclared one is
+            // X::Undeclared::Symbols (rakudo: "Undeclared name: ...").
+            Stmt::Use { arg: Some(arg), .. } => {
+                self.find_undeclared_name_in_expr(arg, local_classes, declared)
+            }
             _ => None,
         }
     }
