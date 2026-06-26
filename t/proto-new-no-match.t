@@ -1,6 +1,6 @@
 use Test;
 
-plan 7;
+plan 9;
 
 # An explicit `proto method new` overrides the inherited Mu.new proto, so it
 # owns dispatch entirely. A call that matches no candidate must surface as
@@ -51,4 +51,19 @@ throws-like 'constant boom = die "kaboom"', X::Comp::BeginTime,
 {
     constant @list = 1, 2, 3;
     is @list.elems, 3, 'constant list initializer still works';
+}
+
+# A bodyless `proto method new` (pure `{*}` forwarder) with NO multi candidates
+# can never dispatch, so any call surfaces X::Multi::NoMatch (not the default
+# constructor's X::Constructor::Positional, and not a stack overflow).
+{
+    my class A is Any { proto method new($) {*} }
+    throws-like { A.new(now) }, X::Multi::NoMatch,
+        'bodyless proto new with no candidates throws X::Multi::NoMatch';
+}
+
+# A `proto method new` with a real body (no `{*}`) runs the body.
+{
+    my class B { proto method new() { 42 } }
+    is B.new, 42, 'proto new with a real body runs the body';
 }
