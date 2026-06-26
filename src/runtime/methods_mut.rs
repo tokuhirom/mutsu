@@ -4360,7 +4360,11 @@ impl Interpreter {
             Some(v) => super::to_int(v) as usize,
             None => 0,
         };
-        bytes.resize(new_size, Value::Int(0));
+        // Guard the grow path with a fallible reservation so an absurd size
+        // (`$b.reallocate(1e15)`) yields a catchable `X::` instead of an
+        // uncatchable abort; `truncate` then handles the shrink case.
+        Self::autoviv_resize(&mut bytes, new_size, Value::Int(0))?;
+        bytes.truncate(new_size);
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(bytes));
         let updated = Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);

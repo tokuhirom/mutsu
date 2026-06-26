@@ -3228,7 +3228,7 @@ impl Interpreter {
                         } else {
                             data
                         };
-                        let shaped = Self::make_shaped_array(&dims);
+                        let shaped = Self::make_shaped_array(&dims)?;
                         let mut result = if let Some(data_val) = data {
                             let data_items = match data_val {
                                 Value::Array(items, ..) => items.to_vec(),
