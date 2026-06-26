@@ -56,6 +56,7 @@ pub(super) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::AndThen => "andthen".to_string(),
         TokenKind::NotAndThen => "notandthen".to_string(),
         TokenKind::OrWord => "or".to_string(),
+        TokenKind::AndWord => "and".to_string(),
         TokenKind::BangBang => "!!".to_string(),
         TokenKind::QuestionQuestion => "??".to_string(),
         TokenKind::SetUnion => "(|)".to_string(),

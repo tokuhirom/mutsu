@@ -70,6 +70,7 @@ pub(crate) enum TokenKind {
     OrOr,
     XorXor, // ^^
     OrWord,
+    AndWord, // loose `and` (looser than `?? !!`, unlike tight `&&`)
     OrElse,
     AndThen,
     NotAndThen,
