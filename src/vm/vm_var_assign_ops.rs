@@ -5382,15 +5382,27 @@ impl Interpreter {
         }
     }
 
+    /// The inner instance's shared attribute cell for a `self` value, unwrapping a
+    /// `Value::Mixin` (runtime `$obj does Role`) to the wrapped instance. The
+    /// Mixin's inner value is held in a shared `Arc`, and the instance's own cell is
+    /// an `Arc<RwLock>` — so a write through this reference persists back to the
+    /// caller's Mixin (it shares the same inner instance). Returns `None` for a
+    /// type object / non-instance.
+    pub(crate) fn self_instance_attrs(val: &Value) -> Option<&crate::value::InstanceAttrs> {
+        match val {
+            Value::Instance { attributes, .. } => Some(attributes),
+            Value::Mixin(inner, _) => Self::self_instance_attrs(inner),
+            _ => None,
+        }
+    }
+
     /// Read a scalar attribute straight from `self`'s shared cell. `Some` only
-    /// when `name` is a scalar attr-twigil, `self` is a concrete instance, and
-    /// the attribute exists in the cell.
+    /// when `name` is a scalar attr-twigil, `self` is a concrete instance (or a
+    /// Mixin wrapping one), and the attribute exists in the cell.
     pub(super) fn read_self_attr_cell(&self, name: &str) -> Option<Value> {
         let twigil = self.canonical_attr_twigil(name)?;
         let self_val = self.get_env_with_main_alias("self")?;
-        let Value::Instance { attributes, .. } = &self_val else {
-            return None;
-        };
+        let attributes = Self::self_instance_attrs(&self_val)?;
         let key = self.resolve_attr_cell_key(&twigil, attributes)?;
         attributes.as_map().get(&key).cloned()
     }
@@ -5454,7 +5466,10 @@ impl Interpreter {
         let Some(self_val) = self.get_env_with_main_alias("self") else {
             return;
         };
-        let Value::Instance { attributes, .. } = &self_val else {
+        // Unwrap a `Value::Mixin` self to the inner instance's shared cell so a
+        // runtime-`does` mixin method's `$.attr`/`$!attr` write persists (the cell
+        // is an `Arc<RwLock>` shared with the caller's Mixin).
+        let Some(attributes) = Self::self_instance_attrs(&self_val) else {
             return;
         };
         if let Some(key) = self.resolve_attr_cell_key(name, attributes) {

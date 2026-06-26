@@ -340,6 +340,26 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
      on-demand compile (`compile_method_def_in_place`, kept ready) becomes safe, THEN
      `run_instance_method_resolved`'s non-delegation tree-walk is dead and can be deleted (keeping
      only the delegation-forwarding branch, extracted to its own small function).
+  9. **Mixin-self attribute writeback fix + on-demand compile ENABLED — DONE (#TBD).** The
+     "multi-point" fix turned out small: a single `self_instance_attrs(val)` helper
+     (vm_var_assign_ops.rs) recursively unwraps a `Value::Mixin(inner, _)` `self` to the inner
+     instance's shared `Arc<RwLock>` cell, used in (a) scalar `read_self_attr_cell` /
+     `write_self_attr_cell` (in-method `$.n++` / `$!x`) and (b) the helper's `final_attrs` exit
+     commit (`inv_for_cell.and_then(Self::self_instance_attrs)` → `cell.to_map()`). The array
+     `@.items` push already reached the inner cell; it only needed the same `final_attrs` commit
+     to capture it. With that, the in-place on-demand compile is now **UNCONDITIONAL** in the
+     helper (`compile_method_def_in_place` on any body-ful, non-delegation, uncompiled candidate),
+     so runtime-`does` mixin / late-added methods run compiled. `make test` 12271 green;
+     `t/mixin-compiled-attr-writeback.t`(9, scalar+array+hash+multi-`.*`) green; broad OOP roast
+     sweep (S12-*/S14-*) = 110 pass / 6 pre-existing fail (all fail identically with on-demand
+     OFF — confirmed via a `MUTSU_NO_ONDEMAND` toggle, NOT regressions). **Pre-existing
+     limitations left (both tree-walk + compiled, unchanged):** role-ADDED `$.x` attributes (live
+     in the Mixin `overrides`, not the inner cell → read `Nil`), `self.^name` on a mixin (`Plain`
+     not `Plain+{Named}`), and the `.map`-attribute-vs-builtin-`.map` accessor shadowing.
+     **Next: the tree-walk `run_instance_method_resolved` non-delegation body is now (near-)dead**
+     — re-run `MUTSU_PROBE_TREEWALK` to confirm only body-less / delegation candidates remain,
+     then delete the tree-walk method-execution arm and extract the delegation-forwarding branch
+     to its own function.
   **★Separate pre-existing gap (NOT a regression, orthogonal):** hyper dispatch `@objs».meth`
   of a method writing a captured-outer *lexical* (`method touch { $seen++ }`) does not
   propagate the write — the hyper internal temp-target redispatch has no op-level drain of
