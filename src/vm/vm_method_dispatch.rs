@@ -158,6 +158,25 @@ impl Interpreter {
                     result
                 })
             };
+            // A required positional left unfilled (`method m($x){}; X.()`) must die
+            // with too-few-positionals; the fast path would silently bind it to Nil.
+            // Route such calls to the full path, which validates arity.
+            let has_missing_required = {
+                let mut pos = 0;
+                method_def.param_defs.iter().any(|pd| {
+                    if pd.is_invocant
+                        || pd.traits.iter().any(|t| t == "invocant")
+                        || pd.slurpy
+                        || pd.double_slurpy
+                        || pd.named
+                    {
+                        return false;
+                    }
+                    let missing = pos >= args.len() && pd.default.is_none() && !pd.optional_marker;
+                    pos += 1;
+                    missing
+                })
+            };
             // Count positional params to check for arg count mismatch
             let positional_count = method_def
                 .param_defs
@@ -171,8 +190,20 @@ impl Interpreter {
                 })
                 .count();
             let has_arg_mismatch = args.len() > positional_count;
+            // A named argument (`$obj.m(:a)` → `Pair("a", …)`) must not be bound to a
+            // positional param by the fast path's index loop — it belongs in the
+            // implicit `*%_`, and a required positional left unfilled by it must die
+            // (`method m($x){}; X(:a)` → too-few-positionals). Routing any call that
+            // carries a Pair/ValuePair to the full path (which separates named from
+            // positional and validates arity via `bind_function_args_values`) keeps
+            // that check; the fast path stays for the common all-positional call.
+            let has_named_arg = args
+                .iter()
+                .any(|a| matches!(a, Value::Pair(..) | Value::ValuePair(..)));
 
-            if !has_invocant_constraint
+            if !has_named_arg
+                && !has_missing_required
+                && !has_invocant_constraint
                 && !has_attr_aliases
                 && !has_role_bindings
                 && !has_complex_params
