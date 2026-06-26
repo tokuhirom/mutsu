@@ -988,8 +988,14 @@ impl Interpreter {
             self.set_var_default(&name, default_value.clone());
             // For array/hash variables, also register the container default
             // so that element access on missing indices returns the default.
+            // Fall back to the env value when the variable is not a local slot:
+            // an anonymous `(my % is default(...))` in expression position is
+            // stored via SetGlobal, not a local, so the embedded default would
+            // otherwise be skipped and lost when the value flows out.
             if (name.starts_with('@') || name.starts_with('%'))
-                && let Some(container) = self.locals_get_by_name(code, &name)
+                && let Some(container) = self
+                    .locals_get_by_name(code, &name)
+                    .or_else(|| self.get_env_with_main_alias(&name))
             {
                 let container = self.tag_container_default(container, default_value.clone());
                 self.locals_set_by_name(code, &name, container.clone());

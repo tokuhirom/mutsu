@@ -72,6 +72,26 @@ impl Compiler {
                     self.compile_expr(expr);
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::SetGlobal(name_idx));
+                    // Apply an `is default(...)` trait BEFORE reading the value back,
+                    // so the container's embedded default travels with the value
+                    // returned by this expression (`(my % is default(42))`). The
+                    // statement-position VarDecl applies traits via `ApplyVarTrait`;
+                    // the expression path must do the same or the default is lost.
+                    if let Some(trait_arg) = custom_traits
+                        .iter()
+                        .find_map(|(t, a)| if t == "default" { Some(a) } else { None })
+                    {
+                        if let Some(arg) = trait_arg {
+                            self.compile_expr(arg);
+                        }
+                        let trait_name_idx =
+                            self.code.add_constant(Value::str("default".to_string()));
+                        self.code.emit(OpCode::ApplyVarTrait {
+                            name_idx,
+                            trait_name_idx,
+                            has_arg: trait_arg.is_some(),
+                        });
+                    }
                     // Read back the coerced value (SetGlobal coerces list->hash for %)
                     let name_idx2 = self.code.add_constant(Value::str(name.clone()));
                     if name.starts_with('@') {

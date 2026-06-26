@@ -2194,7 +2194,10 @@ impl Interpreter {
                 _ => Value::Nil,
             };
             let effective = Self::normalize_incdec_source(match current {
-                Value::Nil => Value::Int(0),
+                Value::Nil => Self::value_carried_default(&inner)
+                    .or_else(|| self.var_default(&name).cloned())
+                    .filter(|d| !matches!(d, Value::Nil))
+                    .unwrap_or(Value::Int(0)),
                 other => other,
             });
             let new_val = if increment {
@@ -2257,14 +2260,16 @@ impl Interpreter {
             Value::Nil => {
                 // Check if the container has an `is default(...)` value;
                 // e.g. `my @a is default(42); @a[0]++` should increment 42.
-                if let Some(def) = self.var_default(&name) {
-                    if matches!(def, Value::Nil) {
-                        Value::Int(0)
-                    } else {
-                        def.clone()
-                    }
-                } else {
-                    Value::Int(0)
+                // Prefer the value-carried default (HashData/ArrayData) so it
+                // works when the container arrived via a parameter (whose name
+                // is not in the name-keyed `var_defaults` table).
+                let def = container
+                    .as_ref()
+                    .and_then(Self::value_carried_default)
+                    .or_else(|| self.var_default(&name).cloned());
+                match def {
+                    Some(d) if !matches!(d, Value::Nil) => d,
+                    _ => Value::Int(0),
                 }
             }
             other => other.clone(),
