@@ -320,6 +320,26 @@ impl Interpreter {
             self.stack.push(index);
             return self.exec_index_op_with_positional(is_positional);
         }
+        // A user object used as a positional subscript coerces via its `.Int`
+        // method (`@a[$obj]` where `$obj` defines `method Int`, Raku subscript
+        // protocol). Gate on an array-like target so an associative `%h{...}`
+        // key Instance is left alone, and on the class actually defining a user
+        // `Int` method so built-in instances (Match, Failure, …) fall through to
+        // their own handling. Slice F: this op-level redispatch has no surrounding
+        // CallMethod op, so drain the captured-outer writeback (`my $i; method Int
+        // { $i++; ... }`) into the caller's slot via `current_code` +
+        // `reconcile_caller_after_internal_dispatch` (retain-on-miss).
+        if let Value::Instance { class_name, .. } = &index
+            && matches!(&target, Value::Array(..) | Value::Seq(_) | Value::Slip(_))
+            && self.has_user_method(&class_name.resolve().to_string(), "Int")
+        {
+            let caller_code = self.current_code;
+            let coerced = self.try_compiled_method_or_interpret(index.clone(), "Int", vec![]);
+            self.reconcile_caller_after_internal_dispatch(caller_code);
+            if let Ok(v) = coerced {
+                index = v;
+            }
+        }
         // If target is a Failure, propagate it (// will catch it as undefined)
         if matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") {
             self.stack.push(target);
