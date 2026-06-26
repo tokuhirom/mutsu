@@ -310,15 +310,42 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   7. **Resolution caching is unsound naively.** Multi dispatch depends on arg *types* AND
      `where`/value clauses, so a `(class, method, arg-type)` cache is wrong for where/literal
      candidates — any cache must exclude those (or key on more).
+  8. **`compiled_code = None` residual — characterized; on-demand compile ATTEMPTED + REVERTED.**
+     The `MUTSU_PROBE_TREEWALK` pass over the full `t/` suite (post-routing) shows the helper's
+     tree-walk fallback now fires for **66 non-delegation cases, all `compiled_code = false`**
+     (52 method + 14 submethod), plus 2 genuine delegation forwarders. Re-resolving each after
+     `compile_class_methods`/`compile_role_methods` makes only **24/66 compilable**; the other 42
+     are role methods, `BUILD`/`TWEAK` submethods, anonymous-role `gist`, and custom-HOW methods.
+     A direct in-place compile of the *owned* candidate (`compile_method_def_in_place`, extracted
+     from `compile_methods_for_map`; avoids the re-resolution hazard that would mis-pick an
+     override for a qualified `$obj.Class::meth` call) compiles **all** non-empty bodies — but
+     **REVERTED** because it regresses `t/multi-method-roles.t`: a RUNTIME `$b does R` mixin role
+     method that pushes to an `@.`-attribute (`method add($x){ push @.items, $x }`) loses the
+     push when run compiled. The Mixin's array-attribute cell is not committed back through the
+     compiled method-execution path (the tree-walk path did). This is the same *array-attribute /
+     Mixin writeback coherence* gap class as the hyper-captured-outer gap, and is the real
+     remaining blocker for deleting the tree-walk body. **★Root cause traced (MUTSU_ONDEMAND
+     probe with an in-method read):** it is NOT commit-only — the whole compiled attribute path
+     assumes a `Value::Instance` `self`. For an array attribute the in-method `push @.items`
+     reads/writes a *detached copy* (each call starts fresh: `[1]` then `[2]`, never `[1,2]`; on
+     return nothing is committed). For a SCALAR attribute it is worse — `$.n++` does not even
+     take effect in-method (`in: 5` twice; raku `6` then `7`), because `read_self_attr_cell` /
+     `write_self_attr_cell` (vm_var_assign_ops.rs) bail out unless `self` is `Value::Instance`,
+     and `reconcile_attrs` (vm_method_dispatch.rs:815) likewise. A `Value::Mixin(inner, overrides)`
+     `self` is never unwrapped to the inner instance's shared attribute cell. **Next (a focused
+     but multi-point change):** make the compiled attribute ops + `reconcile_attrs` unwrap a
+     `Value::Mixin` `self` to the inner instance's cell (scalar `read/write_self_attr_cell`, the
+     `@.`/`%.` array/hash attr ops, and the exit commit), validated by `t/multi-method-roles.t`
+     + `t/compiled-method-attr-incdec.t` extended to Mixin receivers + roast. THEN the in-place
+     on-demand compile (`compile_method_def_in_place`, kept ready) becomes safe, THEN
+     `run_instance_method_resolved`'s non-delegation tree-walk is dead and can be deleted (keeping
+     only the delegation-forwarding branch, extracted to its own small function).
   **★Separate pre-existing gap (NOT a regression, orthogonal):** hyper dispatch `@objs».meth`
   of a method writing a captured-outer *lexical* (`method touch { $seen++ }`) does not
   propagate the write — the hyper internal temp-target redispatch has no op-level drain of
   `pending_rw_writeback_sources` (the coercion/render Slice-1a/1b drain pattern, not yet applied
-  to the hyper/junction sites). Fails identically on tree-walk; predates this work.
-  Remaining sequence: handle the `compiled_code = None` candidates (compile delegation
-  forwarders / ensure every method compiles) so the tree-walk fallback is unreachable, then
-  delete `run_instance_method_resolved` (a sound resolution cache is an orthogonal perf win,
-  not a prerequisite for deletion).
+  to the hyper/junction sites). Fails identically on tree-walk; predates this work. Same
+  array-attribute / Mixin writeback coherence class as item 8.
   **★Pre-existing blocker — BUILDALL sibling writeback clobber — FIXED (#3620).** A
   *nested method dispatch inside one BUILD clobbered a sibling BUILD's captured-outer
   writeback*:
