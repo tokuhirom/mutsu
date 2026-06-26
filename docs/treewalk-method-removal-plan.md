@@ -271,13 +271,28 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
      `t/compiled-method-attr-incdec.t`(13), `t/parallel-dispatch-regression.t`. (Non-rw
      `$.attr++` mutating is a pre-existing gap — `$.attr = N` on a non-rw attr already mutates
      in mutsu; enforcing attribute readonly is a separate axis, out of scope.)
-  3. **Resolution caching is unsound naively.** Multi dispatch depends on arg *types* AND
+  3. **Gate relaxed for captured-outer lexicals — DONE (#TBD).** The
+     `run_resolved_method_compiled_or_treewalk` gate no longer requires
+     `free_var_writes.is_empty()`: a captured-outer *lexical* write (`method m { $outer++ }`)
+     now runs compiled because the merge (step 1, #3664) preserves the write through the
+     caller drain. The gate now only forces the env-merging tree-walk for free writes to
+     **dynamic (`$*x`) / special (`$?x`/`$^x`)** twigils, whose reduce-time / dynamic-scope
+     writeback through a compiled redispatch frame is not yet wired (the remaining blocker
+     below). `make test` (12205) green; pin=`t/captured-outer-method-compiled-gate.t`(7).
+     **★Remaining for full relaxation (4): dynamic-var writeback through compiled redispatch.**
+     `method delim { $*L = '<' }` (grammar reduce-time action, `t/grammar-reduce-time-dynvar.t`)
+     — the only case that still needs tree-walk. Also note a SEPARATE pre-existing gap (NOT a
+     regression, fails identically on tree-walk): hyper dispatch `@objs».meth` of a method
+     writing a captured-outer lexical (`method touch { $seen++ }`) does not propagate the
+     write — the hyper internal temp-target redispatch has no op-level drain of
+     `pending_rw_writeback_sources` (the coercion/render Slice-1a/1b drain pattern, not yet
+     applied to the hyper/junction sites). That gap predates the gate work and is orthogonal.
+  4. **Resolution caching is unsound naively.** Multi dispatch depends on arg *types* AND
      `where`/value clauses, so a `(class, method, arg-type)` cache is wrong for where/literal
      candidates — any cache must exclude those (or key on more).
-  Remaining sequence: relax the `free_var_writes.is_empty()` gate in
-  `run_resolved_method_compiled_or_treewalk` (the merge from step 1 makes captured-outer
-  writes survive), then (separately) the sound resolution cache, then delete
-  `run_instance_method_resolved`.
+  Remaining sequence: wire the dynamic-var writeback through the compiled redispatch frame
+  (then the gate's dynamic/special exception can drop too), then (separately) the sound
+  resolution cache, then delete `run_instance_method_resolved`.
   **★Pre-existing blocker — BUILDALL sibling writeback clobber — FIXED (#3620).** A
   *nested method dispatch inside one BUILD clobbered a sibling BUILD's captured-outer
   writeback*:
