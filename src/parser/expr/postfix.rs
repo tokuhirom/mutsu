@@ -2934,19 +2934,26 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 if let Expr::MultiDimIndex {
                     target: mdt,
                     dimensions: dims,
-                } = expr
+                } = expr.clone()
                 {
-                    // For MultiDimIndex, pass var_name + adverb info + indices
+                    // `:$delete` is the `delete` adverb with a runtime-decided
+                    // flag. Mirror the literal `:delete($cond)` lowering: a
+                    // Ternary whose else-branch is the *original* MultiDimIndex
+                    // read (so the value path resolves the variable through the
+                    // normal opcode, seeing local slots / sub-writeback — unlike
+                    // the by-name `self.env.get` the builtin used, which missed an
+                    // outer hash assigned inside a sub).
                     let var_name = multidim_target_var_name(&mdt);
-                    let mut args = vec![
-                        Expr::Literal(Value::str(var_name)),
-                        Expr::Literal(Value::str(adverb_var.to_string())),
-                        Expr::Var(adverb_var.to_string()),
-                    ];
-                    args.extend(dims);
-                    expr = Expr::Call {
-                        name: Symbol::intern("__mutsu_multidim_dynamic_adverb"),
-                        args,
+                    let mut del_args = vec![Expr::Literal(Value::str(var_name))];
+                    del_args.extend(dims);
+                    let delete_expr = Expr::Call {
+                        name: Symbol::intern("__mutsu_multidim_delete"),
+                        args: del_args,
+                    };
+                    expr = Expr::Ternary {
+                        cond: Box::new(Expr::Var(adverb_var.to_string())),
+                        then_expr: Box::new(delete_expr),
+                        else_expr: Box::new(expr),
                     };
                 } else if matches!(&expr, Expr::Call { name, .. }
                     if name == "__mutsu_multidim_subscript_adverb"
