@@ -167,6 +167,7 @@ impl Interpreter {
             is_raw: def.is_raw,
             param_local_slots: None,
             has_inner_subs: false,
+            declares_inner_routines: false,
             named_param_slots: None,
             deprecated_info,
             declared_locals: None,
@@ -514,6 +515,14 @@ impl Interpreter {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
         self.record_cf_deprecation(cf);
+        // A routine declared directly in this body is lexical; snapshot the
+        // registry so it is removed on return unless it escaped (see
+        // `call_compiled_function_named` / `return_value_escapes_routine`).
+        let routine_snapshot = if cf.declares_inner_routines {
+            Some(self.snapshot_routine_registry())
+        } else {
+            None
+        };
         // Only save env when there are local variables to clean up.
         // When the function has no locals, the env save/restore is a
         // no-op (nothing to remove), but still causes an Arc clone that
@@ -745,7 +754,7 @@ impl Interpreter {
             });
         }
 
-        match result {
+        let final_result = match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {
                 if let Some(v) = explicit_return {
@@ -755,7 +764,16 @@ impl Interpreter {
                 }
             }
             Err(e) => Err(e),
+        };
+        // Restore the routine registry (removing this body's lexical routines)
+        // unless an inner routine escaped via the return value.
+        if let Some(snapshot) = routine_snapshot {
+            match &final_result {
+                Ok(v) if Self::return_value_escapes_routine(v) => {}
+                _ => self.restore_routine_registry(snapshot),
+            }
         }
+        final_result
     }
 
     /// Check if a compiled function is eligible for the fast call path.
@@ -1692,7 +1710,52 @@ impl Interpreter {
         }
     }
 
+    /// A return value that may *be* (or carry) a routine declared inside the
+    /// callee body — i.e. a `my sub` that escaped by being returned. When the
+    /// body declares an inner routine and returns one of these, its registry
+    /// entry must survive the call so it stays callable by name (e.g. `my &bar
+    /// := producer()` then `bar(...)`). Any other return value means the inner
+    /// routine did not escape via the return slot and can be cleaned up.
+    fn return_value_escapes_routine(v: &Value) -> bool {
+        matches!(
+            v,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Mixin(..)
+        )
+    }
+
     pub(super) fn call_compiled_function_named(
+        &mut self,
+        cf: &CompiledFunction,
+        args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+        fn_package: &str,
+        fn_name: &str,
+    ) -> Result<Value, RuntimeError> {
+        // A routine declared directly in this body is lexical to the call.
+        // Snapshot the routine registry around the (multi-exit) body so the
+        // lexical routine is removed on return — UNLESS it escapes by being
+        // returned (then its registry entry must survive so it stays callable
+        // by name). The snapshot is cheap relative to the rare case it guards.
+        if !cf.declares_inner_routines {
+            return self.call_compiled_function_named_inner(
+                cf,
+                args,
+                compiled_fns,
+                fn_package,
+                fn_name,
+            );
+        }
+        let snapshot = self.snapshot_routine_registry();
+        let result =
+            self.call_compiled_function_named_inner(cf, args, compiled_fns, fn_package, fn_name);
+        match &result {
+            Ok(v) if Self::return_value_escapes_routine(v) => {}
+            _ => self.restore_routine_registry(snapshot),
+        }
+        result
+    }
+
+    fn call_compiled_function_named_inner(
         &mut self,
         cf: &CompiledFunction,
         args: Vec<Value>,
