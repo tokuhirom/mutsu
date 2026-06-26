@@ -740,7 +740,7 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        crate::vm::vm_stats::record_tree_walk_method(method_name);
+        crate::vm::vm_stats::record_resolver_method_dispatch(method_name);
         let inv_value = if let Some(inv) = &invocant {
             inv.clone()
         } else if attributes.is_empty() {
@@ -1000,9 +1000,9 @@ impl Interpreter {
         //     back instead of dropped;
         //   - attribute twigils (`.count`/`!x`/…) are not in `free_var_writes` at all
         //     (#3666).
-        // A delegation forwarder is synthesized with `compiled_code = None`, and an
-        // uncompiled method likewise has none, so both fall through to the tree-walk
-        // `run_instance_method_resolved` (the remaining reason it still exists).
+        // A delegation forwarder is synthesized with `compiled_code = None`, so it
+        // falls through to `forward_resolved_delegation` (the remaining reason it
+        // still exists).
         // On-demand compile (§B, #3658): a resolved candidate reached before its
         // owner's registration compile pass — or one added at runtime (a role method
         // punned via `does`, a custom-HOW method) — can still have no `compiled_code`.
@@ -1020,7 +1020,7 @@ impl Interpreter {
         let writeback_safe_compiled =
             method_def.compiled_code.is_some() && method_def.delegation.is_none();
         if !writeback_safe_compiled {
-            return self.run_instance_method_resolved(
+            return self.forward_resolved_delegation(
                 receiver_class_name,
                 owner_class,
                 method_def,
@@ -1091,7 +1091,7 @@ impl Interpreter {
     /// has been deleted. Every non-delegation candidate is now compiled on-demand by
     /// its caller (`compile_method_def_in_place`) before reaching here, so this only
     /// handles delegation forwarders.)
-    pub(super) fn run_instance_method_resolved(
+    pub(super) fn forward_resolved_delegation(
         &mut self,
         receiver_class_name: &str,
         owner_class: &str,
@@ -1175,7 +1175,7 @@ impl Interpreter {
         // method reaching this point would be an internal invariant violation.
         let _ = (&owner_class, &attributes, &args, &invocant);
         Err(RuntimeError::new(format!(
-            "internal error: run_instance_method_resolved reached the deleted tree-walk arm for non-delegation method on '{}' (should have been compiled on-demand)",
+            "internal error: forward_resolved_delegation reached for a non-delegation method on '{}' (should have been compiled on-demand)",
             receiver_class_name
         )))
     }
