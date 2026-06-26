@@ -898,11 +898,22 @@ impl Interpreter {
                 }
             }
             // Hash ~~ Pair: check that key exists in hash and value smartmatches
+            // Hash ~~ Pair: look up the pair's key and smartmatch the hash value
+            // against the pair value. `key => val` literals build a `ValuePair`,
+            // so accept both representations.
             (Value::Hash(map), Value::Pair(key, val)) => {
                 if let Some(hash_val) = map.get(key.as_str()) {
                     self.smart_match(hash_val, val)
                 } else {
                     // Key not in hash: compare against an undefined type object.
+                    self.smart_match(&Value::Package(Symbol::intern("Mu")), val)
+                }
+            }
+            (Value::Hash(map), Value::ValuePair(key, val)) => {
+                let key = key.to_string_value();
+                if let Some(hash_val) = map.get(&key) {
+                    self.smart_match(hash_val, val)
+                } else {
                     self.smart_match(&Value::Package(Symbol::intern("Mu")), val)
                 }
             }

@@ -605,7 +605,14 @@ impl Interpreter {
         // to Bool, and compare with pair value coerced to Bool.
         // Per S03: ?."{X.key}" === ?X.value
         // Exclude types with their own Pair smartmatch semantics (Hash checks key+value).
-        if let Value::Pair(key, val) = right
+        // Both `Value::Pair` (string-keyed) and `Value::ValuePair` (`key => val`
+        // literals are built as ValuePair) reach here.
+        let pair_key_val = match right {
+            Value::Pair(key, val) => Some((key.clone(), val.as_ref().clone())),
+            Value::ValuePair(key, val) => Some((key.to_string_value(), val.as_ref().clone())),
+            _ => None,
+        };
+        if let Some((method_name, val)) = pair_key_val
             && !matches!(
                 left,
                 Value::Hash(_)
@@ -613,15 +620,19 @@ impl Interpreter {
                     | Value::Seq(_)
                     | Value::Slip(_)
                     | Value::LazyList(_)
+                    // A Pair LHS has its own Pair-vs-Pair smartmatch (key AND value
+                    // equality), NOT method-key dispatch — `("a"=>"b") ~~ ("a"=>"b")`
+                    // must compare, not call method `a` on the left Pair.
+                    | Value::Pair(..)
+                    | Value::ValuePair(..)
             )
         {
-            let method_name = key.as_str();
             // Route the key-method call through the Interpreter's unified compiled-first
             // dispatch (ledger §1): user-defined methods run as compiled bytecode;
             // only native/reflective methods bottom out at the interpreter. `left`
             // is never an Array/Hash/Seq here (excluded above), so the native
             // array/list fast paths inside are inert.
-            match self.try_compiled_method_or_interpret(left.clone(), method_name, Vec::new()) {
+            match self.try_compiled_method_or_interpret(left.clone(), &method_name, Vec::new()) {
                 Ok(result) => {
                     return result.truthy() == val.truthy();
                 }
