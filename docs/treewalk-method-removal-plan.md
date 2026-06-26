@@ -173,9 +173,18 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   coercion sites + `say`/`note`) use it; only the genuine lazy-force reify keeps the
   drop-on-miss `reconcile_caller_after_lazy_force` (its pending entries are always its own
   callee's).
-  **Remaining same-shape sites (deferred, lower traffic):** `sprintf`/`.fmt` `%s`
-  formatting drops the `.Str` writeback too (it also calls `.Str` a surprising number of
-  times — a separate count quirk that complicates a clean pin); and `value ~~ $instance`
+  **`sprintf` `%s` user-`.Str` dispatch — DONE (#TBD).** `sprintf("%s", $obj)` rendered the
+  object's `.gist` (`S()`) instead of dispatching a user-defined `.Str` (Rakudo → the
+  `.Str` result). `builtin_sprintf` is now `&mut self` and pre-stringifies each `%s`-directive
+  Instance/Package arg (located via the new `sprintf_str_arg_indices` directive walk) by
+  calling its user `.Str` (`.Str` only — Rakudo `%s` does NOT use `.Stringy`; verified the
+  gist falls through). The captured-outer writeback drains through the surrounding `sprintf`
+  call op's existing `apply_pending_rw_writeback`, so no manual drain is needed (the runtime
+  builtin records the write; the VM call op consumes it). mutsu calls `.Str` once per use;
+  Rakudo's double-call-per-sprintf quirk is not reproduced (pin asserts the value + that the
+  write propagates, not the exact count). pin=`t/sprintf-user-str-dispatch.t`(8, raku-validated).
+  **Remaining same-shape sites (deferred, lower traffic):** `.fmt` `%s`
+  formatting drops the `.Str` writeback too; and `value ~~ $instance`
   / `$instance ~~ (key => …)` do not even *dispatch* the user `ACCEPTS`/key method today
   (`smart_match` bottoms out at `(_, Instance) => false`), so they are a missing-dispatch
   bug, not a writeback one — out of scope for this slice.

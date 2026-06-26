@@ -6,8 +6,8 @@ use super::sprintf_helpers::{
     format_rat_fixed, normalize_sci_exponent, sign_prefix,
 };
 pub(crate) use super::sprintf_validate::{
-    directives_count_message, sprintf_directive_count, validate_sprintf_arg_types,
-    validate_sprintf_directives,
+    directives_count_message, sprintf_directive_count, sprintf_str_arg_indices,
+    validate_sprintf_arg_types, validate_sprintf_directives,
 };
 
 pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
