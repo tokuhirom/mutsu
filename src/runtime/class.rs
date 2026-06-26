@@ -988,25 +988,24 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        // Writeback-safety gate (§B, #3658 step 3). A captured-outer *lexical*
-        // write (`method m { $outer++ }` closing over a `my $outer`) is now safe
-        // to run compiled: `call_compiled_method` records the change into
-        // `pending_rw_writeback_sources`, and the caller drain MERGES it (#3664)
-        // rather than discarding it. The ONLY free-var writes that still require
-        // the env-merging tree-walk are dynamic (`$*x`) and special (`$?x`/`$^x`)
-        // twigils — their reduce-time / dynamic-scope writeback through a compiled
-        // redispatch frame is not yet wired (t/grammar-reduce-time-dynvar.t: a
-        // grammar action `method delim { $*L = '<' }` whose write must affect the
-        // ongoing match). Attribute twigils (`.count`/`!x`/…) are not in
-        // `free_var_writes` at all (#3666, `is_attribute_accessor_name`). A
-        // delegation forwarder is synthesized (`compiled_code = None`) and keeps
-        // the interpreter path. The free-var names are sigil-stripped, twigil-kept
-        // (`$*L` → `*L`).
-        let writeback_safe_compiled = method_def.compiled_code.as_ref().is_some_and(|cc| {
-            cc.free_var_writes.iter().all(|s| {
-                s.with_str(|n| !n.starts_with('*') && !n.starts_with('?') && !n.starts_with('^'))
-            })
-        }) && method_def.delegation.is_none();
+        // Writeback-safety gate (§B, #3658 step 4 — free_var_writes filter REMOVED).
+        // Any resolved candidate that has compiled bytecode and is not a delegation
+        // forwarder now runs compiled, regardless of what free vars it writes:
+        //   - captured-outer *lexical* writes (`method m { $outer++ }`) propagate via
+        //     `call_compiled_method` queuing `pending_rw_writeback_sources` + the
+        //     caller drain MERGING it (#3664);
+        //   - dynamic (`$*x`) / captured-outer writes from a nested CLOSURE inside
+        //     the body (the grammar reduce-time action `method delim { my $f = { $*L =
+        //     '<' }; $f() }`) propagate now that the method fast-path `can_skip_merge`
+        //     also gates on `has_calls` (#3670) — so the closure's env write is merged
+        //     back instead of dropped;
+        //   - attribute twigils (`.count`/`!x`/…) are not in `free_var_writes` at all
+        //     (#3666).
+        // A delegation forwarder is synthesized with `compiled_code = None`, and an
+        // uncompiled method likewise has none, so both fall through to the tree-walk
+        // `run_instance_method_resolved` (the remaining reason it still exists).
+        let writeback_safe_compiled =
+            method_def.compiled_code.is_some() && method_def.delegation.is_none();
         if !writeback_safe_compiled {
             return self.run_instance_method_resolved(
                 receiver_class_name,

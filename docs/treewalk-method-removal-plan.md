@@ -279,20 +279,34 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
      **dynamic (`$*x`) / special (`$?x`/`$^x`)** twigils, whose reduce-time / dynamic-scope
      writeback through a compiled redispatch frame is not yet wired (the remaining blocker
      below). `make test` (12205) green; pin=`t/captured-outer-method-compiled-gate.t`(7).
-     **★Remaining for full relaxation (4): dynamic-var writeback through compiled redispatch.**
-     `method delim { $*L = '<' }` (grammar reduce-time action, `t/grammar-reduce-time-dynvar.t`)
-     — the only case that still needs tree-walk. Also note a SEPARATE pre-existing gap (NOT a
-     regression, fails identically on tree-walk): hyper dispatch `@objs».meth` of a method
-     writing a captured-outer lexical (`method touch { $seen++ }`) does not propagate the
-     write — the hyper internal temp-target redispatch has no op-level drain of
-     `pending_rw_writeback_sources` (the coercion/render Slice-1a/1b drain pattern, not yet
-     applied to the hyper/junction sites). That gap predates the gate work and is orthogonal.
-  4. **Resolution caching is unsound naively.** Multi dispatch depends on arg *types* AND
+  4. **`can_skip_merge` closure/code-var env-write fix — DONE (#3670).** The blocker for
+     dynamic-var writeback was NOT a missing redispatch drain — it was that the compiled
+     method fast-path `can_skip_merge` gated only on `cc.has_env_writes`, whose call-op set
+     omits the closure-invocation ops (`CallOnValue`/`CallOnCodeVar`) and `CallDefined`/
+     `ExecCallSlip`. A method invoking a closure that writes a dynamic var (`method delim { my
+     $f = { $*L = '<' }; $f() }`) had its env-write silently dropped on exit (saved env just
+     restored). Both method `can_skip_merge` sites now also require `!cc.has_calls` (mirroring
+     the closure dispatch, which already did). This is a general correctness fix — it also
+     fixed the same bug for DIRECT calls through the catch-all. pin=
+     `t/method-closure-env-write-merge.t`(7).
+  5. **`free_var_writes` gate filter REMOVED — DONE (#TBD).** With #3670 in place the gate's
+     dynamic/special-twigil exception is no longer needed: `run_resolved_method_compiled_or_treewalk`
+     now runs ANY candidate with `compiled_code.is_some() && delegation.is_none()` compiled,
+     regardless of free-var writes. `grammar-reduce-time-dynvar.t` passes compiled; `make test`
+     (12240) green. `run_instance_method_resolved` is now reached ONLY for `compiled_code = None`
+     candidates — delegation forwarders and any method that failed to compile.
+  6. **Resolution caching is unsound naively.** Multi dispatch depends on arg *types* AND
      `where`/value clauses, so a `(class, method, arg-type)` cache is wrong for where/literal
      candidates — any cache must exclude those (or key on more).
-  Remaining sequence: wire the dynamic-var writeback through the compiled redispatch frame
-  (then the gate's dynamic/special exception can drop too), then (separately) the sound
-  resolution cache, then delete `run_instance_method_resolved`.
+  **★Separate pre-existing gap (NOT a regression, orthogonal):** hyper dispatch `@objs».meth`
+  of a method writing a captured-outer *lexical* (`method touch { $seen++ }`) does not
+  propagate the write — the hyper internal temp-target redispatch has no op-level drain of
+  `pending_rw_writeback_sources` (the coercion/render Slice-1a/1b drain pattern, not yet applied
+  to the hyper/junction sites). Fails identically on tree-walk; predates this work.
+  Remaining sequence: handle the `compiled_code = None` candidates (compile delegation
+  forwarders / ensure every method compiles) so the tree-walk fallback is unreachable, then
+  delete `run_instance_method_resolved` (a sound resolution cache is an orthogonal perf win,
+  not a prerequisite for deletion).
   **★Pre-existing blocker — BUILDALL sibling writeback clobber — FIXED (#3620).** A
   *nested method dispatch inside one BUILD clobbered a sibling BUILD's captured-outer
   writeback*:
