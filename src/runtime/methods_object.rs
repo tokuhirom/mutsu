@@ -3492,6 +3492,23 @@ impl Interpreter {
                             if !e.is_multi_no_match() {
                                 return Err(e);
                             }
+                            // An explicit `proto method new` OVERRIDES the inherited
+                            // Mu.new proto, so it owns dispatch entirely: a no-match
+                            // must surface as X::Multi::NoMatch rather than falling
+                            // back to the default constructor (which would wrongly
+                            // give X::Constructor::Positional).
+                            let cn = class_name.resolve();
+                            if self.lookup_proto_method(&cn, "new").is_some() {
+                                if e.exception.as_deref().is_some_and(|ex| {
+                                    matches!(ex, Value::Instance { class_name, .. }
+                                        if class_name.resolve() == "X::Multi::NoMatch")
+                                }) {
+                                    return Err(e);
+                                }
+                                return Err(super::methods_signature::make_multi_no_match_error(
+                                    "new",
+                                ));
+                            }
                             // Mu.new only accepts named arguments. If the call
                             // had positional args and no multi candidate matched,
                             // die like Raku does.
