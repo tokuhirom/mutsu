@@ -147,7 +147,23 @@ impl Interpreter {
                     match run_result {
                         Ok(_) => {
                             if let Some(last_val) = nested.last_value.take() {
-                                Self::sink_failure_to_error(last_val)
+                                // throws-like runs its code in SINK context (Raku
+                                // sinks the result), so a deferred bare `gather`
+                                // as the final statement must be forced — its body
+                                // runs and any throw (e.g. `return` outside a
+                                // routine) surfaces as the exception under test.
+                                // Force only coroutine-backed (gather) lazy lists
+                                // so a pure lazy sequence/range is never driven.
+                                // A force error IS the thrown exception: surface it
+                                // as the eval result so the type matcher sees it.
+                                if let Value::LazyList(ref ll) = last_val
+                                    && ll.coroutine.is_some()
+                                    && let Err(e) = nested.force_lazy_list_vm(ll)
+                                {
+                                    Err(e)
+                                } else {
+                                    Self::sink_failure_to_error(last_val)
+                                }
                             } else {
                                 Ok(Value::Nil)
                             }
@@ -500,7 +516,23 @@ impl Interpreter {
                     match run_result {
                         Ok(_) => {
                             if let Some(last_val) = nested.last_value.take() {
-                                Self::sink_failure_to_error(last_val)
+                                // throws-like runs its code in SINK context (Raku
+                                // sinks the result), so a deferred bare `gather`
+                                // as the final statement must be forced — its body
+                                // runs and any throw (e.g. `return` outside a
+                                // routine) surfaces as the exception under test.
+                                // Force only coroutine-backed (gather) lazy lists
+                                // so a pure lazy sequence/range is never driven.
+                                // A force error IS the thrown exception: surface it
+                                // as the eval result so the type matcher sees it.
+                                if let Value::LazyList(ref ll) = last_val
+                                    && ll.coroutine.is_some()
+                                    && let Err(e) = nested.force_lazy_list_vm(ll)
+                                {
+                                    Err(e)
+                                } else {
+                                    Self::sink_failure_to_error(last_val)
+                                }
                             } else {
                                 Ok(Value::Nil)
                             }
