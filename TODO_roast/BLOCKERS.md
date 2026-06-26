@@ -16,7 +16,31 @@ on **conflict with the main track** (see below), pruned completed entries
 all "reference rakudo also fails / roast test bug" files into a single
 **§F Unpassable** section so they stop polluting the work queue.
 
+## この文書の使い方
+
+このファイルは、「どの roast 失敗が、どの未実装機能に塞がれているか」を引くための索引。
+個別テストの症状を順番に追うのではなく、**共通原因ごとにまとめて見る**ために使う。
+
+先に押さえるべき点は次の通り:
+
+- ここに並んでいるのは「失敗したテスト名の羅列」ではなく、**根本原因ごとのグループ**。
+- 優先度は「その修正が何ファイルをまとめて動かすか」と
+  「main track と衝突しにくいか」の両方で決めている。
+- `§D Blocked on the main track` にある項目は、原則として先に触らない。
+  基盤側が進むまで、局所修正で前進しにくい。
+- `§F Unpassable` は、mutsu 側で追っても whitelist の前進につながらない項目。
+
+要するに、作業を選ぶときは
+**「直せそうか」ではなく「いま直す価値があるか」** を判断するための文書。
+
 ## Status — final stretch
+
+What this means in practice:
+
+- There are not many cheap one-file whitelist wins left.
+- Most remaining failures collapse onto a small number of hard architectural gaps.
+- The document is most useful as a routing table: once one blocker lands, it tells
+  you which test files are likely to move next.
 
 Essentially every remaining file is gated on one of a small set of **Hard
 architectural blockers**; there are no more cheap whitelist wins to cherry-pick.
@@ -39,17 +63,26 @@ The blockers, in rough order of how many files they gate:
 - **A long tail of distinct compile-time `X::` exception types** thrown at the
   exact right place (the misc.t-style campaign).
 
-The highest-leverage work is the **architectural tracks in PLAN.md**
-(Interpreter-execution-path removal + first-class containers). The per-file
-analysis below is the *map*: when one of those blockers lands, it says which
-files unblock.
+The highest-leverage work is the **architectural tracks in PLAN.md**.
+Historically that meant Interpreter-execution-path removal plus first-class
+containers; today, the remaining leverage is mostly on container identity,
+real lazy arrays, and a few typed-exception campaigns.
+
+The per-file analysis below is the *map*: when one of those blockers lands, it
+shows which files should unblock next.
 
 ## ▶ Pickup order — least main-track conflict first
 
-The **main track** (PLAN.md) is **CP-1 env-loan / Interpreter-removal** plus the
-**🟣 first-class-container** work (Track B). Both churn env ownership, dispatch,
-and the `Value`/container representation. To run a roast session *in parallel*
-without colliding, pick from the **top**:
+If you are choosing a task for a parallel branch, read this section first.
+The ordering is intentionally about **merge/conflict risk**, not just
+"theoretically important features."
+
+The **main track** (PLAN.md) used to be CP-1 env-loan / Interpreter-removal plus
+the **🟣 first-class-container** work (Track B). Interpreter-removal is largely
+done, but the conflict model still matters because container identity, dispatch,
+and `Value` representation remain sensitive areas.
+
+To run a roast session *in parallel* without colliding, pick from the **top**:
 
 1. **§A Isolated subsystems** (regex engine / unicode / IO / Buf / format / shaped
    arrays) — **zero** main-track conflict; live entirely in `runtime/regex*`,

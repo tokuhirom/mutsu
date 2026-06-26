@@ -1,21 +1,30 @@
-# PLAN.md — mutsu 今後の実装計画
+# PLAN.md — mutsu の実装計画
 
-> このファイルは**これからやる作業だけ**を載せる。完了したものは [news/](news/)（月別）へ移す。
-> 過去の実装状況は [news/](news/)、パフォーマンス詳細は [PERFORMANCE.md](PERFORMANCE.md)、
-> roast ブロッカー分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) を参照。
+> このファイルには **未完了の作業だけ** を載せる。完了した作業は [news/](news/) に移す。
+> 過去ログは [news/](news/)、性能の詳細は [PERFORMANCE.md](PERFORMANCE.md)、
+> roast の失敗分析は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) を参照。
 >
-> **最終更新 2026-06-21**: 全面再編。2大フラッグシップ（単一ストア化・tree-walking 撤去）が同一の
-> 構造的前提に収束したことを反映（§1）。完了済みの大型キャンペーン詳細は news/2026-06.md へ移動。
+> **最終更新 2026-06-21**:
+> 単一ストア化と tree-walking 撤去が完了したため、計画を「残作業中心」の構成に整理した。
+> 完了済みの大型キャンペーンの詳細は `news/2026-06.md` に移した。
+
+## この文書の読み方
+
+- まず **§1 現状** を読むと、「大きな基盤工事はどこまで終わったか」が分かる。
+- 次に **§2 substrate** を見ると、「順序依存で、先に片づけるべき残件」が分かる。
+- **§3 並列実装可能** は、別ブランチで衝突しにくい作業一覧。
+- 具体的な roast 失敗の対応順は [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) を参照。
 
 ## 方針
 
-**実用的な Raku インタープリタ**として使ってもらえる品質を目指す。
-起動 25 倍速い強みを活かし、CLI ツール・スクリプティング用途をメインターゲットとし、
-最終的には **mutsu でウェブブログが作れる** レベルのライブラリ互換性を実現する。
+目標は、**実用的な Raku インタープリタ**として使える品質に持っていくこと。
+起動が速い強みを活かし、まずは CLI ツールとスクリプト実行を主戦場にする。
+最終的には、**mutsu でウェブアプリやブログを組める程度のライブラリ互換性**を目指す。
 
-### 🚫 標準ルール: 「1 操作 = 1 実装」を崩さない（ユーザー方針 2026-06-07）
+### 🚫 標準ルール: 「1 操作 = 1 実装」を守る（ユーザー方針 2026-06-07）
 
-実行エンジンは単一 struct `Interpreter`（＝ bytecode VM）に一本化済み。同じ Raku 操作を**二度書かない**:
+実行エンジンは単一 struct `Interpreter`（= bytecode VM）に統合済み。
+同じ Raku 操作を**複数箇所に重複実装しない**:
 
 1. 新規実装・修正は VM/native 層（`src/vm/` ＋ pure native `src/builtins/`）に **1 回だけ**書く。
 2. carrier（EVAL / 正規表現の埋め込み `{}` ブロック等）が同じ処理を要するときは単一 native 実装へ**委譲**する。
@@ -23,39 +32,80 @@
 
 ---
 
-## 1. 現状 — 大型 substrate キャンペーンは完了、残は機能カバレッジ・perf・モジュール
+## 1. 現状 — 基盤工事はほぼ完了、残りは機能拡張と最適化
 
-VM/Interpreter 結合削減の2大フラッグシップ（第一級コンテナ＋状態所有）と、それに依存する単一ストア化・tree-walking 撤去は **全て完了**（詳細→[news/2026-06.md](news/2026-06.md) と末尾「✅ 完了キャンペーン」）。残る作業は順序依存の少数 substrate（§2-D の multi-dispatch 残）と、並列可能な機能カバレッジ／perf／モジュール（§3）。アーキテクチャ上の要設計な未知数はもう無く、残りは個別機能の実装と最適化が中心。
+大きな土台作業だった以下は **完了済み**:
+
+- VM/Interpreter の境界整理
+- 単一ストア化
+- tree-walking interpreter の実行経路撤去
+- 第一級コンテナと状態所有まわりの主要キャンペーン
+
+詳細は [news/2026-06.md](news/2026-06.md) と末尾の「✅ 完了した大型キャンペーン」を参照。
+
+現時点で残っているのは次の 2 系統だけ:
+
+- **順序依存の残件**: §2 の multi-dispatch まわり
+- **並列で進められる残件**: §3 の roast、性能改善、モジュール互換
+
+つまり、もう「設計の方向性が未確定」という段階ではない。
+残りの中心は、個別機能の実装、既知のギャップ埋め、そして性能改善。
 
 ---
 
-## 2. 🔴 substrate（順序依存）— 大半完了、残は multi-dispatch のみ
+## 2. 🔴 substrate（順序依存）— 大半は完了、残りは multi-dispatch だけ
 
-完了した substrate（1行サマリ・詳細→news/2026-06.md）:
+完了済みの substrate は次の通り（詳細は `news/2026-06.md`）:
 - **A. 単一ストア化**（locals↔env 統合）✅ — reverse pull 撤去 #3354 → boxing 恒久ON #3450 → `env_dirty` 物理削除 #3455。`locals` 単一権威・`env` 派生ビュー。
 - **B. tree-walking interpreter 撤去** ✅ — struct 統合 #3075-3104 ＋ `run_instance_method_resolved` 非-delegation arm（~470行 `run_block`）削除 #3664-3680。**bytecode VM がユーザメソッド body の唯一の実行エンジン**。
 - **C. 第一級コンテナ Phase 2 + Phase 3 Stage 0-2c** ✅ — SlotRef→`HashEntryRef` 統合 #3472・grep-rw-view 撤去 #3466・scalar/named-param 共有。Phase 3 Stage 3（escape-aware cell 省略）は perf 未正当化で **deferred**（実質ゼロ残）。
 - **D. 状態所有（②③）** ✅ — レジストリ所有 #2760-2772 / IO native メソッド族 #3499-3511 / 組込型 ctor の native 化＝③ ctor フォーク完了 #3514-3536（capstone IO::Socket::INET）/ (b) tree-walk dispatch chain 削除（=B）。
 
-### D. multi-dispatch の VM 化 — 残フォールバックのみ（唯一の `[ ]` substrate）
+### D. multi-dispatch の VM 化 — 残るのはフォールバック除去だけ
 
-landed（詳細→news/2026-06.md）: proto sub trivial body #3541 / where 制約候補 #3543 / default-param #3559 / 非trivial proto body #3550·#3552 / `{*}` rw-redispatch #3556 / **nextsame+rw チェーン**（§D capstone）/ `&`-code param / 非builtin module·dynamic single sub / imported test-assertion sub / **sound multi resolution cache #3684**。
+ここは、substrate として唯一まだチェックボックスが残っている項目。
 
-- [ ] **残**: bare multi の残フォールバック（`@_` slurpy recursive sub 等は別カテゴリ・`@a[1..*]` 再帰の immutable-List bug は §F）/ `code_signature`〔`&cb:(Int)`〕param を持つ候補の OTF 化（resolution ambiguity 別軸）/ default-param OTF の builtin-shadow 単一候補（name-cache 汚染リスクで除外維持）/
-    モジュール sub OTF の残 interpreter 結合構文（state/EVAL/CATCH/sigilless/rw/raw/code-sig/sub-sig/戻り型 coercion）＝保守ゲートで除外中・compiled_fns 拡充が本筋。
+すでに landed 済みの主な内容（詳細は `news/2026-06.md`）:
+- proto sub trivial body #3541
+- where 制約候補 #3543
+- default-param #3559
+- 非 trivial proto body #3550 / #3552
+- `{*}` rw-redispatch #3556
+- **nextsame + rw チェーン**（§D の capstone）
+- `&`-code param
+- 非 builtin module / dynamic single sub
+- imported test-assertion sub
+- **sound multi resolution cache #3684**
+
+- [ ] **残件**:
+  bare multi の残フォールバック除去。
+  `@_` slurpy recursive sub は別カテゴリで、`@a[1..*]` 再帰の immutable-List bug は §F 扱い。
+  `code_signature`（`&cb:(Int)`）param を持つ候補の OTF 化。
+  これは resolution ambiguity とは別の軸。
+  default-param OTF の builtin-shadow 単一候補。
+  name-cache 汚染リスクがあるため、いまは意図的に除外を維持している。
+  モジュール sub OTF に残っている interpreter 結合構文。
+  対象は `state` / `EVAL` / `CATCH` / sigilless / `rw` / `raw` / code-sig / sub-sig / 戻り型 coercion。
+  現在は保守ゲートで除外しており、本筋は `compiled_fns` の拡充。
 
 ---
 
-## 3. 🟢 並列実装可能（独立・互いにブロックしない）
+## 3. 🟢 並列実装可能（独立・相互にブロックしない）
 
-> substrate（§2）と critical path を共有しない。別ブランチで並行に進められる。着手時に該当 BLOCKERS/メモリを確認。
+> ここにある項目は §2 の critical path と直接は衝突しない。
+> 別ブランチで並行に進めやすい。
+> 着手前に、対応する BLOCKERS や memory のメモを確認すること。
 
 ### F. roast backlog（[TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 駆動・インパクト順）
 
-現状 whitelist **1285**。診断は `./scripts/roast-history.sh`（`tmp/roast-{panic,timeout,error,fail,pass}.txt`）。
+現状 whitelist は **1285**。
+診断には `./scripts/roast-history.sh` を使う。
+出力は `tmp/roast-{panic,timeout,error,fail,pass}.txt` に保存される。
 
-- [ ] **★型付き例外（最高インパクトの単一ファイル）**: `S32-exceptions/misc.t`（42/157）。X::NotParametric /
-      X::Undeclared / X::Redeclaration / X::Bind / X::TypeCheck 他 ~25 種の one-off 型実装。BLOCKERS.md §B。
+- [ ] **★型付き例外（単一ファイルとしては最優先）**:
+      `S32-exceptions/misc.t`（42/157）。
+      `X::NotParametric` / `X::Undeclared` / `X::Redeclaration` / `X::Bind` / `X::TypeCheck` など、
+      およそ 25 種類の one-off 例外実装が必要。詳細は `BLOCKERS.md` §B。
 - [ ] **lazy 無限配列 L2b–L4**: L1/L1b/L5/L5b/L2a は landed（→ news/2026-06）。残＝L2b（真のメモリ遅延化・seed `[1]`・
       `docs/lazy-arrays.md`「L2b」節に実行プラン確定済）→ `(1...*)`/closure 配列変換 → L4 slurpy 真 lazy 化。
       whitelist payoff（slurpy-params.t/slice.t）は Seq single-pass consumption（`X::Seq::Consumed`）が別軸。
