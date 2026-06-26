@@ -72,9 +72,10 @@ impl Interpreter {
                         item.class_name,
                         current_attrs.clone(),
                     );
-                    if let Ok((_v, updated)) = self.run_instance_method_resolved(
+                    if let Ok((_v, updated)) = self.run_resolved_method_compiled_or_treewalk(
                         &instance_class,
                         mro_class,
+                        "DESTROY",
                         method_def,
                         current_attrs.clone(),
                         Vec::new(),
@@ -93,9 +94,10 @@ impl Interpreter {
                             item.class_name,
                             current_attrs.clone(),
                         );
-                        if let Ok((_v, updated)) = self.run_instance_method_resolved(
+                        if let Ok((_v, updated)) = self.run_resolved_method_compiled_or_treewalk(
                             &instance_class,
                             &role_name,
+                            "DESTROY",
                             method_def,
                             current_attrs.clone(),
                             Vec::new(),
@@ -941,98 +943,104 @@ impl Interpreter {
         // (roast S12-methods/defer-next.t: method `m` x10000). Delegation forwarders
         // (synthesized, `compiled_code = None`) and any other uncompiled method keep
         // the interpreter path.
-        // Only take the compiled path when it is writeback-safe; otherwise keep the
-        // tree-walk `run_instance_method_resolved`, which merges captured-outer
-        // caller writes back through the shared `env`:
-        //  - the body writes no captured-outer (free) variables — `call_compiled_method`
-        //    records those in `pending_rw_writeback_sources` for a surrounding *call op*
-        //    to drain, but an interpreter-context caller (BUILDALL, coercion/render
-        //    redispatch, `samewith`) has none (render-method captured-write coherence);
-        //  - it is not a delegation forwarder (synthesized, `compiled_code = None`).
-        // A pure body (the common multi-method / accessor / `samewith` case, e.g.
-        // S12-methods/defer-next.t method `m` x10000, and §B Slice 3 `submethod
-        // BUILD`/`TWEAK` construction) records nothing, so it is safe. Submethods are
-        // included (Slice 3): the construction call sites' `fail`-to-Failure handling
-        // is preserved by re-raising an unhandled-Failure submethod result below.
-        let writeback_safe_compiled = method_def
-            .compiled_code
-            .as_ref()
-            .is_some_and(|cc| cc.free_var_writes.is_empty())
-            && method_def.delegation.is_none();
-        let result = if writeback_safe_compiled {
-            let cc = method_def.compiled_code.clone().unwrap();
-            let inv_for_cell = invocant.clone();
-            let empty_fns: HashMap<String, crate::opcode::CompiledFunction> = HashMap::new();
-            // `call_compiled_method` clears `pending_rw_writeback_sources` on entry;
-            // a writeback-safe (free-var-write-free) body records none of its own, so
-            // save and restore the list around the call to preserve any sibling write
-            // already queued for an outer frame to drain (the #3620 BUILDALL case:
-            // a nested `.new` here must not drop a parent `submethod BUILD { $o++ }`
-            // write). Without this the hot path would have to fall back whenever the
-            // list is non-empty, losing the speedup.
-            let saved_pending = std::mem::take(&mut self.pending_rw_writeback_sources);
-            let call_result = self.call_compiled_method(
-                receiver_class_name,
-                &owner_class,
-                method_name,
-                &method_def,
-                &cc,
-                attributes,
-                args,
-                invocant,
-                &empty_fns,
-            );
-            self.pending_rw_writeback_sources = saved_pending;
-            match call_result {
-                Ok((v, updated, adjusted)) => {
-                    // §B Slice 3: a `submethod BUILD`/`TWEAK` that `fail`ed comes back
-                    // as an unhandled Failure *value* (`call_compiled_method` converts
-                    // `fail` to a value), but the construction call sites
-                    // (BUILDALL / `run_build_phase`) drive their `fail`-to-Failure
-                    // behaviour off `Err(is_fail)`. Re-raise it so that handling is
-                    // unchanged. A non-submethod keeps a Failure as a legitimate return.
-                    if method_def.is_submethod
-                        && let Some(mut err) = self.failure_to_runtime_error_if_unhandled(&v)
-                    {
-                        err.is_fail = true;
-                        Err(err)
-                    } else {
-                        // `run_instance_method`'s contract is `(result, attrs-to-commit)`;
-                        // the caller commits the returned map. `call_compiled_method` only
-                        // marks `adjusted` on a `:=` recovery — otherwise the shared cell
-                        // already holds the in-place mutations, so return those (the
-                        // caller's commit becomes a no-op) rather than the stale baseline
-                        // snapshot, which would clobber them.
-                        let final_attrs = if adjusted {
-                            updated
-                        } else if let Some(Value::Instance {
-                            attributes: cell, ..
-                        }) = &inv_for_cell
-                        {
-                            cell.to_map()
-                        } else {
-                            updated
-                        };
-                        Ok((v, final_attrs))
-                    }
-                }
-                Err(e) => Err(e),
-            }
-        } else {
-            self.run_instance_method_resolved(
-                receiver_class_name,
-                &owner_class,
-                method_def,
-                attributes,
-                args,
-                invocant,
-            )
-        };
+        let result = self.run_resolved_method_compiled_or_treewalk(
+            receiver_class_name,
+            &owner_class,
+            method_name,
+            method_def,
+            attributes,
+            args,
+            invocant,
+        );
         self.samewith_context_stack.pop();
         if pushed_dispatch {
             self.method_dispatch_stack.pop();
         }
         result
+    }
+
+    /// §B: run an already-resolved method/submethod candidate as compiled bytecode
+    /// (`call_compiled_method`) when writeback-safe, else fall back to the tree-walk
+    /// `run_instance_method_resolved` (which `run_block`-recompiles the body each call
+    /// but merges captured-outer caller writes through the shared `env`). Same
+    /// `(result, attrs-to-commit)` contract as `run_instance_method_resolved`, so it is
+    /// a drop-in at every resolved-candidate call site (the `run_instance_method`
+    /// general dispatch and the construction/destruction BUILD/TWEAK/DESTROY runners).
+    ///
+    /// Writeback-safety gate (else tree-walk): the body writes no captured-outer (free)
+    /// vars — `call_compiled_method` queues those in `pending_rw_writeback_sources` for
+    /// a surrounding *call op* to drain, which an interpreter-context caller lacks — and
+    /// it is not a delegation forwarder. `pending_rw_writeback_sources` is saved/restored
+    /// around the call (it clears on entry) so a sibling `submethod BUILD { $o++ }` write
+    /// queued for an outer `.new` survives a nested `.new` (#3620). A `submethod` that
+    /// `fail`ed comes back as an unhandled Failure *value*; re-raise it as `Err(is_fail)`
+    /// so the construction sites' fail-to-Failure handling is unchanged (a non-submethod
+    /// keeps a Failure as a legitimate return). Attributes are committed from the live
+    /// cell unless `:=`-adjusted.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn run_resolved_method_compiled_or_treewalk(
+        &mut self,
+        receiver_class_name: &str,
+        owner_class: &str,
+        method_name: &str,
+        method_def: MethodDef,
+        attributes: HashMap<String, Value>,
+        args: Vec<Value>,
+        invocant: Option<Value>,
+    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        let writeback_safe_compiled = method_def
+            .compiled_code
+            .as_ref()
+            .is_some_and(|cc| cc.free_var_writes.is_empty())
+            && method_def.delegation.is_none();
+        if !writeback_safe_compiled {
+            return self.run_instance_method_resolved(
+                receiver_class_name,
+                owner_class,
+                method_def,
+                attributes,
+                args,
+                invocant,
+            );
+        }
+        let cc = method_def.compiled_code.clone().unwrap();
+        let inv_for_cell = invocant.clone();
+        let empty_fns: HashMap<String, crate::opcode::CompiledFunction> = HashMap::new();
+        let saved_pending = std::mem::take(&mut self.pending_rw_writeback_sources);
+        let call_result = self.call_compiled_method(
+            receiver_class_name,
+            owner_class,
+            method_name,
+            &method_def,
+            &cc,
+            attributes,
+            args,
+            invocant,
+            &empty_fns,
+        );
+        self.pending_rw_writeback_sources = saved_pending;
+        match call_result {
+            Ok((v, updated, adjusted)) => {
+                if method_def.is_submethod
+                    && let Some(mut err) = self.failure_to_runtime_error_if_unhandled(&v)
+                {
+                    err.is_fail = true;
+                    return Err(err);
+                }
+                let final_attrs = if adjusted {
+                    updated
+                } else if let Some(Value::Instance {
+                    attributes: cell, ..
+                }) = &inv_for_cell
+                {
+                    cell.to_map()
+                } else {
+                    updated
+                };
+                Ok((v, final_attrs))
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub(super) fn run_instance_method_resolved(
