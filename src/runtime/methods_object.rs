@@ -2418,6 +2418,26 @@ impl Interpreter {
             err.exception = Some(Box::new(ex));
             return Err(err);
         }
+        // Calling `.new(...)` on a concrete builtin scalar / Pair instance delegates
+        // to that type's constructor (raku: `$pair.new(:key<k>, :value<v>)`,
+        // `42.new` => Int.new => 0, `"x".new` => Str.new => ""). Placed after the
+        // enum-name `Str` check above so a Str holding an enum type name still
+        // throws X::Constructor::BadType rather than delegating to Str.new.
+        {
+            let type_pkg = match &target {
+                Value::Pair(..) | Value::ValuePair(..) => Some("Pair"),
+                Value::Int(_) | Value::BigInt(_) => Some("Int"),
+                Value::Num(_) => Some("Num"),
+                Value::Rat(..) => Some("Rat"),
+                Value::FatRat(..) => Some("FatRat"),
+                Value::Complex(..) => Some("Complex"),
+                Value::Str(_) => Some("Str"),
+                _ => None,
+            };
+            if let Some(type_name) = type_pkg {
+                return self.dispatch_new(Value::Package(Symbol::intern(type_name)), args);
+            }
+        }
         if let Value::ParametricRole {
             base_name,
             type_args,
