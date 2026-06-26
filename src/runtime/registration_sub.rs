@@ -136,6 +136,27 @@ impl Interpreter {
             let Some(tc) = pd.type_constraint.as_deref() else {
                 continue;
             };
+            // A native `array[T]` may only be parameterized with a *native*
+            // element type (`int`/`uint`/`num`/`str`, …). A boxed type such as
+            // `array[Int]` cannot back a native array, so rakudo fails the
+            // parameterization at compile time (X::Comp::BeginTime). The boxed
+            // `Array[Int]` (capital A) is fine and not matched here.
+            if let Some(inner) = tc.strip_prefix("array[").and_then(|r| r.strip_suffix(']')) {
+                let inner = inner.trim();
+                if !inner.is_empty()
+                    && !crate::runtime::native_types::is_native_array_element_type(inner)
+                {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "An exception occurred while parameterizing array\nException details: Can only parameterize array with a native type, not {}",
+                            inner
+                        )),
+                    );
+                    return Err(RuntimeError::typed("X::Comp::BeginTime", attrs));
+                }
+            }
             // A parameterized form `Base[...]` (also how `Base of T` is stored,
             // including the type-only `(Base of T)` param named `__type_only__`)
             // on a non-parametric type (a plain class or a package/module) is
