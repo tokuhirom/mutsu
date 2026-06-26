@@ -287,6 +287,10 @@ impl Interpreter {
         // so that `augment class C { class Nested {} }` can detect redeclaring a
         // nested type that the original `class C { class Nested {} }` declared.
         let mut class_nested: HashMap<String, HashSet<String>> = HashMap::new();
+        // The `repr` of each class at its first declaration. A later declaration
+        // (e.g. upgrading a `{ ... }` stub) may not introduce a different repr —
+        // that is X::TooLateForREPR ("must be set at initial declaration").
+        let mut seen_class_repr: HashMap<String, Option<String>> = HashMap::new();
         let collect_nested = |body: &[Stmt]| -> HashSet<String> {
             body.iter()
                 .filter_map(|s| match s {
@@ -432,12 +436,34 @@ impl Interpreter {
                     name,
                     body,
                     is_lexical,
+                    repr,
                     ..
                 } => {
                     if let Some(err) = dup_scoped_method(body) {
                         return Err(err);
                     }
                     let name = name.resolve().to_string();
+                    // X::TooLateForREPR: the repr must be fixed at the initial
+                    // declaration. If an earlier declaration of this class had a
+                    // different (typically absent) repr, a later one cannot set it.
+                    match seen_class_repr.get(&name) {
+                        Some(prev) if repr.is_some() && prev != repr => {
+                            let mut attrs = std::collections::HashMap::new();
+                            attrs.insert("type".to_string(), Value::str(name.clone()));
+                            attrs.insert(
+                                "message".to_string(),
+                                Value::str(format!(
+                                    "Cannot change REPR of {} now (must be set at initial declaration)",
+                                    name
+                                )),
+                            );
+                            return Err(RuntimeError::typed("X::TooLateForREPR", attrs));
+                        }
+                        Some(_) => {}
+                        None => {
+                            seen_class_repr.insert(name.clone(), repr.clone());
+                        }
+                    }
                     class_nested
                         .entry(name.clone())
                         .or_default()
