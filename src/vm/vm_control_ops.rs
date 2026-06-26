@@ -1963,7 +1963,10 @@ impl Interpreter {
         let Some(mut cval) = self.get_env_with_main_alias(container) else {
             return;
         };
-        Self::assign_into_nested_container(&mut cval, &key, current);
+        // The element index here is an already-resolved existing slot (loop
+        // aliasing), so the autoviv reservation cannot realistically fail; this
+        // writeback teardown has no error channel, so discard the Result.
+        let _ = Self::assign_into_nested_container(&mut cval, &key, current);
         self.set_env_with_main_alias(container, cval.clone());
         self.update_local_if_exists(code, container, &cval);
     }

@@ -23,10 +23,15 @@ plan 6;
 }
 
 # 2: the converted exception is an X::AdHoc carrying the internal-error message.
+# `@a[2**64 - 1] = 1` triggers an index-out-of-bounds panic (the index + 1
+# wraps to 0, so no slot is allocated). A merely-large index such as
+# `@a[1e15] = 1` no longer panics — it is guarded by a fallible reservation
+# (`autoviv_resize`) and surfaces as a clean catchable error instead — so it
+# would not exercise the panic->X:: boundary this subtest checks.
 {
     my $msg;
     try {
-        my $p = start { my @a; @a[2**64 - 2] = 1; };  # capacity-overflow panic
+        my $p = start { my @a; @a[2**64 - 1] = 1; };  # index-OOB panic
         await $p;
         CATCH { default { $msg = .message } }
     }

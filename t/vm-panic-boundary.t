@@ -21,14 +21,17 @@ plan 9;
     ok $survived, 'try {} survives an overflow panic';
 }
 
+# A merely-large autoviv index is guarded by a fallible reservation
+# (`autoviv_resize` -> `try_reserve`), so it surfaces as a clean catchable error
+# rather than a Vec capacity-overflow panic. `try {}` survives it just the same.
 {
     my $survived = False;
     try {
         my @a;
-        @a[2**64 - 2] = 1;   # Vec capacity-overflow panic
+        @a[2**64 - 2] = 1;   # guarded: clean allocation error, not a panic
     }
     $survived = True;
-    ok $survived, 'try {} survives a capacity-overflow panic';
+    ok $survived, 'try {} survives a guarded huge-autoviv allocation failure';
 }
 
 # 3-4: the caught error is a real, introspectable exception.
