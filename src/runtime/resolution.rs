@@ -872,7 +872,7 @@ impl Interpreter {
 
     /// Resolve the MRO for `class_name`. Delegates to [`Registry::class_mro`],
     /// which holds a single write guard for the whole compute-and-cache op.
-    pub(super) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
+    pub(crate) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
         self.registry_mut().class_mro(class_name)
     }
 
