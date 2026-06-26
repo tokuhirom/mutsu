@@ -2240,10 +2240,22 @@ impl Compiler {
                 self.compile_check_phaser(body);
             }
             Stmt::Phaser {
-                kind: PhaserKind::Begin | PhaserKind::Init | PhaserKind::Enter,
+                kind: PhaserKind::Begin,
                 body,
             } => {
-                // BEGIN/INIT are extracted and run at compile time.
+                // BEGIN runs at compile time; an error thrown inside it is wrapped
+                // in X::Comp::BeginTime (same mechanism as CHECK — the
+                // CheckPhaserStart/End opcodes raise the `check_phaser_depth`
+                // counter, and a throw at depth > 0 is wrapped). The opcodes don't
+                // touch the stack, so the body's value/side-effects are preserved.
+                self.compile_check_phaser(body);
+            }
+            Stmt::Phaser {
+                kind: PhaserKind::Init | PhaserKind::Enter,
+                body,
+            } => {
+                // INIT runs at run start, ENTER on block entry — neither is a
+                // compile-time phaser, so their errors are NOT X::Comp::BeginTime.
                 // ENTER at top-level scope compiles inline (in sub/method/closure
                 // bodies it is handled by BlockScope and filtered out before
                 // reaching this match arm).
