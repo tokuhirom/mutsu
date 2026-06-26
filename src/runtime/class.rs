@@ -1018,7 +1018,21 @@ impl Interpreter {
             invocant,
             &empty_fns,
         );
-        self.pending_rw_writeback_sources = saved_pending;
+        // MERGE the saved sibling writes (e.g. a sibling BUILD's captured-outer
+        // write queued for the outer `.new` caller to drain, #3620) with the
+        // body's OWN captured-outer writes that `call_compiled_method` recorded
+        // on exit — rather than RESTORING `saved_pending`, which would discard
+        // the body's writes (so a method's `$outer++` would be lost). With the
+        // `free_var_writes.is_empty()` writeback-safety gate above on, the body
+        // records nothing, so this is inert; it becomes correct once the gate is
+        // relaxed for captured-outer-writing bodies.
+        let mut merged = saved_pending;
+        for src in std::mem::take(&mut self.pending_rw_writeback_sources) {
+            if !merged.contains(&src) {
+                merged.push(src);
+            }
+        }
+        self.pending_rw_writeback_sources = merged;
         match call_result {
             Ok((v, updated, adjusted)) => {
                 if method_def.is_submethod
