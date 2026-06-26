@@ -35,7 +35,13 @@ impl Compiler {
                 true
             }
             Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
-                self.compile_block_inline(inner);
+                // A tail block with ENTER/LEAVE/... phasers must run them through a
+                // real `BlockScope` rather than being inlined (which drops them).
+                if Self::has_block_enter_leave_phasers(inner) {
+                    self.compile_phaser_block_scope(inner, true);
+                } else {
+                    self.compile_block_inline(inner);
+                }
                 true
             }
             _ => false,
@@ -99,8 +105,16 @@ impl Compiler {
                     }
                     Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
                         // Nested bare blocks in final position should keep flowing
-                        // their final value outward.
-                        self.compile_block_inline(inner);
+                        // their final value outward. A block carrying
+                        // ENTER/LEAVE/KEEP/UNDO/PRE/POST phasers must run them via a
+                        // real `BlockScope` (inlining would silently drop them);
+                        // `result_on_stack` keeps its value on the stack, matching
+                        // the inline path.
+                        if Self::has_block_enter_leave_phasers(inner) {
+                            self.compile_phaser_block_scope(inner, true);
+                        } else {
+                            self.compile_block_inline(inner);
+                        }
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }

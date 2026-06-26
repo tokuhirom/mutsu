@@ -832,6 +832,17 @@ impl Compiler {
                                 ))));
                                 continue;
                             }
+                            // A tail block carrying ENTER/LEAVE/KEEP/UNDO/PRE/POST
+                            // phasers must run them: inlining (below) drops the
+                            // phasers entirely (e.g. a trailing `{ ...; LEAVE
+                            // unlink $f }` never cleaned up). Route it through a
+                            // real `BlockScope` instead, which also delivers the
+                            // block value via the topic (matching the SetTopic the
+                            // inline path emits).
+                            if Self::has_block_enter_leave_phasers(body) {
+                                self.compile_phaser_block_scope(body, false);
+                                continue;
+                            }
                             self.compile_block_inline(body);
                             self.code.emit(OpCode::SetTopic);
                             continue;
