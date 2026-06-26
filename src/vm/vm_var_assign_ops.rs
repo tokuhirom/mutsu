@@ -2850,7 +2850,12 @@ impl Interpreter {
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]
                 if var_name == "%*ENV" {
-                    // SAFETY: mutsu is single-threaded
+                    // SAFETY: std::env::set_var is unsafe because mutating the
+                    // process environment races with any concurrent env access
+                    // on another thread. mutsu writes %*ENV from the executing
+                    // thread during normal evaluation; a spawned worker that
+                    // concurrently reads env would be a latent race (tracked
+                    // with the cross-thread container work, see aliased_mut.rs).
                     unsafe {
                         std::env::set_var(&key, val.to_string_value());
                     }
@@ -2878,7 +2883,12 @@ impl Interpreter {
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]
                 if var_name == "%*ENV" {
-                    // SAFETY: mutsu is single-threaded
+                    // SAFETY: std::env::set_var is unsafe because mutating the
+                    // process environment races with any concurrent env access
+                    // on another thread. mutsu writes %*ENV from the executing
+                    // thread during normal evaluation; a spawned worker that
+                    // concurrently reads env would be a latent race (tracked
+                    // with the cross-thread container work, see aliased_mut.rs).
                     unsafe {
                         std::env::set_var(&key, val.to_string_value());
                     }
@@ -3971,8 +3981,9 @@ impl Interpreter {
                             // identity semantics: when a hash is stored in an array
                             // slot via `$arr[i] = $hash`, mutations through the original
                             // variable must be visible through the array.
-                            // SAFETY: mutsu is single-threaded, so exclusive access is
-                            // guaranteed even though the Arc is shared.
+                            // In-place mutation goes through the audited
+                            // `arc_contents_mut` choke point below, guarded by
+                            // `strong_count > 1` (see its safety contract).
                             // For %-sigiled hash variables (e.g. `%h is copy`),
                             // normally use COW.  For scalar ($) variables holding
                             // hashes, use in-place mutation to preserve identity.
@@ -4284,7 +4295,12 @@ impl Interpreter {
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]
                 if var_name == "%*ENV" {
-                    // SAFETY: mutsu is single-threaded
+                    // SAFETY: std::env::set_var is unsafe because mutating the
+                    // process environment races with any concurrent env access
+                    // on another thread. mutsu writes %*ENV from the executing
+                    // thread during normal evaluation; a spawned worker that
+                    // concurrently reads env would be a latent race (tracked
+                    // with the cross-thread container work, see aliased_mut.rs).
                     unsafe {
                         std::env::set_var(&key, val.to_string_value());
                     }
@@ -4731,9 +4747,11 @@ impl Interpreter {
     /// Follow `current` through any chain of `:=`-bound container cells
     /// (`ContainerRef`), returning a raw pointer to the innermost held value.
     ///
-    /// SAFETY: mutsu is single-threaded; the pointer derived from the cell's
-    /// mutex data stays valid after the transient guard drops (the held `Value`
-    /// is owned by the `Arc`, which the caller keeps alive).
+    /// SAFETY: the pointer derived from the cell's mutex data stays valid after
+    /// the transient guard drops because the held `Value` is owned by the `Arc`,
+    /// which the caller keeps alive; no aliasing borrow into that `Value` may be
+    /// live while the returned pointer is used. (Cross-thread sharing of the same
+    /// cell is the tracked, pre-existing gap documented in `aliased_mut.rs`.)
     ///
     /// Cycle-safety (Phase 4): a self-referential bind can make a cell
     /// transitively hold a `ContainerRef` back to itself. A normal cell holds a
@@ -4759,9 +4777,9 @@ impl Interpreter {
     /// a bound cell would fall through every handler's `Value::Hash`/`Value::Array`
     /// match and be silently dropped (Phase 3).
     ///
-    /// SAFETY: single-threaded; the returned reference points into the cell's
-    /// mutex data, kept alive by the `Arc` stored in env (see
-    /// `descend_container_ref`).
+    /// SAFETY: the returned reference points into the cell's mutex data, kept
+    /// alive by the `Arc` stored in env, and no other borrow into that data may
+    /// be live while it is held (see `descend_container_ref`).
     pub(crate) fn env_root_descended_mut(&mut self, var_name: &str) -> Option<&mut Value> {
         let root = self.env_mut().get_mut(var_name)? as *mut Value;
         let descended = unsafe { Self::descend_container_ref(root) };

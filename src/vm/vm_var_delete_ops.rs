@@ -241,7 +241,12 @@ impl Interpreter {
                 Value::Array(keys, ..) => {
                     for k in keys.iter() {
                         let key_str = k.to_string_value();
-                        // SAFETY: mutsu is single-threaded
+                        // SAFETY: std::env::remove_var is unsafe because mutating
+                        // the process environment races with concurrent env
+                        // access on another thread. mutsu deletes %*ENV keys from
+                        // the executing thread; a spawned worker reading env
+                        // concurrently would be a latent race (tracked with the
+                        // cross-thread container work, see aliased_mut.rs).
                         unsafe {
                             std::env::remove_var(&key_str);
                         }
@@ -249,7 +254,12 @@ impl Interpreter {
                 }
                 _ => {
                     let key_str = idx.to_string_value();
-                    // SAFETY: mutsu is single-threaded
+                    // SAFETY: std::env::remove_var is unsafe because mutating the
+                    // process environment races with concurrent env access on
+                    // another thread. mutsu deletes %*ENV keys from the executing
+                    // thread; a spawned worker reading env concurrently would be a
+                    // latent race (tracked with the cross-thread container work,
+                    // see aliased_mut.rs).
                     unsafe {
                         std::env::remove_var(&key_str);
                     }
