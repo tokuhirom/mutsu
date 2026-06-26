@@ -125,10 +125,106 @@ fn check_bare_sym_usage(source: &str) -> Result<(), RuntimeError> {
     Ok(())
 }
 
+/// Reject a `**`-quantifier bare range that has whitespace adjacent to the `..`
+/// (`m ** 1 ..2` / `m ** 1.. 2`): Raku requires the bare range to be written
+/// without spaces around `..` and otherwise raises X::Syntax::Regex::SpacesInBareRange.
+/// `pre`/`post` are reconstructed assuming `/.../` delimiters (the common case).
+fn check_spaces_in_bare_range(pattern: &str) -> Result<(), RuntimeError> {
+    let bytes = pattern.as_bytes();
+    let mut i = 0usize;
+    while i + 1 < bytes.len() {
+        // Skip over quoted literals and `{...}` code blocks so a `**` (or a
+        // space-separated `..`) that lives *inside* one is not mistaken for a
+        // real quantifier — e.g. a `'/m ** 1 ..'` literal in `m!...!`.
+        match bytes[i] {
+            b'\\' => {
+                i += 2;
+                continue;
+            }
+            q @ (b'\'' | b'"') => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != q {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                i += 1;
+                continue;
+            }
+            b'{' => {
+                let mut depth = 1usize;
+                i += 1;
+                while i < bytes.len() && depth > 0 {
+                    match bytes[i] {
+                        b'{' => depth += 1,
+                        b'}' => depth -= 1,
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+            _ => {}
+        }
+        if bytes[i] == b'*' && bytes[i + 1] == b'*' {
+            let mut j = i + 2;
+            // optional frugal `?`
+            if j < bytes.len() && bytes[j] == b'?' {
+                j += 1;
+            }
+            // whitespace after `**`
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            // leading digits (min count)
+            let digit_start = j;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > digit_start {
+                // Whitespace adjacent to `..` on either side is illegal in a bare
+                // range: `1 ..2` (space before) or `1.. 2` (space after).
+                let mut k = j;
+                let space_before = bytes.get(k).is_some_and(|b| b.is_ascii_whitespace());
+                while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+                    k += 1;
+                }
+                let at_dotdot = bytes.get(k) == Some(&b'.') && bytes.get(k + 1) == Some(&b'.');
+                let space_after =
+                    at_dotdot && bytes.get(k + 2).is_some_and(|b| b.is_ascii_whitespace());
+                if at_dotdot && (space_before || space_after) {
+                    // Eject right after the `..`.
+                    let eject = k + 2;
+                    let pre = format!("/{}", &pattern[..eject]);
+                    let post = format!("{}/", &pattern[eject..]);
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("pre".to_string(), crate::value::Value::str(pre));
+                    attrs.insert("post".to_string(), crate::value::Value::str(post));
+                    let msg = "Spaces not allowed in bare range".to_string();
+                    attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+                    let ex = crate::value::Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Syntax::Regex::SpacesInBareRange"),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
+            }
+            i = j.max(i + 2);
+        } else {
+            i += 1;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_regex_structurally(pattern: &str) -> Result<(), RuntimeError> {
     // Flat pre-scan for bare `<sym>` (also inside code blocks), matching the
     // former validator's first check.
     check_bare_sym_usage(pattern)?;
+    check_spaces_in_bare_range(pattern)?;
     PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = None);
     let _ = VALIDATE_INTERP
         .with(|interp| interp.parse_regex_with_mode(pattern, RegexParseMode::Validate));
