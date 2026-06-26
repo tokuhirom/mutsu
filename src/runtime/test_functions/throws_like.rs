@@ -51,14 +51,27 @@ impl Interpreter {
                 nested.lexical_class_scopes = self.lexical_class_scopes.clone();
                 nested.var_dynamic_flags = self.var_dynamic_flags.clone();
                 nested.restore_var_type_constraints(self.snapshot_var_type_constraints());
+                // Copy the caller's lexicals into the nested interpreter so the
+                // EVAL'd code sees them, and remember which names were copied so
+                // their post-run values can be written back. Raku EVALs the string
+                // in the *caller's* lexical scope, so a mutation the code makes
+                // before throwing (e.g. `$str ~= ...` in a loop that later dies)
+                // must be visible to the caller afterwards.
+                let mut shared_var_names: Vec<Symbol> = Vec::new();
                 for (k, v) in &self.env {
                     if k.contains_str("::") {
                         continue;
                     }
                     nested.env.insert_sym(*k, v.clone());
+                    shared_var_names.push(*k);
                 }
                 // Pre-check for undeclared names (compile-time errors in Raku).
                 // Parse the code and check for undeclared type names before running.
+                // Also collect the names the code re-declares with `my`/`state` at
+                // the top level: those must NOT be written back to the caller (an
+                // EVAL `my $x` is a fresh lexical that does not touch the caller's
+                // same-named variable).
+                let mut eval_declared_names: Vec<Symbol> = Vec::new();
                 let pre_check_result = {
                     let op_names = nested.collect_operator_sub_names();
                     let op_assoc = nested.collect_operator_assoc_map();
@@ -69,13 +82,25 @@ impl Interpreter {
                         &op_assoc,
                         &imported_names,
                     ) {
-                        Ok((stmts, _)) => nested
-                            .check_eval_mainline_placeholders(&stmts)
-                            .and_then(|()| nested.check_eval_class_redeclarations(&stmts))
-                            .and_then(|()| nested.check_eval_undeclared_trusts(&stmts))
-                            .and_then(|()| nested.check_eval_undeclared_type_args(&stmts))
-                            .and_then(|()| nested.check_eval_undeclared_vars(&stmts))
-                            .and_then(|()| nested.check_eval_undeclared_names(&stmts)),
+                        Ok((stmts, _)) => {
+                            for stmt in &stmts {
+                                if let crate::ast::Stmt::VarDecl {
+                                    name,
+                                    is_our: false,
+                                    ..
+                                } = stmt
+                                {
+                                    eval_declared_names.push(Symbol::intern(name));
+                                }
+                            }
+                            nested
+                                .check_eval_mainline_placeholders(&stmts)
+                                .and_then(|()| nested.check_eval_class_redeclarations(&stmts))
+                                .and_then(|()| nested.check_eval_undeclared_trusts(&stmts))
+                                .and_then(|()| nested.check_eval_undeclared_type_args(&stmts))
+                                .and_then(|()| nested.check_eval_undeclared_vars(&stmts))
+                                .and_then(|()| nested.check_eval_undeclared_names(&stmts))
+                        }
                         Err(mut e) => {
                             // A compile-time exception raised while parsing the
                             // EVAL'd code reports the EVAL pseudo-file and the
@@ -103,6 +128,19 @@ impl Interpreter {
                     Err(e)
                 } else {
                     let run_result = nested.run(code).map(|_| Value::Nil);
+                    // Write back mutations the code made to the caller's lexicals
+                    // (e.g. `$str`), whether or not it threw — Raku runs the code
+                    // in the caller's scope, so partial work before a throw is
+                    // visible afterwards. Only names that were shared in are
+                    // written back; new lexicals declared inside the EVAL are not.
+                    for name in &shared_var_names {
+                        if eval_declared_names.contains(name) {
+                            continue;
+                        }
+                        if let Some(new_val) = nested.env.get_sym(*name).cloned() {
+                            self.env.insert_sym(*name, new_val);
+                        }
+                    }
                     // If execution succeeded, check if the last evaluated value was
                     // a Failure (which would throw in sink context in Raku).
                     match run_result {
