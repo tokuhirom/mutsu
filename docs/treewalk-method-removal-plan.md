@@ -324,11 +324,22 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
      push when run compiled. The Mixin's array-attribute cell is not committed back through the
      compiled method-execution path (the tree-walk path did). This is the same *array-attribute /
      Mixin writeback coherence* gap class as the hyper-captured-outer gap, and is the real
-     remaining blocker for deleting the tree-walk body. **Next:** fix compiled-execution
-     `@.`/`%.` attribute writeback for runtime-`does` Mixin receivers (and verify custom-HOW
-     submethods), THEN the in-place on-demand compile becomes safe, THEN
+     remaining blocker for deleting the tree-walk body. **★Root cause traced (MUTSU_ONDEMAND
+     probe with an in-method read):** it is NOT commit-only — the whole compiled attribute path
+     assumes a `Value::Instance` `self`. For an array attribute the in-method `push @.items`
+     reads/writes a *detached copy* (each call starts fresh: `[1]` then `[2]`, never `[1,2]`; on
+     return nothing is committed). For a SCALAR attribute it is worse — `$.n++` does not even
+     take effect in-method (`in: 5` twice; raku `6` then `7`), because `read_self_attr_cell` /
+     `write_self_attr_cell` (vm_var_assign_ops.rs) bail out unless `self` is `Value::Instance`,
+     and `reconcile_attrs` (vm_method_dispatch.rs:815) likewise. A `Value::Mixin(inner, overrides)`
+     `self` is never unwrapped to the inner instance's shared attribute cell. **Next (a focused
+     but multi-point change):** make the compiled attribute ops + `reconcile_attrs` unwrap a
+     `Value::Mixin` `self` to the inner instance's cell (scalar `read/write_self_attr_cell`, the
+     `@.`/`%.` array/hash attr ops, and the exit commit), validated by `t/multi-method-roles.t`
+     + `t/compiled-method-attr-incdec.t` extended to Mixin receivers + roast. THEN the in-place
+     on-demand compile (`compile_method_def_in_place`, kept ready) becomes safe, THEN
      `run_instance_method_resolved`'s non-delegation tree-walk is dead and can be deleted (keeping
-     only the delegation-forwarding branch, which should be extracted to its own small function).
+     only the delegation-forwarding branch, extracted to its own small function).
   **★Separate pre-existing gap (NOT a regression, orthogonal):** hyper dispatch `@objs».meth`
   of a method writing a captured-outer *lexical* (`method touch { $seen++ }`) does not
   propagate the write — the hyper internal temp-target redispatch has no op-level drain of
