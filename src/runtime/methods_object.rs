@@ -3473,6 +3473,39 @@ impl Interpreter {
                     );
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
+                // An explicit `proto method new` owns dispatch. When there are
+                // no multi candidates it is registered only as a proto (so
+                // `has_user_method` is false), yet `.new` must still run the
+                // proto body: `proto method new() { 42 }` returns 42, while a
+                // pure forwarder `proto method new($) {*}` with no candidates
+                // surfaces X::Multi::NoMatch. Route through the proto runner
+                // instead of falling back to the default constructor.
+                if !self.has_user_method(class_key, "new")
+                    && let Some((owner, proto)) =
+                        self.lookup_proto_method(&class_name.resolve(), "new")
+                {
+                    // A pure `{*}` forwarder proto with no multi candidates can
+                    // never dispatch, so running it would recurse forever via
+                    // `__PROTO_DISPATCH__` re-entering `.new`. Short-circuit to
+                    // X::Multi::NoMatch. A proto with a real body (no `{*}`)
+                    // runs normally and returns its value.
+                    if proto
+                        .body
+                        .iter()
+                        .any(|s| matches!(s, Stmt::Expr(Expr::Whatever)))
+                    {
+                        return Err(super::methods_signature::make_multi_no_match_error("new"));
+                    }
+                    let cn = class_name.resolve();
+                    return self.run_proto_method(
+                        target.clone(),
+                        &cn,
+                        &owner,
+                        "new",
+                        args.clone(),
+                        proto,
+                    );
+                }
                 // Check for user-defined .new method first
                 if self.has_user_method(class_key, "new") {
                     let empty_attrs = HashMap::new();
