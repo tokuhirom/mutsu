@@ -2231,6 +2231,14 @@ pub(crate) struct CompiledFunction {
     /// When true, parameters must be written to env (not just locals) so that
     /// nested functions can capture them via closure.
     pub(crate) has_inner_subs: bool,
+    /// True if the function body *directly* declares a lexical routine via a
+    /// top-level `RegisterSub` / `RegisterSubset` opcode (`my sub`, a bare
+    /// nested `sub`/`regex`/`token`/`rule`, or a `subset`). Such a routine is
+    /// lexically scoped to this body and — unless it escapes by being returned —
+    /// must be removed from the (program-global) routine registry when the call
+    /// returns. A `my sub` nested inside a `{ }` block within the body is not
+    /// counted here: `BlockScope` already restores the registry for it.
+    pub(crate) declares_inner_routines: bool,
     /// Pre-computed mapping for named parameters: (match_key, local_slot, sub_sig_slots).
     /// sub_sig_slots is a list of (inner_key, inner_slot) for sub_signature aliases.
     /// Used by the OTF named call fast path to avoid name-based lookup per call.
@@ -2340,6 +2348,14 @@ impl CompiledFunction {
                         | OpCode::ForLoop { .. }
                 )
             });
+        // A routine declared directly in this body (not inside a nested
+        // BlockScope, which restores the registry itself) is lexical to the
+        // body and must be unregistered on return unless it escapes.
+        self.declares_inner_routines = self
+            .code
+            .ops
+            .iter()
+            .any(|op| matches!(op, OpCode::RegisterSub(..) | OpCode::RegisterSubset(..)));
     }
 
     /// Compute the set of variable names declared locally in this function

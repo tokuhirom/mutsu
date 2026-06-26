@@ -378,6 +378,7 @@ impl Compiler {
             is_raw,
             param_local_slots: None,
             has_inner_subs: false,
+            declares_inner_routines: false,
             named_param_slots: None,
             deprecated_info,
             declared_locals: None,
