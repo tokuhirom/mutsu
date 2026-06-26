@@ -75,14 +75,27 @@ fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
 }
 
 pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
-    for kw in &[
+    leading_modifier_keyword(input).is_some()
+}
+
+/// The statement-modifier keyword at the start of `input`, if any.
+fn leading_modifier_keyword(input: &str) -> Option<&'static str> {
+    [
         "if", "unless", "for", "while", "until", "given", "when", "with", "without",
-    ] {
-        if keyword(kw, input).is_some() {
-            return true;
-        }
-    }
-    false
+    ]
+    .into_iter()
+    .find(|kw| keyword(kw, input).is_some())
+}
+
+/// Whether a second statement modifier `next` is legal after a first `first`.
+/// Raku only allows a *conditional* modifier (`if`/`unless`/`with`/`without`)
+/// followed by a *loop* modifier (`for`/`while`/`until`/`given`), e.g.
+/// `EXPR if COND for LIST`. Everything else (two conditionals, two loops, a loop
+/// then a conditional) is X::Syntax::Confused.
+fn second_modifier_allowed(first: &str, next: &str) -> bool {
+    let first_is_cond = matches!(first, "if" | "unless" | "with" | "without");
+    let next_is_loop = matches!(next, "for" | "while" | "until" | "given");
+    first_is_cond && next_is_loop
 }
 
 /// Check if an expression ends with a block body (e.g., `try { ... }`,
@@ -137,6 +150,8 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
     }
     let mut current_stmt = stmt;
     let mut rest = rest;
+    // The keywords of the modifiers parsed so far, in order.
+    let mut parsed_kinds: Vec<&str> = Vec::new();
 
     loop {
         // If there's a semicolon, the statement is terminated — no more modifiers
@@ -149,9 +164,36 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             return Ok((rest, current_stmt));
         }
 
+        // A second modifier is only legal as `conditional THEN loop`
+        // (`EXPR if COND for LIST`). Any other chain — two conditionals, two
+        // loops, a loop then a conditional, or a third modifier — needs a `;`
+        // and so is X::Syntax::Confused ("Missing semicolon").
+        if let Some(next_kw) = leading_modifier_keyword(rest)
+            && let Some(&first) = parsed_kinds.first()
+            && (parsed_kinds.len() >= 2 || !second_modifier_allowed(first, next_kw))
+        {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                crate::value::Value::str("Missing semicolon".to_string()),
+            );
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Syntax::Confused"),
+                attrs,
+            );
+            return Err(PError::fatal_with_exception(
+                "Missing semicolon".to_string(),
+                Box::new(ex),
+            ));
+        }
+
+        let kw = leading_modifier_keyword(rest);
         match parse_single_modifier(rest, current_stmt.clone())? {
             Some((r, modified)) => {
                 current_stmt = modified;
+                if let Some(k) = kw {
+                    parsed_kinds.push(k);
+                }
                 let (r, _) = ws(r)?;
                 rest = r;
             }
