@@ -241,6 +241,31 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   (`m`/`BUILD`/`doit`). VM-native multi-method resolution caching (so a `CallMethod` op
   resolves+dispatches a multi/submethod without entering `run_instance_method`) is the
   larger remaining win, plus eventually deleting `run_instance_method_resolved`.
+  **★Investigation (2026-06-26) — deleting `run_instance_method_resolved` is a MULTI-blocker
+  effort, NOT a single slice.** Removing the helper's `free_var_writes.is_empty()` gate (so
+  captured-outer-writing bodies also run compiled) was prototyped behind an env flag and
+  traced:
+  1. **Save/restore-discards-body-writes (FIX FOUND).** The helper takes `pending_rw_writeback_sources`
+     before the call and restores it after — to preserve a sibling BUILD write (#3620) past
+     `call_compiled_method`'s entry `clear()`. But `call_compiled_method` *records the body's
+     own captured-outer writes* into that list on exit, which the restore then discards →
+     the method's `$outer++` is lost. **Fix = MERGE (saved ++ body-recorded), not restore.**
+     With that merge + gate off, `build-sibling-writeback-coherence`,
+     `render-method-captured-writeback`, `native-build-construct`, and
+     `coercion-method-captured-writeback` all pass.
+  2. **Hyper-rw attribute (STILL FAILS — separate blocker).** `@objs».inc` where
+     `method inc { $.count++ }` — `parallel-dispatch-regression.t` test 1. `$.count` (a
+     public rw accessor) is mis-classified into the body's `free_var_writes`; the merge then
+     propagates `"count"` as a *caller-var* writeback, corrupting the hyper-rw attribute
+     update. Needs the attribute accessor excluded from `free_var_writes`, or the hyper-rw
+     attribute commit handled, before the gate can be removed.
+  3. **Resolution caching is unsound naively.** Multi dispatch depends on arg *types* AND
+     `where`/value clauses, so a `(class, method, arg-type)` cache is wrong for where/literal
+     candidates — any cache must exclude those (or key on more).
+  Sequence for a fresh session: land the merge fix (gate still on → inert but correct), then
+  fix the `free_var_writes` attribute-accessor mis-classification + hyper-rw commit, then
+  relax the gate, then (separately) the sound resolution cache, then delete
+  `run_instance_method_resolved`.
   **★Pre-existing blocker — BUILDALL sibling writeback clobber — FIXED (#3620).** A
   *nested method dispatch inside one BUILD clobbered a sibling BUILD's captured-outer
   writeback*:
