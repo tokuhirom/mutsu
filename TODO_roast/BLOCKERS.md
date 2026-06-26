@@ -1,415 +1,413 @@
-# Roast Blockers by Feature
+# roast ブロッカー再評価メモ
 
-Failing roast tests grouped by the missing feature that blocks them. Each entry
-carries a **fix difficulty** estimate:
+この文書は、roast の失敗を「テストファイル単位」ではなく
+**根本原因単位**で追うための索引。
+個々の失敗を片端から潰すためではなく、
+**今どこを直せば何がまとめて動くか**を判断するために使う。
 
-- **Easy** — localized, clear root cause, 1-2 failing subtests, no architectural blocker.
-- **Medium** — a self-contained feature to implement; bounded scope.
-- **Hard** — blocked on a deep architectural limitation (first-class container
-  identity, real lazy infinite sequences, threading primitives, RakuAST,
-  object-hash `%{Mu}` keys) or a large pile of disparate sub-features.
+**最終更新 2026-06-27**
 
-Last refreshed: **2026-06-15** — reorganized into a *pickup-order* taxonomy keyed
-on **conflict with the main track** (see below), pruned completed entries
-(`S17-supply/categorize.t` whitelisted #3071, plus the already-DONE
-`misc2.t`/`write-int.t`/`io-path-cygwin.t`/`words.t`/`alias.t`), and consolidated
-all "reference rakudo also fails / roast test bug" files into a single
-**§F Unpassable** section so they stop polluting the work queue.
+## この版での再評価結果
 
-## Status — final stretch
+今回の見直しで、旧版には次の問題があることを確認した。
 
-Essentially every remaining file is gated on one of a small set of **Hard
-architectural blockers**; there are no more cheap whitelist wins to cherry-pick.
-The blockers, in rough order of how many files they gate:
+- すでに whitelist 済みのファイルが未解決項目として残っていた。
+  例: `S05-capture/array-alias.t`、`S05-match/capturing-contexts.t`、
+  `S03-binding/attributes.t`、`S03-binding/nested.t`、
+  `S12-methods/accessors.t`、`S32-io/io-path.t`、`S32-list/skip.t`、
+  `S09-hashes/objecthash.t`。
+- 「main track」はもう `Interpreter-removal` ではない。
+  そこはほぼ終わっており、今の主戦場は
+  **第一級コンテナ / 真の lazy 配列 / dispatch / 並行実行基盤**。
+- 一見すると孤立した不具合に見えるものでも、
+  実際には main track にぶら下がっている項目がある。
+  例: `S26-documentation/12-non-breaking-space.t`、
+  `S12-introspection/walk.t`。
 
-- **First-class container identity** (scalar/element/attribute `Scalar`
-  containers; `Value` carries a bare value with no per-slot container) — gates
-  binding/`:=`-alias, `is rw`/take-rw, `.VAR`, typed-hash default survival,
-  closure capture-by-container, object-hash `%{Mu}` keys, Arc-pointer typed-array
-  flaky. This is PLAN.md's "🟣 第2優先" and the single largest lever.
-- **Real lazy infinite sequences** — `@a[0..*]`, `X::Cannot::Lazy` on same-type
-  lazy iterables. Closure-based infinite sequences (`1, 1, *+* ... *`) now
-  generate on demand for scalar/`constant`/`.lazy` forms (`$s[100]`, `fib[100]`);
-  the remaining gap is **lazy arrays** — `my @a = 1..*` still materializes to a
-  finite prefix because Array mutation ops (clone/unshift/shift/:delete/elem-assign)
-  have no reify-on-demand path yet.
-- **Threading / concurrency primitives** — Semaphore, nonblocking await, lock
-  contention, remaining Supply combinators (all of S17).
-- **RakuAST** — `Formatter.AST`, anything needing a reflectable AST.
-- **A long tail of distinct compile-time `X::` exception types** thrown at the
-  exact right place (the misc.t-style campaign).
+このため、旧版の「ファイル別の細かい失敗数」よりも、
+**依存関係と投資対効果**を優先して整理し直した。
 
-The highest-leverage work is the **architectural tracks in PLAN.md**
-(Interpreter-execution-path removal + first-class containers). The per-file
-analysis below is the *map*: when one of those blockers lands, it says which
-files unblock.
+## この文書の読み方
 
-## ▶ Pickup order — least main-track conflict first
+- **§1 優先度A**:
+  main track と衝突しにくく、直せば横展開しやすいもの。
+- **§2 優先度B**:
+  局所修正で進むが、複数の小さな論点を含むもの。
+- **§3 main track 待ち**:
+  第一級コンテナ、lazy 配列、dispatch 基盤などの着地待ち。
+- **§4 並行・非同期**:
+  S17 を中心とした別軸の重い課題。
+- **§5 whitelist を目標にしない項目**:
+  rakudo 側も失敗する、または roast 側の問題が強いもの。
 
-The **main track** (PLAN.md) is **CP-1 env-loan / Interpreter-removal** plus the
-**🟣 first-class-container** work (Track B). Both churn env ownership, dispatch,
-and the `Value`/container representation. To run a roast session *in parallel*
-without colliding, pick from the **top**:
+個別の詳細ログは `TODO_roast/S*.md` を参照。
+このファイルは、そちらの要約と進め方の整理に徹する。
 
-1. **§A Isolated subsystems** (regex engine / unicode / IO / Buf / format / shaped
-   arrays) — **zero** main-track conflict; live entirely in `runtime/regex*`,
-   `runtime/io*`, `builtins/unicode.rs`, etc.
-2. **§B Additive typed exceptions & module plumbing** — **low** conflict; new
-   `X::` types + throw sites + parse-time checks, off the VM hot path.
-3. **§C Self-contained semantic / builtin / parser-compiler fixes** — **low-to-medium**
-   conflict; a few touch `vm_control_ops`/parser, so coordinate timing with CP-1.
-4. **§D Blocked on the main track** — **do NOT pick**; these only move when the
-   container-identity / lazy / dispatch tracks land.
-5. **§E Threading / Concurrency** — Hard, separate axis (S17).
-6. **§F Unpassable as written** — reference rakudo also fails or the roast test is
-   buggy; do NOT target a whitelist.
+## 現在の前提
 
----
+- whitelist は **1285**。
+- 安い 1 ファイル勝ちはかなり減っている。
+- 残件の大半は、少数の大きな根本原因に集約される。
 
-## §A — Isolated subsystems (ZERO main-track conflict)
+今いちばん効く大分類は次の 4 つ。
 
-### Regex engine (`runtime/regex*.rs`)
-
-- **S05-substitution/subst.t** — **DONE (whitelisted).** All 191 pass. Last fix:
-  `:sigspace` implies `:samemark` (test 102). See S05.md.
-- **S05-match/capturing-contexts.t** — **Medium (multi-feature)**. 56/64. 8
-  *disparate* failures: binding `$/` (`my $/ := 42`), index-stable positional slots
-  so `(y)?`→Nil and `(z)*`→empty-list coexist, `%%` separator backtracking vs an
-  outer anchor, capture markers `<(`/`)>`. No single-PR whitelist; each is a
-  mini-feature.
-- **S05-capture/array-alias.t** — **Hard**. 30/37 fail then aborts: named/sequential
-  array captures (`@<foo>=...`) largely unimplemented.
-- **S05-capture/hash.t** — **Hard**. 30/99 fail then aborts at line 134:
-  package/hash captures (`%<foo>=...`) unimplemented.
-- **S05-metasyntax/longest-alternative.t** — **Hard**. Timeout — LTM (longest-token
-  matching) over many alternatives is not implemented efficiently.
-
-### Unicode / Collation (`builtins/unicode.rs`)
-
-- **S32-str/CollationTest_NON_IGNORABLE-3.t** — **Hard**, 1367/1369. 2 noncharacter
-  cases (U+FFF0/U+FFFE, U+FFFF/U+1FFFE): ICU4X treats noncharacters as
-  primary-ignorable; UCA-17/MoarVM assign implicit primary weights by codepoint.
-  Needs sort-key-level weight injection (`icu_collator::write_sort_key_to`) or a
-  partial UCA reimplementation. 2-test payoff.
-  - *(DONE: S15-nfg/GraphemeBreakTest-3.t whitelisted #3294 — the 9 GB9c/GB11
-    failures were the `unicode-segmentation` 1.12.0 GCB tables predating Unicode
-    17.0; bumping the crate to 1.13.3 fixed all of them.)*
-
-### IO (`runtime/io*`, IO builtins)
-
-- **S32-io/io-handle.t** — **Hard**, 27/30. Remaining 3 (23 `.print-nl` reuse +
-  `.nl-out=`, 29 `.WRITE`, 30 `.EOF/.WRITE`) all require a **user-subclassable
-  IO::Handle with polymorphic READ/WRITE/EOF** so high-level read/write dispatch
-  into user-overridden `method READ/WRITE/EOF`. Substantial feature.
-- **S32-io/io-cathandle.t** — **Hard**. IO::CatHandle not implemented (note: rakudo
-  itself fails test 31 "Cannot .elems a lazy list", so the file may be unpassable —
-  verify before targeting a whitelist).
-- **S32-io/io-path.t** — **Medium per-fix, low-ROI overall**. 6 independent
-  failures. Test 31 `.gist` depends on a **Rakudo internal caching quirk** (Win32
-  `.gist` renders the backslash form only *after* `.absolute` has been called) — do
-  NOT replicate. The other 5 are doable but the file can't whitelist while 31 needs
-  the quirk: `.parts` Win32 split (33), X::Assignment::RO on `.SPEC=`/`.CWD=` +
-  `temp` (34/35), `.path` indir-independence (36), `.Numeric` Cool chain (37 — most
-  tractable: IO::Path is Cool, numify via `.Str`).
-- **S32-io/lock.t** — **Hard**. `.lock`/`.unlock` throw X::Method::NotFound; needs
-  **fcntl POSIX record locks** (`F_SETLK`/`F_SETLKW`, `F_RDLCK`/`F_WRLCK`), NOT
-  `flock(2)` (rakudo rejects an exclusive lock on a read-only fd via fcntl `EBADF`).
-  Also cross-process blocking via subprocess `is_run`, IO::CatHandle, fd-reuse
-  (`native-descriptor`). Timing-sensitive.
-
-### Native shaped typed arrays
-
-Non-shaped native typed arrays all pass and are whitelisted. Only the *shaped*
-ones (`array[T].new(:shape(n))`) remain — **Hard**, needs real fixed-dimension
-semantics (in-place `.map(* *= 2)`, `@a[*-1,*-2]` slices, `.raku` `:shape(...)`,
-`@a = ()` resets to fixed-size defaults, `.grep`/`.values`/`.pairs` stale values).
-~33/101 fail before abort.
-
-- S09-typed-arrays/native-shape1-int.t / -num.t / -str.t
-
-### Format / RakuAST
-
-- **S32-str/format.t** — **Hard (blocked on RakuAST)**. 26/49 reachable pass; the
-  Format class works but the file aborts at test 27 because `Formatter.AST` must
-  return a `RakuAST::Node` and mutsu has no RakuAST. Local: t/format-class.t.
-
-### Pod
-
-- **S26-documentation/12-non-breaking-space.t** — **Hard (compile-time BEGIN
-  hoisting)**. Subtest 2 plans `$nbchar-count + 1` but `@nbchars` is populated by a
-  `BEGIN {}` at the *end* of the file; rakudo runs the later BEGIN at compile time
-  (count 4), mutsu runs it at its textual position (count 0). Needs BEGIN-phaser
-  hoisting.
+1. **第一級コンテナ / container identity**
+   `:=`、`is rw`、`.VAR`、属性・要素の共有、Capture の書き戻し、
+   typed-hash default、wrapper/closure の container capture など。
+2. **真の lazy 配列 / 無限列**
+   `@a[0..*]`、lazy slurpy、same-type lazy iterable の
+   `X::Cannot::Lazy`、配列操作の reify-on-demand。
+3. **dispatch / MOP / parameterized role**
+   qualified method、role parameter forwarding、call cache、
+   lexical `&` shadowing、qualified dispatch の曖昧性処理など。
+4. **並行実行基盤**
+   Semaphore、lock contention、nonblocking await、Supply combinator、
+   detached `start/react` の駆動保証など。
 
 ---
 
-## §B — Additive typed exceptions & module plumbing (LOW conflict)
+## 1. 優先度A — main track と衝突しにくく、効果が大きい
 
-New `X::` types + throw sites + parse-time checks; lives in exception/parser-error
-code and module handlers, not the VM hot path. **Caveat:** most of these are NOT
-whitelistable as whole files — their real value is the **reusable typed
-exceptions** that carry across files.
+### 1.1 `S32-exceptions/misc.t`
 
-- **S32-exceptions/misc.t** — **Hard**, 42/157. The big campaign (same style as the
-  finished misc2.t): compile-time undeclared-symbol checking for non-EVAL programs,
-  `X::NotParametric`, `X::Syntax::Extension::SpecialForm`, `X::Redeclaration` of
-  subs/methods, `X::Bind`, sink-context "Useless use" warnings, ~30 one-off types.
-  Highest-impact single file in this section. See S32.md.
-- **S10-packages/basic.t** — **Medium part**, 18/59. Compile-time undeclared-symbol
-  checking ("reference to class/role before definition dies") + X::Redeclaration of
-  subs in a class. Overlaps misc.t.
-- **S02-types/baghash.t** — **Medium**. 7 fail then aborts at 270/344
-  (X::TypeCheck::Binding on BagHash iterator/coercion).
-- **S02-types/mixhash.t** — **Medium**. 4 fail then aborts at 216/295
-  (X::Str::Numeric on Mix coercion edge cases).
+- **優先度**: 最優先
+- **難度**: Hard
+- **現状**: `TODO_roast/S32.md` ベースで 129/180 pass まで前進済み
+- **理由**:
+  1 ファイルだけを見ると重いが、ここで実装する型付き例外は他ファイルへ再利用できる。
+  例外の数は多いが、main track のコア構造を大きく壊さず進められる。
+- **主な残件**:
+  `X::Comp::Group`、`X::Comp::BeginTime`、`X::NotParametric` の順序、
+  `X::InvalidType`、source-format を保った sink warning、
+  `gather { return }` の制御フロー、細かな parser/signature edge case。
+- **評価**:
+  「単一ファイルとして最優先」という旧評価は維持。
+  ただし数字は旧版よりかなり改善しており、内容も
+  「丸ごと未着手」ではなく **終盤の one-off 群** に入っている。
 
----
+### 1.2 `S32-array/adverbs.t`
 
-## §C — Self-contained semantic / builtin / parser-compiler fixes (LOW-MEDIUM conflict)
+- **優先度**: 高
+- **難度**: Hard
+- **理由**:
+  parser と subscript/adverb surface の隙間に残っている大きな塊。
+  `X::Adverb` 自体はかなり整っており、残りは「未整理の構文面」が中心。
+- **評価**:
+  main track 依存というより parser/compiler 側の広い未整備。
+  直し始める価値は高い。
 
-Touch specific builtins / method handlers / coercion / parser / `vm_control_ops`,
-not env or dispatch core. A handful brush the VM control path, so coordinate
-timing with CP-1 (they don't conflict in *content*, only in churning the same
-files occasionally).
+### 1.3 `S12-methods/qualified.t`
 
-**Builtin / type / coercion (low conflict):**
+- **優先度**: 高
+- **難度**: Hard
+- **現状**: 6/7 subtests pass
+- **残件の本体**:
+  parameterized role まわり。
+  具体的には role-to-role type parameter forwarding、
+  `$?ROLE` / `$?CLASS` の parameterized 名、
+  qualified call の複数 concretization 返却。
+- **評価**:
+  旧版の「MOP で Hard」は妥当。
+  ただし残っているのは 1 サブテストだけなので、
+  今は **広い MOP 一般** ではなく **parameterized role の集中課題**として扱うべき。
 
-- **S02-types/generics.t** — **Medium**. Nominalizable generic type.
-- **S02-types/bag.t** — 254/255 → **§F Unpassable as written**. Test 215 (BigInt
-  bag weights) FIXED: `BagData.counts` is now `HashMap<String,BigInt>` (baghash.t
-  whitelisted 344/344 by the same change). The ONLY remaining failure, test 252
-  (`my class Foo is Bag {}; isa-ok Foo.new("a") (+) Foo.new("b"), Foo`), **also
-  fails on reference rakudo** — `(+)` returns a plain `Bag`, not the `Foo`
-  subclass, so `.isa(Foo)` is False in both rakudo and mutsu (tracks the still-open
-  rakudo issue #5190). mutsu matches rakudo; the file cannot be whitelisted until
-  rakudo fixes #5190. Do NOT chase "Bag-union subclass preservation".
-- **S32-list/skip.t** — **DONE / whitelisted** (now passes 55/55; the earlier
-  plan-mismatch / subtest-counting issue is resolved).
-- **S03-operators/inplace.t** — **Medium**, 6/38 (from test 318 "constants"): `.=`
-  in-place metaop on class instantiation / readonly constants.
-- **S12-introspection/walk.t** — **Hard but self-contained MOP**. Needs `.WALK` +
-  `WalkList` with all MRO orderings, submethod walking, lazy batch invocation,
-  quiet-mode Failure capture.
-- **S02-literals/allomorphic.t** — **Medium/Hard**, 1/119 (test 107). NOT ACCEPTS
-  (that works) but same-named lexical-class redeclaration across two `gather`
-  blocks: mutsu keys classes by name in one global map, so the second clobbers the
-  first. Needs per-decl class identity (mirror `role_id`/`role_candidates`).
+### 1.4 shaped native typed arrays
 
-**Parser / compiler (medium — touches parser/compiler files):**
+- **対象**:
+  `S09-typed-arrays/native-shape1-int.t`、
+  `native-shape1-num.t`、`native-shape1-str.t`
+- **難度**: Hard
+- **理由**:
+  固定次元の意味論が未完成。
+  `.map`、slice、`.raku` の `:shape(...)`、空代入による初期値復元、
+  `.grep` / `.values` / `.pairs` などが不完全。
+- **評価**:
+  孤立サブシステムとして扱ってよい。
+  main track と衝突しにくいので、独立ブランチ向き。
 
-- **S04-statements/for.t** — **Medium**, 22/111. No exception on bad loop-var
-  binding (`for 1,2 -> $a, $b, $c`) + topic-aliasing edge cases (VM control ops).
-- **S06-signature/slurpy-params.t** — **80/86** (was aborting at 51 on a slurpy
-  `1..*` hang; the infinite-range expansion is now capped in `flatten_into_slurpy`,
-  so tests 52–69 run; **tests 80-81 X::Parameter::TypedSlurpy now pass**, a
-  parse-time check on `*@`/`*%`/`+@`/`+%` slurpies with a type constraint). The
-  remaining 6 all need the **Seq single-pass-consumption** feature: `+@`/`*@`
-  passing a **Seq through unscathed** (70-71, 76-77) + dies-on-second-iteration
-  with `X::Seq::Consumed` (74-75). mutsu currently materializes every Seq so a
-  Seq is silently re-iterable — implementing real single-pass Seq consumption is
-  the blocker (broad blast radius). The lazy tests (52 etc.) pass within the 100k
-  cap; a truly lazy slurpy (`.is-lazy` True, `.gist` no-hang) is the lazy-array
-  campaign — see `docs/lazy-arrays.md` Slice L4. NOTE: `Type **@a` / `Type +@a`
-  (typed double/onearg slurpy) still fail to *parse* (a separate pre-existing
-  limitation; even `Array **@AoA` does not parse), so the TypedSlurpy check only
-  fires on the single-star `*@`/`*%` forms today.
-- **S04-declarations/my-6e.t** — **Medium**. EVAL scope visibility (EVAL'd code must
-  see the enclosing lexical scope).
-- **Parser operators** — `ff`/`fff` flipflop, `==>`/`<==` feed precedence, hyper
-  assignment, generalized negation meta (parser + compiler).
-- **S03-operators/assign.t** — **Hard**, 35/193 then aborts: assignment used as a
-  function (`&infix:<=>`), list-assignment in non-trivial contexts.
-- **S03-metaops/hyper.t** — **Hard**. Timeout — `>>op<<` with assignment forms.
-- **S32-array/adverbs.t** — **Hard**, 283/606. `X::Adverb` is implemented but the
-  parser stops mid-file; needs adverb parsing on more subscript forms.
+### 1.5 IO の残三兄弟
 
----
+- **対象**:
+  `S32-io/io-handle.t`、`S32-io/io-cathandle.t`、`S32-io/lock.t`
+- **難度**: Hard
+- **評価**:
+  旧版の大筋は妥当。
+  ただし `io-path.t` はもう対象から外す。
 
-## §D — Blocked on the main track — do NOT pick until PLAN.md tracks land
+内訳:
 
-Facets of first-class container identity, closure capture, the dual store, real
-lazy infinite sequences, or object-hash `%{Mu}`. They only move when PLAN.md's
-Interpreter-removal / first-class-container tracks advance.
+- `io-handle.t`:
+  user-subclassable `IO::Handle` と `READ` / `WRITE` / `EOF` の多相 dispatch が必要。
+- `io-cathandle.t`:
+  `IO::CatHandle` 自体が未実装。
+  さらに一部は rakudo 側の挙動確認を要する。
+- `lock.t`:
+  `flock` ではなく `fcntl` 系の record lock が必要。
+  cross-process の再現も絡み、テストが timing-sensitive。
 
-**Container identity / closure capture** (the dominant cluster):
+### 1.6 Unicode / RakuAST / Collation
 
-- **S02-types/capture.t** — 2/33 then aborts (planned 46). Tests 28-29: `$c[0]++` /
-  `$c<a>++` on a `\($a)` Capture must write *through* to the original scalar
-  container. Later abort needs X::Cannot::Lazy from Capture lazy ops.
-- **S02-names-vars/variables-and-packages.t** — 16/39. Dominant: closure lexical
-  capture by *container* (`{ my $x=100; $f={$x} }; my $x=999; $f()` wrongly reads
-  999). Independent extras: `&OUR::grtz()` (32-34), X::Redeclaration::Outer (37-38),
-  `$OUTER::_` topic (39), named sub closing over a later `my` (24-31).
-- **S04-statements/gather.t** — 38/39; only failure is test 38 take-rw reference
-  identity `@neighbors[1][1][0] =:= @spot[0][0]` (per-element Scalar containers).
-- **S14-traits/attributes.t** — 4/8. Tests 5-8 need `$a.container.VAR does
-  Role($arg)` (per-attribute container template). Local: t/attribute-trait-mod.t.
-- **S12-methods/accessors.t** — 4/11. Contextualizing (rw) accessors return empty
-  instead of the container value.
-- **S03-binding/attributes.t** — 1/13 then aborts (test 13): `does`-mixing a role
-  into a *bound* private scalar attribute's container.
-- **S03-binding/nested.t** — **Medium**, 18/43. Binding to nested elements
-  (`$a := @b[0]`) doesn't alias (off-by-one: expected 44, got 43).
-- **S12-subset/subtypes.t** — 90/92 run, 13 fail. Dominant: closure writeback from a
-  block/Whatever predicate stored in a `&`-var (write to captured `$wanted` lost on
-  2nd call). Independent: `fail()` in a subset predicate (25), Junction-of-types in
-  `where` (87), read-only topic (34), `where &var` on slurpy (85). 91-92 also fail
-  in rakudo.
-- **S04-blocks-and-statements/temp.t** — **Medium**, 30/37. `temp` restoration vs
-  hash/array element containers.
-- **S06-advanced/wrap.t** — **Hard**, 12/70 then aborts (planned 90): `.wrap`
-  lexical visibility (wrapper closure can't see wrapped routine's lexicals).
-- **S02-types/whatever.t** — **Hard**. 33 distinct WhateverCode features (dummy `*`
-  assignment, `&infix:<+>(*,42)`, X+/Z+ metaop currying, `*++`, rw params, container
-  preservation, compile-time WhateverCode, regex whatever curry) — no single root.
-- **S02-types/pair.t** — **Hard**, 3/180. Tests 128/139 need `$pair.value` to alias
-  the original variable's container; only test 171 (typed-assign throw) is
-  independent (could move to §C if split out).
-- **S32-hash/perl.t** — **Medium**, 12/55. Hash-in-Scalar vs deconted-Hash
-  `.perl`/`.raku` differ (`(Str(Any),Mu)` typed-hash perlify + decont).
-- **S32-hash/adverbs.t** — *big win landed, 823→1069/1128* (zen-slice adverbs,
-  `X::Adverb`, `%h.name`/`@a.name`, Range-key slices). Remaining 59: typed-hash
-  value-type default surviving variable rebinding (first-class container identity).
-- **S32-array/splice.t** — **Hard (container identity, Phase 2)**, 136/381. Dominant:
-  typed-array container identity through a multi-var `for` loop (`for @testing ->
-  @a, $T`): mutsu compiles `@a` binding to assign-coerce (de-itemizes/reallocates,
-  drops pointer-keyed type metadata); Raku binds `@a` as a true typed-element alias.
-  *Partially addressed* #2898 (in-place mutators keep the typed container); the
-  loop-alias step remains.
-- **S02-names/is_default.t** — 141/146 (rakudo 2022.12 fails to compile it at line
-  527, so unpassable anyway). Real failures: `is default(...)` on **hashes** rebound
-  via a `for` signature — container-keyed default lost across copy/rebind.
-
-**Object-hash `%{Mu}`** (non-Str-keyed hashes):
-
-- **S32-list/classify.t** — 39/40 under FUDGE (tests 28-30 `(:@even,:@odd) := classify`
-  are `#?rakudo skip`ped); only test 40 "classify works with Junctions" blocks the
-  whitelist. **Subtle/implementation-dependent junction semantics** (verified
-  2026-06-16): classify with a Junction-returning mapper stores the *junction itself*
-  as the key (`$m.keys` = `any(True,False)` etc. — SAME in mutsu and rakudo). The gap
-  is the *retrieve*: rakudo's `$m{ any(False,False) }` does NOT autothread — it returns
-  the flat list `(cbd xyz)` by matching the stored junction key directly, whereas mutsu
-  autothreads the subscript junction into per-eigenstate lookups → `any((Any),(Any))`.
-  (Plain-hash junction subscripts DO autothread in both; classify result hashes are
-  special.) Not a clean lever — defer until junction-key hash identity is modeled.
-- **S09-hashes/objecthash.t** — **DONE**, whitelisted 62/62 (PR #3159, 2026-06-16).
-- **S02-types/set.t** — last 2 failures ("coercion of object Hash to Set 1/2",
-  `:{ }.Set`) need object-hash semantics. (Test 226 typed-hash bind type-check is
-  already FIXED.)
-
-**Real lazy infinite sequences:**
-
-- **S03-operators/eqv.t** — 63/64. "Setty eqv Setty" FIXED (eqv now distinguishes
-  Set/SetHash, Bag/BagHash, Mix/MixHash; set operators preserve first-operand
-  mutability — PR set-op-mutability). Remaining: "Throws/lives in lazy cases" needs
-  X::Cannot::Lazy for same-type lazy iterables (blocked: mutsu materializes `1…∞`,
-  `.List`/`.Array` of an infinite Seq lose laziness — same root as lazy-arrays).
-  (12/17/36/37 also fail in rakudo.)
-- **S09-subscript/slice.t** — **Hard**, 9/39 then aborts at line 310: slices with
-  infinite sequences (`@a[0..*]`).
-- **S04-declarations/constant.t** — **Medium**. Lazy-seq `fib[100]` (46) now PASSES:
-  closure-based infinite sequences (`0, 1, *+* ... *`) generate elements on demand
-  via `LazyList.closure_seq` (re-invokes the generator over the growing history).
-  Remaining blocker: `G::c` qualified name via constant-aliased enum (44) — a
-  dispatch issue, NOT laziness. NOT whitelistable until that lands.
-
-**Dispatch / MOP / EVAL-in-class:**
-
-- **S06-advanced/lexical-subs.t** — **Medium**, 5/13 then aborts. X::Undeclared::Symbols
-  for forward-referenced lexical `my sub`, plus `&foo` parameter precedence (**VM
-  call cache** — `pos_light_call_cache`/`light_call_cache` are name-keyed and ignore
-  a lexical `&name`) and inner-block lexical-sub leak. Partly §B, partly dispatch.
-- **S12-methods/qualified.t** — **Hard (MOP)**, 6/7. The remaining subtest throws on
-  parameterized roles (`$?ROLE`/`$?CLASS`, `R1[::T]` qualified dispatch, role-private
-  classes).
-- **S12-attributes/class.t** — **Hard**. X::Method::NotFound + EVAL inside a class
-  body (depends on the EVAL-in-class blocker).
-
-**Multi-dimensional slicing (subscript-as-lvalue):**
-
-- **S32-array/multislice-6e.t** — **Medium**. Aborts at test 5 (planned 812):
-  general `@a[0;0;0] = 999` lvalue path returns Nil / doesn't write back.
-- **S32-hash/multislice-6e.t** — **Medium**. Same gap on hashes (test 5, planned 549).
+- `S32-str/CollationTest_NON_IGNORABLE-3.t`
+  - **難度**: Hard
+  - **評価**:
+    2 ケースだけだが、実装は重い。
+    低 ROI という旧評価はそのままでよい。
+- `S32-str/format.t`
+  - **難度**: Hard
+  - **評価**:
+    本質的には `Formatter.AST` と `RakuAST` 不在の問題。
+    `Format` クラス本体の表面的な修正だけでは whitelist にならない。
 
 ---
 
-## §E — Threading / Concurrency / Async — Hard, separate axis
+## 2. 優先度B — 局所修正で前進するが、複数論点を含む
 
-S17 tests that still hang or fail need real threading primitives (Semaphore,
-nonblocking await, lock contention) and the remaining Supply combinators. Basic
-Promise/start/scheduler/channel work and are whitelisted; what's left is the
-genuinely concurrent surface, hard to make deterministic.
+### 2.1 `S06-signature/slurpy-params.t`
 
-**Timeout (hang):**
-- S17-lowlevel/cas-int.t (partial then hangs)
-- S17-lowlevel/semaphore.t (Semaphore not implemented)
-- S17-promise/start.t (partial then hangs)
-- S17-supply/syntax.t (partial then hangs — 2000-react stress; flaky tail, do NOT whitelist)
+- **難度**: Medium ではなく、実質 Medium-Hard
+- **再評価ポイント**:
+  旧版は「残り 6 件」と書けていたが、根は 2 本ある。
 
-**Fail:**
-- S17-lowlevel/lock.t (lock-contention)
-- S17-procasync/encoding.t (Proc::Async encoding errors)
-- S17-promise/then.t (dynamic variables not propagated to `.then` — Track-B blocked: lexical `%`/`@` thread-sharing)
-- S17-scheduler/basic.t
-- S17-supply/batch.t (known flaky — see CLAUDE.md)
-- S17-supply/migrate.t, S17-supply/stable.t (abort on ThreadPoolScheduler)
+残件は分離して考えるべき:
 
-**Related non-S17:**
-- S07-hyperrace/basics.t (hyper/race parallelism)
-- S32-io/socket-recv-vs-read.t (async socket ops)
+1. **真の lazy slurpy**
+   `oneargraw(1..*)` 系。
+   これは lazy 配列キャンペーンに接続する。
+2. **Seq の single-pass consumption**
+   `+foo` / `+@foo` の identity と、2 回目反復時の `X::Seq::Consumed`。
+   これは lazy 配列とは別軸で、Seq の消費モデルの問題。
 
-(Note: `S17-promise/nonblocking-await.t` is now whitelisted #2991 — removed.)
+つまり、このファイルは「slurpy だけの局所修正」では終わらない。
+一部は §3 に送るべき。
+
+### 2.2 `S04-statements/for.t`
+
+- **難度**: Medium
+- **主な論点**:
+  bad loop-var binding と topic aliasing edge case
+- **評価**:
+  旧版どおり局所修正で進む。
+  parser / control-flow 周辺に閉じていて扱いやすい。
+
+### 2.3 `S04-declarations/my-6e.t`
+
+- **難度**: Medium
+- **論点**:
+  EVAL が外側 lexical scope を見られるか
+- **評価**:
+  broad な main track ではなく、EVAL と lexical visibility の局所課題として扱える。
+
+### 2.4 `S03-operators/inplace.t`
+
+- **難度**: Medium
+- **論点**:
+  readonly constant や class instantiation に対する `.=`
+- **評価**:
+  小さく見えて operator surface と readonly 判定が絡むが、
+  main track 待ちではない。
+
+### 2.5 `S02-types/generics.t`
+
+- **難度**: Medium
+- **論点**:
+  nominalizable generic type
+- **評価**:
+  parameterized role/MOP ほど深くはないが、型オブジェクト側の整理が必要。
+
+### 2.6 `S02-literals/allomorphic.t`
+
+- **難度**: Medium-Hard
+- **論点**:
+  gather ブロックごとに同名 lexical class が別 identity を持つべきなのに、
+  いまは global map で潰れている。
+- **評価**:
+  「parser の小ネタ」ではなく **型宣言 identity** の問題。
+  ただし container identity ほど基盤工事ではない。
+
+### 2.7 multislice lvalue
+
+- **対象**:
+  `S32-array/multislice-6e.t`、`S32-hash/multislice-6e.t`
+- **難度**: Medium
+- **論点**:
+  `@a[0;0;0] = 999`、`%h<a;b;c> = 999` の lvalue 書き戻し経路
+- **評価**:
+  旧版の「main track blocked」よりは軽い。
+  subscript-as-lvalue 経路の未実装として独立管理でよい。
+
+### 2.8 `S04-declarations/constant.t`
+
+- **再評価**:
+  旧版では lazy 側に寄せていたが、`TODO_roast/S04` と `PLAN.md` の文脈では
+  主要 lazy ケースはかなり前進済み。
+  いま残る大きい論点は `G::c` qualified name など dispatch 側。
+- **評価**:
+  現時点では lazy 主因としては扱わない。
 
 ---
 
-## §F — Unpassable as written (reference rakudo also fails, or roast test bug)
+## 3. main track 待ち — いま個別に触っても前進しにくい
 
-Do NOT target a whitelist for these — only land *general* improvements they
-motivate.
+この節は「直せない」ではなく、
+**先に container identity / lazy array / dispatch 基盤が進んだ方が速い**
+という意味。
 
-**Reference rakudo on this box fails to compile / dies:**
-- S05-nonstrings/basic.t — `No such symbol 'Antelope'` + mainline has-method.
-- S05-mass/rx.t — `::` backtracking-control NYI (dies line 38); mutsu also needs
-  `<commit>` cut semantics.
-- S05-metasyntax/angle-brackets.t — aborts at test 52 on `<$subrule>` compiling a
-  `{...}`-code string (needs MONKEY-SEE-NO-EVAL); rakudo dies there too. 51/51
-  runnable pass.
-- S06-advanced/caller.t — `@_` in a method (rakudo: "Placeholder variables cannot
-  be used in a method").
-- S06-advanced/return_function.t — rakudo on this box **fails to compile** (line 19
-  `($rv1,$rv2) := |(t2)`: "Cannot use bind operator with this left-hand side"), and
-  even the test-1 expectation is stale: `my $x := |(f)` where `f` returns `:x<1>`
-  binds a **Slip** `(x => 1)` (rakudo), not `1` as the test asserts; `g(|(f))` dies
-  "Too few positionals". Roast-vs-rakudo version skew. (Verified 2026-06-16.)
-- S06-advanced/return-prioritization.t — rakudo also dies at test 5 (LEAVE +
-  return). 2/11 fail in mutsu.
-- S06-operator-overloading/infix.t — "Code items cannot be rebound" (rebinding
-  `&infix:<...>`).
-- S02-names/pseudo-6d.t, pseudo-6e.t, S02-names-vars/names.t — `===SORRY===` in
-  installed rakudo (roast-vs-rakudo version skew).
-- S10-packages/require-and-use--dead-file.t — rakudo itself fails.
-- S12-traits/basic.t, S12-traits/parameterized.t — removed `trait_auxiliary:<is>`.
-- S12-class/open_closed.t — `use oo;` (module not in any repo).
-- S12-attributes/trusts.t — `trusts B;` forward-references undeclared `B`.
-- S12-meta/exporthow.t — rakudo dies at test 2 on EXPORTHOW SUPERSEDE. (mutsu has
-  `X::EXPORTHOW::InvalidDirective`; not whitelistable.)
+### 3.1 第一級コンテナ / container identity
 
-**Roast test bug (mutsu is self-consistent / more correct):**
-- S32-str/sprintf.t — 166/174; the 8 failures (71-74, 101-104) have buggy expected
-  values. See S32.md.
+この群は今も最大のレバー。
 
-**Broad / no single root cause (re-measure before investing):**
-- S02-types/range.t (56 failing) — broad range coercion/typecheck/lazy issues, well beyond a
-  single fix. (S03-operators/range.t is now whitelisted: Range +/- Real #3209, reversed-range
-  meta-ops `R..` + precedence worry, do-stmt-modifier `;` fix #3210.)
+- `S02-types/capture.t`
+- `S02-names-vars/variables-and-packages.t`
+- `S04-blocks-and-statements/temp.t`
+- `S14-traits/attributes.t`
+- `S12-subset/subtypes.t` の一部
+- `S02-types/whatever.t` のうち container preservation 系
+- `S32-hash/adverbs.t` の typed-hash default survival
+- `S32-array/splice.t`
+- `S02-names/is_default.t`
+
+**再評価で移動した項目**:
+
+- `S26-documentation/12-non-breaking-space.t`
+  - 旧版は Pod / BEGIN hoisting 側に寄せていたが、
+    `TODO_roast/S26.md` の分析では
+    **BEGIN 中の配列 lexical 変更が外へ永続化しない**ことが主因。
+  - つまり isolated Pod 問題ではなく、container identity 側の課題。
+- `S12-introspection/walk.t`
+  - 旧版は self-contained MOP としていたが、
+    実際の残りは
+    **public rw accessor mutation の永続化**と
+    **lazy one-at-a-time invocation**。
+  - したがって、これも main track 待ちに移すのが正しい。
+
+### 3.2 真の lazy 配列 / 無限列
+
+- `S09-subscript/slice.t`
+- `S03-operators/eqv.t` の lazy case
+- `S06-signature/slurpy-params.t` の lazy slurpy half
+
+ここは `docs/lazy-arrays.md` の L2b-L4 と同じ話。
+closure-based infinite sequence はかなり進んだが、
+**Array が lazy を保ったまま mutation / slice / slurpy に耐えられない**。
+
+### 3.3 object-hash / junction key
+
+- `S32-list/classify.t`
+
+`objecthash.t` 自体はもう whitelisted なので、
+旧版の「%{Mu} 全体が未着手」という書き方は粗すぎた。
+今残っているのは、**junction を key にした classify 結果の取り出し**という、
+より狭い意味論の問題。
+
+### 3.4 dispatch-sensitive cluster
+
+main track ほどではないが、局所修正を積み上げるより
+dispatch 基盤を意識してまとめて触った方がよい群。
+
+- `S06-advanced/wrap.t`
+- `S06-advanced/dispatching.t`
+- `S03-operators/assign.t`
+- `S03-metaops/hyper.t`
+
+これらは parser、multi dispatch、call cache、wrapper lexical visibility が絡む。
 
 ---
 
-## Recently completed (since 2026-06-11; prune from this doc next refresh)
+## 4. 並行・非同期 — S17 を中心とした別軸の重課題
 
-- **S17-supply/categorize.t** — whitelisted #3071 (Supply.categorize instance method
-  + class-method guard + hash mapper `is default(...)`).
-- Earlier DONE (already whitelisted): S32-exceptions/misc2.t, S03-buf/write-int.t,
-  S32-io/io-path-cygwin.t, S16-io/words.t, S05-capture/alias.t, S29-os/system.t,
-  S02-types/nil.t, S04-declarations/will.t, S06-signature/slurpy-blocks.t,
-  S09-typed-arrays/arrays.t.
+この軸は roast 全体の中でも性質が違う。
+container identity や lazy 配列とは別に、
+**スケジューラと同期原語の正しさ**が問われる。
+
+主な未解決:
+
+- `S17-lowlevel/semaphore.t`
+- `S17-lowlevel/lock.t`
+- `S17-promise/start.t`
+- `S17-promise/then.t`
+- `S17-scheduler/basic.t`
+- `S17-supply/migrate.t`
+- `S17-supply/stable.t`
+- `S17-supply/syntax.t`
+- `S07-hyperrace/basics.t`
+
+補足:
+
+- `S17-promise/nonblocking-await.t` はもう whitelisted。
+- `S17-supply/categorize.t` も whitelisted。
+- したがって旧版の「S17 全体が広く停滞」は、今は言い過ぎ。
+  残っているのは **本当に重い並行 primitives** に寄っている。
+
+---
+
+## 5. whitelist を目標にしない項目
+
+### 5.1 rakudo 側も失敗する、または roast 側の問題が強いもの
+
+ここは mutsu 側で一般改善が入るのはよいが、
+**そのファイルを whitelist すること自体を目標にしない**。
+
+- `S05-nonstrings/basic.t`
+- `S05-metasyntax/angle-brackets.t`
+- `S05-mass/rx.t`
+- `S06-advanced/caller.t`
+- `S06-advanced/return_function.t`
+- `S10-packages/require-and-use--dead-file.t`
+- `S12-traits/parameterized.t`
+- `S12-meta/exporthow.t`
+- `S12-class/open_closed.t`
+- `S32-str/sprintf.t`
+
+### 5.2 低 ROI で後回しにすべきもの
+
+- `S32-str/CollationTest_NON_IGNORABLE-3.t`
+  - 2 ケースのために実装が重すぎる。
+- `S32-str/format.t`
+  - `RakuAST` が無い限り最後まで通しにくい。
+
+---
+
+## 6. 今のおすすめ着手順
+
+「次に何をやるか」を 1 本だけ選ぶなら、順番はこう見るのが妥当。
+
+1. `S32-exceptions/misc.t`
+   reusable な型付き例外を増やす。
+2. `S32-array/adverbs.t`
+   parser / subscript surface の整理を進める。
+3. `S12-methods/qualified.t`
+   parameterized role の残件を詰める。
+4. shaped native typed arrays 3 本
+   main track 非衝突のまとまった塊として進める。
+5. IO 三兄弟
+   `io-handle` / `io-cathandle` / `lock` を別軸で片づける。
+
+その一方で、次は**局所修正を積み上げても効率が悪い**ので、原則として後回し。
+
+- `S26-documentation/12-non-breaking-space.t`
+- `S12-introspection/walk.t`
+- `S32-array/splice.t`
+- `S32-hash/adverbs.t` の typed-hash default 群
+- `S09-subscript/slice.t`
+
+---
+
+## 7. 旧版から落とした主な項目
+
+今回の再評価で、このファイルからは次の「完了済みなのに残っていた項目」を整理対象から外した。
+
+- `S05-capture/array-alias.t`
+- `S05-match/capturing-contexts.t`
+- `S03-binding/attributes.t`
+- `S03-binding/nested.t`
+- `S04-statements/gather.t`
+- `S06-advanced/lexical-subs.t`
+- `S12-methods/accessors.t`
+- `S32-io/io-path.t`
+- `S32-list/skip.t`
+- `S09-hashes/objecthash.t`
+- `S17-promise/nonblocking-await.t`
+- `S17-supply/categorize.t`
+
+これらはすでに whitelist 済みであり、
+今後この文書では「最近完了した項目」としても原則扱わない。
