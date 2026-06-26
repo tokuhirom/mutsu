@@ -227,10 +227,54 @@ impl Interpreter {
         }
     }
 
+    /// Walk bare blocks collecting `our sub` names (package-scoped): two
+    /// `our sub foo` declarations install the same package symbol, so a duplicate
+    /// across sibling blocks (or block vs mainline) is X::Redeclaration. `my sub`
+    /// is lexical and does not conflict across blocks, so it is ignored here.
+    fn find_our_routine_redeclaration(
+        stmts: &[Stmt],
+        seen: &mut HashSet<String>,
+    ) -> Option<RuntimeError> {
+        for stmt in stmts {
+            match stmt {
+                Stmt::SubDecl {
+                    name,
+                    multi: false,
+                    custom_traits,
+                    ..
+                } if custom_traits.iter().any(|(t, _)| t == "__our_scoped") => {
+                    let n = name.resolve().to_string();
+                    if !n.is_empty() && !seen.insert(n.clone()) {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("symbol".to_string(), Value::str(n.clone()));
+                        attrs.insert("what".to_string(), Value::str("routine".to_string()));
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!("Redeclaration of routine '{}'", n)),
+                        );
+                        return Some(RuntimeError::typed("X::Redeclaration", attrs));
+                    }
+                }
+                Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                    if let Some(e) = Self::find_our_routine_redeclaration(body, seen) {
+                        return Some(e);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
     pub(crate) fn check_eval_class_redeclarations(
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        // `our sub` is package-scoped: a duplicate across sibling blocks is
+        // X::Redeclaration even though each block is its own lexical scope.
+        if let Some(e) = Self::find_our_routine_redeclaration(stmts, &mut HashSet::new()) {
+            return Err(e);
+        }
         // Type-like declarations (class/role/subset/enum) share one symbol
         // namespace; a non-stub declaration cannot be redeclared by another
         // type declaration of the same name (regardless of kind).
