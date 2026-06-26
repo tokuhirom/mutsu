@@ -813,6 +813,18 @@ impl Compiler {
                 // var was marked readonly purely as a bind signal).
                 let is_bound_container_vardecl =
                     self.bind_vardecl && (name.starts_with('@') || name.starts_with('%'));
+                // A `constant` initializer is evaluated at BEGIN (compile) time,
+                // so an uncaught exception while evaluating it surfaces as
+                // X::Comp::BeginTime (with the original exception nested). Wrap
+                // the RHS evaluation in a CheckPhaser scope so the top-level run
+                // loop re-wraps any throw. Placed AFTER the X::Redeclaration /
+                // X::ParametricConstant early-returns above so those compile-time
+                // errors are not themselves wrapped.
+                let constant_init_phaser_start = if is_constant_decl {
+                    Some(self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 }))
+                } else {
+                    None
+                };
                 if is_our_redecl_nil {
                     let qualified = self.qualify_variable_name(name);
                     let idx = self.code.add_constant(Value::str(qualified));
@@ -862,6 +874,14 @@ impl Compiler {
                         expr
                     };
                     self.compile_assignment_rhs_for_target(name, rhs_expr);
+                }
+                if let Some(start_idx) = constant_init_phaser_start {
+                    self.code.emit(OpCode::CheckPhaserEnd);
+                    let end_ip = self.code.ops.len() as u32;
+                    if let OpCode::CheckPhaserStart { end_ip: ref mut e } = self.code.ops[start_idx]
+                    {
+                        *e = end_ip;
+                    }
                 }
                 // `constant @x = ...` should store a List, not an Array.
                 // Coerce the value on the stack before storing.
