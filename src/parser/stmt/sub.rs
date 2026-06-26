@@ -1667,6 +1667,26 @@ fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
             }
             continue;
         }
+        // A bare identifier (no `:` adverb prefix) inside `export(...)` is a term
+        // reference, not an export tag (`export(:FOO)` is the tag form). An
+        // undeclared bare name there is X::Undeclared::Symbols, matching rakudo
+        // ("Undeclared name: WTF").
+        if c.is_alphabetic() || c == '_' {
+            let start = i;
+            while i < inner.len() {
+                let ch = inner[i..].chars().next().unwrap_or('\0');
+                if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == ':' {
+                    i += ch.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            let name = &inner[start..i];
+            return Err(PError::fatal(format!(
+                "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
+                name
+            )));
+        }
         i += c_len;
     }
 
