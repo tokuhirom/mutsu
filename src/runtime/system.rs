@@ -417,7 +417,23 @@ impl Interpreter {
                     (name.resolve().to_string(), body_is_stub(body))
                 }
                 Stmt::SubsetDecl { name, .. } => (name.resolve().to_string(), false),
-                Stmt::EnumDecl { name, .. } => (name.resolve().to_string(), false),
+                Stmt::EnumDecl { name, variants, .. } => {
+                    // Enum value names share the type/term namespace, so a later
+                    // class/role/enum (or another value) of the same name is a
+                    // redeclaration. Register each value name as a non-stub
+                    // symbol. (`__DYNAMIC__` is the placeholder for an unresolved
+                    // parenthesised body, handled by the undeclared-names check.)
+                    for (vname, _) in variants {
+                        if vname.is_empty() || vname == "__DYNAMIC__" {
+                            continue;
+                        }
+                        if matches!(seen_types.get(vname), Some(false)) {
+                            return Err(type_redeclaration(vname));
+                        }
+                        seen_types.insert(vname.clone(), false);
+                    }
+                    (name.resolve().to_string(), false)
+                }
                 _ => continue,
             };
 
