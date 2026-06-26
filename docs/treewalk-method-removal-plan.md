@@ -216,17 +216,31 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   `t/multi-method-compiled-dispatch.t`(6). **★The `record_tree_walk_method` counter fires
   at `run_instance_method` ENTRY (resolution), not at execution, so it does NOT drop after
   this conversion — measure the win by wall-clock, not the counter.**
-- **Slice 3 (next) — construction submethods (BUILD/TWEAK, ~60).** Run `.new`'s
-  BUILD/TWEAK as compiled bytecode. **Currently excluded** by the Slice 2 `!is_submethod`
-  gate, so BUILD/TWEAK still tree-walk (`run_instance_method_resolved` at
-  methods_dispatch_new.rs:335/445/545 and `run_instance_method` at :361, threading
-  `current_attrs = updated` through the MRO). Reuse the Slice 2 pattern: convert a BUILD
-  submethod with `compiled_code` and **empty `free_var_writes`** to `call_compiled_method`
-  (saving/restoring `pending_rw_writeback_sources` for the #3620 sibling-write case);
-  BUILDs that write captured-outer (`$outer++`) stay tree-walk for the env merge. The hard
-  parts are the attribute-threading commit and `fail`-inside-BUILD → Failure semantics
-  (`t/native-build-construct.t` tests 8-9) — verify those plus
-  `t/build-sibling-writeback-coherence.t` and S12-construction roast before landing.
+- **Slice 3 — construction submethods (BUILD/TWEAK) — DONE (#3649, #3651, #3652).** Class
+  BUILD/TWEAK (#3649: dropped the `!is_submethod` gate), role-composed BUILD/TWEAK + DESTROY
+  (#3651), and a second custom-constructor BUILDALL path's role BUILD/TWEAK (#3652) now run
+  compiled. The `fail`-inside-BUILD → Failure gap (`call_compiled_method` converts `fail`
+  to an unhandled Failure *value*, but construction sites drive off `Err(is_fail)`) is
+  bridged by re-raising an unhandled-Failure **submethod** result as `Err(is_fail)`, scoped
+  to submethods. Attribute-threading commits the live cell unless `:=`-adjusted; the
+  free_var_writes gate keeps captured-outer-writing BUILDs on the tree-walk path
+  (sibling-writeback / #3620); `pending_rw_writeback_sources` is saved/restored around the
+  call. ~1.4× faster on a 50k-construction loop. pins=`t/construction-submethod-compiled.t`,
+  `t/role-submethod-destroy-compiled.t`.
+  **★Shared helper (#3651): `run_resolved_method_compiled_or_treewalk`** encapsulates the
+  whole gate+compiled-execute+fail-re-raise+adjusted-commit+save/restore logic with the
+  same `(result, attrs)` contract as `run_instance_method_resolved`, so every
+  resolved-candidate site is a drop-in. Private methods (`$obj!m`), the `.*` walk (#3652),
+  and `does`/`but` mixin role methods (#3655) were converted via it too.
+  **★§B method-execution-compiled migration COMPLETE:** every resolved-candidate
+  method/submethod dispatch runs as cached compiled bytecode; the only interpreter-bound
+  method execution left is the synthesized `proto` body (`compiled_code = None`). **Next
+  phase = remove the resolution+setup overhead**: `run_instance_method` is still ENTERED
+  per call (resolve + frame push + env clone) even though execution is now compiled — the
+  `record_tree_walk_method` counter (entry, not execution) still shows the hot names
+  (`m`/`BUILD`/`doit`). VM-native multi-method resolution caching (so a `CallMethod` op
+  resolves+dispatches a multi/submethod without entering `run_instance_method`) is the
+  larger remaining win, plus eventually deleting `run_instance_method_resolved`.
   **★Pre-existing blocker — BUILDALL sibling writeback clobber — FIXED (#3620).** A
   *nested method dispatch inside one BUILD clobbered a sibling BUILD's captured-outer
   writeback*:
