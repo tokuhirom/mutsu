@@ -70,11 +70,8 @@ without colliding, pick from the **top**:
 
 ### Regex engine (`runtime/regex*.rs`)
 
-- **S05-substitution/subst.t** — **Medium**. The remaining failures are
-  regex-internal: `X::Syntax::Regex::NullRegex` (empty `s///`), `:samecase`/
-  `:samemark` application in `.subst`, non-constant `:i`. Sequence these AFTER any
-  open regex PR. (NOT whitelistable as a whole — rakudo itself fails tests 157,
-  170.) See S05.md.
+- **S05-substitution/subst.t** — **DONE (whitelisted).** All 191 pass. Last fix:
+  `:sigspace` implies `:samemark` (test 102). See S05.md.
 - **S05-match/capturing-contexts.t** — **Medium (multi-feature)**. 56/64. 8
   *disparate* failures: binding `$/` (`my $/ := 42`), index-stable positional slots
   so `(y)?`→Nil and `(z)*`→empty-list coexist, `%%` separator backtracking vs an

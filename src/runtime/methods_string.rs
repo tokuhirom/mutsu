@@ -14,7 +14,9 @@ pub(super) struct SubstCaseTransforms {
 
 impl SubstCaseTransforms {
     fn any(&self) -> bool {
-        self.samecase || self.samemark || self.samespace
+        // `:sigspace`/`:samespace` imply `:samemark` (see
+        // `apply_subst_case_transforms`), so a bare `:s` still needs the transform.
+        self.samecase || self.samemark || self.samespace || self.sigspace
     }
 
     fn apply(&self, replacement: &str, matched: &str) -> String {
