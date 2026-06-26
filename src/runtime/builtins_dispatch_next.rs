@@ -234,41 +234,103 @@ impl Interpreter {
             // its exit flush reads its rw-param slot. Capture its frame code now to
             // write the chain's final value into that slot after the redispatch.
             let caller_code = self.current_code;
+            // §B: run the next MRO candidate as compiled bytecode (`call_compiled_method`)
+            // when it has compiled code, instead of the tree-walk
+            // `run_instance_method_resolved` recompile-each-call path. Both leave the
+            // active `method_dispatch_stack` frame in place (neither pushes a new one),
+            // so a further `nextsame`/`callsame` inside the candidate continues this
+            // same MRO chain. Methods without compiled code (rare; added post-compile)
+            // keep the interpreter path.
+            let method_name_for_dispatch = self
+                .samewith_context_stack
+                .last()
+                .map(|(n, _)| n.clone())
+                .unwrap_or_default();
+            let empty_fns: HashMap<String, crate::opcode::CompiledFunction> = HashMap::new();
             let dispatch_result = match &invocant {
                 Value::Instance {
                     class_name,
                     attributes,
                     id: target_id,
-                } => self
-                    .run_instance_method_resolved(
-                        &receiver_class,
-                        &owner_class,
-                        method_def,
-                        attributes.to_map(),
-                        call_args,
-                        Some(invocant.clone()),
-                    )
-                    .map(|(result, updated)| {
-                        (
-                            result,
-                            Some(Value::write_back_sharing(
-                                attributes,
-                                *class_name,
-                                updated,
-                                *target_id,
-                            )),
+                } => {
+                    if let Some(cc) = method_def.compiled_code.clone() {
+                        self.call_compiled_method(
+                            &receiver_class,
+                            &owner_class,
+                            &method_name_for_dispatch,
+                            &method_def,
+                            &cc,
+                            attributes.to_map(),
+                            call_args,
+                            Some(invocant.clone()),
+                            &empty_fns,
                         )
-                    }),
-                _ => self
-                    .run_instance_method_resolved(
-                        &receiver_class,
-                        &owner_class,
-                        method_def,
-                        HashMap::new(),
-                        call_args,
-                        Some(invocant.clone()),
-                    )
-                    .map(|(result, _)| (result, None)),
+                        .map(|(result, updated, adjusted)| {
+                            // Commit only an `adjusted` (`:=`-recovered) snapshot, exactly
+                            // like `dispatch_compiled_method`: an unadjusted run already
+                            // mutated the shared attribute cell in place, so writing the
+                            // baseline snapshot back would clobber it (e.g. a parent
+                            // `callsame` candidate's `self.x ~= ...`).
+                            let new_inv = if adjusted {
+                                Value::write_back_sharing(
+                                    attributes,
+                                    *class_name,
+                                    updated,
+                                    *target_id,
+                                )
+                            } else {
+                                invocant.clone()
+                            };
+                            (result, Some(new_inv))
+                        })
+                    } else {
+                        self.run_instance_method_resolved(
+                            &receiver_class,
+                            &owner_class,
+                            method_def,
+                            attributes.to_map(),
+                            call_args,
+                            Some(invocant.clone()),
+                        )
+                        .map(|(result, updated)| {
+                            (
+                                result,
+                                Some(Value::write_back_sharing(
+                                    attributes,
+                                    *class_name,
+                                    updated,
+                                    *target_id,
+                                )),
+                            )
+                        })
+                    }
+                }
+                _ => {
+                    if let Some(cc) = method_def.compiled_code.clone() {
+                        self.call_compiled_method(
+                            &receiver_class,
+                            &owner_class,
+                            &method_name_for_dispatch,
+                            &method_def,
+                            &cc,
+                            HashMap::new(),
+                            call_args,
+                            Some(invocant.clone()),
+                            &empty_fns,
+                        )
+                        .map(|(result, _, _)| (result, None))
+                    } else {
+                        self.run_instance_method_resolved(
+                            &receiver_class,
+                            &owner_class,
+                            method_def,
+                            HashMap::new(),
+                            call_args,
+                            Some(invocant.clone()),
+                        )
+                        .map(|(result, _)| (result, None))
+                    }
+                }
             };
             if have_rw_source {
                 self.set_pending_call_arg_sources(None);
