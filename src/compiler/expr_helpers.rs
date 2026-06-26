@@ -509,6 +509,18 @@ impl Compiler {
         if let Some(attr_name) = name.strip_prefix('!')
             && !attr_name.is_empty()
         {
+            // `$!attr` requires `self`. In a method body `self` is a direct
+            // local, so the bound attribute slot is read directly. Otherwise
+            // (mainline, a plain `sub`, or a bare class-body statement) there is
+            // no `self`: validate it at runtime via `GetSelfOrNoSelf`, which
+            // raises X::Syntax::NoSelf when absent — matching `$.attr`. When a
+            // `self` *is* reachable (a closure nested in a method) the validated
+            // value is discarded and the attribute slot is read as before.
+            if !self.local_map.contains_key("self") {
+                let name_idx = self.code.add_constant(Value::str(format!("${}", name)));
+                self.code.emit(OpCode::GetSelfOrNoSelf(name_idx));
+                self.code.emit(OpCode::Pop);
+            }
             let slot = self.alloc_local(name);
             self.code.emit(OpCode::GetLocal(slot));
             return;
