@@ -332,9 +332,10 @@ impl Interpreter {
                 if !class_is_6e && class_has_own_build && role_lang_rev == "c" {
                     continue;
                 }
-                let (_v, updated) = self.run_instance_method_resolved(
+                let (_v, updated) = self.run_resolved_method_compiled_or_treewalk(
                     &class_name.resolve(),
                     &role_name,
+                    "BUILD",
                     method_def,
                     attributes.clone(),
                     args.clone(),
@@ -442,9 +443,10 @@ impl Interpreter {
                 if !class_is_6e && class_has_own_tweak && role_lang_rev == "c" {
                     continue;
                 }
-                let (_v, updated) = self.run_instance_method_resolved(
+                let (_v, updated) = self.run_resolved_method_compiled_or_treewalk(
                     &cn,
                     &role_name,
+                    "TWEAK",
                     method_def,
                     attributes.clone(),
                     tweak_args.to_vec(),
@@ -542,9 +544,10 @@ impl Interpreter {
                 if !class_is_6e && class_has_own_build && role_lang_rev == "c" {
                     continue;
                 }
-                let (_v, updated) = self.run_instance_method_resolved(
+                let (_v, updated) = self.run_resolved_method_compiled_or_treewalk(
                     &cn,
                     &role_name,
+                    "BUILD",
                     method_def,
                     attributes.clone(),
                     build_args.to_vec(),
