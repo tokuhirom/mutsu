@@ -245,35 +245,38 @@ frame boundary), now confirmed for the method-coercion redispatch path too.
   effort, NOT a single slice.** Removing the helper's `free_var_writes.is_empty()` gate (so
   captured-outer-writing bodies also run compiled) was prototyped behind an env flag and
   traced:
-  1. **Save/restore-discards-body-writes (FIX FOUND).** The helper takes `pending_rw_writeback_sources`
-     before the call and restores it after — to preserve a sibling BUILD write (#3620) past
-     `call_compiled_method`'s entry `clear()`. But `call_compiled_method` *records the body's
-     own captured-outer writes* into that list on exit, which the restore then discards →
-     the method's `$outer++` is lost. **Fix = MERGE (saved ++ body-recorded), not restore.**
-     With that merge + gate off, `build-sibling-writeback-coherence`,
-     `render-method-captured-writeback`, `native-build-construct`, and
-     `coercion-method-captured-writeback` all pass.
-  2. **Hyper-rw attribute (STILL FAILS — separate, DEEPER blocker).** `@objs».inc` where
-     `method inc { $.count++ }` — `parallel-dispatch-regression.t` test 1. `$.count` is
-     mis-classified into `free_var_writes` as `.count` (confirmed via dump). **Tried the
-     narrowest safe relaxation** (2026-06-26): gate on `free_var_writes.all(|n| n starts
-     with '.'/'!')` (attribute-accessors only) + filter `.`/`!` names out of the merged
-     pending list (so they're not propagated as caller-var). Build/render/native-build/
-     coercion + the merge cases pass, **but `@objs».inc` STILL gives `1,2,3` not `2,3,4`** —
-     when `inc` runs compiled via the helper, the **hyper dispatch path does not commit the
-     compiled method's attribute mutation back to the array element** (the tree-walk
-     `run_instance_method_resolved` path did). So the blocker is NOT just `free_var_writes`
-     classification or pending propagation — it is the **hyper (and likely junction-
-     autothread) dispatch's attribute-writeback contract** assuming the tree-walk executor.
-     This must be fixed in the hyper/autothread op's commit-of-`updated`-attrs before any
-     attribute-mutating method may run compiled there. **Reverted — do NOT relax the gate
-     until the hyper/autothread attribute commit is unified.**
+  1. **Save/restore-discards-body-writes — DONE (#3664).** The helper took
+     `pending_rw_writeback_sources` before the call and *restored* it after — to preserve a
+     sibling BUILD write (#3620) past `call_compiled_method`'s entry `clear()`. But
+     `call_compiled_method` *records the body's own captured-outer writes* into that list on
+     exit, which the restore then discarded → the method's `$outer++` would be lost once the
+     gate is relaxed. **Fix = MERGE (saved ++ body-recorded, deduped), not restore.** With the
+     gate still on the body records nothing, so it is inert but correct.
+  2. **`free_var_writes` attribute-accessor mis-classification + hyper-rw commit — DONE
+     (#TBD).** Two coupled fixes: (a) `compute_free_vars` now treats an attribute-twigil name
+     (`.count`/`!x`/`@.`/`@!`/`%.`/`%!`) as a `self` attribute, NOT a captured-outer free-var
+     write (new `is_attribute_accessor_name`) — so `method inc { $.count++ }` has empty
+     `free_var_writes` and dispatches compiled. Dynamic (`$*x`) and special twigils stay in
+     `free_var_writes` deliberately (they still need the writeback gate — reduce-time
+     dynamic-var scoping in grammar actions, `t/grammar-reduce-time-dynvar.t`). (b) The earlier
+     investigation (#3661) suspected the *hyper dispatch's attribute-writeback contract* was a
+     deeper blocker (compiled `inc` left `@objs».inc` at `1,2,3`). The real cause was narrower:
+     the compiled path's `$.count++` landed only in `env` — the public `.count` accessor name
+     has no local slot (unlike `$!count`), so the cell-mirror in the inc/dec ops never fired,
+     and the increment never reached `self`'s shared cell at all. The hyper path's
+     commit-of-`updated` was fine; it reads the shared Arc cell, which simply was never
+     written. New `try_slotless_attr_incdec` read-modify-writes the shared cell directly for a
+     slotless scalar attribute twigil, wired into all four inc/dec inner ops — so the mutation
+     reaches the cell and the hyper/direct/junction commits all observe it. pins=
+     `t/compiled-method-attr-incdec.t`(13), `t/parallel-dispatch-regression.t`. (Non-rw
+     `$.attr++` mutating is a pre-existing gap — `$.attr = N` on a non-rw attr already mutates
+     in mutsu; enforcing attribute readonly is a separate axis, out of scope.)
   3. **Resolution caching is unsound naively.** Multi dispatch depends on arg *types* AND
      `where`/value clauses, so a `(class, method, arg-type)` cache is wrong for where/literal
      candidates — any cache must exclude those (or key on more).
-  Sequence for a fresh session: land the merge fix (gate still on → inert but correct), then
-  fix the `free_var_writes` attribute-accessor mis-classification + hyper-rw commit, then
-  relax the gate, then (separately) the sound resolution cache, then delete
+  Remaining sequence: relax the `free_var_writes.is_empty()` gate in
+  `run_resolved_method_compiled_or_treewalk` (the merge from step 1 makes captured-outer
+  writes survive), then (separately) the sound resolution cache, then delete
   `run_instance_method_resolved`.
   **★Pre-existing blocker — BUILDALL sibling writeback clobber — FIXED (#3620).** A
   *nested method dispatch inside one BUILD clobbered a sibling BUILD's captured-outer

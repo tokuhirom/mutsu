@@ -937,6 +937,9 @@ impl Interpreter {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        if let Some(r) = self.try_slotless_attr_incdec(code, name, true, true) {
+            return r;
+        }
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
             && !matches!(self.locals[slot], Value::Proxy { .. })
@@ -1035,6 +1038,9 @@ impl Interpreter {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        if let Some(r) = self.try_slotless_attr_incdec(code, name, false, true) {
+            return r;
+        }
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
             && !matches!(self.locals[slot], Value::Proxy { .. })
