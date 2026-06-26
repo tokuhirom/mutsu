@@ -541,7 +541,7 @@ impl Interpreter {
         self.stack.push(out);
     }
 
-    pub(super) fn exec_concat_op(&mut self) {
+    pub(super) fn exec_concat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         // Thread over junctions — concat uses left-first threading
@@ -551,10 +551,41 @@ impl Interpreter {
         if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
             let result = self.eval_concat_with_junctions(left, right);
             self.stack.push(result);
-            return;
+            return Ok(());
         }
+        // Infix `~` stringifies an operand via `.Stringy` (falling back to `.Str`),
+        // so an operand whose class defines a user `Stringy`/`Str` must dispatch it
+        // — the pure `concat_values` only knows `.gist` (rendering `Foo()`). This is
+        // an internal redispatch with no surrounding CallMethod op, so drain any
+        // captured-outer writeback into the caller's slot (Slice 1b render pattern).
+        let caller_code = self.current_code;
+        let left = self.concat_coerce_operand(left)?;
+        let right = self.concat_coerce_operand(right)?;
+        self.reconcile_caller_after_internal_dispatch(caller_code);
         let result = Self::concat_values(left, right);
         self.stack.push(result);
+        Ok(())
+    }
+
+    /// Coerce a concat operand whose class defines a user `Stringy`/`Str` to its
+    /// string value (Raku infix `~` uses `.Stringy`, falling back to `.Str`). Plain
+    /// values and instances without a user stringifier pass through unchanged (the
+    /// pure `concat_values` handles those, including built-in `.gist`/`.Str`).
+    fn concat_coerce_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
+        let cn = match &v {
+            Value::Instance { class_name, .. } => class_name.resolve().to_string(),
+            Value::Package(name) => name.resolve().to_string(),
+            _ => return Ok(v),
+        };
+        if self.has_user_method(&cn, "Stringy") {
+            let r = self.try_compiled_method_or_interpret(v, "Stringy", Vec::new())?;
+            return Ok(Value::str(r.to_string_value()));
+        }
+        if self.has_user_method(&cn, "Str") {
+            let r = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
+            return Ok(Value::str(r.to_string_value()));
+        }
+        Ok(v)
     }
 
     fn eval_concat_with_junctions(&mut self, left: Value, right: Value) -> Value {
