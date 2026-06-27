@@ -665,7 +665,26 @@ fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
                 continue;
             }
             let (r3, next) = expression(r3)?;
-            current_dim.push(next);
+            // `@a[0, 2 ... *]` — the sequence operator's seed is the WHOLE
+            // preceding comma list, not just its immediate left operand
+            // (raku parses this as `(0, 2) ... *`). When a comma item turns out
+            // to be a sequence, fold the items gathered so far into its seed.
+            if let Expr::Binary {
+                left,
+                op: op @ (TokenKind::DotDotDot | TokenKind::DotDotDotCaret),
+                right,
+            } = next
+            {
+                let mut seed = std::mem::take(&mut current_dim);
+                seed.push(*left);
+                current_dim = vec![Expr::Binary {
+                    left: Box::new(Expr::ArrayLiteral(seed)),
+                    op,
+                    right,
+                }];
+            } else {
+                current_dim.push(next);
+            }
             r = r3;
             continue;
         }
