@@ -2,7 +2,8 @@ use super::*;
 use crate::symbol::Symbol;
 
 mod args_matching;
-mod binding;
+mod binding_helpers;
+mod binding_signature;
 mod coercion;
 mod roles;
 mod signature;
