@@ -1,0 +1,3724 @@
+# Changelog
+
+## [v0.1.1](https://github.com/tokuhirom/mutsu/compare/v0.1.0...v0.1.1) - 2026-06-27
+
+- refactor(vm): slim vm.rs by extracting exec_one and helpers into submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3819
+- refactor(runtime): split builtins_operators.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3822
+- refactor(runtime): split types/binding.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3823
+- refactor(parser): split stmt/sub_param.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3824
+- docs: instruct agents to apply tagpr version-bump labels on PRs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3820
+- refactor(builtins): split arith.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3825
+- refactor(builtins): split uniprop.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3826
+- refactor(parser): split expr/precedence_meta_ops.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3827
+- chore: remove stale too_difficult.txt by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3829
+- docs: slim ANALYSIS.md, move completed work to news/2026-06.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3830
+- refactor(parser): split primary/var.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3831
+- refactor(runtime): slim mod.rs by extracting the impl Interpreter block into submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3833
+- docs: deeper ANALYSIS.md slimming — condense all completed sections by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3834
+- fix(array): embed autoviv-hole tracking in ArrayData; user Str in eq/is (HTTP::Status) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3832
+
+## [v0.1.0](https://github.com/tokuhirom/mutsu/commits/v0.1.0) - 2026-06-27
+
+- Add --dump-tokens option to dump lexer output by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1
+- Add rule: never remove whitelisted tests on regression by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2
+- Add rules to use Read/Grep/Glob tools instead of Bash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3
+- Fix listop parsing (shift, push, etc.) without parentheses by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4
+- Fix listop parsing and comma-separated expressions with statement modifiers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5
+- fix listop parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/6
+- Refactor parser with typed operators and dispatch table by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/7
+- Fix bitwise operators in parser by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/8
+- Add support for call-on syntax .(args) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/9
+- Document parser improvement opportunities from code audit by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/10
+- Improve parser_nom error reporting with furthest-failure tracking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/11
+- Add interactive REPL with rustyline by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/12
+- Set up CI with make test/roast and enforce PR workflow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/22
+- Rename src/parser_nom/ to src/parser/ by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/23
+- Pass roast/S02-literals/char-by-name.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/24
+- Pass roast/S02-types/version.t and unicode.t (182 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/25
+- Add infinity literal, Unicode minus, superscript exponentiation, rand term by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/26
+- Detect Perl 5 brainos, lambda CallOn, try $! reset, pass brainos.t (183 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/28
+- Add Regex ~~ Hash smartmatch, pass regex-hash.t (184 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/29
+- Add .tree method, zen slice [], bare Z operator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/30
+- Add bare @/% sigils, state variable semantics, pass bare-sigil.t (185 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/31
+- Add .WHICH method, ObjAt type, ::($expr) indirect lookup, pass built-in.t (186 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/32
+- Update TODO_roast/S02.md with current test results by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/33
+- Add hyper method call, .pick(*), .sum, bare X, fix Version sort/compare, pass version-stress.t (187 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/34
+- Add let keyword, fail semantics, $(stmt; expr) syntax by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/35
+- Add .race, .hyper, .item methods, optimize map/grep VM reuse, pass stress.t (188 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/36
+- Add Supply.from-list, .repeated, Test::Tap tap-ok, pass repeated.t (189 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/37
+- Add GenericRange, fix Range smartmatch, pass range-range.t (190 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/38
+- Add IO::Socket::INET.connect, .getpeername, pass getpeername.t (191 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/39
+- Add bare say/print/put compile errors, fix Z precedence, pass bare-say.t (192 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/40
+- Add Str.trans method, pass 79778.t (193 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/41
+- Add Q quoting, run()/shell() returning Proc, $*EXECUTABLE, make-temp-dir/file by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/42
+- Add builtin function rules to CLAUDE.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/43
+- Move Test::Util functions from builtins to test functions, add is export trait by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/44
+- Replace pick-shortest-fail.sh with prioritized pick-next-roast.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/45
+- Add -I flag, run/shell :err/:out capture, IO::Pipe, pass rt126904.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/46
+- Create fix-roast.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/47
+- Improve fix-roast.sh: translate to English and fix bugs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/48
+- Add --allowedTools to fix-roast.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/49
+- Add .comb(Regex), Unicode-aware character classes, combined classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/50
+- Add .comb(Regex), Unicode-aware char classes, combined classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/51
+- Add .sibling() method on IO::Path, pass roast/S12-traits/precomp.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/52
+- Improve fix-roast.sh robustness by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/53
+- Parse [&func] infixed function call syntax by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/54
+- Support ::?PACKAGE, ::?MODULE, $?PACKAGE, $?MODULE; pass roast/S11-modules/module-file.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/55
+- Update roast history (2026-02-19) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/56
+- Use glob pattern for temp-test.* in .gitignore by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/57
+- Make roast-history.sh commit only with --commit flag by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/58
+- Add whitelist update step to fix-roast.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/59
+- Support #?rakudo N skip directive; pass roast/S15-string-types/Str.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/60
+- Replace fix-roast.sh with sub-agent based roast-fix workflow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/61
+- Add CLAUDE.md with project docs and roast fix workflow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/62
+- Implement start/await and do-for collection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/63
+- Support &infix:<OP> operator references by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/64
+- Change roast fix workflow to serial execution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/66
+- Fix Any type object and class-in-parens expr by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/67
+- Implement cross() function and &[op] operator reference syntax by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/65
+- Add conflict resolution step to roast fix workflow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/68
+- refactor: split compiler into modules and deduplicate helpers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/69
+- refactor: split vm.rs into modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/71
+- refactor: split value.rs into modules for better maintainability by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/72
+- feat: implement IO::Handle.Supply and basic Buf type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/73
+- feat: support anonymous class expressions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/74
+- feat: support return with statement modifiers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/75
+- fix: allow prefix ~ operator on hash variables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/76
+- feat: support top-level CATCH, when *, and Match object with from/to by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/77
+- docs: simplify roast fix workflow to use branches instead of worktrees by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/78
+- feat: support parenthesized assignment as lvalue by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/79
+- feat: implement $*RAKU/$?PERL metadata and fix #?rakudo skip by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/80
+- fix: bind implicit $_ when calling bare blocks with arguments by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/81
+- feat: implement .fc (fold case) method and fc() function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/82
+- feat: implement but mixin, loop fix, Bool methods, class validation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/83
+- feat: implement pseudo-package support and indirect package lookup by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/84
+- feat: implement yada-yada operator, Supply.do, and tap-ok improvements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/85
+- feat: implement Supply.on-demand, Supplier class, and fix s.identifier parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/86
+- feat: support operator-style sub names (infix:<;>, etc.) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/87
+- docs: strengthen CLAUDE.md roast test selection and completion rules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/88
+- fix: make test functions actually validate instead of always passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/97
+- fix: handle Bool negation and partially address type system issues by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/98
+- fix: Rat/FatRat type preservation and Num arithmetic issues by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/99
+- feat: implement type smileys (:U/:D/:_) and HyperWhatever literal (**) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/100
+- Normalize HISTORY.tsv columns by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/101
+- fix: make EvalAstExpr fallback actually evaluate via interpreter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/102
+- feat: support anonymous enums and prefix +/- on hash variables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/103
+- feat: real concurrency with std::thread by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/104
+- feat: regex capture groups, code assertions, and WhateverCode indexing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/105
+- fix: compile CATCH/CONTROL blocks in all block contexts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/106
+- refactor: Arc-wrap Sub values and use Weak for &?BLOCK to enable GC by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/107
+- refactor: Arc-wrap Array, Hash, Set, Bag, Mix, Slip, Junction, and Instance.attributes in Value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/108
+- feat: support custom operator defs with <<>> quoting by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/109
+- feat: pass roast/S17-promise/in.t with cross-thread shared arrays by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/110
+- feat: comprehensive Promise API — pass roast/S17-promise/basic.t and at.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/111
+- feat: pass roast/S17-channel/stress.t and S15-nfg/many-threads.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/112
+- chore: switch submodule URLs from SSH to HTTPS by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/113
+- feat: pass roast/S32-io/other-stress.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/114
+- feat: pass roast/S05-metasyntax/unicode-property-pair.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/115
+- feat: pass roast/S06-traits/as.t — coercion types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/116
+- feat: pass roast/S32-io/null-char.t — NUL byte rejection in IO paths by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/117
+- feat: add MUTSULIB env var, --help option by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/118
+- feat: make Test::Util functions run from genuine Raku module code by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/119
+- test: expand Test::Util make-temp-file/make-temp-dir tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/120
+- feat: implement capture slip (|c) for function call argument forwarding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/121
+- feat: fix exit code handling in is_run and add tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/122
+- docs: add Test::Util workout workflow to CLAUDE.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/123
+- feat: fix die message in get_out/is_run stderr, add get_out tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/124
+- feat: implement warn as CX::Warn control exception and add warns-like by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/125
+- feat: implement doesn't-warn Test::Util function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/126
+- feat: implement is-eqv Test::Util function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/127
+- feat: implement group-of Test::Util function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/128
+- refactor: dynamically register Test/Test::Util function names on use by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/129
+- refactor: use lexical scope stack for imported function names by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/130
+- refactor: unify USER_DECLARED_SUBS into lexical scope stack by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/131
+- feat: support is-path Test::Util function via module loading by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/132
+- refactor: dynamically extract module exports at parse time by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/133
+- feat: implement Proc::Async .start stderr, .kill, .write, .close-stdin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/134
+- feat: implement MY:: pseudo-stash expression by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/135
+- parser: improve Test::Util loading prerequisites by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/137
+- parser: fix additional roast parse blockers and annotate TODO gaps by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/138
+- runtime/parser: parse Test::Util and raise on module parse errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/139
+- Implement Lock.protect and Junction.THREAD by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/140
+- Draft: follow-up for Test::Util test-iter-opt support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/141
+- Add throws-like-any test coverage and required runtime support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/142
+- update history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/143
+- Fix roast/S04-statements/repeat.t and whitelist it by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/144
+- parser: unblock more roast syntax (adverbs, bind slip, Q:to, role generics) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/145
+- parser: extend roast coverage for token/rule forms and regex cases by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/146
+- parser: accept more roast constructs in package/declarator/for signatures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/147
+- parser: accept multi signature chains, postfix ! calls, and anon role terms by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/148
+- parser fix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/149
+- Add roast/S03-operators/also.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/150
+- roast-history should detect parse error by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/151
+- Fix roast S32-io dir.t parsing and IO::Path dir behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/152
+- Fix roast/S05-grammar/ws.t and implement missing grammar ws behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/153
+- docs: add repository contributor guide in AGENTS.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/154
+- Implement Empty term and fix andthen/notandthen// defined checks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/156
+- Implement Buf/Blob types with read-num32/read-num64 and fix NaN truthiness by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/157
+- Add raku filter to pick-next-roast.sh using spectest.data by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/158
+- Implement --doc mode, colon-pair hash parsing, and pass S26 block-leading-user-format test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/159
+- Implement Encoding role, Registry, and Builtin classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/160
+- Implement Capture type and pass S32-str/contains.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/161
+- Implement index builtin, junction auto-threading for methods, pass S32-str/index.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/162
+- Implement trig functions, bless/custom .new, pass 10 trig roast tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/163
+- Implement atan2, generalize Instance coercion, pass S32-trig/atan2.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/164
+- Implement Metamodel::PackageHOW.new_type, pass S11-modules/runtime.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/165
+- Distinguish Array from List types using bool flag by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/166
+- Implement decimal-as-Rat, Seq type, sequence improvements, fix cross-type comparison by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/167
+- Implement closure-based subst replacement, pass S05-substitution/67222.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/168
+- Fix proto dispatch regressions and parser/runtime edge cases by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/155
+- Implement .WHY method and RegisterPackage opcode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/169
+- Support coercion type Str(Match) and auto-coercion on assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/170
+- Implement CompUnit::DependencySpecification.new and methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/171
+- runtime: compose methods on callables for WhateverCode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/172
+- Add Confused prefix to parse errors, pass S02-one-pass-parsing/misc.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/173
+- Implement Stash.new constructor by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/174
+- Implement Supply.reverse method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/176
+- Implement List.batch and fix prefix ^ precedence by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/177
+- Implement need keyword and module Name { } parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/178
+- parser: keep bare * as Whatever in no-sequence mode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/175
+- roast: whitelist S03-sequence/exhaustive.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/179
+- Fix is_run status matching and module path resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/180
+- builtins: fix Str.lines and &lines for roast lines.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/181
+- Implement .HOW meta-object method and X::Assignment::RO by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/182
+- scripts: add ai-next-roast helper by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/183
+- Implement Supply.grab method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/184
+- Support is_run with CLI flag testing and Str type object by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/185
+- introspection: pass roast S12 meta-class.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/186
+- Update ai-next-roast.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/187
+- Fix S29-context/die.t: no-arg die semantics and TAP formatting by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/188
+- Propagate exit code from interpreter to process exit by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/189
+- Match parse errors as X::Comp in throws-like by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/190
+- scripts: randomize ai-next-roast selection by line range by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/191
+- Flatten ArrayLiteral in BracketArray compilation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/192
+- Detect self-inheritance and self-composition errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/193
+- Implement Instant type, INIT prefix, and $*INIT-INSTANT by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/195
+- Support stub class declarations (class Foo { ... }) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/196
+- Implement Supply.skip and .Supply coercion method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/197
+- Add cmp-ok diagnostic output with .gist/.raku by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/199
+- Implement multiline trailing doc comments and .WHY on methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/200
+- Add S03-smartmatch/array-hash.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/201
+- parser/runtime: pass roast S16-filehandles/mode.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/202
+- str: implement samemark function and method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/204
+- Implement lexical scoping for module imports by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/203
+- Fix roast/S06-advanced/stub.t stub semantics and supersede handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/198
+- signature: support object unpacking sub-signatures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/194
+- test: pass roast/S24-testing/8-die_on_fail.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/205
+- runtime: implement Supply.split by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/206
+- scripts: add ai-fix-pr helper by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/207
+- scripts: add datetime to HISTORY.tsv entries by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/208
+- Fix constant declaration and IO::Path.parent() — prevent CWD deletion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/209
+- parser/vm: fix sigiled constant declaration lookup by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/211
+- roast: restore range-range.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/212
+- ci: enforce sorted roast whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/216
+- scripts: add clippy and fmt steps to ai-next-roast.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/217
+- runtime: pass roast S26-documentation/05-comment.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/213
+- Fix roast/S02-types/range-iterator.t by implementing range iterator protocol by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/214
+- scripts: make ai-fix-pr executable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/218
+- Fix S24 line-number reporting and regex scalar interpolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/220
+- runtime: implement grammar subparse for proto token LTM by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/219
+- scripts: split ai-next-roast and add sequential mode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/221
+- Fix S03 sequence arity-2-or-more behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/223
+- Fix S03-operators/div.t divide-by-zero behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/224
+- runtime: implement quietly statement-prefix behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/225
+- compiler: fix nested module package identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/226
+- runtime: support use newline with encode/decode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/227
+- Fix S17-procasync many-processes-no-close-stdin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/228
+- pass roast/S32-trig/sinh.t: ValuePair, is-approx DWIM, parser fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/229
+- parser: fix no-runaway-file-limit roast parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/230
+- scripts: show progress output for claude agent by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/231
+- runtime: fix Supply.list materialization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/232
+- runtime: implement Supply.tail and pass roast/S17-supply/tail.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/233
+- runtime: implement pairup for list-like values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/234
+- runtime: support windows-1251/1252 encode/decode roundtrip by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/235
+- parser: fix one-pass parsing for regex term and sub if by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/236
+- runtime: fix .VAR type for code variables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/237
+- Fix S13 overloading deep fallback for += by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/238
+- parser: preserve non-breaking spaces in angle-word lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/215
+- runtime: implement Supply.max running-extrema semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/241
+- update history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/243
+- runtime: implement Supply.min and pass roast/S17-supply/min.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/242
+- Fix roast S32-hash keys_values behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/244
+- Support rw lvalue method assignment and temp in S12-methods/lvalue.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/222
+- runtime: fix Supply.map semantics for roast S17-supply/map.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/240
+- runtime: implement Supply.collate and pass roast/S17-supply/collate.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/239
+- grammar: support proto :sym captures in rules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/245
+- builtins: implement full unicode foldcase expansions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/248
+- runtime: support dynamic-scope pragma in .VAR.dynamic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/249
+- pick-next-roast: prioritize parse-error category by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/250
+- parser/runtime: support package-qualified vars and stash lookup by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/251
+- Fix roast/S03-operators/chained-declarators.t lexical scoping by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/252
+- parser/runtime: support scan slip semantics and pass S07-slip by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/253
+- parser/runtime: support regex exhaustive repetition modifiers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/254
+- runtime: make rmdir return false instead of throwing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/255
+- runtime: implement Supply.grep behavior for roast S17 test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/256
+- runtime: implement Supplier.Supply.Promise lifecycle by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/257
+- Fix roast S26 doc CLI: Q:to angle heredoc and --doc behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/258
+- runtime: implement Any.are and pass roast/S29-any/are.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/259
+- Implement class trusts + private method permission checks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/261
+- Support alternate signatures in a single multi sub declaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/262
+- Fix type-object string coercion for Set/Bag families by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/264
+- enum: support pseudo-functional enum coercion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/266
+- scripts: simplify ai-next-roast.sh with wip.txt lock by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/267
+- runtime: support imperative does with parameterized roles by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/268
+- Fix S01 Perl5 return integration guard behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/260
+- parser/runtime: make roast S32-container/roundrobin.t pass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/269
+- scripts: keep polling every 10 minutes when no PR candidates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/270
+- Support :delete adverb on indexed hash access by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/271
+- Fix roast/S10-packages/require-and-use.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/265
+- runtime: pass roast/S17-scheduler/times.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/246
+- roast: pass S32-container/zip.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/272
+- Support indirect declarator names in class/sub/method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/274
+- parser/runtime: pass roast/S02-types/mu.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/273
+- parser/runtime: implement Hash.push/append and colonpair list syntax by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/278
+- runtime: make roast/S17-supply/act.t pass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/247
+- Support parent attribute initialization from object shorthand by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/279
+- Support named currying and pass roast/S06-currying/named.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/277
+- parser/runtime: support multidimensional argument lists and **@ double slurpy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/280
+- parser/runtime: support ::= binding and method aliasing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/282
+- regex: pass roast/S05-interpolation/lexicals.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/281
+- scripts: require merging origin/main before PR creation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/276
+- parser/compiler/runtime: implement placeholder variables ($^a, &^c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/275
+- runtime: support Supply.schedule-on with Scheduler by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/263
+- scripts: rename ai-fix-pr to ai-supervisor by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/284
+- Fix roast S02-types/anon_block.t (anon block placeholders) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/285
+- regex: fix roast/S05-substitution/match.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/286
+- parser/runtime: pass roast/S16-io/home.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/283
+- parser: support semicolon MAIN declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/288
+- Update roast history (2026-02-24T21:16) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/289
+- parser/runtime: implement bracket meta-operator notation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/287
+- Fix roast/S06-traits/is-rw.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/290
+- Update roast history (2026-02-24T21:52) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/291
+- Fix roast S04 statement-modifier unless by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/294
+- regex: support :P5 named captures in m/rx by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/293
+- Update roast history (2026-02-24T22:38) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/296
+- Support roast S17-supply/decode.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/297
+- parser/runtime: implement Signature-Signature smartmatch (roast S03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/295
+- Support quoted/dynamic method names and $. shorthand by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/299
+- Update roast history (2026-02-24T23:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/300
+- Pass roast/S03-operators/reduce-le1arg.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/298
+- parser/runtime: fix roast S06-currying/misc.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/302
+- Update roast history (2026-02-24T23:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/304
+- Support quoted method calls to bypass pseudo-method macros by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/301
+- Fix ai-supervisor jq reason field always being null by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/308
+- parser: support nested fat-arrow pairs in expressions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/303
+- Update roast history (2026-02-25T07:00) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/309
+- Pass roast/S10-packages/use-with-class.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/310
+- Pass roast/S01-perl-5-integration/hash.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/312
+- Pass roast/S12-coercion/parameterized.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/307
+- Pass roast/S04-statement-modifiers/without.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/313
+- parser/runtime: pass roast S06 prefix operator overloading by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/314
+- Fix roast/S13-overloading/operators.t operator overloading behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/311
+- Pass roast/S32-array/elems.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/315
+- parser/runtime: support S26 07c pod tables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/316
+- Update roast history (2026-02-25T07:57) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/317
+- Pass roast/S12-methods/syntax.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/318
+- Pass roast/S06-multi/lexical-multis.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/319
+- Implement expmod and unblock roast/S32-num/expmod.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/306
+- Pass roast/S15-string-types/NFK-types.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/320
+- Fix roast S12 method chaining parsing/runtime behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/321
+- runtime: fix IO get behavior in while loops and nl-in handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/324
+- parser: accept operator-style method names by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/325
+- Implement sigilless parameter semantics and whitelist S06 sigilless by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/322
+- Pass roast/S06-multi/unpackability.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/327
+- Pass roast/S32-hash/iterator.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/323
+- regex: pass roast/S05-metasyntax/single-quotes.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/328
+- runtime/parser: pass roast S29-context/evalfile.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/329
+- runtime: make roast/S14-roles/stubs.t pass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/326
+- Update roast history (2026-02-25T10:22) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/330
+- parser/runtime: pass roast/S05-modifier/sigspace.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/331
+- Update roast history (2026-02-25T10:36) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/332
+- Pass roast/S12-methods/method-vs-sub.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/333
+- signature: support multi-invocant markers and params metadata by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/334
+- parser: fix raw Q[...] parsing for windows-arg-quoting roast by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/336
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/335
+- multidim: pass roast/S09-multidim/indexing.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/337
+- Fix roast/S02-names/strict.t strict and EVAL behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/292
+- Update roast history (2026-02-25T11:40) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/338
+- Fix roast/S32-list/flat.t: unicode ellipsis + flat method semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/340
+- parser/runtime: pass roast S32-io/chdir-process.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/339
+- hash: support .hash on lists and reject odd initializers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/341
+- Update roast history (2026-02-25T12:22) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/342
+- Pass roast/S06-signature/unspecified.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/343
+- runtime/parser: implement general callable composition semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/344
+- Pass roast/S06-operator-overloading/term.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/345
+- Pass roast/S24-testing/9-is_deeply.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/346
+- Update roast history (2026-02-25T13:17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/347
+- Pass roast/S12-methods/chaining.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/348
+- Update roast history (2026-02-25T13:32) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/350
+- Sync branch for roast/S05-metasyntax/single-quotes.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/351
+- io: fix note gist dispatch for mixed-in roles by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/349
+- parser/vm: fix spaceship edge cases by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/352
+- Update roast history (2026-02-25T13:58) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/353
+- Pass roast/S12-attributes/mutators.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/354
+- Update roast history (2026-02-25T14:23) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/356
+- Sync branch for roast/S32-array/elems.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/357
+- runtime: preserve itemized arrays in slurpy params by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/358
+- Pass roast/S06-currying/assuming-and-mmd.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/359
+- parser/vm: support custom metaoperator reductions and hyper assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/355
+- class: pass roast S12 interface-consistency by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/360
+- Update roast history (2026-02-25T15:14) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/363
+- Pass roast/S03-binding/closure.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/364
+- runtime: support run win-verbatim-args on Windows by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/365
+- Fix roast/S03-smartmatch/capture-signature.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/366
+- Fix roast/S12-class/extending-arrays.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/361
+- Pass roast/S14-roles/parameter-subtyping.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/362
+- Fix roast/S03-operators/equality.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/367
+- test: align default descriptions for isa-ok/does-ok/can-ok by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/368
+- regex: pass roast S05-modifier/overlapping.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/369
+- Pass roast/S32-list/flat.t: fix flat semantics, LazyList forcing, and for-loop destructuring by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/370
+- Pass roast/S12-introspection/methods.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/371
+- Pass roast/S05-modifier/samemark.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/372
+- Update roast history (2026-02-25T17:14) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/373
+- Pass roast/S15-string-types/NFK-types.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/375
+- Pass roast/S06-signature/multi-invocant.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/376
+- parser: pass roast/S15-literals/identifiers.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/374
+- Fix roast/S06-currying/slurpy.t currying and capture behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/377
+- Update roast history (2026-02-25T17:54) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/378
+- parser: reject unknown variable traits by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/379
+- Pass roast/S06-operator-overloading/circumfix.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/380
+- signature: support mixed sigiled placeholders by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/381
+- Update roast history (2026-02-25T18:28) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/382
+- Pass roast/S32-str/sprintf-c.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/383
+- roles: pass roast/S14-roles/instantiation.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/384
+- Pass roast/S12-class/anonymous.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/385
+- Pass roast/S32-list/first-v.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/387
+- roast/S12 class/anonymous t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/386
+- Update roast history (2026-02-25T19:26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/388
+- transliteration: pass roast trans-TR-operator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/389
+- Pass roast/S32-num/sqrt.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/390
+- Update roast history (2026-02-25T19:41) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/392
+- repl: auto-display expression results by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/391
+- runtime: fix roast count skip semantics in blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/393
+- Update roast history (2026-02-25T19:56) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/394
+- Update roast history (2026-02-25T20:11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/395
+- Add WASM demo site for running Raku in the browser by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/396
+- Fix wasm-pack build: avoid --out-dir flag by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/397
+- Pass roast/S29-any/minpairs-maxpairs.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/398
+- Fix roast S02 nominalizables coercive subset behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/399
+- Support :end adverb on first(), pass roast/S32-list/first-end-v.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/400
+- Fix WASM runtime crashes from platform-specific APIs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/401
+- Update roast history (2026-02-25T20:44) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/402
+- Fix WASM runtime crashes and add Playwright E2E tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/404
+- Move WASM E2E tests to CI workflow for PR validation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/405
+- runtime: pass roast/S22-package-format/local.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/403
+- Change FizzBuzz example to 1..100 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/406
+- Fix regex example in WASM demo by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/407
+- Support $/[N], $0, $1 interpolation in double-quoted strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/408
+- Restore string interpolation in regex example by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/409
+- Update roast history (2026-02-25T21:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/410
+- Update roast history (2026-02-25T21:50) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/412
+- Fix roast S32-num stringify behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/413
+- runtime: implement first :p adverb with indexed pair results by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/415
+- Pass roast/S17-procasync/kill.t: signal handling, Proc::Async streaming by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/411
+- parser/runtime: pass roast S02-types/sigils-and-types.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/417
+- Fix signal act callbacks, raw stdout, and lines splitting by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/418
+- Optimize local variable slot access by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/419
+- collection: implement positional/scalar kv dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/414
+- Support :k, :kv adverbs for first() — pass roast/S32-list/first-end-k.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/421
+- compiler/parser: fix for single-item for-loop semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/420
+- runtime: pass roast/S32-str/sprintf-u.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/423
+- runtime: preserve Rat stringify precision for large powers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/424
+- parser/vm: pass roast S17-lowlevel/cas-int.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/422
+- Update roast history (2026-02-25) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/425
+- Pass roast/S05-grammar/example.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/426
+- repl: fix output buffer accumulation causing repeated output by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/427
+- Update roast history (2026-02-25) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/428
+- regex: implement :pos/:p modifier and anchored matching to pass roast/S05-modifier/pos.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/429
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/430
+- parser: add regex syntax validation to pass roast/S05-metasyntax/unknown.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/431
+- Add roast/S32-list/first-end.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/432
+- Update roast history (2026-02-26T00:40) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/434
+- Implement :ii (samecase) modifier and s/// replacement interpolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/433
+- Implement slurpy parameter features to pass roast/S06-signature/slurpy-and-interpolation.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/435
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/437
+- Implement hash hyperslice {**} and hyperindex {||@keys} by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/436
+- Update roast history (2026-02-26T08:11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/438
+- Update roast history (2026-02-26T08:25) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/439
+- Implement multidim shaped array features to pass roast/S09-multidim/subs.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/440
+- Implement ^^ operator, negated logical/comparison operators, and ! meta-op by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/441
+- Update roast history (2026-02-26T09:33) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/442
+- Update roast history artifacts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/444
+- Implement is-prime builtin and angle bracket complex number parsing to pass roast/S32-num/is-prime.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/445
+- Implement starts-with/ends-with with :i/:m named arg support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/446
+- Implement Match.raku, Match.new and regex features to pass roast/S05-match/raku.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/447
+- Implement grammar namespace features to pass roast/S05-grammar/namespace.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/448
+- Add retry logic and stream-json pretty printer for ai-run-roast.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/450
+- Implement colonpair adverb features to pass roast/S02-literals/adverbs.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/449
+- Implement when/default features to pass roast/S04-statements/when.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/451
+- Implement typed variable, sink, and assignment features to pass roast/S02-types/undefined-types.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/452
+- Implement subrule capture features to pass roast/S05-capture/subrule.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/454
+- Implement contextual variable features to pass roast/S02-names-vars/contextual.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/453
+- Add --agent codex|claude option to ai-supervisor.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/455
+- Fix call-style reduction parsing and pass roast/S13-overloading/metaoperators.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/443
+- Implement rotor method to pass roast/S32-list/rotor.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/456
+- Update roast history (2026-02-26T21:36) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/457
+- Update roast history (2026-02-26T21:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/458
+- Implement shape constraints in signatures and pass roast/S06-signature/shape.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/459
+- Update roast history (2026-02-26T22:07) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/460
+- Update roast history (2026-02-26T22:33) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/461
+- Update roast history (2026-02-26T22:59) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/462
+- Implement parameter traits and pass roast/S06-traits/misc.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/463
+- Update roast history (2026-02-26T23:26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/464
+- Update roast history (2026-02-26T23:42) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/465
+- Implement :exists adverb on array subscripts and pass roast/S32-array/exists-adverb.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/466
+- Update roast history (2026-02-27T00:08) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/467
+- Update roast history (2026-02-27T00:23) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/468
+- Update roast history (2026-02-27T00:38) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/469
+- Update roast history (2026-02-27T00:53) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/470
+- Update roast history (2026-02-27T01:09) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/471
+- Update roast history (2026-02-27T01:25) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/472
+- Implement array-array smartmatch and pass roast/S03-smartmatch/array-array.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/473
+- parser: fix postfix given placeholder block binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/474
+- Fix END phasers to run after die() and exit() by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/476
+- Implement Metamodel::Primitives and pass roast/S12-meta/primitives.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/477
+- parser/vm: pass roast/S02-types/hash_ref.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/475
+- Update roast history (2026-02-27T08:35) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/478
+- regex: pass roast S05-modifier/my.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/479
+- Update roast history (2026-02-27T08:50) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/480
+- Implement CALLER::, DYNAMIC::, and 'is dynamic' trait by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/482
+- runtime: fix grammar parse/parsefile 6e behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/483
+- Fix roast S05-modifier Perl_2.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/484
+- Fix roast S06-other/introspection.t introspection behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/485
+- runtime: fix S12-introspection WHAT.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/486
+- chore: sync roast/S05-modifier/my.t with main by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/487
+- parser: allow keyword-named routine calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/489
+- Implement import statement with tagged exports support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/490
+- Fix roast S04 statement-modifiers if.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/481
+- parser/runtime: make roast/t/fudge.t pass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/488
+- runtime: support rw lvalue subroutine assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/491
+- Update roast history (2026-02-27T12:47) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/492
+- parser/runtime: pass roast/S32-basics/xxPOS-native.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/495
+- parser: allow comma-list expressions in return by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/496
+- Fix roast/S17-supply/lines.t (Supply.lines semantics) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/493
+- runtime: pass constructor named args into BUILD/TWEAK by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/494
+- Update roast history (2026-02-27T14:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/497
+- Update roast history (2026-02-27T14:26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/499
+- docs: forbid creating PR/Issue to Raku org repos by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/500
+- runtime/parser: pass roast S17-lowlevel/atomic-ops.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/498
+- Remove git submodules and vendor files directly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/501
+- Update roast history (2026-02-27T15:07) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/502
+- Update roast history (2026-02-27T16:00) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/503
+- Exclude roast/t/ Perl 5 tooling from roast-history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/505
+- Add --full-auto option to AI roast scripts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/506
+- Fix S03 junction boolean-context semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/504
+- Add bom-test-* to .gitignore by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/507
+- Pass roast/S05-modifier/Perl_6.t: improve P5 regex support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/508
+- Add --full-auto option to ai-supervisor.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/509
+- Merge remote-tracking branch 'origin/main' into roast/S17-procasync/s… by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/511
+- Update roast history (2026-02-27T21:36) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/512
+- Roast/s03 operators/set elem.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/510
+- Roast/s06 signature/definite return.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/514
+- Add ai-sandbox.sh: replace worktree with local clone by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/515
+- Roast/s03 buf/read write bits.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/513
+- Roast/s32 list/unique.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/518
+- Roast/s03 operators/increment.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/517
+- Roast/s02 names vars/list array perl.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/522
+- Implement callframe() introspection (S06-advanced/callframe.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/516
+- Roast/s06 signature/optional.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/519
+- Roast/s03 sequence/misc.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/521
+- Roast/s04 statements/while.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/525
+- Roast/s06 traits/is assoc.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/527
+- Roast/s26 documentation/06 lists.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/526
+- Feature/roast s04 goto by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/523
+- Roast/s03 buf/read write bits.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/529
+- Roast/s03 operators/ternary.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/528
+- Roast/s02 literals/format.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/520
+- Update roast history (2026-02-28T00:16) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/532
+- Roast/s12 methods/what.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/534
+- Roast/s03 feeds/basic.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/524
+- Roast/s03 operators/flip flop.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/533
+- Update roast history (2026-02-28T01:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/536
+- roast: pass S03-feeds/basic.t (feed operators + #?DOES) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/537
+- regex: implement closure interpolation and :my declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/535
+- Roast: pass S12-methods/fallback.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/538
+- roast: pass S17-procasync/nonexistent.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/539
+- Roast/s12-coercion/coercion-return.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/540
+- Update roast history (2026-02-28T03:01) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/541
+- roast: pass S32-array/create.t (Array.clone, circumfix, typed Array) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/542
+- class/role: pass roast S12-class/mro-6e.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/543
+- Update roast history (2026-02-28T03:36) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/544
+- Roast/s32 num/power.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/531
+- Roast/S03-buf/read-write-bits.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/547
+- Roast/S32-list/produce.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/561
+- Update roast history (2026-02-28T07:53) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/546
+- Roast/S04-statements/sink.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/550
+- Roast/S16-io/prompt.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/557
+- Roast/S04-statements/label.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/549
+- Roast/S12-methods/parallel-dispatch.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/554
+- Roast/S12-methods/indirect_notation.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/553
+- Roast/S03-operators/autovivification.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/548
+- Roast/S06-signature/arity.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/551
+- runtime: make roast/S05-modifier/Perl_5.t pass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/562
+- fix: make pcre2 optional to fix wasm build by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/564
+- Roast/S32-array/end.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/560
+- scripts: fix ai-sandbox safety and move dangerous flags to callers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/563
+- parser: support nested scalar deref syntax ($$x) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/566
+- parser: support colon-arg syntax in .= mutating method calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/568
+- runtime/parser: fix roast S03-operators/minmax.t and min/max edge cases by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/569
+- Roast/S14-traits/variables.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/555
+- Implement native int/uint types (roast/S02-types/int-uint.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/570
+- Roast/s02 literals/listquote.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/545
+- ai-sandbox: clone directly from GitHub instead of --local by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/572
+- ai-supervisor: fix sandbox branch name and --dry-run loop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/574
+- roast: pass S07-hyperrace/for.t (chained modifiers, $*THREAD, race/hyper for) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/575
+- Use release build for make test/roast by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/576
+- sequence: pass roast S03-sequence/nonnumeric.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/577
+- Improve ai-supervisor prompts and sandbox clone speed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/578
+- Roast: pass S02-names-vars/signature.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/579
+- runtime: support abbreviated pod named blocks and headings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/565
+- autoref: pass roast S02-literals/autoref.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/580
+- Roast/S15-literals/numbers.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/556
+- Roast/S17-procasync/kill.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/558
+- ai-sandbox: remove --depth 1 to fix rebase by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/582
+- roast/S05 modifier/exhaustive.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/583
+- runtime: implement Supply.delayed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/581
+- regex: support sequential alternation backtracking controls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/584
+- Implement leave control flow and whitelist roast/S04-statements/leave.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/573
+- ai-sandbox: unset CLAUDECODE env for nested sessions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/585
+- ai-scripts: graceful stop, prompt fixes, release build by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/586
+- stream-json-pretty: fix output buffering for background execution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/587
+- Fix roast/S32-list/grep.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/588
+- ai-next-roast: fix infinite loop in dry-run mode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/589
+- stream-json-pretty: output to stdout for log capture by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/590
+- stream-json-pretty: rewrite for current Claude Code format by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/591
+- roast: pass S05-interpolation/regex-in-variable.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/567
+- Update roast history (2026-02-28T15:22) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/593
+- ai-scripts: share cargo cache, add raku filter, improve prompt by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/592
+- signature: support callable sub-signature constraints by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/594
+- ai-run-roast: allow PRs for partial progress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/595
+- Update roast history (2026-02-28T15:39) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/596
+- Update roast history (2026-02-28T15:57) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/597
+- Update roast history (2026-02-28T16:16) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/598
+- Update roast history (2026-02-28T16:34) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/601
+- roast: pass S32-num/negative-zero.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/600
+- Update roast history (2026-02-28T16:52) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/602
+- Update roast history (2026-02-28T17:09) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/603
+- Update roast history (2026-02-28T17:28) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/604
+- parser: pass roast/S02-magicals/dollar_bang.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/605
+- Update roast history (2026-02-28T17:45) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/606
+- hash: fix :exists adverb semantics for empty and multi-key subscripts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/607
+- Update roast history (2026-02-28T18:03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/608
+- Update roast history (2026-02-28T18:21) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/609
+- runtime: pass roast/S32-list/squish.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/610
+- Roast/S17-procasync/stress.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/559
+- parser/vm: improve bitwise handling for roast S03 bit operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/611
+- Update roast history (2026-02-28T18:53) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/612
+- docs: replace roast fix workflow with AI fleet operations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/613
+- Update roast history (2026-02-28T19:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/614
+- Update roast history (2026-02-28T19:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/615
+- Update roast history (2026-02-28T19:37) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/616
+- docs: add tmux-based fleet management to CLAUDE.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/617
+- parser: improve signed Unicode numeric literals in signature constraints by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/618
+- fix: ensure ai-supervisor history update uses latest main by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/620
+- Update roast history (2026-02-28T20:18) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/621
+- Support U+2212 minus operator roast test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/622
+- Update roast history (2026-02-28T20:36) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/623
+- Docs/add tmux management by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/624
+- fix: stop sharing cargo target directory between sandboxes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/626
+- parser: accept Unicode set operators in Z/X metaops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/628
+- fix: sandbox target cache source + per-PID stop files by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/629
+- feat: resume from interrupted sandbox instead of recreating by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/630
+- fix: remove --recreate from ai-supervisor.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/631
+- feat: add ai-fleet.sh fleet manager and tmux-status.sh by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/632
+- parser: support Z(&) and Z∩ meta operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/633
+- runtime/parser: pass roast S32-num real-bridge by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/627
+- parser/vm: support topic bind conditions and topic scope isolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/634
+- Update roast history (2026-02-28T22:15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/635
+- Update roast history (2026-02-28T22:36) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/636
+- Update roast history (2026-02-28T22:56) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/637
+- parser/runtime: pass roast/S03-sequence/basic.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/638
+- runtime: fix S12 methods instance semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/639
+- parser: whitelist roast/S32-num/rshift_pos_amount.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/640
+- Update roast history (2026-02-28T23:16) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/641
+- runtime/parser: pass roast S03-operators/repeat.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/643
+- runtime/parser: pass roast S03-metaops/reverse.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/645
+- Implement S32-list/roll.t support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/646
+- refactor: split methods.rs into 6 focused modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/648
+- Update roast history (2026-03-01T00:41) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/649
+- refactor: extract Promise/Channel dispatch into methods_promise.rs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/650
+- runtime: implement set difference operator and cross-type set operations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/651
+- Update roast history (2026-03-01T01:03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/652
+- Update roast history (2026-03-01T01:25) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/653
+- roast: pass S24-testing/12-subtest-todo.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/654
+- Update roast history (2026-03-01T01:45) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/655
+- Update roast history (2026-03-01T02:06) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/656
+- roast: pass S32-list/combinations.t (List.combinations method and combinations() function) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/657
+- io: pass roast/S32-io/io-path-extension.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/658
+- Update roast history (2026-03-01T02:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/659
+- Update roast history (2026-03-01T02:47) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/660
+- set ops: make roast/S03-operators/set_union.t pass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/661
+- runtime: fix parameterized role composition and ::?CLASS role multi by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/662
+- Update roast history (2026-03-01T03:06) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/663
+- roast: pass S03-operators/short-circuit.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/664
+- roast: pass S24-testing/1-basic.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/665
+- parser: consume subscript adverbs after index expressions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/666
+- Update roast history (2026-03-01T03:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/668
+- Update roast history (2026-03-01T03:47) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/669
+- Update roast history (2026-03-01T04:07) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/670
+- parser: improve if/elsif pointy binding parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/671
+- parser/runtime: implement subscript adverbs for indexing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/672
+- Update roast history (2026-03-01T04:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/673
+- complex: comprehensive Complex number support for roast/S32-num/complex.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/674
+- feat: improve set intersection operator for cross-type support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/675
+- refactor: extract Sub/Routine/WeakSub dispatch into methods_sub.rs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/676
+- feat: implement operator precedence traits (is tighter/looser/equiv) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/677
+- Update roast history (2026-03-01T08:19) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/678
+- enum: improve enum support for roast S12-enums/misc.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/667
+- parser/vm: support slipped hash literal spreads in call args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/647
+- require: pass roast/S11-modules/require.t (all 58 subtests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/679
+- Roast/s12 class/attributes required.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/642
+- refactor: extract supply and proc async into separate modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/681
+- refactor: extract operator dispatch into builtins_operators.rs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/680
+- fix: eqv operator distinguishes Array vs List per Raku spec by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/682
+- docs: trust main branch, skip redundant failure checks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/683
+- docs: add symbol table (string interning) implementation plan by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/684
+- feat: add Symbol type for string interning (phase 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/685
+- feat: convert Expr::Call/MethodCall/HyperMethodCall name to Symbol (phase 2a) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/687
+- fix: @-variables store Array(true) with Decont opcode for slurpy flattening by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/686
+- feat: convert FunctionDef package/name to Symbol (phase 2b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/688
+- feat: convert Stmt declaration names to Symbol (phase 2c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/689
+- feat: convert native dispatch signatures to Symbol (phase 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/690
+- feat: convert Value::Instance/Package to Symbol (phase 4a) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/691
+- feat: convert SubData, Routine, Enum and other Value variants to Symbol (phase 4b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/692
+- feat: convert Interpreter function tables to HashMap<Symbol> (phase 4c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/693
+- docs: Phase 5 benchmark results - symbol table complete by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/694
+- feat: save make test/roast output to log files by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/695
+- feat: replace Array bool with ArrayKind enum + implement .item Scalar support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/696
+- docs: update TODO_eqv.md after ArrayKind resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/697
+- feat: switch is-deeply from PartialEq to eqv semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/699
+- feat: fix decontainerize + switch is-deeply to eqv semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/700
+- feat: add expected/got diagnostics to is-deeply failure output by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/701
+- fix: restore 4 S02 roast tests regressed by is-deeply eqv change by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/702
+- fix: restore 3 S03 roast tests regressed by is-deeply eqv change by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/703
+- fix: restore S12 attributes-required.t + fix hyper dispatch container types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/704
+- fix: restore 5 S32 roast tests regressed by is-deeply eqv change by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/705
+- chore: remove TODO_eqv.md (all phases complete) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/706
+- chore: reorganize TODO.md into architecture-driven roadmap by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/707
+- fix: support where clauses on parameters for multi dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/708
+- fix: improve private method support — access control, quoted syntax, exceptions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/709
+- fix: support bracket sub-signature for array destructuring by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/710
+- feat: compile closure bodies to bytecode (P2 infrastructure) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/711
+- feat: enable compiled closure fast path (P2 completion) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/712
+- feat: compile method bodies to bytecode (P2 method fast path) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/713
+- fix: handle is_leave in compiled methods + deduplicate helpers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/714
+- feat: extend compiled method fast path to dynamic and mutable dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/715
+- chore: pin Rust version to 1.92.0 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/716
+- feat: remove EvalAstExpr opcode — eliminate last interpreter bridge by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/717
+- refactor: introduce VmCallFrame stack for compiled call save/restore by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/718
+- feat: enhance Parameter introspection attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/719
+- feat: implement callwith/nextwith/nextsame + X::NoDispatcher by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/720
+- perf: optimize shared array push to avoid O(n) clone by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/721
+- feat: implement wrap/unwrap for Sub by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/723
+- fix: reduction paren parsing + start xx variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/722
+- fix: prevent silent subrule from leaking positional captures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/724
+- feat: share scalar variables between threads via shared_vars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/726
+- perf: fix Lock::Async.protect for shared scalar variables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/725
+- feat: return outside routine throws X::ControlFlow::Return by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/727
+- chore: update HISTORY.tsv and pass graph by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/728
+- perf: copy-on-write for array mutation methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/729
+- feat: implement allomorphic types (IntStr, NumStr, RatStr, ComplexStr) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/730
+- perf: copy-on-write for hash mutation methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/731
+- perf: copy-on-write Env newtype for O(1) env clones by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/732
+- feat: implement grammar action classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/733
+- feat: implement grammar inheritance (is Grammar) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/734
+- feat: implement full protoregex with longest-token matching by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/736
+- perf: lazy env→locals sync with dirty flag by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/737
+- feat: implement Proxy subclassing, @.attr/%.attr twigils, and qualified method dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/735
+- chore: mark anonymous classes as done in TODO.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/738
+- perf: fast-path SetLocal for simple scalar variables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/739
+- feat: distinguish temp (always restore) from let (restore on failure only) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/740
+- chore: mark A2 container model as completed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/741
+- feat: enforce type constraints on typed variable assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/742
+- feat: implement runtime support for is default(...) variable trait by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/743
+- chore: add PR CI watch rule to CLAUDE.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/744
+- feat: support .new on built-in type objects and add type system tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/745
+- feat: complete allomorphic types (Allomorph smartmatch, Rat gist) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/746
+- chore: mark A3 type system as completed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/747
+- perf: Arc-wrap Value::Str for O(1) string clones by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/748
+- chore: update A4 module system status in TODO.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/749
+- docs: update P1 memory management status with checklist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/750
+- feat: populate EXPORT namespace for is export subs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/751
+- chore: mark EXPORT convention as completed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/752
+- perf: Arc-wrap BigInt, GenericRange, Mixin, and Regex by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/753
+- feat: implement CompUnit::Repository role and $*REPO by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/754
+- feat: implement module precompilation cache by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/755
+- chore: update A4 module system with detailed status by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/757
+- feat: implement $*REPO.need() with precompilation integration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/758
+- chore: update A4 after REPO.need implementation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/759
+- chore: update A5 grammar/regex status by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/760
+- feat: implement .caps and .chunks methods on Match objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/761
+- perf: make locals authoritative for simple vars, lazy env sync by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/762
+- feat: implement regex modifiers :g, :i, :s, :ov, :ex, :ii, :ss, :ratchet by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/763
+- feat: implement regex lookaround assertions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/764
+- docs: mark scoped call frames as completed in TODO.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/765
+- chore: update A6 class system status by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/766
+- feat: implement augment class (monkey-patching) support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/767
+- chore: update A6/A7 status in TODO.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/768
+- feat: implement named parameter renaming (:a(:) syntax) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/769
+- feat: implement cas (compare-and-swap) builtin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/770
+- feat: fix Supply.interval timing and support done statement modifier by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/771
+- chore: mark A7 concurrency as fully completed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/772
+- docs: add roast grinding procedure by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/773
+- fix: handle CATCH blocks in do blocks and value-context branches by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/774
+- feat: support Unicode chars and guillemet delimiters in operator names by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/775
+- feat: support Unicode guillemet hyper operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/776
+- feat: implement regex word boundaries and dot-prefixed named calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/777
+- feat: support alternate quote delimiters, qw/q:w, and 0d prefix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/778
+- feat: add missing compound assignment operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/779
+- fix: parse where clause in has/my declarations and fix named array/hash params by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/780
+- fix: support multiple arguments in take statement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/781
+- feat: implement symbolic variable dereference by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/782
+- refactor: split methods.rs into signature and instance_ops modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/783
+- refactor: split registration.rs into sub and class modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/784
+- refactor: split vm_var_ops.rs into vm_var_assign_ops.rs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/785
+- refactor: split precedence.rs into precedence_meta_ops.rs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/786
+- refactor: split simple.rs into simple_expr_stmt.rs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/787
+- refactor: split sub.rs into sub_param.rs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/788
+- refactor: add Value::as_list_items() dedup helper by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/789
+- refactor: extract shared split_balanced_comma_list utility by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/790
+- fix: prevent panic on multi-byte UTF-8 chars in hyper-op parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/791
+- perf: avoid O(n²) deep copies in shared array push by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/792
+- feat: add S05 regex features (line anchors, match methods, global match) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/793
+- feat: implement Date/DateTime temporal type system by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/794
+- fix: correct let/temp success detection, phaser ordering by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/795
+- fix: Range.Str iterates elements, pop returns Failure on empty array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/796
+- fix: improve Hash/Map method dispatch for roast S32-hash tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/797
+- fix: improve numeric methods (sign, round, narrow) for S32-num roast tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/798
+- fix: improve multi dispatch with named params and proto signature checks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/799
+- fix: populate %*ENV at startup, add .package method, PROCESS:: stash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/800
+- fix: add .VAR.default, X::InvalidType/X::Undeclared error types, stub class tracking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/801
+- fix: improve Z (zip) operator with lazy iteration and * extension by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/802
+- fix: improve class method dispatch (routine_stack, multi MRO, structured exceptions) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/804
+- feat: implement $*KERNEL magic variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/803
+- fix: reduce callable xx * cache size to prevent timeout by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/807
+- feat: fix chomp, implement rindex and samecase string methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/806
+- fix: say uses .gist, put/print use .Str, IO functions return True by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/805
+- fix: implement one-arg rule for Array.append by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/808
+- feat: pass roast/S17-supply/interval.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/809
+- feat: nested captures, regex backreferences, and x operator precedence by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/810
+- feat: implement Supply.unique method and fix VM env sync bug by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/811
+- fix: ignore 0 flag in sprintf %s when precision is specified by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/812
+- fix: implement sprintf space/plus flags, variable precision, and multi-arg support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/813
+- fix: prevent my-scoped role private methods from composing into classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/814
+- fix: handle Raku sprintf -0 flag combo for float specifiers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/815
+- fix: preserve Rat types in geometric sequences by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/816
+- fix: properly handle sprintf %b/%B/%o/%x/%X format specifiers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/817
+- fix: if/else return value in compiled blocks and recursive start/await correctness by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/818
+- chore: update roast history after sprintf/sequence/await fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/819
+- runtime/io: improve copy, chdir, and indir error semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/820
+- runtime: improve concurrency channel/lock/semaphore behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/822
+- runtime: improve classify/categorize list dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/821
+- docs: enforce manual worktree isolation and pre-PR fmt/clippy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/823
+- string: normalize flip/titlecase over grapheme boundaries by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/824
+- parser: accept Unicode ellipsis yada term by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/825
+- hash: improve hash operations toward roast/S02-types/hash.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/826
+- dispatch: pass roast/S12-subset/multi-dispatch.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/827
+- Update roast history (2026-03-06T02:22) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/828
+- runtime: pass roast/S16-io/watch.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/829
+- set-ops: add (.)/⊍ parser/runtime support and improve set-multiply behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/830
+- roast: pass S02-types/lazy-lists.t (lazy list semantics, eager, Scalar container) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/644
+- Update roast history (2026-03-06T03:08) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/832
+- runtime: implement IO::Handle out-buffering semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/831
+- subset: improve roast S02-types/subset-6e.t coverage by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/834
+- runtime: pass roast/S12-methods/private.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/835
+- Update roast history (2026-03-06T03:30) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/833
+- Update roast history (2026-03-06T03:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/836
+- parser/runtime: make roast/S32-hash/slice.t pass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/837
+- Update roast history (2026-03-06T05:15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/838
+- parser: allow no-space one-junction operator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/839
+- Update roast history (2026-03-06T05:39) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/840
+- Update roast history (2026-03-06T06:02) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/841
+- Update roast history (2026-03-06T06:23) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/842
+- Update roast history (2026-03-06T06:43) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/843
+- parser: improve precompilation.t parsing and hash literal handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/844
+- Update roast history (2026-03-06T07:05) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/845
+- Update roast history (2026-03-06T07:25) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/846
+- Update roast history (2026-03-06T07:46) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/848
+- Update roast history (2026-03-06T08:07) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/850
+- runtime: improve Int/UInt behavior for roast S32-num/int by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/851
+- runtime: implement parenthesized set equality operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/852
+- parser/runtime: pass roast/S03-operators/set_subset.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/853
+- multislice: implement multi-dimensional array indexing for S32-array/multislice-6e.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/849
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/854
+- Update roast history (2026-03-06T10:49) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/855
+- Update roast history (2026-03-06T11:09) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/856
+- parser: pass roast/S06-other/misc.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/857
+- Update roast history (2026-03-06T11:30) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/858
+- Update roast history (2026-03-06T11:50) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/859
+- Update roast history (2026-03-06T12:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/860
+- Update roast history (2026-03-06T12:31) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/861
+- Update roast history (2026-03-06T12:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/862
+- runtime: pass roast S03 set_multiply by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/863
+- Update roast history (2026-03-06T13:12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/864
+- Update roast history (2026-03-06T13:32) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/865
+- Update roast history (2026-03-06T13:52) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/866
+- junctions: improve S03-junctions/misc.t coverage by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/867
+- Update roast history (2026-03-06T14:12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/868
+- Update roast history (2026-03-06T14:32) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/869
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/870
+- Update roast history (2026-03-06T15:13) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/871
+- metaops: make roast/S03-metaops/cross.t pass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/872
+- Update roast history (2026-03-06T15:34) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/873
+- Update roast history (2026-03-06T15:54) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/874
+- regex: support counted modifiers and enable roast S05-modifier/counted.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/875
+- Update roast history (2026-03-06T16:15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/876
+- roast: whitelist S32-io/out-buffering.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/877
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/878
+- parser: support comma compound assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/879
+- Update roast history (2026-03-06T16:57) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/880
+- Update roast history (2026-03-06T17:18) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/881
+- Update roast history (2026-03-06T17:40) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/882
+- Pass roast/S32-num/rounders.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/883
+- Update roast history (2026-03-06T18:01) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/884
+- runtime: make S17-procasync/basic.t pass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/885
+- Update roast history (2026-03-06T18:23) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/886
+- Update roast history (2026-03-06T18:44) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/888
+- Improve List type support for roast/S02-types/list.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/887
+- Progress roast/S04-exceptions/fail.t: named sub literal parsing + Failure/fatal groundwork by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/889
+- roast: pass S32-hash/slice.t (hash slice operations) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/890
+- Update roast history (2026-03-06T19:26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/891
+- Update roast history (2026-03-06T19:47) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/892
+- parser: accept prefix operands for unary ^ by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/893
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/894
+- Update roast history (2026-03-06T20:31) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/895
+- Update roast history (2026-03-06T20:53) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/896
+- Update roast history (2026-03-06T21:14) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/897
+- Update roast history (2026-03-06T21:35) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/899
+- Update roast history (2026-03-06T21:58) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/900
+- range: improve GenericRange coercion and iteration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/902
+- parser/vm: improve progress on roast/S02-types/mix.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/901
+- Implement IO::Socket::INET and pass roast/S32-io/IO-Socket-INET.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/898
+- Update roast history (2026-03-06T22:39) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/903
+- runtime/parser: improve SetHash behavior and parse comma assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/904
+- Update roast history (2026-03-06T23:15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/905
+- parser: allow sigilless params to shadow keywords by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/906
+- Update roast history (2026-03-06T23:38) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/907
+- Update roast history (2026-03-07T00:01) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/908
+- Fix S04 given semantics and whitelist roast/S04-statements/given.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/909
+- Update roast history (2026-03-07T00:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/911
+- parser/runtime: pass roast/S06-signature/defaults.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/910
+- Improve hash :delete adverb parsing/runtime behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/847
+- Update roast history (2026-03-07T01:11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/912
+- Update roast history (2026-03-07T08:08) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/913
+- parser/runtime: improve with statement modifier and andthen operator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/914
+- scripts: prune old clean ai-sandbox clones by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/915
+- Update roast history (2026-03-07T08:49) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/916
+- parser: accept hyper unspace before method chains by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/917
+- Pass roast/S32-hash/delete-adverb.t (all 131 subtests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/918
+- parser: accept whitespace before q:to heredoc delimiter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/919
+- Update roast history (2026-03-07T09:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/920
+- Update roast history (2026-03-07T09:33) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/922
+- Implement reduce builtin function (23/24 roast/S32-list/reduce.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/923
+- fix postfix for statement-modifier for semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/921
+- Update roast history (2026-03-07T10:48) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/924
+- Update roast history (2026-03-07T11:11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/925
+- mix: improve smartmatch and % binding coercions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/926
+- Enhance transliteration: closures, regex captures, y///, TR vs tr, anchors (66/70 roast/S05-transliteration/trans.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/927
+- Update roast history (2026-03-07T11:33) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/928
+- Update roast history (2026-03-07T11:56) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/929
+- parser: support block declarator doc comments by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/930
+- Update roast history (2026-03-07T12:19) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/931
+- Implement signature introspection features (124/154 roast/S06-signature/introspection.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/932
+- Update roast history (2026-03-07T12:42) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/933
+- parser/runtime: pass roast S03-operators overflow.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/934
+- parser/runtime: advance roast/S32-io/io-path.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/935
+- Update roast history (2026-03-07T13:03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/936
+- Update roast history (2026-03-07T13:28) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/937
+- parser/runtime: lower supply block syntax and improve on-demand tap quit callbacks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/938
+- Update roast history (2026-03-07T13:54) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/939
+- Update roast history (2026-03-07T14:19) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/940
+- Update roast history (2026-03-07T14:45) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/941
+- Update roast history (2026-03-07T15:17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/943
+- Update roast history (2026-03-07T15:41) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/945
+- supply: fix unique named args and tap-ok expires by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/946
+- Update roast history (2026-03-07T16:04) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/947
+- vm: support BigInt bit shifts for +< and +> by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/942
+- runtime: read atomic vars through shared state by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/948
+- Roast/s12 class/attributes.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/950
+- runtime: speed up cas block updates for additive lambdas by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/951
+- Roast/s10 packages/precompilation.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/949
+- mix: improve Mix roll/list coercion behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/954
+- runtime: parse host:port in IO::Socket::INET.new by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/953
+- runtime: clone socket handles into spawned threads by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/952
+- Implement Buf/Blob operations (173/193 roast/S03-operators/buf.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/944
+- Update roast history (2026-03-07T20:12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/956
+- runtime/compiler: speed up and correct cas block updates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/955
+- Update roast history (2026-03-07T20:39) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/957
+- Improve numeric literal parsing (66/71 roast/S02-literals/numeric.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/958
+- roast-history: avoid false timeout for S17-supply/unique.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/959
+- runtime: preserve CAS block side-effects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/960
+- Update roast history (2026-03-07T22:32) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/961
+- Implement Q/q quoting adverb system for roast/S02-literals/quoting.t (137/168 pass) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/962
+- runtime: pass roast S32-io IO-Socket-Async by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/963
+- Implement IO::Handle methods for roast/S32-io/io-handle.t (22/30) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/964
+- runtime: pass roast S12 coercion types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/965
+- precomp: hash source cache and scope repo precomp behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/966
+- Update roast history (2026-03-08T01:57) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/967
+- runtime: support regex :x repeat counts and ranges by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/968
+- Improve Failure handling for roast/S04-exceptions/fail.t (30/40) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/969
+- runtime: implement Supply.reduce for roast S17 reduce by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/971
+- Pass remaining CLI args as @*ARGS for roast/S19-command-line/dash-e.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/972
+- sequence: support Rat geometric sequences and multi-seed slurped LHS by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/970
+- num: pass roast/S32-num/fatrat.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/973
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/974
+- runtime: reject class redeclaration within single EVAL snippet by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/975
+- runtime: fix raw slurpy writeback for slurpy-is-rw roast by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/976
+- runtime: fix Signal:D typed declarations and whitelist roast/S32-io/signals.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/977
+- Fix array is List immutability by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/979
+- Update roast history (2026-03-08T04:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/980
+- runtime: fix Str coercion and Str-subclass .Str behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/981
+- Update roast history (2026-03-08T04:57) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/982
+- runtime: fix export identity, container equality, and method dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/983
+- io: implement IO::Handle.readchars and enable S16-io/readchars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/984
+- Implement Supply.first and fix Capture method dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/978
+- Fix roast S03-operators/andthen.t and whitelist it by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/985
+- implement Supply.classify (roast/S17-supply/classify.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/986
+- Update roast history (2026-03-08T06:50) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/988
+- supply: pass roast/S17-supply/elems.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/987
+- Implement ASCII encoder with replacement support (S32-encoding/encoder.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/989
+- runtime: support IO::Path subclass constructors and whitelist S32-io/io-path-subclasses.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/990
+- Update roast history (2026-03-08T07:36) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/991
+- Preserve non-breaking spaces in Pod text for roast S26-documentation/12-non-breaking-space.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/992
+- Update roast history (2026-03-08T07:58) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/993
+- Update roast history (2026-03-08T08:23) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/994
+- Fix roundrobin single-arg rule for roast S32-container/roundrobin.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/995
+- parser/runtime: pass roast S03-metaops eager-hyper by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/996
+- runtime/parser: make roast/S32-list/tail.t pass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/997
+- runtime: support Attribute.set_build defaults in class initialization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/999
+- Update roast history (2026-03-08T08:46) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1000
+- Update roast history (2026-03-08T09:11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1001
+- runtime: implement IterationBuffer semantics and whitelist S07 test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1002
+- runtime: fix Supply.encode and whitelist S17-supply/encode.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1003
+- perf: cache parsed regex patterns and use static Regex by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/998
+- runtime: implement Supplier::Preserving and fix shared_vars array push by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1004
+- perf: collapse alternation of char classes into single CharClass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1005
+- perf: optimize ratcheted quantifier loops in regex engine by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1006
+- improve fleet CLI options and prioritize timeout roast tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1007
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1008
+- feat: pass roast/S02-names-vars/varnames.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1009
+- Update roast history (2026-03-11T09:29) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1010
+- Update roast history (2026-03-11T10:13) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1011
+- Update roast history (2026-03-11T10:58) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1012
+- Update roast history (2026-03-11T11:45) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1013
+- Update roast history (2026-03-11T12:19) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1015
+- fix: pass roast/S03-sequence/exhaustive.t (124/124 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1014
+- runtime: fix Promise.allof combinator semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1016
+- Update roast history (2026-03-11T12:41) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1017
+- Update roast history (2026-03-11T13:20) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1018
+- Update roast history (2026-03-11T13:52) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1019
+- perf: cache subprocess calls to pass roast/S03-sequence/exhaustive.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1020
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1021
+- Update roast history (2026-03-11T14:42) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1022
+- Update roast history (2026-03-11T15:02) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1023
+- Update roast history (2026-03-11T15:20) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1024
+- Update roast history (2026-03-11T15:39) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1025
+- Update roast history (2026-03-11T15:58) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1026
+- runtime: make throws-like default to labeled subtests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1027
+- Update roast history (2026-03-11T16:16) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1028
+- Merge latest main for roast/S17-promise/allof.t verification by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1029
+- runtime: align Promise.allof roast behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1030
+- Update roast history (2026-03-11T16:34) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1031
+- Update roast history (2026-03-11T16:52) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1032
+- Update roast history (2026-03-11T17:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1033
+- Update roast history (2026-03-11T17:28) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1034
+- Sync branch for roast/S17-promise/allof.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1035
+- Update roast history (2026-03-11T17:45) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1036
+- Sync branch for roast/S17-promise/allof.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1037
+- Update roast history (2026-03-11T18:03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1038
+- Update roast history (2026-03-11T18:20) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1039
+- Update roast history (2026-03-11T18:38) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1040
+- chore: verify roast/S17-promise/allof.t passes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1041
+- update history 202603111848 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1042
+- Update roast history (2026-03-11T19:26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1043
+- chore: verify roast/S17-promise/allof.t and sync with main by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1044
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1045
+- fix: add --no-session-persistence to Claude agent invocations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1046
+- Update roast history (2026-03-11T20:01) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1047
+- fix: only run history update when main has new commits by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1048
+- Update roast history (2026-03-11T20:20) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1049
+- Update roast history (2026-03-11T20:40) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1050
+- refactor: replace --restart with --stop, add interruptible sleep by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1051
+- Update roast history (2026-03-11T21:20) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1052
+- feat: implement :Perl5/:P5 regex modifier for substitution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1053
+- feat: implement :Perl5/:P5 regex modifier, pass S05-modifier/Perl_0.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1055
+- Update roast history (2026-03-11T21:35) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1054
+- chore: add roast/S05-modifier/Perl_0.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1056
+- Update roast history (2026-03-11T22:17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1057
+- Update roast history (2026-03-11T22:40) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1058
+- Update roast history (2026-03-11T23:03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1059
+- feat: improve string interpolation (48/50 S02-literals/misc-interpolation.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1060
+- Update roast history (2026-03-11T23:26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1061
+- feat: pass all 50 subtests of S02-literals/misc-interpolation.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1062
+- Update roast history (2026-03-11T23:50) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1063
+- Update roast history (2026-03-12T00:18) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1064
+- Update roast history (2026-03-12T00:39) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1065
+- Update roast history (2026-03-12T01:03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1066
+- Update roast history (2026-03-12T01:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1067
+- Update roast history (2026-03-12T01:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1068
+- Update roast history (2026-03-12T08:28) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1069
+- runtime: fix invocant-only method arg matching for metaop assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1070
+- Update roast history (2026-03-12T08:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1071
+- Update roast history (2026-03-12T09:14) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1072
+- Update roast history (2026-03-12T09:37) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1073
+- temporal: pass roast S32-temporal/DateTime.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1074
+- Update roast history (2026-03-12T09:59) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1075
+- Update roast history (2026-03-12T10:20) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1076
+- Mark roast/S03-metaops/misc.t as passing in TODO_roast by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1077
+- Update roast history (2026-03-12T11:06) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1078
+- Mark roast/S03-metaops/misc.t as passing in TODO_roast by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1079
+- Update roast history (2026-03-12T11:29) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1080
+- Update roast history (2026-03-12T11:53) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1081
+- Mark roast/S02-literals/misc-interpolation.t as passing in TODO_roast by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1082
+- Update roast history (2026-03-12T12:17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1083
+- Update roast history (2026-03-12T12:40) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1084
+- parser/runtime: support reverse meta compound assign edge cases by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1085
+- Update roast history (2026-03-12T13:02) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1086
+- Mark roast/S02-literals/misc-interpolation.t as passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1087
+- Update roast history (2026-03-12T13:33) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1088
+- Update roast history (2026-03-12T13:56) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1089
+- Update roast history (2026-03-12T14:18) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1090
+- temporal: pass roast S32-temporal/DateTime.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1091
+- Update roast history (2026-03-12T14:40) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1092
+- feat: add S02-literals/fmt-interpolation.t to roast whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1094
+- feat: implement not-proper-subset/superset set operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1095
+- feat: implement .can, .resume, and Bag/Set/Mix .invert methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1096
+- fix: Match.elems returns positional capture count by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1097
+- feat: pass roast/S03-operators/orelse.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1098
+- feat: fix orelse operator, pass S03-operators/orelse.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1101
+- feat: implement ⊄/⊅ set operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1099
+- feat: implement .can, .resume, Bag/Set/Mix .invert methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1100
+- chore: add S02-literals/fmt-interpolation.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1102
+- fix: Match.elems returns positional capture count by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1103
+- fix: set param_local for for-loop when param has existing local slot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1104
+- fix: set param_local for for-loop when param has existing local slot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1106
+- feat: execute BEGIN phasers before parse errors, pass S04-phasers/begin.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1105
+- feat: improve Junction support (raku dispatch, one-arg rule, .new, type junctions) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1107
+- docs: reorganize TODO.md with blocker analysis by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1093
+- feat: implement INIT and CHECK phaser reordering by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1108
+- feat: implement samewith, pass S06-multi/redispatch.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1109
+- test: add smiley parameter constraint regression tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1110
+- Implement KEEP/UNDO phasers in compiler/runtime/VM by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1112
+- runtime: support ::T capture in local type constraints by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1113
+- class: support class-level is rw traits by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1114
+- parser: support !(<) proper subset operator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1115
+- runtime: finish can and does introspection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1116
+- phaser: implement once blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1117
+- vm: dispatch subscript :exists to EXISTS-POS by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1118
+- test: add dedicated coverage for exception .resume by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1119
+- runtime: implement iterator count-only by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1120
+- Implement .VAR.dynamic introspection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1122
+- runtime: add IO::Path resolve cleanup parts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1123
+- regex: implement tilde goal matching by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1124
+- regex: support bare positive lookaround assertions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1125
+- match: preserve positional capture key types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1126
+- collection: implement .invert by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1121
+- runtime: detect conflicting role methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1127
+- runtime: fix IO::Path file test errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1128
+- runtime: preserve augment definitions from eval tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1129
+- runtime: implement regex array interpolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1131
+- vm: treat return as a control exception by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1132
+- runtime: improve Supply error propagation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1133
+- test: cover is copy on array and hash params by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1134
+- runtime: fix multi dispatch specificity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1135
+- runtime: qualify nested class registrations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1130
+- builtins: add Buf.decode fast path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1136
+- runtime: implement DESTROY submethods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1137
+- regex: support grammar rule arguments by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1138
+- parser: fix panic on multi-byte Unicode chars in quote escape by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1139
+- runtime: improve Proc::Async bindings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1140
+- docs: add FIX_FLOW.md for parallel roast-fixing workflow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1142
+- parser: compose prefix ops into WhateverCode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1141
+- runtime: implement .^parents, .^roles, and improve .^attributes introspection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1144
+- io: fix IO::Handle .read(), .seek(), .slurp(), .tell() by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1145
+- runtime: fix NaN comparisons and approximate equality by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1147
+- io: add Stmt::Put for proper put semantics, fix IO::Path.volume, improve copy/open by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1148
+- runtime: call BUILD/TWEAK submethods in MRO order by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1149
+- signature: detect duplicate params, reject sub invocants, enhance binding errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1150
+- regex: fix <.ws> to require whitespace between word characters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1151
+- supply: add Supply combinators and fix Uni.new/Array.Str by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1152
+- builtins: return Failure instead of Nil when shifting empty array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1156
+- builtins: add NFC normalization and fix Rat.base rounding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1155
+- parser: fix BEGIN statement prefix and leave with modifiers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1153
+- types: fix Bool/Int type hierarchy, Num.raku, and infix thunking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1157
+- signature: fix Parameter introspection and related features by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1158
+- parser: fix capture prefix precedence and Pod block false positives by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1159
+- docs: update roast progress (695/1296 passing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1160
+- numeric: fix Complex→Num tolerance, Inf/NaN→Rat, and Rat(epsilon) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1161
+- builtins: add Cool numeric coercion for Str and Instance method dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1162
+- docs: update TODO.md with session progress (695/1296 passing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1163
+- builtins: complete base/base-repeating methods for all Real types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1164
+- fix module metamethods and push parameter validation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1166
+- runtime: wrap die() non-exception values in X::AdHoc by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1165
+- fix Range.raku exclusive bounds and if-binding variable scoping by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1167
+- for loop: implement rw params, <-> blocks, foreach rejection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1168
+- docs: update FIX_FLOW.md with scout+worker pattern by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1169
+- fix packaged class construction, .raku display, and also-is inheritance by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1174
+- runtime: fix hash :p(0) adverb and hyper/race grep by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1172
+- builtins: add .isa method and fix Bool.new/[or] reduction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1175
+- fix loop init comma parsing, splice edge cases, and array assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1176
+- fix CLI argument handling and .can() for attribute accessors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1177
+- gather/take: improve method dispatch on LazyList values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1178
+- docs: add 3 newly passing tests to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1179
+- builtins: fix BigInt/Num division panic in rat.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1180
+- runtime: improve multidimensional array support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1181
+- roles: fix anonymous role closure capture and diamond composition by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1182
+- introspection: improve Attribute handling for roast S12 attributes test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1183
+- class: fix attribute aliases, hash/array mutation, and list has declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1184
+- regex: fix capture variables in grammar inline code blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1185
+- roles: fix composition.t from 26/50 to 50/50 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1187
+- docs: update FIX_FLOW.md with CI failure handling and refactoring cycle by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1186
+- refactor: split large runtime files into submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1188
+- fix hash map flattening, qualified submethod dispatch, and Bool boolification by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1189
+- fix NaN comparisons and array :delete behavior by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1190
+- fix sprintf and sort improvements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1191
+- runtime: fix Range infinity and pop Failure by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1193
+- parser: fix heredoc escapes and attribute accessor by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1194
+- parser: fix attribute assignment and heredoc improvements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1196
+- runtime: fix NaN/Complex comparisons and arith edge cases by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1199
+- docs: add 5 newly passing tests to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1192
+- fix: bracketed comments, q# delimiter, pair flattening, throws-like EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1201
+- builtins: pass S02-literals/numeric.t and fix hyper method recursion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1202
+- runtime: fix nested class name suppression for modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1203
+- fix rindex edge cases and string bitwise operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1205
+- builtins: fix join and reverse for roast tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1206
+- fix rand() X::Obsolete error and === value identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1204
+- compiler: flatten left-recursive binary chains to prevent stack overflow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1207
+- supply: fix rotor partial with negative gap and head on live supplies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1208
+- docs: add 61 prove-verified tests to whitelist (716 passing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1210
+- fix sigilless readonly, try modifier scope, precomp cache by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1211
+- runtime: fix sleep() with no args to block indefinitely by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1212
+- fix: clear sigilless readonly flag before VarDecl in loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1213
+- fix smartmatch num64/U+2212 and NFC-normalize concatenation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1214
+- fix: set difference and DateTime fractional seconds by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1215
+- fix: hash and array edge cases (9 new roast subtests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1216
+- docs: update whitelist and history (722 passing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1217
+- whitelist: add 40 passing 6.d/ and integration/ tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1218
+- docs: add blocker analysis to FIX_FLOW.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1219
+- fix: method redefinition, qualified dispatch, Mu inheritance, ::Parent parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1220
+- fix: Regex truthiness smartmatches against $_ and reject qr// as X::Obsolete by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1221
+- fix user-defined infix dispatch and parameter binding for exported module subs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1222
+- phasers: implement PRE/POST phaser support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1223
+- parser: fix colonpair keywords, set compound assign, fat arrow ternary by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1224
+- runtime: add structured typed exceptions for throws-like matching by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1225
+- supply: implement produce transform for live Suppliers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1226
+- parser: fix modulo, colonpair keywords, reduction ops, regex \T\R by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1227
+- temporal: support Date formatter and fix Date smartmatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1228
+- parser: reject adverbs on augmented class names by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1229
+- parser: support $<key> interpolation in double-quoted strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1230
+- parser: fix three issues blocking S14-roles/basic.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1231
+- operators: fix %% divide-by-zero exception and !% CannotMeta by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1232
+- fix .of method for typed arrays and grammar inheritance by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1233
+- builtins: fix flat() Array flattening and min/max undefined skipping by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1234
+- runtime: fix BUILD submethod attribute binding semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1235
+- Improve Failure handling: explosion, re-arming, and defined parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1236
+- io: fix chdir, eof semantics, and test function dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1237
+- fix: pass S12-class/augment-supersede.t roast test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1238
+- channel: implement Supply.Channel, Channel.Array, and Channel.elems error by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1239
+- smartmatch: implement Whatever autoprime and WhateverCode type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1240
+- parser: support hash interpolation with {expr}, <<>>, and [] zen-slice by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1241
+- builtins: implement classify/categorize :into writeback by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1242
+- regex: support inline scope modifiers (:!ratchet, etc.) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1243
+- parser: disambiguate S type object from S/// substitution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1245
+- runtime: fix method return types, Range.elems, and trailing :: parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1244
+- runtime: fix WhateverCode index coercion and scalar indexing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1246
+- compiler: fix same-named subs in different scopes and do-block phasers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1247
+- runtime: reject Junction type objects for implicit Any constraint by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1248
+- trans: fix complement regex pairs, mixed arrays, and smartmatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1249
+- runtime: fix .? .* .+ method call modifiers and $.attr compound assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1250
+- parser: fix trailing commas, package-qualified subs, and prefix negation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1251
+- supply: fix done callback race in head-limited supplies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1252
+- substr: support Range, WhateverCode, Callable and ^lookup by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1253
+- builtins: implement native-descriptor for IO::Handle by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1254
+- grammar: return Nil from Grammar.parse on failure in 6.c; allow @/% attr element assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1255
+- docs: update history (738 passing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1257
+- parser/runtime: fix zip reduction parsing and Z-meta assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1256
+- builtins: add words limit support and fix &words resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1258
+- regex: implement quantified capture groups by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1259
+- docs: add never-close-PR-without-knowledge rule to CLAUDE.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1261
+- construction: pass roast S12-construction/new.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1260
+- supply: fix snip splitting and words buffering by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1262
+- runtime: support mutating methods on indexed elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1263
+- runtime: do not set $_ to invocant in method bodies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1264
+- io: improve move/rename with X::IO::Move exceptions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1265
+- parser: throw X::Obsolete for obsolete regex syntax by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1266
+- runtime: implement class-level attributes (our $.x / my $.x) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1267
+- runtime: enforce Positional/Associative type checks for @/% parameters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1268
+- parser: normalize leading zeros in capture vars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1269
+- parser: allow bare hyphen as first word in angle bracket lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1271
+- compiler: fix DoStmt SyntheticBlock scope for :into writeback by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1270
+- class: implement lexical class scoping and nested class resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1272
+- runtime/compiler: support push/pop on index targets, fix .raku and sprintf by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1273
+- unicode: fix Uni.new array flattening and NFC positional indexing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1274
+- runtime: optimize MethodDef cloning with Arc body by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1275
+- sequence: fix closure env persistence and multi-arity endpoint checks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1277
+- fix .raku trailing comma for single-element lists and allow postfix on declarators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1279
+- builtins: fix antipairs for Bag/Set/Mix and pad array range slices by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1278
+- vm: return type object for typed variables in GetGlobal when Nil by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1280
+- parser: detect prefix ! and :exists precedence confusion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1281
+- io: use X::IO::Rename for rename and X::IO::Move for move by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1282
+- enums: support string-valued enum variants by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1283
+- runtime: implement package/module stubs and X::Package::Stubbed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1284
+- builtins: throw X::Hash::Store::OddNumber for .Map/.Hash on odd elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1285
+- runtime: fix Array/Hash ~~ Regex smartmatch to iterate elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1287
+- runtime: fix state variable persistence across loop iterations and scopes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1288
+- runtime: set $! in POST phasers on exception by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1289
+- runtime: fix state variable persistence in loops and destructuring by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1290
+- runtime: distinguish lexical role identities for === comparison by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1291
+- phasers: hoist use statements before CHECK blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1292
+- builtins: validate codepoint range in chr before u32 cast by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1293
+- runtime: make div/mod by zero return Failure by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1294
+- builtins: implement Range.sum method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1295
+- builtins: implement comprehensive split with Seq slip fix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1296
+- parser: remove n/d Rat literal syntax from expression parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1297
+- runtime: implement IO::Handle attribute accessors and inheritance by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1298
+- parser: support << >> enum variant lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1299
+- fix: enum truthiness for Order::Same and zero-valued enums by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1300
+- builtins: implement duckmap and qualified method calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1301
+- builtins: add bounds checking for shaped attribute array assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1302
+- fix slurpy hash and typed constant parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1303
+- runtime: support qualified role method dispatch and attribute conflict detection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1305
+- docs: update history (766 passing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1306
+- runtime: support qualified method dispatch on built-in types and roles by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1304
+- typecheck: throw X::Syntax::Number::LiteralType for Inf→Int by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1307
+- builtins: support .fmt() for Hash, Pair, and ValuePair types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1309
+- docs: add 2 newly passing tests to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1197
+- parser: detect negation meta-operator on non-iffy arithmetic ops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1310
+- parser: handle unicode quote escapes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1311
+- runtime: iterate Set/SetHash as Pairs instead of bare strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1312
+- sort: fix allomorph comparison and comparator argument ordering by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1313
+- fix negated comparison operators (ne, !=, !==) with junctions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1314
+- Fix dynamic variable propagation in nested eval by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1315
+- parser: support namespaced enum declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1316
+- runtime: pad out-of-bounds array slices with Nil and implement lazy prefix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1276
+- io: return Failure from mkdir/rmdir instead of throwing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1317
+- testing: support three-arg is-approx with numeric tolerance by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1318
+- Update roast history (2026-03-17T23:20) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1319
+- enums: fix .can()/.^can() introspection and non-existent variant errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1320
+- fix Set iteration to yield Pairs instead of bare strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1322
+- parser: support quoting roast cases by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1321
+- Update roast history (2026-03-17T23:41) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1323
+- enum: improve introspection, mixin support, and error handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1324
+- Update roast history (2026-03-18T00:21) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1325
+- Update roast history (2026-03-18T00:40) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1326
+- Update roast history (2026-03-18T01:00) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1327
+- Update roast history (2026-03-18T07:38) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1328
+- Fix multidim attribute array assignment and shared thread output by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1209
+- Update roast history (2026-03-18T08:04) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1329
+- Update roast history (2026-03-18T08:25) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1330
+- fix multi dispatch where constraints and numeric coercion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1331
+- Nil method fallback, empty else block, and sprintf allomorph fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1332
+- Update roast history (2026-03-18T08:47) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1333
+- docs: prohibit new interpreter fallbacks from VM by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1334
+- runtime: mark Failure as handled when UNDO phasers run by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1337
+- runtime: fix does role mixin on enum bare words by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1336
+- vm: native string/list repeat (x/xx) ops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1338
+- vm: extract transliteration to pure function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1339
+- fix: preserve empty_sig in code refs and add rand to builtins by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1335
+- vm: native gist/str rendering for primitives by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1340
+- vm: eliminate regex bridge fallbacks in substitution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1341
+- vm: reduce eval_call_on_value interpreter fallbacks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1342
+- vm: extract smart matching to pure function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1343
+- vm: reduce call_sub_value interpreter fallbacks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1344
+- vm: reduce force_lazy_list interpreter fallbacks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1345
+- vm: reduce call_function interpreter fallbacks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1346
+- vm: reduce call_method_with_values interpreter fallbacks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1347
+- vm: eliminate miscellaneous interpreter fallbacks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1348
+- runtime: fix DESTROY submethod handling and pass destruction.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1349
+- enums: support typed enums, collection methods, and improved dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1350
+- parser/runtime: fix operator name display and guillemet escape handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1351
+- regex: support :Perl5 adverb for match and substitution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1352
+- parser: fix emoji/symbol chars in parenthesized strings; add deepmap and uniprop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1353
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1354
+- parser: fix prefix ^ to allow exponentiation operands by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1355
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1356
+- match objects: support $/ assignment, $¢ variable, Cursor type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1357
+- parser/runtime: implement smiley type constraints and use variables pragma by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1358
+- Update roast history (2026-03-18T15:00) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1359
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1360
+- parser: handle escaped non-ASCII quote delimiters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1362
+- Update roast history (2026-03-18T15:34) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1361
+- parser: handle escaped multibyte quote delimiters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1363
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1364
+- parser: support Unicode curly quote delimiters and fix related issues by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1365
+- Update roast history (2026-03-18T16:29) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1366
+- enum: fix .raku round-tripping for non-identifier enum keys by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1367
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1369
+- parser: support Unicode curly quotes and missing bracket pairs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1368
+- overloading: support hyper call-on >>.(args) and CALL-ME dispatch on type objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1370
+- Update roast history (2026-03-18T17:26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1371
+- parser: support anonymous @? and %? optional parameters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1372
+- Update roast history (2026-03-18T17:49) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1373
+- type checking: enforce assignment constraints, return types, and literal type mismatches by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1374
+- parser: add list/cache listop support and fix type object coercion errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1375
+- Update roast history (2026-03-18T18:11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1376
+- runtime: speed up roast timeout hot paths by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1377
+- Update roast history (2026-03-18T18:32) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1378
+- parser/runtime: support user-declared symbol infix ops in meta/hyper/reduction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1379
+- operators: implement set addition (+) / ⊎ operator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1380
+- Update roast history (2026-03-18T18:56) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1381
+- compiler: scalarize global regex match assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1383
+- allomorphs: fix qw:v, qqww, eqv, succ/pred, comb, U+2212, and chained Z by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1382
+- runtime: trim protect block overhead in lock hot paths by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1384
+- Update roast history (2026-03-18T19:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1385
+- multi dispatch: fix ::T invocant parsing and sigil-based dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1386
+- Update roast history (2026-03-18T19:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1387
+- parser: fix m regex disambiguation with fat arrow after whitespace by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1388
+- parser: fix ws-dot method call precedence and so/not with assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1389
+- Update roast history (2026-03-18T20:11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1390
+- hyper: support function reference operators >>[&func]<< by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1391
+- Update roast history (2026-03-18T20:33) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1392
+- runtime: suppress backend TODO on passing tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1393
+- Update roast history (2026-03-18T20:56) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1394
+- builtins: implement uniprop/uniprops and fix grapheme-aware string parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1395
+- parser: support compound assignment in expression context and add .Capture method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1396
+- Update roast history (2026-03-18T21:16) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1397
+- Update roast history (2026-03-18T21:38) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1398
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1399
+- runtime: run async callables on the VM by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1401
+- parser: support negated quote adverbs and Whatever compound assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1400
+- parser: handle escaped non-ASCII quote delimiters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1402
+- parser: support chained colonpairs in parentheses by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1404
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1403
+- runtime: simplify shared array push in lock hot path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1406
+- parser: fix parenthesized assignment in call arg expressions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1405
+- Update roast history (2026-03-18T23:42) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1407
+- Update roast history (2026-03-19T00:03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1408
+- parser: support prefix-type subset, coercion types, and advanced destructuring by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1409
+- parser: fix Whatever/WhateverCode handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1410
+- Update roast history (2026-03-19T00:25) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1411
+- parser: support ss/// samespace substitution and compound assign by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1412
+- Update roast history (2026-03-19T07:42) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1413
+- parser: support sigilless variable assignment in expression context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1414
+- parser: fix parenthesized assignment for complex LHS and sigilless vars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1415
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1416
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1417
+- reduce: support hyper/X meta-ops and new reduction operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1418
+- Update roast history (2026-03-19T08:42) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1419
+- parser: fix operator overloading parse issues by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1420
+- Update roast history (2026-03-19T09:04) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1421
+- parser: fix prefix ++/-- precedence to bind tighter than ** by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1422
+- Update roast history (2026-03-19T09:26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1423
+- fix multiple issues uncovered by roast/S02-types/num.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1424
+- runtime: sync shared array pushes across threads by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1425
+- Update roast history (2026-03-19T10:18) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1426
+- Update roast history (2026-03-19T10:43) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1427
+- symbolic deref: implement lvalue assignment and chained lookups by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1428
+- runtime: fix =:= container identity for fresh containers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1429
+- heredoc: fix variable scoping for qq:to in blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1430
+- vm: avoid shared array snapshots in protect blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1431
+- Update roast history (2026-03-19T11:03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1432
+- parser: allow Unicode symbols in angle-bracket word keys by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1433
+- parser: support colonpair French quotes and operator adverbs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1434
+- Update roast history (2026-03-19T11:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1435
+- parser: fix with/without statement parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1436
+- Update roast history (2026-03-19T11:49) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1437
+- runtime: narrow Lock::Async protect sync set by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1438
+- Update roast history (2026-03-19T12:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1439
+- parser: support trailing comma after scalar my declaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1440
+- quoting: handle escaped Unicode delimiters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1441
+- Update roast history (2026-03-19T12:33) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1443
+- parser/runtime: add pseudo-stash lookups, indirect package vars, ^shortname by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1442
+- Update roast history (2026-03-19T12:53) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1444
+- parser: improve .= (dot-assign) operator support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1445
+- Update roast history (2026-03-19T13:15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1446
+- parser/compiler: fix sigilless variable shadowing and $.method calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1448
+- Update roast history (2026-03-19T13:37) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1449
+- parser/runtime: add undefine listop, auto-vivify typed containers, fix match captures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1450
+- runtime: narrow protect sync names by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1451
+- parser: auto-quote keywords on LHS of fat arrow (=>) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1447
+- Update roast history (2026-03-19T14:15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1452
+- vm: avoid COW for shared collection mutators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1453
+- hash: fix postcircumfix indexing and add throws-like-any by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1454
+- types: fix declare.t roast test (Nil identity, native int overflow, missing types) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1455
+- Update roast history (2026-03-19T14:38) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1456
+- parser/vm: reject negative subscripts, improve error messages by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1457
+- regex: pass roast/S05-modifier/Perl_0.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1458
+- temporal: fix Instant/Duration arithmetic, .raku, and type hierarchy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1459
+- runtime: fix flattening semantics for arrays, hashes, and itemized containers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1460
+- Update roast history (2026-03-19T15:34) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1461
+- Update roast history (2026-03-19T15:56) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1462
+- Update roast history (2026-03-19T16:17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1463
+- vm: trim protect block local lookup overhead by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1465
+- Update roast history (2026-03-19T16:38) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1466
+- Update roast history (2026-03-19T16:59) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1468
+- parser: distinguish positional vs associative indexing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1467
+- Update roast history (2026-03-19T17:19) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1470
+- autovivification: fix type indexing, scalar autovivify, and is-rw hash elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1469
+- cmp: fix comparisons for Inf, NaN Rat/FatRat, arrays, ranges, and pairs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1472
+- junction: improve auto-threading, concat, assign metaops, and push autovivify by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1473
+- parser: implement context operators and P5 deref detection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1474
+- implement is DEPRECATED trait and Deprecation.report by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1471
+- Update roast history (2026-03-19T19:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1475
+- Update roast history (2026-03-19T19:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1476
+- fix S12-attributes/class.t: callable attributes and private attr errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1477
+- class inheritance: support Array subclasses and fix parent validation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1478
+- Update roast history (2026-03-19T20:13) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1479
+- Update roast history (2026-03-19T20:34) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1480
+- class: fix several S12-class/basic.t subtests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1481
+- Update roast history (2026-03-19T20:55) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1482
+- attributes: fix readonly marking, typed container defaults, and type checks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1483
+- Update roast history (2026-03-19T21:17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1484
+- for loop: support scalar variable writeback and list reassignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1485
+- coercion: fix multi dispatch specificity, submethod inheritance, and role pun by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1486
+- bag: fix Bag display, roll/pick, pickpairs, fmt, and more by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1464
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1487
+- vm: prefer shared arrays in thread clones by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1488
+- Update roast history (2026-03-19T22:24) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1489
+- parser: register constant operator aliases and fix typed constant .= new by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1490
+- hyper: fix parsing and runtime for multiple hyper operator forms by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1491
+- Update roast history (2026-03-19T22:45) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1493
+- runtime: interpolate Perl 5 regex vars at match time by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1494
+- Update roast history (2026-03-19T23:05) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1495
+- parser: fix compound assignment operators (or=, and=, ~&=, ^^=, [+]=) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1492
+- Update roast history (2026-03-19T23:26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1496
+- Update roast history (2026-03-19T23:47) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1497
+- parser: support binding (:=) in subscript lvalues and HyperWhatever in brackets by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1498
+- Update roast history by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1499
+- Pass roast S05-modifier/Perl_0.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1502
+- parser: implement comprehensive unspace support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1500
+- radix: implement full radix literal support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1501
+- Update roast history (2026-03-20T00:31) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1503
+- builtins: fix Hash .raku and .gist rendering for nested values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1504
+- Update roast history (2026-03-20T01:03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1506
+- state: fix parenthesized state assignment and skip RHS on re-init by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1507
+- array: fix shift/pop on literals and add argument validation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1505
+- Update roast history (2026-03-20T06:06) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1508
+- parser: support type captures (::name) and anonymous & by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1509
+- Update roast history (2026-03-20T06:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1510
+- Update roast history (2026-03-20T06:50) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1511
+- Update roast history (2026-03-20T07:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1512
+- regex: pass roast/S05-modifier/Perl_0.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1513
+- Update roast history (2026-03-20T07:30) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1514
+- vm: preserve inline protect block state by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1515
+- Update roast history (2026-03-20T07:50) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1516
+- Update roast history (2026-03-20T08:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1517
+- Update roast history (2026-03-20T08:30) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1518
+- Update roast history (2026-03-20T08:49) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1519
+- Update roast history (2026-03-20T09:08) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1520
+- vm: use cached outer local slots in protect blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1521
+- Update roast history (2026-03-20T09:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1522
+- Update roast history (2026-03-20T09:46) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1523
+- Update roast history (2026-03-20T10:05) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1524
+- roast/S02 literals/quoting.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1525
+- runtime: interpolate Perl 5 regex vars at match time by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1526
+- parser: support type captures, anonymous &, and comma-chained my declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1527
+- hash: fix keyof and constrained hash .raku serialization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1528
+- fix Rat arithmetic overflow, BigInt parsing, and stringification by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1529
+- runtime: fix try/die/throw semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1530
+- gather: add take-rw, fix join with custom Str, fix nested gather env by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1531
+- fix: improve signature error messages and type checking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1532
+- runtime: fix once scope resolution inside EVAL closures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1533
+- fix loop statement issues and whitelist S04-statements/loop.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1534
+- runtime: implement .return method and &return proxy support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1535
+- fix Match.make and temp $/ to pass S05-match/make.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1536
+- proxy: fix Proxy STORE on bound variables and subclass array mutation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1537
+- if: fix slurpy parameter binding and @_ in bare blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1538
+- regex: implement frugal (non-greedy) quantifiers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1539
+- regex: fix :i (ignorecase) for character classes, alternations, and quote words by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1541
+- parser: implement statement-ending block rule by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1540
+- runtime: support our-scoped subs across blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1542
+- regex: implement :ii (samecase) modifier for s/// by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1543
+- fix clone, fat arrow parsing, and .hash dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1544
+- split: pass all 55 roast/S32-str/split.t subtests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1545
+- delegation: implement full handles trait support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1546
+- io: fix IO::Path gist, ACCEPTS, sibling, parent, and IO::Spec support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1547
+- list: fix min/max/minmax with comparator blocks and improve comparison by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1548
+- map: implement rw binding and fix &sprintf.assuming by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1549
+- regex: implement :c/:continue modifier for match operations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1551
+- builtins: implement snip function and method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1550
+- grep: implement :k adverb and fix listop argument precedence by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1552
+- match: implement :nth modifier for .match method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1553
+- runtime: support is rw attributes on punned role instances by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1554
+- roles: fix mixin attribute assignment, type checking, and redeclaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1555
+- enums: support enum-as-role composition and does/but mixin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1556
+- compiler: hoist stub class definitions for compile-time registration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1557
+- runtime: implement v6.e.PREVIEW role BUILD/TWEAK/DESTROY submethods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1558
+- fix $?PACKAGE, self outside methods, and GLOBAL:: classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1559
+- attributes: fix recursive/cyclic attribute access and ::?CLASS support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1560
+- builtins: fix polymod for infinite and lazy lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1561
+- smartmatch: support negated file test pairs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1562
+- roles: throw X::Declaration::OurScopeInRole for our-scoped declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1563
+- attributes: implement type smiley constraints and use attributes pragma by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1564
+- runtime: detect undeclared class names and add Exception hierarchy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1565
+- autoincrement: fix string succ/pred, Unicode ranges, and custom methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1566
+- junctions: implement auto-threading for function and method call arguments by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1567
+- binding: fix =:= identity, X::Bind for literals, and rebinding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1568
+- compiler: support list-associative user-defined junction operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1570
+- zip: fix laziness, thunking, Z. errors, and arity-0 Z by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1571
+- vm: implement junction auto-threading for closure calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1569
+- signature: fix binding and literal smartmatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1572
+- signatures: fix named param where constraints, name clashes, and Capture.raku by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1573
+- multi: fix dispatch tie, anonymous errors, builtin override by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1574
+- builtins: add Thai digit range to string autoincrement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1575
+- fix: strip sigils from named param names in multi dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1576
+- multi dispatch: fix literal Int specificity and True/False type constraints by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1577
+- EVAL: fix method return, block rejection, Buf decoding, and .EVAL dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1578
+- builtins: fix sleep-timer return type and add sleep-until by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1579
+- testing: rewrite fails-like with subtest structure and fix Failure returns by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1580
+- testing: done-testing returns Bool and dubious exit code 255 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1581
+- iterators: fix is-lazy and Num range iteration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1582
+- fix: pass roast/S29-any/deg-trans.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1583
+- builtins: add uniparse/parse-names function and method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1584
+- builtins: implement .toggle and .skip methods for lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1585
+- runtime: implement comprehensive Raku string-to-numeric parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1586
+- builtins: add deepmap function and nodemap method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1587
+- fix: support hash-from-range coercion and pair value rw writeback by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1588
+- range: implement Range methods and fix smartmatch for string ranges by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1589
+- fix classify-list: hash mapper, mixed-level, lazy list, and colonpair fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1591
+- builtins: implement List.repeated method and repeated() function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1590
+- fix: improve operator dispatch, junction concat, and does mixin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1592
+- testing: fix TAP output and add named regex backrefs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1594
+- parser: recognize %var at brace start as hash literal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1593
+- runtime: fix role typecheck for qualified names and role groups by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1595
+- smartmatch: implement Any ~~ Pair object attribute test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1596
+- runtime: implement per-class private attribute scoping by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1597
+- fix: array unpacking sub-signature scoping and kebab-case interpolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1598
+- builtins: implement unimatch function and method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1599
+- runtime: defer parameterized role body statements until composition by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1600
+- types: improve WHICH, gist, raku for type objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1601
+- io: implement IO::Path.symlink method and :l file test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1602
+- subset: pass roast/S12-subset/type-subset.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1603
+- io: fix IO::Handle lines limit, encoding, printf, and Buf normalization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1604
+- introspection: fix ^add_method and lexical class re-declaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1605
+- builtins: implement substr-rw function and method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1606
+- runtime: implement Pod::Block::Declarator for WHY doc comments by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1607
+- builtins: implement Uni type methods and coercion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1608
+- array: fix delete trailing cleanup and is-default semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1610
+- attributes: implement is default(...) trait for class attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1609
+- parser: fix anonymous hash vs block detection and sub hoisting by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1611
+- builtins: implement Str.indent method and $?TABSTOP by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1613
+- runtime: fix Failure handled state sharing and Nil method dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1612
+- cli: implement -n flag and run :in support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1614
+- MixHash: fix subscript mutation, grabpairs, type matching, and .new semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1615
+- runtime: fix WHO dispatch for instances and Stash stringification by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1616
+- phasers: fix CHECK/BEGIN execution order by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1617
+- runtime: enforce typed hash constraints on global assignment and element access by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1619
+- runtime: fix module export scoping and function package resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1618
+- parser: fix string escape sequence error handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1620
+- exceptions: improve Exception class, Nil methods, and error types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1621
+- docs: fix Pod::Block::Declarator and doc comment improvements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1622
+- native types: comprehensive fixes for roast S02-types/native.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1624
+- builtins: shaped array methods operate on leaves by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1623
+- trans: support closures in array pairs and :complement mode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1625
+- unicode: fix unival/univals for full roast compliance by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1626
+- filetest: fix Str~~:d, add .rw/.rwx, .z Failure, :mode/:create by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1627
+- sethash: fix ++/--, roll, pick, smartmatch, isa, and Pair coercion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1628
+- runtime: implement MAIN CLI argument parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1629
+- introspection: implement ^language-revision and ^submethod_table by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1630
+- docs: document return_function.t as unfixable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1631
+- parser: support `will leave` trait on variable declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1632
+- sprintf: add validation, positional args, high-precision Rat formatting by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1633
+- runtime: add UNIX domain socket support for IO::Socket::INET by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1634
+- phasers: fix phaser interpolation in double-quoted strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1635
+- fix hyper dispatch and #?rakudo todo to pass parallel-dispatch.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1636
+- stash: exclude my-scoped items from package stash, fix Stash.elems by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1637
+- builtins: add Buf read-int/uint methods and fix Range slurpy flattening by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1638
+- typed arrays: fix .of, .new, bounds, constructor, slice assign by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1640
+- vm: resolve hash binding sentinels in method calls and assignments by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1639
+- io: fix IO::Path::Win32 path operations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1641
+- parser: detect Perl 5 special variables (X::Syntax::Perl5Var) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1642
+- constants: fix scope, type checks, containerization, and @-sigil List storage by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1643
+- fix Pair.kv writeback in for loops with is rw params by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1644
+- lazy: implement lazy thunk for statement prefix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1645
+- proc: implement Proc sink context, array flattening in run(), and IO::Pipe methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1646
+- runtime: support rw assignment to standalone Pair.value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1647
+- parser/vm: fix sigilless variable hash subscripts and dynamic adverb args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1648
+- Map type: implement gist/raku format, immutability, and binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1649
+- encoding: fix handle slurp decoding and encode :replacement parameter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1650
+- array: fix subscript adverb combinations with :delete and :exists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1651
+- fix multi-dimensional index assignment for arrays and hashes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1652
+- regex: fix P5 capture index gaps in Match object list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1653
+- regex: support P5 postponed regex (??{...}) construct by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1654
+- regex: fix :m/:ignoremark modifier for match captures and quoted escapes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1655
+- Update roast history and whitelist (931 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1656
+- Update roast history (2026-03-24T08:05) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1657
+- Update roast history (2026-03-24T08:28) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1658
+- Update roast history (2026-03-24T08:48) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1659
+- Update roast history (2026-03-24T09:07) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1660
+- Update roast history (2026-03-24T09:29) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1661
+- Update roast history (2026-03-24T09:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1662
+- Update roast history (2026-03-24T10:12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1663
+- fix implicit parameter handling for blocks and pointy blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1666
+- runtime: preserve hash identity for scalar containers and add cycle detection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1667
+- roles: support parameterized role of types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1668
+- fix callsame/callwith/nextcallee dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1665
+- multi dispatch: implement is default trait for tie-breaking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1669
+- regex: improve sigspace, caps/chunks, and ** quantifier handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1671
+- io: implement lazy $fh.lines for correct $fh.tell during iteration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1670
+- implement coll operator and Collation class with ICU collation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1673
+- traits: implement is Type for variable/attribute container types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1675
+- parser: support meta-method calls in string interpolation and fix smartmatch env sync by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1676
+- runtime: implement is DEPRECATED trait and Deprecation.report by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1677
+- runtime: fix our-scoped sub leaking from EVAL and add $GLOBAL:: variable support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1672
+- runtime: enforce Callable type check for &-sigil parameters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1678
+- runtime: implement scalar container itemization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1674
+- socket: validate port range in IO::Socket::INET.new by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1679
+- builtins: add times/localtime/gmtime and fix list assignment to existing vars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1680
+- scripts: skip empty roast history updates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1664
+- fix S04-declarations/multiple.t: variable rebinding, sub/role redeclaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1681
+- preprocessor: add missing test functions to skip-block detection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1682
+- phasers: fix ENTER/LEAVE semantics for loops, exceptions, and r-values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1683
+- range: implement ACCEPTS, bounds, int-bounds, minmax and fix arithmetic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1684
+- phasers: fix PRE/POST/LAST in loops and keyword masking by imports by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1685
+- spurt: implement append/createonly/binary modes, fix slip arg ordering by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1686
+- parser: support attributive params, pass S12-methods/attribute-params.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1687
+- set ops: implement proper symmetric difference for Bag/Mix types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1688
+- runtime: support is rw params in methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1689
+- our: improve our-scoped variable handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1690
+- vm: reduce interpreter fallbacks by compiling functions on-the-fly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1691
+- refactor: split vm_var_ops.rs into 6 focused modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1692
+- split vm_helpers.rs into smaller modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1693
+- refactor: split methods_0arg/mod.rs into smaller submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1694
+- refactor: split runtime/types.rs into 9 submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1695
+- compiler: split expr.rs into 11 focused submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1696
+- refactor: split runtime/regex.rs into 13 submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1697
+- regex: fix closure interpolation regression from PR #1697 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1698
+- refactor: split methods.rs into 9 smaller submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1700
+- refactor: split runtime/builtins.rs (3697 lines) into 8 submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1699
+- refactor: split vm_call_ops.rs (3125 lines) into 8 submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1702
+- compiler: split helpers.rs into 10 smaller modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1703
+- refactor: split native_methods.rs into 13 submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1701
+- refactor: split methods_collection_ops.rs into submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1705
+- refactor: split seq_helpers.rs into 8 submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1706
+- refactor: split test_functions.rs into submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1707
+- parser: split stmt/decl.rs into 12 submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1704
+- roast-history: increase timeout for S17-promise/allof.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1708
+- exit: terminate process from threads, fix EVAL assignment return, pass sleep.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1709
+- perf: optimize Lock::Async.protect and shared array push by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1710
+- range: fix roll/pick timeout on vast ranges by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1711
+- state vars: scope per closure instance for loops and clones by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1713
+- pick: fix timeout on large ranges, BigInt comparison, enum sort by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1712
+- scheduler: make ThreadPoolScheduler.cue run async by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1714
+- lines(): return lazy iterator to fix -ne mode timeout by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1715
+- fix @array.method() string interpolation, Seq handling in get_out, and ARGFILES stdin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1716
+- argfiles: fix remaining test failures in S16-filehandles/argfiles.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1717
+- react: fix env sync order to preserve instance attribute mutations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1718
+- scheduler: implement :at, :in, :every, :catch, :stop, NaN handling for cue() by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1719
+- parser: support sigilless single-argument rule slurpy params (+foo) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1720
+- parser: fix scalar decl trailing comma and inline module operator import by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1721
+- junctions: fix .defined autothreading and for-loop junction expansion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1722
+- phasers: fix ENTER phaser at mainline scope to share VM variable slots by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1723
+- vm: optimize for loops over integer ranges by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1724
+- Set/Bag/Mix: add mutability flag for immutable/Hash variant distinction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1725
+- whatever: mark WhateverCode closures and support user-defined operator currying by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1726
+- pragmas: treat `use oo` and `use class` as no-op pragmas by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1728
+- parser: register sigilless params as term symbols in arrow lambdas by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1729
+- undefine: add listop parsing and fix LHS assignment, hash subscript, Array auto-vivify by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1730
+- parser: recognize capture literals after identifiers in expression context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1731
+- parser: improve .= (dot-assign) operator parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1732
+- docs: add worktree cleanup rule to CLAUDE.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1733
+- array: support WhateverCode in array slice indexing and assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1735
+- Update roast history (2026-03-26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1736
+- pointy blocks: fix return, &?ROUTINE, .line/.file, {YOU_ARE_HERE} by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1727
+- bag: fix BagHash.new with QuantHash/container args and .pick(Callable) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1734
+- unshift: throw X::Multi::NoMatch on scalar values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1737
+- preprocessor: emit correct skip count for #?DOES-annotated subs in skipped blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1738
+- fix ~& bitwise AND to extend Buf operands to max length by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1739
+- parser: fix trailing comma after scalar decl in expression context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1740
+- map: execute LAST phasers after map loop completes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1741
+- junctions: fix parenthesized junction nesting by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1742
+- binding: implement two-way container binding for array elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1743
+- compiler: implicit return for assignment as last statement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1744
+- regex: grapheme-level advancement for character classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1745
+- hash: fix circular hash .raku and non-identifier key formatting by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1747
+- comb: fix grapheme segmentation, add multi-arg support and subroutine form by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1746
+- signature introspection: fix multiple issues to pass roast S06 test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1748
+- parser: fix bare await/slip/set/bag/mix parsing with whitespace by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1749
+- parser: reject no-twigil native attr access at class body level by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1750
+- hash binding: fix in-place mutation for bound % variables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1751
+- fix closure parameter writeback clobbering outer variables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1753
+- parser: handle my $foo:: and detect undeclared vars in EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1752
+- parser: fix prefix ^ with whitespace and smartmatch-regex chaining by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1754
+- IO::Path: fix child() on "." to not prepend "./" prefix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1755
+- raku repr: de-itemize arrays inside containers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1756
+- react: support react whenever shorthand and Channel sources by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1757
+- regex: support Junction arguments in :nth modifier by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1758
+- parser: fix with/without modifier disambiguation and string method chain interpolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1759
+- cas: implement atomic CAS for instance attributes and array elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1760
+- fix operator overloading: Rat precision in hyper ops and default constructor rejection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1762
+- array: fix Whatever slice and trailing comma subscript parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1763
+- assuming: fix Whatever placeholder, type checks, parameterized containers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1764
+- parser: add math functions as listops and support postfix:<i> calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1765
+- numeric: implement roots() builtin function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1766
+- meta: support Metamodel::ClassHOW dynamic type creation and ClassHOW inheritance by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1767
+- list: implement permutations() builtin function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1768
+- IO: strip UTF-8 BOM when reading files by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1769
+- attributes: validate undeclared attribute access and fix X::Attribute::NoPackage by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1770
+- compiler/parser: fix CATCH in bare blocks and sub immediate invocation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1771
+- Date: fix roast/S32-temporal/Date.t with subclass support and missing methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1772
+- regex: improve character class parsing with subtraction, escapes, and validation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1773
+- compiler: propagate variable source for inline VarDecl arguments to support is rw by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1774
+- IO::Special: implement type and fix multi-param for-loop closure capture by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1776
+- parser: support sub-signature destructuring in with/without pointy blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1775
+- grep: throw X::Adverb when :!v is passed to grep by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1777
+- role: support is rw trait and enforce readonly on role pun attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1778
+- classify-list: throw X::Immutable for immutable Bag/Mix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1761
+- declarations: support smiley type constraints and typed MY:: assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1779
+- runtime: fix Proc::Async Promise.allof react ordering by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1780
+- Update roast history (2026-03-29T11:59) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1781
+- roast: mark S14 parameterized-type passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1782
+- Update roast history (2026-03-29T12:23) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1783
+- vm: fast-path simple Lock::Async protect pushes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1784
+- fix: stack overflow in is_run_honors_compiler_include_paths test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1785
+- Update roast history (2026-03-29T12:47) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1786
+- Update roast history (2026-03-29T13:11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1787
+- runtime: fix is_run executable resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1788
+- Update roast history (2026-03-29T13:32) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1789
+- Update roast history (2026-03-29T13:55) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1790
+- Update roast history (2026-03-29T14:17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1791
+- Update roast history (2026-03-29T14:39) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1792
+- Update roast history (2026-03-29T15:01) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1793
+- binding: attach structured exception to typed container param errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1794
+- TODO_roast: mark S04 smiley passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1795
+- Update roast history (2026-03-29T15:22) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1796
+- Pass roast/S14-roles/parameterized-type.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1797
+- Update roast history (2026-03-29T15:44) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1798
+- Update roast history (2026-03-29T16:06) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1799
+- TODO_roast: mark S04 smiley passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1800
+- Update roast history (2026-03-29T16:28) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1801
+- Fix2 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1802
+- ai-fleet: show dead window output for failure diagnosis by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1803
+- Update roast history (2026-03-30T09:08) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1804
+- parser: tighten bare call arg precedence by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1805
+- Update roast history (2026-03-30T09:29) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1806
+- Update roast history (2026-03-30T09:52) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1807
+- Update roast history (2026-03-30T10:14) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1808
+- Update roast history (2026-03-30T10:40) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1809
+- TODO_roast: update S04/state.t blocker analysis by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1810
+- Update roast history (2026-03-30T11:04) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1811
+- Update roast history (2026-03-30T11:28) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1812
+- Update roast history (2026-03-30T11:50) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1813
+- Update roast history (2026-03-30T12:12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1814
+- Update roast history (2026-03-30T12:37) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1816
+- parser: accept precedence roast and speed lock async pushes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1817
+- multi: fix type-based dispatch and Mu::new by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1818
+- Pass roast/S04-declarations/state.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1815
+- Update roast history (2026-03-30T13:47) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1819
+- roast: mark S06-multi/type-based.t passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1820
+- Update roast history (2026-03-30T14:09) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1821
+- Fix closure local cleanup for state variable scoping by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1822
+- Update roast history (2026-03-30T14:45) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1823
+- TODO_roast: mark S03 precedence passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1824
+- Update roast history (2026-03-30T15:06) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1825
+- roast: mark S06-multi/type-based.t passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1826
+- Update roast history (2026-03-30T15:28) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1827
+- Update roast history (2026-03-30T15:50) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1828
+- Update roast history (2026-03-30T16:12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1829
+- Update roast history (2026-03-30T16:33) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1830
+- Update roast history (2026-03-30T16:54) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1831
+- Optimize function call performance for tight loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1832
+- Update roast history (2026-03-30T17:15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1833
+- Pass roast/S06-multi/type-based.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1834
+- Update roast history (2026-03-30T17:35) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1835
+- Update roast history (2026-03-30T18:10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1836
+- Update roast history (2026-03-30T18:31) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1837
+- Update roast history (2026-03-30T18:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1838
+- Update roast history (2026-03-30T19:11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1839
+- Update roast history (2026-03-30T19:31) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1840
+- Update roast history (2026-03-30T19:51) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1841
+- Update roast history (2026-03-30T20:12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1842
+- Update roast history (2026-03-30T20:32) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1843
+- Update roast history (2026-03-30T21:02) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1844
+- Update roast history (2026-03-30T21:22) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1845
+- Update roast history (2026-03-30T22:04) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1846
+- Update roast history (2026-03-30T22:24) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1847
+- Update roast history (2026-03-30T22:44) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1848
+- Update roast history (2026-03-30T23:05) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1849
+- Update roast history (2026-03-30T23:26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1850
+- Update roast history (2026-03-30T23:46) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1851
+- Update roast history (2026-03-31T00:07) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1852
+- Update roast history (2026-03-31T00:27) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1853
+- Update roast history (2026-03-31T00:47) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1854
+- Update roast history (2026-03-31T01:08) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1855
+- fix: build debug binary before cargo test in Makefile by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1856
+- chore: add 5 newly passing roast tests to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1857
+- chore: add 5 more newly passing roast tests to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1858
+- fix: treat rand, time, now as string keys in pair syntax by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1859
+- fix: prevent integer overflow in for-loop int range iteration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1861
+- fix: Nil.raku/gist and ValueObjAt for WHICH by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1860
+- chore: add 4 newly passing roast tests to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1863
+- fix: throw error for undeclared %ENV (only %*ENV should work) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1862
+- fix: treat \r\n as single grapheme in regex character classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1864
+- Add Incus VM setup script by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1865
+- fix: handle Junctions correctly in say/note/print/printf/sprintf by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1866
+- fix: compound assignment in function call args should not consume commas by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1867
+- fix: throw X::Cannot::Lazy when popping from a lazy array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1868
+- fix: prevent block-local variable values from leaking to outer scope by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1869
+- Update roast history (2026-03-31T07:13) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1870
+- fix: handle multi-way zip with set symmetric difference correctly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1871
+- fix: preserve original key types in BagHash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1873
+- fix: throw X::Range::InvalidArg for Seq endpoints in ranges by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1872
+- fix: mark Failures as handled on boolification and fix with/without single-eval by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1874
+- fix: preserve shaped array shape in class constructor by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1875
+- fix: Str.lines should return Seq instead of Array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1876
+- fix: handle ENTER/LEAVE phasers in recompiled bodies and ENTER expr in loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1878
+- feat: implement $!.pending for Failure tracking (S04 spec) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1879
+- fix: pass all 78 subtests in roast/S03-operators/misc.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1877
+- fix: implement hash autovivification for reduce with is raw by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1880
+- fix: push on hash elements and type-check push on typed attribute arrays by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1881
+- fix: preserve original key types in Mix/MixHash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1882
+- fix: support container writeback through .reverse in for loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1884
+- fix: lazy prefix parsing and typed array attribute type checks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1887
+- fix: reject invalid type smileys in sub signatures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1885
+- docs: rewrite README with project overview and status by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1888
+- fix: use Unix ctime for IO.changed instead of mtime by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1889
+- fix: wrap anonymous scalar args with VarRef for is-rw multi dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1890
+- fix: pass roast/S02-types/type.t (native int Nil + X::TypeCheck::Argument) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1891
+- fix: detect undeclared names and class redeclarations in EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1893
+- fix: throw error for bigint-to-native-int overflow and fix Nil type identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1892
+- fix: reject enumerated char class matches on graphemes with combining marks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1894
+- feat: implement IO::Spec.devnull and Proc::Async stdout(:bin) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1895
+- fix: Complex number handling in callable infix operators and display by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1896
+- fix: improve slurp encoding, ARGFILES reading, and Buf temp file writing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1897
+- fix: support ::?CLASS:D/:U invocant dispatch and X::Parameter::InvalidConcreteness by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1899
+- fix: implement proper export tag filtering for module imports by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1898
+- fix: preserve itemization in List .raku output by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1900
+- fix: comb returns Seq and fix |capture destructuring in for-loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1901
+- fix: improve WHICH identity, Nil.raku, and numeric coercion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1902
+- fix: support InASCII block and Numeric_Type<Value> in regex by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1903
+- fix: set $_ in .trans regex+closure replacements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1905
+- fix: multi method dispatch and method wrap support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1907
+- fix: clear stale pending_call_arg_sources before accepts_type dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1908
+- fix: pass all 48 subtests in roast/S06-other/main-usage.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1906
+- fix: print/put type objects stringify to empty string by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1909
+- Update roast history (2026-04-01T12:00) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1911
+- fix: propagate token_defs to regex closure interpreter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1912
+- fix: allow lexical class to shadow outer role name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1913
+- fix: pass all 24 subtests in roast/S32-hash/map.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1910
+- fix: nextcallee should match original args to find correct candidate by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1914
+- fix: pass all 82 subtests in roast/S09-multidim/methods.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1915
+- fix: support prefix:<~> overloading and .Stringy() in string interpolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1916
+- fix: pass all 25 subtests in roast/S06-signature/errors.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1917
+- fix: reject quantified anchors and fix ^^ / $$ with \r\n by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1918
+- fix: detect unspace-in-identifier and missing separator after block declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1919
+- scripts: improve Incus setup user tooling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1921
+- [codex] parser: accept root pseudostash forms by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1922
+- chore: add S04-phasers/enter-leave.t and S11-modules/import-tag.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1925
+- fix: reject \# without backtick as unspace in ws() parser by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1926
+- fix: pass all 20 subtests in roast/S02-literals/sub-calls.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1920
+- fix: execute regex code blocks eagerly in comb for $/ access by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1927
+- fix: Nil.gist returns 'Nil' instead of '(Any)' by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1924
+- fix: unary minus on strings preserves Rat/Complex and throws on invalid by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1928
+- fix: support Proxy lvalue assignment via rw methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1929
+- fix: support rw identity map slice assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1930
+- fix: pass all 49 subtests in roast/S14-roles/basic.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1931
+- fix: preserve original key types in Set and handle Hash/itemized args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1932
+- fix: pass 5 more subtests in roast/S02-types/hash.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1933
+- fix: pass roast/S32-str/substr-eq.t (87/87 subtests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1934
+- fix: improve roast/S02-types/num.t from 102 to 107 passing subtests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1935
+- fix: improve allomorphic type support (S02-literals/allomorphic.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1937
+- fix: clear match captures on failed regex and reject undefine of immutable values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1938
+- [codex] fix: normalize split limits and dot lookarounds by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1923
+- fix: pass 59/60 subtests in roast/S02-types/subset-6e.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1936
+- chore: add S32-str/split-simple.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1939
+- fix: use plain Int keys for 1-D shaped array methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1940
+- fix: improve roast/S02-types/list.t from 69/77 to 76/77 passing subtests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1941
+- fix: Set/SetHash.new preserves Pair elements and treats QuantHash as single item by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1942
+- fix: grapheme-aware Unicode case conversion for uc/tc/fc by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1943
+- fix: improve roast/S02-types/mix.t from 176 to 218 passing subtests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1944
+- fix: improve Bag operations for roast/S02-types/bag.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1946
+- fix: implement non-local return from blocks to enclosing routine by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1945
+- fix: implement BagHash .grab/.grabpairs and improve QuantHash mutability support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1948
+- fix: improve MixHash support (grabpairs, new-from-pairs, is-trait init) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1947
+- fix: improve instance attribute support for roast/S12-attributes/instance.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1949
+- fix: improve S05 regex type hierarchy and missing-rule error reporting by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1950
+- fix: improve my-declaration handling for S04-declarations/my-6e.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1951
+- fix: support my/our method scoping for S12-methods/class-and-instance.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1953
+- fix: pass roast/S32-str/encode.t with encoding improvements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1954
+- fix: improve Zxx operator, flat with LazyList, and gather env propagation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1952
+- fix: pass roast/S06-signature/sub-ref.t with arity checks, closure isolation, and placeholder scoping by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1956
+- fix: pass roast/S03-operators/context-forcers.t with Seq semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1955
+- fix: return X::Numeric::DivideByZero for zero-denom Rational ops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1957
+- fix: improve typed Hash support for roast/S32-hash/perl.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1959
+- fix: expand capture backreferences in substitution replacements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1960
+- fix: pass roast S12-introspection/roles.t by fixing .^roles and role punning by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1958
+- fix: support role BUILD submethods during mixin and multi-role does by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1961
+- fix: support slurp($fh) and fix Stmt::Call implicit return in sub bodies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1963
+- fix: improve regex character class handling and ** quantifier by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1962
+- fix: implement proper cmp semantics for lists, ranges, and NaN Rats by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1964
+- fix: improve Pair handling (Pair.new named args, .Pair identity, cmp-ok, gist) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1965
+- fix: improve enum infrastructure for dynamic declarations and methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1966
+- chore: add 2 tests to whitelist and fix Pair.new with named args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1967
+- fix: pass all 63 subtests in roast/S32-str/indent.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1969
+- fix: pass all 109 subtests in roast/S06-advanced/return.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1968
+- chore: add codex easy picker and document LXC environment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1971
+- fix: pass all 60 subtests in roast/S32-list/head.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1972
+- fix: pass all 1657 subtests in roast/S02-types/WHICH.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1973
+- fix: improve S12-class/basic.t pass rate from 31/43 to 41/43 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1974
+- fix: pass all 31 subtests in roast/S32-list/first.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1975
+- fix: improve Rat/BigRat support and type introspection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1976
+- fix: improve Range operations for roast/S02-types/range.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1977
+- fix: pass all 194 subtests in roast/S03-operators/buf.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1978
+- fix: implement zprintf %g/%G with decimal-place precision by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1979
+- fix: rightmost named argument wins when duplicate keys provided by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1980
+- fix: pass all 43 subtests in roast/S12-class/basic.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1981
+- fix: pass all 27 subtests in roast/S05-grammar/action-stubs.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1986
+- fix: improve WhateverCode handling for ranges, meta-ops, !~~, and closures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1987
+- fix: pass all 43 subtests in roast/S12-class/basic.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1989
+- chore: add .claude/worktrees/ to .gitignore by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1990
+- fix: handle NaN/negative Num in roll/pick and add 6 roast tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1991
+- chore: update roast history (2026-04-10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1992
+- fix: implement reactive Supply.start and fix xx for method calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1993
+- feat: implement Supply.batch with :elems/:seconds for live supplies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1996
+- fix: optimize function call performance, pass state.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1995
+- fix: parse BEGIN as PhaserExpr in expression context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1997
+- fix: resolve compiled functions with named-only parameters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1998
+- chore: add 33 newly passing roast tests to whitelist (985→1090) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/1999
+- fix: lazy triangle reduce, [^^]/[xor] semantics, prefix:<[op]> auto-gen by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2000
+- fix: add .of attribute to Scalar .VAR objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2001
+- fix: improve Array .raku/.perl for constrained, lazy, and circular arrays by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2002
+- fix: support nested index ++/-- and fix try with binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2005
+- [codex] fix: improve 04-negation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2006
+- fix: propagate writes through := bindings so bound vars see updates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2003
+- fix: distinguish positional vs associative indexing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2007
+- fix: handle #?v6.0.0+ skip directive and whitelist roast/S02-literals/pod.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2008
+- [codex] fix: preserve native array declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2009
+- fix: pass all 9 subtests in roast/S02-types/baggy.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2010
+- fix: add CallFrame attrs, @_ in methods, and package-qualified calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2011
+- fix: support Supply.words on live Supplier-backed supplies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2012
+- fix: pass all 12 subtests in roast/S32-list/permutations.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2014
+- fix: validate Pod =table paragraph blocks for mixed column separators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2013
+- fix: drop Empty hash entries in deepmap by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2016
+- fix: support is/does/hides on unit class and strip :: from parent names by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2015
+- fix: correct smartmatch results for junctions, m//, and s/// by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2017
+- fix: throw X::Promise::Resolved when vowing an already-resolved Promise by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2019
+- fix: flesh out $*VM/$?VM for S02-magicals/VM.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2020
+- fix: support utf8-c8 encoding and stateful Encoding::Decoder by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2021
+- fix: implement Buf/Blob write-num32 and write-num64 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2022
+- fix: reject invalid underscore placement in numeric literals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2023
+- fix: implement Semaphore.acquire/release with a counting registry by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2024
+- fix: implement lastcall to trim dispatch candidates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2025
+- fix: make Supply.wait block until live supplier is done by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2026
+- fix: implement Mu.WALK and diamond role attribute composition by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2027
+- fix: pass roast/S32-io/io-spec-qnx.t (canonpath :parent, is-absolute) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2030
+- fix: pass all 36 subtests in roast S02-types/instants-and-durations.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2029
+- chore: defer roast/S32-array/perl.t (container sharing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2031
+- fix: propagate imported operator sub metadata to parser by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2032
+- fix: support IO handles opened in promise threads and IO::Pipe.get by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2033
+- defer: add S05-mass/recursive.t to too_difficult.txt by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2034
+- defer: S11-modules/versioning.t (Raku language version pragmas) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2035
+- defer: S02-types/multi_dimensional_array.t (raku blocker) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2036
+- defer: add S17-supply/migrate.t to too_difficult.txt by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2037
+- fix: support named pair destructuring in signature bind by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2038
+- chore: defer roast/S17-supply/categorize.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2039
+- fix: pass roast/S11-modules/nested.t (nested module namespaces) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2040
+- fix: apply produce scan in tap-ok for live supplies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2041
+- fix: pass roast/S17-supply/flat.t (live-supplier Supply.flat + Tap close) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2042
+- fix: implement getc builtin and pass roast/S16-io/getc.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2043
+- fix: pass roast/S17-supply/interval.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2044
+- Implement method-level `handles` trait for delegation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2045
+- fix: implement IO::Spec::*.tmpdir class method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2046
+- chore: mark roast/S32-io/child-secure.t too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2047
+- fix: pass export tags through for Test::* module imports by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2048
+- fix: EVAL sees outer user subs and they shadow listop builtins by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2049
+- fix: enforce Raku minimal-whitespace parser rules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2050
+- fix: raise X::Import::NoSuchTag for bad tags on unit modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2051
+- chore: update roast history (1022 passing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2052
+- fix: implement parse-base sub form, pass roast/S32-str/parse-base.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2053
+- fix: bridge live Supply emits into Channel via Supply.Channel by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2054
+- chore: mark roast/S02-magicals/sub.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2055
+- chore: mark S12-methods/accessors.t as too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2057
+- fix: support multi-arg *-POS methods on undimensioned arrays by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2056
+- fix: pass roast/S32-temporal/juliandate.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2058
+- fix: support named, colonpair, and slip arg passing for grammar subrules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2059
+- fix: parse Pod =defn blocks (S26-documentation/14-defn.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2060
+- fix: support split() on IO::Handle by slurping the file first by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2061
+- fix: pass roast/S17-supply/minmax.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2062
+- fix: improve package scope handling for nested package blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2063
+- chore: mark S03-binding/attributes.t as too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2064
+- fix: pass roast/S17-supply/comb.t (Supply.comb routing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2065
+- fix: pass roast/S16-io/eof.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2066
+- chore: mark roast/S12-meta/exporthow.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2067
+- fix: support Pod # alias for :numbered on abbreviated blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2068
+- chore: defer roast/S17-procasync/encoding.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2069
+- chore: mark roast/S32-temporal/local.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2070
+- chore: mark roast/S32-list/categorize.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2071
+- fix: pass S05-grammar/polymorphism.t (virtual subrule dispatch + capture reset) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2072
+- chore: mark roast/S11-repository/curli-install.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2073
+- chore: mark roast/S32-io/io-path-cygwin.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2074
+- fix: lexical `&foo` parameter shadows package sub for bare calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2075
+- Defer roast/S32-hash/perl.t (Scalar-container .raku semantics) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2076
+- chore: mark roast/S05-capture/caps.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2077
+- fix: throw X::ControlFlow::Return for return outside routine by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2078
+- fix: implement StrDistance and read-only topic for tr/// operator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2079
+- chore: defer roast/S05-capture/array-alias.t (raku itself fails) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2080
+- chore: mark socket-recv-vs-read.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2081
+- Pass roast/S04-declarations/our.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2082
+- chore: defer roast/S06-advanced/return-prioritization.t (rakudo bug) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2083
+- fix: pass S12-introspection/parents.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2084
+- fix: pass roast/S32-basics/warn.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2085
+- chore: mark S14-roles/parameterized-mixin.t as too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2086
+- chore: mark roast/S32-basics/xxPOS.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2087
+- chore: mark roast/S26-documentation/07b-tables.t too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2089
+- fix: return Any for hash-subscript of bare type object by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2090
+- chore: defer roast/S03-operators/context.t to too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2091
+- fix: pass roast/S17-lowlevel/cas.t fully by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2092
+- chore: mark S04-phasers/in-eval.t as too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2093
+- chore: defer S26 08-formattingcodes.t to too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2094
+- chore: defer roast/S05-metasyntax/repeat.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2095
+- fix: prevent qualified class names from shadowing builtin types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2097
+- fix: Lock::Async.lock returns Promise; unlock throws X::Lock::Async::NotLocked by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2098
+- docs(TODO_roast): document litvar.t blockers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2099
+- Defer roast/S11-modules/import-multi.t (raku compile failure) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2100
+- chore: defer roast/S14-traits/routines.t to too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2101
+- chore: mark roast/S32-io/pipe.t as too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2102
+- docs: defer roast/S02-magicals/dollar-underscore.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2103
+- chore: mark roast/S11-repository/cur-current-distribution.t as too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2104
+- fix: pass roast/S04-exception-handlers/catch.t (nested CATCH, .resume, X::Phaser::Multiple) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2105
+- docs: mark roast/S32-str/format.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2106
+- docs: mark S04-statements/gather.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2107
+- chore: record S02-literals/allomorphic.t as too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2108
+- docs: mark S12-subset/subtypes.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2109
+- fix: support CX::Take/Emit/Done/X::Control in CONTROL blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2110
+- Defer roast/S04-statements/for.t (raku itself fails subtest 65) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2111
+- defer: S12-methods/qualified.t to too_difficult.txt by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2112
+- fix: sync multidim index assign into VM locals slot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2113
+- docs: defer roast/S02-literals/string-interpolation.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2114
+- docs: defer roast/S12-introspection/walk.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2115
+- fix: implement .comb on IO::Handle and IO::Path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2116
+- chore: mark roast/S03-operators/identity.t as too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2117
+- fix: autovivify nested/positional index assignments correctly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2118
+- fix: pass roast/S32-array/delete-adverb.t fully by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2119
+- chore: mark roast/S17-promise/then.t as too_difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2120
+- defer: S02-types/nil.t — raku 2022.12 cannot compile the test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2121
+- defer: mark S17-lowlevel/lock.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2124
+- chore: mark roast/S29-os/system.t as too difficult by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2125
+- docs: defer roast/S32-array/adverbs.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2126
+- chore: defer roast/S06-advanced/wrap.t (raku itself fails) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2127
+- docs: defer S17-promise/nonblocking-await.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2128
+- fix: improve SetHash support (roast/S02-types/sethash.t 150→222) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2129
+- docs: defer roast/S12-attributes/clone.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2131
+- docs: defer roast/S32-io/io-path.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2132
+- fix: allow declarator keywords as pair keys by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2133
+- fix: curry * ~~ Type as WhateverCode and give start blocks fresh $/ and $! by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2134
+- chore: update roast history (1048 passing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2135
+- fix: implement LTM for regex | alternation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2136
+- fix: improve Pod declarator doc comments (60/63 S26 block-leading) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2137
+- fix: pass all 21 subtests in roast/S32-container/buf.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2138
+- fix: implement Pod code blocks, formatting codes, and =begin code by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2139
+- fix: implement IO::Spec::Unix methods to pass roast/S32-io/io-spec-unix.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2141
+- fix: support nested list/range indices in array and range slicing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2142
+- fix: implement proper scalar binding semantics (roast S03-binding/scalars.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2143
+- fix: pass all 557 subtests in roast/S32-num/complex.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2144
+- fix: implement IO::Spec::Cygwin path handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2145
+- fix: pass all 66 subtests in roast/S26-documentation/why-leading.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2146
+- fix: implement full IO::Spec::Win32 support (213 subtests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2147
+- chore: update roast history (1056 passing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2148
+- chore(deps): bump rand from 0.8.5 to 0.8.6 by @dependabot[bot] in https://github.com/tokuhirom/mutsu/pull/2149
+- fix: improve DateTime/Instant/Duration temporal precision and leap seconds by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2150
+- fix: pass all 29 subtests in roast/S06-operator-overloading/sub.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2151
+- fix: pass all 50 subtests in roast/S02-types/flattening.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2154
+- fix: implement full Pod config parsing (98 subtests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2153
+- fix: add QuantHash to known type constraints by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2152
+- fix: pass all 112 subtests in roast/S02-types/hash.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2155
+- fix: degrade BigRat to Num when denominator exceeds uint64 range by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2156
+- feat: implement utf8-c8 encoding round-trip support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2158
+- fix: improve Capture type coercion and add io-spec-win to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2159
+- fix: implement nextsame/nextwith in proto-dispatched multi subs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2160
+- fix: improve S12-attributes/class.t from 12/28 to 22/28 passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2161
+- fix: handle buf16/Buf[uint16] decode as UTF-16 code units by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2162
+- fix: improve Set/Bag/Mix support — ACCEPTS, STORE, Capture, lazy check, subclass construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2163
+- fix: handle backslash escapes in regex character class bracket extraction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2164
+- fix: improve S02-types/pair.t from 0/182 to 174/182 passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2165
+- fix: pass all 193 subtests in roast/S05-mass/stdrules.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2166
+- feat: add HyperSeq/RaceSeq value types for .hyper/.race by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2167
+- fix: thread junctions through %% and !%% operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2168
+- fix: improve S02-types/mix.t from 234/244 to 240/244 passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2169
+- fix: pass all 62 subtests in roast/S32-io/spurt.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2170
+- fix: implement X::PoisonedAlias and return Failure for enum coercion errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2172
+- fix: pass S26-documentation/wacky.t by improving Pod doc comment handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2171
+- fix: pass roast/S13-overloading/typecasting-long.t (39 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2173
+- fix: implement PartialEq for Uni values to fix eqv/is-deeply by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2174
+- fix: pass roast/S12-construction/roles-6e.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2176
+- fix: pass all 48 subtests in roast/S03-binding/arrays.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2177
+- fix: wrap negative values for uint/uint64 and fix inline native decl expr by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2178
+- fix: pass all 77 subtests in roast/S26-documentation/07a-tables.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2179
+- fix: pass all 38 subtests in roast/S12-methods/calling_sets.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2180
+- fix: pass all 55 subtests in roast/S15-nfg/concat-stable.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2181
+- fix: resolve type captures in return type checks, compound assignment, and declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2182
+- fix: improve junction support for S03-junctions/misc.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2183
+- fix: pass all 28 subtests in roast/S32-list/categorize-list.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2184
+- fix: handle GB18030 PUA encoding and replacement string encoding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2185
+- fix: pass all 129 subtests in roast/S32-basics/xxKEY.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2186
+- fix: pass all 25 subtests in roast/S04-declarations/constant-6.d.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2187
+- fix: implement regex features and class-scoped sub visibility by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2188
+- fix: pass all 39 subtests in roast/S32-io/utf16.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2189
+- fix: pass all 60 subtests in roast/S02-types/subset-6e.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2190
+- fix: pass all 57 subtests in roast/S26-documentation/why-both.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2192
+- fix: implement BIND-POS and DELETE-POS for non-native arrays by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2191
+- fix: improve typed hash smartmatch and metadata propagation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2193
+- chore: update roast history (1083 passing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2194
+- fix: add ArraySlotRef for nested structure binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2195
+- fix: pass all 21 subtests in roast/S32-io/slurp.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2196
+- chore: add PLAN.md — practical usability roadmap by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2197
+- fix: accumulate named captures for repeated grammar subrules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2198
+- fix: fix double usage output and improve MAIN sub argument handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2199
+- docs: expand README for potential users by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2201
+- feat: add release workflow for mise support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2202
+- perf: optimize state variable handling and for-loop performance by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2204
+- feat: add runtime error backtraces with file and line info by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2203
+- fix: pass all 41 subtests in roast/S12-class/inheritance.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2205
+- feat: implement .line, .file, and .backtrace methods on exception objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2206
+- fix: support grab/grabpairs with Callable and Scalar decontainerization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2207
+- perf: add lightweight call path for named-parameter functions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2209
+- fix: make triangle reduce on infinite ranges truly lazy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2208
+- chore: update HISTORY.tsv and add 2 newly passing roast tests (1148) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2210
+- test: add comprehensive require tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2213
+- fix: implement parallel execution for hyper/race map and grep by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2214
+- perf: add fast path for ratcheted Named regex atoms in quantifier loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2212
+- feat: add 'Did you mean ...?' suggestions for method-not-found errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2211
+- feat: return Backtrace object from .backtrace instead of plain string by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2215
+- feat: JSON::Tiny to-json compatibility by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2216
+- feat: add performance benchmark suite (mutsu vs raku) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2217
+- feat: show source code snippets with caret in parse error messages by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2218
+- docs: add user guide (Phase 4-2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2219
+- feat: support from-json via grammar features for JSON::Tiny by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2220
+- fix: support double-sigil interpolation in strings and detect undeclared vars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2221
+- docs: update PLAN.md with completed Phase 1-6 status by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2222
+- docs: add monthly news for Feb-Apr 2026 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2225
+- docs: update PLAN.md and add news/2026-05.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2223
+- docs: add PLAN.md/news conventions to CLAUDE.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2226
+- fix: improve grammar infrastructure for JSON::Tiny from-json arrays by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2227
+- docs: prioritize PLAN.md — perf → from-json → containers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2228
+- perf: 15x faster function calls via positional light call path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2229
+- fix: grammar aliased capture action dispatch and regex char class alternations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2231
+- docs: add 2026 yearly roadmap to PLAN.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2230
+- fix: pass array length to all WhateverCode params in subscript evaluation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2232
+- feat: implement Str.indices, chaining eqv/before/after, Rat positions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2235
+- fix: parse make with fat-arrow so from-json works for JSON objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2233
+- docs: add agent workflow rules to CLAUDE.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2236
+- fix: use ?LINE env var as fallback for warn line number by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2237
+- fix: implement +@ (onearg) slurpy parameter binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2238
+- fix: use downstream supplier snapshot in tap-ok for batch supplies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2239
+- fix: correct junction concat threading and add OUR:: stash support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2240
+- fix: support :ver/:auth on roles and fix multidim string index assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2241
+- fix: validate =begin table empty content and + column separator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2243
+- fix: skip heredoc content when collecting Pod doc comments by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2244
+- fix: negated char class with :i, standalone m// result, user-defined Unicode infix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2245
+- fix: support .does() with parameterized roles and named role params by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2246
+- docs: add web blog stack as Q3 target in PLAN.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2248
+- fix: return Failure for Num division/modulo by zero and power underflow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2250
+- fix: preserve BigRat precision and improve .Rat/.FatRat coercers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2249
+- fix: degrade Rat to Num when arithmetic produces denominator exceeding u64 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2256
+- fix: grammar action class-level my vars, utf16.new with Seq, and stack overflow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2251
+- fix: autothread junction keys in hash subscript access by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2254
+- fix: support loading modules with type adverbs and Hash subclass element assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2255
+- fix: support shared container semantics for clone and chained accessor assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2253
+- fix: support .= inplace operators on sigilless vars, constants, and adverbs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2257
+- fix: implement .subst adverbs :x, :nth, :p, :c and fix $/ on non-match by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2258
+- fix: parse adjacent colonpairs and return Failure from chdir by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2259
+- fix: support hyper prefix ++/-- and improve hyper method dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2260
+- feat: implement regex hash capture aliasing (%<name>= and %ident=) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2261
+- fix: support list assignment with multiple targets in parenthesized expressions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2264
+- fix: parse adjacent colonpairs and return Failure from indir by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2262
+- fix: support open/closed class semantics in roast S12 test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2265
+- fix: handle literal [ in char classes and support regex alias assertions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2267
+- fix: support ** quantifier modifiers, <alias=rule>, <commit>, and char class subtraction in regex by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2263
+- fix: support subtest fat-arrow syntax and bare pseudo-stash access by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2268
+- fix: support does on Hash/Array, fix andthen topic, add mixin attr accessors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2270
+- fix: update ArraySlotRef/HashSlotRef after COW element assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2271
+- fix: resolve JSON::Tiny test failures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2272
+- fix: make &?ROUTINE work in anonymous subs for self-recursion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2276
+- fix: add per-file timeout support to make roast by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2274
+- fix: improve val() allomorphics and .Numeric for radix, Unicode, and complex numbers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2275
+- fix: correct LTM expansion for prefix+subrule % sep patterns by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2278
+- perf: skip env clone in fast-call when function has no locals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2277
+- fix: increase per-file timeout for roast/S29-context/sleep.t to 60s by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2280
+- fix: add is_bind to AssignExpr and implement rebind semantics for expression-context := by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2279
+- fix: implement $*SCHEDULER.uncaught_handler for sunk broken promises by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2281
+- fix: throw X::Syntax::Confused for unknown postfix operators and two-terms-in-a-row by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2282
+- fix: handle IO::Path ~~ Str smartmatch and add chdir.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2283
+- fix: preserve Scalar containers passed to List.new and add list.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2285
+- fix: restore $_ topic after lives-ok/dies-ok blocks and support Range+Mixin arithmetic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2288
+- fix: pass all 55 subtests in roast/S05-metasyntax/regex.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2289
+- fix: reject plan skip-all inside Block subtest callable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2290
+- fix: improve nested package support for S10-packages/scope.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2294
+- fix: reorder phasers in EVAL'd code for correct execution timing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2291
+- fix: support custom trait_mod:<is> dispatch on class/role declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2292
+- fix: scope non-exported unit module subs to prevent GLOBAL leaking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2293
+- perf: fast-path literal defaults in class constructors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2297
+- fix: pass all 1453 subtests in roast/S32-str/val.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2298
+- fix: deepmap on typed arrays returns List when results violate constraint by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2299
+- fix: pass all 33 subtests in roast/S05-metasyntax/litvar.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2300
+- fix: implement context operators @(), %(), item(), P5 dereference detection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2301
+- fix: fix %(expr) hash context and @<name>/%<name> capture variable parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2306
+- fix: implement custom trait_mod:<is> dispatch for sub declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2305
+- fix: pass all 46 subtests in roast/S05-metasyntax/repeat.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2307
+- fix: pass all 22 subtests in roast/S02-types/autovivification.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2309
+- fix: silently ignore unknown sub traits and restore whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2308
+- fix: implement proper uniname/uninames for all codepoint categories by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2310
+- fix: implement write-int/write-uint Buf methods and fix WhateverCode composition by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2296
+- fix: support Unicode case folding in :i regex for ligatures and sharp s by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2311
+- fix: propagate := bind alias writes for env-based vars like $_ by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2304
+- fix: optimize named-param calls and fix array ++/-- sharing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2295
+- fix: pass all 47 subtests in roast/S09-typed-arrays/hashes.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2312
+- chore: restore 3 whitelist entries removed by PR #2301 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2313
+- fix: pass all 19 subtests in roast/S06-signature/types.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2315
+- fix: pass all 30 subtests in roast/S02-types/lists.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2316
+- fix: pass all 46 subtests in roast/S03-operators/identity.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2314
+- feat: implement is DEPRECATED deprecation tracking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2317
+- chore: add enums/basic.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2318
+- fix: support :ignoremark regex in capture groups for JSON::Tiny by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2319
+- fix: implement container identity (=:=) for bound hash elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2320
+- fix: IO::Pipe methods, exit(Bool), and reverse(LazyIoLines) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2321
+- chore: update HISTORY.tsv with latest roast results (1117 pass) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2323
+- fix: prevent $-sigiled variables from shadowing class type objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2325
+- fix: emit SetLine in block bodies and fix method deprecation line tracking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2322
+- chore: update PLAN.md whitelist count to 1179 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2324
+- fix: support supply { whenever } with die propagation to quit handlers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2327
+- fix: END phasers inside closures fire only once by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2328
+- fix: pass all JSON::Tiny upstream tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2329
+- fix: support $* twigil variables in regex patterns by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2330
+- fix: scope positional captures in grammar action methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2331
+- chore: update PLAN.md progress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2333
+- fix: whenever blocks inside supply receive emitted values instead of Supplier object by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2334
+- chore: add 3 newly passing roast tests to whitelist (1182) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2332
+- fix: implement Supply.zip with :with combiner, validation, and live support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2336
+- fix: improve package scope visibility for our/my package declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2337
+- fix: interior mutation for shared arrays (container semantics) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2338
+- fix: propagate named_subcaps through regex alternation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2339
+- fix: regex frugal quantifier, grammar match selection, and Pair positional args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2340
+- perf: reduce env mutations in light call path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2341
+- perf: skip NFC normalization for ASCII-only strings (46x string-concat speedup) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2342
+- perf: method resolution cache + Int/Num arithmetic fast paths by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2343
+- docs: update news/2026-05.md and PLAN.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2345
+- perf: fast path for simple class .new() + CI stability by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2344
+- perf: skip env merge for read-only compiled methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2347
+- chore: update HISTORY.tsv with 2026-05-20 roast stats by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2348
+- fix: perf optimization regressions in env handling and positional light calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2350
+- fix: perf regression in class attribute handling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2349
+- fix: perf regression in method dispatch, param binding, and env merge by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2351
+- fix: perf regression - env sync and attribute accessor fast path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2352
+- fix: perf optimization regressions in env merge and deprecation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2353
+- fix: per-slot dirty tracking prevents env clobbering in ENTER/LEAVE phasers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2354
+- fix: return type smiley (:D/:U) checking for --> constraints by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2355
+- fix: Supply.zip with channel-based supplies and LAST phaser in react by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2357
+- fix: END phaser env handling for closures and EVAL contexts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2359
+- fix: propagate die in supply/react as X::React::Died by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2358
+- fix: pipe chaining, :bin mode, and binary write for run() by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2361
+- feat: implement $?DISTRIBUTION support and Distribution.meta by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2362
+- feat: implement Distribution and CompUnit repository infrastructure by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2363
+- fix: error on qualified bareword function calls to unknown packages by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2360
+- feat: implement Channel.Supply, Supply.throttle, and LazyList.Supply by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2366
+- fix: improve S14-traits/routines.t pass rate (12 -> 14 of 17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2364
+- fix: reject private attribute twigil (!) outside class for @!/%! vars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2367
+- feat: implement IO::Socket::Async UDP support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2370
+- fix: validate signature alternates and fix Num widening for named params by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2369
+- feat: implement caller() function with type filtering and skip navigation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2371
+- feat: implement Thread class methods for S17-lowlevel/thread.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2373
+- fix: per-candidate language revision tracking for role versioning by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2374
+- fix: Promise.then passes Promise to callback, add andthen/orelse methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2372
+- docs: document open_closed.t roast test status by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2375
+- fix: underscore-to-kebab normalization for dynamic variable names by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2376
+- feat: implement atomic variable operation functions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2378
+- fix: implement private attribute access via trust for assignment and reading by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2379
+- fix: strict .decode() error handling and :replacement support by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2377
+- chore: increase batch.t CI timeout to 180s by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2368
+- feat: implement %*SUB-MAIN-OPTS and improve MAIN dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2380
+- fix: Supplier reuse after done/quit and Tap.close return value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2381
+- fix: pass all 178 subtests in roast/S16-io/lines.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2382
+- perf: inline sort comparator for simple patterns (8700x speedup) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2383
+- docs: document hash fast path rejection root cause by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2384
+- perf: fix hash fast path for shared Arc (365x speedup) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2385
+- docs: update PERFORMANCE.md with accurate benchmarks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2386
+- perf: add ArrayPush opcode (64x speedup on push) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2387
+- docs: rewrite PERFORMANCE.md with method dispatch analysis and roadmap by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2388
+- perf: fast method dispatch path (20-27% speedup) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2389
+- docs: update perf plan after method dispatch optimization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2390
+- perf: compile $!attr to GetLocal instead of GetGlobal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2391
+- perf: monomorphic inline cache for method resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2392
+- docs: update PERFORMANCE.md after $!attr GetLocal and inline cache by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2393
+- perf: reduce method dispatch entry overhead by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2394
+- perf: lightweight call frame for fast method dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2395
+- perf: avoid String allocation in method dispatch and skip wrap chain check by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2396
+- perf: pre-compute attribute slot indices for method exit writeback by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2397
+- perf: reduce env inserts and compile ?CLASS/?ROLE to GetLocal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2398
+- docs: update PERFORMANCE.md with optimization roadmap by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2399
+- refactor: replace Env Deref/DerefMut with explicit methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2400
+- feat: implement shared ContainerRef for := binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2401
+- docs: update container semantics progress in PLAN.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2402
+- fix: improve ContainerRef for our variables and cross-scope binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2403
+- fix: support nested structure element binding in IndexAutovivifyLazy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2405
+- fix: implement in-place undefine for arrays and hashes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2404
+- perf: fast method dispatch cache for compiled methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2407
+- docs: update PLAN.md and PERFORMANCE.md with perf status by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2408
+- perf: add needs_env_sync infrastructure for env compaction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2409
+- perf: add needs_env_sync infrastructure for future env compaction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2410
+- perf: use Symbol keys in Env for faster method dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2411
+- fix: use interior mutation for nested array writes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2406
+- fix: preserve nested ArraySlotRef bindings during parent element assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2413
+- fix: implement undefine rw semantics and temp+undefine combinations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2414
+- feat: implement is built trait and method-over-accessor priority by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2412
+- docs: add roast blockers analysis grouped by missing feature by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2416
+- cleanup: remove stale TODO_roast files superseded by BLOCKERS.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2417
+- fix: make $*CWD thread-local to prevent cross-thread leakage by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2418
+- cleanup: consolidate TODO files into PLAN.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2419
+- fix: initialize native type variables to zero defaults by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2415
+- perf: optimize cas {.succ} and implement hash element CAS by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2420
+- fix: support CAS on instance attributes ($!attr) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2421
+- chore: add atomic.t to roast whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2422
+- fix: implement skip builtin function and fix WhateverCode in pair values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2423
+- feat: implement typed exceptions for throws-like matching by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2424
+- fix: block access to my-scoped subs via package-qualified calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2426
+- fix: handle Empty (empty Slip) in ArrayPush for typed arrays by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2427
+- fix: pass all roast/S32-io/pipe.t tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2425
+- fix: prevent premature done callback in supply blocks with whenever by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2428
+- feat: implement Pod formatting codes (recursive, V<>, L<>, E<>, <<>>) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2430
+- fix: implement shaped array semantics for multi-dim *-POS methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2429
+- fix: implement Supply.throttle with time-based batching, control, and status by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2431
+- fix: improve is default() trait support for private attrs and array/hash elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2432
+- feat: implement Supply.zip-latest combinator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2433
+- fix: preserve $_ binding alias across block scope exit by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2434
+- feat: implement .Numeric/.Real warnings on type objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2435
+- fix: improve unspace parsing for degenerate form and invocant-colon syntax by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2437
+- fix: make &?ROUTINE transparent through bare blocks and work in named regex by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2438
+- fix: improve pseudo-package support (::, MY.WHO, indirect ::($name)) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2436
+- fix: implement hyper-assign operators and flat laziness propagation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2439
+- fix: allow keyword-named subs to be called and detect class redeclaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2440
+- fix: expose infix/prefix/postfix operators to EVAL parser by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2443
+- fix: remove mro-6e.t from whitelist (fails on main) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2444
+- fix: implement bidirectional container sharing for := binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2441
+- fix: improve is default() trait handling for variables and attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2445
+- fix: support does Numeric/Real on user classes and fix expr-context class role composition by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2446
+- chore: add 2 newly passing roast tests to whitelist (1198) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2442
+- fix: correct BagHash X::Cannot::Lazy .what and enable re-assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2447
+- fix: deep autovivification and $%h/$@a itemization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2448
+- fix: resolve 7 failing tests in roast/S02-types/set.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2450
+- fix: wrap CHECK phaser errors in X::Comp::BeginTime and catch return in .map by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2449
+- fix: implement $OUTER:: variable access and improve closure variable isolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2451
+- fix: improve S14-traits/routines.t pass rate (14 -> 16 of 17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2452
+- fix: lazy array for infinite range .list and Capture as parent class by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2453
+- fix: improve S02-types/bag.t pass rate (247 -> 251 of 255) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2455
+- fix: native int != cross-signed comparison by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2457
+- fix: improve MixHash support — Rat weights, autovivification, hash keys by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2456
+- fix: improve native typed array support (S09-typed-arrays/native.t 4->10 pass) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2458
+- fix: pass all 59 tests in S02-types/multi_dimensional_array.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2459
+- fix: regex * % separator captures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2463
+- fix: pass all 244 tests in roast/S02-types/mix.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2462
+- fix: support Match hash slice access ($/<a b>) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2464
+- fix: handle # comments with braces in regex/token body parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2465
+- fix: proto regex frugal quantifier and word list backslash escapes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2466
+- fix: skip angle brackets and bracket groups in LTM separator check by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2467
+- fix: .map on itemized lists and given/when return values in map callbacks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2468
+- fix: grammar parent class resolution and stack value guard in map by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2473
+- fix: grammar tokens override builtin char class names in subrule resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2475
+- fix: Supply.Promise for on-demand supplies with async whenever by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2476
+- fix: skip too-many-positionals check in .assuming on multi-dispatch wrapper Subs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2478
+- fix: role mixin attribute defaults and trait_mod does writeback by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2479
+- fix: use typed exceptions for X::Assignment::RO and X::TypeCheck::Binding::Parameter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2477
+- fix: Pod table parsing for =for table, blank-line grouping, and config by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2481
+- fix: expand range indices in hash slice assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2482
+- add roast/S17-supply/batch.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2480
+- fix: mixin improvements for roast S14-roles/mixin-6e.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2484
+- fix: role submethod composition and module package scoping by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2485
+- docs: update HISTORY.tsv, PLAN.md, and news for May 27 progress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2486
+- fix: support inst# paths in module resolution for CompUnit::Repository::Installation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2488
+- fix: capture leftover named args in %_ when named placeholders present by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2500
+- fix: rewrite .emit topic call in supply blocks and check empty_sig in call_sub_value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2487
+- fix: propagate $!attr := outer_var binding through ContainerRef for increment/decrement ops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2490
+- fix: implement $*TZ, DateTime.local, and leap-second-aware timezone conversion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2495
+- fix: pass roast/S11-repository/cur-candidates.t (CompUnit installation and run-script) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2491
+- fix: support recursive named regex patterns (left and right recursion) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2494
+- fix: S14-traits/routines.t — mixin array attrs, wrap closure writeback, &-param parsing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2492
+- docs: update news for May 28 progress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2501
+- fix: implement X::Worry::Precedence::Range typed exception by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2502
+- fix: X::IllegalDimensionInShape and X::Comp::BeginTime for lifted CHECK phasers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2503
+- fix: propagate ContainerRef on has $x attribute binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2504
+- fix: pass roast/S32-list/seq.t (all 50 tests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2499
+- fix: implement X::PseudoPackage::InDeclaration typed exception by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2507
+- fix: support bound variable declarations in expression context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2508
+- docs: add 6.d/sprintf.t to whitelist, document zprintf test bugs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2509
+- fix: support :k, :v, :kv, :p adverbs on min/max and add minmax.t to whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2510
+- fix: implement coroutine-based lazy gather/take by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2511
+- fix: implement X::Adverb typed exception for conflicting subscript adverbs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2505
+- docs: shift CLAUDE.md strategy to PLAN.md/BLOCKERS.md driven by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2506
+- fix: enforce readonly on constant declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2512
+- fix: temp restore semantics for roast S04-blocks-and-statements/temp.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2514
+- fix: improve Array.splice and for-loop @-sigil parameter mutability by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2515
+- fix: handle cross-type circular references in .raku representation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2516
+- fix: implement typed object hash semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2517
+- fix: Hash in Scalar perlification for roast/S32-hash/perl.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2518
+- docs: update HISTORY.tsv — pass 1138→1149, subtests +554 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2519
+- docs: update PLAN.md and BLOCKERS.md for May 30 progress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2520
+- fix: temp undefine($var) restores default value correctly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2521
+- fix: pass roast/S12-attributes/instance.t (all 152 subtests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2496
+- fix: persist anonymous state variable ($) across closure calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2522
+- fix: gather/take coroutine resume for for-loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2523
+- fix: preserve non-breaking spaces in pod table cell content by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2527
+- fix: S03-metaops/reduce.t improvements (rebased from #2498) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2524
+- fix: .emit method on values in supply blocks and tap arity checking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2483
+- fix: user-defined subs properly shadow same-named builtins by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2528
+- docs: update whitelist — add 7 newly passing tests, remove 7 flaky/failing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2529
+- fix: improve EVAL completeness — pass all 30 S29-context/eval.t tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2513
+- fix: preserve typed keys in Set/Bag/Mix .Hash coercion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2530
+- fix: implement proper .message methods for exception types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2532
+- fix: will phaser - FIRST loop guard, class-scoped LEAVE, short-circuit reductions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2497
+- fix: wrap errors from lifted CHECK phasers in X::Comp::BeginTime by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2531
+- docs: add 7 newly passing roast tests to whitelist (1220->1227) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2533
+- feat: implement real TCP socket binding for IO::Socket::Async.listen by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2474
+- fix: lazy infinite sequences and m:g code block execution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2534
+- fix: Seq.new deferred iteration and consumed roundtrip by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2536
+- fix: allomorph ACCEPTS checks both Numeric and Str parts for custom classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2535
+- docs: mark S32-temporal/local.t as passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2538
+- fix: don't clobber @/% source when index-assigning the for-loop topic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2539
+- feat: RAKU_EXCEPTIONS_HANDLER=JSON exception handler by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2540
+- fix: role method shadows accessor, mainline our/my $.a warning, where-clause NoSelf (S12 class.t 22->26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2541
+- docs: record accurate gather.t take-rw blocker (38/39 pass) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2542
+- docs: mark roast/S32-scalar/undef.t as passing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2543
+- fix: add post/highexpect attributes to X::Undeclared for bare undeclared variables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2544
+- fix: constant our-scoping, sub-call parens, and try-handled Failure reuse by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2545
+- fix: merge imported proto with existing proto and preserve trait-modified exports by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2546
+- fix: for-loop topic element writeback no longer clobbers the aggregate by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2547
+- fix: lazy .map for correct return-from-closure detection by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2537
+- fix(incus-setup): ensure incusbr0 forwarding past Docker's FORWARD DROP by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2548
+- feat: implement the Format class (6.e) and Format-aware .fmt by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2549
+- fix: callsame into punned roles, symbolic-deref operator assign, hyper infix sub names by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2551
+- fix: multi dispatch on capture subsignatures (S06-multi/subsignature.t 95/95) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2552
+- fix: MAIN enum/subset type-constraint coercion and named-anywhere dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2553
+- feat: native typed array Positional compliance, defaults, shaped :exists/:delete, whatever compound-assign by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2554
+- feat: register subset and class-method `is export` for import by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2555
+- fix: qualified dispatch through run-time mixins + parametric-role ambiguity (S12 qualified.t 6/7) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2556
+- chore: remove stray debug files and ignore them by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2557
+- chore: bump CI Rust to 1.96.0 and fix clippy lints by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2558
+- docs: default to single-threaded work, no sub-agents unless asked by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2559
+- chore: update roast history (2026-06-02) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2560
+- perf: fast path for anonymous state scalar (`$`) assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2562
+- chore: give inherently-slow roast tests proper timeouts in history script by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2561
+- chore: remove stray proc-async test scratch files and ignore them by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2563
+- chore: prune now-passing entries from too_difficult.txt by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2564
+- S09 typed arrays: fix native.t & arrays.t, broad typed-array fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2565
+- S09 native arrays: pass native-int/num/str.t and more by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2566
+- Make S12-methods/multi.t pass: role multi dispatch, .candidates, ambiguity, multi submethod by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2550
+- docs: ANALYSIS.md — architecture & quality review by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2567
+- Fix [op] reduction edge cases in S03-metaops/reduce.t (17->1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2568
+- S03-operators/assign.t: lvalue-yielding assignment & [op]= reduce-meta in expressions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2570
+- Alias $_ to topic var in statement-form 'with'; fix block-final 'if' value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2569
+- Nodal hyper methods return a List, not an Array (S03-metaops/hyper.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2572
+- vm: instrument VM->interpreter method-dispatch fallback rate (strangler step 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2571
+- vm: instrument function-dispatch fallback rate (strangler step 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2573
+- Support .splice on a bare Array value (S03-metaops/hyper.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2575
+- vm: dual-store design doc + sync-cost instrumentation (state-ownership slice 0+1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2574
+- Hyper ops on two hashes combine values key-by-key (S03-metaops/hyper.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2576
+- Hyper method/postfix on a hash, and hash<->scalar hyper ops (S03-metaops/hyper.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2578
+- vm: cut method-dispatch env deep-copies 4->1 per call (bench-class perf) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2577
+- Hyper meta-assignment over a list of lvalues writes back (S03-metaops/hyper.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2579
+- Support a reduction op as the inner op of a hyper op (S03-metaops/hyper.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2580
+- Autogenerate hyper prefix/postfix operators as callables (S03-metaops/hyper.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2581
+- vm: shrink closure capture-state work from O(env) to free variables (2.3-3x closure speedup) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2582
+- docs: document known flaky tests and how to handle them by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2583
+- Remove flaky S17-supply/batch.t from the roast whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2584
+- S03 hyper func-op: write back mutated values for sigilless-rw code-refs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2586
+- S03 hyper func-op: assignment meta-op write-back and dwim length rules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2588
+- vm: skip closure exit writeback scan for read-only closures (cumulative ~5.6x) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2585
+- vm: replace conservative whole-frame closure env-sync with free-var set by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2587
+- vm: hoist built-in enum constants into a shared immutable env base tier by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2589
+- vm: hoist immutable magic/dynamic-var defaults into the shared env base tier (4c pt1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2590
+- Fix #2585 rw-param write-back regression; add X::HyperOp::Infinite/NonDWIM by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2591
+- vm: gate per-read atomic check + typed closure-capture store (4c pt2a) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2592
+- S03 Set/Bag/Mix coercion: list-context flatten (don't flatten nested arrays) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2593
+- vm: Symbol-key the closure exit writeback scan (4c pt2b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2594
+- Junction .gist renders eigenstates with gist when nested in a list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2595
+- Hyper auto-increment/decrement writes mutation back to Array/Hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2596
+- vm: gate closure exit metadata write-back scans behind a monotonic flag (4c pt2c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2597
+- Hash .gist joins nested pairs with ", " (comma-space) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2598
+- deepmap parent-aware itemization; nodemap always returns a List by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2599
+- Hyper binary ops recurse into nested Iterables and Hash elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2600
+- vm: nativize sprintf/zprintf + per-name function-fallback diagnostic (decouple step 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2601
+- Hyper-op dwim: empty side yields empty; `*`-terminated list pads with last element by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2602
+- Hyper infix as a named function returns a List, like the operator form by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2603
+- vm: nativize attribute-accessor reads on the mut opcode (decouple step 4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2604
+- Hyper meta-assignment yields its value as an expression by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2606
+- docs: update S03 hyper.t status (154 -> ~20 sub-subtest fails) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2605
+- Hyper wordy postfix operator in dotted form is a method call by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2607
+- vm: stop mirroring slot-only locals into the interpreter env (dual-store decouple, Slice 5 step 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2608
+- docs: reorganize VM-decoupling roadmap (PLAN.md) + news/2026-06 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2609
+- QuantHash (Set/Bag/Mix) hyper function-ops: pass S03-metaops/infix.t in full by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2611
+- vm: don't mirror slot-only function params into the interpreter env (dual-store decouple step 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2610
+- vm: nativize default constructor (Foo.new) dispatch (lever A, step 5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2612
+- parser+vm: let a user-declared type shadow a built-in term constant by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2613
+- runtime: give user-code worker threads a large stack (fix debug-only stack overflow) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2614
+- io: IO::Path .CWD/.SPEC, words $limit, named for-loop unpack by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2616
+- io: .child(:secure), .resolve(:completely) Failure, .link, .IO on :U type objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2617
+- test: force lazy IO lines in `is` before comparison by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2618
+- docs: update IO Advanced Features blocker status by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2620
+- vm: nativize .map over an array with a simple block (lever A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2619
+- vm: nativize .subst over a Str with a simple pattern/replacement (lever A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2621
+- vm: nativize .sort over a plain array (no/simple comparator) (lever A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2622
+- unicode: unicmp operator, BEGIN-time use Test, GB/Shift-JIS encoding tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2624
+- temporal: store Duration seconds as Rational, fix Rat % BigInt modulo by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2626
+- vm: nativize multi-arity .map blocks and pointy-signature blocks (lever A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2623
+- vm: dispatch Test functions to their typed handler from the VM (lever A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2625
+- value: distinguish allomorphs in Set eqv by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2628
+- docs: slim PLAN.md, move completed lever-A 2nd-wave to news/2026-06 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2627
+- fix: keep PredictiveIterator-backed Seq association alive across scope (tail/Numeric) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2630
+- traits: dispatch user-defined trait_mod:<is> on attribute declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2631
+- fix: stop stale captured-env snapshots clobbering live caller lexicals on wrapped/closure calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2629
+- docs: reclassify wrap/placeholder/tail as fixed bugs; add flaky-triage guideline by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2633
+- fix: capture leftover named args into %_ for placeholder subs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2632
+- docs: Pseudo-packages blockers + closure-capture root-cause analysis by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2634
+- signature: enforce `is required` on named params like the `!` marker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2636
+- parser: signed numeric words in `<...>` produce allomorphs, not Str by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2637
+- docs: PLAN.md — plan the stable-container-ID refactor (intermittent typed-container flaky root cause) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2638
+- fix: keep typed (object) hash key constraint across COW / Arc-pointer reuse by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2635
+- parser: CORE-SETTING-REV and per-compunit $*RAKU.version; EVAL resolves use-exports by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2640
+- docs: concrete improvement plan for curli-install.t (CUR::Installation) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2642
+- vm: native .map — Pair topic + rw $_ writeback (lever A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2641
+- parser: fix `==>` feed into inline `my` decl + scalar-sink Array materialization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2643
+- runtime: full Match.gist with positional captures + nested-Match gist in containers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2644
+- docs: PLAN.md — sharpen stable-container-ID plan (Weak+reconcile dead-ends on native arrays) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2639
+- docs: PLAN.md — refresh backlog from session findings (feed/Match/operators) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2645
+- runtime: trailing declarator #= carries callable type to $=pod WHEREFORE by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2649
+- vm: scoped/overlay Env primitive + fast-path pilot (lever B, dual-store collapse) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2647
+- vm: scoped overlay on positional_light / light / non-fast-method paths (lever B, Slice 6) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2650
+- vm: named function path → scoped overlay via Env tombstones (lever B, Slice 6) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2651
+- vm: scoped overlay on closure dispatch + gather/lazy-list paths (lever B, Slice 6) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2652
+- vm: kill redundant per-call env_dirty/locals_dirty churn on compiled fast paths (lever B, Slice 6.1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2654
+- num: pass S32-num/rat.t (Rational role, Cool .Rat coercers, Int-subclass payload) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2653
+- Pass S02 unspace.t: postfix/infix ambiguity, sigilless term listop arg, augment Block dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2656
+- chore: drop flaky S02-names-vars/perl.t from roast whitelist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2658
+- vm: grep rw-view writeback for `for @a.grep(...) { $_++ }` (lever A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2657
+- feat: CompUnit::Repository::Installation — pass curli-install.t (19/19) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2646
+- vm: convert locals_dirty to write-through, delete the dirty-flag machinery (lever B, Slice 6.2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2655
+- runtime: extract TAP state into TapState struct (lever B carrier) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2659
+- docs(PLAN): conclude TAP-state item at Step A; record core Test-dispatch debt by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2660
+- Improve S05 angle-brackets: regex <...> metasyntax fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2661
+- docs: document S05-nonstrings/basic.t as blocked (obsolete spec) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2662
+- fix(vm): for-loop variable per-iteration capture in the int-range fast path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2663
+- regex: fix ratchet backtracking-control and leading-null alternatives (S05-mass/rx, recursive) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2664
+- Improve S05-substitution/subst.t: List/Match $/ results, multi-:nth, adverb errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2665
+- regex: memoize static-pattern parsing to fix subrule-heavy hang (S05 longest-alternative) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2667
+- S05 captures: conjunction merge, named-in-group subcaptures, native % separator quantifiers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2666
+- feat(vm): per-iteration closure capture for loop-body locals (lever C, owned_captures) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2668
+- S03-metaops/hyper.t: hyper-op precedence inheritance + recursive distribution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2670
+- feat(vm): closures capture the container, not the value (lever C Slice 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2669
+- docs(PLAN): first-class container identity as the #2 priority after interpreter elimination by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2671
+- feat(vm): compiler-driven box-on-capture for mutated loop-body locals (lever C Slice 2b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2672
+- feat(vm): enforce inline where constraints on variables and on ++/-- by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2673
+- refactor(vm): finish lever A — classify EVAL/pseudo-package as carrier, not tree-walk fallback by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2677
+- ci: extend test job timeout 15 -> 25 minutes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2678
+- feat(vm): flatten `@a = $bound` for scalars bound (`:=`) to a Positional by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2679
+- fix(regex): named capture `$<x>=(...)` must not consume a positional number by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2676
+- docs(BLOCKERS): refresh — drop passing entries, deepen analysis, add fix-difficulty by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2675
+- fix(regex): zero-width named captures for .caps/.chunks (S05-capture/caps.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2680
+- ci: run roast suite in parallel with prove -j4 (~3x faster) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2681
+- fix(vm): loop/if body-local `my` no longer clobbers an enclosing same-named outer var (lever C Slice 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2674
+- ci: drop release debug info in CI to speed up the build (~70s) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2682
+- docs(vm-dual-store): record measured remaining method-call dual-store costs (lever B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2683
+- perf(vm): multi-tier overlay env — kill per-nested-call O(env) deep copy (lever B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2684
+- fix(vm): type-check :=-binding to a typed-hash variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2685
+- docs(vm-dual-store): prep Slice 6.3 (env_dirty removal = lever B finish) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2686
+- fix(proc): pass all of roast/S29-os/system.t (run/shell/Proc) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2687
+- docs(blockers): sub-engineer work order to minimize conflicts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2688
+- perf(vm): eliminate per-method-call env→locals pull (lever B Slice 6.3 stage 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2689
+- feat(io): lazy words iterator with close-on-exhaust + IO::ArgFiles.new by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2690
+- feat(regex): numbered capture aliases + :s propagation into alternation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2691
+- perf(vm): accessor-read & native-construct env-pure (lever B Slice 6.3 stage 1b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2692
+- feat(regex): preserve inner subcap of aliased group — whitelist S05-capture/alias.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2693
+- docs(blockers): refine end-of-Tier-1 → Tier-2 implementation plan by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2694
+- docs: trim completed lever A/B/C narratives; keep future + Slice 6.3 resume map by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2695
+- fix(dispatch): type unknown-function call errors as X::Undeclared::Symbols by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2700
+- feat(vm): block-local `my` scope for if/else branches (lever C Slice 3b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2697
+- feat(exporthow): X::EXPORTHOW::InvalidDirective for unknown EXPORTHOW directives by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2701
+- feat(hash): zen-slice adverbs, X::Adverb, .name, Range-key slices by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2702
+- feat(signature): X::Parameter::WrongOrder for misordered parameters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2706
+- fix(io/gist): nested-topic writeback, collection custom gist, strict ASCII decode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2696
+- docs(blockers): record Tier-2 first pass + next misc2.t clusters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2708
+- perf(vm): precise env_dirty for 0-arg / heavy-named / push dispatch (lever B Slice 6.3 step 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2709
+- feat(constant): X::Redeclaration on same-scope constant redeclaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2698
+- feat(subst): X::Assignment::RO for s///|tr/// on a matching string literal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2704
+- docs(claude): exit-255/Failed-0 can be a self-introduced deterministic abort by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2711
+- feat(io): IO::Path::Cygwin backslash normalization + Win32 volume semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2712
+- feat(parser): structured X::Obsolete for foreach, C-style for, bare undef by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2713
+- perf(vm): precise env_dirty for regex/smartmatch (lever B Slice 6.3 step 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2710
+- fix(compiler): propagate given value from if/with branch-final position by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2715
+- docs(blockers): reclassify write-int.t as Whatever-currying, not 128-bit by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2716
+- docs(plan): reframe roadmap around "never duplicate interpreter code" (1 op = 1 impl) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2717
+- refactor(runtime): delete 9 duplicate builtin implementations (VM/Interpreter dedup) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2714
+- chore: update roast history (2026-06-07) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2718
+- fix(phasers): correct phaser order for will-trait blocks + class-body will leave by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2720
+- feat(signature): bind slurpy scalar parameters (*$x) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2721
+- refactor(dedup): delegate reduction %/mod to native arith_mod (Category C Phase 1a) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2719
+- feat(parser): X::Obsolete for Perl 5 `.` string concatenation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2722
+- refactor(dedup): share minmax_bounds_of_value for [minmax] reduction (Category C Phase 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2723
+- feat(parser): typed X::Syntax::Perl5Var for $& $backtick $pipe $question by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2724
+- fix(dispatch): bind Hash-sourced Pair elements positionally to .first matcher by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2725
+- refactor(dedup): finish Category A — delete remaining pure-value builtin copies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2726
+- refactor(dedup): share sort orchestration VM↔interpreter; VM-native comparator/:k/Hash sort (Category B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2727
+- refactor(dedup): share min/max fold VM↔interpreter; VM-native .min/.max incl :by (Category B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2728
+- refactor(dedup): share minmax fold VM↔interpreter; VM-native .minmax incl :by (Category B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2730
+- refactor(dedup): share .first matcher scan VM↔interpreter; VM-native .first (Category B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2731
+- docs(plan): record Category B block-fork migrations (sort/min/max/minmax/first) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2732
+- fix+dedup(elems): define elems($x) as $x.elems; delete drifted second copy (Category B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2733
+- fix+dedup(flat): single shared flat helper; fix nested-array over-flattening (Category B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2734
+- refactor(container): Phase 0 PR1 — canonical descalarize helper by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2736
+- refactor(container): Phase 0 PR2 — route recursive Scalar strips to descalarize by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2737
+- fix+dedup(join): single shared join_flat helper; fix join(sep, Range) ignoring separator (Category B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2735
+- refactor(container): Phase 0 PR3 — non-cloning with_deref ContainerRef reader by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2738
+- fix+dedup(reverse): single shared reverse; fix reverse() -> () (Category B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2739
+- docs: record container-identity Phase 0 (PR1-3) in PLAN.md + news by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2740
+- refactor(vm): share is_plain_eager_list; mark Category B done (recap + PLAN.md) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2741
+- refactor(container): Phase 0.5 step 1 — into_deref read chokepoint (behavior-invariant) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2742
+- fix(.first): bind pointy-block matcher param positionally over Pair elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2743
+- refactor(sort): single shared sort_value_generic; delete dispatch_sort duplicate wrapper by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2744
+- refactor(comb): move pure Int/Str split to builtins::comb, shared by both engines by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2745
+- refactor(substr): collapse four native substr slice copies into one shared helper by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2747
+- docs: close out Category C (dedup) — sort wrapper, .first binding, comb/substr placement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2748
+- docs(container): record Phase 1 slice-1 finding (broad closure boxing reverted) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2749
+- refactor(regex): unify validator/matcher into one parser, delete regex_validate.rs (ANALYSIS §3.1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2750
+- feat(container): Phase 1 slice 1 — sibling closures share a scalar cell (escape-aware) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2751
+- docs: background-watch a PR's CI instead of fire-and-forget by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2752
+- docs(plan): collapse completed dedup catalog to news, expand 最終ゴール into a roadmap by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2753
+- docs(container): architecture-first implementation order (escape analysis first) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2754
+- refactor(vm): visualize Interpreter fallbacks (ledger) + route succ/pred through unified dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2755
+- refactor(vm): route smartmatch + Routine method dispatch through unified dispatch (ledger §1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2756
+- refactor(vm): route cold term-position function fallbacks through unified dispatch (ledger §2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2757
+- feat(container): step 1 — escape analysis replaces the ≥2-sibling boxing proxy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2758
+- refactor(vm): extract enum/subset registries into shared Registry cell (phase ② PR-A slice 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2760
+- docs: phase ② (registry VM ownership) design + PLAN.md update by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2761
+- refactor(vm): migrate class metadata into shared Registry (phase ② PR-A slice 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2762
+- fix(closure): bareword f() to an exited-block closure keeps its captured lexical by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2759
+- refactor(vm): migrate class definitions into shared Registry (phase ② PR-A slice 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2763
+- refactor(vm): migrate roles group into shared Registry (phase ② PR-A slice 4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2764
+- docs(plan): retire container 4→1 deletion goal — 3 capture mechanisms proven non-redundant by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2766
+- refactor(vm): migrate functions/subs/tokens into shared Registry (phase ② PR-A final slice) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2767
+- feat(exceptions): X::Redeclaration for routines, cross-kind types, return types, augment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2768
+- refactor(vm): move MRO/class-lookup reads into Registry methods (phase ② PR-B slice 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2769
+- feat(exceptions): X::Syntax::Missing for bare constant and block-less for by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2770
+- refactor(vm): move method-resolution & type-match reads into Registry methods (phase ② PR-B slice 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2772
+- feat(exceptions): X::Obsolete for s///flag and empty <> diamond by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2771
+- feat(exceptions): reject illegal $-sigil names in my/our/state declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2773
+- refactor(vm): write-through cleanup + runtime reentrancy guard (phase ② PR-C, ② complete) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2775
+- feat(exceptions): X::Does::TypeObject and X::Mixin::NotComposable for does/but by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2774
+- feat(exceptions): typed X::Constructor::Positional for the default constructor by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2776
+- feat(exceptions): X::Inheritance::Unsupported for inheriting from a package by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2777
+- feat(exceptions): X::Syntax::Reserved for the () shape syntax in declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2778
+- refactor(vm): route Routine value dispatch through compiled-first (③ PR-1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2779
+- feat(exceptions): X::Hash::Store::OddNumber for a single-scalar hash assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2780
+- feat(exceptions): X::Placeholder::Mainline/Block for stray placeholders by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2781
+- refactor(vm): OTF-compile builtin-shadowing user subs (③ PR-2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2782
+- feat(exceptions): X::Syntax::Confused "Two terms in a row" in array literals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2783
+- feat(exceptions): X::Syntax::Perl5Var for $@ $; $, $. and @-/@+/%-/%+/%! by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2784
+- feat(exceptions): X::Undeclared.suggestions + open misc2.t suggestions gate by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2785
+- refactor(vm): compile-on-demand uncompiled user methods at §1 catch-all (③ PR-3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2786
+- feat(exceptions): X::Undeclared::Symbols routine_suggestion / type_suggestion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2787
+- feat(exceptions): X::Comp::Group for undeclared my-type + UnknownParent.suggestions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2789
+- refactor(vm): OTF-compile non-proto multi candidates (③ PR-4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2788
+- feat(exceptions): X::Syntax::Regex::NullRegex for empty regexes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2790
+- fix(lazy): guard grep over infinite Range via unified pull iterator (§8.1 PR-1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2791
+- feat(exceptions): X::Parameter::Default for default on required/slurpy params by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2792
+- fix(lazy): route sub-form map/first over Range through pull iterator (§8.1 PR-2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2793
+- feat(exceptions): X::Assignment::RO for assigning to an immutable literal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2794
+- exceptions role initialization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2795
+- fix(lazy): throw X::Cannot::Lazy for eager ops on infinite/lazy sources (§8.1 PR-4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2796
+- fix(exceptions): X::Numeric::Real.target should be a type object by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2797
+- feat(exceptions): X::Bind::ZenSlice for binding to a zen slice by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2798
+- fix(lazy): pull infinite gather coroutines lazily for .head/.first/index by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2799
+- feat(exceptions): X::Declaration::Scope for illegal `has` declarators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2800
+- docs(news): record §8.1 lazy pull-model series (PR-1/2/4 + #2799) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2801
+- fix(exceptions): populate X::Attribute::Undeclared accessors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2802
+- feat(exceptions): X::Signature::Placeholder for placeholders with explicit signature by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2803
+- feat(lazy): method-form .map/.grep over infinite source stay truly lazy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2804
+- feat(exceptions): X::Placeholder::Attribute for placeholders in attribute initializers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2805
+- docs: record method-form .map/.grep lazy fix (#2804) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2806
+- feat(exceptions): X::Parameter::Placeholder/Twigil for placeholder params by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2807
+- feat(vm): native dispatch for plain @-array mutators (§1 catch-all) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2808
+- feat(exceptions): X::Parameter::AfterDefault for trait/where after default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2809
+- feat(vm): native dispatch for any/all/one/none junction constructors (§2 terminal) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2810
+- feat(exceptions): X::Attribute::Package for has in module/package body by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2811
+- feat(exceptions): X::Syntax::NoSelf for $.attr where no self is available by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2812
+- feat(vm): native dispatch for mutable Buf write methods + builtins relocation (§1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2813
+- feat(exceptions): X::Phaser::PrePost condition source and message by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2814
+- feat(exceptions): X::Augment::NoSuchType for augmenting a missing type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2815
+- feat(exceptions): X::TypeCheck::Assignment .got is value, .expected is type object by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2816
+- feat(exceptions): X::Eval::NoSuchLang for EVAL with unsupported :lang by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2817
+- feat(exceptions): X::Temporal::InvalidFormat carries invalid-str and target by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2818
+- feat(vm): native dispatch for QuantHash coercions + builtins relocation (§1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2819
+- feat(exceptions): X::HyperOp::NonDWIM exposes operator routine handle by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2820
+- feat(exceptions): X::Export::NameClash for a symbol exported twice by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2821
+- feat(exceptions): X::DateTime::TimezoneClash for offset string + :timezone by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2822
+- feat(vm): native dispatch for the array-backed Iterator protocol (§1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2823
+- feat(exceptions): X::Parameter::InvalidType for unknown sub parameter types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2824
+- feat(exceptions): X::Comp::Group for a statement keyword used as a function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2825
+- feat(vm): native dispatch for plain @-array splice (§1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2826
+- docs(CLAUDE): decide the next slice while the PR's CI watch runs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2828
+- feat(exceptions): X::Comp with payload for definite-return + return arg by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2827
+- feat(exceptions): X::Method::NotFound for invoking a non-Callable value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2829
+- feat(exceptions): structured X::Method::Private::Permission/Unqualified by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2830
+- feat(exceptions): X::OutOfRange for scalar index + adverbed regex matchers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2832
+- feat(vm): native default construction for typed scalar attributes (§1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2833
+- feat(vm): native default construction for untyped @/% attributes (§1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2834
+- feat(vm): native default construction for `is required` attributes (§1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2835
+- feat(exceptions): X::Routine::Unwrap for invalid unwrap handles by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2836
+- feat(exceptions): X::Str::Numeric for non-numeric strings in numeric context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2831
+- feat(vm): native default construction for native-typed scalar attributes (§1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2837
+- feat(vm): correct construction of coercion-typed attributes + native path (§1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2838
+- feat(exceptions): X::Str::Trans::InvalidArg / IllegalKey for .trans by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2839
+- feat(exceptions): X::Comp::NYI for a constant with a twigil by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2840
+- feat(vm): native construction for typed `@`/`%` attributes (§1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2841
+- fix(ctor): correct construction of `is Type` and shaped container attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2844
+- feat(exceptions): X::Composition::NotComposable for does on a concrete type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2843
+- docs: re-plan interpreter removal as 3 parallel tracks + Phase I/II by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2845
+- feat(exceptions): X::Obsolete for the bare `<>` diamond by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2846
+- feat(exceptions): X::Syntax::Name::Null for empty name components by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2847
+- docs(vm): root-cause analysis of dynamic-var visibility across closure frames by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2849
+- feat(exceptions): X::Syntax::Signature::InvocantMarker for a late `:` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2848
+- feat(exceptions): X::Bind::NativeType for binding a native-typed variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2850
+- docs(container): design first-class instance cells (Phase 3, option C) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2851
+- feat(exceptions): X::Backslash::UnrecognizedSequence for unknown string escapes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2852
+- feat(exceptions): X::Syntax::NonAssociative carries .left / .right by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2853
+- feat(exceptions): X::Syntax::Missing for a bare `sub` without a block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2854
+- feat(exceptions): X::Str::Match::x for invalid :x adverb to .match by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2855
+- refactor(value): InstanceAttrs encapsulation boundary (Phase 3 Stage 0) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2856
+- feat(exceptions): X::Syntax::VirtualCall for $.attr in an attribute initializer by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2857
+- feat(exceptions): X::Signature::NameClash for a rename key colliding with an inner alias by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2858
+- feat(exceptions): X::Syntax::Extension::Null for an empty operator symbol by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2860
+- feat(exceptions): X::Value::Dynamic for a dynamic value on a boolean regex adverb by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2861
+- feat(exceptions): X::Syntax::NegatedPair for an argument on a negated colonpair by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2859
+- feat(exceptions): X::Syntax::Augment::Illegal and X::Anon::Augment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2864
+- feat(exceptions): X::Syntax::Variable::IndirectDeclaration for my $::(EXPR) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2863
+- feat(exceptions): carry adverb/construct on X::Syntax::Regex::Adverb by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2865
+- feat(exceptions): X::Backslash::NonVariableDollar for a bare $ in a string by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2866
+- fix: make `use MONKEY-TYPING` lexically scoped by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2867
+- feat(exceptions): X::Syntax::Pod::BeginWithoutIdentifier for bare =begin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2868
+- feat(exceptions): X::Syntax::P5 for Perl 5 `for my $x (LIST)` foreach by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2869
+- feat(exceptions): X::Bind for call / pseudo-package bind left-hand sides by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2870
+- fix: do not flag anonymous variables in the EVAL undeclared-var check by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2871
+- fix(test): report EVAL line/filename on throws-like compile-time exceptions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2873
+- feat(exceptions): seven more misc2.t throws-like cases by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2874
+- feat(exceptions): complete misc2.t — open() returns Failure, print/say/put on Failure -> X::Multi::NoMatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2875
+- Phase 3 Stage 1: shared mutable instance attribute cells by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2872
+- test(roast): whitelist S06-signature/slurpy-blocks.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2876
+- docs: Stage 2 keystone implementation map (cell as sole source) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2877
+- feat(nil): Nil type-object semantics (subscript, push, ords/chrs, for) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2878
+- Phase 3 Stage 2a: scalar instance attributes as cell-direct (sigil slice) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2879
+- Phase 3 Stage 2b: array/hash instance attributes as cell-direct by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2881
+- Phase 3 Stage 2c slice 1: drop redundant by-id instance propagation scan by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2882
+- feat(nil): complete S02-types/nil.t — `for Nil` iterates once + default lang version 6.d by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2880
+- Phase 3 Stage 2c (i): route attributive params through the shared cell by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2883
+- fix(constant): call .Map once for our/implied %-sigil constant by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2884
+- fix(test): count threaded passes in subtest/plan accounting by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2885
+- fix(flat): descend Seq/List element arrays in the .flat method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2887
+- Phase 3 Stage 2c (ii): route sigilless attributes through the shared cell by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2886
+- fix(control): make method/hyper warns resumable by CONTROL { .resume } by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2888
+- Phase 3 Stage 2c (iii-a): simplify reconcile to the shared cell as sole source by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2889
+- fix(test): enforce subtest plan count by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2890
+- fix(temporal): make Date.today use the local timezone by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2891
+- Phase 3 Stage 2c (iii-b): drop slow-path materialize attribute env copies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2892
+- fix(parser): emit a real bind for `bareword := value` at statement level by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2893
+- docs(roast): refresh BLOCKERS.md + whitelist S09-typed-arrays/arrays.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2894
+- Phase 2 (A): give the VM its own registry handle by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2895
+- feat(whatever): compose a parenthesized WhateverCode operand into a new WhateverCode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2896
+- docs: native IO ownership (③) design + crux finding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2897
+- fix(typed-array): preserve declared element type across in-place mutation and reassignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2898
+- refactor(io): closure-form handle-state API (③ native IO PR-A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2899
+- docs(container-identity): validated Phase 2 element-cell plan + staged order by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2900
+- refactor(io): lift IO handle table into shared Arc<RwLock> (③ native IO PR-B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2901
+- feat(container): Phase 2 — bind array elements to first-class cells (RHS element binding) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2902
+- docs(container-identity): Phase 2 next-slice findings (hash element cells, LHS bind) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2903
+- refactor(io): VM-native dispatch for pure IO::Handle methods (③ native IO PR-C) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2904
+- docs(io): map PR-D remaining IO methods into 3 dependency tiers (③ native IO) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2905
+- Phase 2 hash element WRITE chokepoint (Stage 0, behavior-invariant) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2906
+- refactor(io): VM-native dispatch for Tier-1 state-only IO::Handle methods (③ native IO PR-D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2907
+- refactor(io): VM-native text output for File+UTF8 IO::Handle (③ native IO PR-D Tier-2a) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2909
+- Phase 2 Stage 1 — promote :=-bound hash elements to first-class cells by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2908
+- refactor(io): VM-native printf (File+UTF8) and flush (any target) on IO::Handle (③ native IO PR-D Tier-2b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2910
+- Phase 2 Stage 2 — cell-ize deep LHS array/hash element binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2911
+- refactor(io): VM-native write/spurt raw byte output for File IO::Handle (③ native IO PR-D Tier-2c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2912
+- docs(output): design the ③後段/④ emit_output VM ownership migration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2913
+- Cell-ize single-level LHS array bind + fix array-copy cell leak by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2914
+- refactor(output): extract OutputSink struct from Interpreter (③後段/④ emit_output PR-A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2915
+- refactor(output): lift OutputSink behind Arc<RwLock> shared handle (③後段/④ emit_output PR-B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2916
+- docs: record element-element / container-leaf bind investigation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2917
+- refactor(output): VM-native Stdout/Stderr output dispatch (③後段 emit_output PR-C) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2918
+- docs: actionable element-element bind implementation plan (next-session prep) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2919
+- refactor(io): VM-native .get line read for File+UTF8 IO::Handle (③後段 PR-D read side) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2920
+- refactor(io): VM-native .slurp/.read bulk reads for File+UTF8 IO::Handle (③後段 PR-D2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2921
+- feat(container): element-element / container-leaf := bind via shared cells by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2922
+- docs(TODO_roast): nested.t now 41/43 after element-element bind (#2922) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2923
+- refactor(io): VM-native .getc/.readchars char reads for File+UTF8 IO::Handle (③後段 PR-D3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2924
+- feat(container): complete nested.t — write through bound cell on stack-target index-assign by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2925
+- docs: actionable `is rw` shared-cell plan for next session by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2926
+- refactor(state): lift current_package behind Arc<RwLock> shared handle (③ state ownership) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2927
+- feat(binding): live shared cell for `is rw` param re-bound to outer scalar by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2928
+- refactor(dispatch): VM-native has_proto / has_multi_candidates via shared Registry impl by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2929
+- feat(gather): true `take-rw` shared-cell container identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2930
+- fix(types): clear stale Arc-ptr type metadata on untyped @-array assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2931
+- feat(accessors): item/hash context for `$.attr` / `%.attr` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2932
+- refactor(dispatch): VM-native has_function / has_multi_function via shared Registry impl by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2933
+- docs(registry): record has_function VM-native slice; pure-predicate dispatch reads exhausted by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2934
+- feat(class): per-class storage for same-named child-redeclared attribute by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2935
+- refactor(dispatch): VM-native .iterator construction via shared builtins impl (③ catch-all) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2936
+- feat(attributes): `has $.x does Role` attribute trait (role mixin) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2937
+- feat(capture): write-through container binding for `\($a)` Capture elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2938
+- fix(parser): fake-infix adverb args on parenthesized `.=` method call by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2939
+- refactor(instance): drop id->cell registry; mutate receiver Arc cell in place (Phase 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2940
+- docs(comments): scrub references to removed overwrite_instance_bindings_by_identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2941
+- feat(pair): `key => $var` captures the variable's container (write-through) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2942
+- feat(pair): element write-through via a Pair value/key shared container by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2943
+- fix(attributes): refresh array/hash attr env copies from the live cell pre-op (Phase 3 Stage 2c iii-c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2944
+- feat(pair): typed value container completes pair.t (182/182, whitelisted) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2945
+- fix(quanthash): correct element-assignment semantics for Bag/Mix/Set by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2946
+- feat(atomics): cell-CAS for instance attributes; drop the shared_vars side channel (Phase 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2947
+- docs(container-identity): record Stage 3 reassessment from release-build profiling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2948
+- feat(vm): dispatch pure lexical &-var calls VM-natively (Track A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2949
+- perf(runtime): gate reset_atomic_var_key* on atomic_var_seen by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2950
+- perf(attrs): gate the method-exit attr reconcile scan; lazy cell snapshot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2951
+- feat(hash): HashData wrapper + embed type metadata (kill hash_type_metadata side-table flaky) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2952
+- fix(meta): Weak-guard pointer-keyed container metadata tables (Q2 flaky root) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2953
+- refactor(hash): Stage 2 — embed object-hash original_keys in HashData, delete both side tables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2954
+- Update roast history (2026-06-12): pass 1188->1200, subtests 190918->193489 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2955
+- feat(objecthash): distinct mixin keys + .new preserves object-hash type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2956
+- refactor(quanthash): embed Set/Bag/Mix type metadata in their data structs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2957
+- fix(subscript): expand a Range dimension in multi-dim subscript adverbs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2959
+- docs(hashdata): record objecthash follow-up status + list→hash itemization blocker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2960
+- docs(plan): sync PLAN.md/news with completed hash type-meta migration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2961
+- refactor(array): ArrayData wrapper + embed array type metadata (Q2 full absorption) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2962
+- feat(deepmap): pass leaves as containers; mutations write through (Stage 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2964
+- refactor(array): embed shaped-array dims in ArrayData, delete ShapedArrayIds side table by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2965
+- refactor(bind): drop intermediate SlotRef back-references on the bind path (Stage 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2966
+- feat(exceptions): X::Undeclared for an undeclared sub return type (--> NoSuchType) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2967
+- feat(parser): X::Syntax::Term::MissingInitializer for sigilless term decl without initializer by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2968
+- refactor(bind): replace BOUND_HASH_REF_SENTINEL with shared ContainerRef cells (Stage 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2969
+- feat(subst): apply :samecase/:samemark/:samespace adverbs in .subst method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2970
+- refactor(bind): replace BOUND_ARRAY_REF_SENTINEL with shared ContainerRef cells (Stage 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2971
+- feat(exceptions): populate X::TypeCheck::Argument fields on proto dispatch failure by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2972
+- fix(bind): deep write through a cell-bound container element reaches the source (Stage 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2973
+- fix(bind): cell-bind computed-target := element bind (SlotRef removal slice 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2974
+- feat(exceptions): X::TypeCheck::Argument fields + mandatory-positional check on VM light path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2975
+- fix(exceptions): missing required named parameter throws X::AdHoc, not bare Exception by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2977
+- refactor(bind): remove the now-dead ArraySlotRef value variant (SlotRef removal slice 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2976
+- fix(exceptions): untyped caught errors surface as X::AdHoc, not the abstract Exception by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2978
+- fix(bind): cell-based phantom-entry materialization for missing-key := binds (SlotRef removal slice 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2979
+- feat(concurrency): share thread-captured lexical cells across start blocks (Track C slice 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2980
+- fix(subscript): autothread outermost junction/slice assign through nested targets by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2981
+- feat(concurrency): share scalar state variables across threads (Track C slice 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2982
+- refactor(bind): cell/shared-Arc autoviv for hash bind-descent (SlotRef removal slice 4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2983
+- fix(await): flatten Slip results into the await result list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2984
+- refactor(grep): embed grep rw-view binding into ArrayData (remove side table) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2985
+- feat(await): broken-Promise exception does X::Await::Died by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2986
+- refactor(container): embed hash `is default` into HashData; delete ptr_keyed side table by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2987
+- feat(await): support awaiting Channels and Supplies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2988
+- feat(await): append the await call-site to a broken Promise's backtrace by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2989
+- feat(bind): share a cell for whole-container := binds (Track B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2990
+- fix(supply): `done` as an expression term completes the supply (no 30s spin) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2991
+- fix(parser): allow a parenthesized listop in a ternary then-branch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2992
+- feat(bind): share a cell for scalar := whole-container binds (Track B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2993
+- feat(container): reflect bound container type in .VAR.^name (Track B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2994
+- fix(control): emit/done outside supply throw X::ControlFlow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2995
+- fix(hyper): write back hyper mutations to nested elements (Track B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2996
+- fix(supply): run LAST phaser in whenever on done; route its emit by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2997
+- fix(supply): run whenever QUIT phaser; handled exception completes with done by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2998
+- fix(hyper): lvalue-precise writeback for hyper mutation on a variable (Track B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/2999
+- docs: hand off parameter-aliasing (array-param cells) for a fresh session by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3000
+- fix(when): record the match when a when block exits via control flow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3001
+- feat(supply): run CLOSE phaser on tap close and normal termination by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3002
+- feat(bind): alias plain @/% positional params to the caller's container by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3003
+- fix(supply): complete multi-whenever supply on done, fire source on-close by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3004
+- fix(supply): replay static whenever source on the await/Promise path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3005
+- fix(parser): parse `done()` with a statement modifier as a single statement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3006
+- fix(object-hash): show original typed keys, not internal WHICH strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3007
+- docs(plan): record the VM-native react/supply runtime plan (Track C) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3009
+- refactor(supply): unify Supply tap/act into a single implementation (Track C Stage 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3010
+- fix(for): alias named loop variable to the source element; make read-only loops O(n) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3008
+- refactor(supply): extract on-demand body execution into one helper (Track C Stage 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3011
+- fix(given): alias the container topic; enforce read-only topic semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3012
+- docs(plan): record given fix (#3012) and Track B next-session candidates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3013
+- fix(with): alias the container topic so `with @a { .push }` propagates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3014
+- fix(given): alias a container-element topic so `given %h<k> { .push }` propagates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3015
+- fix(with): alias a container-element topic so `with %h<k> { .push }` propagates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3016
+- docs: record container/element topic aliasing (#3014/#3015/#3016) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3017
+- fix(supply): stop on-demand react over interval+done from busy-spinning forever by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3018
+- feat(supply): stream synchronous on-demand emit so an infinite body terminates on done by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3019
+- fix(given/with): alias container/scalar pointy parameters to the topic source by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3020
+- feat(track-a): dispatch lexical &-var shadow overrides VM-natively by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3021
+- feat(track-a): dispatch lexical &-var slip calls VM-natively by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3022
+- feat(react): handle `last` and `next` inside a `whenever` block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3023
+- fix(track-a): lexical &op shadow wins over package sub in slip calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3024
+- docs: record lexical &-var VM dispatch completion (Track A §2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3025
+- feat(supply): fire Supply.on-demand `closing` callback in react by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3026
+- feat(③ ctor): native-construct TWEAK-only classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3028
+- refactor(supply): unify react/promise drive loops behind a policy enum by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3027
+- refactor(supply): add ReactSubscription::new to drop field boilerplate by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3029
+- feat(③ ctor): native-construct where-constrained classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3030
+- refactor(supply): split native_supply_methods.rs into focused submodules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3031
+- feat(③ ctor): native-construct classes with a BUILD submethod by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3032
+- docs: record Track C Stage 1 (react/supply drive-loop unification) complete by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3033
+- feat(③ ctor): native-construct classes with is rw attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3034
+- feat(③ ctor): native-construct classes with :D/:U/:_ smiley attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3035
+- feat(③ ctor): native-construct classes with does Role attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3036
+- docs: record ctor native-construction 2nd wave (#3028-3036) + re-measurement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3037
+- refactor(③ react): relocate react/supply drive loop onto impl VM (Stage 2 PR1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3038
+- feat(③ react): run whenever-body callbacks as compiled bytecode (Stage 2 PR2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3039
+- docs(③ react): record Stage 2 react/supply VM-native complete (#3038/#3039) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3040
+- feat(③ ctor): native-construct unset class-typed and required attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3041
+- feat(③ ctor): native-construct classes with `is built(Bool)` attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3042
+- feat(③ ctor): native-construct `repr('CUnion')` classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3043
+- feat(③ ctor): VM-native `Buf`/`Blob` construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3044
+- feat(vm): convert user-code Rust panics into catchable X:: at a VM boundary by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3045
+- feat(③ ctor): VM-native utf8/utf16/Uni construction + unified built-in entry by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3046
+- feat(③ ctor): VM-native Version/Duration/StrDistance/Stash + handle construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3047
+- feat(C react): dispatch supply QUIT handlers as VM-native bytecode by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3048
+- feat(③ Track A): VM-native `.gist` on bare native-data instances (Buf/Blob/Uni) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3049
+- feat(③ Track A): VM-native Failure `.exception` / `.handled` accessors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3050
+- feat(③ ctor): VM-native `Complex.new` construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3051
+- feat(③ ctor): VM-native `Date.new` construction (no-formatter case) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3052
+- feat(③ ctor): VM-native `DateTime.new` construction (no-formatter case) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3053
+- feat(③ Track A): VM-native built-in class-method dispatch (Instant.from-posix) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3054
+- feat(③ ctor): VM-native `Rat.new`/`FatRat.new`/`Pair.new` construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3055
+- feat(③ ctor): VM-native `Int.new`/`Num.new`/`Str.new`/`Slip.new` construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3056
+- feat(③ ctor): VM-native `IterationBuffer.new` construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3057
+- feat(Track B): VM-native array mutators on `is Array`-backed instances by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3058
+- feat(C track): VM-native atomic scalar compound-assign ($x OP= rhs) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3059
+- feat(Track B): VM-native `push` on the CallMethodMut path (captured / multi-arg) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3060
+- feat(C track): VM-native atomic shared hash element-assign across threads by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3061
+- feat(Track A): VM-native gist/Str/raku for Instant and Duration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3062
+- feat(C track): VM-native atomic shared array element index-assign across threads by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3063
+- perf(regex): cache compiled patterns as Arc to avoid a deep clone per match by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3064
+- perf(regex): stop backtracking DFS at the first complete single match by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3065
+- docs: reorganize Phase II roadmap around env-loan critical path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3066
+- docs(CP-1): finalize env-loan design (step 1a) + allow sub-agents by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3067
+- refactor(③): lift instance_type_metadata behind a shared Arc<RwLock> handle by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3068
+- refactor(CP-1 1b): route all src/vm env access through VM seam accessors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3069
+- docs(CP-1): record the env-loan flip blocker (env move needs helper-surface reduction first) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3070
+- feat(C supply): implement Supply.categorize + class-method guard by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3071
+- fix(fudge): gate roast fudge preprocessing behind MUTSU_FUDGE (ANALYSIS §4-1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3072
+- perf(value): box Capture and BigRat payloads to shrink Value 72→64 (ANALYSIS §5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3073
+- perf(value): box CustomTypeInstance payload, shrink Value 64→56 (ANALYSIS §5 PR2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3074
+- perf(value): box Uni/RegexWithAdverbs/CustomType, shrink Value 56→48 (§5 PR3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3076
+- feat(CP-1 1e): env-loan flip — env is now VM-owned by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3075
+- docs(ANALYSIS §5): record Value-boxing outcome (72→48) + stop rationale by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3077
+- docs(BLOCKERS): reorganize by main-track conflict; prune completed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3078
+- fix(subst): apply :samecase and :samemark together (S05 subst.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3079
+- perf(vm): drop spurious env_dirty marks on pure hyper/race/reflection branches (CP-2 shrink slice 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3080
+- perf(vm): convert module-load ops to eager reconcile (CP-2 shrink slice 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3081
+- docs: roast history 2026-06-15 + allomorphic.t notes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3082
+- perf(vm): drop more spurious env_dirty marks on env-pure method branches (CP-2 shrink slice 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3083
+- fix(given): make `-> $_ is copy` a writable, non-writeback topic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3085
+- perf(vm): drop redundant env_dirty marks in exec-call ops; revert unsafe eager reconcile (CP-2 shrink slice 4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3084
+- docs(plan): reorganize CP-2/CP-3 — dual-store is permanent, decoupled from Interpreter removal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3086
+- refactor(vm): read container type metadata natively via peer handle (CP-3 Track 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3087
+- fix(for): enforce required-param arity and apply defaults in multi-param pointy blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3088
+- feat(io): IO::Path numeric coercion (.Numeric/.Int/.Rat/.Num/.FatRat) via basename by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3089
+- perf(subset): cache + inline subset `where` predicate evaluation (CP-3 Track 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3090
+- perf(subset): inline single-param pointy `where` predicates (CP-3 Track 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3091
+- fix(quanthash): eat named arguments in Set/Bag/Mix.new by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3092
+- docs(roast): record the X/Z whatever-curry vs list-extend trap in whatever.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3093
+- feat(whatever): X/Z meta-operator Whatever-currying by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3094
+- feat(vm): run_nested — in-place nested execution PoC (CP-3 collapse linchpin) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3095
+- refactor(vm): run eval_block_value pure-expr blocks in-place via run_nested (CP-3 collapse) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3096
+- feat(whatever): curry chained comparisons (whatever.t test 125) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3097
+- fix(subst): validate :x adverb value, throw X::Str::Match::x by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3098
+- docs(plan): CP-3 final-collapse next-session plan (incremental exhausted → big-bang) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3099
+- fix(subst): propagate replacement-block writes to closed-over lexicals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3100
+- fix(subst): honor a read-only topic in destructive s/// by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3101
+- CP-3 collapse: dissolve VM struct into Interpreter, remove ping-pong by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3102
+- docs: record CP-3 collapse landing (#3102) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3103
+- CP-3 cleanup: remove VM type alias + dead Env poison guard by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3104
+- fix(quanthash): type-check parameterized Bag/Mix/Set element binding + MixHash[T] mutability by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3105
+- docs(plan): slim PLAN.md to future-only, split parallelizable vs sequential by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3107
+- fix(given): scalar-decl topic (`given my $x = ...`) aliases $x rw by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3108
+- chore(roast): update HISTORY.tsv (2026-06-15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3109
+- docs: rev2 re-audit of ANALYSIS.md + PLAN.md (CP-3 collapse, residual Supply crash) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3110
+- fix(supply): stop (1..Inf).Supply from capacity-overflow panicking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3111
+- refactor(value): concentrate aliased Arc-mut casts into one audited choke point (Track C) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3112
+- chore: gitignore and remove stray IO test temp file by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3113
+- fix(attributes): mirror whole-container assign to array/hash attribute into the cell (Phase 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3114
+- fix(methods): alias a method's plain array/hash positional param to the caller by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3116
+- fix(for): sigilless raw for-loop params (`-> \v`, `-> \k, \v`) are rw aliases by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3115
+- fix(for): `$_ = X for %h.values` aliases the hash value and writes back by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3117
+- fix(str): support sprintf method form with two or more args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3118
+- fix(parser): apply postfix operators to a statement-leading hash literal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3119
+- fix(parser): allow a set/baggy infix operator after a method call by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3120
+- feat(for): `= X` writeback through `.values`/`.kv` aliases into a mutable QuantHash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3121
+- fix(parser): tight @a[0]=1 at statement level is an element assign, not [op]= by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3122
+- chore: remove AI fleet and random roast-picking machinery by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3123
+- fix(for): postfix/prefix ++/-- on a sigilless rw for-param writes back by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3124
+- fix(seq): support .reverse on a Seq/Slip by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3125
+- fix(quanthash): .pairs .value=/.value-- writeback (+ .value-- parse, negative Bag weight) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3126
+- fix(quanthash): Bag/BagHash element --/++ clamps the returned value at 0 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3128
+- docs(roast): record baghash.t/mixhash.t progress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3129
+- fix(setbagmix): say/gist shows the type-name wrapper for Set/Bag/Mix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3127
+- fix(array): single-element [set(...)] keeps the Set/Bag/Mix whole by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3130
+- fix(quanthash): enforce key type of a parameterized BagHash/MixHash/SetHash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3131
+- docs(roast): baghash.t/mixhash.t status after key type-check fix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3132
+- fix(lazy): say/put/note/print render a LazyList's contents, not "LazyList" by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3133
+- fix(quanthash): hyper >>++ / >>-- applies to weights and writes back by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3134
+- fix(quanthash): X::Cannot::Lazy.what names the target type; whitelist mixhash.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3135
+- fix(exception): X::AdHoc .Str and .throw surface the payload, not the type repr by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3136
+- docs(roast): baghash.t 343/344, mixhash.t whitelisted by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3137
+- fix(seq): .sum/.min/.max/.Int compute over a Seq's elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3138
+- docs: next-session playbook for arbitrary-precision Bag weights by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3139
+- fix(grammar): rule with `%%` separator quantifier (trailing sep allowed) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3140
+- fix(complex): integer-exponent ** is exact (no floating-point noise) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3141
+- fix(oop): is-rw method returning @!attr[$i] / %!attr{$k} is assignable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3142
+- fix(bind): standalone `$x := @a[i]` shares a cell with the element by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3143
+- feat(quanthash): arbitrary-precision Bag/BagHash weights (i64 -> BigInt) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3144
+- fix(regex): quantified built-in named char-class subrule yields capture list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3145
+- fix(bind): element-as-target bind to an inline `my` shares a cell by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3146
+- fix(bind): scalar bind to an inline `my` shares a cell by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3148
+- fix(list): Set/Bag/Mix flatten to pairs on @-assignment; itemize when scalar-held by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3149
+- fix(gist): Set/Bag/Mix keep their type wrapper as a list/array element by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3150
+- fix(raku): Set/Bag/Mix render proper constructor form in .raku/.perl/dd by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3152
+- fix(gist): Set/Bag/Mix render Pair elements via the element gist, not the raw key by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3153
+- feat(hash): itemization flag on HashData (mirror ArrayKind); flatten bare %h in list/hash context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3151
+- fix(lvalue): ternary on the LHS of an assignment selects the branch as lvalue by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3154
+- docs(news): record hash itemization flag (#3151) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3155
+- feat(for): element-source `.values` writeback (`for %h<k>.values { $_ *= 2 }`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3156
+- feat(push): `@a.push(@b)` stores the container by reference, not a snapshot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3157
+- fix(list): scalar-held hash stays a single element on @-assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3158
+- fix(objecthash): type enforcement for object hashes (objecthash.t 62/62) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3159
+- docs(blockers): retriage objecthash/return_function/classify after #3159 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3160
+- fix(concurrency): concurrent `@a.push`/`unshift` from `start` blocks no longer lose updates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3161
+- fix(start): panic->X:: boundary for start{}/Promise worker threads (§8.7) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3162
+- fix(concurrency): concurrent `%h{k}=v` / `@a[i]=v` no longer lose updates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3163
+- fix(subst): $/ List results, slipped-pair named args, compile-time :i check by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3164
+- fix(placeholder): bare placeholder blocks keep the outer $_ topic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3165
+- fix(subst): support :x(Range) in the operator s///|S/// forms by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3167
+- fix(flat): `.flat` / `flat()` un-itemize the top-level operand by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3166
+- fix(methods): method parameters are read-only by default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3168
+- fix(flipflop): parse ff/fff at conditional precedence; smart-match constant operands by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3169
+- fix(parser): parse a ternary inside a no-paren call argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3171
+- fix(smartmatch): `$_ ~~ s///` / `tr///` must mutate the topic in place by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3170
+- fix(smartmatch): `$_ ~~ s///` in `given`/`with` writes back to the source by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3172
+- feat(set-ops): support negated set membership/relational operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3173
+- fix(signatures): destructure list/array/hash variables in sub-signatures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3174
+- fix(signature): correct +@ / +foo single-argument-rule flattening by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3175
+- fix(try): set $! to an unthrown Failure's exception by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3176
+- fix(junction): slurpy params do not auto-thread a Junction argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3177
+- test(roast): whitelist 3 newly-passing integration tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3178
+- feat(signatures): implement Signature.returns by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3179
+- fix(temporal): delegate Duration numeric methods to its value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3180
+- fix(numeric): sign() on a Complex requires a Real by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3181
+- fix(setbagmix): sort a Set/Bag/Mix into its sorted pairs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3182
+- fix(list): support .head(&callable) / .head(*) WhateverCode arguments by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3183
+- fix(test): do not hijack core list skip() as Test::skip in VM fast-path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3184
+- fix(hash): Hash.push/.append flatten a Seq or Slip of Pairs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3185
+- fix(repr): itemize aggregate hash values in .raku / .perl by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3186
+- fix(repr): Bool::True in .raku and route dd through .raku by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3188
+- fix(coercion): .Array yields a real Array, not a List by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3189
+- fix(gather): eagerly reify a gather LazyList in an array literal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3187
+- chore(roast): update HISTORY.tsv (2026-06-17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3190
+- fix(hash): a plain hash always reports Str keys, not the bare numeric value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3191
+- fix(range): .join with no separator joins Range elements, not its gist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3192
+- fix(range): .Int/.Numeric/.Real/.Num numerify a Range to its element count by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3193
+- feat(str): implement Str.subst-mutate by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3194
+- feat(lazy): generate closure-based infinite sequences on demand by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3195
+- fix(list): .sort and .reverse return a Seq, not a List/Array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3196
+- fix(list): .keys/.values/.kv/.pairs/.antipairs return a Seq by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3197
+- fix(list): .head/.tail/.rotate/.unique/.repeated return a Seq by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3198
+- fix(list): .pick(N)/.roll(N)/.produce return a Seq by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3199
+- fix(metaops): X and Z are list-associative (chained cross/zip build flat n-tuples) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3200
+- fix(map): an immutable Map reports type Map and renders as Map.new((...)) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3201
+- fix(io): flatten Slip args in say/put/print/note; put concatenates multiple args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3203
+- fix(set): preserve QuantHash mutability through set operators and eqv by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3202
+- fix(regex): a `** N..M` range quantifier on a non-capturing atom adds no capture by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3204
+- fix(coerce): Int()/Num() of an invalid string fail with X::Str::Numeric by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3206
+- fix(range): Range * Real returns a canonical integer Range by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3205
+- fix(lazy): grep/map over an exclusive-end infinite range; honor last/next in the pipe by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3207
+- fix(metaops): Unicode operator aliases work inside hyper meta-ops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3208
+- fix(range): Range +/- Real shifts both bounds, preserving variant by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3209
+- fix(parser): do STMT must not swallow the trailing statement terminator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3210
+- feat(metaops): reversed range meta-ops (R../R^../R..^/R^..^) + precedence worry by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3211
+- docs(analysis): trim ANALYSIS.md to rev3 — drop resolved findings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3212
+- fix(concurrency): uniform worker panic boundary for hyper/race by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3214
+- docs(analysis): correct worker-thread panic-boundary finding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3215
+- fix(seq/parser): Seq.skip consumes original + lexical &-sub listop precedence by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3213
+- fix(dispatch): lexical &-sigil parameter shadows a same-named package routine by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3216
+- fix(dynamic): throw X::Dynamic::NotFound on assignment to undeclared dynamic var by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3217
+- docs(single-store): design for the single-authority store redesign by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3218
+- feat(single-store): Slice A — measure reverse-sync precision by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3219
+- feat(parser): reject overriding reserved special-form operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3220
+- feat(types): X::*::BadType when a package/module is used as a type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3221
+- feat(regex): reject unspace (backslash + whitespace) with X::Syntax::Regex::Unspace by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3223
+- fix(symbols): failed ::() symbolic lookup throws X::NoSuchSymbol by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3224
+- feat(single-store): Slice B — EVAL/carrier precise reverse-sync writeback by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3222
+- feat(parser): X::Syntax::Malformed for bad C-style loop spec + sigilless 'my Int a' by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3225
+- feat(types): X::NotParametric for parameterizing a non-parametric type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3226
+- feat(single-store): drop blanket env_dirty on a fully-reconciled EVAL carrier by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3227
+- feat(types): X::NotParametric for 'of T' params + share is_non_parametric_type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3228
+- feat(class): X::Undeclared for trusts of an undeclared type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3229
+- feat(types): X::Undeclared::Symbols for an undeclared type-parameter argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3230
+- feat(single-store): Slice C' — log regex carrier writes + generalize bareword-carrier env_dirty drop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3231
+- feat(constant): X::Undeclared::Symbols for a constant from an undeclared name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3232
+- feat(class): X::Redeclaration for duplicate my/our methods in one body by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3233
+- feat(grammar): X::Redeclaration for duplicate my/our tokens in one grammar by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3234
+- feat(when): X::Undeclared for an undeclared type in a when clause by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3235
+- feat(backtrace): Backtrace::Frame methods + throw-time backtrace capture by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3236
+- fix(single-store): EVAL'd `$x ~~ s///` lost its writeback under the bareword-carrier env_dirty drop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3237
+- docs(single-store): record Slice D (R3 blanket-mark removal) as audited-complete by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3238
+- feat(exceptions): X::Parameter::InvalidConcreteness for fail/die/throw on a type object by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3239
+- fix(typecheck): .expected is the Nil type object for type-check exceptions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3240
+- fix(regex): `$x ~~ s///` inside a `for ^N` loop wrongly threw "Cannot modify an immutable Str" by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3241
+- docs(single-store): reframe single-store + first-class-container as one campaign converging at Slice F by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3242
+- feat(warnings): "Useless use of X in sink context" compile-time warnings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3243
+- feat(warnings): "Useless use of X in sink context" inside gather blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3244
+- feat(single-store): Slice E — closures capture an upvalue snapshot, not the whole env by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3245
+- fix(parser): scalar item assignment `$x = 1, 2` binds tighter than comma by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3246
+- feat(single-store): Slice E Part 2 — closures read upvalues from the slot store; drop the closure flush by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3247
+- fix(parser): embedded scalar item assignment binds tighter than comma by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3248
+- docs: record Slice E completion; re-scope remaining Slice F prereq by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3249
+- fix(grep): flatten a Seq argument so `grep BLOCK, @a.sort` iterates elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3250
+- docs: design env↔locals container-coherence (the remaining Slice F prerequisite) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3251
+- fix(binding): `our %g := %h` no longer dies with readonly error by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3252
+- fix(warnings): no spurious "Useless use of $@a in sink context" on array := bind by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3253
+- docs(env-locals): record 3 residual Stage 0 bind-coherence bugs (differential probe) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3254
+- fix(binding): bound hash whole-reassign no longer dies readonly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3255
+- fix(binding): constant hash element write dies; bound hash whole-reassign works in closures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3256
+- feat(WALK): WalkList dual list+callable return with all orderings & submethods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3257
+- docs(env-locals): scope Stage 1 (outer container cell-ization) with blast-radius audit by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3258
+- fix(for-loop): bound array for-rw writeback propagates through shared cell (Stage 1 bug ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3259
+- fix(for-loop): bound hash for-values-rw writeback propagates through shared cell (Stage 1 hash site A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3260
+- fix(parser+slip): whitelist S32-list/skip.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3261
+- docs(plan): refresh whitelist metric (1282, target met) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3262
+- docs: design `$x = @arr` reference sharing (Stage 1 bug ② first-class container) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3263
+- docs(env-locals): value-alias design for `$n = @z` ref-sharing + Arc-identity ripple gating it on Sub-slice 1a by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3265
+- feat(container): `$scalar = @arr` shares the source by reference (Slice 2a) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3264
+- feat(container): chained `$r = $q` scalar-array reference sharing (open-q #3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3267
+- docs(scalar-array-sharing): #3264 landed Slice 2a, supersede §8 revert record by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3266
+- feat(container): deref-bind of a value-alias scalar shares the source (Slice 2c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3268
+- docs(scalar-array-sharing): Slice 2b implementation handoff (§10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3269
+- ci: automate releases with tagpr (SemVer, Cargo.toml-linked) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3270
+- ci(release): publish SHA256 checksums with the release tarballs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3271
+- ci(release): add aarch64-linux build on a native ARM runner by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3272
+- fix(regex): quantified angle-bracket char-class alias captures as a list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3273
+- feat(container): `@aoa[i] = @row` / `%h<k> = @row` element reference sharing (Slice 2b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3274
+- fix(compiler): block-final `my $x := <literal>` no longer dies as readonly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3275
+- fix(vm): `$0`/`$1`/... derive from a directly bound/assigned `$/` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3276
+- feat(container): `my %h := %$m` hash deref-bind cell sharing (Slice 2c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3277
+- fix(signature): nested Pair sub-signature keeps a string-key Pair value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3278
+- fix(container): junction index-assign through a `:=`-bound container by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3279
+- fix(container): `%h.push` / `.append` through a `:=`-bound hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3281
+- feat(regex): index-stable positional capture slots for unmatched optionals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3280
+- feat(grammar): `my grammar {...}` expression + capture markers in tokens by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3282
+- feat(regex): greedy backtracking into quantified alternations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3284
+- feat(container): share array/hash into a readonly scalar `$` param (Slice 2d) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3283
+- feat(regex): backtrack the `%%`/`%` separator path against an outer anchor by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3286
+- docs(container): Slice 2d DONE + method-param/is-copy handoff by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3285
+- fix(io): preserve IO::Path SPEC-variant subclass through path-deriving methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3287
+- fix(io): IO::Path.gist shows SPEC-normalized absolute path (Win32 backslashes) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3288
+- feat(container): share array/hash into a method's readonly scalar $ param (Slice 2d method follow-up) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3289
+- fix(junction): don't auto-thread a Junction captured by a slurpy hash (*%h) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3290
+- fix(io): IO::Spec::Win32.join separates a bare volume from the directory by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3291
+- feat(container): share array/hash into a readonly scalar named $ param (Slice 2d named follow-up) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3292
+- test(roast): whitelist GraphemeBreakTest-3.t via Unicode 17 grapheme data by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3294
+- fix(container): propagate element ++/-- through a shared container by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3293
+- fix(parser): don't treat `LISTOP :{...}` as a label (whitespace before colon) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3295
+- perf(single-store): teach cheaply_unchanged about ContainerRef identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3296
+- docs(single-store): record Slice F Stage 2 measurement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3297
+- docs(roast): record 12-non-breaking-space.t BEGIN-array blocker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3298
+- docs(single-store): survey the real reverse-sync dependency surface (~80 files, 7 categories) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3299
+- feat(single-store): write lvalue-method writeback through to the local slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3300
+- feat(walk): WALK omit/include, batch-invoke, Grammar, role $?PACKAGE (walk.t 2/3 subtests) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3301
+- feat(single-store): write for-loop QuantHash .value writeback through to the local slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3302
+- fix(signature): cap infinite-range expansion in a flattening slurpy (no hang) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3303
+- feat(single-store): write `is rw` parameter writeback through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3304
+- feat(single-store): write `is rw` method-param writeback through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3305
+- feat(lazy): render lazy infinite arrays as bounded placeholders by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3306
+- feat(single-store): write closure captured-var mutations through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3307
+- feat(signature): reject typed slurpy array/hash params (X::Parameter::TypedSlurpy) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3308
+- feat(single-store): write `is rw` sub lvalue-return through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3309
+- feat(lazy): throw X::Cannot::Lazy on .elems of a lazy infinite array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3310
+- feat(single-store): write a mutating method's receiver through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3311
+- docs(single-store): record Slice F write-through family + t/ reverse-sync independence milestone by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3312
+- feat(lazy): render coroutine LazyList gist as context-aware placeholder (L1b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3313
+- feat(lazy): throw X::Cannot::Lazy on .Int/.Numeric/.end/prefix-+ of a lazy array (L5b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3314
+- feat(lazy): keep `my @a = 1..*` a reify LazyList so `@a[N]` reifies past the cap (L2a) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3315
+- docs(lazy): record L1b/L5b/L2a + ready-to-execute L2b plan by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3316
+- feat(single-store): write a 0-arg fast-call's captured-outer mutations through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3317
+- feat(single-store): write a sigilless param's caller-alias mutations through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3318
+- feat(lazy): make `my @a = 1..*` truly O(1)-memory lazy (L2b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3319
+- feat(single-store): write a callee's caller-dynamic-var mutations through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3320
+- feat(single-store): write regex `~~` match results through to caller locals (Slice F) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3321
+- feat(single-store): write a method's captured-outer mutations through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3322
+- feat(single-store): write a qualified/our sub's captured-outer mutations through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3323
+- feat(single-store): read dynamic vars `$*x` from env, not a local slot (Slice F) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3324
+- docs(single-store): map the Slice F roast-level reverse-sync dependencies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3325
+- feat(single-store): write a light/positional-light sub's captured-outer mutations through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3326
+- feat(single-store): write a deferred role body's captured-outer mutations through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3327
+- feat(single-store): write a deferred class body's captured-outer mutations through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3328
+- feat(single-store): write imported symbols through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3329
+- docs(plan): update Slice F coherence status — write-through family extended to #3329 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3330
+- feat(single-store): write a submethod BUILD/TWEAK's captured-outer mutations through to the caller slot (Slice F) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3331
+- feat(single-store): drain captured-outer writeback on the exception-escape path (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3332
+- feat(single-store): drain captured-outer writeback after junction auto-threading (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3333
+- feat(single-store): write a block-method/gather captured-outer mutation through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3334
+- feat(single-store): write an eager .map/.grep block's captured-outer mutations through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3335
+- feat(single-store): write an X/Z-metaop thunk's captured-outer mutation through to the caller slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3336
+- docs(plan): record eager .map/.grep captured write-through (#3335) in Slice F coherence by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3337
+- feat(single-store): reconcile caller slots on env_dirty at call tails, replacing the args_callable gate (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3338
+- docs(env-locals-coherence): pin the deep-cell wall root cause to scalar-rooted 2+ level LHS element bind by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3339
+- feat(single-store): write a deep `:=` element bind/write through to the local slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3340
+- feat(single-store): reconcile local slots after a let/temp restore (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3341
+- feat(single-store): write a pair-value element mutation through to the aliased source's local slot (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3342
+- docs(plan): record let/temp + pair-value write-through; Slice F OFF surface 36->13 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3343
+- docs(env-locals-coherence): handoff for the multi-frame captured-outer accumulation wall by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3344
+- fix(exceptions): typed X::Bind / X::InvalidType / X::Str::Numeric source-indicator (misc.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3345
+- feat(single-store): reconcile caller slots at cached fast-call / closure / carrier sites for multi-frame captured-outer accumulation (Slice F coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3346
+- feat(single-store): write bare s/// topic and :let regex modifier through to the caller's slot (Slice F regex carrier coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3347
+- feat(single-store): reconcile caller slots after react/whenever + gather-coroutine captured writes (Slice F; OFF surface -> 0) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3348
+- feat(single-store): Stage 3 — disable reverse sync_locals_from_env by default (WIP, fix-forward roast) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3349
+- ci: make roast failures visible despite parallel run + log truncation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3350
+- docs(perf): refresh PERFORMANCE.md to match current architecture by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3351
+- docs: tidy CLAUDE.md — update stale architecture, dedupe redundant guidance by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3352
+- docs: remove obsolete FIX_FLOW.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3353
+- refactor(single-store): Stage 3 — delete dead reverse pull sync_locals_from_env by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3354
+- docs: remove 3 orphaned stale docs; mark vm-dual-store.md as historical by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3355
+- docs: cross-link ANALYSIS §1.2 and fallback-ledger to the live single-store design by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3356
+- docs: re-plan PLAN.md around flagship convergence; record env_dirty deletion wall by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3357
+- docs: implementation prep for captured-outer cell sharing (next session) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3359
+- feat(proto): run `proto method` bodies and dispatch `{*}` to multi candidates by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3358
+- fix(self): restore caller's env `self` across stringify, dynamic-call, and grammar-action dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3361
+- feat(single-store): box named-sub-captured scalars into shared cells (Sub-slice 1b slice 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3360
+- docs: slice-1 surface map + next-slice plan for captured-outer cell sharing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3362
+- fix(array): push/pop/shift/unshift through a shared backing array mutate in place by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3363
+- feat(single-store): relax Mu universal type-skip for captured-outer cell boxing (Sub-slice 1b slice 1.5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3364
+- feat(grammar): run actions on named captures so `$<x>.made` works in `<?{ }>` assertions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3365
+- feat(single-store): precise captured-outer writeback for lazy-map/gather/subst carriers (Sub-slice 1b slice 1.6) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3366
+- fix(exception): Str/gist delegate to a user `message` method, not just the attribute by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3367
+- fix(exception): materialize a user `message` method into the message attribute at construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3368
+- feat(single-store): cross-frame cell boxing for EVAL carrier captured-outer writes (Sub-slice 1b slice 1.7) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3369
+- fix(vm): record a resume point for control signals from CallOnValue/CallOnCodeVar by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3370
+- feat(single-store): captured-outer container @/% cell sharing (Sub-slice 1b slice 1.8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3371
+- fix(builtins): slurpy builtins (&warn, &note, &say, …) report arity 0 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3373
+- feat(single-store): X-cross metaop thunk captured-outer scalar writeback (Sub-slice 1b slice 1.9) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3374
+- docs: record captured-outer cell-sharing progress (slices 1.8/1.9) + remaining surface by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3375
+- fix(warn): resume cross-frame warn inline when no CONTROL handler is active by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3377
+- feat(single-store): nested-method captured-outer scalar writeback (Sub-slice 1b slice 1.10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3376
+- fix(compiler): given/when/default block ending in `if` yields the if value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3378
+- feat(single-store): cross-thread shared-var writeback to caller slot (Sub-slice 1b slice 1.11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3379
+- fix(compiler): honor per-branch `-> $v` topic binding in the do-if value path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3380
+- fix(regex): `^^` line-anchor respects original text position inside subrules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3381
+- feat(single-store): object subscript-assign invocant slot writeback (Sub-slice 1b slice 1.12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3382
+- docs(plan): Mustache session-3 progress + next target (delimiter) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3383
+- feat(single-store): substr-rw / subbuf-rw lvalue slot writeback (Sub-slice 1b slice 1.13) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3384
+- feat(single-store): zip short-circuit topicalizing thunk writeback (Sub-slice 1b slice 1.14) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3385
+- feat(single-store): .map block LAST phaser captured-outer writeback (Sub-slice 1b slice 1.15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3386
+- feat(single-store): undefine() lvalue slot writeback (Sub-slice 1b slice 1.16) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3387
+- docs(single-store): complete OFF survey triage + next-session starter (proto state-%cache) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3388
+- feat(grammar): reduce-time $* dyn-var actions for mid-parse delimiter change by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3390
+- feat(single-store): caching proto `state %` element-assign writeback (Sub-slice 1b slice 1.17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3389
+- docs(claude): require mergeability check immediately after opening a PR by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3391
+- feat(single-store): caller-frame by-name write slot writeback (Sub-slice 1b slice 1.18) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3393
+- fix(catch): preserve block return value through CATCH/CONTROL; add Kernel.cpu-cores by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3392
+- fix(signature): parameter is in scope within its own default (self-shadow) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3394
+- feat(control): cross-frame resumable warn via inline resume_safe CONTROL handler by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3395
+- docs(single-store): record destruction.t cell-detachment root cause (§7.2c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3396
+- docs(plan): record web-blog-stack module survey under mutsu by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3397
+- docs(single-store): correct destruction.t §7.2c — cross-thread, not cell-detachment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3398
+- feat(modules): consume :ver<>:auth<> adverbs on use / unit module (File::Temp works) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3399
+- docs: record File::Temp completion (#3399), fix PLAN.md #TBD by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3401
+- fix(concurrency): retain-on-miss cross-thread shared-var writeback (destruction.t 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3400
+- feat(json): native to-json / from-json (JSON::Fast / JSON::Tiny compatible) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3402
+- feat(lazy): lazy .pairs/.antipairs/.kv over a lazy list (no eager force) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3403
+- feat(socket): IO::Socket::Async .Supply(:bin) emits Buf[uint8], not Str by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3404
+- fix(hash): decontainerize element cells when iterating a hash as pairs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3405
+- feat(single-store): precise bound-Proxy STORE writeback (env_dirty substrate S1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3406
+- fix(hash): decontainerize element cells when iterating a hash as pairs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3407
+- feat(single-store): precise let/temp restore writeback (env_dirty substrate S2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3408
+- feat(single-store): precise closure/method nested-capture writeback (env_dirty substrate S3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3409
+- feat(coercion): IO(Cool) parameters work — File::Directory::Tree fully runs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3410
+- fix(regex): decode bracketless \xHH in a double-quoted regex string literal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3411
+- feat(single-store): precise regex embedded {}/:let cross-frame caller writeback (env_dirty substrate S4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3412
+- fix(dispatch): user method overrides a builtin parent's native method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3413
+- feat(single-store): precise junction invocant autothread per-eigenstate writeback (env_dirty substrate S5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3414
+- feat(enum): register the built-in SeekType enum by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3415
+- feat(single-store): precise resumable CONTROL handler writeback (env_dirty substrate S6) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3416
+- feat(single-store): precise react/whenever captured-outer writeback (env_dirty substrate S7) — reaches double-OFF surface 0 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3417
+- feat(single-store): precise user .defined writeback for andthen/orelse/notandthen (env_dirty substrate S8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3418
+- feat(single-store): precise symbolic-deref store carrier writeback (env_dirty substrate S9) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3419
+- fix(constant): compile a shadowing constant as a pure lexical binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3420
+- feat(single-store): precise user Proxy STORE captured-outer writeback (env_dirty substrate S10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3421
+- fix(grammar): fire action methods for rules nested in ( ) groups and silent subrules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3422
+- Complete HTTP::Parser: silent-subrule grammar actions + Blob .first iteration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3423
+- docs(news): record session 10 web-stack work (HTTP::Parser complete) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3424
+- docs(plan): mark HTTP::Parser complete; link blob-for-iteration deep-work plan by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3425
+- feat(single-store): precise lives-ok container carrier Set/Bag/Mix writeback (env_dirty substrate S11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3426
+- feat(blob): iterate Blob/Buf bytes in for/.map/.grep (unblock MIME::Base64) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3427
+- feat(single-store): broaden lives-ok carrier writeback to slot-overwritable (env_dirty substrate S12) — roast double-OFF 17→11 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3428
+- feat(pack): implement pack/unpack + recognize `use experimental :pack` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3429
+- feat(single-store): precise does/but mixin captured-outer writeback (env_dirty substrate S13) — roast double-OFF 11→7 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3430
+- feat(types): lowercase native buffer type aliases (blob8/buf16/…) — completes MIME::Base64 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3431
+- feat(single-store): precise param where clause captured-outer writeback (env_dirty substrate S14) — roast double-OFF 7→6 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3432
+- feat(single-store): precise CAS block captured-outer writeback (env_dirty substrate S15) — roast double-OFF 6→5 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3433
+- docs(plan): fix S13-S15 PR numbers + next-session ordering for remaining roast double-OFF surfaces by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3434
+- docs(single-store): handoff summary for remaining 5 roast double-OFF surfaces (§10.19) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3435
+- feat(single-store): precise proto-multi candidate captured-outer writeback (env_dirty substrate S16) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3437
+- feat(single-store): precise custom-HOW type-check captured-outer writeback (env_dirty substrate S17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3438
+- fix(gist): default gist of a user instance is ClassName.new(...), not ClassName() by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3436
+- feat(single-store): EVAL carrier scalar-reassignment writeback to container slots (env_dirty substrate S18) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3439
+- docs(plan): finalize S16-S18 handoff (PR numbers, lazy-lists confirmed blocker) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3440
+- fix(dd): dump a user instance as its .raku (F.new(...)), not F() by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3441
+- fix(raku/gist): correct itemization sigil on .raku/.gist of itemized containers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3442
+- feat(lazy): truly-lazy .map/.grep over a gather (env_dirty substrate S19) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3443
+- fix(range): coerce an allomorph Range endpoint to its numeric value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3444
+- fix(temporal): render Date/DateTime .raku as the numeric-argument constructor by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3446
+- fix(lazy): short-circuit LazyThunk self-comparison to avoid mutex deadlock (env_dirty substrate S20) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3445
+- fix(io): coerce a numeric/allomorph .lines/.words limit argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3447
+- feat(raku/gist): render allomorphs (IntStr/RatStr/NumStr) faithfully by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3448
+- fix(supply): write back Supply .tap callback captured-outer lexicals (env_dirty substrate S21) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3449
+- refactor(single-store): make cell-boxing the permanent coherence mechanism (retire env→locals reconcile) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3450
+- fix(subst): evaluate `s{}=EXPR` / `S{}=EXPR` replacement in the right scope by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3451
+- fix(str): `.ords` / `ords()` return a Seq (not a List) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3452
+- fix(range): `.pick(N)` / `.pick(*)` on a Range returns a Seq by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3453
+- fix(raku): trailing comma for a single Iterable element in an array's .raku by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3454
+- refactor(single-store): physically remove env_dirty dual-store dead code by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3455
+- fix(parser): `[TypeName]` is an array literal, not a reduction metaop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3456
+- docs(plan): reorganize PLAN.md — completed work to news, record grep-rw-view finding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3457
+- fix(parser): trailing comma in a parenthesized list-assignment RHS by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3458
+- fix(range): Range.gist matches Range.raku (quote strings, Inf, ^N form) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3461
+- fix(sprintf): match Rakudo's unsupported-directive error message by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3460
+- fix(parser): `$@(...)` and `$%(...)` itemized list/hash contextualizers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3459
+- fix(operators): numeric ops coerce a list operand to its element count by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3462
+- fix(reduce): `[R op]` reverses the whole fold; single-element reduce numifies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3463
+- fix(WHICH): ObjAt gists as the bare WHICH, raku as the constructor form by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3464
+- fix(parser): superscript power in method-call syntax (`2.²`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3465
+- refactor(grep): remove grep-rw-view side channel; use first-class element cells by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3466
+- docs(plan): move completed grep-rw-view removal to news; record SlotRef-kill head-start by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3467
+- fix(polymod): return a Seq, not a List (matches Rakudo) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3468
+- fix(sum): fold with + so result type promotes (Rat/allomorphs) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3469
+- fix(raku): escape control characters in Str.raku like Rakudo by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3470
+- fix(map): native array .map returns a Seq, not a List by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3473
+- refactor(value): collapse HashSlotRef + DeferredHashAccess into one HashEntryRef (final SlotRef kill) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3472
+- fix(divide-by-zero): descriptive uncaught message; int % reports dividend by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3474
+- fix(metaops): cross (X) and zip (Z) return a Seq, not a List by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3471
+- fix(sprintf): %f rounds half-away-from-zero on exact value, like Rakudo by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3475
+- docs: mark first-class container Phase 2 complete; pin round-out coverage by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3476
+- fix(%%): is-divisible-by works for Rat/Num/BigInt, not only Int by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3477
+- feat(parser): X::Comp::FailGoal for unterminated array composer / smart quotes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3478
+- fix(zip): zip() / chained Z over 3+ operands returns a Seq, not a List by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3479
+- fix(cross): cross() returns a Seq, not a List by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3480
+- feat(state-ownership): native-ize `.MixHash` coercion (ledger §1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3481
+- fix(lines): lines("...") function form returns a Seq, not a List by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3483
+- docs(plan): record chained-Z Seq-ness bug + stale chained-cross-zip.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3482
+- feat(state-ownership): native-ize QuantHash coercion on the mut path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3484
+- docs(plan): remove obsolete chained-Z Seq note (fixed by #3479) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3485
+- feat(state-ownership): native-ize `.Map`/`.Hash` coercion + builtins dedup by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3486
+- feat(state-ownership): native-ize `.Seq` coercion (structural receivers) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3487
+- fix(sink-warn): warn on pure prefix ops; name bare anonymous $ correctly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3488
+- feat(state-ownership): native-ize pure-lexical IO::Path methods (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3490
+- fix(.raku): BigInt renders as a plain integer, not a float with .0 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3489
+- fix(.gist/.raku): a WhateverCode renders as WhateverCode.new by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3491
+- feat(state-ownership): native-ize Cool scalar `.IO` coercion (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3492
+- fix(Match.raku): close the :list(( ... )) paren for positional captures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3493
+- fix(coerce): empty/whitespace string coerces to 0 for .Int/.Num/.UInt by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3494
+- feat(state-ownership): native-ize IO::Path `.absolute`/`.relative` (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3495
+- fix(X::Str::Numeric): populate .source-indicator with pos-aware split by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3496
+- feat(state-ownership): native-ize QuantHash/Map/Hash coercion of Cool scalars (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3497
+- fix(sprintf): match rakudo's X::Str::Sprintf::Directives::Count message by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3498
+- feat(state-ownership): native-ize IO::Path filesystem stat-only methods (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3499
+- feat(temporal): Str.Date / Str.DateTime coercion methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3500
+- feat(state-ownership): native-ize IO::Path content reads slurp/lines/words (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3501
+- fix(subscript): a positional slice of a List returns a List, not a Seq by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3502
+- feat(state-ownership): native-ize IO::Path single-path FS mutations (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3503
+- feat(state-ownership): native-ize IO::Path.open — VM allocates io_handles (ledger §D ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3504
+- fix(subscript): trailing dimension on a flat List indexes scalar leaves as 1-element lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3505
+- fix(parser): hash literal %(...) may be directly brace-subscripted by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3506
+- feat(state-ownership): native-ize IO::Path two-path FS ops (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3507
+- feat(state-ownership): native-ize .encode / .decode (Str<->Buf) (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3509
+- fix(match): a Match in a collection renders as Match.new under .raku by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3508
+- feat(parser): top-level ; sections a list/array literal into sub-lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3510
+- feat(state-ownership): native-ize IO::Path.comb — completes the FS family + fixes no-arg comb (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3511
+- docs(plan): §D — IO native methods complete; lay out the next §D fork by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3512
+- fix(sprintf): report the full format string for an invalid directive by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3513
+- feat(state-ownership): native-ize `.new` for `::`-namespaced classes & built-in exception types (§D ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3514
+- feat(state-ownership): native-ize `.new` for the `Lock` family (§D ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3515
+- feat(nativecall): minimal C FFI for `is native(...)` subs (MVP) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3516
+- feat(state-ownership): native-ize `.new` for Promise/Channel/Supplier (§D ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3517
+- docs(plan): §D ③ ctor fork — 3 slices landed, scope QuantHash next by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3518
+- feat(nativecall): Pointer type + `is rw` out-parameters (sqlite3 open/exec/close) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3519
+- feat(state-ownership): native-ize `.new` for the QuantHash family (§D ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3520
+- docs(plan): §D ③ ctor fork — QuantHash family landed, clean backlog drained by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3521
+- feat(nativecall): Pointer return + real SQLite SELECT round-trip by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3522
+- feat(state-ownership): native-ize .new for FakeScheduler/Proxy/Match (ledger §D ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3523
+- fix(parser): allow a trait / where clause on a type-only parameter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3525
+- feat(state-ownership): implement Capture.new (ledger §D ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3524
+- feat(state-ownership): native-ize .new for Array/List/Hash/Map (ledger §D ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3526
+- feat(nativecall): make the Pointer prelude available inside modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3527
+- feat(state-ownership): native-ize .new for allomorphs + ObjAt/ValueObjAt (ledger §D ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3528
+- feat(state-ownership): native-ize IO::Path family .new (ledger §D ③ ctor capstone) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3529
+- feat(state-ownership): native-ize Failure.new (ledger §D ③ ctor) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3530
+- docs(plan,ledger): correct next ctor slices — Proc::Async/IO::Socket::INET are tractable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3531
+- fix(precomp): stamp cache with executable mtime to invalidate on rebuild by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3532
+- feat(state-ownership): native-ize Seq.new (ledger §D ③ ctor) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3533
+- fix(class): resolve a nested class used as an attribute type during construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3534
+- feat(state-ownership): native-ize Proc::Async.new (ledger §D ③ ctor) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3535
+- feat(state-ownership): native-ize IO::Socket::INET.new (ledger §D ③ ctor capstone) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3536
+- test: imported sub shadows a same-named builtin (route declarators) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3538
+- fix(scope): a `my` declaration clears an inherited readonly-param flag by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3539
+- feat(example): Tubu — a synchronous Sinatra/P6W web framework + integration test by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3540
+- fix(class/role/regex): six raku-module-compat fixes surfaced by Bailador by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3542
+- feat(multi-dispatch): VM-dispatch trivial-body proto subs (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3541
+- fix(types/parser): Hash is-a Map; ternary as a hash-literal element by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3544
+- feat(multi-dispatch): OTF-compile where-constrained candidates (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3543
+- docs(plan): record the async-server rate-limiter for existing web frameworks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3545
+- docs(ledger §D): record where-OTF #3543 + defer default-OTF by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3547
+- docs(PLAN §D): design notes for non-trivial proto body VM-ization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3548
+- feat(multi-dispatch): VM-ize non-trivial proto bodies (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3550
+- fix(compat): six general fixes that load an off-the-shelf framework (Humming-Bird::Core) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3549
+- feat(multi-dispatch): VM-native {*} proto candidate dispatch (ledger §D ②③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3552
+- fix(types): scalar parameter type constraints are env-scoped (no caller leak) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3551
+- docs(PLAN/news §D): record non-trivial proto body VM-ization (#3550/#3552) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3553
+- docs(PLAN §D): {*} rw redispatch needs varref containers (§C-intertwined) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3554
+- fix(types): resolve short-name import alias for `my ImportedClass:D` constraints by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3555
+- feat(multi-dispatch): {*} rw-redispatch chains candidate writes through proto param (§D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3556
+- feat(multi-dispatch): {*} rw-redispatch for proto methods (§D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3557
+- feat(multi-dispatch): OTF-compile multi candidates with a &callback param (§D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3558
+- feat(multi-dispatch): OTF-compile default-param genuine multi candidates (§D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3559
+- feat: Humming-Bird web framework serves end-to-end on mutsu (4 fixes) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3560
+- feat(multi-dispatch): OTF-compile default-param proto candidates (§D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3561
+- chore: update roast history (2026-06-25) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3562
+- fix: [&sub] single-bracket is an array literal, not a reduction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3563
+- feat(dispatch): VM-native non-mutating list methods on is-Array instances (§D/§C) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3564
+- fix(dispatch): is-Array instances delegate the full list-method set to storage by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3565
+- fix(array): .splice on a scalar variable holding an array writes back in place by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3567
+- fix: four bugs blocking real web-app request handling (Humming-Bird) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3566
+- feat(multi-dispatch): OTF-compile non-builtin module/dynamic single subs (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3568
+- fix(failure): interpolating an unhandled Failure into a string throws by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3569
+- OTF-compile imported test-assertion subs + fix cross-module caller-line (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3570
+- fix(parser): -> ($a, $b) is one destructuring param, not two by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3571
+- fix(parser): multi-line enum lists and where-then-default signatures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3572
+- feat(json): Rakudo::Internals::JSON.from-json / .to-json by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3573
+- fix(parser/phaser): restore ORIGINAL_SOURCE after nested parse + fix exposed phaser block-value bugs (ledger §D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3574
+- fix(supply): chain supply-block transforms through react (Cro pipelines) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3575
+- docs(plan): record precise nextsame+rw blocker analysis (§D) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3576
+- feat(pragma): if pragma — conditional use Foo:if(EXPR) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3577
+- fix(xx): re-evaluate mutating-method LHS each repetition by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3578
+- fix(enum): wrap instead of panicking on i64 auto-increment overflow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3579
+- feat(vm): dispatch plain .starts-with / .ends-with natively (ledger §D(b)) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3580
+- feat(vm): dispatch .substr-eq($needle, Int $pos) natively (ledger §D(b)) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3581
+- docs: record §D(b) Str-method native-dispatch drains by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3582
+- fix(parser): three constructs blocking popular ecosystem modules by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3583
+- feat: PROCESS::<$x> write-through and Rakudo::Internals.REGISTER-DYNAMIC by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3584
+- feat: PROCESS pseudo-stash write-through and Rakudo::Internals.REGISTER-DYNAMIC by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3585
+- fix(role): allow lexically-scoped `my role` inside a role body by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3586
+- feat(vm): dispatch Buf .write-int*/.write-uint*/.write-num* natively (ledger §D(b)) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3588
+- fix(placeholder): allow %_ / @_ inside a do {} block within a method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3587
+- fix(parser): parse `does Qualified::Role` trait on role/class declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3589
+- fix(coerce): flatten an itemized list of pairs in .hash / %(...) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3590
+- feat(vm): dispatch Str.contains named-arg/position forms natively (ledger §D(b)) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3591
+- feat(vm): dispatch Str starts-with/ends-with/substr-eq :i named forms natively (§D(b)) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3593
+- fix(construct): bless passes its named args to BUILD / TWEAK by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3595
+- fix(method): bind the implicit *%_ slurpy on the fast dispatch path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3592
+- feat(vm): dispatch string-search methods on a Match receiver natively (§D(b)) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3596
+- fix(packages): GLOBAL:: is the root namespace for package declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3597
+- feat(exception): .fail method on Exception instances by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3598
+- fix(class): ::?CLASS in attribute defaults; .^ver returns Mu when unversioned by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3594
+- feat(vm): dispatch atomic var/element RMW ops natively (§D state ownership) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3599
+- feat: support URI module — grammar inheritance, Lock.protect writeback, $._port by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3600
+- feat(vm): dispatch builtin infix:<op> operator-functions natively (§D state ownership) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3601
+- feat(vm): dispatch file/FS builtin functions natively (§D state ownership ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3602
+- feat(vm): dispatch pure list/coercion builtin functions natively (§D(b)) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3603
+- fix(regex): enumerated bracket+named char classes & cross-package grammar token resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3604
+- fix(signature): renamed named param `:key($key)` is not a self-redeclaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3605
+- docs(vm): §D(b) tree-walk method-removal design + measurement counter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3606
+- fix(parser): `not`/`so` after `&&` binds with loose-unary precedence by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3607
+- fix(class): private `method !foo` does not collide with public `method foo` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3608
+- docs(vm): §D(b) — tree-walk-removal lever is blocked on writeback coherence by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3609
+- docs(plan): reflect §D(b) tree-walk-removal measurement + writeback-coherence blocker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3610
+- fix(parser): block-after-condition modifier guard only applies to block-final statements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3611
+- fix(class): `:D` smiley on an array/hash attribute does not require an initializer by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3612
+- fix(parser): enum trait argument + `trait_mod:<of>(...)` call syntax by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3613
+- fix(parser): a symbolic prefix may stack on another prefix (`+!$x`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3614
+- fix(vm): drain captured-outer writeback at internal coercion redispatch (§D(b) Slice 1a) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3615
+- fix(regex): @<name>= array-sigil capture alias + group-alias list semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3616
+- fix(vm): drain captured-outer writeback at string-render redispatch (§D(b) Slice 1b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3617
+- docs(vm): record BUILDALL sibling-writeback clobber blocker (§D(b) Slice 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3618
+- fix(io): IO::Path .SPEC/.CWD attributes — green S32-io/io-path.t (43/43) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3619
+- fix(vm): retain captured-outer writeback dropped by a nested call (BUILDALL coherence) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3620
+- fix(coerce): type-object .Numeric/.Real default to Mu's 0 with a warning by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3621
+- docs(vm): mark BUILDALL sibling-writeback clobber resolved (#3620) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3622
+- fix(quietly): statement-prefix quietly is scope-transparent by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3623
+- docs(roast): allomorphic.t (118/119) + inplace.t (33/38) progress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3624
+- feat(vm): positional subscript coerces a user object index via .Int by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3625
+- docs(vm): scope the nextsame+rw capstone implementation path (§D(b) Slice 4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3626
+- feat(coerce): SetHash/BagHash/MixHash coercion functions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3627
+- feat(multi-dispatch): nextsame/callsame chain rw writes through redispatch (§D capstone) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3628
+- fix(vm): multi-dimensional hash subscript read %h{a;b;c} by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3629
+- feat(sprintf): %s dispatches a user-defined .Str method (§B render redispatch) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3630
+- feat(smartmatch): $x ~~ $obj dispatches a user-defined ACCEPTS method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3632
+- fix(parser): tight && binds tighter than ?? !! (not looser) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3631
+- feat(sprintf): numeric directives dispatch user .Int / .Numeric by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3633
+- fix(parser): dynamic :$delete on multi-dim subscript reads through normal path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3635
+- feat(concat): infix ~ dispatches user .Stringy / .Str by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3636
+- fix(parser): combined dynamic adverb :exists:$delete / :kv:$delete read path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3637
+- fix(test): throws-like string code writes caller lexicals back by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3638
+- fix(smartmatch): $x ~~ (key => val) accepts ValuePair (S03 Pair smartmatch) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3634
+- chore(roast): update HISTORY.tsv (2026-06-26) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3639
+- feat(vm): method nextsame/callsame redispatch runs compiled, not tree-walk (§B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3640
+- feat(enum): bare paren-term enum body is X::Undeclared::Symbols by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3641
+- feat(export): bare word in is export(...) is X::Undeclared::Symbols by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3642
+- feat(redeclaration): enum value vs same-named type is X::Redeclaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3643
+- feat(redeclaration): our sub across sibling blocks is X::Redeclaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3644
+- feat(vm): multi-method dispatch executes compiled, not recompile-each-call (§B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3645
+- docs(vm): record §B method-dispatch-compiled progress (Slices 2 & 4 done, Slice 3 next) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3646
+- feat(use): bare word import arg is X::Undeclared::Symbols by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3647
+- docs(roast): record misc.t undeclared-symbol campaign + remaining blockers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3648
+- feat(vm): construction submethods (BUILD/TWEAK) run compiled (§B Slice 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3649
+- feat(parser): my $x :a -> X::Syntax::Adverb; my Int(Str $x) -> ConflictingTypes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3650
+- refactor(vm): share compiled method-dispatch helper; convert role-submethod/DESTROY sites (§B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3651
+- feat(vm): remaining resolved-candidate method sites run compiled via shared helper (§B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3652
+- feat(regex): SpacesInBareRange — whitespace around .. in ** bare range by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3653
+- feat(class): X::TooLateForREPR when a stub upgrade introduces a repr by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3654
+- feat(vm): does/but mixin role-method dispatch runs compiled (§B — completes method-execution migration) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3655
+- docs(vm): §B method-execution-compiled migration complete by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3656
+- feat(phaser): errors in a BEGIN phaser wrap in X::Comp::BeginTime by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3657
+- docs(vm): scope run_instance_method_resolved deletion — multi-blocker investigation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3658
+- feat(parser): two statement modifiers is X::Syntax::Confused by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3659
+- feat(signature): returns/of <undeclared> is X::InvalidType (vs --> X::Undeclared) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3660
+- docs(vm): hyper-rw attribute-commit blocker for run_instance_method_resolved deletion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3661
+- feat(signature): native array[Int] (boxed element) is X::Comp::BeginTime by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3662
+- feat(phaser): BEGIN calling a later-declared sub is X::Undeclared::Symbols by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3663
+- fix(vm): merge (not restore) pending_rw_writeback_sources around compiled candidate dispatch (§B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3664
+- feat(dispatch): proto-new no-match is X::Multi::NoMatch; constant init wraps in X::Comp::BeginTime by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3665
+- fix(vm): compiled-method $.attr++ persists to the shared cell; attr twigils are not free-var writes (§B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3666
+- feat(signature): return constraint followed by `;` is X::Syntax::Malformed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3667
+- feat(vm): run captured-outer-lexical-writing methods compiled (relax §B writeback gate) (#3658 step 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3668
+- feat(parser): `no Module BareWord` (undeclared) is X::Undeclared::Symbols by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3669
+- fix(vm): compiled-method can_skip_merge must account for has_calls (closure/code-var env writes) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3670
+- feat(dispatch): bodyless `proto method new` routes through the proto runner by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3671
+- feat(vm): remove free_var_writes gate filter — all compiled candidates run compiled (§B #3658 step 4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3672
+- feat(signature): trailing `:D`/`:U`/`:_` smiley on a parameter is X::Parameter::InvalidType by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3673
+- feat(vm): route qualified-call / .* walk / proto dispatch through the compiled method runner (§B #3658) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3674
+- feat(test): throws-like forces a bare gather final statement (sink context) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3675
+- docs(vm): characterize the compiled_code=None residual blocking run_instance_method_resolved deletion (§B) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3676
+- feat(vm): Mixin-self attribute writeback in compiled methods + unconditional on-demand compile (§B #3658) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3677
+- feat(vm): compile empty method bodies — helper tree-walk fallback is now delegation-only (§B #3658) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3678
+- feat(subst): :sigspace implies :samemark (greens subst.t, whitelisted) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3679
+- feat(vm): delete the non-delegation tree-walk method-execution arm — VM is the only user-code engine (§B #3658) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3680
+- docs: mark §2-D(b) tree-walk dispatch-chain removal COMPLETE (#3664–#3680) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3681
+- feat(dispatch): .new on a builtin instance delegates to its type constructor by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3682
+- refactor(vm): rename run_instance_method_resolved → forward_resolved_delegation; fix the misnamed tree-walk counter (§B #3658) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3683
+- perf(vm): sound multi-method resolution cache (§B follow-up) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3684
+- docs: slim PLAN.md (completed → 1-line + news), refresh ANALYSIS.md to rev4 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3685
+- fix(scope): lexical `my sub` must not leak out of its declaring scope (lexical-subs.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3686
+- robustness(vm): guard array autoviv & string repeat allocations (ANALYSIS roadmap #1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3687
+- fix(compiler): $!attr outside a method raises X::Syntax::NoSelf by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3688
+- fix(scope): clean up routine-body lexical my sub on return unless it escapes (greens lexical-subs.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3689
+- robustness(vm): guard shaped-array & Buf allocations (finish alloc-abort eradication) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3690
+- fix(compiler): run ENTER/LEAVE/KEEP/UNDO phasers in a tail-position bare block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3691
+- fix(default): surface Hash/Array value-carried is default through .default, .VAR.default, :delete and ++/-- by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3692
+- docs: clarify planning docs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3694
+- docs(unsafe): replace stale "single-threaded" SAFETY comments with accurate ones by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3696
+- fix(introspection): sync .^can/.^methods builtin lists with real dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3693
+- docs(lazy): refresh BLOCKERS.md + PLAN.md lazy-seq status from a re-probe by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3695
+- fix(parser): feed ==>/<== precedence looser than = (Sequencer level) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3699
+- fix(vm): multidim index assign writes through shared ContainerRef cell by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3702
+- refactor(error): introduce enum Control, migrate 6 control signals (§7-4 slice 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3701
+- [codex] gitignore: ignore .codex by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3700
+- fix(parser): bare `*` operand of list-repeat `xx` is the Whatever value, not a curry point by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3703
+- fix(rotor): throw X::OutOfRange for a zero batch size instead of hanging by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3697
+- fix(coerce): X::Str::Numeric carries the `⏏` marker for .Int/.UInt/.Num/.Numeric by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3705
+- refactor(error): migrate 5 more control signals into enum Control (§7-4 slice 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3706
+- refactor(error): migrate last/fail/done into enum Control (§7-4 slice 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3708
+- docs(roast): correct S32-str stale entries and refine the 2 Unicode blockers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3709
+- fix(signature): validate bare type-only parameter type names with suggestions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3710
+- docs(roast): record misc.t triage and test 167 completion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3712
+- refactor(registration): idempotent sub re-registration via compile-time fingerprint (§7 slice 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3711
+- fix(subscript): zen slice with a subscript adverb (@a[]:k) works by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3713
+- docs(roast): record S32-array/adverbs.t status (zen fix + for-loop blocker) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3714
+- fix(unicode): `.tc` titlecases the Latin DŽ digraph + title forms correctly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3707
+- fix(for-loop): multi-param @-sigil binding de-itemizes the chunk element by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3716
+- fix(subscript): resolve WhateverCode adverb index + typed missing-element default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3717
+- fix(types): bare and pointy blocks are `Block`, not `Sub` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3704
+- vm: index-based closure upvalues (Phase 1: scalar reads) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3715
+- docs(roast): update S32-array/adverbs.t status (550/606) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3718
+- fix(subscript): correct X::Adverb .what for range / whatever slices by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3719
+- perf(registry): hold routine definitions behind Arc so snapshots share, not deep-copy (§7 slice 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3721
+- fix(subscript): lazy subscript adverb auto-truncates out-of-range indices by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3722
+- fix(decl): tag element-type for a typed @-array declared in expr position by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3720
+- perf(dispatch): return Arc<FunctionDef> from hot single-result resolvers (§7 slice 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3724
+- fix(flat): flatten a native shaped array's elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3725
+- docs(roast): analyze the S09 shaped native-array early-abort blocker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3726
+- vm: reference-capture (cell) for read-only scalar upvalues by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3723
+- fix(subscript): an itemized list/Range subscript is a single index, not a slice by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3727
+- docs(analysis): closure-upvalue Phase 1 + Track B pre-work findings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3728
+- fix(subscript): zen slice X::Adverb reports .what = zen slice by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3729
+- docs(adr): record GC strategy and phasing decision (ADR-0001) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3731
+- perf(registration): derive each sub declaration once, reuse the Arc on re-install (§7 slice 4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3730
+- docs(adr): accept level-1 (cycle collector on Arc) for GC; record JIT rationale by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3732
+- docs: restructure PLAN.md/ANALYSIS.md around GC phasing (ADR-0001) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3733
+- perf(dispatch): hold multi-dispatch candidates as Arc<FunctionDef> (§7 slice 5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3734
+- perf(registration): hold proto_functions registry as Arc<FunctionDef> (§7 slice 6) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3735
+- fix(capture): container identity for === + nested placeholder scoping by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3736
+- fix(capture): Blob/Buf/utf8 .Capture unpacks bytes into positionals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3737
+- perf(registration): hold grammar token_defs candidates as Arc<FunctionDef> (§7 slice 7) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3738
+- fix(capture): Complex/Rat/FatRat .Capture expose attributes as nameds by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3740
+- perf(registration): hold our_scoped_functions registry as Arc<FunctionDef> (§7 slice 8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3741
+- fix(capture): Signature/Version/Failure .Capture throw X::Cannot::Capture by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3739
+- refactor(runtime): split methods_distribution.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3742
+- refactor(runtime): split builtins_atomic.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3743
+- refactor(runtime): split class.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3744
+- fix(vm): smartmatch env-sync must not clobber a readonly for/sub param by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3745
+- refactor(runtime): split handle.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3746
+- refactor(runtime): split methods_signature.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3747
+- fix(multidim): :delete on a lexical my @a/%h writes back to its slot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3748
+- refactor(runtime): split builtins_multidim.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3749
+- refactor(runtime): split vm_arith_ops.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3750
+- refactor(runtime): split value/error.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3752
+- refactor(runtime): split builtins_io.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3753
+- refactor(runtime): split vm_comparison_ops.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3751
+- fix(subscript): Array OOB is Any, array-valued subscript is a slice, type-object comparison coercion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3754
+- refactor(runtime): split accessors.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3755
+- refactor(runtime): split vm_register_ops.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3756
+- refactor(runtime): split methods_string.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3757
+- fix(lazy): .List/.Array preserve laziness; eqv throws X::Cannot::Lazy on both-lazy (eqv.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3758
+- refactor(runtime): split builtins_system.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3759
+- refactor(runtime): split builtins_collection.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3760
+- fix(parser): sequence operator in a subscript seeds from the whole comma list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3761
+- refactor(runtime): split system.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3762
+- refactor(vm): split vm_string_regex_ops.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3763
+- refactor(runtime): split dispatch.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3764
+- refactor(runtime): split run.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3765
+- refactor(vm): split vm_helpers.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3766
+- fix(caller): CALLER::<$x> resolves caller-frame lexical; non-dynamic throws X::Caller::NotDynamic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3767
+- refactor(vm): split vm_misc_ops.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3768
+- refactor(runtime): split regex_eval.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3769
+- refactor(vm): split vm_control_ops.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3770
+- refactor(value): split types.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3771
+- fix(dispatch): Sub/Block binding failure is X::TypeCheck::Binding, not X::TypeCheck::Argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3772
+- refactor(runtime): split utils.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3773
+- fix(multidim): :delete out of a shaped array's bounds dies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3774
+- refactor(value): extract impl blocks from value/mod.rs into submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3775
+- refactor(parser): split stmt/control.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3776
+- refactor(parser): split stmt/class.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3777
+- fix(parser): reject `new TypeName` (C++ constructor syntax) with X::Obsolete by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3778
+- refactor(parser): split stmt/sub.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3779
+- fix(exceptions): Exception instances stringify via .message; X::AdHoc.raku shows payload by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3780
+- refactor(vm): split vm_call_dispatch.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3781
+- fix(setbagmix): bag/set/mix flatten a Seq argument into its elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3782
+- fix(smartmatch): list/array ~~ Numeric compares element count by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3783
+- refactor(parser): split stmt/simple.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3784
+- fix(vars): $_, $/, $! report as dynamic (.VAR.dynamic) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3785
+- refactor(parser): split primary/string.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3786
+- refactor(parser): split expr/precedence.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3787
+- refactor(parser): slim expr/mod.rs by extracting submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3788
+- fix(mixin): boolean context uses a runtime mixin's mixed-in .Bool method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3789
+- refactor(parser): slim stmt/mod.rs by extracting submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3791
+- fix(dispatch): .name on a type object hits its own attribute accessor (dies) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3790
+- refactor(runtime): split resolution.rs into cohesive modules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3792
+- refactor(parser): split primary/misc.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3793
+- refactor(runtime): split native_io.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3795
+- fix(parser): `($x, $y) .= method` applies the method to the whole list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3796
+- refactor(parser): split stmt/assign.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3797
+- fix(vm): don't propagate $_/$//$! back to caller on routine return by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3798
+- fix(mixin): Bool-but-Bool stringifies from the effective .Bool by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3800
+- refactor(runtime): split regex_parse.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3801
+- refactor(parser): split expr/postfix.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3799
+- refactor(vm): split vm_var_assign_ops.rs into 10 cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3802
+- refactor(runtime): split methods_object.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3803
+- refactor(parser): split primary/ident.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3804
+- refactor(builtins): split methods_narg.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3805
+- refactor(runtime): split methods_mut.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3806
+- refactor(runtime): split io.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3807
+- refactor(parser): split primary/regex.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3808
+- fix(params,regex): writable params shadow caller readonly; alias captures dual-name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3809
+- refactor(runtime): split registration_class.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3810
+- refactor(builtins): split functions.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3811
+- refactor(vm): split vm_call_method_compiled.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3812
+- refactor(runtime): split methods.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3813
+- fix(parser): unit-class `also is Parent` extracts into the parent list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3814
+- refactor(parser): split primary/container.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3815
+- refactor(runtime): split methods_classhow.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3816
+- refactor(runtime): split ops.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3817
+- refactor(parser): split stmt/simple_expr_stmt.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3818
