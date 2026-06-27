@@ -112,6 +112,17 @@ impl Value {
     pub fn real_array(items: Vec<Value>) -> Self {
         Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::Array)
     }
+    /// Create a true Array value with a single explicitly-assigned index
+    /// recorded in the embedded `initialized` set (used when autovivifying a
+    /// missing variable via `@a[i] = …`, so the autovivification gaps below `i`
+    /// are recognized as holes by `:exists`/`:k`/`:p`).
+    pub fn real_array_initialized_at(items: Vec<Value>, idx: usize) -> Self {
+        let mut data = ArrayData::new(items);
+        let mut set = std::collections::HashSet::new();
+        set.insert(idx);
+        data.initialized = Some(set);
+        Value::Array(Arc::new(data), ArrayKind::Array)
+    }
     /// Create a shaped (multidimensional) Array value.
     pub fn shaped_array(items: Vec<Value>) -> Self {
         Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::Shaped)
@@ -131,6 +142,7 @@ impl Value {
             declared_type: like.declared_type.clone(),
             default: like.default.clone(),
             shape: like.shape.clone(),
+            initialized: like.initialized.clone(),
         })
     }
     /// Construct a `Value::Hash`. Accepts either a bare `HashMap` (fresh hash)

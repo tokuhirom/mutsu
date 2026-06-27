@@ -157,6 +157,7 @@ impl ArrayData {
             declared_type: None,
             default: None,
             shape: None,
+            initialized: None,
         }
     }
 

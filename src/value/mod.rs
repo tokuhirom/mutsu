@@ -876,6 +876,18 @@ pub struct ArrayData {
     /// `Arc::as_ptr`-keyed `ShapedArrayIds` side table) so the shape travels
     /// with the container through copy-on-write.
     pub shape: Option<Vec<usize>>,
+    /// Indices that were explicitly element-assigned (`@a[i] = …`), as opposed
+    /// to autovivification gaps. `None` means the array was bulk/literal-
+    /// constructed, so every in-range index exists (the historical
+    /// "no side table → all exist" fallback). `Some(set)` means element-wise
+    /// assignment has occurred: an in-range slot exists iff it is in the set OR
+    /// its value is not a `Package("Any")` hole. Embedded (not an env-name-keyed
+    /// side table) so it travels with the value across scopes, closures, and
+    /// method calls — the former `__mutsu_initialized_index::name` table was
+    /// scoped to the assigning frame and lost on scope exit, so an outer array
+    /// filled from inside a method/closure (e.g. HTTP::Status's `method sink`
+    /// populating `@codes`) reported every gap as existing.
+    pub initialized: Option<std::collections::HashSet<usize>>,
 }
 
 /// Value stored in an enum variant: an integer, a string, or an arbitrary Value.

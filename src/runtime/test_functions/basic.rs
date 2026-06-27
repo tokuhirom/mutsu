@@ -113,6 +113,25 @@ impl Interpreter {
             Value::LazyIoLines { handle, words, .. } => {
                 Ok(self.force_lazy_io_lines(handle, *words)?.to_string_value())
             }
+            // `is $got, $expected` compares via Raku's `eq` (Str coercion), so an
+            // object whose class defines a user `Stringy`/`Str` must be compared
+            // by that string value rather than its `.gist`.
+            Value::Instance { class_name, .. } | Value::Package(class_name) => {
+                let cn = class_name.resolve().to_string();
+                let method = if self.has_user_method(&cn, "Stringy") {
+                    Some("Stringy")
+                } else if self.has_user_method(&cn, "Str") {
+                    Some("Str")
+                } else {
+                    None
+                };
+                match method {
+                    Some(m) => Ok(self
+                        .call_method_with_values(value.clone(), m, vec![])?
+                        .to_string_value()),
+                    None => Ok(value.to_string_value()),
+                }
+            }
             _ => Ok(value.to_string_value()),
         }
     }

@@ -40,19 +40,6 @@ impl Interpreter {
     /// assigned slots are tracked via `__mutsu_initialized_index::` metadata
     /// and are NOT trimmed.
     fn trim_trailing_array_holes(&mut self, var_name: &str) {
-        let init_key = format!("__mutsu_initialized_index::{}", var_name);
-        // Clone the initialized set to avoid borrow conflicts
-        let initialized: std::collections::HashSet<String> = self
-            .env()
-            .get(&init_key)
-            .and_then(|v| {
-                if let Value::Hash(map) = v {
-                    Some(map.keys().cloned().collect())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
         // Get the type constraint for typed arrays (e.g. "Int" for `my Int @a`)
         let type_constraint = loan_env!(self, var_type_constraint(var_name)).unwrap_or_default();
         let env = self.env_mut();
@@ -63,21 +50,26 @@ impl Interpreter {
             return;
         };
         let arr = Arc::make_mut(items);
+        // The explicitly-assigned indices travel with the array (embedded set).
+        let initialized = arr.initialized.clone().unwrap_or_default();
         while let Some(last) = arr.last() {
-            let idx_str = (arr.len() - 1).to_string();
+            let idx = arr.len() - 1;
             let is_hole = match last {
                 Value::Nil => true,
-                Value::Package(name) if name == "Any" => !initialized.contains(&idx_str),
+                Value::Package(name) if name == "Any" => !initialized.contains(&idx),
                 // For typed arrays (e.g. `my Int @a`), the type object is also a hole
                 Value::Package(name)
                     if !type_constraint.is_empty() && name == type_constraint.as_str() =>
                 {
-                    !initialized.contains(&idx_str)
+                    !initialized.contains(&idx)
                 }
                 _ => false,
             };
             if is_hole {
                 arr.pop();
+                if let Some(s) = arr.initialized.as_mut() {
+                    s.remove(&idx);
+                }
             } else {
                 break;
             }
