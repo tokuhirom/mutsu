@@ -1,4 +1,4 @@
-use super::methods_signature::{
+use super::methods_signature_errors::{
     make_method_not_found_error, make_private_permission_error, make_private_unqualified_error,
 };
 use super::*;

@@ -1,4 +1,4 @@
-use super::methods_signature::make_x_immutable_error;
+use super::methods_signature_errors::make_x_immutable_error;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::InstanceAttrs;
@@ -1702,9 +1702,13 @@ impl Interpreter {
                     }
                 }
             }
-            return Err(super::methods_signature::make_multi_no_match_error(method));
+            return Err(super::methods_signature_errors::make_multi_no_match_error(
+                method,
+            ));
         } else {
-            return Err(super::methods_signature::make_multi_no_match_error(method));
+            return Err(super::methods_signature_errors::make_multi_no_match_error(
+                method,
+            ));
         };
         // Delegation methods: forward assignment to the delegate
         if let Some((attr_var_name, target_method)) = &method_def.delegation
@@ -3951,7 +3955,9 @@ impl Interpreter {
                         return Ok(assigned);
                     }
                     // Signal to assign_method_lvalue to handle via Proxy
-                    return Err(super::methods_signature::make_multi_no_match_error(method));
+                    return Err(super::methods_signature_errors::make_multi_no_match_error(
+                        method,
+                    ));
                 } else {
                     // Check if there's a user-defined method with is_rw
                     let has_rw_method = self
@@ -3959,7 +3965,9 @@ impl Interpreter {
                         .is_some_and(|m| m.is_rw);
                     if has_rw_method {
                         // Signal to assign_method_lvalue to handle via Proxy
-                        return Err(super::methods_signature::make_multi_no_match_error(method));
+                        return Err(super::methods_signature_errors::make_multi_no_match_error(
+                            method,
+                        ));
                     }
                     // Public accessor exists but is not rw — reject assignment
                     let is_public_accessor = if class_attrs.is_empty() {

@@ -609,11 +609,13 @@ impl Interpreter {
                             .get(&method_name)
                             .is_some_and(|overloads| overloads.iter().any(|md| md.is_private));
                         if !has_method {
-                            return Err(super::methods_signature::make_method_not_found_error(
-                                &method_name,
-                                class_name,
-                                true,
-                            ));
+                            return Err(
+                                super::methods_signature_errors::make_method_not_found_error(
+                                    &method_name,
+                                    class_name,
+                                    true,
+                                ),
+                            );
                         }
                     }
                 }

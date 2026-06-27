@@ -3514,7 +3514,9 @@ impl Interpreter {
                         .iter()
                         .any(|s| matches!(s, Stmt::Expr(Expr::Whatever)))
                     {
-                        return Err(super::methods_signature::make_multi_no_match_error("new"));
+                        return Err(super::methods_signature_errors::make_multi_no_match_error(
+                            "new",
+                        ));
                     }
                     let cn = class_name.resolve();
                     return self.run_proto_method(
@@ -3558,9 +3560,11 @@ impl Interpreter {
                                 }) {
                                     return Err(e);
                                 }
-                                return Err(super::methods_signature::make_multi_no_match_error(
-                                    "new",
-                                ));
+                                return Err(
+                                    super::methods_signature_errors::make_multi_no_match_error(
+                                        "new",
+                                    ),
+                                );
                             }
                             // Mu.new only accepts named arguments. If the call
                             // had positional args and no multi candidate matched,
