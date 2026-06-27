@@ -190,6 +190,7 @@ mod main_args;
 mod metamodel;
 mod methods;
 mod methods_aggregate_ctor;
+mod methods_call_dispatch;
 mod methods_call_helpers;
 mod methods_classhow;
 mod methods_collection;
