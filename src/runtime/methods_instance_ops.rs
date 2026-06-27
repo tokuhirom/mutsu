@@ -703,22 +703,39 @@ impl Interpreter {
                     self.class_mro(&class_name.resolve()).contains(&target_name),
                 ));
             }
-            if (method == "gist" || method == "message")
-                && args.is_empty()
-                && (class_name.resolve().starts_with("X::")
-                    || class_name == "Exception"
-                    || class_name.resolve().ends_with("Exception"))
-            {
-                if let Some(msg) = attributes.as_map().get("message") {
-                    return Ok(Value::str(msg.to_string_value()));
-                }
-                if let Some(formatted) =
-                    crate::builtins::exception_message::format_exception_message(
-                        &class_name.resolve(),
-                        &(attributes).as_map(),
-                    )
-                {
-                    return Ok(Value::str(formatted));
+            // An Exception instance stringifies (.Str/.gist/~) and reports via its
+            // `.message` (raku: Exception.Str and .gist both return .message). Detect
+            // it via the MRO so a user `class E is Exception` (whose name is not
+            // `X::*`/`*Exception`) is covered too. A user-defined `gist`/`Str`/
+            // `message` already won dispatch above, so reaching here is the default.
+            if args.is_empty() && matches!(method, "gist" | "Str" | "Stringy" | "message") {
+                let cn = class_name.resolve();
+                let is_exception = cn == "Exception"
+                    || cn.starts_with("X::")
+                    || cn.starts_with("CX::")
+                    || cn.ends_with("Exception")
+                    || self
+                        .class_mro(&cn)
+                        .iter()
+                        .any(|p| p == "Exception" || p == "Failure");
+                if is_exception {
+                    // For .Str/.gist, prefer a user-defined `message` method (it may
+                    // interpolate attributes); `message` itself only reaches here when
+                    // no user method exists, so fall to the stored attr / formatted msg.
+                    if method != "message" && self.has_user_method(&cn, "message") {
+                        return self.call_method_with_values(target.clone(), "message", vec![]);
+                    }
+                    if let Some(msg) = attributes.as_map().get("message") {
+                        return Ok(Value::str(msg.to_string_value()));
+                    }
+                    if let Some(formatted) =
+                        crate::builtins::exception_message::format_exception_message(
+                            &cn,
+                            &(attributes).as_map(),
+                        )
+                    {
+                        return Ok(Value::str(formatted));
+                    }
                 }
             }
             // Default `.gist` of a user instance matches its `.raku` (raku:
@@ -765,6 +782,25 @@ impl Interpreter {
                         "{}.new(\"{}\")",
                         class_name.resolve(),
                         which
+                    )));
+                }
+                // X::AdHoc's raku-visible attribute is `payload` (mutsu stores the
+                // die string under `message`/`payload`); render it as
+                // `X::AdHoc.new(payload => "...")` rather than the bare `.new`.
+                if class_name.resolve() == "X::AdHoc"
+                    && (method == "raku" || method == "perl")
+                    && let attr_map = attributes.as_map()
+                    && let Some(payload) = attr_map
+                        .get("payload")
+                        .or_else(|| attr_map.get("message"))
+                        .cloned()
+                {
+                    let payload_raku = self
+                        .call_method_with_values(payload.clone(), "raku", vec![])
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|_| payload.to_string_value());
+                    return Ok(Value::str(format!(
+                        "X::AdHoc.new(payload => {payload_raku})"
                     )));
                 }
                 // Collect public attributes for .raku representation
