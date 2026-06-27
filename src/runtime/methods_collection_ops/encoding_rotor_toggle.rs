@@ -82,6 +82,22 @@ impl Interpreter {
         }
     }
 
+    /// The `X::OutOfRange` raku throws for a `rotor`/`batch` sublist length
+    /// outside `1..^Inf`. A length of 0 (or negative) is rejected eagerly because
+    /// a zero-length batch never advances the cursor and would loop forever.
+    fn rotor_count_out_of_range(count: i64) -> RuntimeError {
+        let msg =
+            format!("Batching sublist length is out of range. Is: {count}, should be in 1..^Inf");
+        let mut attrs = HashMap::new();
+        attrs.insert("got".to_string(), Value::Int(count));
+        attrs.insert("range".to_string(), Value::str("1..^Inf".to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+        let mut err = RuntimeError::new(format!("X::OutOfRange: {msg}"));
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     pub(in crate::runtime) fn dispatch_rotor(
         &mut self,
         target: Value,
@@ -153,23 +169,13 @@ impl Interpreter {
             match spec {
                 Value::Int(n) => {
                     let count = *n;
+                    // A negative batching sublist length is out of range. A length
+                    // of 0 is allowed: it yields an empty sublist `()` (roast
+                    // S32-list/rotor.t exercises `(0..5).rotor(0, 1, *)`). The
+                    // infinite-loop case (a full spec cycle that never advances the
+                    // cursor, e.g. a lone `rotor(0)`) is caught in the loop below.
                     if count < 0 {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("got".to_string(), Value::Int(count));
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::str(format!(
-                                "Expected a non-negative integer for rotor count, got {}",
-                                count
-                            )),
-                        );
-                        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
-                        let mut err = RuntimeError::new(format!(
-                            "X::OutOfRange: Expected non-negative count, got {}",
-                            count
-                        ));
-                        err.exception = Some(Box::new(ex));
-                        return Err(err);
+                        return Err(Self::rotor_count_out_of_range(count));
                     }
                     rotor_specs.push(RotorSpec {
                         count: RotorCount::Fixed(count as usize),
@@ -301,10 +307,24 @@ impl Interpreter {
         let mut pos = 0usize;
         let mut spec_idx = 0usize;
         let mut range_sub_idx = 0usize; // for Range specs
+        // Cursor position at the start of the current spec cycle. If a full pass
+        // through every spec advances the cursor by zero (e.g. a lone `rotor(0)`,
+        // `rotor(0, 0)`, or `rotor(2 => -2)` where count+gap == 0 for every
+        // spec), the loop would never terminate — stop instead of hanging. A
+        // mixed cycle that does advance somewhere (`rotor(0, 1, *)`) is fine.
+        let mut cycle_start_pos = pos;
 
         loop {
             if pos >= items.len() {
                 break;
+            }
+
+            // Detect a non-advancing full cycle at each cycle boundary.
+            if spec_idx > 0 && spec_idx.is_multiple_of(rotor_specs.len()) {
+                if pos == cycle_start_pos {
+                    break;
+                }
+                cycle_start_pos = pos;
             }
 
             let spec = &rotor_specs[spec_idx % rotor_specs.len()];
