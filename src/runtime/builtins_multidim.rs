@@ -782,11 +782,23 @@ impl Interpreter {
             keep_missing
         };
 
+        // A lazy subscript (`@a[lazy 11..12]`, materialized to a Seq/LazyList)
+        // auto-truncates at the array end: out-of-range indices are dropped rather
+        // than reported as missing. An eager Range keeps missing elements.
+        let mut truncate_oob = false;
         let mut indices = match index {
             Value::Array(items, ..) => items.to_vec(),
             // A Range subscript on a hash is a multi-key slice (`%h{"b".."c"}:kv`),
             // so expand it to its element keys.
             ref r if r.is_range() => crate::runtime::utils::value_to_list(r),
+            Value::Seq(ref items) => {
+                truncate_oob = true;
+                items.to_vec()
+            }
+            Value::LazyList(ref ll) => {
+                truncate_oob = true;
+                self.force_lazy_list_vm(ll)?
+            }
             other => vec![other],
         };
         // Resolve WhateverCode indices (e.g. `@a[*-1]:k`) by applying them to the
@@ -815,6 +827,18 @@ impl Interpreter {
                     .collect::<Vec<_>>(),
                 _ => Vec::new(),
             };
+        }
+        // Lazy-subscript truncation: keep only in-range indices of the array.
+        if truncate_oob && let Value::Array(items, ..) = &target {
+            let len = items.len() as i64;
+            indices.retain(|idx| match idx {
+                Value::Int(i) => *i >= 0 && *i < len,
+                Value::Num(f) => *f >= 0.0 && (*f as i64) < len,
+                _ => idx
+                    .to_string_value()
+                    .parse::<i64>()
+                    .is_ok_and(|i| i >= 0 && i < len),
+            });
         }
         let is_multi = indices.len() != 1;
 
