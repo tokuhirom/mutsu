@@ -3831,6 +3831,21 @@ pub(crate) fn dynamic_not_found_error(display_name: &str) -> RuntimeError {
     RuntimeError::typed("X::Dynamic::NotFound", attrs)
 }
 
+/// Build a structured X::Caller::NotDynamic RuntimeError.
+/// Thrown when accessing a caller-frame lexical through `CALLER::` (either the
+/// `$CALLER::x` symbolic form or the `CALLER::<$x>` stash-subscript form) when
+/// that variable is not declared `is dynamic`. `name` is the bare variable name
+/// without sigil; the reported `symbol` re-adds the `$` sigil.
+pub(crate) fn caller_not_dynamic_error(name: &str) -> RuntimeError {
+    let symbol = format!("${name}");
+    let msg =
+        format!("Cannot access '{symbol}' through CALLER, because it is not declared as dynamic");
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("symbol".to_string(), Value::str(symbol));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    RuntimeError::typed("X::Caller::NotDynamic", attrs)
+}
+
 /// Build a structured X::TypeCheck::Assignment RuntimeError.
 /// This creates a proper exception object that `throws-like` can match.
 pub(crate) fn type_check_assignment_typed_error(
