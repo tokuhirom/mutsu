@@ -43,9 +43,10 @@ impl Interpreter {
             | Value::GenericRange { .. } => "Range",
             Value::Array(_, kind) if kind.is_real_array() => "Array",
             Value::Array(_, _) => "List",
-            // A lazy list assigned into an `@` array reports `Array`; a bare Seq
-            // (scalar-held) reports `Seq`.
+            // A lazy list assigned into an `@` array reports `Array`; one coerced
+            // via `.List` reports `List`; a bare Seq (scalar-held) reports `Seq`.
             Value::LazyList(ll) if ll.in_array_context() => "Array",
+            Value::LazyList(ll) if ll.in_list_context() => "List",
             Value::LazyList(_) => "Seq",
             Value::Hash(_) => "Hash",
             Value::Rat(_, _) => "Rat",

@@ -303,7 +303,7 @@ impl Interpreter {
     pub(crate) fn lazy_pipe_preserving_coercion(method: &str) -> bool {
         matches!(
             method,
-            "Seq" | "List" | "list" | "cache" | "values" | "lazy"
+            "Seq" | "List" | "list" | "Array" | "cache" | "values" | "lazy"
         )
     }
 

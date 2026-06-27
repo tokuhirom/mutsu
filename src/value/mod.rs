@@ -2046,6 +2046,27 @@ impl LazyList {
         cloned
     }
 
+    pub(crate) const LIST_CONTEXT_MARKER: &'static str = "__mutsu_lazylist_list_context";
+
+    /// Whether this lazy list was coerced via `.List` (so `.WHAT` is `List`,
+    /// not the default `Seq`). Mutually exclusive with array context in practice.
+    pub(crate) fn in_list_context(&self) -> bool {
+        matches!(
+            self.env.get(Self::LIST_CONTEXT_MARKER),
+            Some(Value::Bool(true))
+        )
+    }
+
+    /// Return a clone of this list tagged as a `.List`-coerced list. Preserves
+    /// laziness (the generator is untouched) while making `.WHAT` report `List`.
+    pub(crate) fn with_list_context(&self) -> Self {
+        let mut cloned = self.clone();
+        cloned
+            .env
+            .insert(Self::LIST_CONTEXT_MARKER.to_string(), Value::Bool(true));
+        cloned
+    }
+
     /// Create a pre-cached lazy list (no body to evaluate).
     pub(crate) fn new_cached(items: Vec<Value>) -> Self {
         Self {
