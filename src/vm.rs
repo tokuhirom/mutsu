@@ -455,7 +455,7 @@ impl Interpreter {
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
-                if e.is_goto
+                if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)
                 {
@@ -482,7 +482,7 @@ impl Interpreter {
                 // stack contains no routine — otherwise the return is meant
                 // for an enclosing routine that will catch it via its own
                 // call-frame handling further up the stack.
-                if e.is_return && self.routine_stack().is_empty() {
+                if e.is_return() && self.routine_stack().is_empty() {
                     let inner_err = RuntimeError::controlflow_return(true);
                     if self.check_phaser_depth > 0 {
                         return Err(Self::wrap_in_begin_time(inner_err));
@@ -688,7 +688,7 @@ impl Interpreter {
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
-                if e.is_goto
+                if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)
                 {
@@ -996,7 +996,7 @@ impl Interpreter {
         let mut ip = start;
         while ip < end {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
-                if e.is_goto
+                if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)
                     && (start..end).contains(&target_ip)

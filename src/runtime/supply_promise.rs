@@ -294,7 +294,7 @@ impl Interpreter {
                     if err.is_react_done || err.is_last {
                         break 'replay;
                     }
-                    if err.is_next || err.is_redo {
+                    if err.is_next || err.is_redo() {
                         continue;
                     }
                     // A `die` quits the supply: route to the QUIT phaser.

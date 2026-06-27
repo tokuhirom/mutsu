@@ -31,6 +31,31 @@ impl RuntimeErrorCode {
     }
 }
 
+/// A non-error control-flow signal carried by an `Err(RuntimeError)`.
+///
+/// Raku implements `return`/`last`/`next`/`take`/`emit`/... as control
+/// exceptions that unwind the Rust call stack via `Result::Err`. Historically
+/// each was a separate `bool` on `RuntimeError`; they are mutually exclusive (an
+/// error carries at most one control signal), so they are being consolidated
+/// into this single enum (ANALYSIS §2.2 / §7-4). Migration is incremental — only
+/// the variants below have moved off their `bool` fields so far; the rest remain
+/// `is_*: bool` on `RuntimeError` until later slices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Control {
+    /// `return` — non-local return carrying `return_value`.
+    Return,
+    /// `goto` (`is_goto`) — labelled jump; the label is in `RuntimeError::label`.
+    Goto,
+    /// `proceed` — fall through to the next `when` in a `given`.
+    Proceed,
+    /// `take` — yield a value to the enclosing `gather` (`return_value`).
+    Take,
+    /// `emit` — emit a value to the enclosing `supply`/`react` (`return_value`).
+    Emit,
+    /// `redo` — re-run the current loop iteration.
+    Redo,
+}
+
 #[derive(Debug)]
 pub struct RuntimeError {
     pub message: String,
@@ -39,20 +64,18 @@ pub struct RuntimeError {
     pub column: Option<usize>,
     pub hint: Option<String>,
     pub return_value: Option<Value>,
-    pub is_return: bool,
+    /// The control-flow signal this error carries, if any (see `Control`).
+    /// Replaces the former `is_return`/`is_goto`/`is_proceed`/`is_take`/
+    /// `is_emit`/`is_redo` bools; read via the `is_*()` accessor methods.
+    pub control: Option<Control>,
     pub is_last: bool,
     pub is_next: bool,
-    pub is_redo: bool,
-    pub is_goto: bool,
-    pub is_proceed: bool,
     pub is_succeed: bool,
     pub is_fail: bool,
     /// When true, the Failure produced from this fail error should be marked as handled.
     /// Set when UNDO phasers run in response to the fail.
     pub fail_handled: bool,
     pub is_warn: bool,
-    pub is_take: bool,
-    pub is_emit: bool,
     pub is_done: bool,
     pub is_leave: bool,
     pub is_resume: bool,
@@ -92,18 +115,13 @@ impl RuntimeError {
             column: None,
             hint: None,
             return_value: None,
-            is_return: false,
+            control: None,
             is_last: false,
             is_next: false,
-            is_redo: false,
-            is_goto: false,
-            is_proceed: false,
             is_succeed: false,
             is_fail: false,
             fail_handled: false,
             is_warn: false,
-            is_take: false,
-            is_emit: false,
             is_done: false,
             is_leave: false,
             is_resume: false,
@@ -116,6 +134,31 @@ impl RuntimeError {
             exception: None,
             backtrace: None,
         }
+    }
+
+    /// `return` control signal (non-local return carrying `return_value`).
+    pub(crate) fn is_return(&self) -> bool {
+        self.control == Some(Control::Return)
+    }
+    /// `goto` control signal (labelled jump; label in `self.label`).
+    pub(crate) fn is_goto(&self) -> bool {
+        self.control == Some(Control::Goto)
+    }
+    /// `proceed` control signal (fall through to the next `when`).
+    pub(crate) fn is_proceed(&self) -> bool {
+        self.control == Some(Control::Proceed)
+    }
+    /// `take` control signal (yield to the enclosing `gather`).
+    pub(crate) fn is_take(&self) -> bool {
+        self.control == Some(Control::Take)
+    }
+    /// `emit` control signal (emit to the enclosing `supply`/`react`).
+    pub(crate) fn is_emit(&self) -> bool {
+        self.control == Some(Control::Emit)
+    }
+    /// `redo` control signal (re-run the current loop iteration).
+    pub(crate) fn is_redo(&self) -> bool {
+        self.control == Some(Control::Redo)
     }
 
     /// Check if this error represents an X::CompUnit::UnsatisfiedDependency error.
@@ -183,18 +226,13 @@ impl RuntimeError {
             column: Some(column),
             hint: None,
             return_value: None,
-            is_return: false,
+            control: None,
             is_last: false,
             is_next: false,
-            is_redo: false,
-            is_goto: false,
-            is_proceed: false,
             is_succeed: false,
             is_fail: false,
             fail_handled: false,
             is_warn: false,
-            is_take: false,
-            is_emit: false,
             is_done: false,
             is_leave: false,
             is_resume: false,
@@ -228,7 +266,7 @@ impl RuntimeError {
     pub(crate) fn redo_signal() -> Self {
         Self {
             message: "X::ControlFlow".to_string(),
-            is_redo: true,
+            control: Some(Control::Redo),
             ..Self::new("")
         }
     }
@@ -236,7 +274,7 @@ impl RuntimeError {
     pub(crate) fn goto_signal(label: String) -> Self {
         Self {
             message: "X::ControlFlow".to_string(),
-            is_goto: true,
+            control: Some(Control::Goto),
             label: Some(label),
             ..Self::new("")
         }
@@ -244,7 +282,7 @@ impl RuntimeError {
 
     pub(crate) fn proceed_signal() -> Self {
         Self {
-            is_proceed: true,
+            control: Some(Control::Proceed),
             ..Self::new("")
         }
     }
@@ -303,7 +341,7 @@ impl RuntimeError {
         Self {
             message: "CX::Return".to_string(),
             return_value: Some(value),
-            is_return: true,
+            control: Some(Control::Return),
             ..Self::new("")
         }
     }
@@ -330,7 +368,7 @@ impl RuntimeError {
         let xcf = Self::typed("X::ControlFlow", attrs);
         Self {
             message: "CX::Take".to_string(),
-            is_take: true,
+            control: Some(Control::Take),
             return_value: Some(value),
             exception: xcf.exception,
             ..Self::new("")
@@ -356,7 +394,7 @@ impl RuntimeError {
         let xcf = Self::typed("X::ControlFlow", attrs);
         Self {
             message: "CX::Emit".to_string(),
-            is_emit: true,
+            control: Some(Control::Emit),
             return_value: Some(value),
             exception: xcf.exception,
             ..Self::new("")

@@ -624,7 +624,7 @@ impl Interpreter {
                                     return Ok(());
                                 }
                                 // `next`/`redo` are loop control, not completion.
-                                if !err.is_next && !err.is_redo {
+                                if !err.is_next && !err.is_redo() {
                                     // A `die` quits the supply: break with the cause.
                                     let cause = err
                                         .exception
