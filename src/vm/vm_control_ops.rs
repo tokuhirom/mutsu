@@ -97,21 +97,21 @@ impl Interpreter {
             Some("CX::Last")
         } else if signal.is_next {
             Some("CX::Next")
-        } else if signal.is_redo {
+        } else if signal.is_redo() {
             Some("CX::Redo")
-        } else if signal.is_proceed {
+        } else if signal.is_proceed() {
             Some("CX::Proceed")
         } else if signal.is_succeed {
             Some("CX::Succeed")
         } else if signal.is_warn {
             Some("CX::Warn")
-        } else if signal.is_take {
+        } else if signal.is_take() {
             Some("CX::Take")
-        } else if signal.is_emit {
+        } else if signal.is_emit() {
             Some("CX::Emit")
         } else if signal.is_done || signal.is_react_done {
             Some("CX::Done")
-        } else if signal.is_return {
+        } else if signal.is_return() {
             Some("CX::Return")
         } else {
             None
@@ -299,7 +299,7 @@ impl Interpreter {
                         }
                         break 'body_redo;
                     }
-                    Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);
@@ -980,7 +980,7 @@ impl Interpreter {
                         );
                         break 'body_redo;
                     }
-                    Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
                             self.env_mut().insert("_".to_string(), item.clone());
                         }
@@ -1383,7 +1383,7 @@ impl Interpreter {
                     Err(e) if e.is_succeed => {
                         break 'body_redo;
                     }
-                    Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
                             self.env_mut().insert("_".to_string(), item.clone());
                         }
@@ -1611,7 +1611,7 @@ impl Interpreter {
                     Err(e) if e.is_succeed => {
                         break 'body_redo;
                     }
-                    Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
                             self.env_mut().insert("_".to_string(), item.clone());
                         }
@@ -1833,7 +1833,7 @@ impl Interpreter {
                     Err(e) if e.is_succeed => {
                         break 'body_redo;
                     }
-                    Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
                             self.env_mut().insert("_".to_string(), item.clone());
                         }
@@ -2549,7 +2549,7 @@ impl Interpreter {
                     Err(e) if e.is_succeed => {
                         break 'body_redo;
                     }
-                    Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         continue 'body_redo;
                     }
                     Err(e)
@@ -2861,7 +2861,7 @@ impl Interpreter {
             let mut did_proceed = false;
             match self.run_range(code, body_start, end, compiled_fns) {
                 Ok(()) => {}
-                Err(e) if e.is_proceed => {
+                Err(e) if e.is_proceed() => {
                     did_proceed = true;
                 }
                 Err(e) if e.is_succeed => {
@@ -2957,7 +2957,7 @@ impl Interpreter {
                         }
                         break 'body_redo;
                     }
-                    Err(e) if e.is_redo && Self::label_matches(&e.label, label) => {
+                    Err(e) if e.is_redo() && Self::label_matches(&e.label, label) => {
                         continue 'body_redo;
                     }
                     Err(e)
@@ -3105,7 +3105,7 @@ impl Interpreter {
                 *ip = end;
                 Ok(())
             }
-            Err(e) if e.is_return => {
+            Err(e) if e.is_return() => {
                 self.discard_let_saves(let_mark);
                 if control_begin < end {
                     self.stack.truncate(saved_depth);
@@ -3142,8 +3142,8 @@ impl Interpreter {
                 if e.return_value.is_some()
                     && !e.is_succeed
                     && !e.is_warn
-                    && !e.is_take
-                    && !e.is_emit =>
+                    && !e.is_take()
+                    && !e.is_emit() =>
             {
                 self.discard_let_saves(let_mark);
                 Err(e)
@@ -3153,12 +3153,12 @@ impl Interpreter {
             Err(e)
                 if (e.is_last
                     || e.is_next
-                    || e.is_redo
-                    || e.is_proceed
+                    || e.is_redo()
+                    || e.is_proceed()
                     || e.is_succeed
                     || e.is_warn
-                    || e.is_take
-                    || e.is_emit
+                    || e.is_take()
+                    || e.is_emit()
                     || e.is_done
                     || e.is_react_done)
                     && control_begin >= end =>
@@ -3169,12 +3169,12 @@ impl Interpreter {
             Err(e)
                 if (e.is_last
                     || e.is_next
-                    || e.is_redo
-                    || e.is_proceed
+                    || e.is_redo()
+                    || e.is_proceed()
                     || e.is_succeed
                     || e.is_warn
-                    || e.is_take
-                    || e.is_emit
+                    || e.is_take()
+                    || e.is_emit()
                     || e.is_done
                     || e.is_react_done)
                     && control_begin < end =>
@@ -3269,12 +3269,12 @@ impl Interpreter {
                                 Err(new_err)
                                     if new_err.is_last
                                         || new_err.is_next
-                                        || new_err.is_redo
-                                        || new_err.is_proceed
+                                        || new_err.is_redo()
+                                        || new_err.is_proceed()
                                         || new_err.is_succeed
                                         || new_err.is_warn
-                                        || new_err.is_take
-                                        || new_err.is_emit
+                                        || new_err.is_take()
+                                        || new_err.is_emit()
                                         || new_err.is_done
                                         || new_err.is_react_done =>
                                 {

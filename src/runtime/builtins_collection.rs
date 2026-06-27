@@ -2545,7 +2545,7 @@ impl Interpreter {
         // Try to call the block with this value
         match self.call_sub_value(block.clone(), vec![value.clone()], false) {
             Ok(result) => Ok(result),
-            Err(e) if e.is_next || e.is_last || e.is_redo => {
+            Err(e) if e.is_next || e.is_last || e.is_redo() => {
                 // Propagate loop control signals (next, last, redo)
                 Err(e)
             }

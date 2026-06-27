@@ -2236,7 +2236,7 @@ impl Interpreter {
                             // closure env) so propagation/out-of-dynamic-scope
                             // detection works when the map is forced lazily after
                             // the enclosing routine has exited.
-                            if e.is_return
+                            if e.is_return()
                                 && e.return_target_callable_id.is_none()
                                 && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
                             {
@@ -2660,7 +2660,7 @@ impl Interpreter {
                                 }
                                 break 'body_redo;
                             }
-                            Err(e) if e.is_redo => continue 'body_redo,
+                            Err(e) if e.is_redo() => continue 'body_redo,
                             Err(e) if e.is_next => break 'body_redo,
                             Err(e) if e.is_last => {
                                 stop = true;

@@ -3198,9 +3198,9 @@ impl Interpreter {
         }
         !(err.is_last
             || err.is_next
-            || err.is_redo
-            || err.is_goto
-            || err.is_proceed
+            || err.is_redo()
+            || err.is_goto()
+            || err.is_proceed()
             || err.is_succeed
             || err.is_leave
             || err.is_resume
@@ -3283,7 +3283,7 @@ impl Interpreter {
         let result = loop {
             match self.run_range(code, body_start, end, compiled_fns) {
                 Ok(()) => break Ok(()),
-                Err(e) if e.is_redo && has_label && Self::label_matches(&e.label, &label) => {
+                Err(e) if e.is_redo() && has_label && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
                     continue;
                 }
