@@ -1012,11 +1012,7 @@ pub struct SubData {
 }
 
 impl SubData {
-    pub(crate) fn captured_upvalue(
-        &self,
-        code: &CompiledCode,
-        sym: Symbol,
-    ) -> Option<&Value> {
+    pub(crate) fn captured_upvalue(&self, code: &CompiledCode, sym: Symbol) -> Option<&Value> {
         code.free_var_syms
             .iter()
             .position(|candidate| *candidate == sym)
@@ -1025,8 +1021,7 @@ impl SubData {
     }
 
     pub(crate) fn captures_symbol(&self, code: Option<&CompiledCode>, sym: Symbol) -> bool {
-        self.env.contains_key_sym(sym)
-            || code.is_some_and(|cc| cc.free_var_syms.contains(&sym))
+        self.env.contains_key_sym(sym) || code.is_some_and(|cc| cc.free_var_syms.contains(&sym))
     }
 
     pub(crate) fn captures_name(&self, code: Option<&CompiledCode>, name: &str) -> bool {

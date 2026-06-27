@@ -777,12 +777,12 @@ impl Interpreter {
                 .iter()
                 .map(|(_, source)| Symbol::intern(source))
                 .collect();
-            let captured_names: std::collections::HashSet<Symbol> =
-                data.env
-                    .keys()
-                    .copied()
-                    .chain(cc.free_var_syms.iter().copied())
-                    .collect();
+            let captured_names: std::collections::HashSet<Symbol> = data
+                .env
+                .keys()
+                .copied()
+                .chain(cc.free_var_syms.iter().copied())
+                .collect();
             // Write back captured-variable changes, but NOT the closure's own
             // parameters/locals (which live in cc.locals).  Without this filter,
             // recursive &?BLOCK calls clobber the outer frame's $n, etc.

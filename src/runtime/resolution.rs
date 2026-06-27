@@ -1586,7 +1586,8 @@ impl Interpreter {
                         .compiled_code
                         .as_deref()
                         .is_some_and(|cc| data.captured_upvalue_from_local(cc, *k));
-                    if k == "_" || k == "@_" || plain_upvalue || subsig_names.contains(&k.resolve()) {
+                    if k == "_" || k == "@_" || plain_upvalue || subsig_names.contains(&k.resolve())
+                    {
                         continue;
                     }
                     if matches!(v, Value::Array(..)) {

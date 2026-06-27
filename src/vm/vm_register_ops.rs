@@ -256,7 +256,10 @@ impl Interpreter {
             return (Vec::new(), Vec::new());
         };
         cc.free_var_syms.iter().fold(
-            (Vec::with_capacity(cc.free_var_syms.len()), Vec::with_capacity(cc.free_var_syms.len())),
+            (
+                Vec::with_capacity(cc.free_var_syms.len()),
+                Vec::with_capacity(cc.free_var_syms.len()),
+            ),
             |(mut values, mut from_local), sym| {
                 if !sym.with_str(crate::env::is_plain_user_lexical) {
                     values.push(None);
@@ -270,7 +273,9 @@ impl Interpreter {
                     from_local.push(true);
                     return (values, from_local);
                 }
-                values.push(Some(self.env().get_sym(*sym).cloned().unwrap_or(Value::Nil)));
+                values.push(Some(
+                    self.env().get_sym(*sym).cloned().unwrap_or(Value::Nil),
+                ));
                 from_local.push(false);
                 (values, from_local)
             },
