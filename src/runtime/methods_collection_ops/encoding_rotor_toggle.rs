@@ -82,6 +82,22 @@ impl Interpreter {
         }
     }
 
+    /// The `X::OutOfRange` raku throws for a `rotor`/`batch` sublist length
+    /// outside `1..^Inf`. A length of 0 (or negative) is rejected eagerly because
+    /// a zero-length batch never advances the cursor and would loop forever.
+    fn rotor_count_out_of_range(count: i64) -> RuntimeError {
+        let msg =
+            format!("Batching sublist length is out of range. Is: {count}, should be in 1..^Inf");
+        let mut attrs = HashMap::new();
+        attrs.insert("got".to_string(), Value::Int(count));
+        attrs.insert("range".to_string(), Value::str("1..^Inf".to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+        let mut err = RuntimeError::new(format!("X::OutOfRange: {msg}"));
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     pub(in crate::runtime) fn dispatch_rotor(
         &mut self,
         target: Value,
@@ -153,23 +169,12 @@ impl Interpreter {
             match spec {
                 Value::Int(n) => {
                     let count = *n;
-                    if count < 0 {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("got".to_string(), Value::Int(count));
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::str(format!(
-                                "Expected a non-negative integer for rotor count, got {}",
-                                count
-                            )),
-                        );
-                        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
-                        let mut err = RuntimeError::new(format!(
-                            "X::OutOfRange: Expected non-negative count, got {}",
-                            count
-                        ));
-                        err.exception = Some(Box::new(ex));
-                        return Err(err);
+                    // A batching sublist length must be at least 1; 0 (or negative)
+                    // is out of range. Rejecting 0 also prevents an infinite loop:
+                    // a Fixed(0) count never advances the cursor (raku throws
+                    // X::OutOfRange here rather than hanging).
+                    if count < 1 {
+                        return Err(Self::rotor_count_out_of_range(count));
                     }
                     rotor_specs.push(RotorSpec {
                         count: RotorCount::Fixed(count as usize),
@@ -274,6 +279,22 @@ impl Interpreter {
                         }
                     }
                 }
+            }
+        }
+
+        // A batching sublist length must be >= 1. Catch any zero count that the
+        // Int guard above did not (Num/Rat/Pair/coercion produce `Fixed(0)`, and
+        // a `Range` spec such as `0..2` yields a 0 count) — a zero-length batch
+        // never advances the cursor and would otherwise loop forever.
+        for s in &rotor_specs {
+            match &s.count {
+                RotorCount::Fixed(0) => return Err(Self::rotor_count_out_of_range(0)),
+                RotorCount::Range(counts) => {
+                    if let Some(&c) = counts.iter().find(|&&c| c < 1) {
+                        return Err(Self::rotor_count_out_of_range(c));
+                    }
+                }
+                _ => {}
             }
         }
 
