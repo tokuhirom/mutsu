@@ -510,7 +510,7 @@ impl Interpreter {
             Value::Sub(data) => (data.params.clone(), data.param_defs.clone()),
             Value::Routine { name, .. } => {
                 if let Some(def) = self.resolve_function(&name.resolve()) {
-                    return (def.params, def.param_defs);
+                    return (def.params.clone(), def.param_defs.clone());
                 }
                 if let Some(arity) = Self::inferred_operator_arity(&name.resolve()) {
                     let params = (0..arity).map(|i| format!("arg{}", i)).collect();
@@ -1197,24 +1197,27 @@ impl Interpreter {
         // When pseudo-packages are present (e.g. OUR::, GLOBAL::), also check
         // our_scoped_functions for subs defined in EVAL that don't leak into
         // the regular functions map.
-        let def = self.resolve_function(lookup_name).or_else(|| {
-            if has_packages {
-                let fq = format!("{}::{}", self.current_package(), lookup_name);
-                self.registry()
-                    .our_scoped_functions
-                    .get(&Symbol::intern(&fq))
-                    .cloned()
-                    .or_else(|| {
-                        let global_fq = format!("GLOBAL::{}", lookup_name);
-                        self.registry()
-                            .our_scoped_functions
-                            .get(&Symbol::intern(&global_fq))
-                            .cloned()
-                    })
-            } else {
-                None
-            }
-        });
+        let def = self
+            .resolve_function(lookup_name)
+            .map(|a| (*a).clone())
+            .or_else(|| {
+                if has_packages {
+                    let fq = format!("{}::{}", self.current_package(), lookup_name);
+                    self.registry()
+                        .our_scoped_functions
+                        .get(&Symbol::intern(&fq))
+                        .cloned()
+                        .or_else(|| {
+                            let global_fq = format!("GLOBAL::{}", lookup_name);
+                            self.registry()
+                                .our_scoped_functions
+                                .get(&Symbol::intern(&global_fq))
+                                .cloned()
+                        })
+                } else {
+                    None
+                }
+            });
         let is_multi = if def.is_none() && !self.has_proto(lookup_name) {
             // Check if there are multi-dispatch variants (stored with arity/type suffixes)
             let prefix_local = format!("{}::{}/", self.current_package(), lookup_name);
