@@ -393,7 +393,7 @@ impl Interpreter {
             let all_candidates = self.resolve_all_multi_candidates(name);
             let def_fp =
                 crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
-            let remaining: Vec<FunctionDef> = all_candidates
+            let remaining: Vec<std::sync::Arc<FunctionDef>> = all_candidates
                 .into_iter()
                 .filter(|c| {
                     crate::ast::function_body_fingerprint(&c.params, &c.param_defs, &c.body)

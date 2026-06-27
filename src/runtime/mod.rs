@@ -408,7 +408,12 @@ pub(crate) struct ProtoMethodCtx {
 /// One entry of `multi_dispatch_stack`: (function_name, remaining_candidates,
 /// original_args, first_candidate_rw_params). See the field doc on
 /// `Interpreter::multi_dispatch_stack`.
-type MultiDispatchEntry = (String, Vec<FunctionDef>, Vec<Value>, Vec<(usize, String)>);
+type MultiDispatchEntry = (
+    String,
+    Vec<Arc<FunctionDef>>,
+    Vec<Value>,
+    Vec<(usize, String)>,
+);
 
 #[derive(Debug, Clone)]
 struct MethodDispatchFrame {

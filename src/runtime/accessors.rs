@@ -905,7 +905,7 @@ impl Interpreter {
         if let Some(err) = saved_err {
             self.set_pending_dispatch_error(err);
         }
-        let remaining: Vec<super::FunctionDef> = all_candidates
+        let remaining: Vec<std::sync::Arc<super::FunctionDef>> = all_candidates
             .into_iter()
             .filter(|c| {
                 let fp = crate::ast::function_body_fingerprint(&c.params, &c.param_defs, &c.body);
