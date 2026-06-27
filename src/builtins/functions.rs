@@ -132,6 +132,14 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
                 flat_val(item, out, false);
             }
         }
+        // A shaped (native) array (`array[int].new(:shape(10), …)`) flattens its
+        // elements like a list — `flat 0, @native, 11` splices the native array's
+        // values in. Multi-dim shaped arrays descend into their leaves.
+        Value::Array(items, ArrayKind::Shaped) => {
+            for item in items.iter() {
+                flat_val(item, out, true);
+            }
+        }
         // Itemized containers — don't descend
         Value::Array(_, kind) if kind.is_itemized() => out.push(v.clone()),
         // A genuinely-lazy `@`-array (`my @a = 1..*`) stays opaque so it renders
