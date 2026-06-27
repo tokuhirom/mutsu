@@ -345,11 +345,22 @@ pub(in crate::parser) fn should_wrap_whatevercode(expr: &Expr) -> bool {
             op: TokenKind::Ident(name),
             ..
         } if name == "o" => false,
+        // List replication `xx` does not Whatever-curry a *bare* `*` operand: a
+        // standalone `*` is the Whatever value, repeated literally. `* xx 2` is
+        // `(*, *)`; `1 xx *`/`1 x *` is the infinite-repeat form. None wrap into a
+        // WhateverCode. (A compound operand like `(*+1) xx 2` is already wrapped at
+        // the parenthesis, so its `left` is a Lambda, not a bare Whatever. Note
+        // string replication `* x 2` DOES curry into a WhateverCode in Raku, so
+        // only the right-Whatever form is exempt for `x`.)
         Expr::Binary {
             op: TokenKind::Ident(name),
+            left,
             right,
-            ..
-        } if (name == "x" || name == "xx") && matches!(&**right, Expr::Whatever) => false,
+        } if ((name == "x" || name == "xx") && matches!(&**right, Expr::Whatever))
+            || (name == "xx" && matches!(&**left, Expr::Whatever)) =>
+        {
+            false
+        }
         _ => true,
     }
 }
@@ -362,7 +373,13 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
             right,
             ..
         } => {
-            (name == "xx" && matches!(&**right, Expr::Whatever))
+            // `xx` with a *bare* `*` on either side is a literal repetition of the
+            // Whatever value (`* xx 2` → `(*, *)`, `1 xx *` → infinite), not a curry
+            // point — so an enclosing postfix (`(* xx 3).elems`) must not wrap the
+            // whole chain into a WhateverCode either. (`x`/`xx` with a right `*` was
+            // already exempt; string `* x 2` DOES curry, so only `xx` exempts left.)
+            ((name == "xx" || name == "x") && matches!(&**right, Expr::Whatever))
+                || (name == "xx" && matches!(&**left, Expr::Whatever))
                 || contains_xx_with_bare_whatever(left)
                 || contains_xx_with_bare_whatever(right)
         }
