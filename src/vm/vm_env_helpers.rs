@@ -623,6 +623,16 @@ impl Interpreter {
             if !self.env().contains_key(name) {
                 continue;
             }
+            // Never clobber a name that is currently bound as a readonly param
+            // (a `for ... -> $x` / sub param). The compiler allocates one slot
+            // per *name* across the whole unit, so a sibling scope's `my $x`
+            // produces a `code.locals` entry that shares this name but whose
+            // slot is an uninitialised stale value here. The live binding lives
+            // in `env` (params are env-authoritative), so pushing the stale
+            // slot would overwrite the param with Nil. Skip it.
+            if self.is_readonly(name) {
+                continue;
+            }
             self.set_env_with_main_alias(name, self.locals[i].clone());
         }
     }
