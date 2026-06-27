@@ -264,6 +264,11 @@ pub(crate) struct VmCallFrame {
     /// without cloning the whole set). Removed on `pop_call_frame`. Empty for the
     /// slow path, which restores the full set via `saved_readonly` instead.
     pub readonly_added: Vec<String>,
+    /// Read-only var names this frame *removed* from `readonly_vars` because a
+    /// writable (`is copy`/`is rw`/`is raw`) param shadows a caller's same-named
+    /// read-only variable. Re-added on `pop_call_frame` to restore the caller's
+    /// state. Light-frame method path counterpart to `readonly_added`.
+    pub readonly_removed: Vec<String>,
     pub saved_local_bind_pairs: Vec<(usize, usize)>,
 }
 

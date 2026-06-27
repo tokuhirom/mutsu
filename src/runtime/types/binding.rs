@@ -1679,10 +1679,18 @@ impl Interpreter {
             // array/hash params through. (`@!attr`/`%.attr` twigil params are
             // attribute binds, already skipped above.)
             let is_container_param = pd.name.starts_with('@') || pd.name.starts_with('%');
-            if !is_container_param
-                && (!has_mutable_trait || raw_nonlvalue_params.contains(&pd.name))
-            {
-                self.readonly_vars.insert(pd.name.clone());
+            if !is_container_param {
+                if !has_mutable_trait || raw_nonlvalue_params.contains(&pd.name) {
+                    self.readonly_vars.insert(pd.name.clone());
+                } else {
+                    // Writable `is copy`/`is rw`/`is raw` scalar param: the
+                    // readonly set is keyed by bare name and shared across frames,
+                    // so a caller's same-named readonly param (e.g. an outer `$d`)
+                    // would otherwise leak in and make this writable param appear
+                    // readonly. Drop the mark; the surrounding call path restores
+                    // the caller's readonly state via `restore_readonly_vars`.
+                    self.readonly_vars.remove(&pd.name);
+                }
             }
         }
         Ok(rw_bindings)
