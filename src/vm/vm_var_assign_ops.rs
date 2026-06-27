@@ -3087,6 +3087,21 @@ impl Interpreter {
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
+        // An *itemized* list/Range subscript (`@a[$(7,8,9)] = …`) is a SINGLE
+        // index (its `.Int`, the element count), not a slice — itemization makes
+        // it one item. An itemized list reaches here as `ArrayKind::ItemList` (or
+        // a `Scalar`-wrapped list/Range). A bare `@a[7,8,9] = …` stays a slice.
+        let idx = match &idx {
+            Value::Array(items, crate::value::ArrayKind::ItemList) => {
+                Value::Int(items.len() as i64)
+            }
+            Value::Scalar(inner)
+                if inner.is_range() || matches!(inner.as_ref(), Value::Array(..)) =>
+            {
+                Value::Int(crate::runtime::utils::value_to_list(inner).len() as i64)
+            }
+            _ => idx,
+        };
         let index_target = self.env().get(&var_name).cloned();
         let idx = self.resolve_whatever_index_for_target(idx, index_target.as_ref());
         // Normalize Seq/Slip/Range index to Array for uniform handling in assignment.

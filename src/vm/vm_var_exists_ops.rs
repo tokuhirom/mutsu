@@ -54,7 +54,20 @@ impl Interpreter {
             let idxs: Vec<i64> = (0..len as i64).collect();
             (target, idxs)
         } else {
-            let idx = self.stack.pop().unwrap_or(Value::Nil);
+            let mut idx = self.stack.pop().unwrap_or(Value::Nil);
+            // An *itemized* list subscript (`@a[$(7,8,9)]:exists`) is a SINGLE
+            // index (its `.Int`, the element count), not a slice.
+            match &idx {
+                Value::Array(items, crate::value::ArrayKind::ItemList) => {
+                    idx = Value::Int(items.len() as i64);
+                }
+                Value::Scalar(inner)
+                    if inner.is_range() || matches!(inner.as_ref(), Value::Array(..)) =>
+                {
+                    idx = Value::Int(crate::runtime::utils::value_to_list(inner).len() as i64);
+                }
+                _ => {}
+            }
             let target = self.stack.pop().unwrap_or(Value::Nil);
             Self::throw_if_failure(&target)?;
             if let Some(map) = match &target {
