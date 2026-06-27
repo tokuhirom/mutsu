@@ -156,6 +156,35 @@ fn collect_indexed_leaves(value: &Value, indices: &mut Vec<i64>, out: &mut Vec<(
     }
 }
 
+/// Rebuild a shaped array, replacing its leaf values (in depth-first order) with
+/// `new_leaves`, while preserving the nested structure, shape metadata, and array
+/// kind. Used to write `.map`/mutation results back into a shaped array without
+/// flattening it into an ordinary list. `new_leaves` must have exactly as many
+/// elements as the array has leaves; extras are ignored, shortfalls keep the
+/// original leaf.
+pub(crate) fn replace_shaped_leaves(original: &Value, new_leaves: &[Value]) -> Value {
+    let mut iter = new_leaves.iter();
+    rebuild_with_leaves(original, &mut iter)
+}
+
+fn rebuild_with_leaves<'a, I: Iterator<Item = &'a Value>>(value: &Value, iter: &mut I) -> Value {
+    if let Value::Array(items, kind) = value {
+        let new_items: Vec<Value> = if items.iter().any(|v| matches!(v, Value::Array(..))) {
+            items.iter().map(|c| rebuild_with_leaves(c, iter)).collect()
+        } else {
+            items
+                .iter()
+                .map(|orig| iter.next().cloned().unwrap_or_else(|| orig.clone()))
+                .collect()
+        };
+        let mut data = crate::value::ArrayData::new(new_items);
+        data.shape = items.shape.clone();
+        Value::Array(Arc::new(data), *kind)
+    } else {
+        iter.next().cloned().unwrap_or_else(|| value.clone())
+    }
+}
+
 pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
     match (left, right) {
         (Value::Package(name), Value::Int(0)) | (Value::Int(0), Value::Package(name))

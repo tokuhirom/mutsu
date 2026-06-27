@@ -1343,16 +1343,23 @@ impl Interpreter {
             && target_var.starts_with('@')
             && !matches!(&target, Value::LazyList(ll) if ll.is_infinite_spec())
         {
-            let mut items = if crate::runtime::utils::is_shaped_array(&target) {
+            let is_shaped = crate::runtime::utils::is_shaped_array(&target);
+            let mut items = if is_shaped {
                 crate::runtime::utils::shaped_array_leaves(&target)
             } else {
                 Self::value_to_list(&target)
             };
             let result = self.eval_map_over_items_rw(args.first().cloned(), &mut items)?;
-            // Write mutated elements back to the source array (skip for shaped arrays
-            // since map shouldn't mutate the shaped structure)
-            if !crate::runtime::utils::is_shaped_array(&target) {
-                let key = target_var.to_string();
+            // Write mutated elements back to the source array. `.map(* *= 2)`
+            // rw-binds `$_` to each element, so element mutations persist (Raku
+            // semantics). A shaped array keeps its shape/structure — only the leaf
+            // values change — so rebuild it from the mutated leaves instead of
+            // flattening it into an ordinary list.
+            let key = target_var.to_string();
+            if is_shaped {
+                let rebuilt = crate::runtime::utils::replace_shaped_leaves(&target, &items);
+                self.env.insert(key, rebuilt);
+            } else {
                 self.env.insert(key, Value::real_array(items));
             }
             return Ok(result);
