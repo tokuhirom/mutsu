@@ -324,7 +324,13 @@ impl Interpreter {
                 return def;
             }
             Value::Package(Symbol::intern(&info.value_type))
-        } else if matches!(target, Value::Hash(_)) {
+        } else if matches!(target, Value::Hash(_))
+            || matches!(target, Value::Array(_, kind) if kind.is_real_array())
+        {
+            // An untyped Array/Hash defaults its missing elements to the `Any`
+            // type object (raku: `my @a; @a[5]` is `Any`), not `Nil`. A *List*
+            // (`(1,2,3)[11]`, `()[0]`) is out-of-range → `Nil`, so only a real
+            // `Array` (`[...]`/`my @a`) gets the `Any` default.
             Value::Package(Symbol::intern("Any"))
         } else {
             Value::Nil

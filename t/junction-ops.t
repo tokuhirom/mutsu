@@ -12,4 +12,4 @@ nok 1 ^ 1 == 1, 'junction ^ fails when more than one matches';
 ok 1^2 == 2, 'junction ^ parses without surrounding spaces';
 nok 1^1 == 1, 'junction ^ without spaces fails when more than one matches';
 
-ok (1 | 2).WHAT eq '(Junction)', 'junction operator constructs junction';
+ok (1 | 2).^name eq 'Junction', 'junction operator constructs junction';

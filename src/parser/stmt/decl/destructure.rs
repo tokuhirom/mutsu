@@ -380,6 +380,10 @@ fn parse_destructuring_with_rhs(
             && dvar.name.starts_with('@')
             && !vars[i + 1..].iter().any(|v| !v.is_slurpy);
 
+        let effective_tc = dvar
+            .per_var_type_constraint
+            .clone()
+            .or_else(|| type_constraint.clone());
         let expr = if dvar.is_slurpy || is_implicit_slurpy {
             Expr::Index {
                 target: Box::new(Expr::ArrayVar(array_bare.clone())),
@@ -391,16 +395,26 @@ fn parse_destructuring_with_rhs(
                 is_positional: true,
             }
         } else {
-            Expr::Index {
+            let read = Expr::Index {
                 target: Box::new(Expr::ArrayVar(array_bare.clone())),
                 index: Box::new(Expr::Literal(Value::Int(i as i64))),
                 is_positional: true,
+            };
+            // A *typed* element whose RHS ran out of values gets the type's
+            // DEFAULT, not the `Any` an out-of-range Array read now yields
+            // (`my Str ($a) = ()` → `$a` is `Str`, not the un-assignable `Any`).
+            // Untyped vars keep the raw `Any`. The `// default` fallback fires
+            // only for an undefined (missing) read, so present values pass through.
+            if effective_tc.is_some() {
+                Expr::Binary {
+                    left: Box::new(read),
+                    op: TokenKind::SlashSlash,
+                    right: Box::new(native_type_default(&effective_tc)),
+                }
+            } else {
+                read
             }
         };
-        let effective_tc = dvar
-            .per_var_type_constraint
-            .clone()
-            .or_else(|| type_constraint.clone());
         let effective_where = dvar.where_constraint.clone().map(Box::new);
         stmts.push(Stmt::VarDecl {
             name: dvar.name.clone(),

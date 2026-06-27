@@ -609,8 +609,11 @@ impl Interpreter {
                 // (`@a[0;1]` uses MultiDimIndex, a separate opcode). A plain
                 // array-of-arrays is NOT shaped, so it slices.
                 let is_shaped = crate::runtime::utils::is_shaped_array(&target);
-                if !is_shaped && indices.len() > 1 {
-                    // Positional slice: @a[0,1,2] returns (@a[0], @a[1], @a[2])
+                if !is_shaped {
+                    // Positional slice: @a[0,1,2] returns (@a[0], @a[1], @a[2]).
+                    // An array-valued subscript is ALWAYS a slice, so a single
+                    // element (`@a[@b]`, `@a[(1,)]`) still yields a 1-list, not a
+                    // scalar (raku: `@a[(1,)]` is `(20,)`, not `20`).
                     let Value::Array(items, kind) = &target else {
                         unreachable!()
                     };
