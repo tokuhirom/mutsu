@@ -1069,7 +1069,7 @@ impl Interpreter {
     /// Collect ALL multi dispatch candidates for a function name, regardless of
     /// arity or type matching.  Used to build the full candidate list for
     /// callwith(), which may re-dispatch with different arguments.
-    pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<FunctionDef> {
+    pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<Arc<FunctionDef>> {
         let mut all: Vec<(String, Arc<FunctionDef>)> = Vec::new();
         let prefixes = [
             format!("{}::{}/", self.current_package(), name),
@@ -1106,7 +1106,7 @@ impl Interpreter {
         // S12-methods/defer-next.t `nextsame + multi + where`). Mirrors the
         // deterministic winner resolution PR-4 added to `push_multi_dispatch_frame`.
         self.sort_candidates_by_specificity(&mut all);
-        all.into_iter().map(|(_, def)| (*def).clone()).collect()
+        all.into_iter().map(|(_, def)| def).collect()
     }
 
     pub(super) fn eval_token_call_values(
@@ -1680,7 +1680,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
         current_def: &FunctionDef,
-    ) -> Vec<FunctionDef> {
+    ) -> Vec<Arc<FunctionDef>> {
         let arity = args
             .iter()
             .filter(|v| !matches!(v, Value::Pair(..)))
@@ -1741,7 +1741,7 @@ impl Interpreter {
                 }
                 continue;
             }
-            remaining.push((**cand).clone());
+            remaining.push(cand.clone());
         }
         remaining
     }
