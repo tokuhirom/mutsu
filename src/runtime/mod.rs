@@ -1471,7 +1471,7 @@ pub(crate) struct SubtestContext {
 }
 
 pub(crate) type RoutineRegistrySnapshot = (
-    HashMap<Symbol, FunctionDef>,
+    HashMap<Symbol, Arc<FunctionDef>>,
     HashMap<Symbol, FunctionDef>,
     HashMap<Symbol, Vec<FunctionDef>>,
     HashSet<String>,
@@ -4434,7 +4434,7 @@ impl Interpreter {
             let target_single = format!("{target_pkg}::{name}");
             let target_prefix = format!("{target_pkg}::{name}/");
 
-            let function_entries: Vec<(Symbol, FunctionDef)> = self
+            let function_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()

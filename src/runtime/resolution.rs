@@ -41,7 +41,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .get(&Symbol::intern(name))
-                .cloned()
+                .map(|d| (**d).clone())
             {
                 return Some(def);
             }
@@ -63,7 +63,7 @@ impl Interpreter {
                         .registry()
                         .functions
                         .get(&Symbol::intern(&qualified))
-                        .cloned()
+                        .map(|d| (**d).clone())
                     {
                         return Some(def);
                     }
@@ -75,12 +75,12 @@ impl Interpreter {
         self.registry()
             .functions
             .get(&Symbol::intern(&local))
-            .cloned()
+            .map(|d| (**d).clone())
             .or_else(|| {
                 self.registry()
                     .functions
                     .get(&Symbol::intern(&format!("GLOBAL::{}", name)))
-                    .cloned()
+                    .map(|d| (**d).clone())
             })
     }
 

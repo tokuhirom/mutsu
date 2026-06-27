@@ -82,6 +82,7 @@ impl Interpreter {
     /// shape acquired a second write lock inside the arm and deadlocked (the
     /// borrow checker cannot see it because each `registry_mut()` is a fresh guard).
     fn insert_multi_overload(&mut self, base_key: &str, def: FunctionDef) {
+        let def = std::sync::Arc::new(def);
         let mut registry = self.registry_mut();
         let funcs = &mut registry.functions;
         if let std::collections::hash_map::Entry::Vacant(entry) =
@@ -748,12 +749,14 @@ impl Interpreter {
                 self.registry_mut()
                     .functions
                     .entry(Symbol::intern(&fq))
-                    .or_insert(def);
+                    .or_insert(std::sync::Arc::new(def));
             }
         } else {
             let fq = format!("{}::{}", self.current_package(), name);
             let fq_sym = Symbol::intern(&fq);
-            self.registry_mut().functions.insert(fq_sym, def);
+            self.registry_mut()
+                .functions
+                .insert(fq_sym, std::sync::Arc::new(def));
             // Record this declaration's fingerprint so a later re-execution of the
             // same `RegisterSub` site is recognized as an idempotent no-op. Reuse
             // the compile-time `site_fingerprint` rather than recomputing it here:
@@ -772,7 +775,11 @@ impl Interpreter {
             let fq = format!("{}::{}", self.current_package(), name);
             // Clone out before the registry_mut write (read->write on the same
             // lock would deadlock).
-            let f = self.registry().functions.get(&Symbol::intern(&fq)).cloned();
+            let f = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(&fq))
+                .map(|d| (**d).clone());
             if let Some(f) = f {
                 self.registry_mut()
                     .our_scoped_functions
@@ -1126,7 +1133,7 @@ impl Interpreter {
                 let typed_fq = format!("GLOBAL::{}/{}:{}", name, arity, type_sig.join(","));
                 self.registry_mut()
                     .functions
-                    .insert(Symbol::intern(&typed_fq), def.clone());
+                    .insert(Symbol::intern(&typed_fq), std::sync::Arc::new(def.clone()));
             }
             let fq = format!("GLOBAL::{}/{}", name, arity);
             if !has_types {
@@ -1135,7 +1142,7 @@ impl Interpreter {
                 self.registry_mut()
                     .functions
                     .entry(Symbol::intern(&fq))
-                    .or_insert(def);
+                    .or_insert(std::sync::Arc::new(def));
             }
         } else {
             if has_multi && !has_proto && !supersede {
@@ -1147,7 +1154,7 @@ impl Interpreter {
             let fq = format!("GLOBAL::{}", name);
             self.registry_mut()
                 .functions
-                .insert(Symbol::intern(&fq), def);
+                .insert(Symbol::intern(&fq), std::sync::Arc::new(def));
         }
         let callable_key = format!("__mutsu_callable_id::GLOBAL::{}", name);
         self.env.insert(
