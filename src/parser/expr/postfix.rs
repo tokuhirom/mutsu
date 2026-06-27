@@ -2280,6 +2280,23 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     rest = after;
                     continue;
                 }
+                // `@a[]:k` / `:v` / `:kv` / `:p` (and `:delete`): a zen slice
+                // carrying a subscript adverb returns all keys/values just like
+                // the whatever slice `@a[*]:adverb`, so model the empty subscript
+                // as a Whatever index and let the adverb block below build the
+                // `__mutsu_subscript_adverb` call. Without this the `[]` would be
+                // dropped and the adverb mis-parsed as a colonpair argument.
+                if parse_subscript_adverb_with_expr(r_adv).is_some()
+                    || parse_delete_adverb(r_adv).is_some()
+                {
+                    expr = Expr::Index {
+                        target: Box::new(expr),
+                        index: Box::new(Expr::Whatever),
+                        is_positional: true,
+                    };
+                    rest = after;
+                    continue;
+                }
                 rest = after;
                 continue;
             }
