@@ -4,7 +4,7 @@
 「設計上どこまで整理できていて、何がまだ負債として残っているか」をまとめたもの。
 バグ票の一覧ではなく、**アーキテクチャと健全性のレビュー**として読む想定。
 
-初版: 2026-06-03 / rev2: 2026-06-15 / rev3: 2026-06-17 / **rev4: 2026-06-27 (単一ストア化 #3455・ユーザメソッド本体 tree-walk 撤去 §B #3680 を反映)**
+初版: 2026-06-03 / rev2: 2026-06-15 / rev3: 2026-06-17 / rev4: 2026-06-27 (単一ストア化 #3455・ユーザメソッド本体 tree-walk 撤去 §B #3680) / **rev5: 2026-06-27 (クロージャ upvalue Phase 1 #3715・Track B 着手前設計メモを §1.3/§2.1 に反映)**
 方法:
 - 調査エージェントによるサブシステム単位の精読
 - 主張ごとの実機再現確認
@@ -134,15 +134,38 @@ rev3 で「最大の設計負債」としていた `locals ↔ env` の二重ス
 [docs/vm-single-store.md](docs/vm-single-store.md) を参照。
 残テーマは、§C の第一級コンテナ Phase 3 に吸収されている。
 
-### 1.3 クロージャが env ベース (upvalue 不在)
+### 1.3 クロージャの upvalue — **Phase 1 着手 (#3715)、残りは Track B 待ち**
 
-クロージャは upvalue を持たず、自由変数は `GetGlobal`/`GetArrayVar`/`GetHashVar` として env HashMap を引く。
-捕捉時に env をフラットコピーして `Value::Sub` に持たせる (`vm/vm_register_ops.rs`)。
-`compute_needs_env_sync` (`opcode.rs`) は **ネストクロージャの自由変数になっているローカルだけ**を選別して
-マークするよう精緻化されたが (`free_var_syms` 解析)、`ForLoop`/`BlockScope`/`MakeGather` を含むコードは
-依然全ローカルを保守的にマークするフォールバックが残る。upvalue 機構そのものは未導入。
-捕捉して書き換えられるローカルは `box_captured_lexicals` で `ContainerRef` セルに昇格し、
-兄弟クロージャ間・スレッド間で共有される (Track C ライブセル化と同じ基盤)。
+クロージャの自由変数は元々 `GetGlobal`/`GetArrayVar`/`GetHashVar` として env HashMap を引き、
+捕捉時に env をフラットコピーして `Value::Sub` に持たせていた (`vm/vm_register_ops.rs`)。
+
+**Phase 1 (#3715): index ベース upvalue 読み取りを導入。** `OpCode::GetUpvalue { index, name_idx }`
+を追加し、`CompiledCode::compute_upvalues` がクロージャ本体の read-only plain-scalar 自由変数の
+`GetGlobal` 読みを `GetUpvalue(i)` に書き換える (`upvalue_syms`)。`capture_upvalues` は**既に共有
+`ContainerRef` セルになっている捕捉だけ**を upvalue 配列に取り込み (それ以外は `None` → env を live
+で読む `name_idx` フォールバック)。`captures_env_by_name` (ForLoop/BlockScope/MakeGather/EVAL) や
+サブシグネチャ捕捉引数は除外。env を捕捉源として残すため**常に健全**。これで既セル化済み
+(mutated-escaping、`box_captured_lexicals` + Track C で cross-thread 対応) のキャプチャ読みが
+env HashMap を経由しなくなった。フレーム upvalue 配列は `Interpreter::upvalues` で locals と同様に
+保存/復元し、control-handler 経路ではクリアして env フォールバックさせる。
+
+**残り (Phase 2+): read-only 定数キャプチャの値化・同名修正・write 経路・env コピー撤去は Track B
+(§2.1) 待ち。** 試みて分かった健全性の壁:
+- **値スナップショットは unsound**: 「この捕捉は不変」を健全判定できない。mutsu の compile 時
+  mutation 解析は role/class メソッドの書き込みや `cas`/`is rw` 等の rw-arg sink を見落とすため、
+  read-only に*見える*変数が実は変更され、凍結すると **flaky 化** する (`S12-construction/roles-6e.t`)。
+  → セル (参照捕捉) が唯一の健全策。
+- **read-only キャプチャの一律セル化 (#2749) は別の壁**: 型オブジェクト/Mix をセルに隠すと
+  ContainerRef 非 deref 経路が壊れ (型 dispatch・不変性・`.kv` rw)、`is raw`/`cas` の by-name 書き戻しも
+  壊れ、そして **per-iteration × cross-thread (`await ^4 .map: -> $n { start { $n } }`) で
+  デッドロック/ハング**する。escape/whitelist/type-skip/loop-local のゲートを積めば個別には回避できるが、
+  それは**場当たり (CLAUDE.md の「リスク」定義)**。
+- 結論: クロージャ upvalue の残り利得は、**配列/ハッシュ/スカラのセルが cross-thread でも健全に
+  共有・再入安全になること = §2.1 Track B が前提**。それが入るまで Phase 1 が健全な到達点。
+
+なお `compute_needs_env_sync` の保守的フォールバック (ForLoop/BlockScope/MakeGather で全ローカルを
+マーク) と、`box_captured_lexicals` による captured-mutated-escaping ローカルの `ContainerRef` 昇格
+(兄弟クロージャ間・スレッド間共有、Track C と同基盤) は従来どおり。
 
 ### 1.4 ローカルスロットのレキシカルスコープ不在
 
@@ -193,6 +216,26 @@ env 変異は「別スレッドからの並行 env アクセスが UB」、alias
 が明記するとおり、生ポインタ書き込みの provenance 違反＋クロスthread 共有時のデータ競合で、これは
 **配列/ハッシュ要素を first-class `ContainerRef` セル化 (Track B) して interior mutability に置換する**ことで
 初めて解消する (高ブラスト半径・別 PR)。
+
+#### Track B 着手前の設計メモ (2026-06-27 調査)
+
+Track B は規模・難度ともに大きく、着手前に次を踏まえること:
+
+- **規模**: `Value::Array(Arc<ArrayData>)` / `Hash(Arc<HashData>)` のコア表現変更 +
+  `arc_contents_mut` 呼び出し **79 箇所 / 10 ファイル** + 全 read 経路 + Send/Sync 再設計。
+- **cross-thread 共有の実体**: `clone_for_thread` が env の値 (`Arc<ArrayData>` クローン) を
+  `shared_vars: RwLock<HashMap>` に入れて共有する (`runtime/mod.rs`)。同じ Arc を別スレッドが
+  生ポインタ書き込み → data race。健全化には共有時の同期 (lock) が要る。
+- **設計の地雷①: 再入デッドロック**。`arc_contents_mut` の契約は「借用保持中に VM を再入するな」。
+  配列を `RwLock`/`Mutex` で包むと、配列操作中に VM が再入 (要素アクセスが closure/method を呼ぶ等) した
+  瞬間、同じロックの再取得でデッドロック。**最ホットな型 (配列) で起きる**ため、素朴な lock 化は不可。
+  「読み出して借用を落としてから再入」を全 79 箇所で保証するか、再入可能な所有モデルが要る。
+- **設計の地雷②: perf**。単一スレッドの大半はロック不要なのに毎操作ロックは hot path に直撃。
+  「共有 (cross-thread) のときだけ同期」には cross-thread 検出が要る。
+- 上記より Track B は**再入安全なロック戦略 (または所有権モデル) の設計判断を伴う研究レベルの作業**で、
+  場当たりに lock を足すと CLAUDE.md の「リスク」(flaky/ハング/ad-hoc) に直結する。設計を詰めてから着手。
+- これが §1.3 クロージャ upvalue Phase 2+ の前提でもある (read-only/per-iteration/cross-thread キャプチャの
+  健全なセル化が解禁される)。
 
 ### 2.2 `RuntimeError` god-struct が制御フローをエラーチャネルで運ぶ — **bool→enum 分離は完了、残るは縮小・Box 化**
 
@@ -306,11 +349,11 @@ env 変異は「別スレッドからの並行 env アクセスが UB」、alias
 | # | 項目 | 区分 | 効果 |
 |---|------|------|------|
 | 1 | アロケーション abort ガードは **完了** (配列 autoviv・文字列リピート・shaped 宣言・`Buf.allocate`/`reallocate`・§5)。残: Supply worker panic の QUIT 伝播 | 堅牢性 (任意) | 低 |
-| 2 | クロージャに upvalue を導入し env 経由捕捉を撤廃 (PLAN §G Lever 1) | 性能 | 中 |
+| 2 | クロージャ upvalue: **Phase 1 完了** (#3715・index ベース `GetUpvalue` で既セル化キャプチャの読みを env HashMap から外す・§1.3)。残 (read-only 値化/同名修正/write 経路/env コピー撤去) は **#6 Track B 待ち** (cross-thread セルの再入安全・健全化が前提) | 性能 + 正しさ | 中 |
 | 3 | ローカルスロットにレキシカルスコープを導入 (シャドウ衝突解消) | 正しさ + 設計 | 中 |
 | 4 | 制御フローを `RuntimeError` から `enum Control` へ分離は **完了** (§2.2・#3701/#3706 ほか)。残: `RuntimeError` 本体の縮小・Box 化で `result_large_err` 23 箇所を撤去 (高 churn・別 PR 群) | 設計 | 中 |
 | 5 | `.^methods`/`.can` の型別リスト: 確認済みドリフトは是正 (Str/Int/List・§4.1)。完全な実ディスパッチ表からの導出は arity-dispatch 非列挙のため別軸 | ドリフト解消 | 中 |
-| 6 | 陳腐化した `unsafe` SAFETY コメント是正は **完了** (§2.1)。残: 配列・ハッシュ要素の `ContainerRef` 化で生ポインタ unsoundness を撤廃 (高ブラスト・別 PR) | 健全性 (UB) | 中 |
+| 6 | **Track B**: 陳腐化 `unsafe` コメント是正は完了。残: 配列・ハッシュ要素の `ContainerRef` 化で生ポインタ unsoundness を撤廃。**着手前設計メモを §2.1 に追記** (79 箇所・コア表現変更・再入デッドロック/perf の地雷・cross-thread 共有は `shared_vars`)。再入安全なロック/所有モデルの設計判断が要る研究レベル作業。#2 upvalue Phase 2+ の前提 | 健全性 (UB) + 性能 | 中〜大 |
 | 7 | 宣言登録の bytecode 化: sub 登録の冪等化 (**slice 1**・`SubRegisterOutcome`+fingerprint) と registry Arc 化 (**slice 2**・snapshot 共有) + dispatch resolution への Arc 貫通 (**slice 3**・resolution 毎の body clone を Arc bump に) 着手済 (§1.1)。残: 導出済み `Arc<FunctionDef>` キャッシュ再利用 (真の derive-once) + `MultiDispatchEntry` の Arc 化。method dispatch の resolution caching (multi は #3684 着手) | 設計 + 性能 | 中 |
 | 8 | 一時ファイルを `tmp/` へ (root の `bom-test-*`) / 巨大ファイル分割 (500 行規約) | 衛生 | 低〜中 |
 
