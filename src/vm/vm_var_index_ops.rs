@@ -263,14 +263,17 @@ impl Interpreter {
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
         let mut index = self.stack.pop().unwrap();
-        // An *itemized* Range used as a subscript (`@a[my $ = ^2]`) is a single
-        // numeric index, not a slice: the contained Range numifies to its element
-        // count. (A bare Range index `@a[^2]` is still a slice.)
+        // An *itemized* list/Range used as a subscript (`@a[$(7,8,9)]`,
+        // `@a[my $ = ^2]`) is a SINGLE index, not a slice: itemization makes it
+        // one item, which numifies to its element count (`$(7,8,9).Int == 3`).
+        // (A bare `@a[7,8,9]` / `@a[^2]` is still a slice.)
         if let Value::Scalar(inner) = &index
-            && inner.is_range()
+            && (inner.is_range() || matches!(inner.as_ref(), Value::Array(..)))
         {
             let n = crate::runtime::utils::value_to_list(inner).len() as i64;
             index = Value::Int(n);
+        } else if let Value::Array(items, crate::value::ArrayKind::ItemList) = &index {
+            index = Value::Int(items.len() as i64);
         }
         let mut target = self.stack.pop().unwrap();
         if let Value::Junction { kind, values } = &target {

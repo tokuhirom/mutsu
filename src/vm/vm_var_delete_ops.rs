@@ -195,6 +195,19 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
+        // An *itemized* list subscript (`@a[$(7,8,9)]:delete`) is a SINGLE index
+        // (its `.Int`, the element count), not a slice.
+        let idx = match &idx {
+            Value::Array(items, crate::value::ArrayKind::ItemList) => {
+                Value::Int(items.len() as i64)
+            }
+            Value::Scalar(inner)
+                if inner.is_range() || matches!(inner.as_ref(), Value::Array(..)) =>
+            {
+                Value::Int(crate::runtime::utils::value_to_list(inner).len() as i64)
+            }
+            _ => idx,
+        };
         // Fast path for simple hash delete
         if let Some(result) = self.try_fast_hash_delete(code, &var_name, &idx) {
             self.stack.push(result?);
