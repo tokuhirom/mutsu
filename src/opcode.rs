@@ -1960,7 +1960,7 @@ impl CompiledCode {
     ///   the upvalue array observes the creator's container correctly (a mutated
     ///   capture is boxed into a shared `ContainerRef` cell, which the snapshot
     ///   clones), so reads stay coherent without any write-back.
-    pub(crate) fn compute_upvalues(&mut self) {
+    pub(crate) fn compute_upvalues(&mut self, runtime_bound: &std::collections::HashSet<Symbol>) {
         if self.captures_env_by_name {
             return;
         }
@@ -1974,12 +1974,15 @@ impl CompiledCode {
         // Eligible = free, read-only, plain *scalar* user lexical, not an own
         // local. Scalars are stored sigil-less ("$x" -> "x"); arrays/hashes/subs
         // ("@a"/"%h"/"&f") are excluded in Phase 1 (their reads use distinct ops
-        // and shared-container semantics handled separately).
+        // and shared-container semantics handled separately). `runtime_bound`
+        // excludes names this body binds at call time but that read via GetGlobal
+        // (sub-signature capture params like `|c(Str $x)`), which only LOOK free.
         let eligible: std::collections::HashSet<Symbol> = self
             .free_var_syms
             .iter()
             .copied()
             .filter(|sym| !written.contains(sym))
+            .filter(|sym| !runtime_bound.contains(sym))
             .filter(|sym| {
                 sym.with_str(|s| {
                     crate::env::is_plain_user_lexical(s)
