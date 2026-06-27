@@ -1351,11 +1351,9 @@ impl Interpreter {
             if let Some(cc) = data.compiled_code.as_deref() {
                 for (sym, maybe_val) in cc.free_var_syms.iter().zip(data.captured_upvalues.iter()) {
                     let Some(val) = maybe_val else { continue };
-                    if matches!(val, Value::ContainerRef(_)) {
-                        new_env.insert_sym(*sym, val.clone());
-                    } else if !merge_all
-                        || !(matches!(new_env.get_sym(*sym), Some(Value::Array(..)))
-                            && matches!(val, Value::Array(..)))
+                    if !(merge_all
+                        && matches!(new_env.get_sym(*sym), Some(Value::Array(..)))
+                        && matches!(val, Value::Array(..)))
                     {
                         new_env.insert_sym(*sym, val.clone());
                     }

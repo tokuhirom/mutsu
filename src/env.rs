@@ -483,7 +483,8 @@ impl Env {
             None => global_base()
                 .map(|b| {
                     b.iter()
-                        .filter_map(|(k, v)| keep(*k, v).then(|| (*k, v.clone())))
+                        .filter(|(k, v)| keep(**k, v))
+                        .map(|(k, v)| (*k, v.clone()))
                         .collect()
                 })
                 .unwrap_or_default(),

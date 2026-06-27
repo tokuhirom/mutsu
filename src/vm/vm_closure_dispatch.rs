@@ -239,11 +239,7 @@ impl Interpreter {
         }
         for (sym, maybe_val) in cc.free_var_syms.iter().zip(data.captured_upvalues.iter()) {
             let Some(val) = maybe_val else { continue };
-            if matches!(val, Value::ContainerRef(_)) {
-                self.env_mut().insert_sym(*sym, val.clone());
-            } else {
-                self.env_mut().insert_sym(*sym, val.clone());
-            }
+            self.env_mut().insert_sym(*sym, val.clone());
         }
         // Per-iteration loop captures (Raku fresh-binding semantics): these free
         // variables were declared in an enclosing loop body when this closure was
