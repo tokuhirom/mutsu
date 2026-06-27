@@ -22,15 +22,18 @@ fn str_numeric_exception_attrs(s: &str) -> std::collections::HashMap<String, Val
     ex_attrs.insert("source".to_string(), Value::str(s.to_string()));
     ex_attrs.insert("reason".to_string(), Value::str(reason.clone()));
     ex_attrs.insert("pos".to_string(), Value::Int(pos as i64));
+    let source_indicator = crate::runtime::str_numeric::build_source_indicator(s, pos);
     ex_attrs.insert(
         "source-indicator".to_string(),
-        Value::str(crate::runtime::str_numeric::build_source_indicator(s, pos)),
+        Value::str(source_indicator.clone()),
     );
+    // Include the `⏏` position marker, matching Rakudo:
+    // `Cannot convert string to number: trailing characters after number
+    //  in '5⏏ foo' (indicated by ⏏)`.
     ex_attrs.insert(
         "message".to_string(),
         Value::str(format!(
-            "Cannot convert string to number: {} in '{}'",
-            reason, s
+            "Cannot convert string to number: {reason} {source_indicator}"
         )),
     );
     ex_attrs
@@ -522,34 +525,10 @@ pub(super) fn dispatch(
                     if let Some(v) = parse_raku_int_from_str(s) {
                         Some(v)
                     } else {
-                        // Return Failure for invalid string
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("source".to_string(), Value::str(s.to_string()));
-                        ex_attrs.insert(
-                            "reason".to_string(),
-                            Value::str(
-                                "base-10 number must begin with valid digits or '.'".to_string(),
-                            ),
-                        );
-                        ex_attrs.insert("pos".to_string(), Value::Int(0));
-                        ex_attrs.insert(
-                            "message".to_string(),
-                            Value::str(format!(
-                                "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
-                                s
-                            )),
-                        );
-                        let ex = Value::make_instance(
-                            crate::symbol::Symbol::intern("X::Str::Numeric"),
-                            ex_attrs,
-                        );
-                        let mut failure_attrs = std::collections::HashMap::new();
-                        failure_attrs.insert("exception".to_string(), ex);
-                        failure_attrs.insert("handled".to_string(), Value::Bool(false));
-                        return Some(Some(Ok(Value::make_instance(
-                            crate::symbol::Symbol::intern("Failure"),
-                            failure_attrs,
-                        ))));
+                        // Invalid string: same X::Str::Numeric Failure (with the `⏏`
+                        // position marker) as `.Int`, rather than a hand-rolled
+                        // message that hard-codes the wrong reason and drops the marker.
+                        return Some(Some(Ok(str_numeric_failure(s))));
                     }
                 }
                 _ => None,
@@ -696,10 +675,9 @@ pub(super) fn dispatch(
                     } else if let Ok(f) = s.trim().parse::<f64>() {
                         Value::Num(f)
                     } else {
-                        return Some(Some(Err(RuntimeError::new(format!(
-                            "X::Str::Numeric: Cannot convert string '{}' to a number",
-                            s
-                        )))));
+                        // Same X::Str::Numeric Failure (typed, with the `⏏` marker)
+                        // as `.Int`/`.Numeric`.
+                        return Some(Some(Ok(str_numeric_failure(s))));
                     }
                 }
                 Value::Array(items, ..) => Value::Int(items.len() as i64),
@@ -758,10 +736,9 @@ pub(super) fn dispatch(
                     if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
                         v
                     } else {
-                        return Some(Some(Err(RuntimeError::new(format!(
-                            "X::Str::Numeric: Cannot convert string '{}' to a number",
-                            s
-                        )))));
+                        // Same X::Str::Numeric Failure (typed, with the `⏏` marker)
+                        // as `.Int`.
+                        return Some(Some(Ok(str_numeric_failure(s))));
                     }
                 }
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
