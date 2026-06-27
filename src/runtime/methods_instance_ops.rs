@@ -1,4 +1,4 @@
-use super::methods_signature::{make_method_not_found_error, make_private_permission_error};
+use super::methods_signature_errors::{make_method_not_found_error, make_private_permission_error};
 use super::*;
 use crate::symbol::Symbol;
 

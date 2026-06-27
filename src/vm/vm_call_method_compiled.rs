@@ -2295,7 +2295,7 @@ impl Interpreter {
                 self.dispatch_ambiguous = false;
                 let sigs = self.format_method_candidate_signatures(&cn, method);
                 return Err(
-                    crate::runtime::methods_signature::make_multi_ambiguous_error(
+                    crate::runtime::methods_signature_errors::make_multi_ambiguous_error(
                         method, &cn, &sigs,
                     ),
                 );

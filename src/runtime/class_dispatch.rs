@@ -50,7 +50,7 @@ impl Interpreter {
                 let sigs =
                     self.format_method_candidate_signatures(receiver_class_name, method_name);
                 return Err(
-                    super::methods_signature::make_multi_no_match_error_detailed(
+                    super::methods_signature_errors::make_multi_no_match_error_detailed(
                         method_name,
                         receiver_class_name,
                         &sigs,
@@ -58,18 +58,20 @@ impl Interpreter {
                 );
             }
             let type_name = receiver_class_name.to_string();
-            return Err(super::methods_signature::make_method_not_found_error(
-                method_name,
-                &type_name,
-                false,
-            ));
+            return Err(
+                super::methods_signature_errors::make_method_not_found_error(
+                    method_name,
+                    &type_name,
+                    false,
+                ),
+            );
         };
         // Ambiguous multi dispatch: two or more candidates were equally
         // specific. Raise X::Multi::Ambiguous rather than silently choosing.
         if self.dispatch_ambiguous {
             self.dispatch_ambiguous = false;
             let sigs = self.format_method_candidate_signatures(receiver_class_name, method_name);
-            return Err(super::methods_signature::make_multi_ambiguous_error(
+            return Err(super::methods_signature_errors::make_multi_ambiguous_error(
                 method_name,
                 receiver_class_name,
                 &sigs,

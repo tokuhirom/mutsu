@@ -159,9 +159,9 @@ impl Interpreter {
             }
         }
         if role_has_method {
-            return Some(Err(super::methods_signature::make_multi_no_match_error(
-                method,
-            )));
+            return Some(Err(
+                super::methods_signature_errors::make_multi_no_match_error(method),
+            ));
         }
         if method == "can" && args.len() == 1 {
             let method_name = args[0].to_string_value();
