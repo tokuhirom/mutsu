@@ -5528,6 +5528,17 @@ impl Interpreter {
         if let Some(popped) = self.caller_env_stack.pop() {
             for (key, value) in &popped {
                 key.with_str(|key_str| {
+                    // `$_`, `$/`, `$!` report as dynamic for `.VAR.dynamic` /
+                    // CALLER:: purposes, but they are *not* propagated back to the
+                    // caller on return: each routine gets its own topic/match/error
+                    // and the caller's value is restored from `saved_env`. Writing
+                    // the callee frame's stale copy back here clobbers the caller's
+                    // live `$_` (e.g. a `block.($_)` call inside a `for` loop would
+                    // revert the loop topic to the previous iteration's value).
+                    let bare = Self::normalize_var_meta_name(key_str);
+                    if matches!(bare, "_" | "/" | "!") {
+                        return;
+                    }
                     if self.is_var_dynamic(key_str) && restored_env.get_sym(*key) != Some(value) {
                         restored_env.insert_sym(*key, value.clone());
                     }
