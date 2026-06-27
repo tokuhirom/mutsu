@@ -21,6 +21,30 @@ impl Interpreter {
     pub(crate) const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str =
         "__mutsu_lazy_gather_take_limit_reached__";
 
+    pub(crate) fn closure_upvalue_value(
+        &self,
+        data: &crate::value::SubData,
+        sym: Symbol,
+        captured: Option<&Value>,
+    ) -> Option<Value> {
+        self.get_closure_captured_state(data.id, sym)
+            .cloned()
+            .or_else(|| captured.cloned())
+    }
+
+    pub(crate) fn persist_closure_upvalue_state(
+        &mut self,
+        data: &crate::value::SubData,
+        code: Option<&crate::opcode::CompiledCode>,
+    ) {
+        let Some(code) = code else { return };
+        for sym in &code.free_var_syms {
+            if let Some(val) = self.env.get_sym(*sym).cloned() {
+                self.set_closure_captured_state(data.id, *sym, val);
+            }
+        }
+    }
+
     fn is_stub_method_body(body: &[Stmt]) -> bool {
         let filtered: Vec<_> = body
             .iter()
@@ -1350,13 +1374,11 @@ impl Interpreter {
             }
             if let Some(cc) = data.compiled_code.as_deref() {
                 for (sym, maybe_val) in cc.free_var_syms.iter().zip(data.captured_upvalues.iter()) {
-                    let Some(val) = maybe_val else { continue };
-                    if !(merge_all
-                        && matches!(new_env.get_sym(*sym), Some(Value::Array(..)))
-                        && matches!(val, Value::Array(..)))
-                    {
-                        new_env.insert_sym(*sym, val.clone());
-                    }
+                    let Some(val) = self.closure_upvalue_value(&data, *sym, maybe_val.as_ref())
+                    else {
+                        continue;
+                    };
+                    new_env.insert_sym(*sym, val);
                 }
             }
             self.env = new_env.clone();
@@ -1527,6 +1549,7 @@ impl Interpreter {
                 self.closure_env_overrides
                     .insert(data.id, persisted_closure_env);
             }
+            self.persist_closure_upvalue_state(&data, data.compiled_code.as_deref());
             // Preserve map rw topic writeback across env restoration
             let rw_map_topic = self.env.get("__mutsu_rw_map_topic__").cloned();
             let mut merged = saved_env;
@@ -1545,13 +1568,15 @@ impl Interpreter {
             let mut captured_outer_writes: Vec<String> = Vec::new();
             if merge_all {
                 for (k, v) in self.env.iter() {
-                    let plain_upvalue = data
+                    let creator_local_upvalue = data
                         .compiled_code
                         .as_deref()
                         .is_some_and(|cc| data.captured_upvalue_from_local(cc, *k));
+                    let unrelated_caller_binding =
+                        creator_local_upvalue && merged.get_sym(*k) != body_entry_env.get_sym(*k);
                     if k != "_"
                         && k != "@_"
-                        && !plain_upvalue
+                        && !unrelated_caller_binding
                         && (merged.contains_key_sym(*k) || k.starts_with("__mutsu_var_meta::"))
                     {
                         if merged.contains_key_sym(*k)
@@ -1580,11 +1605,16 @@ impl Interpreter {
                     Self::collect_sub_signature_names(&pd.sub_signature, &mut subsig_names);
                 }
                 for (k, v) in self.env.iter() {
-                    let plain_upvalue = data
+                    let creator_local_upvalue = data
                         .compiled_code
                         .as_deref()
                         .is_some_and(|cc| data.captured_upvalue_from_local(cc, *k));
-                    if k == "_" || k == "@_" || plain_upvalue || subsig_names.contains(&k.resolve())
+                    let unrelated_caller_binding =
+                        creator_local_upvalue && merged.get_sym(*k) != body_entry_env.get_sym(*k);
+                    if k == "_"
+                        || k == "@_"
+                        || unrelated_caller_binding
+                        || subsig_names.contains(&k.resolve())
                     {
                         continue;
                     }

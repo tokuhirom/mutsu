@@ -1,6 +1,38 @@
 use super::*;
 
 impl Interpreter {
+    fn sync_from_loop_closure_state(&mut self, source: &Value, siblings: &[Value]) {
+        let Value::Sub(source_data) = source else {
+            return;
+        };
+        let Some(source_cc) = source_data.compiled_code.as_deref() else {
+            return;
+        };
+        for sym in &source_cc.free_var_syms {
+            let Some(val) = self
+                .get_closure_captured_state(source_data.id, *sym)
+                .cloned()
+                .or_else(|| source_data.captured_upvalue(source_cc, *sym).cloned())
+            else {
+                continue;
+            };
+            for sibling in siblings {
+                let Value::Sub(sibling_data) = sibling else {
+                    continue;
+                };
+                if sibling_data.id == source_data.id {
+                    continue;
+                }
+                let Some(sibling_cc) = sibling_data.compiled_code.as_deref() else {
+                    continue;
+                };
+                if sibling_cc.free_var_syms.contains(sym) {
+                    self.set_closure_captured_state(sibling_data.id, *sym, val.clone());
+                }
+            }
+        }
+    }
+
     /// Dispatch Seq.from-loop / Seq.from_loop
     pub(super) fn dispatch_seq_from_loop(
         &mut self,
@@ -43,6 +75,11 @@ impl Interpreter {
         };
         let cond_callable = positional.get(1).cloned();
         let step_callable = positional.get(2).cloned();
+        let sibling_closures: Vec<Value> = positional
+            .iter()
+            .filter(|value| matches!(value, Value::Sub(_)))
+            .cloned()
+            .collect();
 
         // If there's no condition and no step, this is a lazy infinite Seq.
         // Return a lazy list backed by a from-loop iterator.
@@ -72,6 +109,7 @@ impl Interpreter {
                 && let Some(cond) = cond_callable.clone()
             {
                 let cond_value = self.call_sub_value(cond, vec![], true)?;
+                self.sync_from_loop_closure_state(&positional[1], &sibling_closures);
                 if !cond_value.truthy() {
                     break;
                 }
@@ -81,6 +119,7 @@ impl Interpreter {
             'body_redo: loop {
                 match self.call_sub_value(body_callable.clone(), vec![], true) {
                     Ok(value) => {
+                        self.sync_from_loop_closure_state(&body_callable, &sibling_closures);
                         if !matches!(value, Value::Nil) {
                             items.push(value);
                         }
@@ -95,7 +134,9 @@ impl Interpreter {
 
             if let Some(step) = step_callable.clone() {
                 match self.call_sub_value(step, vec![], true) {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        self.sync_from_loop_closure_state(&positional[2], &sibling_closures);
+                    }
                     Err(e) if e.is_next() && label_matches(&e.label) => continue 'from_loop,
                     Err(e) if e.is_redo() && label_matches(&e.label) => continue 'from_loop,
                     Err(e) if e.is_last && label_matches(&e.label) => break 'from_loop,

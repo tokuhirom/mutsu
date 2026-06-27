@@ -2,6 +2,16 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Compiler {
+    fn method_args_escape(target: &Expr, name: &Symbol) -> bool {
+        matches!(
+            (target, name.resolve().as_str()),
+            (
+                Expr::Literal(Value::Package(pkg)),
+                "from-loop" | "from_loop"
+            ) if *pkg == Symbol::intern("Seq")
+        )
+    }
+
     /// Compile method call on indexed target: .VAR on @a[0] / %h<k>
     pub(super) fn compile_expr_method_var_on_index(&mut self, target: &Expr) {
         if let Expr::Index {
@@ -100,8 +110,9 @@ impl Compiler {
         self.compile_expr(target);
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
+        let escaping_args = Self::method_args_escape(target, name);
         for arg in args {
-            self.compile_method_arg(arg);
+            self.compile_method_arg_with_escape(arg, escaping_args);
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
@@ -313,8 +324,9 @@ impl Compiler {
         self.compile_expr(target);
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
+        let escaping_args = Self::method_args_escape(target, name);
         for arg in args {
-            self.compile_method_arg(arg);
+            self.compile_method_arg_with_escape(arg, escaping_args);
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));

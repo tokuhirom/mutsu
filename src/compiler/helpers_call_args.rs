@@ -100,10 +100,16 @@ impl Compiler {
     /// Compile a method call argument. Named args (AssignExpr) are
     /// compiled as Pair values so they survive VM execution.
     pub(super) fn compile_method_arg(&mut self, arg: &Expr) {
+        self.compile_method_arg_with_escape(arg, false);
+    }
+
+    /// Like `compile_method_arg` but lets the caller mark the argument as
+    /// escaping when the callee retains the closure beyond the immediate call.
+    pub(super) fn compile_method_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
         // A method argument is passed to the callee, not stored in the caller
         // frame, so a closure argument is conservatively NON-escaping (same
         // #2746 guard as compile_call_arg).
-        self.with_escape(false, |s| {
+        self.with_escape(escaping, |s| {
             s.with_suppress_pair_capture(true, |s| {
                 if let Expr::AssignExpr { name, expr, .. } = arg {
                     // `foo(arg = 1)` in method-call argument position is treated as a

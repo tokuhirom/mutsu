@@ -221,6 +221,22 @@ impl Interpreter {
                             self.env.insert_sym(*k, v.clone());
                         }
                     }
+                    let closure_code = data
+                        .compiled_code
+                        .as_deref()
+                        .or_else(|| precompiled.map(|(code, _)| code));
+                    if let Some(cc) = closure_code {
+                        for (sym, maybe_val) in
+                            cc.free_var_syms.iter().zip(data.captured_upvalues.iter())
+                        {
+                            let Some(val) =
+                                self.closure_upvalue_value(data, *sym, maybe_val.as_ref())
+                            else {
+                                continue;
+                            };
+                            self.env.insert_sym(*sym, val);
+                        }
+                    }
 
                     // Bind parameters
                     for (i, param) in data.params.iter().enumerate() {
@@ -268,6 +284,9 @@ impl Interpreter {
                     // then restore the caller env. This runs on every exit path —
                     // including `last` — so `{ ++$sunk; last }` still records its
                     // side effect even though the body signals termination.
+                    if let Some(cc) = closure_code {
+                        self.persist_closure_upvalue_state(data, Some(cc));
+                    }
                     let mut restored = saved;
                     for (k, before) in &pre {
                         if let Some(after) = self.env.get_sym(*k)
