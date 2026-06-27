@@ -1348,6 +1348,19 @@ impl Interpreter {
                 }
                 new_env.insert_sym(*k, v.clone());
             }
+            if let Some(cc) = data.compiled_code.as_deref() {
+                for (sym, maybe_val) in cc.free_var_syms.iter().zip(data.captured_upvalues.iter()) {
+                    let Some(val) = maybe_val else { continue };
+                    if matches!(val, Value::ContainerRef(_)) {
+                        new_env.insert_sym(*sym, val.clone());
+                    } else if !merge_all
+                        || !(matches!(new_env.get_sym(*sym), Some(Value::Array(..)))
+                            && matches!(val, Value::Array(..)))
+                    {
+                        new_env.insert_sym(*sym, val.clone());
+                    }
+                }
+            }
             self.env = new_env.clone();
             // Check for empty signature: a pointy block `-> { }` or sub with no
             // params that doesn't use @_/%_ must reject positional arguments.
@@ -1418,6 +1431,8 @@ impl Interpreter {
                 source_line: data.source_line,
                 source_file: data.source_file.clone(),
                 owned_captures: data.owned_captures.clone(),
+                captured_upvalues: data.captured_upvalues.clone(),
+                captured_upvalues_from_local: data.captured_upvalues_from_local.clone(),
             });
             new_env.insert(
                 "&?BLOCK".to_string(),
@@ -1532,8 +1547,13 @@ impl Interpreter {
             let mut captured_outer_writes: Vec<String> = Vec::new();
             if merge_all {
                 for (k, v) in self.env.iter() {
+                    let plain_upvalue = data
+                        .compiled_code
+                        .as_deref()
+                        .is_some_and(|cc| data.captured_upvalue_from_local(cc, *k));
                     if k != "_"
                         && k != "@_"
+                        && !plain_upvalue
                         && (merged.contains_key_sym(*k) || k.starts_with("__mutsu_var_meta::"))
                     {
                         if merged.contains_key_sym(*k)
@@ -1562,7 +1582,11 @@ impl Interpreter {
                     Self::collect_sub_signature_names(&pd.sub_signature, &mut subsig_names);
                 }
                 for (k, v) in self.env.iter() {
-                    if k == "_" || k == "@_" || subsig_names.contains(&k.resolve()) {
+                    let plain_upvalue = data
+                        .compiled_code
+                        .as_deref()
+                        .is_some_and(|cc| data.captured_upvalue_from_local(cc, *k));
+                    if k == "_" || k == "@_" || plain_upvalue || subsig_names.contains(&k.resolve()) {
                         continue;
                     }
                     if matches!(v, Value::Array(..)) {
@@ -1920,7 +1944,7 @@ impl Interpreter {
                 .locals
                 .iter()
                 .enumerate()
-                .filter(|(_, name)| data.env.contains_key(name))
+                .filter(|(_, name)| data.captures_name(data.compiled_code.as_deref(), name))
                 .map(|(idx, name)| (idx, name.clone()))
                 .collect();
             let mut assigned_slots = std::collections::HashSet::new();
@@ -1961,7 +1985,9 @@ impl Interpreter {
                 let Some(crate::value::Value::Str(name)) = compiled.constants.get(idx) else {
                     continue;
                 };
-                if data.env.contains_key(name.as_str()) && !captured_names.contains(name) {
+                if data.captures_name(data.compiled_code.as_deref(), name.as_str())
+                    && !captured_names.contains(name)
+                {
                     captured_names.push(name.to_string());
                 }
             }
@@ -2173,6 +2199,14 @@ impl Interpreter {
             for (k, v) in &data.env {
                 if !self.env.contains_key_sym(*k) {
                     self.env.insert_sym(*k, v.clone());
+                }
+            }
+            if let Some(cc) = data.compiled_code.as_deref() {
+                for (sym, maybe_val) in cc.free_var_syms.iter().zip(data.captured_upvalues.iter()) {
+                    let Some(val) = maybe_val else { continue };
+                    if !self.env.contains_key_sym(*sym) {
+                        self.env.insert_sym(*sym, val.clone());
+                    }
                 }
             }
 
@@ -2407,6 +2441,14 @@ impl Interpreter {
                     self.env.insert_sym(*k, v.clone());
                 }
             }
+            if let Some(cc) = data.compiled_code.as_deref() {
+                for (sym, maybe_val) in cc.free_var_syms.iter().zip(data.captured_upvalues.iter()) {
+                    let Some(val) = maybe_val else { continue };
+                    if !self.env.contains_key_sym(*sym) {
+                        self.env.insert_sym(*sym, val.clone());
+                    }
+                }
+            }
 
             // CP-3 collapse: run the rw map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
@@ -2587,6 +2629,12 @@ impl Interpreter {
             // Pre-insert closure env
             for (k, v) in &data.env {
                 self.env.insert_sym(*k, v.clone());
+            }
+            if let Some(cc) = data.compiled_code.as_deref() {
+                for (sym, maybe_val) in cc.free_var_syms.iter().zip(data.captured_upvalues.iter()) {
+                    let Some(val) = maybe_val else { continue };
+                    self.env.insert_sym(*sym, val.clone());
+                }
             }
 
             // CP-3 collapse: run the grep loop with fresh execution registers

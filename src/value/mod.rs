@@ -1000,6 +1000,47 @@ pub struct SubData {
     /// the shared lexical name — Raku's per-iteration closure capture. Empty for
     /// non-loop closures and named subs.
     pub(crate) owned_captures: Vec<Symbol>,
+    /// Captured free-variable values aligned with `compiled_code.free_var_syms`.
+    /// For compiled closures this is the primary capture store for lexical
+    /// upvalues; `env` keeps only non-free/system names and metadata.
+    pub(crate) captured_upvalues: Vec<Option<Value>>,
+    /// Parallel to `captured_upvalues`: true when the corresponding plain lexical
+    /// was read from the creating frame's own local slot rather than an ancestor
+    /// env entry. Such upvalues are private to the closure instance unless they
+    /// were explicitly boxed into a shared `ContainerRef`.
+    pub(crate) captured_upvalues_from_local: Vec<bool>,
+}
+
+impl SubData {
+    pub(crate) fn captured_upvalue(
+        &self,
+        code: &CompiledCode,
+        sym: Symbol,
+    ) -> Option<&Value> {
+        code.free_var_syms
+            .iter()
+            .position(|candidate| *candidate == sym)
+            .and_then(|idx| self.captured_upvalues.get(idx))
+            .and_then(|val| val.as_ref())
+    }
+
+    pub(crate) fn captures_symbol(&self, code: Option<&CompiledCode>, sym: Symbol) -> bool {
+        self.env.contains_key_sym(sym)
+            || code.is_some_and(|cc| cc.free_var_syms.contains(&sym))
+    }
+
+    pub(crate) fn captures_name(&self, code: Option<&CompiledCode>, name: &str) -> bool {
+        self.captures_symbol(code, Symbol::intern(name))
+    }
+
+    pub(crate) fn captured_upvalue_from_local(&self, code: &CompiledCode, sym: Symbol) -> bool {
+        code.free_var_syms
+            .iter()
+            .position(|candidate| *candidate == sym)
+            .and_then(|idx| self.captured_upvalues_from_local.get(idx))
+            .copied()
+            .unwrap_or(false)
+    }
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {
@@ -3641,6 +3682,8 @@ impl Value {
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
+            captured_upvalues: Vec::new(),
+            captured_upvalues_from_local: Vec::new(),
         }))
     }
 
@@ -3675,6 +3718,8 @@ impl Value {
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
+            captured_upvalues: Vec::new(),
+            captured_upvalues_from_local: Vec::new(),
         }))
     }
 

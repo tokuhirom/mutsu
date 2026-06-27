@@ -237,6 +237,14 @@ impl Interpreter {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
             }
         }
+        for (sym, maybe_val) in cc.free_var_syms.iter().zip(data.captured_upvalues.iter()) {
+            let Some(val) = maybe_val else { continue };
+            if matches!(val, Value::ContainerRef(_)) {
+                self.env_mut().insert_sym(*sym, val.clone());
+            } else {
+                self.env_mut().insert_sym(*sym, val.clone());
+            }
+        }
         // Per-iteration loop captures (Raku fresh-binding semantics): these free
         // variables were declared in an enclosing loop body when this closure was
         // created, so each iteration's closure froze a distinct value in its
@@ -248,7 +256,11 @@ impl Interpreter {
         // per-instance-state override below so a mutating loop closure's
         // accumulated state still wins on later calls. See PLAN.md lever C.
         for sym in &data.owned_captures {
-            if let Some(val) = data.env.get_sym(*sym).cloned() {
+            if let Some(val) = data
+                .captured_upvalue(cc, *sym)
+                .or_else(|| data.env.get_sym(*sym))
+                .cloned()
+            {
                 self.env_mut().insert_sym(*sym, val);
             }
         }
@@ -302,6 +314,8 @@ impl Interpreter {
             source_line: data.source_line,
             source_file: data.source_file.clone(),
             owned_captures: data.owned_captures.clone(),
+            captured_upvalues: data.captured_upvalues.clone(),
+            captured_upvalues_from_local: data.captured_upvalues_from_local.clone(),
         });
         self.env_mut().insert(
             "&?BLOCK".to_string(),
@@ -480,7 +494,7 @@ impl Interpreter {
         let has_captured_local = cc
             .locals
             .iter()
-            .any(|n| !n.is_empty() && data.env.contains_key(n));
+            .any(|n| !n.is_empty() && data.captures_name(Some(cc), n));
 
         let let_mark = self.let_saves_len();
         let mut ip = 0;
@@ -639,7 +653,7 @@ impl Interpreter {
         // per call for the common read-only closure (which has no captured
         // locals to flush at all).
         for (i, local_name) in cc.locals.iter().enumerate() {
-            if !local_name.is_empty() && data.env.contains_key(local_name) {
+            if !local_name.is_empty() && data.captures_name(Some(cc), local_name) {
                 {
                     let __v = self.locals[i].clone();
                     self.env_mut().insert(local_name.clone(), __v);
@@ -764,7 +778,11 @@ impl Interpreter {
                 .map(|(_, source)| Symbol::intern(source))
                 .collect();
             let captured_names: std::collections::HashSet<Symbol> =
-                data.env.keys().copied().collect();
+                data.env
+                    .keys()
+                    .copied()
+                    .chain(cc.free_var_syms.iter().copied())
+                    .collect();
             // Write back captured-variable changes, but NOT the closure's own
             // parameters/locals (which live in cc.locals).  Without this filter,
             // recursive &?BLOCK calls clobber the outer frame's $n, etc.
@@ -783,8 +801,10 @@ impl Interpreter {
             // free_var recording below misses it.
             let mut caller_writeback: Vec<Symbol> = Vec::new();
             for (k, v) in self.env().iter() {
+                let plain_upvalue = data.captured_upvalue_from_local(cc, *k);
                 if *k != underscore_sym
                     && *k != at_underscore_sym
+                    && !plain_upvalue
                     && !rw_sources.contains(k)
                     && !param_names.contains(k)
                     && (restored_env.contains_key_sym(*k)
@@ -827,8 +847,10 @@ impl Interpreter {
             // no-op in the drain; a captured-only var is filtered out).
             if free_changed {
                 for (k, old) in cc.free_var_syms.iter().zip(free_at_entry.iter()) {
+                    let plain_upvalue = data.captured_upvalue_from_local(cc, *k);
                     if *k != underscore_sym
                         && *k != at_underscore_sym
+                        && !plain_upvalue
                         && !param_names.contains(k)
                         && restored_env.contains_key_sym(*k)
                         && self.env().get_sym(*k) != old.as_ref()
@@ -901,7 +923,13 @@ impl Interpreter {
         // Only update keys matching the closure's captured variable names to
         // avoid overwriting unrelated captured lexicals in other END phasers.
         if self.end_phaser_count() > 0 && !data.env.is_empty() {
-            let captured_strs: Vec<String> = data.env.keys().map(|s| s.resolve()).collect();
+            let captured_strs: Vec<String> = data
+                .env
+                .keys()
+                .copied()
+                .chain(cc.free_var_syms.iter().copied())
+                .map(|s| s.resolve())
+                .collect();
             let captured_names: std::collections::HashSet<&str> =
                 captured_strs.iter().map(|s| s.as_str()).collect();
             // Flatten: END phasers run at program exit with this captured env;

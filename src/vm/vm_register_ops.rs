@@ -82,6 +82,8 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let (captured_upvalues, captured_upvalues_from_local) =
+                self.capture_closure_upvalues(code, &compiled_code);
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -108,6 +110,8 @@ impl Interpreter {
                 deprecated_message: None,
                 source_line: cc_source_line,
                 source_file: self.current_source_file(),
+                captured_upvalues,
+                captured_upvalues_from_local,
             }));
             self.stack.push(val);
             Ok(())
@@ -137,6 +141,8 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let (captured_upvalues, captured_upvalues_from_local) =
+                self.capture_closure_upvalues(code, &compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
             let mut env = self.capture_closure_env(code, &compiled_code);
             if let Some(rt) = return_type {
@@ -172,6 +178,8 @@ impl Interpreter {
                 deprecated_message: None,
                 source_line: cc_source_line,
                 source_file: self.current_source_file(),
+                captured_upvalues,
+                captured_upvalues_from_local,
             }));
             self.stack.push(val);
             Ok(())
@@ -239,9 +247,39 @@ impl Interpreter {
     /// `env_dirty` path and, for captured-and-mutated locals, the shared
     /// `ContainerRef` cell that `box_captured_lexicals` installs in both the slot
     /// and `env`.
-    fn capture_closure_env(
+    fn capture_closure_upvalues(
         &self,
         code: &CompiledCode,
+        cc: &Option<std::sync::Arc<CompiledCode>>,
+    ) -> (Vec<Option<Value>>, Vec<bool>) {
+        let Some(cc) = cc else {
+            return (Vec::new(), Vec::new());
+        };
+        cc.free_var_syms.iter().fold(
+            (Vec::with_capacity(cc.free_var_syms.len()), Vec::with_capacity(cc.free_var_syms.len())),
+            |(mut values, mut from_local), sym| {
+                if !sym.with_str(crate::env::is_plain_user_lexical) {
+                    values.push(None);
+                    from_local.push(false);
+                    return (values, from_local);
+                }
+                if let Some(slot) = sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
+                    && let Some(val) = self.locals.get(slot)
+                {
+                    values.push(Some(val.clone()));
+                    from_local.push(true);
+                    return (values, from_local);
+                }
+                values.push(Some(self.env().get_sym(*sym).cloned().unwrap_or(Value::Nil)));
+                from_local.push(false);
+                (values, from_local)
+            },
+        )
+    }
+
+    fn capture_closure_env(
+        &self,
+        _code: &CompiledCode,
         cc: &Option<std::sync::Arc<CompiledCode>>,
     ) -> Env {
         let Some(cc) = cc else {
@@ -251,27 +289,12 @@ impl Interpreter {
             return self.clone_env();
         }
         let free: std::collections::HashSet<Symbol> = cc.free_var_syms.iter().copied().collect();
-        // Flatten once (same as `clone_env`), then keep only the upvalue set,
-        // shadow-meta, and system names. The base tier (GLOBAL_BASE) is never in
-        // the overlay and stays reachable through the flat env's tail lookup.
-        let flat = self.clone_env();
-        let mut map: std::collections::HashMap<Symbol, Value> = std::collections::HashMap::new();
-        for (k, v) in flat.iter() {
-            let keep = free.contains(k) || k.with_str(|s| !crate::env::is_plain_user_lexical(s));
-            if keep {
-                map.insert(*k, v.clone());
-            }
-        }
-        // Upvalue read: override this frame's own free-var slots with the live
-        // local value. Authoritative even after the closure-driven env flush is
-        // gone (a slot-only local is no longer mirrored into `env`).
-        for sym in &cc.free_var_syms {
-            if let Some(slot) = sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
-                && let Some(val) = self.locals.get(slot)
-            {
-                map.insert(*sym, val.clone());
-            }
-        }
+        // Keep only non-free names here: system/meta names still flow through
+        // env, while lexical free vars live in `captured_upvalues`.
+        let mut keep = |k: Symbol, _v: &Value| {
+            !free.contains(&k) || !k.with_str(crate::env::is_plain_user_lexical)
+        };
+        let map = self.env().filtered_symbol_map(&mut keep);
         crate::env::Env::from_symbol_map(map)
     }
 
@@ -421,6 +444,8 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let (captured_upvalues, captured_upvalues_from_local) =
+                self.capture_closure_upvalues(code, &compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
             let mut env = self.capture_closure_env(code, &compiled_code);
             if let Some(rt) = return_type {
@@ -456,6 +481,8 @@ impl Interpreter {
                 deprecated_message: None,
                 source_line: cc_source_line,
                 source_file: self.current_source_file(),
+                captured_upvalues,
+                captured_upvalues_from_local,
             }));
             self.stack.push(val);
             Ok(())
@@ -475,6 +502,8 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let (captured_upvalues, captured_upvalues_from_local) =
+                self.capture_closure_upvalues(code, &compiled_code);
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -500,6 +529,8 @@ impl Interpreter {
                 deprecated_message: None,
                 source_line: cc_source_line,
                 source_file: self.current_source_file(),
+                captured_upvalues,
+                captured_upvalues_from_local,
             }));
             self.stack.push(val);
             Ok(())

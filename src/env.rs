@@ -472,6 +472,37 @@ impl Env {
         out
     }
 
+    /// Full symbol-keyed snapshot filtered during collection, without first
+    /// materializing every reachable entry into an intermediate flat env.
+    pub(crate) fn filtered_symbol_map<F>(&self, keep: &mut F) -> HashMap<Symbol, Value>
+    where
+        F: FnMut(Symbol, &Value) -> bool,
+    {
+        let mut out: HashMap<Symbol, Value> = match &self.parent {
+            Some(parent) => parent.filtered_symbol_map(keep),
+            None => global_base()
+                .map(|b| {
+                    b.iter()
+                        .filter_map(|(k, v)| keep(*k, v).then(|| (*k, v.clone())))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
+        if let Some(tomb) = &self.tombstones {
+            for k in tomb {
+                out.remove(k);
+            }
+        }
+        for (k, v) in self.inner.iter() {
+            if keep(*k, v) {
+                out.insert(*k, v.clone());
+            } else {
+                out.remove(k);
+            }
+        }
+        out
+    }
+
     pub fn len(&self) -> usize {
         self.inner.len()
     }
