@@ -1489,6 +1489,17 @@ impl Interpreter {
                 Value::Routine { name, .. } => {
                     Ok(Value::str(format_operator_name(&name.resolve())))
                 }
+                // `.name` on a *type object* whose class declares its own public
+                // attribute `$.name` resolves to that accessor, and reading an
+                // instance attribute off a type object is an error (raku). Only
+                // divert when the class actually has a `name` attribute; otherwise
+                // keep the type-name introspection behaviour.
+                Value::Package(name) if self.has_public_accessor(&name.resolve(), "name") => {
+                    Err(RuntimeError::new(format!(
+                        "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
+                        name.resolve()
+                    )))
+                }
                 Value::Package(name) => Ok(Value::str(name.resolve())),
                 Value::Str(name) => Ok(Value::Str(name.clone())),
                 Value::Sub(data) => Ok(Value::str(format_operator_name(&data.name.resolve()))),
