@@ -92,6 +92,22 @@ impl Compiler {
                             has_arg: trait_arg.is_some(),
                         });
                     }
+                    // Tag the container's element-type metadata so `.of` survives
+                    // (and the missing-element default is the element type) when a
+                    // typed *array* is declared in EXPRESSION position
+                    // (`my $x = (my Str @c)`, `gen my Str @s`). The statement-
+                    // position VarDecl emits the same `SetVarType`; without it the
+                    // expr path left `@c.of` = Mu. Restricted to boxed-element
+                    // `@`-arrays: native element types (`int`/`num`/`str`) change
+                    // the array storage (would panic in the expr-path auto-vivify),
+                    // and `%`-hash tagging here perturbs `Associative[T]` binding.
+                    if name.starts_with('@')
+                        && let Some(tc) = type_constraint
+                        && !crate::runtime::native_types::is_native_array_element_type(tc)
+                    {
+                        let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                        self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                    }
                     // Read back the coerced value (SetGlobal coerces list->hash for %)
                     let name_idx2 = self.code.add_constant(Value::str(name.clone()));
                     if name.starts_with('@') {
