@@ -515,6 +515,64 @@ impl Interpreter {
         format!("({})", sig_parts.join(", "))
     }
 
+    /// Extract the expected type name from a binding type-check error message.
+    /// Handles both message shapes mutsu emits:
+    ///   "... expected Sub, got Block"
+    ///   "... expected Int but got Str"
+    fn extract_expected_type(message: &str) -> Option<String> {
+        let after = message.rsplit_once("expected ")?.1;
+        let end = after
+            .find([',', ';'])
+            .or_else(|| after.find(" but "))
+            .unwrap_or(after.len());
+        let ty = after[..end].trim();
+        if ty.is_empty() {
+            None
+        } else {
+            Some(ty.to_string())
+        }
+    }
+
+    /// True for the simple built-in types whose binding failure raku surfaces as
+    /// a compile-time X::TypeCheck::Argument (rather than a runtime
+    /// X::TypeCheck::Binding::Parameter). Notably excludes `Sub`/`Block` and other
+    /// `Callable` refinements, which are only checked at run time.
+    fn is_simple_argument_type(ty: &str) -> bool {
+        matches!(
+            ty,
+            "Int"
+                | "Str"
+                | "Bool"
+                | "Num"
+                | "Rat"
+                | "Complex"
+                | "Real"
+                | "Numeric"
+                | "Cool"
+                | "Any"
+                | "Mu"
+                | "IO"
+                | "Regex"
+                | "Callable"
+                | "Positional"
+                | "Associative"
+                | "Range"
+                | "Match"
+                | "Pair"
+                | "List"
+                | "Array"
+                | "Hash"
+                | "Set"
+                | "Bag"
+                | "Mix"
+                | "Junction"
+                | "Seq"
+                | "Supply"
+                | "Promise"
+                | "Channel"
+        )
+    }
+
     /// Enhance a binding error with function name, call profile, and signature info.
     pub(crate) fn enhance_binding_error(
         err: RuntimeError,
@@ -574,43 +632,28 @@ impl Interpreter {
                         || pd.name.starts_with('%')
                         || pd.name.starts_with('&'))
             })
-            && param_defs.iter().any(|pd| {
-                pd.type_constraint.as_ref().is_some_and(|tc| {
-                    matches!(
-                        tc.as_str(),
-                        "Int"
-                            | "Str"
-                            | "Bool"
-                            | "Num"
-                            | "Rat"
-                            | "Complex"
-                            | "Real"
-                            | "Numeric"
-                            | "Cool"
-                            | "Any"
-                            | "Mu"
-                            | "IO"
-                            | "Regex"
-                            | "Callable"
-                            | "Positional"
-                            | "Associative"
-                            | "Range"
-                            | "Match"
-                            | "Pair"
-                            | "List"
-                            | "Array"
-                            | "Hash"
-                            | "Set"
-                            | "Bag"
-                            | "Mix"
-                            | "Junction"
-                            | "Seq"
-                            | "Supply"
-                            | "Promise"
-                            | "Channel"
-                    )
-                })
-            });
+            // Gate on the *failing* parameter's expected type (parsed from the
+            // error message), NOT on whether any param happens to be simple. A
+            // call like `foo(Sub $c, Str $a); foo(-> {}, "a")` fails on the `Sub`
+            // param; the presence of a simple `Str` param must not reclassify it
+            // as a compile-time X::TypeCheck::Argument. raku throws a runtime
+            // X::TypeCheck::Binding::Parameter when the expected type is one (like
+            // Sub/Block) it cannot rule out statically.
+            && Self::extract_expected_type(&err.message)
+                .as_deref()
+                .is_some_and(|expected| {
+                    // The expected type must be a simple built-in AND must appear
+                    // as a *declared* constraint on some parameter. A type-capture
+                    // call (`sub f(::T, T $a); f.assuming(Int)`) reports the
+                    // resolved `Int` in its message while the declared constraint
+                    // is still `T`, so it must NOT be reclassified to a
+                    // compile-time X::TypeCheck::Argument — it stays a runtime
+                    // X::TypeCheck::Binding::Parameter.
+                    Self::is_simple_argument_type(expected)
+                        && param_defs
+                            .iter()
+                            .any(|pd| pd.type_constraint.as_deref() == Some(expected))
+                });
         if (is_arity_error || is_type_only_mismatch)
             && (err.exception.is_none() || is_binding_param_exception)
         {
