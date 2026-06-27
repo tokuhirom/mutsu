@@ -4,7 +4,7 @@
 「設計上どこまで整理できていて、何がまだ負債として残っているか」をまとめたもの。
 バグ票の一覧ではなく、**アーキテクチャと健全性のレビュー**として読む想定。
 
-初版: 2026-06-03 / rev2: 2026-06-15 / rev3: 2026-06-17 / rev4: 2026-06-27 (単一ストア化 #3455・ユーザメソッド本体 tree-walk 撤去 §B #3680) / **rev5: 2026-06-27 (クロージャ upvalue Phase 1 #3715・Track B 着手前設計メモを §1.3/§2.1 に反映)** / **rev6: 2026-06-27 (GC 方針確定 ADR-0001＝cycle collector on Arc・Track B は GC 統合=層3a・§2.1/§7-6 に反映)**
+初版: 2026-06-03 / rev2: 2026-06-15 / rev3: 2026-06-17 / rev4: 2026-06-27 (単一ストア化 #3455・ユーザメソッド本体 tree-walk 撤去 §B #3680) / **rev5: 2026-06-27 (クロージャ upvalue Phase 1 #3715・Track B 着手前設計メモを §1.3/§2.1 に反映)** / **rev6: 2026-06-27 (GC 方針確定 ADR-0001＝cycle collector on Arc・Track B は GC 統合=層3a・§2.1/§7-6 に反映)** / **rev7: 2026-06-28 (§7-8 巨大ファイル分割 sweep 完了・registry-Arc/単一ストア/bool→enum の完了詳細を news へ移動し §1.1/§6/§7 をスリム化)**
 方法:
 - 調査エージェントによるサブシステム単位の精読
 - 主張ごとの実機再現確認
@@ -83,43 +83,15 @@ CP-3 collapse で VM と Interpreter の二重構造は消えた。
 - **宣言登録** (`class`/`role`/`enum`/`sub`/`method` の `register_*_decl`) は依然 tree-walk で実行
   (`Register*` opcode → `register_sub_decl` / `register_class_decl`)。クラスシステム・MRO・role 合成は
   未コンパイル。ただしこれは**宣言の登録**であって本体実行ではない。
-  - **sub 登録の冪等化 (slice 1)**: `RegisterSub` は enclosing frame が走るたびに再実行される
-    (hot routine 内の `my sub` 等) が、宣言が識別不変なら再実行は no-op であるべき。各宣言に
-    コンパイル時 fingerprint (`CompiledCode.sub_fingerprints`) を持たせ、`register_sub_decl` が
-    `SubRegisterOutcome::{Installed, Unchanged}` を返すことで、**識別不変な再登録を `FunctionDef`
-    再導出なしに O(1) で検出し、resolution cache を乱さない**よう型で明示した。
-  - **registry の `Arc<FunctionDef>` 化 (slice 2)**: `my sub` を宣言するルーチンへ入るたびに
-    `snapshot_routine_registry` が `functions.clone()` で**プログラム中の全ルーチン body を deep-clone**
-    していた (lexical scope を巻き戻すため)。registry が `HashMap<Symbol, Arc<FunctionDef>>` を保持する
-    ことで、この snapshot は O(n) の refcount-bump になり、body の大きいルーチンを多数持つ現実的な
-    プログラムで顕著に軽くなる (200-sub のマイクロベンチで ~28%)。registry は**不変・共有可能な定義**を
-    保持する設計になった (in-place 変異サイトは皆無＝`make_mut` 不要)。dispatch 側の戻り値型は
-    `FunctionDef` のまま (resolution 境界で `(**arc).clone()`)。
-  - **dispatch resolution への Arc 貫通 (slice 3)**: ホットな単一結果リゾルバ
-    (`resolve_function`/`resolve_function_with_types`/`_with_arity`/`_with_alias`/
-    `choose_best_matching_candidate`) の戻り値を `Option<Arc<FunctionDef>>` 化。**呼び出し毎の
-    resolution が body を deep-clone していたのを Arc bump に**。caller は Deref 経由で読み、所有 FunctionDef
-    が要る数箇所のみ明示 clone。multi 候補列挙 (`resolve_all_*`) と proto/redispatch
-    (`MultiDispatchEntry`) はレアパスなので境界で `FunctionDef` に変換し、core struct への波及を回避。
-  - **derive-once キャッシュ (slice 4)**: `my sub` はルーチン return 時に registry から外れ
-    (lexical scope の snapshot/restore)、次の呼び出しで再 install される。slice 1 の冪等パスは
-    「registry に残っている」場合専用なので、この**再 install は AST→`FunctionDef` を毎回再導出**して
-    いた (auto-sig scan・validation・body clone)。導出済み `Arc<FunctionDef>` を
-    `(fingerprint, package)` キーでキャッシュ (`prepared_fn_defs`) し、単純な単一 sub の再 install は
-    キャッシュした `Arc` を clone して streamlined install するだけにした (**真の derive-once**)。
-    package をキーに含めるので同 body の別 package sub が混ざらない。
-  - **`MultiDispatchEntry` の Arc 化 (slice 5)**: redispatch スタックの候補列を
-    `Vec<Arc<FunctionDef>>` 化。`resolve_all_multi_candidates`/`resolve_remaining_proto_candidates`
-    は registry の `Arc` をそのまま返し、`nextsame`/`callsame`/`callwith`/`nextcallee` の
-    per-step 候補 clone が refcount-bump になった。
-  - **registry-Arc の完遂 (slice 6/7/8)**: registry に残っていた `FunctionDef` 直保持マップを
-    すべて `Arc<FunctionDef>` 化した — `proto_functions` (slice 6)、grammar `token_defs`
-    (`HashMap<Symbol, Vec<Arc<FunctionDef>>>`・slice 7)、`our_scoped_functions` (slice 8)。
-    これにより `snapshot_routine_registry` / `clone_for_thread` / EVAL コピー / block-scope
-    restore のいずれの registry クローンでも **`FunctionDef` body が deep-clone されなくなった**。
-    grammar token 解決 (`resolve_token_defs`) の候補 merge も Arc bump になり、`our` sub の
-    restore は `functions` と同一 `Arc` を共有する。**→ registry-Arc キャンペーン完了。** 残る
-    §1.1 課題はメソッド dispatch の resolution caching のみ (下記)。
+  - **sub 登録の冪等化 + registry-Arc キャンペーン完了** (slice 1-8・詳細は [news/2026-06.md](news/2026-06.md)):
+    `my sub` 宣言ルーチンへ入るたびに `snapshot_routine_registry` が registry クローンで**全ルーチン body を
+    deep-clone** していた問題を、registry の全定義マップ (`functions`/`proto_functions`/grammar `token_defs`/
+    `our_scoped_functions`) を `Arc<FunctionDef>` 化し、コンパイル時 fingerprint
+    (`CompiledCode.sub_fingerprints`) による再登録冪等化 (`SubRegisterOutcome::{Installed, Unchanged}`) と
+    `(fingerprint, package)` キーの derive-once キャッシュ (`prepared_fn_defs`) を加えて解消。dispatch
+    resolution と `MultiDispatchEntry` も `Arc` 貫通。**どの registry クローン (snapshot/`clone_for_thread`/
+    EVAL/block-scope restore) でも `FunctionDef` body が deep-clone されなくなった。** 残る §1.1 課題は
+    メソッド dispatch の resolution caching のみ (下記)。
 - **メソッド dispatch の resolver オーバーヘッド**: multi/submethod や `samewith`/`nextsame` は
   `run_instance_method` (resolve + frame setup) を**入口として**通る (本体は compiled)。`MUTSU_VM_STATS` の
   `resolver-path method dispatches` カウンタはこの dispatch 入口数を測る (tree-walk 実行ではない)。
@@ -356,9 +328,14 @@ Track B は規模・難度ともに大きく、着手前に次を踏まえるこ
   持つ場合は実 `BlockScope` を通すよう修正し、`bom-test-2-*` のリークは解消。pin=`t/tail-block-leave-phaser.t`。
   残: `t/bom-stripping.t` は自前で `LEAVE unlink` 済 (CWD だが掃除される)。別軸の未修正＝bare block での KEEP が
   raku では発火しないのに mutsu は発火する (tail/非-tail 共通・本修正と独立)。
-- **500 行規約の大幅違反**: `src/` に 500 行超 **164 ファイル**、1000 行超 **82 ファイル**。
-  最大は `vm/vm_var_assign_ops.rs` **7267**、`runtime/mod.rs` **6633**、`runtime/regex_parse.rs` **6193**、
-  `runtime/methods_object.rs` 5135、`runtime/io.rs` 4494。規約 (500 行上限) は形骸化。
+- **500 行規約違反 — §7-8 sweep で最悪オフェンダーを一掃**（詳細は [news/2026-06.md](news/2026-06.md)）:
+  500 行超のファイルを **cohesive サブモジュールへ純粋移設**（impl ブロック→兄弟ファイル / 自由関数→facade + サブディレクトリ）。
+  最大級だった `vm/vm_var_assign_ops.rs`（7267）・`runtime/mod.rs`・`runtime/methods_object.rs`・`runtime/io.rs`・
+  `runtime/methods.rs`・`runtime/regex_parse.rs` 等をすべて分割し、`vm.rs` module root は 4872→**286** 行に。
+  **`1000 行超` ファイルが 82→~40 件台へ激減**。`500 行超` の総数は微減（giant な単一 `match`/dispatch メソッド
+  —`exec_one`・`call_method_with_values`・`register_class_decl`・`native_method_1arg` 等—が関数境界で分割できず
+  residual 単独ファイルとして残るため）だが、これらは**意図的な indivisible 例外**。残: `ast.rs`・`registration_sub.rs`
+  等の未分割ファイルと、giant dispatch メソッドの構造的分割（logic refactor を伴うため別軸）。
 
 ---
 
@@ -377,7 +354,7 @@ Track B は規模・難度ともに大きく、着手前に次を踏まえるこ
 | 5 | `.^methods`/`.can` の型別リスト: 確認済みドリフトは是正 (Str/Int/List・§4.1)。完全な実ディスパッチ表からの導出は arity-dispatch 非列挙のため別軸 | ドリフト解消 | 中 |
 | 6 | **Track B**: 陳腐化 `unsafe` コメント是正は完了。残: 配列・ハッシュ要素の `ContainerRef` 化で生ポインタ unsoundness を撤廃。**GC と統合＝ADR-0001 層3a (`Arc → Gc<T>` 一斉置換・cycle collector on Arc)。単独着手しない・Phase A 完了後。** 着手前設計メモは §2.1 (79 箇所・コア表現変更・再入デッドロック/perf の地雷・cross-thread 共有は `shared_vars`)。#2 upvalue Phase 2+ の前提 | 健全性 (UB) + 性能 | 中〜大 |
 | 7 | 宣言登録の bytecode 化: 冪等化 (**slice 1**) + **registry-Arc キャンペーン完了** (slice 2 `functions` / slice 3 dispatch resolution / slice 4 derive-once キャッシュ / slice 5 `MultiDispatchEntry` / slice 6 `proto_functions` / slice 7 `token_defs` / slice 8 `our_scoped_functions`)。**registry のどのクローンでも `FunctionDef` body は deep-clone されない** (§1.1)。残: method dispatch の resolution caching (multi は #3684 着手・`fast_method_cache` 済・残るは multi arg-shape 依存解決) | 設計 + 性能 | 中 |
-| 8 | 一時ファイルを `tmp/` へ (root の `bom-test-*`) / 巨大ファイル分割 (500 行規約) | 衛生 | 低〜中 |
+| 8 | 巨大ファイル分割 (500 行規約): **§7-8 sweep で最悪オフェンダー一掃済み**（1000 行超 82→~40 件台・最大ファイル群を全分割・詳細は news）。残: `ast.rs`・`registration_sub.rs` 等の未分割ファイル / giant dispatch メソッドの構造的分割（別軸）。一時ファイルを `tmp/` へ (root の `bom-test-*`) | 衛生 | 低〜中 |
 
 ### Interpreter 除去という長期目標について — **達成 (2026-06)**
 
