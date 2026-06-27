@@ -392,6 +392,35 @@ impl Interpreter {
         )
     }
 
+    /// Whether registering a sub named `name` would raise `X::Redeclaration`
+    /// because a conflicting `&name` (e.g. an earlier `my &name`) is already
+    /// bound in the lexical env. Mirrors the env-`&name` check in
+    /// `register_sub_decl_fp`; the idempotent fast path consults it so it never
+    /// short-circuits past a redeclaration error (the registry can hold an
+    /// identical entry from a hoisted pass while a `my &name` declared afterward
+    /// must still make the textual `sub name` a redeclaration).
+    fn sub_decl_would_redeclare(&self, name: &str, is_lexical_hoist: bool) -> bool {
+        let code_var_key = format!("&{}", name);
+        let Some(existing) = self.env.get(&code_var_key) else {
+            return false;
+        };
+        if matches!(existing, Value::Mixin(..)) {
+            return false;
+        }
+        let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
+            && !matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)))
+            && !matches!(
+                self.env.get("__mutsu_eval_wrapped_decls"),
+                Some(Value::Bool(true))
+            );
+        if allow_lexical_shadow {
+            return false;
+        }
+        let is_in_eval = matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)));
+        let shadows_outer_eval_name = is_in_eval && is_outer_amp_name(&code_var_key);
+        !shadows_outer_eval_name
+    }
+
     /// `register_sub_decl` with an optional compile-time declaration fingerprint
     /// (`site_fingerprint`) enabling the idempotent-reregistration fast path. The
     /// `register_sub_decl` wrapper passes `None` for call sites (EVAL, the
@@ -432,6 +461,7 @@ impl Interpreter {
             && !multi
             && !is_method_value_decl
             && !custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
+            && !self.sub_decl_would_redeclare(name, is_lexical_hoist)
         {
             let fq = format!("{}::{}", self.current_package(), name);
             let fq_sym = Symbol::intern(&fq);
