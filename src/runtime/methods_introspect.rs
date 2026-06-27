@@ -74,10 +74,16 @@ impl Interpreter {
             }
             Value::Routine { is_regex: true, .. } => "Regex",
             Value::Routine { .. } => "Sub",
+            // Keep in sync with `runtime::utils::value_type_name`: a bare/pointy
+            // block (`{...}`, `-> {...}`) is a `Block`, not a `Sub`. `.WHAT`/`.^name`
+            // previously reported `Sub` for these even though smartmatch already
+            // treated them as `Block` (via `value_type_name`).
             Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
                 Some(Value::Str(kind)) if kind.as_str() == "Method" => "Method",
                 Some(Value::Str(kind)) if kind.as_str() == "Submethod" => "Submethod",
                 Some(Value::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",
+                Some(Value::Str(kind)) if kind.as_str() == "Block" => "Block",
+                _ if data.is_bare_block => "Block",
                 _ => "Sub",
             },
             Value::WeakSub(_) => "Sub",
