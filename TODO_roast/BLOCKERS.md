@@ -147,16 +147,50 @@
 
 ### 1.6 Unicode / RakuAST / Collation
 
+**前提（2026-06-27 調査）**: mutsu の Unicode 対応は実質完成。
+S15 全 81 ファイル、および tractable な S32-str Unicode 機能
+（fc/flip/comb/tc/tclc/uc/capitalize/samecase/samemark/uniparse/utf8-c8 …）は
+すべて whitelist 済み。未 whitelist の Unicode テストは下記 2 件のみで、
+どちらも大規模サブシステム待ち。新規に着手して通せる tractable な Unicode
+テストは残っていない。
+
 - `S32-str/CollationTest_NON_IGNORABLE-3.t`
   - **難度**: Hard
+  - **根本原因**:
+    1369 中 2 失敗（test 1161, 1171）。ICU4X が BMP センチネル noncharacter を
+    特別扱いする（U+FFFE = primary-ignorable、U+FFFF = max-sentinel）一方、
+    UCA-17/MoarVM は全 noncharacter に codepoint 由来 implicit weight
+    （AAAA=0xFBC0+(cp>>15)）を付与するため。mutsu は符号位置を正しく保持して
+    おり、差異は ICU4X collator 内部のみ。
+  - **依存方針の調査結果**:
+    - `icu_collator`（icu4x）は **完全 pure Rust・C 依存なし**。ICU4C（C ライブラリ）
+      とは別物で、データも Rust crate に同梱（`cargo tree` で確認）。
+      よって「外部 C 依存を減らす」観点では現状すでに問題なし。
+    - 代替（すべて pure Rust）: **feruca**（from-scratch UCA、Unicode16/CLDR46、
+      icu4x より小依存・2-4倍速、spec 準拠なので noncharacter バグは直る見込み／
+      要実測）、collate（成熟度低）、rust_icu（ICU4C bindings = **C 依存が増える**、却下）。
+    - 自前実装の規模 ≒ feruca を作り直す（DUCET データ + contraction/expansion +
+      implicit weight 派生 + sort key 構築、数千行 + 生成データ）。pure Rust の
+      feruca が既にある以上、自前実装の妥当性は低い。
+    - feruca 採用時の **要検証リスク**: 現状の `coll` は icu4x で 3 強度比較して
+      `$*COLLATION` の 4 レベル個別 reverse/disable を合成している。feruca の公開
+      API は `collate()` 一本で per-strength / sort key を露出しないため、
+      `coll` + 非デフォルト `$*COLLATION` の再現が難しい可能性がある。
   - **評価**:
-    2 ケースだけだが、実装は重い。
-    低 ROI という旧評価はそのままでよい。
+    実バグだが正しい修正には DUCET ベースの collation 入れ替え（feruca 移行 or
+    自前実装）が必要で、2 ケースのために大仕事。noncharacter は交換用途では
+    非妥当文字で実害も薄い。低 ROI のため defer。着手するなら feruca を throwaway
+    で実測（noncharacter 修正可否 + coll/$*COLLATION 維持可否）してから判断する。
 - `S32-str/format.t`
   - **難度**: Hard
+  - **現状**: 49 中 26 到達・全 pass。`Format`/`.fmt` は完全実装済みで、
+    test 30-49 相当（List/Seq/Set/Bag/Mix/Map への `.fmt`）も単体では動く。
   - **評価**:
-    本質的には `Formatter.AST` と `RakuAST` 不在の問題。
-    `Format` クラス本体の表面的な修正だけでは whitelist にならない。
+    test 27-29 が `Formatter::Syntax.parse`→Match、`Formatter.CODE`→Callable、
+    `Formatter.AST`→`RakuAST::Node` を要求し、ここで runtime error 中断するため
+    以降が到達不能。本質は **RakuAST サブシステム不在**。参照 raku 本体すら
+    `Format`（6.e）未対応。RakuAST::Node を偽装するのは stub（禁止）なので、
+    RakuAST 本実装なしには whitelist 不可。
 
 ---
 
