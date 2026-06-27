@@ -1264,6 +1264,7 @@ roast/integration/advent2011-day05.t
 roast/integration/advent2011-day16.t
 roast/integration/advent2011-day20.t
 roast/integration/advent2011-day22.t
+roast/integration/advent2011-day23.t
 roast/integration/advent2011-day24.t
 roast/integration/advent2012-day02.t
 roast/integration/advent2012-day03.t
