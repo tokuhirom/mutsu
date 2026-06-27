@@ -988,6 +988,7 @@ roast/S29-context/sleep.t
 roast/S29-conversions/hash.t
 roast/S29-conversions/ord_and_chr.t
 roast/S29-os/system.t
+roast/S32-array/adverbs.t
 roast/S32-array/bool.t
 roast/S32-array/create.t
 roast/S32-array/delete-adverb-native.t
