@@ -378,10 +378,32 @@ impl Interpreter {
         let raw_indices = args[1..].to_vec();
         let target_val = self.env.get(&var_name).cloned().unwrap_or(Value::Nil);
         let indices = self.resolve_multidim_indices(&target_val, &raw_indices)?;
-        if let Some(target) = self.env.get_mut(&var_name) {
-            Ok(multidim_delete(target, &indices))
-        } else {
-            Ok(Value::Nil)
+        let Some(target) = self.env.get_mut(&var_name) else {
+            return Ok(Value::Nil);
+        };
+        let result = multidim_delete(target, &indices);
+        self.writeback_multidim_var_to_local(&var_name);
+        Ok(result)
+    }
+
+    /// After a multidim `:delete` mutates the env copy of `@a`/`%h` in place,
+    /// mirror the mutated container back into the caller frame's local slot.
+    /// `my @a` lives in a local slot (dual store), so mutating only env would
+    /// leave the slot stale and `say @a` would read the pre-delete value.
+    /// (The single-dim `DeleteIndexNamed` opcode does the same writeback.)
+    pub(super) fn writeback_multidim_var_to_local(&mut self, var_name: &str) {
+        let caller_code = self.current_code;
+        if caller_code == 0 {
+            return;
+        }
+        if let Some(updated) = self.env.get(var_name).cloned() {
+            // SAFETY: `current_code` is the address of the live bytecode frame
+            // that invoked this builtin (an ancestor on the call stack, valid
+            // for the synchronous duration of this call).
+            let code = unsafe { &*(caller_code as *const crate::opcode::CompiledCode) };
+            if let Some(slot) = code.locals.iter().position(|n| n == var_name) {
+                self.locals[slot] = updated;
+            }
         }
     }
 
@@ -456,15 +478,17 @@ impl Interpreter {
                 multidim_collect_leaves(&target, &indices, &[], &mut leaves);
                 if let Some(t) = self.env.get_mut(&var_name) {
                     multidim_delete(t, &indices);
+                    self.writeback_multidim_var_to_local(&var_name);
                 }
                 let values: Vec<Value> = leaves.into_iter().map(|(_, v)| v).collect();
                 return Ok(Value::array(values));
             }
-            if let Some(target) = self.env.get_mut(&var_name) {
-                Ok(multidim_delete(target, &indices))
-            } else {
-                Ok(Value::Nil)
-            }
+            let Some(target) = self.env.get_mut(&var_name) else {
+                return Ok(Value::Nil);
+            };
+            let result = multidim_delete(target, &indices);
+            self.writeback_multidim_var_to_local(&var_name);
+            Ok(result)
         } else {
             Ok(multidim_index(&target, &indices))
         }
@@ -496,6 +520,7 @@ impl Interpreter {
             multidim_collect_leaves(&target, &indices, &[], &mut leaves);
             if do_delete && let Some(t) = self.env.get_mut(&var_name) {
                 multidim_delete(t, &indices);
+                self.writeback_multidim_var_to_local(&var_name);
             }
             let mut out = Vec::new();
             for (path, value) in leaves {
@@ -541,7 +566,9 @@ impl Interpreter {
 
         let value = if do_delete {
             if let Some(target) = self.env.get_mut(&var_name) {
-                multidim_delete(target, &indices)
+                let r = multidim_delete(target, &indices);
+                self.writeback_multidim_var_to_local(&var_name);
+                r
             } else {
                 Value::Nil
             }
@@ -614,6 +641,7 @@ impl Interpreter {
             multidim_collect_leaves(&target_val, &indices, &[], &mut leaves);
             if do_delete && let Some(t) = self.env.get_mut(&var_name) {
                 multidim_delete(t, &indices);
+                self.writeback_multidim_var_to_local(&var_name);
             }
             let mut out = Vec::new();
             for (path, value) in leaves {
@@ -658,6 +686,7 @@ impl Interpreter {
         // Then delete if requested
         if do_delete && let Some(target) = self.env.get_mut(&var_name) {
             multidim_delete(target, &indices);
+            self.writeback_multidim_var_to_local(&var_name);
         }
 
         let raw_exists = !matches!(&value, Value::Nil);
