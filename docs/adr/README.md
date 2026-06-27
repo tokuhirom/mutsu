@@ -19,4 +19,4 @@
 
 | # | タイトル | Status |
 |---|---|---|
-| [0001](0001-gc-strategy-and-phasing.md) | GC 導入の方式選定とフェーズ計画 | Proposed |
+| [0001](0001-gc-strategy-and-phasing.md) | GC 導入の方式選定とフェーズ計画 | Accepted |
