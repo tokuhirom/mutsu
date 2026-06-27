@@ -1342,6 +1342,18 @@ pub struct Interpreter {
     /// without invalidating the resolution caches. Entries are best-effort: a
     /// miss simply takes the full registration path.
     pub(crate) registered_fn_fingerprints: HashMap<Symbol, u64>,
+    /// Derive-once cache: a declaration is parsed into a `FunctionDef` exactly
+    /// once, then shared. Keyed by the routine's fully-qualified name
+    /// (`package::name`), the value is `(declaration fingerprint, Arc<FunctionDef>)`.
+    /// A `my sub` inside a routine is removed from the registry when the routine
+    /// returns (lexical-scope snapshot/restore) and re-installed on the next call;
+    /// without this cache that re-install would re-run the full AST→FunctionDef
+    /// derivation (auto-signature scan, validation, body clone) every call. With
+    /// it, the re-install is a cheap `Arc` clone of the already-derived definition.
+    /// The key is the FQ name (not the fingerprint) so two distinct subs that share
+    /// an identical body but differ in name never alias; the stored fingerprint is
+    /// re-checked on lookup so a redefined body at the same name re-derives.
+    pub(crate) prepared_fn_defs: HashMap<Symbol, (u64, Arc<FunctionDef>)>,
     pub(crate) method_resolve_cache: HashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
     #[allow(clippy::type_complexity)]
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, String, Arc<MethodDef>)>,
@@ -3519,6 +3531,7 @@ impl Interpreter {
             pos_light_call_cache_gen: 0,
             amp_param_shadowed_names: std::collections::HashSet::new(),
             registered_fn_fingerprints: HashMap::new(),
+            prepared_fn_defs: HashMap::new(),
             method_resolve_cache: HashMap::new(),
             last_method_resolve: None,
             fast_method_cache: HashMap::new(),
@@ -6190,6 +6203,7 @@ impl Interpreter {
             pos_light_call_cache_gen: 0,
             amp_param_shadowed_names: std::collections::HashSet::new(),
             registered_fn_fingerprints: HashMap::new(),
+            prepared_fn_defs: HashMap::new(),
             method_resolve_cache: HashMap::new(),
             last_method_resolve: None,
             fast_method_cache: HashMap::new(),
