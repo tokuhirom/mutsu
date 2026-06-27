@@ -372,6 +372,33 @@ impl Interpreter {
             .cloned()
             .and_then(|v| self.container_type_metadata(&v));
 
+        // If the variable is bound to a shared container cell — e.g. it was
+        // assigned by a sub/closure that captured the outer variable, leaving a
+        // `ContainerRef` in both env and locals — mutate THROUGH the cell. The
+        // cell is shared, so the write is visible everywhere; mutating the env
+        // snapshot (the path below) would only touch a copy and silently drop the
+        // write. This mirrors the simple-index assignment's ContainerRef handling.
+        let container_cell = match self.env().get(&var_name) {
+            Some(Value::ContainerRef(cell)) => Some(cell.clone()),
+            _ => self
+                .locals_get_by_name(code, &var_name)
+                .and_then(|v| match v {
+                    Value::ContainerRef(cell) => Some(cell),
+                    _ => None,
+                }),
+        };
+        if let Some(cell) = container_cell {
+            let mut inner = cell.lock().unwrap();
+            if is_shaped {
+                Self::assign_array_multidim(&mut inner, &dims, value.clone())?;
+            } else {
+                Self::multi_dim_assign(&mut inner, &dims, value.clone())?;
+            }
+            drop(inner);
+            self.stack.push(value);
+            return Ok(());
+        }
+
         // Get mutable reference to the target variable
         if let Some(container) = self.env_mut().get_mut(&var_name) {
             if is_shaped {
