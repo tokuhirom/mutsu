@@ -5550,9 +5550,7 @@ impl Interpreter {
         if let Some(val) = env.get(name) {
             // Check that the variable is declared `is dynamic`
             if !self.is_var_dynamic(name) {
-                return Err(RuntimeError::new(format!(
-                    "Cannot access '${name}' through CALLER, because it is not declared as dynamic"
-                )));
+                return Err(crate::runtime::utils::caller_not_dynamic_error(name));
             }
             Ok(val.clone())
         } else {
@@ -5576,9 +5574,7 @@ impl Interpreter {
             )));
         }
         if !self.is_var_dynamic(name) {
-            return Err(RuntimeError::new(format!(
-                "Cannot access '${name}' through CALLER, because it is not declared as dynamic"
-            )));
+            return Err(crate::runtime::utils::caller_not_dynamic_error(name));
         }
         let idx = stack_len - depth;
         self.caller_env_stack[idx].insert(name.to_string(), value.clone());

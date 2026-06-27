@@ -348,6 +348,28 @@ impl Compiler {
         let saved_terminal = self.bind_terminal;
         self.bind_terminal = false; // inner `target` indices are intermediate
 
+        // Special case: CALLER::<$x> stash-subscript access resolves a caller-frame
+        // lexical, exactly like the `$CALLER::x` symbolic form. Route both to the
+        // same GetCallerVar opcode so the dynamic-ness check (X::Caller::NotDynamic)
+        // and frame walk are shared. Supports nested CALLER::CALLER::<$x> too.
+        if let Expr::PseudoStash(stash) = target
+            && let Some((rest, depth)) = Self::parse_caller_prefix(stash)
+            && rest.is_empty()
+            && let Expr::Literal(Value::Str(key)) = index
+        {
+            let bare: String = match key.chars().next() {
+                Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
+                _ => key.as_ref().clone(),
+            };
+            let name_idx = self.code.add_constant(Value::str(bare));
+            self.code.emit(OpCode::GetCallerVar {
+                name_idx,
+                depth: depth as u32,
+            });
+            self.bind_terminal = saved_terminal;
+            return;
+        }
+
         // Special case: %*ENV<key> compiles to GetEnvIndex
         if let Expr::HashVar(name) = target {
             if name == "*ENV" {
