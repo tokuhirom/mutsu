@@ -161,7 +161,7 @@ impl Interpreter {
         match result {
             Ok(_) if matched => QuitOutcome::Handled,
             Ok(_) => QuitOutcome::Unhandled,
-            Err(err) if err.is_react_done || err.is_succeed => QuitOutcome::Handled,
+            Err(err) if err.is_react_done() || err.is_succeed() => QuitOutcome::Handled,
             Err(_) => QuitOutcome::Unhandled,
         }
     }

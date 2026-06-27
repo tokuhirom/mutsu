@@ -514,7 +514,7 @@ impl Interpreter {
                     result = Err(e);
                     break;
                 }
-                Err(e) if e.is_succeed => {
+                Err(e) if e.is_succeed() => {
                     // `when`/`default` succeed signals are caught at the
                     // enclosing block boundary (sub, method, or pointy block).
                     let ret_val = e.return_value.unwrap_or(Value::Nil);

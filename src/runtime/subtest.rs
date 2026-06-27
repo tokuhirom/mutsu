@@ -118,7 +118,7 @@ impl Interpreter {
         }
         let cb = self.supply_stream_consumers[idx].consumer_cb.clone();
         match self.call_sub_value(cb, vec![value.clone()], true) {
-            Err(e) if e.is_react_done => {
+            Err(e) if e.is_react_done() => {
                 self.supply_stream_consumers[idx].done = true;
                 for close_cb in
                     crate::runtime::native_methods::take_supplier_close_callbacks(supplier_id)

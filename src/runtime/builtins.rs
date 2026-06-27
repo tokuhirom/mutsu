@@ -905,7 +905,7 @@ impl Interpreter {
                         let result = self.call_sub_value(first, Vec::new(), true);
                         self.pop_warn_suppression();
                         match result {
-                            Err(e) if e.is_warn => Ok(Value::Nil),
+                            Err(e) if e.is_warn() => Ok(Value::Nil),
                             other => other,
                         }
                     }

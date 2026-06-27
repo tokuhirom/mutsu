@@ -81,7 +81,7 @@ impl Interpreter {
             self.run_on_demand_body(on_demand_cb, Some(emitter_supplier_id));
 
         if let Err(err) = cb_result
-            && !err.is_react_done
+            && !err.is_react_done()
         {
             promise.break_with(
                 err.exception
@@ -291,10 +291,10 @@ impl Interpreter {
             };
             for item in items {
                 if let Err(err) = run_capture(self, callback.clone(), vec![item], last_value) {
-                    if err.is_react_done || err.is_last {
+                    if err.is_react_done() || err.is_last {
                         break 'replay;
                     }
-                    if err.is_next || err.is_redo() {
+                    if err.is_next() || err.is_redo() {
                         continue;
                     }
                     // A `die` quits the supply: route to the QUIT phaser.

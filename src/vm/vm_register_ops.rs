@@ -1821,7 +1821,7 @@ impl Interpreter {
 
         // If `done;` was called in the react body, skip the event loop —
         // the body already signaled that no further events should be processed.
-        let body_done = matches!(&run_result, Err(e) if e.is_react_done);
+        let body_done = matches!(&run_result, Err(e) if e.is_react_done());
         // The react/supply drive loop runs Interpreter-side and dispatches every
         // whenever / LAST / QUIT / CLOSE callback as compiled bytecode
         // (Stage 2 #3038/#3039; QUIT handlers Interpreter-native in the Stage 3 follow-up).
@@ -1876,12 +1876,12 @@ impl Interpreter {
 
         *ip = end;
         if let Err(err) = run_result
-            && !err.is_react_done
+            && !err.is_react_done()
         {
             return Err(err);
         }
         if let Err(err) = event_result
-            && !err.is_react_done
+            && !err.is_react_done()
         {
             // Wrap in X::React::Died if not already wrapped
             return Err(crate::runtime::Interpreter::wrap_react_died_if_needed(err));

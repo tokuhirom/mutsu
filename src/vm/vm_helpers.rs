@@ -512,7 +512,7 @@ impl Interpreter {
         while ip < cc.ops.len() {
             match self.exec_one(&cc, &mut ip, run_fns) {
                 Ok(()) => {}
-                Err(e) if e.is_warn => {
+                Err(e) if e.is_warn() => {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -835,7 +835,7 @@ impl Interpreter {
         while ip < cc.ops.len() {
             match self.exec_one(&cc, &mut ip, run_fns) {
                 Ok(()) => {}
-                Err(e) if e.is_warn => {
+                Err(e) if e.is_warn() => {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -1061,7 +1061,7 @@ impl Interpreter {
                             return Ok(c[..n].to_vec());
                         }
                         // `next`: skip the current element and continue.
-                        Err(e) if e.is_next => Vec::new(),
+                        Err(e) if e.is_next() => Vec::new(),
                         Err(e) => return Err(e),
                     };
                     {

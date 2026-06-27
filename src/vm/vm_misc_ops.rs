@@ -3197,14 +3197,14 @@ impl Interpreter {
             return false;
         }
         !(err.is_last
-            || err.is_next
+            || err.is_next()
             || err.is_redo()
             || err.is_goto()
             || err.is_proceed()
-            || err.is_succeed
+            || err.is_succeed()
             || err.is_leave
-            || err.is_resume
-            || err.is_react_done)
+            || err.is_resume()
+            || err.is_react_done())
     }
 
     fn should_run_success_queue(
@@ -3287,7 +3287,7 @@ impl Interpreter {
                     self.stack.truncate(stack_base);
                     continue;
                 }
-                Err(e) if e.is_next && has_label && Self::label_matches(&e.label, &label) => {
+                Err(e) if e.is_next() && has_label && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
                     self.stack.push(Value::Slip(std::sync::Arc::new(vec![])));
                     break Ok(());

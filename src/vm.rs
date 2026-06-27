@@ -462,7 +462,7 @@ impl Interpreter {
                     ip = target_ip;
                     continue;
                 }
-                if e.is_warn && self.control_handler_depth == 0 {
+                if e.is_warn() && self.control_handler_depth == 0 {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -695,7 +695,7 @@ impl Interpreter {
                     ip = target_ip;
                     continue;
                 }
-                if e.is_warn && self.control_handler_depth == 0 {
+                if e.is_warn() && self.control_handler_depth == 0 {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -1005,7 +1005,7 @@ impl Interpreter {
                     continue;
                 }
                 // Handle warn signals inline when no CONTROL handler is active.
-                if e.is_warn && self.control_handler_depth == 0 {
+                if e.is_warn() && self.control_handler_depth == 0 {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -3351,7 +3351,7 @@ impl Interpreter {
                         // Record a resume point so a call that raises a
                         // control signal (e.g. `warn`) can be resumed after
                         // the call site by `.resume` in a CONTROL block.
-                        if !e.is_resume && self.resume_ip.is_none() {
+                        if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some(*ip + 1);
                         }
                         return Err(e);
@@ -3398,7 +3398,7 @@ impl Interpreter {
                         // method call is itself a `.resume`/`.rethrow` that
                         // re-raises a control signal, the original resume
                         // point (e.g. after `warn`) must be preserved.
-                        if !e.is_resume && self.resume_ip.is_none() {
+                        if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some(*ip + 1);
                         }
                         return Err(e);
@@ -3419,7 +3419,7 @@ impl Interpreter {
                         // Record a resume point so a method that raises a
                         // control signal (e.g. a resumable `warn`) can be
                         // resumed after the call site by `.resume`.
-                        if !e.is_resume && self.resume_ip.is_none() {
+                        if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some(*ip + 1);
                         }
                         return Err(e);
@@ -3443,7 +3443,7 @@ impl Interpreter {
                 ) {
                     Ok(()) => {}
                     Err(e) => {
-                        if !e.is_resume && self.resume_ip.is_none() {
+                        if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some(*ip + 1);
                         }
                         return Err(e);
@@ -3482,7 +3482,7 @@ impl Interpreter {
                 ) {
                     Ok(()) => {}
                     Err(e) => {
-                        if !e.is_resume && self.resume_ip.is_none() {
+                        if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some(*ip + 1);
                         }
                         return Err(e);
@@ -3519,7 +3519,7 @@ impl Interpreter {
                 match self.exec_call_on_value_op(code, *arity, *arg_sources_idx, compiled_fns) {
                     Ok(()) => {}
                     Err(e) => {
-                        if !e.is_resume && self.resume_ip.is_none() {
+                        if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some(*ip + 1);
                         }
                         return Err(e);
@@ -3541,7 +3541,7 @@ impl Interpreter {
                 ) {
                     Ok(()) => {}
                     Err(e) => {
-                        if !e.is_resume && self.resume_ip.is_none() {
+                        if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some(*ip + 1);
                         }
                         return Err(e);
@@ -3563,7 +3563,7 @@ impl Interpreter {
                 ) {
                     Ok(()) => {}
                     Err(e) => {
-                        if !e.is_resume && self.resume_ip.is_none() {
+                        if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some(*ip + 1);
                         }
                         return Err(e);
@@ -4315,7 +4315,7 @@ impl Interpreter {
                         // A per-element method may raise a resumable warn (the
                         // hyper op re-raises it carrying the full result); record
                         // the resume point so `.resume` continues after the call.
-                        if !e.is_resume && self.resume_ip.is_none() {
+                        if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some(*ip + 1);
                         }
                         return Err(e);
@@ -4330,7 +4330,7 @@ impl Interpreter {
                 match self.exec_hyper_method_call_dynamic_op(code, *arity, *modifier_idx) {
                     Ok(()) => {}
                     Err(e) => {
-                        if !e.is_resume && self.resume_ip.is_none() {
+                        if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some(*ip + 1);
                         }
                         return Err(e);

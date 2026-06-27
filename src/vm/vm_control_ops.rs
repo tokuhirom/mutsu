@@ -95,21 +95,21 @@ impl Interpreter {
         }
         let class_name = if signal.is_last {
             Some("CX::Last")
-        } else if signal.is_next {
+        } else if signal.is_next() {
             Some("CX::Next")
         } else if signal.is_redo() {
             Some("CX::Redo")
         } else if signal.is_proceed() {
             Some("CX::Proceed")
-        } else if signal.is_succeed {
+        } else if signal.is_succeed() {
             Some("CX::Succeed")
-        } else if signal.is_warn {
+        } else if signal.is_warn() {
             Some("CX::Warn")
         } else if signal.is_take() {
             Some("CX::Take")
         } else if signal.is_emit() {
             Some("CX::Emit")
-        } else if signal.is_done || signal.is_react_done {
+        } else if signal.is_done || signal.is_react_done() {
             Some("CX::Done")
         } else if signal.is_return() {
             Some("CX::Return")
@@ -124,7 +124,7 @@ impl Interpreter {
         // text without the location, so strip the appended suffix.
         let message_text = if signal.message.is_empty() {
             class_name.to_string()
-        } else if signal.is_warn {
+        } else if signal.is_warn() {
             signal
                 .message
                 .split_once("\n  in block ")
@@ -289,7 +289,7 @@ impl Interpreter {
                         }
                         break 'body_redo;
                     }
-                    Err(e) if e.is_succeed => {
+                    Err(e) if e.is_succeed() => {
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);
@@ -327,7 +327,7 @@ impl Interpreter {
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'while_loop;
                     }
-                    Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);
@@ -947,7 +947,7 @@ impl Interpreter {
                         }
                         break 'body_redo;
                     }
-                    Err(e) if e.is_succeed => {
+                    Err(e) if e.is_succeed() => {
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
@@ -1073,7 +1073,7 @@ impl Interpreter {
                         );
                         break 'for_loop;
                     }
-                    Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
@@ -1380,7 +1380,7 @@ impl Interpreter {
                         );
                         break 'body_redo;
                     }
-                    Err(e) if e.is_succeed => {
+                    Err(e) if e.is_succeed() => {
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
@@ -1410,7 +1410,7 @@ impl Interpreter {
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'for_loop;
                     }
-                    Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
                         break 'body_redo;
                     }
                     Err(e)
@@ -1608,7 +1608,7 @@ impl Interpreter {
                         }
                         break 'body_redo;
                     }
-                    Err(e) if e.is_succeed => {
+                    Err(e) if e.is_succeed() => {
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
@@ -1634,7 +1634,7 @@ impl Interpreter {
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'for_loop;
                     }
-                    Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
                         break 'body_redo;
                     }
                     Err(e)
@@ -1830,7 +1830,7 @@ impl Interpreter {
                         }
                         break 'body_redo;
                     }
-                    Err(e) if e.is_succeed => {
+                    Err(e) if e.is_succeed() => {
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
@@ -1848,7 +1848,7 @@ impl Interpreter {
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'for_loop;
                     }
-                    Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
                         break 'body_redo;
                     }
                     Err(e) => {
@@ -2546,7 +2546,7 @@ impl Interpreter {
                         }
                         break 'body_redo;
                     }
-                    Err(e) if e.is_succeed => {
+                    Err(e) if e.is_succeed() => {
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
@@ -2570,7 +2570,7 @@ impl Interpreter {
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'c_loop;
                     }
-                    Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
                         break 'body_redo;
                     }
                     Err(e)
@@ -2718,7 +2718,7 @@ impl Interpreter {
         let mut inner_ip = body_start;
         while inner_ip < end {
             if let Err(e) = self.exec_one(code, &mut inner_ip, compiled_fns) {
-                if e.is_succeed {
+                if e.is_succeed() {
                     self.stack.truncate(stack_base);
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
@@ -2771,7 +2771,7 @@ impl Interpreter {
                 }
                 self.stack.truncate(stack_base);
             }
-            Err(e) if e.is_succeed => {
+            Err(e) if e.is_succeed() => {
                 if let Some(v) = e.return_value {
                     last = v;
                 }
@@ -2864,7 +2864,7 @@ impl Interpreter {
                 Err(e) if e.is_proceed() => {
                     did_proceed = true;
                 }
-                Err(e) if e.is_succeed => {
+                Err(e) if e.is_succeed() => {
                     loan_env!(self, set_when_matched(true));
                     return Err(e);
                 }
@@ -2901,7 +2901,7 @@ impl Interpreter {
         let end = body_end as usize;
         match self.run_range(code, body_start, end, compiled_fns) {
             Ok(()) => {}
-            Err(e) if e.is_succeed => {
+            Err(e) if e.is_succeed() => {
                 loan_env!(self, set_when_matched(true));
                 return Err(e);
             }
@@ -2974,7 +2974,7 @@ impl Interpreter {
                     Err(e) if e.is_last && Self::label_matches(&e.label, label) => {
                         break 'repeat_loop;
                     }
-                    Err(e) if e.is_next && Self::label_matches(&e.label, label) => {
+                    Err(e) if e.is_next() && Self::label_matches(&e.label, label) => {
                         break 'body_redo;
                     }
                     Err(e) => {
@@ -3120,7 +3120,7 @@ impl Interpreter {
                             self.stack.truncate(saved_depth);
                             self.stack.push(Value::Nil);
                         }
-                        Err(control_err) if control_err.is_succeed => {
+                        Err(control_err) if control_err.is_succeed() => {
                             self.stack.truncate(saved_depth);
                             self.stack.push(Value::Nil);
                         }
@@ -3140,8 +3140,8 @@ impl Interpreter {
             }
             Err(e)
                 if e.return_value.is_some()
-                    && !e.is_succeed
-                    && !e.is_warn
+                    && !e.is_succeed()
+                    && !e.is_warn()
                     && !e.is_take()
                     && !e.is_emit() =>
             {
@@ -3152,15 +3152,15 @@ impl Interpreter {
             // block must propagate up — `try` alone does not catch them.
             Err(e)
                 if (e.is_last
-                    || e.is_next
+                    || e.is_next()
                     || e.is_redo()
                     || e.is_proceed()
-                    || e.is_succeed
-                    || e.is_warn
+                    || e.is_succeed()
+                    || e.is_warn()
                     || e.is_take()
                     || e.is_emit()
                     || e.is_done
-                    || e.is_react_done)
+                    || e.is_react_done())
                     && control_begin >= end =>
             {
                 self.discard_let_saves(let_mark);
@@ -3168,15 +3168,15 @@ impl Interpreter {
             }
             Err(e)
                 if (e.is_last
-                    || e.is_next
+                    || e.is_next()
                     || e.is_redo()
                     || e.is_proceed()
-                    || e.is_succeed
-                    || e.is_warn
+                    || e.is_succeed()
+                    || e.is_warn()
                     || e.is_take()
                     || e.is_emit()
                     || e.is_done
-                    || e.is_react_done)
+                    || e.is_react_done())
                     && control_begin < end =>
             {
                 self.discard_let_saves(let_mark);
@@ -3192,16 +3192,16 @@ impl Interpreter {
                     let control_result = self.run_range(code, control_begin, end, compiled_fns);
                     let next_resume = match control_result {
                         Ok(()) => None,
-                        Err(ref ce) if ce.is_succeed => None,
+                        Err(ref ce) if ce.is_succeed() => None,
                         // Re-throwing a CX::Warn from CONTROL acts like the
                         // default warn handler: print to stderr and resume.
-                        Err(ce) if ce.is_warn => {
+                        Err(ce) if ce.is_warn() => {
                             if !self.warning_suppressed() {
                                 self.write_warn_to_stderr(&ce.message);
                             }
                             self.resume_ip.take()
                         }
-                        Err(ce) if ce.is_resume => {
+                        Err(ce) if ce.is_resume() => {
                             let _ = ce;
                             self.resume_ip.take()
                         }
@@ -3233,7 +3233,7 @@ impl Interpreter {
                             // other control signals (take/emit/done) also carry a
                             // `return_value` for their own machinery, which must NOT
                             // land on the Interpreter operand stack here.
-                            if pending_err.is_warn
+                            if pending_err.is_warn()
                                 && let Some(rv) = pending_err.return_value.take()
                             {
                                 self.stack.push(rv);
@@ -3268,15 +3268,15 @@ impl Interpreter {
                                 }
                                 Err(new_err)
                                     if new_err.is_last
-                                        || new_err.is_next
+                                        || new_err.is_next()
                                         || new_err.is_redo()
                                         || new_err.is_proceed()
-                                        || new_err.is_succeed
-                                        || new_err.is_warn
+                                        || new_err.is_succeed()
+                                        || new_err.is_warn()
                                         || new_err.is_take()
                                         || new_err.is_emit()
                                         || new_err.is_done
-                                        || new_err.is_react_done =>
+                                        || new_err.is_react_done() =>
                                 {
                                     pending_err = new_err;
                                     continue;
@@ -3336,7 +3336,7 @@ impl Interpreter {
                     match self.run_range(code, catch_begin, control_begin, compiled_fns) {
                         Ok(()) => self.when_matched(),
                         // succeed from `when` inside CATCH means exception was handled
-                        Err(catch_err) if catch_err.is_succeed => {
+                        Err(catch_err) if catch_err.is_succeed() => {
                             // Truncate values left by default body, then push Nil
                             // (Raku: try { die; CATCH { default { "caught" } } } returns Nil)
                             self.stack.truncate(catch_stack_base);
@@ -3344,7 +3344,7 @@ impl Interpreter {
                             true
                         }
                         // .resume called inside CATCH: resume execution after the die
-                        Err(catch_err) if catch_err.is_resume => {
+                        Err(catch_err) if catch_err.is_resume() => {
                             self.stack.truncate(catch_stack_base);
                             loan_env!(self, set_when_matched(saved_when));
                             if let Some(v) = saved_topic {

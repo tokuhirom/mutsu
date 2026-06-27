@@ -473,7 +473,7 @@ impl Interpreter {
                                     // Resumable warn from a per-element native
                                     // method: use its carried resume value and
                                     // remember the warn to re-raise after the loop.
-                                    Err(e) if collect_warns && e.is_warn => {
+                                    Err(e) if collect_warns && e.is_warn() => {
                                         let rv = e.return_value.clone().unwrap_or(Value::Nil);
                                         if pending_warn.is_none() {
                                             pending_warn = Some(e);
