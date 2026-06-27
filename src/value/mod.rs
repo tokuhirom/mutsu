@@ -1592,9 +1592,10 @@ pub enum Value {
         values: Arc<Vec<Value>>,
     },
     Seq(Arc<Vec<Value>>),
-    /// HyperSeq: result of `.hyper` — preserves order, single-threaded implementation.
+    /// HyperSeq: result of `.hyper` — order-preserving parallel map/grep
+    /// (worker threads, see `vm_hyper_race_parallel.rs`).
     HyperSeq(Arc<Vec<Value>>),
-    /// RaceSeq: result of `.race` — unordered parallel, single-threaded implementation.
+    /// RaceSeq: result of `.race` — unordered parallel map/grep (worker threads).
     RaceSeq(Arc<Vec<Value>>),
     Slip(Arc<Vec<Value>>),
     LazyList(Arc<LazyList>),
@@ -3181,9 +3182,10 @@ impl Value {
     /// Autovivify a hash entry: if the key doesn't exist, insert an empty Hash.
     /// Returns a `HashEntryRef` pointing to the entry in the parent hash.
     /// Uses interior mutation of the `Arc<HashMap>` so that **all** clones of
-    /// the same `Arc` observe the change.  This is sound in mutsu because the
-    /// interpreter is single-threaded and no `&HashMap` borrows are live
-    /// across this call.
+    /// the same `Arc` observe the change.  This relies on no `&HashMap` borrow
+    /// being live across the call (the aliased-mutation contract in
+    /// `aliased_mut.rs`); cross-thread sharing of the same `Arc` is the tracked,
+    /// pre-existing gap documented there.
     ///
     /// Look up a key in a Hash value by string key.
     pub fn hash_get_str(&self, key: &str) -> Option<Value> {
