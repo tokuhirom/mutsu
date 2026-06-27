@@ -312,7 +312,12 @@ fn try_parse_unknown_adverb(input: &str) -> Option<(&str, String)> {
 /// Determine "element access" vs "slice" from the target and index.
 /// Hash access is always "slice"; array single-element is "element access".
 fn determine_subscript_what(target: &Expr, index_expr: &Expr) -> String {
-    // A whatever slice (`@a[*]`, parsed as a Whatever index) reports
+    // A *zen* slice (`@a[]` / `%h{}`, modelled as a `Literal(Whatever)` index by
+    // the empty-subscript-with-adverb path) reports "zen slice".
+    if matches!(index_expr, Expr::Literal(Value::Whatever)) {
+        return "zen slice".to_string();
+    }
+    // A whatever slice (`@a[*]`, parsed as a bare Whatever index) reports
     // "whatever slice". A hash zen slice keeps the bracket-kind descriptor
     // (`{} slice`), which the runtime downgrades to plain "slice" on a nogo
     // conflict (see `builtin_subscript_adverb_error`).
@@ -2300,10 +2305,18 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 // dropped and the adverb mis-parsed as a colonpair argument.
                 if parse_subscript_adverb_with_expr(r_adv).is_some()
                     || parse_delete_adverb(r_adv).is_some()
+                    || try_parse_unknown_adverb(r_adv).is_some()
                 {
+                    // A zen slice carrying an adverb behaves like the whatever
+                    // slice for VALUES (all keys/values), so model the empty
+                    // subscript as a Whatever index. Use a `Literal(Whatever)`
+                    // (which evaluates to the same `Value::Whatever`) rather than
+                    // bare `Expr::Whatever` so the X::Adverb error path can tell a
+                    // *zen* slice (`@a[]` → ".what" = "zen slice") apart from a
+                    // *whatever* slice (`@a[*]` → "whatever slice").
                     expr = Expr::Index {
                         target: Box::new(expr),
-                        index: Box::new(Expr::Whatever),
+                        index: Box::new(Expr::Literal(Value::Whatever)),
                         is_positional: true,
                     };
                     rest = after;
