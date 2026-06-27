@@ -245,9 +245,53 @@ pub(crate) fn stmt_list_with_mode(
         // the compiler keeps their package context for the rest of the scope.)
         if allow_mainline_capture && starts_unit_class_role_grammar(r) {
             let (after_decl, mut decl) = class::unit_module_stmt(r)?;
-            let (tail_rest, tail_stmts) = stmt_list_with_mode(after_decl, false, emit_setline)?;
+            let (tail_rest, mut tail_stmts) = stmt_list_with_mode(after_decl, false, emit_setline)?;
             match &mut decl {
-                Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => *body = tail_stmts,
+                Stmt::ClassDecl {
+                    body,
+                    parents,
+                    class_is_rw,
+                    ..
+                } => {
+                    // A `class Foo { ... }` block extracts `also is Parent` and
+                    // `also is rw` from its body into the parents list / rw flag
+                    // at parse time. The `unit class Foo;` form gathers trailing
+                    // statements here, so apply the same extraction — otherwise an
+                    // `also is Parent` (a bare `is(also, Parent)` infix expression)
+                    // would execute as a runtime "two terms in a row".
+                    tail_stmts.retain(|stmt| {
+                        if class::stmt_is_also_is_rw(stmt) {
+                            *class_is_rw = true;
+                            false
+                        } else if let Some(parent_name) = class::stmt_also_is_parent(stmt) {
+                            parents.push(parent_name);
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    // `use` is compile-time in Raku, so a `unit class Foo; use Bar;
+                    // also is Bar;` must load Bar before Foo's parents resolve. The
+                    // unit-class body runs at class-registration time (after parents
+                    // are resolved), so hoist any `use`/`need`/`import` statements
+                    // out of the body to before the declaration. They stay in the
+                    // same compilation-unit scope, so imported symbols remain
+                    // visible. (Diamond inheritance: roast/integration/diamond.t.)
+                    if !parents.is_empty() {
+                        let mut hoisted: Vec<Stmt> = Vec::new();
+                        tail_stmts.retain(|stmt| {
+                            if matches!(stmt, Stmt::Use { .. }) {
+                                hoisted.push(stmt.clone());
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                        stmts.extend(hoisted);
+                    }
+                    *body = tail_stmts;
+                }
+                Stmt::RoleDecl { body, .. } => *body = tail_stmts,
                 _ => {}
             }
             stmts.push(decl);
