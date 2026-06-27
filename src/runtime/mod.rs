@@ -5471,10 +5471,14 @@ impl Interpreter {
     }
 
     pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
-        self.var_dynamic_flags
-            .get(Self::normalize_var_meta_name(name))
-            .copied()
-            .unwrap_or(false)
+        let bare = Self::normalize_var_meta_name(name);
+        // The implicit special variables `$_`, `$/`, `$!` are dynamic by nature
+        // (no `*` twigil, but `.VAR.dynamic` is True and they are visible through
+        // CALLER::), so report them as dynamic even without an explicit flag.
+        if matches!(bare, "_" | "/" | "!") {
+            return true;
+        }
+        self.var_dynamic_flags.get(bare).copied().unwrap_or(false)
     }
 
     pub(crate) fn push_caller_env(&mut self) {
