@@ -743,6 +743,18 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             );
             Ok(Value::capture(vec![], named))
         }
+        // Version.Capture throws X::Cannot::Capture
+        Value::Version { .. } => Err(cannot_capture("Version")),
+        // Signature/Failure .Capture throw X::Cannot::Capture (both the type
+        // object and an instance).
+        Value::Instance { class_name, .. }
+            if matches!(class_name.resolve().as_str(), "Signature" | "Failure") =>
+        {
+            Err(cannot_capture(&class_name.resolve()))
+        }
+        Value::Package(name) if matches!(name.resolve().as_str(), "Signature" | "Failure") => {
+            Err(cannot_capture(&name.resolve()))
+        }
         // Pair.Capture → \(:key($pair.key), :value($pair.value))
         Value::Pair(k, v) => {
             let mut named = HashMap::new();
