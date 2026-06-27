@@ -548,7 +548,7 @@ impl Interpreter {
             }
             // Convert fail errors to Failure values (same as closure call path)
             if let Err(e) = &result
-                && e.is_fail
+                && e.is_fail()
             {
                 return Ok(self.fail_error_to_failure_value(e));
             }

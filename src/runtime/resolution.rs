@@ -1473,7 +1473,7 @@ impl Interpreter {
                     };
                     if matches_frame {
                         e.is_leave = false;
-                        e.is_last = false;
+                        e.control = None;
                         if e.return_value.is_none() {
                             e.return_value = Some(Value::Nil);
                         }
@@ -1603,7 +1603,7 @@ impl Interpreter {
             self.env = merged;
             self.restore_readonly_vars(saved_readonly);
             if let Err(e) = &result
-                && e.is_fail
+                && e.is_fail()
             {
                 return Ok(self.fail_error_to_failure_value(e));
             }
@@ -2228,7 +2228,7 @@ impl Interpreter {
                             }
                         }
                         Err(e) if e.is_next() => {}
-                        Err(e) if e.is_last => break,
+                        Err(e) if e.is_last() => break,
                         Err(mut e) => {
                             // A `return` inside the map block targets the routine
                             // that lexically encloses the block. Stamp the signal
@@ -2472,7 +2472,7 @@ impl Interpreter {
                                 list_items[i] = mutated;
                             }
                         }
-                        Err(e) if e.is_last => {
+                        Err(e) if e.is_last() => {
                             if arity == 1
                                 && let Some(mutated) = vm.env().get(topic_key).cloned()
                             {
@@ -2662,7 +2662,7 @@ impl Interpreter {
                             }
                             Err(e) if e.is_redo() => continue 'body_redo,
                             Err(e) if e.is_next() => break 'body_redo,
-                            Err(e) if e.is_last => {
+                            Err(e) if e.is_last() => {
                                 stop = true;
                                 break 'body_redo;
                             }

@@ -603,7 +603,7 @@ impl Interpreter {
                     result = Ok(());
                     break;
                 }
-                Err(e) if e.is_fail => {
+                Err(e) if e.is_fail() => {
                     fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));
@@ -1215,7 +1215,7 @@ impl Interpreter {
                     result = Ok(());
                     break;
                 }
-                Err(e) if e.is_fail => {
+                Err(e) if e.is_fail() => {
                     fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));
@@ -1620,7 +1620,7 @@ impl Interpreter {
                     result = Ok(());
                     break;
                 }
-                Err(e) if e.is_fail => {
+                Err(e) if e.is_fail() => {
                     fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));
@@ -1982,7 +1982,7 @@ impl Interpreter {
                     };
                     if matches_frame {
                         e.is_leave = false;
-                        e.is_last = false;
+                        e.control = None;
                         let ret_val = e.return_value.unwrap_or(Value::Nil);
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
@@ -2013,7 +2013,7 @@ impl Interpreter {
                     result = Ok(());
                     break;
                 }
-                Err(e) if e.is_fail => {
+                Err(e) if e.is_fail() => {
                     // fail() — restore let saves and return a Failure value
                     fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);

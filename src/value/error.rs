@@ -64,6 +64,14 @@ pub enum Control {
     ReactDone,
     /// `warn` — emit a warning (resumable); message in `RuntimeError::message`.
     Warn,
+    /// `last` — break out of the enclosing loop. (A `LEAVE`/routine unwind also
+    /// sets the separate `is_leave` flag on top of this.)
+    Last,
+    /// `fail` — produce a Failure (see also `fail_handled`).
+    Fail,
+    /// A user `X::Control`-doing exception thrown as a control signal so CONTROL
+    /// blocks (not CATCH) handle it.
+    Done,
 }
 
 #[derive(Debug)]
@@ -79,12 +87,14 @@ pub struct RuntimeError {
     /// `is_*()` accessor methods. The remaining `is_*: bool` fields below carry
     /// signals not yet migrated to the enum (later slices).
     pub control: Option<Control>,
-    pub is_last: bool,
-    pub is_fail: bool,
-    /// When true, the Failure produced from this fail error should be marked as handled.
-    /// Set when UNDO phasers run in response to the fail.
+    /// When true, the Failure produced from a `Control::Fail` error should be
+    /// marked as handled. Set when UNDO phasers run in response to the fail.
+    /// (A modifier on `Control::Fail`, kept as a separate flag.)
     pub fail_handled: bool,
-    pub is_done: bool,
+    /// A `LEAVE`/routine unwind sets this *in addition to* `Control::Last` (it
+    /// breaks loops like `last` but also targets a routine frame via
+    /// `leave_callable_id`/`leave_routine`/`label`), so it cannot live in the
+    /// single-signal `control` enum and stays a separate flag.
     pub is_leave: bool,
     pub label: Option<String>,
     pub leave_callable_id: Option<u64>,
@@ -122,10 +132,7 @@ impl RuntimeError {
             hint: None,
             return_value: None,
             control: None,
-            is_last: false,
-            is_fail: false,
             fail_handled: false,
-            is_done: false,
             is_leave: false,
             label: None,
             leave_callable_id: None,
@@ -180,6 +187,18 @@ impl RuntimeError {
     /// `warn` control signal (resumable warning).
     pub(crate) fn is_warn(&self) -> bool {
         self.control == Some(Control::Warn)
+    }
+    /// `last` control signal (break out of the enclosing loop).
+    pub(crate) fn is_last(&self) -> bool {
+        self.control == Some(Control::Last)
+    }
+    /// `fail` control signal (produces a Failure).
+    pub(crate) fn is_fail(&self) -> bool {
+        self.control == Some(Control::Fail)
+    }
+    /// User `X::Control`-doing exception thrown as a control signal.
+    pub(crate) fn is_done(&self) -> bool {
+        self.control == Some(Control::Done)
     }
 
     /// Check if this error represents an X::CompUnit::UnsatisfiedDependency error.
@@ -248,10 +267,7 @@ impl RuntimeError {
             hint: None,
             return_value: None,
             control: None,
-            is_last: false,
-            is_fail: false,
             fail_handled: false,
-            is_done: false,
             is_leave: false,
             label: None,
             leave_callable_id: None,
@@ -266,7 +282,7 @@ impl RuntimeError {
     pub(crate) fn last_signal() -> Self {
         Self {
             message: "X::ControlFlow".to_string(),
-            is_last: true,
+            control: Some(Control::Last),
             ..Self::new("")
         }
     }

@@ -613,7 +613,7 @@ impl Interpreter {
                 // Classes doing X::Control throw as control exceptions so
                 // CONTROL blocks catch them instead of CATCH.
                 if does_x_control {
-                    err.is_done = true;
+                    err.control = Some(crate::value::Control::Done);
                 }
                 // Throwing/rethrowing a CX::Warn re-raises it as a warn
                 // signal so the default handler writes to stderr and

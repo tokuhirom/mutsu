@@ -291,7 +291,7 @@ impl Interpreter {
             };
             for item in items {
                 if let Err(err) = run_capture(self, callback.clone(), vec![item], last_value) {
-                    if err.is_react_done() || err.is_last {
+                    if err.is_react_done() || err.is_last() {
                         break 'replay;
                     }
                     if err.is_next() || err.is_redo() {

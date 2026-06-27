@@ -31,7 +31,9 @@ impl Interpreter {
     ) -> RuntimeError {
         if matches!(value, Value::Nil) {
             let mut err = RuntimeError::new(default_message);
-            err.is_fail = is_fail;
+            if is_fail {
+                err.control = Some(crate::value::Control::Fail);
+            }
             return err;
         }
 
@@ -62,7 +64,9 @@ impl Interpreter {
         };
 
         let mut err = RuntimeError::new(&msg);
-        err.is_fail = is_fail;
+        if is_fail {
+            err.control = Some(crate::value::Control::Fail);
+        }
         if let Value::Instance { class_name, .. } = value {
             let cn = class_name.resolve();
             let is_exception = cn == "Exception"
@@ -144,7 +148,7 @@ impl Interpreter {
             return Err(self.runtime_error_from_die_value(&current, "Failed", true));
         }
         let mut err = RuntimeError::new("Failed");
-        err.is_fail = true;
+        err.control = Some(crate::value::Control::Fail);
         Err(err)
     }
 

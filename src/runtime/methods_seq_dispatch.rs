@@ -88,7 +88,7 @@ impl Interpreter {
                     }
                     Err(e) if e.is_redo() && label_matches(&e.label) => continue 'body_redo,
                     Err(e) if e.is_next() && label_matches(&e.label) => break 'body_redo,
-                    Err(e) if e.is_last && label_matches(&e.label) => break 'from_loop,
+                    Err(e) if e.is_last() && label_matches(&e.label) => break 'from_loop,
                     Err(e) => return Err(e),
                 }
             }
@@ -98,7 +98,7 @@ impl Interpreter {
                     Ok(_) => {}
                     Err(e) if e.is_next() && label_matches(&e.label) => continue 'from_loop,
                     Err(e) if e.is_redo() && label_matches(&e.label) => continue 'from_loop,
-                    Err(e) if e.is_last && label_matches(&e.label) => break 'from_loop,
+                    Err(e) if e.is_last() && label_matches(&e.label) => break 'from_loop,
                     Err(e) => return Err(e),
                 }
             }
