@@ -789,6 +789,19 @@ impl Interpreter {
             ref r if r.is_range() => crate::runtime::utils::value_to_list(r),
             other => vec![other],
         };
+        // Resolve WhateverCode indices (e.g. `@a[*-1]:k`) by applying them to the
+        // target's length, exactly as the plain-value subscript path does.
+        if indices.iter().any(|i| matches!(i, Value::Sub(..))) {
+            let target_len = match &target {
+                Value::Array(items, ..) => items.len() as i64,
+                _ => 0,
+            };
+            for idx in indices.iter_mut() {
+                if matches!(idx, Value::Sub(..)) {
+                    *idx = self.call_sub_value(idx.clone(), vec![Value::Int(target_len)], false)?;
+                }
+            }
+        }
         if matches!(indices.first(), Some(Value::Whatever))
             || matches!(indices.first(), Some(Value::Num(f)) if f.is_infinite() && *f > 0.0)
         {
@@ -815,13 +828,26 @@ impl Interpreter {
                         Value::Hash(map) => Some(map),
                         _ => None,
                     });
-                // Get container default value (from `is default(...)` trait)
-                let container_default = var_name
-                    .as_ref()
-                    .and_then(|name| self.var_default(name).cloned());
-                let type_constraint_default = var_name
-                    .as_ref()
-                    .and_then(|name| self.var_type_constraint(name))
+                // The missing-element default comes from the array's *element
+                // type*. Read it from the container value itself (embedded
+                // metadata / `is default`) FIRST so it survives rebinding — e.g.
+                // `for $@s, Str -> @a { @a[11]:!v }` where the loop variable has
+                // no type constraint but the bound array still carries `.of=Str`.
+                // Fall back to the declared variable's default/type, then Any.
+                let container_default = self.container_default(&target).cloned().or_else(|| {
+                    var_name
+                        .as_ref()
+                        .and_then(|name| self.var_default(name).cloned())
+                });
+                let type_constraint_default = self
+                    .container_type_metadata(&target)
+                    .map(|info| info.value_type)
+                    .filter(|t| !t.is_empty())
+                    .or_else(|| {
+                        var_name
+                            .as_ref()
+                            .and_then(|name| self.var_type_constraint(name))
+                    })
                     .map(|t| Value::Package(Symbol::intern(&t)));
                 let missing_value = container_default
                     .or(type_constraint_default)
