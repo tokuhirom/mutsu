@@ -214,12 +214,15 @@ impl Interpreter {
         if Self::loop_var_unchanged(&current_topic, &items[actual_idx]) {
             return;
         }
-        let mut updated = items.to_vec();
-        updated[actual_idx] = current_topic;
-        let updated_value = Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(updated)),
-            kind,
-        );
+        // Clone the original ArrayData (carrying its element-type / declared-type
+        // / shape / default metadata) and replace only the mutated element, so a
+        // mutating `for @a { $_++ }` over a native or shaped array preserves
+        // `array[int]` typing and the shape (`ArrayData::new` would drop them,
+        // turning `array[int]` into a bare `Array` and breaking later `.WHAT`,
+        // `.raku`, and shaped `:delete`-dies behaviour).
+        let mut new_data = (*items).clone();
+        new_data.items[actual_idx] = current_topic;
+        let updated_value = Value::Array(std::sync::Arc::new(new_data), kind);
         self.write_back_container_source(code, source, &raw_source, updated_value);
     }
 }

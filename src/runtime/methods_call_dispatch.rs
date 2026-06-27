@@ -2489,19 +2489,55 @@ impl Interpreter {
             && info.value_type != "Any"
             && info.value_type != "Mu"
         {
-            let raku_str = crate::builtins::methods_0arg::raku_repr::raku_value(&target);
             let type_prefix = if let Some(ref dt) = info.declared_type {
                 dt.clone()
             } else {
                 format!("array[{}]", info.value_type)
             };
-            // Replace the "Array.new(" prefix with the typed prefix
-            let result = if let Some(rest) = raku_str.strip_prefix("Array.new(") {
-                format!("{}.new({}", type_prefix, rest)
+            // Rakudo renders a shaped array as
+            //   array[int].new(:shape(4,), [1, 2, 3, 4])           # 1-D
+            //   array[int].new(:shape(2, 2), [1, 2], [3, 4])       # 2-D
+            // i.e. `:shape(<dims>)` (a single dim gets a trailing comma, being a
+            // 1-element list), then the data: the whole bracket for 1-D, or each
+            // first-dimension slice as a separate positional arg for N-D.
+            fn render_data(v: &Value) -> String {
+                if let Value::Array(items, _) = v {
+                    let inner = items
+                        .iter()
+                        .map(render_data)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("[{}]", inner)
+                } else {
+                    crate::builtins::methods_0arg::raku_repr::raku_value(v)
+                }
+            }
+            let shape = Self::infer_array_shape(&target).unwrap_or_default();
+            let shape_str = if shape.len() == 1 {
+                format!("{},", shape[0])
             } else {
-                raku_str
+                shape
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             };
-            return Ok(Value::str(result));
+            let Value::Array(items, _) = &target else {
+                unreachable!()
+            };
+            let data = if shape.len() <= 1 {
+                render_data(&target)
+            } else {
+                items
+                    .iter()
+                    .map(render_data)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Ok(Value::str(format!(
+                "{}.new(:shape({}), {})",
+                type_prefix, shape_str, data
+            )));
         }
         // .raku/.perl on constrained regular Array (e.g. Array[Int])
         if matches!(method, "raku" | "perl")
