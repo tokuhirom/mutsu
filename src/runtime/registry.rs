@@ -119,8 +119,11 @@ pub(crate) struct Registry {
     pub(crate) our_scoped_functions: HashMap<Symbol, FunctionDef>,
     /// `proto sub` markers (multi proto stubs): name -> proto `FunctionDef`.
     pub(crate) proto_functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
-    /// Grammar token/rule definitions: name -> [overloads].
-    pub(crate) token_defs: HashMap<Symbol, Vec<FunctionDef>>,
+    /// Grammar token/rule definitions: name -> [overloads]. Each overload is
+    /// held behind `Arc` so the whole-map snapshot/restore clones (and the
+    /// per-resolution candidate merges) are O(n) refcount bumps rather than
+    /// deep clones of the token bodies.
+    pub(crate) token_defs: HashMap<Symbol, Vec<std::sync::Arc<FunctionDef>>>,
     /// `proto sub` declaration markers (existence set).
     pub(crate) proto_subs: HashSet<String>,
     /// `proto token`/`proto rule` declaration markers (existence set).

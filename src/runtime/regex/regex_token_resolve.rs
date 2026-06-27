@@ -3,7 +3,7 @@ use super::regex_helpers::NamedRegexLookupSpec;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    pub(super) fn resolve_token_defs_in_pkg(&self, name: &str, pkg: &str) -> Vec<FunctionDef> {
+    pub(super) fn resolve_token_defs_in_pkg(&self, name: &str, pkg: &str) -> Vec<Arc<FunctionDef>> {
         let mut out = Vec::new();
         if name.contains("::") {
             if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(name)) {

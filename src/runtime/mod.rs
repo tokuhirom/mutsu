@@ -1490,7 +1490,7 @@ pub(crate) struct SubtestContext {
 pub(crate) type RoutineRegistrySnapshot = (
     HashMap<Symbol, Arc<FunctionDef>>,
     HashMap<Symbol, Arc<FunctionDef>>,
-    HashMap<Symbol, Vec<FunctionDef>>,
+    HashMap<Symbol, Vec<Arc<FunctionDef>>>,
     HashSet<String>,
     HashSet<String>,
     HashSet<Symbol>,
