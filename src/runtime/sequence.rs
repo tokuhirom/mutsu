@@ -286,7 +286,7 @@ impl Interpreter {
                     match exec_result {
                         Ok(v) => v,
                         Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
-                        Err(e) if e.is_last => return Ok(None),
+                        Err(e) if e.is_last() => return Ok(None),
                         Err(_e) if suppress_generator_error => return Ok(None),
                         Err(e) => return Err(e),
                     }

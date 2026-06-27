@@ -1064,7 +1064,7 @@ impl Interpreter {
                 if method_def.is_submethod
                     && let Some(mut err) = self.failure_to_runtime_error_if_unhandled(&v)
                 {
-                    err.is_fail = true;
+                    err.control = Some(crate::value::Control::Fail);
                     return Err(err);
                 }
                 // Read the committed attribute map from the live cell of `self`,

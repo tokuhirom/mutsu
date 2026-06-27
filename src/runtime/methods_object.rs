@@ -4074,7 +4074,7 @@ impl Interpreter {
                             Ok((_v, updated)) => {
                                 attrs = updated;
                             }
-                            Err(err) if err.is_fail => {
+                            Err(err) if err.is_fail() => {
                                 // fail in BUILD: return a Failure wrapping the exception
                                 let ex = if let Some(exception) = err.exception {
                                     *exception

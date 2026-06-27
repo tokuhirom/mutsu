@@ -283,7 +283,9 @@ impl Interpreter {
             );
             let exception = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
             let mut err = RuntimeError::new(default_message);
-            err.is_fail = is_fail;
+            if is_fail {
+                err.control = Some(crate::value::Control::Fail);
+            }
             err.exception = Some(Box::new(exception));
             return err;
         }
@@ -314,7 +316,9 @@ impl Interpreter {
         };
 
         let mut err = RuntimeError::new(&message);
-        err.is_fail = is_fail;
+        if is_fail {
+            err.control = Some(crate::value::Control::Fail);
+        }
         if let Value::Instance { class_name, .. } = &value {
             let cn = class_name.resolve();
             let is_exception = cn == "Exception"

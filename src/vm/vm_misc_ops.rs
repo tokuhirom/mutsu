@@ -2995,7 +2995,7 @@ impl Interpreter {
         if ran_undo
             && undo_start < post_start
             && let Err(ref mut e) = body_result
-            && e.is_fail
+            && e.is_fail()
         {
             e.fail_handled = true;
         }
@@ -3190,13 +3190,13 @@ impl Interpreter {
     }
 
     pub(crate) fn is_exceptional_block_exit(err: &RuntimeError) -> bool {
-        if err.is_fail {
+        if err.is_fail() {
             return true;
         }
         if err.return_value.is_some() {
             return false;
         }
-        !(err.is_last
+        !(err.is_last()
             || err.is_next()
             || err.is_redo()
             || err.is_goto()
@@ -3305,7 +3305,7 @@ impl Interpreter {
                     );
                     break Ok(());
                 }
-                Err(e) if e.is_last && has_label && Self::label_matches(&e.label, &label) => {
+                Err(e) if e.is_last() && has_label && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
                     self.stack.push(
                         e.return_value

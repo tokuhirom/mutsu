@@ -399,7 +399,7 @@ impl Interpreter {
                                     }
                                     Err(e) if e.is_redo() => continue 'redo_item,
                                     Err(e) if e.is_next() => break 'redo_item,
-                                    Err(e) if e.is_last => {
+                                    Err(e) if e.is_last() => {
                                         return grep_adverb.transform_result(
                                             Value::array(result),
                                             &result_indices,

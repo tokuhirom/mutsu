@@ -1050,7 +1050,7 @@ impl Interpreter {
                     };
                     let produced: Vec<Value> = match applied {
                         Ok(p) => p,
-                        Err(e) if e.is_last => {
+                        Err(e) if e.is_last() => {
                             // `last`: terminate the sequence, current element excluded.
                             let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
                             spec.done = true;

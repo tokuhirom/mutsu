@@ -88,12 +88,12 @@ impl Interpreter {
         // User-defined classes doing X::Control carry their original
         // exception instance. Surface it directly so CONTROL blocks see the
         // real type rather than a generic CX::Done wrapper.
-        if signal.is_done
+        if signal.is_done()
             && let Some(ex) = signal.exception.as_ref()
         {
             return Some((**ex).clone());
         }
-        let class_name = if signal.is_last {
+        let class_name = if signal.is_last() {
             Some("CX::Last")
         } else if signal.is_next() {
             Some("CX::Next")
@@ -109,7 +109,7 @@ impl Interpreter {
             Some("CX::Take")
         } else if signal.is_emit() {
             Some("CX::Emit")
-        } else if signal.is_done || signal.is_react_done() {
+        } else if signal.is_done() || signal.is_react_done() {
             Some("CX::Done")
         } else if signal.is_return() {
             Some("CX::Return")
@@ -324,7 +324,7 @@ impl Interpreter {
                         }
                         break 'while_loop;
                     }
-                    Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
                         break 'while_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
@@ -1040,7 +1040,7 @@ impl Interpreter {
                         }
                         break 'for_loop;
                     }
-                    Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
@@ -1407,7 +1407,7 @@ impl Interpreter {
                         }
                         break 'for_loop;
                     }
-                    Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
                         break 'for_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
@@ -1631,7 +1631,7 @@ impl Interpreter {
                     {
                         break 'for_loop;
                     }
-                    Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
                         break 'for_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
@@ -1845,7 +1845,7 @@ impl Interpreter {
                         }
                         continue 'body_redo;
                     }
-                    Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
                         break 'for_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
@@ -2567,7 +2567,7 @@ impl Interpreter {
                         }
                         break 'c_loop;
                     }
-                    Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
+                    Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
                         break 'c_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
@@ -2971,7 +2971,7 @@ impl Interpreter {
                         }
                         break 'repeat_loop;
                     }
-                    Err(e) if e.is_last && Self::label_matches(&e.label, label) => {
+                    Err(e) if e.is_last() && Self::label_matches(&e.label, label) => {
                         break 'repeat_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, label) => {
@@ -3151,7 +3151,7 @@ impl Interpreter {
             // Control signals (warn, last, next, redo, etc.) without a CONTROL
             // block must propagate up — `try` alone does not catch them.
             Err(e)
-                if (e.is_last
+                if (e.is_last()
                     || e.is_next()
                     || e.is_redo()
                     || e.is_proceed()
@@ -3159,7 +3159,7 @@ impl Interpreter {
                     || e.is_warn()
                     || e.is_take()
                     || e.is_emit()
-                    || e.is_done
+                    || e.is_done()
                     || e.is_react_done())
                     && control_begin >= end =>
             {
@@ -3167,7 +3167,7 @@ impl Interpreter {
                 Err(e)
             }
             Err(e)
-                if (e.is_last
+                if (e.is_last()
                     || e.is_next()
                     || e.is_redo()
                     || e.is_proceed()
@@ -3175,7 +3175,7 @@ impl Interpreter {
                     || e.is_warn()
                     || e.is_take()
                     || e.is_emit()
-                    || e.is_done
+                    || e.is_done()
                     || e.is_react_done())
                     && control_begin < end =>
             {
@@ -3267,7 +3267,7 @@ impl Interpreter {
                                     return Ok(());
                                 }
                                 Err(new_err)
-                                    if new_err.is_last
+                                    if new_err.is_last()
                                         || new_err.is_next()
                                         || new_err.is_redo()
                                         || new_err.is_proceed()
@@ -3275,7 +3275,7 @@ impl Interpreter {
                                         || new_err.is_warn()
                                         || new_err.is_take()
                                         || new_err.is_emit()
-                                        || new_err.is_done
+                                        || new_err.is_done()
                                         || new_err.is_react_done() =>
                                 {
                                     pending_err = new_err;

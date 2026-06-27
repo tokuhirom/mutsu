@@ -105,7 +105,7 @@ impl Interpreter {
             Ok(_) => Ok(false),
             Err(e) if e.is_react_done() => Ok(true),
             Err(e) if e.is_next() => Ok(false),
-            Err(e) if e.is_last => {
+            Err(e) if e.is_last() => {
                 for cb in sub.last_callbacks.clone() {
                     match self.call_react_callback(&cb, vec![value.clone()]) {
                         Err(le) if le.is_react_done() => {
@@ -619,7 +619,7 @@ impl Interpreter {
                                 // supply: keep the promise with the last emitted
                                 // value immediately rather than spinning to the
                                 // deadline.
-                                if err.is_react_done() || err.is_last {
+                                if err.is_react_done() || err.is_last() {
                                     promise.keep(last_value.clone(), String::new(), String::new());
                                     return Ok(());
                                 }
@@ -945,7 +945,7 @@ impl Interpreter {
                     Ok(_) => {}
                     Err(e) if e.is_react_done() => return Ok(true),
                     Err(e) if e.is_next() => continue,
-                    Err(e) if e.is_last => {
+                    Err(e) if e.is_last() => {
                         last_topic = Some(v.clone());
                         break;
                     }
