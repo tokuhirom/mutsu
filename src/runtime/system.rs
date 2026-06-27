@@ -734,7 +734,7 @@ impl Interpreter {
         Self::suggest_from_candidates(name, &candidates)
     }
 
-    fn suggest_from_candidates(name: &str, candidates: &[String]) -> Vec<String> {
+    pub(crate) fn suggest_from_candidates(name: &str, candidates: &[String]) -> Vec<String> {
         use crate::runtime::did_you_mean::levenshtein_distance;
         // Rakudo accepts a candidate whose Levenshtein distance from the typo
         // is at most `chars div 3` (e.g. a 4-char name tolerates 1 edit, a

@@ -23,7 +23,15 @@ fn collect_declared_type_names(
                 out.insert(name.resolve().to_string());
                 collect_declared_type_names(body, out, packages, classes);
             }
-            Stmt::EnumDecl { name, .. } | Stmt::SubsetDecl { name, .. } => {
+            Stmt::EnumDecl { name, variants, .. } => {
+                out.insert(name.resolve().to_string());
+                // Enum values are valid value-params (`sub f(SomeEnumValue)`),
+                // and serve as suggestions for a mistyped one.
+                for (vname, _) in variants {
+                    out.insert(vname.clone());
+                }
+            }
+            Stmt::SubsetDecl { name, .. } => {
                 out.insert(name.resolve().to_string());
             }
             Stmt::Package {

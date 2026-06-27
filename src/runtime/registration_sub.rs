@@ -180,10 +180,11 @@ impl Interpreter {
                 );
                 return Err(RuntimeError::typed("X::NotParametric", attrs));
             }
-            // Skip synthetic params (`__type_only__`, `__literal__`): a bare
-            // `(Inf)` / `(True)` term param smartmatches a value, so its
-            // "constraint" is not necessarily a type name.
-            if pd.name.starts_with("__") {
+            // A genuine literal-value param (`(42)`, `("foo")`) smartmatches a
+            // value, so its "constraint" is not a type name and must not be
+            // validated. A bare *type-only* param `(TypeName)` IS validated
+            // below (an undeclared one is X::Parameter::InvalidType).
+            if pd.name.starts_with("__") && pd.name != "__type_only__" {
                 continue;
             }
             // Only a bare identifier (letters/digits/_/-) starting uppercase is
@@ -196,10 +197,15 @@ impl Interpreter {
             {
                 continue;
             }
+            // Bare value-params are not type names and must not be rejected:
+            // uppercase value-terms (`Inf`, `NaN`, `True`, `False`) and built-in
+            // enum values (`LittleEndian`, `Less`, ... — kept in the global base).
             if captures.contains(tc)
                 || declared_types.contains(tc)
                 || self.is_resolvable_type(tc)
                 || self.has_type(tc)
+                || matches!(tc, "Inf" | "NaN" | "True" | "False" | "Empty")
+                || crate::env::global_base_contains(tc)
             {
                 continue;
             }
@@ -217,9 +223,19 @@ impl Interpreter {
                 attrs.insert("message".to_string(), Value::str(msg));
                 return Err(RuntimeError::typed("X::Parameter::BadType", attrs));
             }
-            let suggestions = self.suggest_type_names(tc);
+            let mut suggestions = self.suggest_type_names(tc);
+            // Also suggest type/enum-value names declared in this same
+            // compilation unit; they are not yet registered at this pre-pass
+            // stage, so `suggest_type_names` (which reads the runtime registry)
+            // cannot see them.
+            let declared_vec: Vec<String> = declared_types.iter().cloned().collect();
+            for s in Self::suggest_from_candidates(tc, &declared_vec) {
+                if !suggestions.contains(&s) {
+                    suggestions.push(s);
+                }
+            }
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("type".to_string(), Value::str(tc.to_string()));
+            attrs.insert("typename".to_string(), Value::str(tc.to_string()));
             attrs.insert(
                 "suggestions".to_string(),
                 Value::array(suggestions.iter().cloned().map(Value::str).collect()),
