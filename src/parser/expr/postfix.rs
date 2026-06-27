@@ -1029,6 +1029,17 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
                 label: None,
             }
         }
+        // A parenthesized list of lvalues (`($x, $y) .= reverse`) applies the
+        // method to the WHOLE list and assigns the result back element-wise
+        // (`($x, $y) = ($x, $y).reverse`), not per-element.
+        Expr::ArrayLiteral(_) => {
+            let lhs = target.clone();
+            let value = method_call_fn(target);
+            Expr::Call {
+                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                args: vec![lhs, Expr::ArrayLiteral(Vec::new()), value],
+            }
+        }
         _ => method_call_fn(target),
     }
 }
