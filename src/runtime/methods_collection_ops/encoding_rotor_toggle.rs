@@ -169,11 +169,12 @@ impl Interpreter {
             match spec {
                 Value::Int(n) => {
                     let count = *n;
-                    // A batching sublist length must be at least 1; 0 (or negative)
-                    // is out of range. Rejecting 0 also prevents an infinite loop:
-                    // a Fixed(0) count never advances the cursor (raku throws
-                    // X::OutOfRange here rather than hanging).
-                    if count < 1 {
+                    // A negative batching sublist length is out of range. A length
+                    // of 0 is allowed: it yields an empty sublist `()` (roast
+                    // S32-list/rotor.t exercises `(0..5).rotor(0, 1, *)`). The
+                    // infinite-loop case (a full spec cycle that never advances the
+                    // cursor, e.g. a lone `rotor(0)`) is caught in the loop below.
+                    if count < 0 {
                         return Err(Self::rotor_count_out_of_range(count));
                     }
                     rotor_specs.push(RotorSpec {
@@ -282,22 +283,6 @@ impl Interpreter {
             }
         }
 
-        // A batching sublist length must be >= 1. Catch any zero count that the
-        // Int guard above did not (Num/Rat/Pair/coercion produce `Fixed(0)`, and
-        // a `Range` spec such as `0..2` yields a 0 count) — a zero-length batch
-        // never advances the cursor and would otherwise loop forever.
-        for s in &rotor_specs {
-            match &s.count {
-                RotorCount::Fixed(0) => return Err(Self::rotor_count_out_of_range(0)),
-                RotorCount::Range(counts) => {
-                    if let Some(&c) = counts.iter().find(|&&c| c < 1) {
-                        return Err(Self::rotor_count_out_of_range(c));
-                    }
-                }
-                _ => {}
-            }
-        }
-
         if rotor_specs.is_empty() {
             return Ok(Value::Seq(Arc::new(Vec::new())));
         }
@@ -322,10 +307,24 @@ impl Interpreter {
         let mut pos = 0usize;
         let mut spec_idx = 0usize;
         let mut range_sub_idx = 0usize; // for Range specs
+        // Cursor position at the start of the current spec cycle. If a full pass
+        // through every spec advances the cursor by zero (e.g. a lone `rotor(0)`,
+        // `rotor(0, 0)`, or `rotor(2 => -2)` where count+gap == 0 for every
+        // spec), the loop would never terminate — stop instead of hanging. A
+        // mixed cycle that does advance somewhere (`rotor(0, 1, *)`) is fine.
+        let mut cycle_start_pos = pos;
 
         loop {
             if pos >= items.len() {
                 break;
+            }
+
+            // Detect a non-advancing full cycle at each cycle boundary.
+            if spec_idx > 0 && spec_idx.is_multiple_of(rotor_specs.len()) {
+                if pos == cycle_start_pos {
+                    break;
+                }
+                cycle_start_pos = pos;
             }
 
             let spec = &rotor_specs[spec_idx % rotor_specs.len()];
