@@ -1279,6 +1279,7 @@ roast/integration/failure-and-callsame.t
 roast/integration/lexical-array-in-inner-block.t
 roast/integration/lexicals-and-attributes.t
 roast/integration/method-calls-and-instantiation.t
+roast/integration/no-indirect-new.t
 roast/integration/packages.t
 roast/integration/pair-in-array.t
 roast/integration/passing-pair-class-to-sub.t
