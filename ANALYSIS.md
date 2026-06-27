@@ -72,70 +72,37 @@ Rust panic についても、catchable なものはメイン/worker の両スレ
 
 ### 1.1 tree-walk 実行の残存 — ユーザコード本体は撤去済み
 
-CP-3 collapse で VM と Interpreter の二重構造は消えた。
-さらに §B キャンペーンで、**ユーザメソッド本体を tree-walk で実行する経路も撤去済み**。
-`run_instance_method_resolved` にあった非 delegation arm
-（`run_block(method_def.body)` の約 470 行）が削除され、
-**ユーザメソッド/サブ本体の実行エンジンは bytecode VM に一本化された**。
+CP-3 collapse で VM/Interpreter 二重構造が、§B キャンペーンで**ユーザメソッド本体の tree-walk 実行**
+（`run_instance_method_resolved` の非 delegation arm・~470 行）が撤去され、**ユーザコード本体の実行エンジンは
+bytecode VM に一本化済み**（詳細は news）。いま残る tree-walk は本体実行ではなく次の周辺処理だけ:
 
-いま残っている tree-walk は、「ユーザコード本体の実行」ではなく、次の周辺処理だけ:
-
-- **宣言登録** (`class`/`role`/`enum`/`sub`/`method` の `register_*_decl`) は依然 tree-walk で実行
-  (`Register*` opcode → `register_sub_decl` / `register_class_decl`)。クラスシステム・MRO・role 合成は
-  未コンパイル。ただしこれは**宣言の登録**であって本体実行ではない。
-  - **sub 登録の冪等化 + registry-Arc キャンペーン完了** (slice 1-8・詳細は [news/2026-06.md](news/2026-06.md)):
-    `my sub` 宣言ルーチンへ入るたびに `snapshot_routine_registry` が registry クローンで**全ルーチン body を
-    deep-clone** していた問題を、registry の全定義マップ (`functions`/`proto_functions`/grammar `token_defs`/
-    `our_scoped_functions`) を `Arc<FunctionDef>` 化し、コンパイル時 fingerprint
-    (`CompiledCode.sub_fingerprints`) による再登録冪等化 (`SubRegisterOutcome::{Installed, Unchanged}`) と
-    `(fingerprint, package)` キーの derive-once キャッシュ (`prepared_fn_defs`) を加えて解消。dispatch
-    resolution と `MultiDispatchEntry` も `Arc` 貫通。**どの registry クローン (snapshot/`clone_for_thread`/
-    EVAL/block-scope restore) でも `FunctionDef` body が deep-clone されなくなった。** 残る §1.1 課題は
-    メソッド dispatch の resolution caching のみ (下記)。
+- **宣言登録** (`class`/`role`/`enum`/`sub`/`method` の `register_*_decl`) は依然 tree-walk
+  (`Register*` opcode 経由)。クラスシステム・MRO・role 合成は未コンパイル。ただし本体実行ではなく登録処理。
+  registry クローンでの `FunctionDef` body deep-clone は **registry-Arc キャンペーン (slice 1-8) で解消済み**
+  （詳細は news）。
 - **メソッド dispatch の resolver オーバーヘッド**: multi/submethod や `samewith`/`nextsame` は
-  `run_instance_method` (resolve + frame setup) を**入口として**通る (本体は compiled)。`MUTSU_VM_STATS` の
-  `resolver-path method dispatches` カウンタはこの dispatch 入口数を測る (tree-walk 実行ではない)。
-  次の最適化は VM-native resolution caching (multi は #3684 で着手・`CallMethod` op が resolver を
-  経ずに直接 dispatch する拡張が残)。
-- **delegation forwarder** (`handles`) は `forward_resolved_delegation` で native に転送 (run_block なし)。
+  `run_instance_method` を**入口として**通る（本体は compiled）。残る最適化は VM-native resolution caching
+  （multi は #3684 で着手・`CallMethod` op が resolver を経ず直接 dispatch する拡張が残）。
+- **delegation forwarder** (`handles`) は `forward_resolved_delegation` で native 転送（run_block なし）。
 
-つまり、§B の本質課題だった
-「tree-walk **実行**を bytecode 化する」は達成済み。
-残りは宣言登録の bytecode 化と dispatch overhead の削減であり、
-どちらも性能改善や後片づけの話であって、ユーザコード本体の tree-walk 実行ではない。
+→ 残りは宣言登録の bytecode 化と dispatch overhead 削減で、いずれも性能/後片づけ。本体の tree-walk 実行ではない。
 
-### 1.2 二重変数ストア（`locals ↔ env`）— 単一権威ストア化で解消済み
+### 1.2 二重変数ストア（`locals ↔ env`）— 解消済み
 
-rev3 で「最大の設計負債」としていた `locals ↔ env` の二重ストアは、
-単一ストア化キャンペーンで解消済み。
-対象だったのは `sync_locals_from_env` / `ensure_locals_synced` / `env_dirty` による手動同期系。
-
-流れは次の通り:
-
-- reverse pull（`sync_locals_from_env`）撤去 #3354
-- cell-boxing 恒久 ON #3450
-- `env_dirty` 系の物理削除 #3455（604 行減）
-
-現在の整合性維持は **cell-boxing と precise writeback の 2 本だけ**。
-`locals` が単一権威で、`env` は派生ビューという整理になっている。
-設計メモは [docs/env-locals-coherence.md](docs/env-locals-coherence.md) と
-[docs/vm-single-store.md](docs/vm-single-store.md) を参照。
-残テーマは、§C の第一級コンテナ Phase 3 に吸収されている。
+rev3 で「最大の設計負債」としていた `locals ↔ env` 二重ストアは単一権威ストア化で解消済み
+（reverse pull 撤去 #3354 → cell-boxing 恒久 ON #3450 → `env_dirty` 物理削除 #3455）。いまは
+`locals` が単一権威・`env` は派生ビューで、整合性維持は cell-boxing と precise writeback の 2 本だけ。
+詳細は [docs/env-locals-coherence.md](docs/env-locals-coherence.md) /
+[docs/vm-single-store.md](docs/vm-single-store.md)。残テーマは無し（§C 第一級コンテナに吸収済み）。
 
 ### 1.3 クロージャの upvalue — **Phase 1 着手 (#3715)、残りは Track B 待ち**
 
 クロージャの自由変数は元々 `GetGlobal`/`GetArrayVar`/`GetHashVar` として env HashMap を引き、
 捕捉時に env をフラットコピーして `Value::Sub` に持たせていた (`vm/vm_register_ops.rs`)。
 
-**Phase 1 (#3715): index ベース upvalue 読み取りを導入。** `OpCode::GetUpvalue { index, name_idx }`
-を追加し、`CompiledCode::compute_upvalues` がクロージャ本体の read-only plain-scalar 自由変数の
-`GetGlobal` 読みを `GetUpvalue(i)` に書き換える (`upvalue_syms`)。`capture_upvalues` は**既に共有
-`ContainerRef` セルになっている捕捉だけ**を upvalue 配列に取り込み (それ以外は `None` → env を live
-で読む `name_idx` フォールバック)。`captures_env_by_name` (ForLoop/BlockScope/MakeGather/EVAL) や
-サブシグネチャ捕捉引数は除外。env を捕捉源として残すため**常に健全**。これで既セル化済み
-(mutated-escaping、`box_captured_lexicals` + Track C で cross-thread 対応) のキャプチャ読みが
-env HashMap を経由しなくなった。フレーム upvalue 配列は `Interpreter::upvalues` で locals と同様に
-保存/復元し、control-handler 経路ではクリアして env フォールバックさせる。
+**Phase 1 (#3715) 完了**: index ベース `OpCode::GetUpvalue` を追加し、**既に共有 `ContainerRef` セルに
+なっている捕捉だけ**を upvalue 配列で読む（それ以外は env を live で読む `name_idx` フォールバック＝常に健全）。
+既セル化済みキャプチャ読みが env HashMap を経由しなくなった（詳細は news）。
 
 **残り (Phase 2+): read-only 定数キャプチャの値化・同名修正・write 経路・env コピー撤去は Track B
 (§2.1) 待ち。** 試みて分かった健全性の壁:
@@ -194,16 +161,12 @@ env HashMap を経由しなくなった。フレーム upvalue 配列は `Interp
 ### 2.1 `unsafe` の "single-threaded 前提" コメント — **是正済み (コメント面)**
 
 Arc 中身を生ポインタ経由で書き換える in-place mutation は **単一の監査済みチョークポイント
-`value::aliased_mut::arc_contents_mut` に集約済み** (生 `Arc::as_ptr as *mut` キャストはこの 1 箇所のみ・
-コードベース内に他のアドホックキャストはゼロ)。各呼び出しは `Arc::strong_count` ガード付きで、ユニーク
-所有でなければ `Arc::make_mut` の COW パスに落ちる。陳腐化していた `// SAFETY: mutsu is single-threaded`
-コメント群 (env `set_var`/`remove_var`・hash 内部変異・`descend_container_ref`/`env_root_descended_mut`・
-`HyperSeq`/`RaceSeq` の "single-threaded implementation" doc) は**実際の不変条件を述べる正確な文面に是正済み**:
-env 変異は「別スレッドからの並行 env アクセスが UB」、aliased mutation は「ライブな別 borrow が無いこと＋
-クロスthread 共有は `aliased_mut.rs` 記載の既知ギャップ」。**残る本質的 unsoundness** は `aliased_mut.rs`
-が明記するとおり、生ポインタ書き込みの provenance 違反＋クロスthread 共有時のデータ競合で、これは
-**配列/ハッシュ要素を first-class `ContainerRef` セル化 (Track B) して interior mutability に置換する**ことで
-初めて解消する (高ブラスト半径・別 PR)。
+`value::aliased_mut::arc_contents_mut` に集約済み**（生 `Arc::as_ptr as *mut` キャストはこの 1 箇所のみ・
+`Arc::strong_count` ガード付きで非ユニーク時は `make_mut` COW に落ちる）。陳腐化していた
+`// SAFETY: mutsu is single-threaded` コメント群は**実際の不変条件を述べる正確な文面に是正済み**。
+**残る本質的 unsoundness** は `aliased_mut.rs` が明記するとおり、生ポインタ書き込みの provenance 違反＋
+クロスthread 共有時のデータ競合で、**配列/ハッシュ要素を first-class `ContainerRef` セル化 (Track B) して
+interior mutability に置換する**ことで初めて解消する（高ブラスト半径・別 PR）。
 
 #### Track B 着手前の設計メモ (2026-06-27 調査)
 
@@ -234,12 +197,9 @@ Track B は規模・難度ともに大きく、着手前に次を踏まえるこ
 ### 2.2 `RuntimeError` god-struct が制御フローをエラーチャネルで運ぶ — **bool→enum 分離は完了、残るは縮小・Box 化**
 
 `RuntimeError` (`value/error.rs`) は `return`/`last`/`next`/`take`/`emit`/... を `Result::Err` で
-実装しており、エラーと制御が同じチャネルを流れる。かつては
-`is_return/is_last/.../is_emit` の**制御フロー bool が 18 個超**同居していたが、§7-4 キャンペーン
-(#3701 slice 1 / #3706 slice 2 / slice 3) で**単一の `enum Control` (`value/error.rs`) へ統合済み**。
-いまは `control: Option<Control>` 1 フィールドが排他的な制御シグナルを保持し、各 `is_*()` は
-そこから派生する。残る独立 bool は `fail_handled` (Fail の修飾) と `is_leave`
-(Last と同時成立しうるので enum に畳めない) の 2 つだけで、これらは意図的に分離している。
+実装しており、エラーと制御が同じチャネルを流れる。かつて 18 個超同居していた**制御フロー bool**は
+§7-4 キャンペーン (#3701/#3706 ほか) で**単一の `enum Control` へ統合済み**（残る独立 bool は
+`fail_handled`/`is_leave` の 2 つだけ・意図的に分離）。
 
 **残課題**: `RuntimeError` 本体はまだ ~270 バイトと巨大で、`#[allow(clippy::result_large_err)]` が
 **23 箇所**に残る。縮小には (a) cold な routing フィールド
@@ -331,8 +291,9 @@ Track B は規模・難度ともに大きく、着手前に次を踏まえるこ
 - **500 行規約違反 — §7-8 sweep で最悪オフェンダーを一掃**（詳細は [news/2026-06.md](news/2026-06.md)）:
   500 行超のファイルを **cohesive サブモジュールへ純粋移設**（impl ブロック→兄弟ファイル / 自由関数→facade + サブディレクトリ）。
   最大級だった `vm/vm_var_assign_ops.rs`（7267）・`runtime/mod.rs`・`runtime/methods_object.rs`・`runtime/io.rs`・
-  `runtime/methods.rs`・`runtime/regex_parse.rs` 等をすべて分割し、`vm.rs` module root は 4872→**286** 行に。
-  **`1000 行超` ファイルが 82→~40 件台へ激減**。`500 行超` の総数は微減（giant な単一 `match`/dispatch メソッド
+  `runtime/methods.rs`・`runtime/regex_parse.rs` 等をすべて分割し、`vm.rs` module root は 4872→**286** 行・
+  `runtime/mod.rs` は 7179→**1932** 行に。**`1000 行超` ファイルが 82→~50 件弱へほぼ半減**。`500 行超` の
+  総数は微減（giant な単一 `match`/dispatch メソッド
   —`exec_one`・`call_method_with_values`・`register_class_decl`・`native_method_1arg` 等—が関数境界で分割できず
   residual 単独ファイルとして残るため）だが、これらは**意図的な indivisible 例外**。残: `ast.rs`・`registration_sub.rs`
   等の未分割ファイルと、giant dispatch メソッドの構造的分割（logic refactor を伴うため別軸）。
@@ -341,28 +302,20 @@ Track B は規模・難度ともに大きく、着手前に次を踏まえるこ
 
 ## 7. 推奨ロードマップ (優先度順)
 
-初版〜rev3 ロードマップの上位 (遅延リスト・並行ライブセル・メイン/worker panic 境界・regex 統合・
-`.Supply` クラッシュ・`Value` 縮小・**locals↔env 単一ストア化** #3455・**ユーザメソッド本体の tree-walk
-撤去** §B #3680) はすべて完了済み。残る課題:
+初版〜rev3 の上位課題（遅延リスト・並行ライブセル・メイン/worker panic 境界・regex 統合・`.Supply`
+クラッシュ・`Value` 縮小・**locals↔env 単一ストア化** #3455・**ユーザメソッド本体 tree-walk 撤去** §B #3680・
+**Interpreter 除去**＝bytecode VM への完全統合）はすべて完了済み（詳細は news）。残る課題のみ:
 
-| # | 項目 | 区分 | 効果 |
+| # | 残課題 | 区分 | 効果 |
 |---|------|------|------|
-| 1 | アロケーション abort ガードは **完了** (配列 autoviv・文字列リピート・shaped 宣言・`Buf.allocate`/`reallocate`・§5)。残: Supply worker panic の QUIT 伝播 | 堅牢性 (任意) | 低 |
-| 2 | クロージャ upvalue: **Phase 1 完了** (#3715・index ベース `GetUpvalue` で既セル化キャプチャの読みを env HashMap から外す・§1.3)。残 (read-only 値化/同名修正/write 経路/env コピー撤去) は **#6 Track B 待ち** (cross-thread セルの再入安全・健全化が前提) | 性能 + 正しさ | 中 |
-| 3 | ローカルスロットにレキシカルスコープを導入 (シャドウ衝突解消) | 正しさ + 設計 | 中 |
-| 4 | 制御フローを `RuntimeError` から `enum Control` へ分離は **完了** (§2.2・#3701/#3706 ほか)。残: `RuntimeError` 本体の縮小・Box 化で `result_large_err` 23 箇所を撤去 (高 churn・別 PR 群) | 設計 | 中 |
-| 5 | `.^methods`/`.can` の型別リスト: 確認済みドリフトは是正 (Str/Int/List・§4.1)。完全な実ディスパッチ表からの導出は arity-dispatch 非列挙のため別軸 | ドリフト解消 | 中 |
-| 6 | **Track B**: 陳腐化 `unsafe` コメント是正は完了。残: 配列・ハッシュ要素の `ContainerRef` 化で生ポインタ unsoundness を撤廃。**GC と統合＝ADR-0001 層3a (`Arc → Gc<T>` 一斉置換・cycle collector on Arc)。単独着手しない・Phase A 完了後。** 着手前設計メモは §2.1 (79 箇所・コア表現変更・再入デッドロック/perf の地雷・cross-thread 共有は `shared_vars`)。#2 upvalue Phase 2+ の前提 | 健全性 (UB) + 性能 | 中〜大 |
-| 7 | 宣言登録の bytecode 化: 冪等化 (**slice 1**) + **registry-Arc キャンペーン完了** (slice 2 `functions` / slice 3 dispatch resolution / slice 4 derive-once キャッシュ / slice 5 `MultiDispatchEntry` / slice 6 `proto_functions` / slice 7 `token_defs` / slice 8 `our_scoped_functions`)。**registry のどのクローンでも `FunctionDef` body は deep-clone されない** (§1.1)。残: method dispatch の resolution caching (multi は #3684 着手・`fast_method_cache` 済・残るは multi arg-shape 依存解決) | 設計 + 性能 | 中 |
-| 8 | 巨大ファイル分割 (500 行規約): **§7-8 sweep で最悪オフェンダー一掃済み**（1000 行超 82→~40 件台・最大ファイル群を全分割・詳細は news）。残: `ast.rs`・`registration_sub.rs` 等の未分割ファイル / giant dispatch メソッドの構造的分割（別軸）。一時ファイルを `tmp/` へ (root の `bom-test-*`) | 衛生 | 低〜中 |
-
-### Interpreter 除去という長期目標について — **達成 (2026-06)**
-
-CP-3 collapse で "別 struct を消す" 意味で達成 (bytecode VM が `Interpreter` 構造体へ完全統合) し、
-さらに §B (#3664〜#3680) で「**ユーザメソッド本体の tree-walk 実行**」を撤去 — bytecode VM がユーザ
-コード本体の唯一の実行エンジンになった。残る tree-walk は**宣言登録** (`register_*_decl`) のみで、
-これは本体実行ではなく登録処理。dispatch の resolver 入口 (`run_instance_method`) も本体は compiled で、
-残るのは resolution overhead の削減 (perf) のみ。
+| 1 | Supply worker panic の QUIT 伝播（アロケーション abort ガードは完了・§5） | 堅牢性 (任意) | 低 |
+| 2 | クロージャ upvalue Phase 2+（read-only 値化/同名修正/write 経路/env コピー撤去）— **#6 Track B 待ち**（§1.3） | 性能 + 正しさ | 中 |
+| 3 | ローカルスロットにレキシカルスコープを導入（シャドウ衝突解消・§1.4） | 正しさ + 設計 | 中 |
+| 4 | `RuntimeError` 本体の縮小・Box 化で `result_large_err` 23 箇所を撤去（高 churn・別 PR 群・§2.2） | 設計 | 中 |
+| 5 | `.^methods`/`.can` の型別リストを実ディスパッチ表から導出（arity-dispatch 非列挙が壁・§4） | ドリフト解消 | 中 |
+| 6 | **Track B**: 配列・ハッシュ要素の `ContainerRef` セル化で生ポインタ unsoundness を撤廃。**GC と統合＝ADR-0001 層3a・単独着手しない・Phase A 完了後**（設計メモ §2.1・#2 の前提） | 健全性 (UB) + 性能 | 中〜大 |
+| 7 | method dispatch の resolution caching（multi は #3684 着手・残るは multi arg-shape 依存解決。宣言登録の冪等化/registry-Arc は完了・§1.1） | 設計 + 性能 | 中 |
+| 8 | 巨大ファイル分割の残（`ast.rs`・`registration_sub.rs` 等／giant dispatch メソッドの構造的分割は別軸）／一時ファイルを `tmp/` へ（§6） | 衛生 | 低〜中 |
 
 ---
 
