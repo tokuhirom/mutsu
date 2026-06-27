@@ -27,6 +27,7 @@ impl Interpreter {
             saved_readonly: Some(self.save_readonly_vars()),
             readonly_added: Vec::new(),
             saved_locals: std::mem::take(&mut self.locals),
+            saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
         };
@@ -42,6 +43,7 @@ impl Interpreter {
             saved_readonly: None,
             readonly_added: Vec::new(),
             saved_locals: std::mem::take(&mut self.locals),
+            saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
         };
@@ -56,6 +58,7 @@ impl Interpreter {
             .pop()
             .expect("pop_call_frame: no frame to pop");
         self.locals = std::mem::take(&mut frame.saved_locals);
+        self.upvalues = std::mem::take(&mut frame.saved_upvalues);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
         if let Some(readonly) = std::mem::take(&mut frame.saved_readonly) {
             // Slow path: restore the whole snapshot (covers any `:=` marking).

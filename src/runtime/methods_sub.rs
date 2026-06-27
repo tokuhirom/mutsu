@@ -73,6 +73,7 @@ impl Interpreter {
                 source_line: None,
                 source_file: None,
                 owned_captures: Vec::new(),
+                upvalues: Vec::new(),
             };
             // Store the routine name so call_sub_value can dispatch
             sub_data.env.insert(

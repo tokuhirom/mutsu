@@ -82,6 +82,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let upvalues = self.capture_upvalues(code, &compiled_code);
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -104,6 +105,7 @@ impl Interpreter {
                 empty_sig: false,
                 is_bare_block: is_block,
                 owned_captures,
+                upvalues,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -137,6 +139,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let upvalues = self.capture_upvalues(code, &compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
             let mut env = self.capture_closure_env(code, &compiled_code);
             if let Some(rt) = return_type {
@@ -168,6 +171,7 @@ impl Interpreter {
                 empty_sig: params.is_empty() && param_defs.is_empty(),
                 is_bare_block: false,
                 owned_captures,
+                upvalues,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -273,6 +277,63 @@ impl Interpreter {
             }
         }
         crate::env::Env::from_symbol_map(map)
+    }
+
+    /// Build the closure's upvalue array (aligned with `cc.upvalue_syms`) from the
+    /// creating frame's current bindings. Each entry resolves from the creating
+    /// frame's own local slot first (authoritative in the single-store model —
+    /// after `box_captured_lexicals` a mutated/escaping lexical's slot holds the
+    /// shared `ContainerRef` cell, so the snapshot clones the live cell), then the
+    /// enclosing env (transitive captures / outer-frame lexicals). A read-only
+    /// scalar that is never mutated resolves to its plain value. `GetUpvalue` later
+    /// dereferences a `ContainerRef`, so a boxed capture stays coherent with the
+    /// creator.
+    fn capture_upvalues(
+        &self,
+        code: &CompiledCode,
+        cc: &Option<std::sync::Arc<CompiledCode>>,
+    ) -> Vec<Option<Value>> {
+        let Some(cc) = cc else {
+            return Vec::new();
+        };
+        if cc.upvalue_syms.is_empty() {
+            return Vec::new();
+        }
+        cc.upvalue_syms
+            .iter()
+            .map(|sym| {
+                // A free variable that is the creating frame's OWN local is that
+                // invocation's private binding: snapshot it so the closure reads
+                // the creator's value, NOT a same-name variable in whatever scope
+                // later calls the closure (`sub ma($x){ -> {$x} }` ignores a
+                // caller `$x`). This is the real upvalue capture.
+                if let Some(slot) = sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
+                    && let Some(val) = self.locals.get(slot)
+                {
+                    // A boxed (`ContainerRef`) own local is mutated-and-shared: the
+                    // snapshot clones the cell, so reads track later mutations.
+                    if val.is_container_ref() {
+                        return Some(val.clone());
+                    }
+                    // An unboxed own local that this frame mutates while it is
+                    // captured (`captured_mutated_locals`) but that escape analysis
+                    // did NOT box (e.g. a closure created in a loop over an outer
+                    // `$n` the frame later reassigns) must NOT be frozen — read it
+                    // live from env instead.
+                    if code.captured_mutated_locals.contains(sym) {
+                        return None;
+                    }
+                    // Read-only own local: a true constant for the closure's life —
+                    // freeze it by value (the upvalue fast path, no env lookup).
+                    return Some(val.clone());
+                }
+                // An OUTER-frame variable (not this frame's local) is shared lexical
+                // state an enclosing scope may keep mutating after capture. It
+                // cannot be frozen by value; `None` makes `GetUpvalue` read it live
+                // from env, preserving the env-capture behavior for these.
+                None
+            })
+            .collect()
     }
 
     /// Box-on-capture (lever C Slice 2): a closure captures the *container* of a
@@ -421,6 +482,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let upvalues = self.capture_upvalues(code, &compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
             let mut env = self.capture_closure_env(code, &compiled_code);
             if let Some(rt) = return_type {
@@ -452,6 +514,7 @@ impl Interpreter {
                 empty_sig: params.is_empty() && param_defs.is_empty(),
                 is_bare_block: false,
                 owned_captures,
+                upvalues,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -475,6 +538,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let upvalues = self.capture_upvalues(code, &compiled_code);
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -496,6 +560,7 @@ impl Interpreter {
                 empty_sig: false,
                 is_bare_block: true,
                 owned_captures,
+                upvalues,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,

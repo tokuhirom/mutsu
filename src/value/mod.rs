@@ -1000,6 +1000,17 @@ pub struct SubData {
     /// the shared lexical name — Raku's per-iteration closure capture. Empty for
     /// non-loop closures and named subs.
     pub(crate) owned_captures: Vec<Symbol>,
+    /// Captured upvalue array, aligned with `compiled_code.upvalue_syms`. Built at
+    /// closure-creation time (after `box_captured_lexicals`). An entry is
+    /// `Some(cell)` only when the captured lexical is a shared `ContainerRef` cell
+    /// (a boxed, mutated-and-shared lexical): reading the cell tracks the
+    /// creator's container, so the snapshot stays correct. A non-cell capture is
+    /// `None` — it cannot be safely frozen by value (an enclosing scope may
+    /// reassign it after capture, e.g. a closure created in a loop over a shared
+    /// outer `$n`), so `GetUpvalue` falls back to a live by-name env read instead.
+    /// Installed as `Interpreter::upvalues` on closure entry. Empty for closures
+    /// with no upvalue-eligible free variables.
+    pub(crate) upvalues: Vec<Option<Value>>,
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {
@@ -3641,6 +3652,7 @@ impl Value {
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
+            upvalues: Vec::new(),
         }))
     }
 
@@ -3675,6 +3687,7 @@ impl Value {
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
+            upvalues: Vec::new(),
         }))
     }
 

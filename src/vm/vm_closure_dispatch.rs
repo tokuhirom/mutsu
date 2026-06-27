@@ -302,6 +302,7 @@ impl Interpreter {
             source_line: data.source_line,
             source_file: data.source_file.clone(),
             owned_captures: data.owned_captures.clone(),
+            upvalues: data.upvalues.clone(),
         });
         self.env_mut().insert(
             "&?BLOCK".to_string(),
@@ -451,6 +452,11 @@ impl Interpreter {
                 self.locals[i] = val.clone();
             }
         }
+        // Install this closure's captured upvalue array for `GetUpvalue` reads.
+        // (`push_call_frame` saved the caller's array; `pop_call_frame` restores
+        // it.) Out-of-range `GetUpvalue` indices fall back to env by name, so a
+        // mismatched/empty array is always safe.
+        self.upvalues = data.upvalues.clone();
         // Load persisted state variable values using scoped keys
         // (state_scope_id is set to data.id above, so scoped_state_key
         // will generate closure-instance-specific keys automatically).

@@ -829,6 +829,10 @@ impl Compiler {
         // last_source_line.
         sub_compiler.code.source_line = sub_compiler.last_source_line.or(self.last_source_line);
         sub_compiler.code.compute_needs_env_sync();
+        // Promote read-only plain-lexical free variables to index-based upvalues.
+        // Closure-only (this path compiles anonymous closures/blocks); named subs
+        // and the top-level program never get an upvalue array at runtime.
+        sub_compiler.code.compute_upvalues();
         sub_compiler.code
     }
 }

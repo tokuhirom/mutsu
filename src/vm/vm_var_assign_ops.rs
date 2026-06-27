@@ -5698,6 +5698,40 @@ impl Interpreter {
         self.stack.push(val);
     }
 
+    /// Read a read-only scalar upvalue (see `OpCode::GetUpvalue`). The fast path
+    /// reads this frame's installed upvalue array by index, dereferencing a
+    /// shared `ContainerRef` cell so the value tracks the creator's container.
+    /// When `index` is out of range — a non-standard path (control handler /
+    /// phaser / register-reuse run) executed this closure's ops without installing
+    /// its upvalue array — it falls back to a by-name env read; env is retained as
+    /// the capture source, so the fallback is always correct for the plain scalar
+    /// lexicals that are ever upvalue-promoted.
+    pub(super) fn exec_get_upvalue_op(
+        &mut self,
+        code: &CompiledCode,
+        index: u32,
+        name_idx: u32,
+        ip: &mut usize,
+    ) -> Result<(), RuntimeError> {
+        let val = match self.upvalues.get(index as usize) {
+            Some(Some(v)) => v.clone(),
+            // `None` entry (non-cell capture) or out-of-range (non-standard path):
+            // read the captured scalar live from env by name.
+            _ => {
+                let name = Self::const_str(code, name_idx);
+                self.get_env_with_main_alias(name).unwrap_or(Value::Nil)
+            }
+        };
+        let val = if let Value::LazyThunk(ref thunk_data) = val {
+            self.force_lazy_thunk(thunk_data)?
+        } else {
+            val
+        };
+        self.stack.push(val.into_deref());
+        *ip += 1;
+        Ok(())
+    }
+
     pub(super) fn exec_get_local_op(
         &mut self,
         code: &CompiledCode,
