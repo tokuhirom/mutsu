@@ -182,6 +182,14 @@ impl Interpreter {
                     .any(|t| t == "rw" || t == "copy" || t == "raw");
                 if !has_mutable_trait {
                     self.mark_readonly(&pd.name);
+                } else {
+                    // `is copy`/`is rw`/`is raw` params are writable. The readonly
+                    // set is keyed by bare name and shared across frames, so a
+                    // caller's same-named readonly param (e.g. an outer `$d`) would
+                    // otherwise leak in and make this writable param appear readonly.
+                    // Unmark it; `restore_readonly_vars` reinstates the caller's
+                    // state after the call.
+                    self.unmark_readonly(&pd.name);
                 }
             }
         }

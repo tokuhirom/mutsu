@@ -544,6 +544,16 @@ impl Interpreter {
                     subcap.sym = sym_key.cloned();
                 }
                 new_caps.code_blocks.extend(subcap.code_blocks.clone());
+                // A non-suppressing alias `<name=subrule>` (NOT `<name=.subrule>` /
+                // `<name=&subrule>`) installs the capture under BOTH the alias name
+                // AND the subrule's own name, matching Rakudo (e.g. `<x=num>` yields
+                // `$<x>` and `$<num>`; repeated `<num>`/`<offset=count>` aggregate
+                // into a list under the rule name). Snapshot the subcap/text before
+                // the alias push consumes them so we can also store under the original.
+                let also_under_original = spec.capture_name.is_some()
+                    && !spec.alias_replaces_original
+                    && capture_name != spec.lookup_name;
+                let original_subcap = also_under_original.then(|| subcap.clone());
                 new_caps
                     .named_subcaps
                     .entry(capture_name.to_string())
@@ -553,7 +563,7 @@ impl Interpreter {
                     .named
                     .entry(capture_name.to_string())
                     .or_default()
-                    .push(captured);
+                    .push(captured.clone());
                 if spec.capture_name.is_some() && capture_name != spec.lookup_name {
                     new_caps
                         .capture_alias_map
@@ -563,6 +573,18 @@ impl Interpreter {
                     {
                         last.action_name = Some(spec.lookup_name.clone());
                     }
+                }
+                if let Some(orig_subcap) = original_subcap {
+                    new_caps
+                        .named_subcaps
+                        .entry(spec.lookup_name.clone())
+                        .or_default()
+                        .push(orig_subcap);
+                    new_caps
+                        .named
+                        .entry(spec.lookup_name.clone())
+                        .or_default()
+                        .push(captured);
                 }
             } else if !inner_caps.named.is_empty() || !inner_caps.named_subcaps.is_empty() {
                 // Silent subrule (`<.foo>`) that contains nested captures. The

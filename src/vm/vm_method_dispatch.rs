@@ -968,6 +968,16 @@ impl Interpreter {
                 .iter()
                 .any(|t| t == "rw" || t == "copy" || t == "raw")
             {
+                // A writable param must shadow a caller's same-named read-only
+                // variable (the readonly set is keyed by bare name, shared across
+                // frames). Drop the mark and record it so `pop_call_frame`
+                // restores the caller's state.
+                if self.readonly_vars().contains(pd.name.as_str()) {
+                    self.unmark_readonly(&pd.name);
+                    if let Some(frame) = self.call_frames.last_mut() {
+                        frame.readonly_removed.push(pd.name.clone());
+                    }
+                }
                 continue;
             }
             if self.readonly_vars().contains(pd.name.as_str()) {

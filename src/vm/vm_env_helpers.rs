@@ -26,6 +26,7 @@ impl Interpreter {
             saved_env: self.env().clone(),
             saved_readonly: Some(self.save_readonly_vars()),
             readonly_added: Vec::new(),
+            readonly_removed: Vec::new(),
             saved_locals: std::mem::take(&mut self.locals),
             saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
@@ -42,6 +43,7 @@ impl Interpreter {
             saved_env: self.env().clone(),
             saved_readonly: None,
             readonly_added: Vec::new(),
+            readonly_removed: Vec::new(),
             saved_locals: std::mem::take(&mut self.locals),
             saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
@@ -63,10 +65,14 @@ impl Interpreter {
         if let Some(readonly) = std::mem::take(&mut frame.saved_readonly) {
             // Slow path: restore the whole snapshot (covers any `:=` marking).
             self.restore_readonly_vars(readonly);
-        } else if !frame.readonly_added.is_empty() {
-            // Light-frame method path: drop only the param names this frame added.
+        } else {
+            // Light-frame method path: drop only the param names this frame added
+            // and restore any caller names this frame's writable params shadowed.
             for name in &frame.readonly_added {
                 self.unmark_readonly(name);
+            }
+            for name in &frame.readonly_removed {
+                self.mark_readonly(name);
             }
         }
         frame
