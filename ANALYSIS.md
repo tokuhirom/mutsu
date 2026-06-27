@@ -101,9 +101,16 @@ CP-3 collapse で VM と Interpreter の二重構造は消えた。
     resolution が body を deep-clone していたのを Arc bump に**。caller は Deref 経由で読み、所有 FunctionDef
     が要る数箇所のみ明示 clone。multi 候補列挙 (`resolve_all_*`) と proto/redispatch
     (`MultiDispatchEntry`) はレアパスなので境界で `FunctionDef` に変換し、core struct への波及を回避。
-  - **残 (次スライス)**: 導出済み `Arc<FunctionDef>` を fingerprint キーでキャッシュし再 install 時に
-    再利用 (真の「derive once」)。`MultiDispatchEntry` も `Arc<FunctionDef>` 化すると redispatch の
-    候補 clone も消える (core struct 波及・別スライス)。
+  - **derive-once キャッシュ (slice 4)**: `my sub` はルーチン return 時に registry から外れ
+    (lexical scope の snapshot/restore)、次の呼び出しで再 install される。slice 1 の冪等パスは
+    「registry に残っている」場合専用なので、この**再 install は AST→`FunctionDef` を毎回再導出**して
+    いた (auto-sig scan・validation・body clone)。導出済み `Arc<FunctionDef>` を
+    `(fingerprint, package)` キーでキャッシュ (`prepared_fn_defs`) し、単純な単一 sub の再 install は
+    キャッシュした `Arc` を clone して streamlined install するだけにした (**真の derive-once**)。
+    package をキーに含めるので同 body の別 package sub が混ざらない。
+  - **残 (次スライス)**: `MultiDispatchEntry` の候補列 (`Vec<FunctionDef>`) を `Arc` 化すると
+    redispatch (`nextsame`/`callsame`) の候補 clone も消える。ただし `resolve_all_*` 候補列挙の
+    Arc 貫通 cascade を伴う (slice 3 で意図的に scope 外にした範囲・別スライス)。
 - **メソッド dispatch の resolver オーバーヘッド**: multi/submethod や `samewith`/`nextsame` は
   `run_instance_method` (resolve + frame setup) を**入口として**通る (本体は compiled)。`MUTSU_VM_STATS` の
   `resolver-path method dispatches` カウンタはこの dispatch 入口数を測る (tree-walk 実行ではない)。

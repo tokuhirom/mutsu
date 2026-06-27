@@ -494,6 +494,45 @@ impl Interpreter {
                 return Ok(SubRegisterOutcome::Unchanged);
             }
         }
+        // Derive-once re-install fast path. A `my sub` is removed from the registry
+        // when its routine returns (lexical-scope snapshot/restore) and re-installed
+        // on the next call. The registry no longer has it (so the idempotent path
+        // above missed), but we derived an identical `FunctionDef` on an earlier
+        // call — reuse that cached `Arc` instead of re-running the full AST→def
+        // derivation. Restricted to simple single subs (no multi/our/traits/assoc)
+        // so the streamlined install below covers every side effect the full path
+        // would apply for this shape.
+        if let Some(site_fp) = site_fingerprint
+            && !multi
+            && !is_method_value_decl
+            && !is_our_scoped
+            && associativity.is_none()
+            && !custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
+            && !self.sub_decl_would_redeclare(name, is_lexical_hoist)
+        {
+            let pkg = self.current_package().to_string();
+            let fq = format!("{}::{}", pkg, name);
+            let fq_sym = Symbol::intern(&fq);
+            if !self.registry().functions.contains_key(&fq_sym)
+                && let Some(cached) = self
+                    .prepared_fn_defs
+                    .get(&fq_sym)
+                    .filter(|(fp, _)| *fp == site_fp)
+                    .map(|(_, arc)| arc.clone())
+            {
+                self.registry_mut().functions.insert(fq_sym, cached);
+                self.registered_fn_fingerprints.insert(fq_sym, site_fp);
+                if pkg != "GLOBAL" {
+                    self.mark_my_scoped_package_item(fq);
+                }
+                let callable_key = format!("__mutsu_callable_id::{}::{}", pkg, name);
+                self.env.insert(
+                    callable_key,
+                    Value::Int(crate::value::next_instance_id() as i64),
+                );
+                return Ok(SubRegisterOutcome::Installed);
+            }
+        }
         Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
@@ -752,11 +791,10 @@ impl Interpreter {
                     .or_insert(std::sync::Arc::new(def));
             }
         } else {
-            let fq = format!("{}::{}", self.current_package(), name);
+            let pkg = self.current_package().to_string();
+            let fq = format!("{}::{}", pkg, name);
             let fq_sym = Symbol::intern(&fq);
-            self.registry_mut()
-                .functions
-                .insert(fq_sym, std::sync::Arc::new(def));
+            let arc = std::sync::Arc::new(def);
             // Record this declaration's fingerprint so a later re-execution of the
             // same `RegisterSub` site is recognized as an idempotent no-op. Reuse
             // the compile-time `site_fingerprint` rather than recomputing it here:
@@ -765,9 +803,20 @@ impl Interpreter {
             // enclosing call) is exactly the per-call cost this is meant to avoid.
             if let Some(fp) = site_fingerprint {
                 self.registered_fn_fingerprints.insert(fq_sym, fp);
+                // Cache the derived definition so a later re-install of this exact
+                // simple single sub reuses the `Arc` instead of re-deriving it (the
+                // derive-once fast path above). Only cache the shapes that fast path
+                // accepts, so a cache hit always lands on the streamlined install.
+                if !is_our_scoped
+                    && associativity.is_none()
+                    && !custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
+                {
+                    self.prepared_fn_defs.insert(fq_sym, (fp, arc.clone()));
+                }
             } else {
                 self.registered_fn_fingerprints.remove(&fq_sym);
             }
+            self.registry_mut().functions.insert(fq_sym, arc);
         }
         // If this is an our-scoped sub, also store it in the persistent our_scoped_functions
         // so it survives block scope restoration.
