@@ -1009,7 +1009,7 @@ impl Interpreter {
         let fq = format!("{}::{}", self.current_package(), name);
         self.registry_mut().proto_functions.insert(
             Symbol::intern(&fq),
-            FunctionDef {
+            std::sync::Arc::new(FunctionDef {
                 package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(name),
                 params: params.to_vec(),
@@ -1023,7 +1023,7 @@ impl Interpreter {
                 return_type: None,
                 is_default: false,
                 deprecated_message: None,
-            },
+            }),
         );
         Ok(())
     }
@@ -1242,7 +1242,7 @@ impl Interpreter {
         self.registry_mut().proto_subs.insert(key.clone());
         self.registry_mut().proto_functions.insert(
             Symbol::intern(&key),
-            FunctionDef {
+            std::sync::Arc::new(FunctionDef {
                 package: Symbol::intern("GLOBAL"),
                 name: Symbol::intern(name),
                 params: params.to_vec(),
@@ -1256,7 +1256,7 @@ impl Interpreter {
                 return_type: None,
                 is_default: false,
                 deprecated_message: None,
-            },
+            }),
         );
         Ok(())
     }

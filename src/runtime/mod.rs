@@ -1489,7 +1489,7 @@ pub(crate) struct SubtestContext {
 
 pub(crate) type RoutineRegistrySnapshot = (
     HashMap<Symbol, Arc<FunctionDef>>,
-    HashMap<Symbol, FunctionDef>,
+    HashMap<Symbol, Arc<FunctionDef>>,
     HashMap<Symbol, Vec<FunctionDef>>,
     HashSet<String>,
     HashSet<String>,
@@ -4474,7 +4474,7 @@ impl Interpreter {
                 self.registry_mut().functions.insert(k, v);
             }
 
-            let proto_entries: Vec<(Symbol, FunctionDef)> = self
+            let proto_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
                 .registry()
                 .proto_functions
                 .iter()
