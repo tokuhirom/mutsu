@@ -202,6 +202,11 @@ impl Interpreter {
         // auto-truncates at the array end: out-of-range indices are dropped rather
         // than reported as missing. An eager Range keeps missing elements.
         let mut truncate_oob = false;
+        // A list-valued subscript (`@a[@b]`, `@a[(1,)]`, `@a[1..2]`, a Seq, ...)
+        // is ALWAYS a slice and yields a list result, even for a single index —
+        // `@a[@b]:!v` is `($T,)`, not the scalar `$T`. Only a bare scalar
+        // subscript (`@a[11]:!v`) returns a scalar.
+        let mut force_list = true;
         let mut indices = match index {
             Value::Array(items, ..) => items.to_vec(),
             // A Range subscript on a hash is a multi-key slice (`%h{"b".."c"}:kv`),
@@ -215,7 +220,10 @@ impl Interpreter {
                 truncate_oob = true;
                 self.force_lazy_list_vm(ll)?
             }
-            other => vec![other],
+            other => {
+                force_list = false;
+                vec![other]
+            }
         };
         // Resolve WhateverCode indices (e.g. `@a[*-1]:k`) by applying them to the
         // target's length, exactly as the plain-value subscript path does.
@@ -256,7 +264,7 @@ impl Interpreter {
                     .is_ok_and(|i| i >= 0 && i < len),
             });
         }
-        let is_multi = indices.len() != 1;
+        let is_multi = indices.len() != 1 || force_list;
 
         let mut rows: Vec<(Value, Value, bool)> = Vec::with_capacity(indices.len());
         match &target {

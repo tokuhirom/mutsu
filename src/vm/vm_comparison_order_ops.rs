@@ -15,7 +15,7 @@ impl Interpreter {
                     Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
                 ))
             } else {
-                Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
+                Ok(Value::Bool(l.to_str_context() == r.to_str_context()))
             }
         })?;
         self.stack.push(result);
@@ -34,7 +34,7 @@ impl Interpreter {
                     Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
                 ))
             } else {
-                Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
+                Ok(Value::Bool(l.to_str_context() == r.to_str_context()))
             }
         })?;
         self.stack.push(Value::Bool(!eq_result.truthy()));
@@ -56,7 +56,7 @@ impl Interpreter {
                     Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Less,
                 ))
             } else {
-                Ok(Value::Bool(l.to_string_value() < r.to_string_value()))
+                Ok(Value::Bool(l.to_str_context() < r.to_str_context()))
             }
         })?;
         self.stack.push(result);
@@ -72,7 +72,7 @@ impl Interpreter {
                     Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Greater,
                 ))
             } else {
-                Ok(Value::Bool(l.to_string_value() > r.to_string_value()))
+                Ok(Value::Bool(l.to_str_context() > r.to_str_context()))
             }
         })?;
         self.stack.push(result);
@@ -88,7 +88,7 @@ impl Interpreter {
                     Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Greater,
                 ))
             } else {
-                Ok(Value::Bool(l.to_string_value() <= r.to_string_value()))
+                Ok(Value::Bool(l.to_str_context() <= r.to_str_context()))
             }
         })?;
         self.stack.push(result);
@@ -104,7 +104,7 @@ impl Interpreter {
                     Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Less,
                 ))
             } else {
-                Ok(Value::Bool(l.to_string_value() >= r.to_string_value()))
+                Ok(Value::Bool(l.to_str_context() >= r.to_str_context()))
             }
         })?;
         self.stack.push(result);
