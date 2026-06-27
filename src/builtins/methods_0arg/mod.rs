@@ -413,6 +413,27 @@ pub(crate) fn native_method_0arg(
         {
             return Some(Ok(str_val.clone()));
         }
+        // A Bool with a mixed-in Bool override (`True but False`) renders its
+        // Str/gist/raku from the *effective* boolean — `Bool.Str` is
+        // `self ?? 'True' !! 'False'`, so it follows `.Bool`, not the base bool.
+        if matches!(inner.as_ref(), Value::Bool(_))
+            && mixins.get("Str").is_none()
+            && let Some(Value::Bool(b)) = mixins.get("Bool")
+        {
+            match method {
+                "Str" | "~" | "gist" => {
+                    return Some(Ok(Value::str(
+                        if *b { "True" } else { "False" }.to_string(),
+                    )));
+                }
+                "raku" | "perl" => {
+                    return Some(Ok(Value::str(
+                        if *b { "Bool::True" } else { "Bool::False" }.to_string(),
+                    )));
+                }
+                _ => {}
+            }
+        }
         // An allomorph (IntStr/NumStr/…) gists as its preserved source string,
         // not the inner numeric's gist: `<1e3>.gist` → `1e3` (not `1000`). Only
         // allomorphs; a general `but`-mixin gists via its inner value (below).
