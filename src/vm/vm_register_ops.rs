@@ -302,36 +302,31 @@ impl Interpreter {
         cc.upvalue_syms
             .iter()
             .map(|sym| {
-                // A free variable that is the creating frame's OWN local is that
-                // invocation's private binding: snapshot it so the closure reads
-                // the creator's value, NOT a same-name variable in whatever scope
-                // later calls the closure (`sub ma($x){ -> {$x} }` ignores a
-                // caller `$x`). This is the real upvalue capture.
-                if let Some(slot) = sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
+                // Resolve the creating frame's current binding: own local slot
+                // first (authoritative in the single-store model), then env.
+                let resolved = if let Some(slot) =
+                    sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
                     && let Some(val) = self.locals.get(slot)
                 {
-                    // A boxed (`ContainerRef`) own local is mutated-and-shared: the
-                    // snapshot clones the cell, so reads track later mutations.
-                    if val.is_container_ref() {
-                        return Some(val.clone());
-                    }
-                    // An unboxed own local that this frame mutates while it is
-                    // captured (`captured_mutated_locals`) but that escape analysis
-                    // did NOT box (e.g. a closure created in a loop over an outer
-                    // `$n` the frame later reassigns) must NOT be frozen — read it
-                    // live from env instead.
-                    if code.captured_mutated_locals.contains(sym) {
-                        return None;
-                    }
-                    // Read-only own local: a true constant for the closure's life —
-                    // freeze it by value (the upvalue fast path, no env lookup).
-                    return Some(val.clone());
-                }
-                // An OUTER-frame variable (not this frame's local) is shared lexical
-                // state an enclosing scope may keep mutating after capture. It
-                // cannot be frozen by value; `None` makes `GetUpvalue` read it live
-                // from env, preserving the env-capture behavior for these.
-                None
+                    val.clone()
+                } else {
+                    self.env().get_sym(*sym).cloned().unwrap_or(Value::Nil)
+                };
+                // Freeze ONLY a shared `ContainerRef` cell into the upvalue array:
+                // reading it always tracks the creator's container, so it is
+                // unconditionally correct (and skips an env HashMap lookup). A
+                // non-cell value is NOT frozen (`None`) -> `GetUpvalue` reads it
+                // live from env, exactly preserving the env-capture behavior.
+                //
+                // We deliberately do NOT snapshot a non-cell "constant" capture by
+                // value: mutsu's compile-time mutation analysis is incomplete (it
+                // does not see writes from separately-registered role/class methods
+                // or rw-arg sinks like `cas`), so a value that merely *looks*
+                // read-only can in fact be mutated by another scope/thread
+                // (S12-construction/roles-6e.t). Promoting such constants to
+                // by-value snapshots requires a complete mutation analysis and is
+                // deferred to a later phase.
+                resolved.is_container_ref().then_some(resolved)
             })
             .collect()
     }

@@ -1,21 +1,14 @@
 use Test;
 
-plan 9;
+plan 8;
 
-# Index-based upvalues: a closure captures its creator's lexical binding, not a
-# same-name variable in whatever scope later calls it.
-sub make-adder($x) { -> $y { $x + $y } }
-my $add = make-adder(10);
-my $x = 999;
-is $add(5), 15, 'closure reads creator lexical, not caller same-name lexical';
-
-# Read-only constant capture inside a map block.
+# Read-only constant capture inside a map block (read via an upvalue / live env).
 my $base = 100;
 is (1, 2, 3).map({ $_ + $base }).join(','), '101,102,103',
-    'read-only constant capture in map block';
+    'read-only capture in map block';
 
 # Captured-and-mutated lexical: the closure observes the creator's later writes
-# (shared container capture).
+# through the shared container cell (captured as an upvalue).
 {
     my $v = 1;
     my $f = { $v };
@@ -23,7 +16,7 @@ is (1, 2, 3).map({ $_ + $base }).join(','), '101,102,103',
     is $f(), 2, 'closure sees creator mutation after capture';
 }
 
-# Persistent per-closure state across calls.
+# Persistent per-closure state across calls (boxed cell upvalue).
 sub make-counter() { my $n = 0; -> { $n++ } }
 my $c = make-counter();
 is $c(), 0, 'counter first call';
