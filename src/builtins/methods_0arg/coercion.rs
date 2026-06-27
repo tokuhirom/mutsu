@@ -492,6 +492,20 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         Some(Ok(Value::array(items.to_vec())))
                     }
                 }
+                // A genuinely-lazy list stays lazy through `.Array`/`.list`:
+                // tag it with the target context so `.WHAT` reports `Array`/`List`
+                // without materializing the (possibly infinite) generator.
+                Value::LazyList(ll) if ll.is_genuinely_lazy() => {
+                    if want_array {
+                        Some(Ok(Value::LazyList(std::sync::Arc::new(
+                            ll.with_array_context(),
+                        ))))
+                    } else {
+                        Some(Ok(Value::LazyList(std::sync::Arc::new(
+                            ll.with_list_context(),
+                        ))))
+                    }
+                }
                 Value::Channel(_) => None, // fall through to runtime for drain
                 Value::Hash(map) => {
                     let pairs: Vec<Value> = map

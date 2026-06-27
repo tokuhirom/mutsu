@@ -102,6 +102,15 @@ impl Interpreter {
                 ));
             }
         }
+        // A genuinely-lazy list (`(1…∞).List`) must STAY lazy: materializing it
+        // would lose the infinite tail (and `.elems`/`eqv` must still throw
+        // X::Cannot::Lazy). Tag it as `.List`-coerced so `.WHAT` reports `List`
+        // while the generator is untouched.
+        if let Value::LazyList(ll) = &target
+            && ll.is_genuinely_lazy()
+        {
+            return Ok(Value::LazyList(std::sync::Arc::new(ll.with_list_context())));
+        }
         let items = Self::value_to_list(&target);
         Ok(Value::Array(
             std::sync::Arc::new(crate::value::ArrayData::new(items)),

@@ -483,9 +483,40 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The `.WHAT`-flavoured type tag of a *genuinely lazy* iterable (one that
+    /// `eqv` cannot compare without iterating forever), or `None` when the value
+    /// is not lazy. The tag follows `.WHAT`: a bare lazy `Seq` is `Seq`, a
+    /// `.List`-coerced one is `List`, a `.Array`/`@`-coerced one is `Array`.
+    fn lazy_eqv_type(v: &Value) -> Option<&'static str> {
+        match v {
+            Value::LazyList(ll) if ll.is_genuinely_lazy() => Some(if ll.in_array_context() {
+                "Array"
+            } else if ll.in_list_context() {
+                "List"
+            } else {
+                "Seq"
+            }),
+            Value::Array(_, kind) if kind.is_lazy() => Some("Array"),
+            _ => None,
+        }
+    }
+
     pub(super) fn exec_eqv_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // `eqv` on two lazy iterables of the SAME type cannot be answered without
+        // iterating them, so it throws X::Cannot::Lazy (action `eqv`). Two lazy
+        // iterables of DIFFERENT type are trivially not-eqv (no iteration needed),
+        // and a single lazy operand falls through to the normal element compare,
+        // which short-circuits on the length/laziness mismatch.
+        match (Self::lazy_eqv_type(&left), Self::lazy_eqv_type(&right)) {
+            (Some(a), Some(b)) if a == b => return Err(RuntimeError::cannot_lazy("eqv")),
+            (Some(_), Some(_)) => {
+                self.stack.push(Value::Bool(false));
+                return Ok(());
+            }
+            _ => {}
+        }
         let result =
             self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l.eqv(&r))))?;
         self.stack.push(result);
