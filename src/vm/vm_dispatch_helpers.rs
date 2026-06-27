@@ -264,6 +264,19 @@ impl Interpreter {
                 }
                 val.truthy()
             }
+            // A runtime mixin (`42 but role { method Bool {...} }`) boolifies via
+            // the mixed-in `Bool` method, exactly like a class with a user `Bool`.
+            // Without this, `?$mixin` / `if $mixin` ignored the role's `Bool` and
+            // used the base value's truthiness.
+            Value::Mixin(..) if self.mixin_role_has_method(val, "Bool") => {
+                let caller_code = self.current_code;
+                let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
+                self.reconcile_caller_after_internal_dispatch(caller_code);
+                match result {
+                    Ok(result) => result.truthy(),
+                    Err(_) => val.truthy(),
+                }
+            }
             Value::Regex(_)
             | Value::RegexWithAdverbs { .. }
             | Value::Routine { is_regex: true, .. } => {
