@@ -460,6 +460,8 @@ impl PartialEq for MixData {
 mod aliased_mut;
 mod display;
 mod error;
+mod error_construct;
+mod error_typed;
 mod serde_support;
 pub(crate) mod signature;
 pub(crate) mod types;
