@@ -83,6 +83,14 @@ CP-3 collapse で VM と Interpreter の二重構造は消えた。
 - **宣言登録** (`class`/`role`/`enum`/`sub`/`method` の `register_*_decl`) は依然 tree-walk で実行
   (`Register*` opcode → `register_sub_decl` / `register_class_decl`)。クラスシステム・MRO・role 合成は
   未コンパイル。ただしこれは**宣言の登録**であって本体実行ではない。
+  - **sub 登録の冪等化 (slice 1)**: `RegisterSub` は enclosing frame が走るたびに再実行される
+    (hot routine 内の `my sub` 等) が、宣言が識別不変なら再実行は no-op であるべき。各宣言に
+    コンパイル時 fingerprint (`CompiledCode.sub_fingerprints`) を持たせ、`register_sub_decl` が
+    `SubRegisterOutcome::{Installed, Unchanged}` を返すことで、**識別不変な再登録を `FunctionDef`
+    再導出なしに O(1) で検出し、resolution cache を乱さない**よう型で明示した。
+  - **残 (次スライス)**: ①導出済み `Arc<FunctionDef>` をキャッシュし再 install 時に再利用 (真の
+    「derive once」)。②`my sub` を持つルーチン呼び出しの `snapshot_routine_registry` が registry 全体を
+    deep-clone している → registry を `Arc<FunctionDef>` 化して snapshot を O(1) 共有にする。
 - **メソッド dispatch の resolver オーバーヘッド**: multi/submethod や `samewith`/`nextsame` は
   `run_instance_method` (resolve + frame setup) を**入口として**通る (本体は compiled)。`MUTSU_VM_STATS` の
   `resolver-path method dispatches` カウンタはこの dispatch 入口数を測る (tree-walk 実行ではない)。
@@ -173,14 +181,21 @@ env 変異は「別スレッドからの並行 env アクセスが UB」、alias
 **配列/ハッシュ要素を first-class `ContainerRef` セル化 (Track B) して interior mutability に置換する**ことで
 初めて解消する (高ブラスト半径・別 PR)。
 
-### 2.2 `RuntimeError` god-struct が制御フローをエラーチャネルで運ぶ
+### 2.2 `RuntimeError` god-struct が制御フローをエラーチャネルで運ぶ — **bool→enum 分離は完了、残るは縮小・Box 化**
 
-`RuntimeError` (`value/error.rs`) は本来のエラー情報に加え、
-`is_return/is_last/is_next/is_redo/is_goto/is_proceed/is_succeed/is_fail/is_take/is_emit/...`
-**制御フロー bool を 18 個超**同居させる。`return`/`last`/`next`/`take`/`emit` を `Result::Err` で実装しており、
-エラーと制御が型レベルで混線。構造体肥大のため `#[allow(clippy::result_large_err)]` が **23 箇所**に散在。
-**改善**: `enum Control { Return, Last, Next, Take(Value), Emit(Value), ... }` を分離し
-`RuntimeError` を純エラーに縮小・Box 化。
+`RuntimeError` (`value/error.rs`) は `return`/`last`/`next`/`take`/`emit`/... を `Result::Err` で
+実装しており、エラーと制御が同じチャネルを流れる。かつては
+`is_return/is_last/.../is_emit` の**制御フロー bool が 18 個超**同居していたが、§7-4 キャンペーン
+(#3701 slice 1 / #3706 slice 2 / slice 3) で**単一の `enum Control` (`value/error.rs`) へ統合済み**。
+いまは `control: Option<Control>` 1 フィールドが排他的な制御シグナルを保持し、各 `is_*()` は
+そこから派生する。残る独立 bool は `fail_handled` (Fail の修飾) と `is_leave`
+(Last と同時成立しうるので enum に畳めない) の 2 つだけで、これらは意図的に分離している。
+
+**残課題**: `RuntimeError` 本体はまだ ~270 バイトと巨大で、`#[allow(clippy::result_large_err)]` が
+**23 箇所**に残る。縮小には (a) cold な routing フィールド
+(`leave_*`/`return_target_callable_id`/`container_name`/`backtrace`/`hint`/parse 用 `code`/`line`/`column`)
+を `Box` した補助構造体へ退避するか、(b) `Result<T, Box<RuntimeError>>` 化する必要がある。
+いずれも構築サイト ~1700・`Result` シグネチャ ~1280 に波及する高 churn 作業で、別 PR 群として実施する。
 
 ---
 
@@ -280,10 +295,10 @@ env 変異は「別スレッドからの並行 env アクセスが UB」、alias
 | 1 | アロケーション abort ガードは **完了** (配列 autoviv・文字列リピート・shaped 宣言・`Buf.allocate`/`reallocate`・§5)。残: Supply worker panic の QUIT 伝播 | 堅牢性 (任意) | 低 |
 | 2 | クロージャに upvalue を導入し env 経由捕捉を撤廃 (PLAN §G Lever 1) | 性能 | 中 |
 | 3 | ローカルスロットにレキシカルスコープを導入 (シャドウ衝突解消) | 正しさ + 設計 | 中 |
-| 4 | 制御フローを `RuntimeError` から `enum Control` へ分離 | 設計 | 中 |
+| 4 | 制御フローを `RuntimeError` から `enum Control` へ分離は **完了** (§2.2・#3701/#3706 ほか)。残: `RuntimeError` 本体の縮小・Box 化で `result_large_err` 23 箇所を撤去 (高 churn・別 PR 群) | 設計 | 中 |
 | 5 | `.^methods`/`.can` の型別リスト: 確認済みドリフトは是正 (Str/Int/List・§4.1)。完全な実ディスパッチ表からの導出は arity-dispatch 非列挙のため別軸 | ドリフト解消 | 中 |
 | 6 | 陳腐化した `unsafe` SAFETY コメント是正は **完了** (§2.1)。残: 配列・ハッシュ要素の `ContainerRef` 化で生ポインタ unsoundness を撤廃 (高ブラスト・別 PR) | 健全性 (UB) | 中 |
-| 7 | 宣言登録の bytecode 化 / method dispatch の resolution caching (multi は #3684 着手) | 設計 + 性能 | 中 |
+| 7 | 宣言登録の bytecode 化: sub 登録の冪等化は **slice 1 着手** (§1.1・`SubRegisterOutcome`+コンパイル時 fingerprint)。残: 導出済み `Arc<FunctionDef>` キャッシュ再利用 + registry の `Arc<FunctionDef>` 化 (snapshot 共有)。method dispatch の resolution caching (multi は #3684 着手) | 設計 + 性能 | 中 |
 | 8 | 一時ファイルを `tmp/` へ (root の `bom-test-*`) / 巨大ファイル分割 (500 行規約) | 衛生 | 低〜中 |
 
 ### Interpreter 除去という長期目標について — **達成 (2026-06)**

@@ -105,6 +105,33 @@ pub(crate) fn function_body_fingerprint(
     hasher.finish()
 }
 
+/// Identity fingerprint of a sub *declaration* for idempotent re-registration.
+///
+/// Two executions of the same `RegisterSub` site install structurally identical
+/// declarations; this fingerprint lets the registrar recognize that in O(1) and
+/// skip re-deriving the `FunctionDef`. It extends `function_body_fingerprint`
+/// with the return type and the flags that distinguish otherwise same-bodied
+/// declarations (`multi`/`is rw`/`is raw`), so a genuine change is never mistaken
+/// for a no-op. The name and package are *not* hashed: they are the registry key
+/// the fingerprint is compared under, so they are already known to match.
+pub(crate) fn sub_registration_fingerprint(
+    params: &[String],
+    param_defs: &[ParamDef],
+    body: &[Stmt],
+    return_type: Option<&String>,
+    multi: bool,
+    is_rw: bool,
+    is_raw: bool,
+) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    function_body_fingerprint(params, param_defs, body).hash(&mut hasher);
+    return_type.hash(&mut hasher);
+    multi.hash(&mut hasher);
+    is_rw.hash(&mut hasher);
+    is_raw.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum PhaserKind {
     Begin,

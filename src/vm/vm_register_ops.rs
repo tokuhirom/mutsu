@@ -540,8 +540,12 @@ impl Interpreter {
             } else {
                 name.resolve()
             };
-            self.loan_env_for(|i| {
-                i.register_sub_decl(
+            // Compile-time declaration fingerprint for this site (absent for a
+            // runtime-resolved `name_expr` sub), enabling the idempotent
+            // re-registration fast path inside `register_sub_decl_fp`.
+            let site_fp = code.sub_fingerprints.get(&idx).copied();
+            let outcome = self.loan_env_for(|i| {
+                i.register_sub_decl_fp(
                     &resolved_name,
                     params,
                     param_defs,
@@ -554,65 +558,77 @@ impl Interpreter {
                     *is_test_assertion,
                     *supersede,
                     custom_traits,
+                    site_fp,
                 )
             })?;
-            // If this sub carries the `is native(...)` trait, record its C-FFI
-            // descriptor so calls route through NativeCall instead of the body.
-            if custom_traits.iter().any(|(t, _)| t == "native") {
-                self.register_native_call_sub(
-                    &resolved_name,
-                    param_defs,
-                    return_type.as_ref(),
-                    custom_traits,
-                )?;
-            }
-            self.fn_resolve_gen += 1;
-            self.method_resolve_cache.clear();
-            self.last_method_resolve = None;
-            self.fast_method_cache.clear();
-            self.multi_resolve_cache.clear();
-            self.multi_type_cacheable.clear();
-            // Record `&`-sigil parameter names so calls to a same-named routine
-            // inside this sub bypass the name-keyed light-call caches (the param
-            // can shadow a package sub of the same name).
-            for pd in param_defs {
-                if let Some(bare) = pd.name.strip_prefix('&')
-                    && !bare.is_empty()
-                {
-                    // Records both plain names (`foo`) and operator categories
-                    // (`infix:<@@>`); both can shadow a same-named package routine.
-                    self.amp_param_shadowed_names.insert(Symbol::intern(bare));
-                }
-            }
-            if *is_export && !self.suppress_exports {
-                let pkg = self.current_package().to_string();
-                self.register_exported_sub(pkg.clone(), resolved_name.clone(), export_tags.clone());
-                // If a custom `is` trait mixed a role into this routine, the
-                // resulting Mixin lives in the lexical env as `&name` but would
-                // be dropped when the module scope exits. Capture it so `import`
-                // can restore the trait-modified value.
-                let code_var_key = format!("&{}", resolved_name);
-                if let Some(val @ Value::Mixin(..)) = self.env().get(&code_var_key) {
-                    self.record_exported_sub_value(pkg, resolved_name.clone(), val.clone());
-                }
-            }
-            for (alt_params, alt_param_defs) in signature_alternates {
-                self.loan_env_for(|i| {
-                    i.register_sub_decl(
+            // An idempotent re-registration of an already-installed identical sub
+            // leaves the registry untouched, so none of the install bookkeeping
+            // below (cache invalidation, `&`-param shadow tracking, export, native
+            // descriptor, signature alternates) needs to re-run — they were all
+            // done by the first installation and persist.
+            if outcome == crate::runtime::registration_sub::SubRegisterOutcome::Installed {
+                // If this sub carries the `is native(...)` trait, record its C-FFI
+                // descriptor so calls route through NativeCall instead of the body.
+                if custom_traits.iter().any(|(t, _)| t == "native") {
+                    self.register_native_call_sub(
                         &resolved_name,
-                        alt_params,
-                        alt_param_defs,
+                        param_defs,
                         return_type.as_ref(),
-                        associativity.as_ref(),
-                        body,
-                        *multi,
-                        *is_rw,
-                        *is_raw,
-                        *is_test_assertion,
-                        *supersede,
                         custom_traits,
-                    )
-                })?;
+                    )?;
+                }
+                self.fn_resolve_gen += 1;
+                self.method_resolve_cache.clear();
+                self.last_method_resolve = None;
+                self.fast_method_cache.clear();
+                self.multi_resolve_cache.clear();
+                self.multi_type_cacheable.clear();
+                // Record `&`-sigil parameter names so calls to a same-named routine
+                // inside this sub bypass the name-keyed light-call caches (the param
+                // can shadow a package sub of the same name).
+                for pd in param_defs {
+                    if let Some(bare) = pd.name.strip_prefix('&')
+                        && !bare.is_empty()
+                    {
+                        // Records both plain names (`foo`) and operator categories
+                        // (`infix:<@@>`); both can shadow a same-named package routine.
+                        self.amp_param_shadowed_names.insert(Symbol::intern(bare));
+                    }
+                }
+                if *is_export && !self.suppress_exports {
+                    let pkg = self.current_package().to_string();
+                    self.register_exported_sub(
+                        pkg.clone(),
+                        resolved_name.clone(),
+                        export_tags.clone(),
+                    );
+                    // If a custom `is` trait mixed a role into this routine, the
+                    // resulting Mixin lives in the lexical env as `&name` but would
+                    // be dropped when the module scope exits. Capture it so `import`
+                    // can restore the trait-modified value.
+                    let code_var_key = format!("&{}", resolved_name);
+                    if let Some(val @ Value::Mixin(..)) = self.env().get(&code_var_key) {
+                        self.record_exported_sub_value(pkg, resolved_name.clone(), val.clone());
+                    }
+                }
+                for (alt_params, alt_param_defs) in signature_alternates {
+                    self.loan_env_for(|i| {
+                        i.register_sub_decl(
+                            &resolved_name,
+                            alt_params,
+                            alt_param_defs,
+                            return_type.as_ref(),
+                            associativity.as_ref(),
+                            body,
+                            *multi,
+                            *is_rw,
+                            *is_raw,
+                            *is_test_assertion,
+                            *supersede,
+                            custom_traits,
+                        )
+                    })?;
+                }
             }
             // Note: we intentionally do NOT push the Sub onto the stack or
             // store it in env here. The interpreter's trailing_sub_value

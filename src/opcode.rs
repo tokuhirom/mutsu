@@ -1396,6 +1396,14 @@ pub(crate) struct CompiledCode {
     /// snapshots the whole env instead of just the free vars. Set during
     /// `compute_needs_env_sync`.
     pub(crate) captures_env_by_name: bool,
+    /// Compile-time identity fingerprint for each `Stmt::SubDecl` in `stmt_pool`,
+    /// keyed by its pool index. A `RegisterSub(idx)` opcode re-executes whenever
+    /// its enclosing frame runs (e.g. a `my sub` inside a hot routine), but the
+    /// declaration it installs is constant. The fingerprint lets the registrar
+    /// recognize an idempotent re-registration in O(1) — without re-deriving the
+    /// `FunctionDef` from the AST — and skip perturbing the resolution caches.
+    /// Computed once here at compile time (see `add_stmt`).
+    pub(crate) sub_fingerprints: std::collections::HashMap<u32, u64>,
 }
 
 impl CompiledCode {
@@ -1428,6 +1436,7 @@ impl CompiledCode {
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
             captures_env_by_name: false,
+            sub_fingerprints: std::collections::HashMap::new(),
         }
     }
 
@@ -2204,6 +2213,33 @@ impl CompiledCode {
 
     pub(crate) fn add_stmt(&mut self, stmt: Stmt) -> u32 {
         let idx = self.stmt_pool.len() as u32;
+        // Record a declaration fingerprint for SubDecls so a re-executed
+        // `RegisterSub(idx)` (e.g. a `my sub` inside a hot routine) can be
+        // recognized as an idempotent no-op without re-deriving the FunctionDef.
+        if let Stmt::SubDecl {
+            params,
+            param_defs,
+            body,
+            return_type,
+            multi,
+            is_rw,
+            is_raw,
+            name_expr,
+            ..
+        } = &stmt
+            && name_expr.is_none()
+        {
+            let fp = crate::ast::sub_registration_fingerprint(
+                params,
+                param_defs,
+                body,
+                return_type.as_ref(),
+                *multi,
+                *is_rw,
+                *is_raw,
+            );
+            self.sub_fingerprints.insert(idx, fp);
+        }
         self.stmt_pool.push(stmt);
         idx
     }
