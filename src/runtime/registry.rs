@@ -115,8 +115,11 @@ pub(crate) struct Registry {
     /// declaring inner `my sub`s is entered, to scope them) is an O(n) Arc-bump
     /// rather than a deep copy of every routine body in the program.
     pub(crate) functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
-    /// `our`-scoped subs that persist across block boundaries.
-    pub(crate) our_scoped_functions: HashMap<Symbol, FunctionDef>,
+    /// `our`-scoped subs that persist across block boundaries. Held behind `Arc`
+    /// (like `functions`) so block-scope restore and whole-registry clones
+    /// (`clone_for_thread`, EVAL copy) share the def rather than deep-cloning it;
+    /// the same `Arc` is also what gets re-inserted into `functions`.
+    pub(crate) our_scoped_functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
     /// `proto sub` markers (multi proto stubs): name -> proto `FunctionDef`.
     pub(crate) proto_functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
     /// Grammar token/rule definitions: name -> [overloads]. Each overload is

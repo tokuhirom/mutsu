@@ -1206,13 +1206,13 @@ impl Interpreter {
                     self.registry()
                         .our_scoped_functions
                         .get(&Symbol::intern(&fq))
-                        .cloned()
+                        .map(|d| (**d).clone())
                         .or_else(|| {
                             let global_fq = format!("GLOBAL::{}", lookup_name);
                             self.registry()
                                 .our_scoped_functions
                                 .get(&Symbol::intern(&global_fq))
-                                .cloned()
+                                .map(|d| (**d).clone())
                         })
                 } else {
                     None
@@ -2123,7 +2123,7 @@ impl Interpreter {
         // distinguish "newly registered during this block" by tracking the set
         // of our_scoped_functions keys that existed at snapshot time.
         let current_pkg = self.current_package();
-        let mut new_our: Vec<(Symbol, FunctionDef)> = Vec::new();
+        let mut new_our: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
         // Collect under a read guard, which drops before the writes below
         // (read->write on the same lock would deadlock).
         {
@@ -2159,7 +2159,7 @@ impl Interpreter {
         // scope — they remain accessible only via OUR:: pseudo-package resolution.
         if !is_eval {
             for (key, def) in new_our {
-                registry.functions.insert(key, std::sync::Arc::new(def));
+                registry.functions.insert(key, def);
             }
         }
         drop(registry);
