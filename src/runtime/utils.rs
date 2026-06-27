@@ -433,7 +433,46 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         (Value::Junction { values: a_vals, .. }, Value::Junction { values: b_vals, .. }) => {
             std::sync::Arc::ptr_eq(a_vals, b_vals)
         }
+        // Capture identity is NOT structural: a Capture's `.WHICH` keeps the
+        // *container* identity of each captured element, so `\($a) === \($b)`
+        // is False even when `$a` and `$b` hold equal values, while
+        // `\(42) === \(42)` is True (both literal-value elements). This is
+        // unlike `eqv`, which deconts and compares structurally.
+        (
+            Value::Capture {
+                positional: ap,
+                named: an,
+            },
+            Value::Capture {
+                positional: bp,
+                named: bn,
+            },
+        ) => {
+            ap.len() == bp.len()
+                && an.len() == bn.len()
+                && ap
+                    .iter()
+                    .zip(bp.iter())
+                    .all(|(x, y)| capture_elem_identical(x, y))
+                && an
+                    .iter()
+                    .all(|(k, v)| bn.get(k).is_some_and(|bv| capture_elem_identical(v, bv)))
+        }
         _ => left.eqv(right),
+    }
+}
+
+/// Identity comparison for a single Capture element. Unlike a top-level
+/// `===` (which deconts a bound scalar to its value), a Capture retains the
+/// container identity of each element: two `ContainerRef` cells are identical
+/// only when they are the same `Arc` (i.e. bound to the same container), and a
+/// container can never be identical to a plain value. Non-container elements
+/// fall back to the normal value identity rules.
+fn capture_elem_identical(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::ContainerRef(x), Value::ContainerRef(y)) => std::sync::Arc::ptr_eq(x, y),
+        (Value::ContainerRef(_), _) | (_, Value::ContainerRef(_)) => false,
+        _ => values_identical(a, b),
     }
 }
 
