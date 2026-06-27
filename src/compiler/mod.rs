@@ -616,6 +616,24 @@ impl Compiler {
                 },
                 None => element_expr,
             };
+            // An `@`-sigil multi-param de-itemizes the chunk element: Raku binds
+            // `@a` to the element's *list* (`for $@n, Any -> @a, $T` → `@a` IS the
+            // 4-element array), whereas a plain assignment would wrap an itemized
+            // array as a one-element array (`[$@n]`, elems=1). Coerce via `.list`
+            // so the de-itemized elements flow into the fresh container. (A scalar
+            // param keeps plain assignment + later MarkReadonly; `%`-sigil is left
+            // as plain assignment — `.hash` mis-coerces an itemized hash.)
+            let value_expr = if actual_name.starts_with('@') {
+                Expr::MethodCall {
+                    target: Box::new(value_expr),
+                    name: Symbol::intern("list"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                }
+            } else {
+                value_expr
+            };
             let stmt = bind_stmt(actual_name.clone(), value_expr);
             if actual_name == "_" {
                 deferred_topic = Some(stmt);
