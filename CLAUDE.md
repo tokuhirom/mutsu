@@ -261,6 +261,19 @@ CI (`make test` + the extensive `make roast` spec suite) gates every merge, and 
 
 The goal is essential architectural improvement, not the appearance of progress through small safe diffs.
 
+### What "gain" and "risk" actually mean (read before weighing any change)
+
+When deciding whether a change is worth it, use these definitions — NOT a vague sense of "effort vs payoff", and NOT micro-perf:
+
+- **Gain (利得)** = moving toward the *correct architecture*: a maintainable, fast interpreter with **no flaky tests** and **better Raku compatibility**. A change that removes a band-aid/fallback, unifies a dual mechanism, or makes a subsystem sound is a gain even if its immediate speedup is modest.
+- **Risk (リスク)** = making the codebase *worse*: introducing **flaky tests**, **reducing Raku compatibility**, **lowering maintainability**, or adding **ad-hoc / band-aid changes**.
+- **A temporary CI/roast failure is NOT a risk.** roast detects it deterministically and you fix it forward. Do not down-weight an architecturally-correct change because it will "break tests for a while" — that is the safety net working, not a cost.
+
+Consequences for design choices:
+
+- Prefer **sound mechanisms that cannot go flaky** over clever optimizations that are correct only under an *incomplete* static analysis. Example: capturing a closure's mutable lexical as a **shared cell** always tracks later mutations, so it never flakes; snapshotting it **by value** is only correct if you can prove the variable is never mutated — and mutsu's compile-time mutation analysis is incomplete (it does not see writes from separately-registered role/class methods, nor rw-arg sinks like `cas`), so a missed case turns into a *flaky* failure (see the `S12-construction/roles-6e.t` regression). The by-value route is therefore the **risky** one and the cell route is the **gain**, even though by-value reads are faster.
+- A known-hard prerequisite (e.g. making `ContainerRef` deref universal, §2.1 / Track B) is itself a **gain** to pursue, not a reason to stop — surfacing its gaps as deterministic roast failures and fixing them *is* the architectural progress.
+
 ## Known flaky tests
 
 Some tests are genuinely non-deterministic (concurrency/timing/CI-load sensitive) and fail intermittently. When a `make roast` / `make test` failure is **only** in the list below and your change is unrelated (e.g. an operator/parser fix), treat it as flaky: re-run the single file a few times before assuming a regression. Do **not** remove it from the whitelist.
