@@ -956,6 +956,12 @@ impl Value {
             Value::Mixin(inner, mixins) => {
                 if let Some(str_val) = mixins.get("Str") {
                     str_val.to_string_value()
+                } else if let (Value::Bool(_), Some(Value::Bool(b))) =
+                    (inner.as_ref(), mixins.get("Bool"))
+                {
+                    // `True but False`: Bool stringifies from the effective
+                    // boolean (`self ?? 'True' !! 'False'`), so follow `.Bool`.
+                    if *b { "True" } else { "False" }.to_string()
                 } else {
                     inner.to_string_value()
                 }
