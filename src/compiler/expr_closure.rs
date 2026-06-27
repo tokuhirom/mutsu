@@ -228,7 +228,12 @@ impl Compiler {
         } else {
             vec![param.to_string()]
         };
-        let compiled = self.compile_closure_body(&params, &[], body);
+        let mut compiled = self.compile_closure_body(&params, &[], body);
+        // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub`. A WhateverCode
+        // (`*+1`, also an `Expr::Lambda`) is tagged separately via callable_type.
+        if !is_whatever_code {
+            compiled.is_pointy_block = true;
+        }
         let esc = self.escaping_position;
         let cc_idx = self.code.add_closure_code(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {

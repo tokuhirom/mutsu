@@ -806,8 +806,18 @@ impl Interpreter {
                     } else {
                         let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
                         let mut defs = Vec::new();
-                        // Bare blocks have an implicit $_ parameter with default from outer scope
-                        if data.is_bare_block && !use_positional {
+                        // A *bare* block `{ ... }` has an implicit `$_` parameter
+                        // (default from the outer topic). A pointy block `-> { ... }`
+                        // is also a `Block` (`is_bare_block` is set for the `.WHAT`),
+                        // but its signature is explicit — an empty `-> {}` takes no
+                        // arguments, so it must NOT gain the implicit `$_` (which
+                        // would render its signature as `($$_?)` and break
+                        // `.raku`/`.gist` round-tripping).
+                        let is_pointy = data
+                            .compiled_code
+                            .as_ref()
+                            .is_some_and(|cc| cc.is_pointy_block);
+                        if data.is_bare_block && !is_pointy && !use_positional {
                             defs.push(ParamDef {
                                 name: "$_".to_string(),
                                 default: Some(Expr::Var("$_".to_string())),

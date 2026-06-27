@@ -166,7 +166,10 @@ impl Interpreter {
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
                 empty_sig: params.is_empty() && param_defs.is_empty(),
-                is_bare_block: false,
+                // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub`. Named
+                // anonymous subs (`sub {...}`) have `is_pointy_block == false` and
+                // stay `Sub`. (`WhateverCode` already overrides via callable_type.)
+                is_bare_block: compiled_code.as_ref().is_some_and(|cc| cc.is_pointy_block),
                 owned_captures,
                 compiled_code,
                 deprecated_message: None,
@@ -450,7 +453,10 @@ impl Interpreter {
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
                 empty_sig: params.is_empty() && param_defs.is_empty(),
-                is_bare_block: false,
+                // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub` — mark it
+                // so `.WHAT`/`.^name`/smartmatch report `Block`. Named anonymous subs
+                // (`sub {...}`) have `is_pointy_block == false` and stay `Sub`.
+                is_bare_block: compiled_code.as_ref().is_some_and(|cc| cc.is_pointy_block),
                 owned_captures,
                 compiled_code,
                 deprecated_message: None,
