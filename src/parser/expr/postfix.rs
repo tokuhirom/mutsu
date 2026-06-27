@@ -312,18 +312,30 @@ fn try_parse_unknown_adverb(input: &str) -> Option<(&str, String)> {
 /// Determine "element access" vs "slice" from the target and index.
 /// Hash access is always "slice"; array single-element is "element access".
 fn determine_subscript_what(target: &Expr, index_expr: &Expr) -> String {
-    // A zen slice (empty subscript → Whatever index) reports the bracket kind:
-    // `{} slice` for a hash, `[] slice` for an array. This is only used when
-    // there is no `nogo` (pure unknown-adverb) error; the runtime overrides it
-    // to plain "slice" when a conflicting (nogo) combination is present.
+    // A whatever slice (`@a[*]`, parsed as a Whatever index) reports
+    // "whatever slice". A hash zen slice keeps the bracket-kind descriptor
+    // (`{} slice`), which the runtime downgrades to plain "slice" on a nogo
+    // conflict (see `builtin_subscript_adverb_error`).
     if matches!(index_expr, Expr::Whatever) {
         return if matches!(target, Expr::HashVar(_)) {
             "{} slice".to_string()
         } else {
-            "[] slice".to_string()
+            "whatever slice".to_string()
         };
     }
     if matches!(target, Expr::HashVar(_)) {
+        return "slice".to_string();
+    }
+    // A Range subscript (`@a[1..2]`) is a multi-element slice.
+    if let Expr::Binary { op, .. } = index_expr
+        && matches!(
+            op,
+            TokenKind::DotDot
+                | TokenKind::DotDotCaret
+                | TokenKind::CaretDotDot
+                | TokenKind::CaretDotDotCaret
+        )
+    {
         return "slice".to_string();
     }
     match index_expr {
