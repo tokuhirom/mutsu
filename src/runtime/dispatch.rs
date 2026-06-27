@@ -637,18 +637,18 @@ impl Interpreter {
         if name.contains("::") {
             let multi_key = format!("{}/{}", name, arity);
             if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_key)) {
-                return Some(def.clone());
+                return Some((**def).clone());
             }
             return self
                 .registry()
                 .functions
                 .get(&Symbol::intern(name))
-                .cloned();
+                .map(|d| (**d).clone());
         }
         // Try multi-dispatch with arity first
         let multi_local = format!("{}::{}/{}", self.current_package(), name, arity);
         if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_local)) {
-            return Some(def.clone());
+            return Some((**def).clone());
         }
         let multi_global = format!("GLOBAL::{}/{}", name, arity);
         if let Some(def) = self
@@ -656,7 +656,7 @@ impl Interpreter {
             .functions
             .get(&Symbol::intern(&multi_global))
         {
-            return Some(def.clone());
+            return Some((**def).clone());
         }
         // Fall back to regular lookup
         self.resolve_function(name)
@@ -677,7 +677,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .get(&Symbol::intern(name))
-                .cloned()
+                .map(|d| (**d).clone())
             {
                 // Block access to my-scoped (non-our) package items from outside
                 // their declaring package.
@@ -706,7 +706,7 @@ impl Interpreter {
                         || **key == untyped_key_sym
                         || ks.starts_with(&untyped_m_prefix)
                 })
-                .map(|(key, def)| (key.resolve(), def.clone()))
+                .map(|(key, def)| (key.resolve(), (**def).clone()))
                 .collect();
             self.sort_candidates_by_specificity(&mut candidates);
             if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
@@ -726,7 +726,7 @@ impl Interpreter {
                     key.resolve().starts_with(&subsig_prefix)
                         && def.param_defs.iter().any(|p| p.is_capture_subsignature())
                 })
-                .map(|(key, def)| (key.resolve(), def.clone()))
+                .map(|(key, def)| (key.resolve(), (**def).clone()))
                 .collect();
             if !subsig_candidates.is_empty() {
                 self.sort_candidates_by_specificity(&mut subsig_candidates);
@@ -740,7 +740,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .get(&Symbol::intern(name))
-                .cloned()
+                .map(|d| (**d).clone())
             {
                 if !self.is_my_scoped_package_item(name) {
                     return Some(def);
@@ -776,7 +776,7 @@ impl Interpreter {
                         .registry()
                         .functions
                         .get(&Symbol::intern(&qualified))
-                        .cloned()
+                        .map(|d| (**d).clone())
                     {
                         return Some(def);
                     }
@@ -794,7 +794,7 @@ impl Interpreter {
                                 || **key == q_untyped_key_sym
                                 || ks.starts_with(&q_untyped_m_prefix)
                         })
-                        .map(|(key, def)| (key.resolve(), def.clone()))
+                        .map(|(key, def)| (key.resolve(), (**def).clone()))
                         .collect();
                     self.sort_candidates_by_specificity(&mut q_candidates);
                     if let Some(def) =
@@ -811,7 +811,7 @@ impl Interpreter {
             .registry()
             .functions
             .get(&Symbol::intern(&exact_local))
-            .cloned()
+            .map(|d| (**d).clone())
         {
             return Some(def);
         }
@@ -820,7 +820,7 @@ impl Interpreter {
             .registry()
             .functions
             .get(&Symbol::intern(&exact_global))
-            .cloned()
+            .map(|d| (**d).clone())
         {
             return Some(def);
         }
@@ -839,7 +839,7 @@ impl Interpreter {
                 let ks = key.resolve();
                 ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
             })
-            .map(|(key, def)| (key.resolve(), def.clone()))
+            .map(|(key, def)| (key.resolve(), (**def).clone()))
             .collect();
         for key in &generic_keys {
             let key_sym = Symbol::intern(key);
@@ -849,7 +849,7 @@ impl Interpreter {
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
-                .map(|(k, def)| (k.resolve(), def.clone()))
+                .map(|(k, def)| (k.resolve(), (**def).clone()))
                 .collect();
             if !more.is_empty() {
                 found_multi_candidates = true;
@@ -880,7 +880,7 @@ impl Interpreter {
                         .iter()
                         .any(|p| !p.named && (p.optional_marker || p.default.is_some()))
             })
-            .map(|(k, def)| (k.resolve(), def.clone()))
+            .map(|(k, def)| (k.resolve(), (**def).clone()))
             .collect();
         if !optional_candidates.is_empty() {
             found_multi_candidates = true;
@@ -918,7 +918,7 @@ impl Interpreter {
                         .iter()
                         .any(|p| p.slurpy || p.is_capture_subsignature())
             })
-            .map(|(k, def)| (k.resolve(), def.clone()))
+            .map(|(k, def)| (k.resolve(), (**def).clone()))
             .collect();
         if !slurpy_candidates.is_empty() {
             found_multi_candidates = true;
@@ -944,7 +944,7 @@ impl Interpreter {
                     .iter()
                     .any(|prefix| ks.starts_with(prefix))
             })
-            .map(|(k, def)| (k.resolve(), def.clone()))
+            .map(|(k, def)| (k.resolve(), (**def).clone()))
             .collect();
         if !any_arity_candidates.is_empty() {
             found_multi_candidates = true;
@@ -985,7 +985,7 @@ impl Interpreter {
                 .functions
                 .iter()
                 .filter(|(key, _)| key.resolve().starts_with(&prefix_base))
-                .map(|(_, def)| def.clone())
+                .map(|(_, def)| (**def).clone())
                 .collect();
             for def in candidates {
                 if self.args_match_param_types(arg_values, &def.param_defs) {
@@ -1007,7 +1007,7 @@ impl Interpreter {
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
-                .map(|(k, def)| (k.resolve(), def.clone()))
+                .map(|(k, def)| (k.resolve(), (**def).clone()))
                 .collect();
             candidates.sort_by(|a, b| {
                 let a_has_subsig = a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
@@ -1048,7 +1048,7 @@ impl Interpreter {
                         .iter()
                         .any(|p| p.slurpy || p.is_capture_subsignature())
             })
-            .map(|(k, def)| (k.resolve(), def.clone()))
+            .map(|(k, def)| (k.resolve(), (**def).clone()))
             .collect();
         slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
         for (_, def) in slurpy_candidates {
@@ -1082,7 +1082,7 @@ impl Interpreter {
                 .functions
                 .iter()
                 .filter(|(k, _)| k.resolve().starts_with(prefix.as_str()))
-                .map(|(k, def)| (k.resolve(), def.clone()))
+                .map(|(k, def)| (k.resolve(), (**def).clone()))
                 .collect();
             for (key, def) in candidates {
                 let fp =
@@ -1700,7 +1700,7 @@ impl Interpreter {
                 let ks = key.resolve();
                 ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
             })
-            .map(|(key, def)| (key.resolve(), def.clone()))
+            .map(|(key, def)| (key.resolve(), (**def).clone()))
             .collect();
         for key in &generic_keys {
             let key_sym = Symbol::intern(key);
@@ -1710,7 +1710,7 @@ impl Interpreter {
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
-                .map(|(k, def)| (k.resolve(), def.clone()))
+                .map(|(k, def)| (k.resolve(), (**def).clone()))
                 .collect();
             candidates.extend(more);
         }
@@ -1771,7 +1771,7 @@ impl Interpreter {
                         || **key == untyped_key_sym
                         || ks.starts_with(&untyped_m_prefix)
                 })
-                .map(|(key, def)| (key.resolve(), def.clone()))
+                .map(|(key, def)| (key.resolve(), (**def).clone()))
                 .collect();
             candidates.sort_by(|a, b| {
                 let a_has_where = a.1.param_defs.iter().any(|p| p.where_constraint.is_some());

@@ -330,7 +330,7 @@ impl Interpreter {
         if let Some(pkg) = package_hint
             && !pkg.is_empty()
         {
-            let mut fn_aliases: Vec<(Symbol, FunctionDef)> = Vec::new();
+            let mut fn_aliases: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
             for (name, def) in &self.registry().functions {
                 if before_function_keys.contains(name) {
                     continue;
@@ -394,7 +394,7 @@ impl Interpreter {
     /// end. `before_keys` is the set of function-registry keys that existed
     /// before the module body ran; only newly-added MAIN keys are removed.
     pub(crate) fn remove_leaked_main_routines(
-        functions: &mut HashMap<Symbol, FunctionDef>,
+        functions: &mut HashMap<Symbol, std::sync::Arc<FunctionDef>>,
         before_keys: &std::collections::HashSet<Symbol>,
     ) {
         let leaked: Vec<Symbol> = functions
@@ -430,7 +430,7 @@ impl Interpreter {
             let target_single = format!("GLOBAL::{name}");
             let target_prefix = format!("GLOBAL::{name}/");
             let mut found = false;
-            let function_entries: Vec<(Symbol, FunctionDef)> = self
+            let function_entries: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()

@@ -198,7 +198,7 @@ impl Interpreter {
                 let fp =
                     crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
                 if seen_keys.insert(fp) {
-                    candidates.push(def.clone());
+                    candidates.push((**def).clone());
                 }
             }
         }

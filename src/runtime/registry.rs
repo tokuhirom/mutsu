@@ -109,9 +109,12 @@ pub(crate) struct Registry {
 
     // ----- functions / subs / tokens (PR-A slice 5, final PR-A slice) -----
     /// User-defined subs: fully-qualified name -> [`FunctionDef`]. Read on the
-    /// sub/multi-dispatch hot path; callers clone the matched `FunctionDef`
-    /// (already the prior behavior) under a short-lived guard.
-    pub(crate) functions: HashMap<Symbol, FunctionDef>,
+    /// sub/multi-dispatch hot path; callers clone the matched `Arc<FunctionDef>`
+    /// (a cheap refcount bump) under a short-lived guard. Held behind `Arc` so
+    /// the per-call `snapshot_routine_registry` clone (taken whenever a routine
+    /// declaring inner `my sub`s is entered, to scope them) is an O(n) Arc-bump
+    /// rather than a deep copy of every routine body in the program.
+    pub(crate) functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
     /// `our`-scoped subs that persist across block boundaries.
     pub(crate) our_scoped_functions: HashMap<Symbol, FunctionDef>,
     /// `proto sub` markers (multi proto stubs): name -> proto `FunctionDef`.

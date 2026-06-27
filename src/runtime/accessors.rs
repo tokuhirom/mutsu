@@ -2156,7 +2156,7 @@ impl Interpreter {
         // scope — they remain accessible only via OUR:: pseudo-package resolution.
         if !is_eval {
             for (key, def) in new_our {
-                registry.functions.insert(key, def);
+                registry.functions.insert(key, std::sync::Arc::new(def));
             }
         }
         drop(registry);

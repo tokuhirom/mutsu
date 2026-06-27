@@ -2128,9 +2128,10 @@ impl Interpreter {
                             is_default: *is_default_candidate,
                             deprecated_message: None,
                         };
-                        self.registry_mut()
-                            .functions
-                            .insert(Symbol::intern(&qualified_name), func_def);
+                        self.registry_mut().functions.insert(
+                            Symbol::intern(&qualified_name),
+                            std::sync::Arc::new(func_def),
+                        );
                     }
                     // `my method` registers as a lexically-scoped function
                     // (callable as `name(invocant)` inside the class body)
@@ -2203,14 +2204,16 @@ impl Interpreter {
                             deprecated_message: None,
                         };
                         // Register under the short name (lexical scope)
-                        self.registry_mut()
-                            .functions
-                            .insert(Symbol::intern(&resolved_method_name), func_def.clone());
+                        self.registry_mut().functions.insert(
+                            Symbol::intern(&resolved_method_name),
+                            std::sync::Arc::new(func_def.clone()),
+                        );
                         // Also register under the qualified name for consistency
                         let qualified_name = format!("{}::{}", name, resolved_method_name);
-                        self.registry_mut()
-                            .functions
-                            .insert(Symbol::intern(&qualified_name), func_def);
+                        self.registry_mut().functions.insert(
+                            Symbol::intern(&qualified_name),
+                            std::sync::Arc::new(func_def),
+                        );
                         // Mark as my-scoped so it doesn't appear in the package stash
                         self.mark_my_scoped_package_item(qualified_name);
                     }
