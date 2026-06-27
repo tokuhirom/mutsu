@@ -710,6 +710,39 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             };
             Ok(Value::capture(positional, HashMap::new()))
         }
+        // Numeric types follow Mu.Capture: public attributes become nameds.
+        // Complex → \(:re, :im)
+        Value::Complex(r, i) => {
+            let mut named = HashMap::new();
+            named.insert("re".to_string(), Value::Num(*r));
+            named.insert("im".to_string(), Value::Num(*i));
+            Ok(Value::capture(vec![], named))
+        }
+        // Rat/FatRat/BigRat → \(:numerator, :denominator)
+        Value::Rat(n, d) => {
+            let mut named = HashMap::new();
+            named.insert("numerator".to_string(), Value::Int(*n));
+            named.insert("denominator".to_string(), Value::Int(*d));
+            Ok(Value::capture(vec![], named))
+        }
+        Value::FatRat(n, d) => {
+            let mut named = HashMap::new();
+            named.insert("numerator".to_string(), Value::Int(*n));
+            named.insert("denominator".to_string(), Value::Int(*d));
+            Ok(Value::capture(vec![], named))
+        }
+        Value::BigRat(n, d) => {
+            let mut named = HashMap::new();
+            named.insert(
+                "numerator".to_string(),
+                Value::BigInt(std::sync::Arc::new((**n).clone())),
+            );
+            named.insert(
+                "denominator".to_string(),
+                Value::BigInt(std::sync::Arc::new((**d).clone())),
+            );
+            Ok(Value::capture(vec![], named))
+        }
         // Pair.Capture → \(:key($pair.key), :value($pair.value))
         Value::Pair(k, v) => {
             let mut named = HashMap::new();
