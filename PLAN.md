@@ -102,13 +102,13 @@
 診断には `./scripts/roast-history.sh` を使う。
 出力は `tmp/roast-{panic,timeout,error,fail,pass}.txt` に保存される。
 
-- [ ] **★型付き例外（単一ファイルとしては最優先）**:
-      `S32-exceptions/misc.t`（42/157）。
-      `X::NotParametric` / `X::Undeclared` / `X::Redeclaration` / `X::Bind` / `X::TypeCheck` など、
-      およそ 25 種類の one-off 例外実装が必要。詳細は `BLOCKERS.md` §B。
-- [ ] **lazy 無限配列 L2b–L4**: L1/L1b/L5/L5b/L2a は landed（→ news/2026-06）。残＝L2b（真のメモリ遅延化・seed `[1]`・
-      `docs/lazy-arrays.md`「L2b」節に実行プラン確定済）→ `(1...*)`/closure 配列変換 → L4 slurpy 真 lazy 化。
-      whitelist payoff（slurpy-params.t/slice.t）は Seq single-pass consumption（`X::Seq::Consumed`）が別軸。
+- [ ] **★型付き例外（最高インパクトの単一ファイル）**: `S32-exceptions/misc.t`（42/157）。X::NotParametric /
+      X::Undeclared / X::Redeclaration / X::Bind / X::TypeCheck 他 ~25 種の one-off 型実装。BLOCKERS.md §B。
+- [ ] **★lazy-seq（次セッションの開始点・2026-06-27 再 probe）**: `1..*` 配列は reify-on-index 済（`@a[200000]`=200001・100k cap 解消）、
+      `(1...Inf)`=Seq is-lazy=True。残 live ギャップ＝① `.List`/`.Array` coercion が laziness を落とす（`coercion.rs`）②`eqv` が両-lazy-同型で
+      `X::Cannot::Lazy` を投げない（`vm_comparison_ops.rs`）＝**eqv.t（1 subtest・最も近い +1）** ③Seq single-pass consumption（`X::Seq::Consumed`・broad）
+      ＝slurpy-params.t 70-77 ④reify-on-mutation／slurpy 真 lazy（`flatten_into_slurpy` 無限展開→hang）／lazy `.gist`（`docs/lazy-arrays.md` L3/L4・doc TL;DR は stale）。
+      詳細＝memory `next-session-lazy-seq`・BLOCKERS.md §「Real lazy infinite sequences」。
 - [ ] **Match キャプチャ番号付け / コンテナ kind**: (1) `$<x>=(...)` が positional スロットにも重複格納され番号がずれる、
       (2) `m:g//` を `my @m` 代入後 `@m.gist` が `(…)` を返す（receiver の List-kind dual-store）。S05-capture/array-alias.t（30/37）。
 - [ ] 未実装演算子: `ff`/`fff`（flipflop 8 variants）/ `==>`・`<==`（feed precedence: `==>` が `=` より強く結合する差）/
