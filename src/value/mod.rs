@@ -465,6 +465,9 @@ mod error_typed;
 mod serde_support;
 pub(crate) mod signature;
 pub(crate) mod types;
+pub(crate) mod types_eqv;
+pub(crate) mod types_isa;
+pub(crate) mod types_truthy;
 pub(crate) use aliased_mut::arc_contents_mut;
 pub(crate) use types::what_type_name;
 
