@@ -146,6 +146,8 @@ mod builtins_unbase;
 mod call_helpers;
 mod calls;
 mod class;
+mod class_dispatch;
+mod class_introspection;
 pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
 mod dispatch;
