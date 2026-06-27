@@ -5,7 +5,7 @@
 //! (the genuine Category-B fork) is invoked through `vm_call_on_value`; non-block
 //! patterns use the interpreter's single shared `smart_match`. The scan itself
 //! (iteration, `pair_as_positional`) is the shared
-//! [`crate::runtime::resolution::find_first_match_generic`] — the same one the
+//! [`crate::runtime::resolution_map_grep::find_first_match_generic`] — the same one the
 //! interpreter's `find_first_match_over_items` uses.
 //!
 //! Anything with an adverb (`:k`/`:kv`/`:p`/`:v`/`:end`), a `Bool` matcher (which
@@ -13,7 +13,7 @@
 //! falls back to the interpreter's `builtin_first` / method dispatch unchanged.
 
 use super::*;
-use crate::runtime::resolution::{FirstMatcher, find_first_match_generic};
+use crate::runtime::resolution_map_grep::{FirstMatcher, find_first_match_generic};
 use crate::runtime::utils::pair_as_positional;
 use crate::value::Value;
 
