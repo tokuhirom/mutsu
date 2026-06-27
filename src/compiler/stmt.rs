@@ -463,8 +463,12 @@ impl Compiler {
                     .emit(OpCode::SinkPop(Self::stmt_value_may_user_sink(&feed)));
             }
             Stmt::Block(stmts) => {
-                // Check for placeholder conflicts in blocks
-                let placeholders = crate::ast::collect_placeholders(stmts);
+                // Check for placeholder conflicts in blocks. Use the *shallow*
+                // collector: a placeholder belongs to its innermost enclosing
+                // block, so placeholders nested inside an inner closure
+                // (`{ my $a; { $^a } }`) must NOT be attributed to this block
+                // and falsely flagged as redeclaring this block's `my $a`.
+                let placeholders = crate::ast::collect_placeholders_shallow(stmts);
                 if !placeholders.is_empty()
                     && let Some(err_val) =
                         self.check_placeholder_conflicts(&placeholders, stmts, None)
