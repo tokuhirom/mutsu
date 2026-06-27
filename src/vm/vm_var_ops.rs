@@ -685,7 +685,8 @@ impl Interpreter {
         // the original would be lost (t/array-push-byref-coherence).
         let use_inplace = !var_name.starts_with('@');
         if let Some(Value::Array(items, _)) = self.env_root_descended_mut(var_name) {
-            let data: &mut crate::value::ArrayData = if use_inplace && Arc::strong_count(items) > 1 {
+            let data: &mut crate::value::ArrayData = if use_inplace && Arc::strong_count(items) > 1
+            {
                 // SAFETY: aliased in-place mutation of a shared array; same
                 // contract as the assignment site's `arc_contents_mut` use.
                 unsafe { crate::value::arc_contents_mut(items) }
