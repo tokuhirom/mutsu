@@ -822,13 +822,9 @@ impl Interpreter {
         // so it survives block scope restoration.
         if is_our_scoped {
             let fq = format!("{}::{}", self.current_package(), name);
-            // Clone out before the registry_mut write (read->write on the same
-            // lock would deadlock).
-            let f = self
-                .registry()
-                .functions
-                .get(&Symbol::intern(&fq))
-                .map(|d| (**d).clone());
+            // Share the `Arc` already held in `functions` (read->write on the
+            // same lock would deadlock, so clone the handle out first).
+            let f = self.registry().functions.get(&Symbol::intern(&fq)).cloned();
             if let Some(f) = f {
                 self.registry_mut()
                     .our_scoped_functions
