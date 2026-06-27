@@ -1259,16 +1259,16 @@ impl Interpreter {
                 .registry()
                 .proto_functions
                 .get(&Symbol::intern(name))
-                .cloned();
+                .map(|def| (**def).clone());
         }
         let local = format!("{}::{}", self.current_package(), name);
         if let Some(def) = self.registry().proto_functions.get(&Symbol::intern(&local)) {
-            return Some(def.clone());
+            return Some((**def).clone());
         }
         self.registry()
             .proto_functions
             .get(&Symbol::intern(&format!("GLOBAL::{}", name)))
-            .cloned()
+            .map(|def| (**def).clone())
     }
 
     pub(super) fn call_proto_function(

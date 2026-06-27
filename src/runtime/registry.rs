@@ -118,7 +118,7 @@ pub(crate) struct Registry {
     /// `our`-scoped subs that persist across block boundaries.
     pub(crate) our_scoped_functions: HashMap<Symbol, FunctionDef>,
     /// `proto sub` markers (multi proto stubs): name -> proto `FunctionDef`.
-    pub(crate) proto_functions: HashMap<Symbol, FunctionDef>,
+    pub(crate) proto_functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
     /// Grammar token/rule definitions: name -> [overloads].
     pub(crate) token_defs: HashMap<Symbol, Vec<FunctionDef>>,
     /// `proto sub` declaration markers (existence set).
