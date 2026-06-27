@@ -86,6 +86,7 @@ impl Interpreter {
 
     pub(super) fn insert_token_def(&mut self, name: &str, def: FunctionDef, multi: bool) {
         let key = Symbol::intern(&format!("{}::{}", self.current_package(), name));
+        let def = std::sync::Arc::new(def);
         if multi {
             self.registry_mut()
                 .token_defs
@@ -102,7 +103,7 @@ impl Interpreter {
         &self,
         scope: &str,
         name: &str,
-        defs: &mut Vec<FunctionDef>,
+        defs: &mut Vec<std::sync::Arc<FunctionDef>>,
     ) {
         let exact_key = format!("{scope}::{name}");
         if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(&exact_key)) {
@@ -153,7 +154,10 @@ impl Interpreter {
         result
     }
 
-    pub(crate) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
+    pub(crate) fn resolve_token_defs(
+        &self,
+        name: &str,
+    ) -> Option<Vec<std::sync::Arc<FunctionDef>>> {
         if name.contains("::") {
             let mut defs = Vec::new();
             if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(name)) {
