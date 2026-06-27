@@ -4,7 +4,7 @@
 「設計上どこまで整理できていて、何がまだ負債として残っているか」をまとめたもの。
 バグ票の一覧ではなく、**アーキテクチャと健全性のレビュー**として読む想定。
 
-初版: 2026-06-03 / rev2: 2026-06-15 / rev3: 2026-06-17 / rev4: 2026-06-27 (単一ストア化 #3455・ユーザメソッド本体 tree-walk 撤去 §B #3680) / **rev5: 2026-06-27 (クロージャ upvalue Phase 1 #3715・Track B 着手前設計メモを §1.3/§2.1 に反映)**
+初版: 2026-06-03 / rev2: 2026-06-15 / rev3: 2026-06-17 / rev4: 2026-06-27 (単一ストア化 #3455・ユーザメソッド本体 tree-walk 撤去 §B #3680) / **rev5: 2026-06-27 (クロージャ upvalue Phase 1 #3715・Track B 着手前設計メモを §1.3/§2.1 に反映)** / **rev6: 2026-06-27 (GC 方針確定 ADR-0001＝cycle collector on Arc・Track B は GC 統合=層3a・§2.1/§7-6 に反映)**
 方法:
 - 調査エージェントによるサブシステム単位の精読
 - 主張ごとの実機再現確認
@@ -243,6 +243,12 @@ Track B は規模・難度ともに大きく、着手前に次を踏まえるこ
   場当たりに lock を足すと CLAUDE.md の「リスク」(flaky/ハング/ad-hoc) に直結する。設計を詰めてから着手。
 - これが §1.3 クロージャ upvalue Phase 2+ の前提でもある (read-only/per-iteration/cross-thread キャプチャの
   健全なセル化が解禁される)。
+- **方針決定 (ADR-0001, 2026-06-27)**: Track B は単独で着手せず **GC (cycle collector on Arc) と統合**して
+  実施する (ADR 層3a)。同じ `Arc<ArrayData>`/`Arc<HashData>` 群 (79 箇所) を Track B と GC が触るため、
+  `Arc → Gc<T>` 置換と要素セル化を 1 キャンペーンにまとめる (別々だと 79 箇所を 2 回触る)。再入デッドロックと
+  GC セーフポイントは同じ再入境界の問題として一緒に設計する。moving GC は Rust 所有+Arc と非互換ゆえ却下、
+  スカラ系は型フィルタで GC 対象外＝hot path コスト 0。Phase A 完了後に着手。詳細は
+  [docs/adr/0001-gc-strategy-and-phasing.md](docs/adr/0001-gc-strategy-and-phasing.md)。
 
 ### 2.2 `RuntimeError` god-struct が制御フローをエラーチャネルで運ぶ — **bool→enum 分離は完了、残るは縮小・Box 化**
 
@@ -360,7 +366,7 @@ Track B は規模・難度ともに大きく、着手前に次を踏まえるこ
 | 3 | ローカルスロットにレキシカルスコープを導入 (シャドウ衝突解消) | 正しさ + 設計 | 中 |
 | 4 | 制御フローを `RuntimeError` から `enum Control` へ分離は **完了** (§2.2・#3701/#3706 ほか)。残: `RuntimeError` 本体の縮小・Box 化で `result_large_err` 23 箇所を撤去 (高 churn・別 PR 群) | 設計 | 中 |
 | 5 | `.^methods`/`.can` の型別リスト: 確認済みドリフトは是正 (Str/Int/List・§4.1)。完全な実ディスパッチ表からの導出は arity-dispatch 非列挙のため別軸 | ドリフト解消 | 中 |
-| 6 | **Track B**: 陳腐化 `unsafe` コメント是正は完了。残: 配列・ハッシュ要素の `ContainerRef` 化で生ポインタ unsoundness を撤廃。**着手前設計メモを §2.1 に追記** (79 箇所・コア表現変更・再入デッドロック/perf の地雷・cross-thread 共有は `shared_vars`)。再入安全なロック/所有モデルの設計判断が要る研究レベル作業。#2 upvalue Phase 2+ の前提 | 健全性 (UB) + 性能 | 中〜大 |
+| 6 | **Track B**: 陳腐化 `unsafe` コメント是正は完了。残: 配列・ハッシュ要素の `ContainerRef` 化で生ポインタ unsoundness を撤廃。**GC と統合＝ADR-0001 層3a (`Arc → Gc<T>` 一斉置換・cycle collector on Arc)。単独着手しない・Phase A 完了後。** 着手前設計メモは §2.1 (79 箇所・コア表現変更・再入デッドロック/perf の地雷・cross-thread 共有は `shared_vars`)。#2 upvalue Phase 2+ の前提 | 健全性 (UB) + 性能 | 中〜大 |
 | 7 | 宣言登録の bytecode 化: sub 登録の冪等化 (**slice 1**・`SubRegisterOutcome`+fingerprint) と registry Arc 化 (**slice 2**・snapshot 共有) + dispatch resolution への Arc 貫通 (**slice 3**・resolution 毎の body clone を Arc bump に) 着手済 (§1.1)。残: 導出済み `Arc<FunctionDef>` キャッシュ再利用 (真の derive-once) + `MultiDispatchEntry` の Arc 化。method dispatch の resolution caching (multi は #3684 着手) | 設計 + 性能 | 中 |
 | 8 | 一時ファイルを `tmp/` へ (root の `bom-test-*`) / 巨大ファイル分割 (500 行規約) | 衛生 | 低〜中 |
 

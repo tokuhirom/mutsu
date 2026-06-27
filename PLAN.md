@@ -21,6 +21,25 @@
 起動が速い強みを活かし、まずは CLI ツールとスクリプト実行を主戦場にする。
 最終的には、**mutsu でウェブアプリやブログを組める程度のライブラリ互換性**を目指す。
 
+### フェーズ構成と次の大型ジャンプ（ADR-0001）
+
+性能と互換性で raku に追いついたその先、**GC と JIT が次の大型ジャンプ**になる。
+GC のないインタプリタは「欠陥品」とみなされ誰も使わない＝GC は table stakes。順序と方式は
+[docs/adr/0001-gc-strategy-and-phasing.md](docs/adr/0001-gc-strategy-and-phasing.md) で決定済み。要点:
+
+| フェーズ | 内容 | 本書の該当 |
+|---|---|---|
+| **A. 追いつく** | 互換性＋速度で raku に並ぶ（**いまここ**） | §F roast / §2 multi-dispatch / §H module / §G Lever 1・3 |
+| **A'. 地ならし** | root 集約で GC 実装を楽にする | レキシカルスコープ（ANALYSIS §1.4）/ upvalue index 化（ANALYSIS §1.3） |
+| **B. Value 表現リワーク＋GC** | Track B（要素 cell 化）＋ cycle collector を**統合**（ADR 層3a） | §G Lever 2 周辺 / §I Track B 依存項目 / §J |
+| **C. JIT** | 独自メリット | §G Lever 4 |
+
+- **GC は JIT の前**（JIT を GC 前提の上に載せる）。**GC は Phase A 完了後**に着手（当面は §J の将来扱い）。
+- **方式 = cycle collector on Arc（non-moving + refcount・レベル1 採用）**。スカラ系は型フィルタで GC 対象外
+  ＝数値/文字列 hot path はコスト 0。性能は GC でなく JIT で稼ぐ。
+- **Track B は GC と一体（層3a）。単独で先行着手しない。** NaN-boxing は JIT の地ならし（層3b）、
+  biased refcount は層3c。
+
 ### 🚫 標準ルール: 「1 操作 = 1 実装」を守る（ユーザー方針 2026-06-07）
 
 実行エンジンは単一の `Interpreter` 構造体（= bytecode VM）に統合済み。
@@ -133,10 +152,15 @@
 
 - [ ] **Lever 1: closure captures を indexed slot 化（高 payoff・設計済）**: closure 生成時の env deep clone を撤廃。
       コンパイル時に closure が read/write する変数を解析し `Vec<Value>` に格納。method-call <2x 狙い。
-- [ ] **Lever 2: NaN-boxing（高 payoff・設計済）**: `Value` 48→8 bytes（Int/Num/Bool/Nil を NaN payload に）。
-      int-arith 2x・fib ~30% 狙い。`value_size_guard` テストでサイズ監視中。
+- [ ] **Lever 2: NaN-boxing（高 payoff・設計済）= ADR-0001 層3b（JIT の地ならし・GC 後）**: `Value` 48→8 bytes
+      （Int/Num/Bool/Nil を NaN payload に）。int-arith 2x・fib ~30% 狙い。8B 固定・タグ単純で JIT 生成が楽に
+      なる（型境界は GC の型フィルタと一致）。`value_size_guard` テストでサイズ監視中。
 - [ ] **Lever 3: threaded dispatch（中 payoff・ラフ）**: opcode の `match` を関数ポインタテーブルに。命令律速ベンチ 10–30%。
-- [ ] **Lever 4: JIT（Cranelift）/ Lever 5: 型制約チェックの tight-loop 省略**（ラフ・大）。
+- [ ] **Lever 4: JIT（Cranelift）= ADR-0001 層4（GC の後）/ Lever 5: 型制約チェックの tight-loop 省略**（ラフ・大）。
+      GC を cycle collector on Arc（non-moving + refcount）にする決定で、JIT は stack map/forwarding/write barrier
+      不要・`Arc` inc/dec を emit するだけになる。intループのネイティブ化で hot path は GC/refcost ゼロ（ADR-0001 §3-8）。
+- [ ] **Lever 6: biased reference counting = ADR-0001 層3c（GC 後の独立 perf）**: 所有スレッドからの refcount を
+      非 atomic 化。JIT が intループをネイティブ化すれば hot path から refcount が消えるため優先度は低め。
 - [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
 - 目標: method-call <1.5x、bench-class <1.5x、bench-fib（型制約付き）<2x。
 
@@ -222,12 +246,16 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
 
 スカラ／state の `start` 間ライブ共有・hash/array 要素 atomic は landed（→ news）。残:
 
-- [ ] **`state @`/`%`・lexical aggregate の真共有**（Track B 要素 cell 基盤に依存）。
+- [ ] **`state @`/`%`・lexical aggregate の真共有**（Track B 要素 cell 基盤に依存。Track B は GC と統合＝
+      ADR-0001 層3a なので、この項目も実質 Phase B 待ち）。
 - [ ] Semaphore / nonblocking await / lock 競合（S17・hard・別軸）。
 - [ ] `unsafe` の single-thread 前提コメント是正（`Arc::as_ptr as *mut` を strong_count ガード前提に・最終的に要素も cell 化）。
 
 ### J. 構造リファクタ・将来（独立・中長期）
 
+- [ ] **★大型ジャンプ: GC（cycle collector on Arc）→ JIT**（ADR-0001・Phase B/C）。Phase A 完了後に着手。
+      **Track B（要素 cell 化）と GC は統合キャンペーン（層3a・`Arc → Gc<T>` 一斉置換）**。続いて NaN-boxing
+      （層3b・JIT 地ならし）→ JIT（層4）。未決は収集方式（同期/非同期）と A' 地ならしの範囲（ADR §4.2/§4.3）。
 - [ ] 制御フロー（`return`/`last`/`next`/`take`/`emit`）を `RuntimeError` god-struct から `enum Control` へ分離（ANALYSIS §2.4）。
 - [ ] `.^methods`/`.can` を実ディスパッチ表から導出 / roast fudge ロジック分離 / 500 行超ファイル分割。
 - [ ] エラーメッセージ品質向上 / エッジケースの panic・crash を 0 に。
