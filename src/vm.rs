@@ -149,6 +149,7 @@ mod vm_hyper_race_parallel;
 pub(crate) mod vm_method_dispatch;
 pub(crate) mod vm_misc_ops;
 mod vm_mixin_does_ops;
+mod vm_module_ops;
 mod vm_native_dispatch;
 mod vm_native_extrema;
 mod vm_native_first;
@@ -159,11 +160,14 @@ mod vm_native_subst;
 mod vm_native_test;
 mod vm_react_loop;
 mod vm_register_ops;
+mod vm_register_sub_ops;
+mod vm_scope_ops;
 mod vm_set_ops;
 pub(crate) mod vm_smart_match;
 mod vm_smartmatch_ops;
 pub(crate) mod vm_stats;
 pub(crate) mod vm_string_regex_ops;
+mod vm_typedecl_ops;
 mod vm_value_helpers;
 mod vm_var_assign_ops;
 mod vm_var_delete_ops;
@@ -172,6 +176,7 @@ mod vm_var_get_ops;
 mod vm_var_index_ops;
 mod vm_var_multidim_ops;
 mod vm_var_ops;
+mod vm_var_trait_ops;
 
 fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
     crate::runtime::compare_values(left, right).cmp(&0)
