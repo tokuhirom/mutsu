@@ -54,6 +54,16 @@ pub enum Control {
     Emit,
     /// `redo` — re-run the current loop iteration.
     Redo,
+    /// `next` — skip to the next loop iteration.
+    Next,
+    /// `succeed` — leave the enclosing `when`/`given` successfully.
+    Succeed,
+    /// A resumable control signal (e.g. a resumed `warn`/CONTROL handler).
+    Resume,
+    /// `done` for a `react`/`supply` (consumed by the react runtime).
+    ReactDone,
+    /// `warn` — emit a warning (resumable); message in `RuntimeError::message`.
+    Warn,
 }
 
 #[derive(Debug)]
@@ -65,21 +75,17 @@ pub struct RuntimeError {
     pub hint: Option<String>,
     pub return_value: Option<Value>,
     /// The control-flow signal this error carries, if any (see `Control`).
-    /// Replaces the former `is_return`/`is_goto`/`is_proceed`/`is_take`/
-    /// `is_emit`/`is_redo` bools; read via the `is_*()` accessor methods.
+    /// Replaces the former `is_*` bools for the migrated signals; read via the
+    /// `is_*()` accessor methods. The remaining `is_*: bool` fields below carry
+    /// signals not yet migrated to the enum (later slices).
     pub control: Option<Control>,
     pub is_last: bool,
-    pub is_next: bool,
-    pub is_succeed: bool,
     pub is_fail: bool,
     /// When true, the Failure produced from this fail error should be marked as handled.
     /// Set when UNDO phasers run in response to the fail.
     pub fail_handled: bool,
-    pub is_warn: bool,
     pub is_done: bool,
     pub is_leave: bool,
-    pub is_resume: bool,
-    pub is_react_done: bool,
     pub label: Option<String>,
     pub leave_callable_id: Option<u64>,
     pub leave_routine: Option<String>,
@@ -117,15 +123,10 @@ impl RuntimeError {
             return_value: None,
             control: None,
             is_last: false,
-            is_next: false,
-            is_succeed: false,
             is_fail: false,
             fail_handled: false,
-            is_warn: false,
             is_done: false,
             is_leave: false,
-            is_resume: false,
-            is_react_done: false,
             label: None,
             leave_callable_id: None,
             leave_routine: None,
@@ -159,6 +160,26 @@ impl RuntimeError {
     /// `redo` control signal (re-run the current loop iteration).
     pub(crate) fn is_redo(&self) -> bool {
         self.control == Some(Control::Redo)
+    }
+    /// `next` control signal (skip to the next loop iteration).
+    pub(crate) fn is_next(&self) -> bool {
+        self.control == Some(Control::Next)
+    }
+    /// `succeed` control signal (leave the enclosing `when`/`given`).
+    pub(crate) fn is_succeed(&self) -> bool {
+        self.control == Some(Control::Succeed)
+    }
+    /// Resumable control signal (resumed `warn`/CONTROL handler).
+    pub(crate) fn is_resume(&self) -> bool {
+        self.control == Some(Control::Resume)
+    }
+    /// `done` control signal for a `react`/`supply`.
+    pub(crate) fn is_react_done(&self) -> bool {
+        self.control == Some(Control::ReactDone)
+    }
+    /// `warn` control signal (resumable warning).
+    pub(crate) fn is_warn(&self) -> bool {
+        self.control == Some(Control::Warn)
     }
 
     /// Check if this error represents an X::CompUnit::UnsatisfiedDependency error.
@@ -228,15 +249,10 @@ impl RuntimeError {
             return_value: None,
             control: None,
             is_last: false,
-            is_next: false,
-            is_succeed: false,
             is_fail: false,
             fail_handled: false,
-            is_warn: false,
             is_done: false,
             is_leave: false,
-            is_resume: false,
-            is_react_done: false,
             label: None,
             leave_callable_id: None,
             leave_routine: None,
@@ -258,7 +274,7 @@ impl RuntimeError {
     pub(crate) fn next_signal() -> Self {
         Self {
             message: "X::ControlFlow".to_string(),
-            is_next: true,
+            control: Some(Control::Next),
             ..Self::new("")
         }
     }
@@ -289,7 +305,7 @@ impl RuntimeError {
 
     pub(crate) fn succeed_signal() -> Self {
         Self {
-            is_succeed: true,
+            control: Some(Control::Succeed),
             ..Self::new("")
         }
     }
@@ -301,14 +317,14 @@ impl RuntimeError {
     /// surfaces to user code.
     pub(crate) fn supply_terminate_signal() -> Self {
         Self {
-            is_react_done: true,
+            control: Some(Control::ReactDone),
             ..Self::new("")
         }
     }
 
     pub(crate) fn resume_signal() -> Self {
         Self {
-            is_resume: true,
+            control: Some(Control::Resume),
             ..Self::new("")
         }
     }
@@ -331,7 +347,7 @@ impl RuntimeError {
         );
         let xcf = Self::typed("X::ControlFlow", attrs);
         Self {
-            is_react_done: true,
+            control: Some(Control::ReactDone),
             exception: xcf.exception,
             ..Self::new("")
         }
@@ -349,7 +365,7 @@ impl RuntimeError {
     pub(crate) fn warn_signal(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
-            is_warn: true,
+            control: Some(Control::Warn),
             ..Self::new("")
         }
     }
@@ -405,7 +421,7 @@ impl RuntimeError {
     pub(crate) fn warn_signal_with_resume(message: impl Into<String>, resume_value: Value) -> Self {
         Self {
             message: message.into(),
-            is_warn: true,
+            control: Some(Control::Warn),
             return_value: Some(resume_value),
             ..Self::new("")
         }

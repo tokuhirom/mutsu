@@ -2227,7 +2227,7 @@ impl Interpreter {
                                 v => result.push(v),
                             }
                         }
-                        Err(e) if e.is_next => {}
+                        Err(e) if e.is_next() => {}
                         Err(e) if e.is_last => break,
                         Err(mut e) => {
                             // A `return` inside the map block targets the routine
@@ -2465,7 +2465,7 @@ impl Interpreter {
                                 v => result.push(v),
                             }
                         }
-                        Err(e) if e.is_next => {
+                        Err(e) if e.is_next() => {
                             if arity == 1
                                 && let Some(mutated) = vm.env().get(topic_key).cloned()
                             {
@@ -2661,7 +2661,7 @@ impl Interpreter {
                                 break 'body_redo;
                             }
                             Err(e) if e.is_redo() => continue 'body_redo,
-                            Err(e) if e.is_next => break 'body_redo,
+                            Err(e) if e.is_next() => break 'body_redo,
                             Err(e) if e.is_last => {
                                 stop = true;
                                 break 'body_redo;

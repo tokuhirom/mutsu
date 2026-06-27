@@ -523,7 +523,7 @@ impl Interpreter {
         args: &[Value],
     ) -> RuntimeError {
         // Don't enhance errors that are already enhanced or are control flow
-        if err.is_return() || err.is_last || err.is_next || func_name.is_empty() {
+        if err.is_return() || err.is_last || err.is_next() || func_name.is_empty() {
             return err;
         }
         // Build call profile: func_name(Type1, Type2, ...)

@@ -491,7 +491,7 @@ impl Interpreter {
                         // how `(1..Inf).Supply.tap({ ...; done if ... })` terminates).
                         match self.call_sub_value(tap_cb.clone(), vec![v.clone()], true) {
                             Ok(_) => {}
-                            Err(err) if err.is_react_done || err.is_last => break,
+                            Err(err) if err.is_react_done() || err.is_last => break,
                             Err(err) => return Err(err),
                         }
                     }

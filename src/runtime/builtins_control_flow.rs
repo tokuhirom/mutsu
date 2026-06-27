@@ -434,10 +434,10 @@ impl Interpreter {
             // handler this is equivalent to resuming with Nil.
             Ok(()) => Some(Ok(Value::Nil)),
             // `.resume` — the warn resumes; a bare `.resume` yields Nil.
-            Err(ce) if ce.is_resume => Some(Ok(Value::Nil)),
+            Err(ce) if ce.is_resume() => Some(Ok(Value::Nil)),
             // The handler re-threw the warn (`warn`/`.rethrow` of CX::Warn):
             // act like the default handler — print and resume.
-            Err(ce) if ce.is_warn => {
+            Err(ce) if ce.is_warn() => {
                 if !self.warning_suppressed() {
                     self.write_warn_to_stderr(&ce.message);
                 }

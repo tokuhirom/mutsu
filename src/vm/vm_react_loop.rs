@@ -65,7 +65,7 @@ impl Interpreter {
                 loan_env!(self, set_when_matched(saved_when));
                 Ok(())
             }
-            Err(err) if err.is_succeed => {
+            Err(err) if err.is_succeed() => {
                 loan_env!(self, set_when_matched(saved_when));
                 Ok(())
             }
@@ -103,12 +103,12 @@ impl Interpreter {
     ) -> Result<bool, RuntimeError> {
         match self.call_react_callback(&sub.callback.clone(), vec![value.clone()]) {
             Ok(_) => Ok(false),
-            Err(e) if e.is_react_done => Ok(true),
-            Err(e) if e.is_next => Ok(false),
+            Err(e) if e.is_react_done() => Ok(true),
+            Err(e) if e.is_next() => Ok(false),
             Err(e) if e.is_last => {
                 for cb in sub.last_callbacks.clone() {
                     match self.call_react_callback(&cb, vec![value.clone()]) {
-                        Err(le) if le.is_react_done => {
+                        Err(le) if le.is_react_done() => {
                             sub.done = true;
                             return Ok(true);
                         }
@@ -250,7 +250,7 @@ impl Interpreter {
                                 .map(|c| c.done)
                                 .unwrap_or(false);
                             if let Err(od_err) = od_res
-                                && !od_err.is_react_done
+                                && !od_err.is_react_done()
                             {
                                 self.supply_stream_consumers.truncate(stream_idx);
                                 return Err(crate::runtime::Interpreter::wrap_react_died(od_err));
@@ -267,7 +267,7 @@ impl Interpreter {
                                     .unwrap_or_default();
                                 for last_cb in &last_cbs {
                                     match self.call_react_callback(&last_cb.clone(), Vec::new()) {
-                                        Err(e) if e.is_react_done => return Ok(()),
+                                        Err(e) if e.is_react_done() => return Ok(()),
                                         _ => {}
                                     }
                                 }
@@ -354,7 +354,7 @@ impl Interpreter {
                             .unwrap_or_default();
                         for last_cb in &last_cbs {
                             match self.call_react_callback(&last_cb.clone(), Vec::new()) {
-                                Err(e) if e.is_react_done => return Ok(()),
+                                Err(e) if e.is_react_done() => return Ok(()),
                                 _ => {}
                             }
                         }
@@ -454,7 +454,7 @@ impl Interpreter {
                 {
                     for callback in &sub.last_callbacks {
                         match self.call_react_callback(&callback.clone(), Vec::new()) {
-                            Err(e) if e.is_react_done => break 'react_loop,
+                            Err(e) if e.is_react_done() => break 'react_loop,
                             other => {
                                 other?;
                             }
@@ -569,7 +569,7 @@ impl Interpreter {
                                 &sub.callback.clone(),
                                 vec![Value::str(remaining)],
                             ) {
-                                Err(e) if e.is_react_done => break 'react_loop,
+                                Err(e) if e.is_react_done() => break 'react_loop,
                                 other => {
                                     other?;
                                 }
@@ -619,12 +619,12 @@ impl Interpreter {
                                 // supply: keep the promise with the last emitted
                                 // value immediately rather than spinning to the
                                 // deadline.
-                                if err.is_react_done || err.is_last {
+                                if err.is_react_done() || err.is_last {
                                     promise.keep(last_value.clone(), String::new(), String::new());
                                     return Ok(());
                                 }
                                 // `next`/`redo` are loop control, not completion.
-                                if !err.is_next && !err.is_redo() {
+                                if !err.is_next() && !err.is_redo() {
                                     // A `die` quits the supply: break with the cause.
                                     let cause = err
                                         .exception
@@ -668,7 +668,7 @@ impl Interpreter {
                                     &sub.callback.clone(),
                                     vec![Value::str(remaining)],
                                 ) {
-                                    Err(e) if e.is_react_done => break 'react_loop,
+                                    Err(e) if e.is_react_done() => break 'react_loop,
                                     other => {
                                         other?;
                                     }
@@ -874,7 +874,7 @@ impl Interpreter {
             .map(|c| c.done)
             .unwrap_or(false);
         if let Err(e) = res
-            && !e.is_react_done
+            && !e.is_react_done()
         {
             self.supply_stream_consumers.truncate(idx);
             return Err(crate::runtime::Interpreter::wrap_react_died(e));
@@ -904,7 +904,7 @@ impl Interpreter {
                     // A plain value buffered by the body (no active stream route):
                     // deliver it to the consumer directly.
                     match self.call_react_callback(&consumer_cb.clone(), vec![v]) {
-                        Err(e) if e.is_react_done => {
+                        Err(e) if e.is_react_done() => {
                             reached = true;
                             break;
                         }
@@ -919,7 +919,7 @@ impl Interpreter {
         if !reached {
             for cb in last_callbacks {
                 match self.call_react_callback(&cb.clone(), Vec::new()) {
-                    Err(e) if e.is_react_done => {
+                    Err(e) if e.is_react_done() => {
                         reached = true;
                         break;
                     }
@@ -943,8 +943,8 @@ impl Interpreter {
             for v in values.iter() {
                 match self.call_react_callback(&callback.clone(), vec![v.clone()]) {
                     Ok(_) => {}
-                    Err(e) if e.is_react_done => return Ok(true),
-                    Err(e) if e.is_next => continue,
+                    Err(e) if e.is_react_done() => return Ok(true),
+                    Err(e) if e.is_next() => continue,
                     Err(e) if e.is_last => {
                         last_topic = Some(v.clone());
                         break;
@@ -959,7 +959,7 @@ impl Interpreter {
                 None => Vec::new(),
             };
             match self.call_react_callback(&cb.clone(), args) {
-                Err(e) if e.is_react_done => return Ok(true),
+                Err(e) if e.is_react_done() => return Ok(true),
                 other => {
                     other?;
                 }

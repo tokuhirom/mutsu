@@ -2289,7 +2289,7 @@ impl Interpreter {
                 for item in items.iter() {
                     match self.duckmap_element(block, item) {
                         Ok(v) => result.push(v),
-                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_next() => continue,
                         Err(e) if e.is_last => break,
                         Err(e) => return Err(e),
                     }
@@ -2305,7 +2305,7 @@ impl Interpreter {
                 for item in items.iter() {
                     match self.duckmap_element(block, item) {
                         Ok(v) => result.push(v),
-                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_next() => continue,
                         Err(e) if e.is_last => break,
                         Err(e) => return Err(e),
                     }
@@ -2319,7 +2319,7 @@ impl Interpreter {
                         Ok(mapped) => {
                             result.insert(k.clone(), mapped);
                         }
-                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_next() => continue,
                         Err(e) if e.is_last => break,
                         Err(e) => return Err(e),
                     }
@@ -2399,14 +2399,14 @@ impl Interpreter {
                                 }
                                 result.push(v);
                             }
-                            Err(e) if e.is_next => continue,
+                            Err(e) if e.is_next() => continue,
                             Err(e) => return Err(e),
                         }
                         continue;
                     }
                     match self.deepmap_iterate_inner(block, item, child_itemize) {
                         Ok(v) => result.push(v),
-                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_next() => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -2440,7 +2440,7 @@ impl Interpreter {
                 for item in items.iter() {
                     match self.deepmap_iterate_inner(block, item, true) {
                         Ok(v) => result.push(v),
-                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_next() => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -2478,7 +2478,7 @@ impl Interpreter {
                                 }
                                 result.insert(k.clone(), val);
                             }
-                            Err(e) if e.is_next => continue,
+                            Err(e) if e.is_next() => continue,
                             Err(e) => return Err(e),
                         }
                         continue;
@@ -2492,7 +2492,7 @@ impl Interpreter {
                         Ok(val) => {
                             result.insert(k.clone(), val);
                         }
-                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_next() => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -2518,7 +2518,7 @@ impl Interpreter {
                 for item in items.iter() {
                     match self.call_sub_value(block.clone(), vec![item.clone()], false) {
                         Ok(v) => result.push(v),
-                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_next() => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -2529,7 +2529,7 @@ impl Interpreter {
                 for item in items.iter() {
                     match self.call_sub_value(block.clone(), vec![item.clone()], false) {
                         Ok(v) => result.push(v),
-                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_next() => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -2545,7 +2545,7 @@ impl Interpreter {
         // Try to call the block with this value
         match self.call_sub_value(block.clone(), vec![value.clone()], false) {
             Ok(result) => Ok(result),
-            Err(e) if e.is_next || e.is_last || e.is_redo() => {
+            Err(e) if e.is_next() || e.is_last || e.is_redo() => {
                 // Propagate loop control signals (next, last, redo)
                 Err(e)
             }

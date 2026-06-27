@@ -619,7 +619,7 @@ impl Interpreter {
                 // signal so the default handler writes to stderr and
                 // execution continues.
                 if cn == "CX::Warn" {
-                    err.is_warn = true;
+                    err.control = Some(crate::value::Control::Warn);
                 }
                 err.exception = Some(Box::new(target.clone()));
                 return Err(err);
