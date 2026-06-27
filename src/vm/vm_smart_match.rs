@@ -181,6 +181,13 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         (Value::Int(a), Value::Str(b)) => Some(b.trim().parse::<f64>() == Ok(*a as f64)),
         (Value::Nil, Value::Str(s)) => Some(s.is_empty()),
 
+        // Array/List ~~ Numeric: a list smart-matched against a number compares
+        // numerically (`@a == $n`), and a list's numeric value is its element
+        // count — so `[1,2,3] ~~ 3` is True (3 elems), `~~ 2` is False.
+        (Value::Array(a, _), Value::Int(b)) => Some(a.items.len() as i64 == *b),
+        (Value::Array(a, _), Value::Num(b)) => Some(a.items.len() as f64 == *b),
+        (Value::Array(a, _), Value::Rat(n, d)) => Some(*d != 0 && a.items.len() as i64 * *d == *n),
+
         // IO::Path ~~ IO::Path: compare by cleanup.absolute
         (
             Value::Instance {
