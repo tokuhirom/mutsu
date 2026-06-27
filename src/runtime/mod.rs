@@ -126,6 +126,8 @@ type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
 mod accessors;
 mod builtins;
 mod builtins_atomic;
+mod builtins_atomic_cas;
+mod builtins_atomic_shared;
 mod builtins_coerce;
 pub(crate) mod builtins_collection;
 mod builtins_control_flow;
