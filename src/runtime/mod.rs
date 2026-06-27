@@ -124,6 +124,11 @@ type ProtectBlockCacheEntry = (
 type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
 
 mod accessors;
+mod accessors_misc;
+mod accessors_resolve;
+mod accessors_stack;
+mod accessors_stash;
+mod accessors_state;
 mod builtins;
 mod builtins_atomic;
 mod builtins_atomic_cas;
