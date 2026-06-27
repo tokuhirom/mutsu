@@ -123,7 +123,9 @@ macro_rules! loan_env {
     }};
 }
 
+mod vm_arith_int_ops;
 mod vm_arith_ops;
+mod vm_bitwise_ops;
 mod vm_call_autothread;
 mod vm_call_dispatch;
 mod vm_call_exec_ops;
@@ -133,6 +135,7 @@ mod vm_call_method_compiled;
 mod vm_call_method_mut_ops;
 mod vm_call_method_ops;
 mod vm_closure_dispatch;
+mod vm_coerce_concat_ops;
 mod vm_comparison_ops;
 mod vm_control_ops;
 mod vm_data_ops;
@@ -143,6 +146,7 @@ mod vm_hyper_method_ops;
 mod vm_hyper_race_parallel;
 pub(crate) mod vm_method_dispatch;
 pub(crate) mod vm_misc_ops;
+mod vm_mixin_does_ops;
 mod vm_native_dispatch;
 mod vm_native_extrema;
 mod vm_native_first;
