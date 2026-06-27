@@ -94,14 +94,20 @@ impl Compiler {
                     }
                     // Tag the container's element-type metadata so `.of` survives
                     // (and the missing-element default is the element type) when a
-                    // typed *array* is declared in EXPRESSION position
+                    // *named* typed array is declared in EXPRESSION position
                     // (`my $x = (my Str @c)`, `gen my Str @s`). The statement-
                     // position VarDecl emits the same `SetVarType`; without it the
-                    // expr path left `@c.of` = Mu. Restricted to boxed-element
-                    // `@`-arrays: native element types (`int`/`num`/`str`) change
-                    // the array storage (would panic in the expr-path auto-vivify),
-                    // and `%`-hash tagging here perturbs `Associative[T]` binding.
+                    // expr path left `@c.of` = Mu. Restrictions:
+                    //   - `@`-arrays only (`%`-hash tagging perturbs `Associative[T]`
+                    //     binding);
+                    //   - boxed element types only (native `int`/`num`/`str` change
+                    //     the array storage and would panic in the auto-vivify here);
+                    //   - NOT anonymous `my Int @` — leaving an anonymous typed
+                    //     array untagged in an argument keeps `Positional[T]`
+                    //     type-capture binding working (a pre-existing limitation
+                    //     where a parameterized Array[T] is rejected by `Positional[T]`).
                     if name.starts_with('@')
+                        && !name.contains("__ANON_ARRAY__")
                         && let Some(tc) = type_constraint
                         && !crate::runtime::native_types::is_native_array_element_type(tc)
                     {
