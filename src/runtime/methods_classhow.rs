@@ -2317,6 +2317,7 @@ impl Interpreter {
                     source_line: None,
                     source_file: None,
                     owned_captures: Vec::new(),
+                    upvalues: Vec::new(),
                 };
                 meta.insert(
                     "build".to_string(),

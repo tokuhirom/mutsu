@@ -395,6 +395,11 @@ impl Interpreter {
             .collect();
         let seeded = handler_locals.clone();
         let saved_locals = std::mem::replace(&mut self.locals, handler_locals);
+        // The handler addresses the installing frame's lexicals by name through
+        // env (handler_locals above), NOT this deep frame's upvalue array. Clear
+        // the upvalue array so any `GetUpvalue` in the handler range falls back to
+        // the env read (correct), instead of indexing the wrong frame's array.
+        let saved_upvalues = std::mem::take(&mut self.upvalues);
 
         // The handler runs in the deep frame's stack; isolate its operand-stack
         // effects so the suspended computation's stack is left untouched.
@@ -407,6 +412,7 @@ impl Interpreter {
         // observes them. Only changed slots are written, to keep blast radius
         // minimal.
         let handler_locals = std::mem::replace(&mut self.locals, saved_locals);
+        self.upvalues = saved_upvalues;
         for (i, name) in code.locals.iter().enumerate() {
             if name.is_empty() {
                 continue;

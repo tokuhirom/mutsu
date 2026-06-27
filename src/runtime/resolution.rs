@@ -1418,6 +1418,7 @@ impl Interpreter {
                 source_line: data.source_line,
                 source_file: data.source_file.clone(),
                 owned_captures: data.owned_captures.clone(),
+                upvalues: data.upvalues.clone(),
             });
             new_env.insert(
                 "&?BLOCK".to_string(),

@@ -829,6 +829,24 @@ impl Compiler {
         // last_source_line.
         sub_compiler.code.source_line = sub_compiler.last_source_line.or(self.last_source_line);
         sub_compiler.code.compute_needs_env_sync();
+        // Promote read-only plain-lexical free variables to index-based upvalues.
+        // Closure-only (this path compiles anonymous closures/blocks); named subs
+        // and the top-level program never get an upvalue array at runtime.
+        // Sub-signature capture params (`|c(Str $x)`) bind at call time but read
+        // via GetGlobal, so they look free — exclude them so they are NOT
+        // upvalue-promoted (they must read the runtime-bound env value).
+        let mut runtime_bound: std::collections::HashSet<crate::symbol::Symbol> =
+            std::collections::HashSet::new();
+        for pd in param_defs {
+            let mut names: std::collections::HashSet<String> = std::collections::HashSet::new();
+            crate::runtime::Interpreter::collect_sub_signature_names(&pd.sub_signature, &mut names);
+            for n in names {
+                let bare = n.trim_start_matches(['$', '@', '%', '&']);
+                runtime_bound.insert(crate::symbol::Symbol::intern(bare));
+                runtime_bound.insert(crate::symbol::Symbol::intern(&n));
+            }
+        }
+        sub_compiler.code.compute_upvalues(&runtime_bound);
         sub_compiler.code
     }
 }

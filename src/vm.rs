@@ -199,6 +199,7 @@ pub(crate) struct ControlHandlerCode {
 pub(crate) struct VmCallFrame {
     pub saved_env: Env,
     pub saved_locals: Vec<Value>,
+    pub saved_upvalues: Vec<Option<Value>>,
     pub saved_stack_depth: usize,
     /// None when using light call frame (simple methods that don't use `:=` binding).
     pub saved_readonly: Option<HashSet<String>>,
@@ -558,6 +559,7 @@ impl Interpreter {
         // fresh) and reset them to their fresh-Interpreter defaults for the nested run.
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_locals = std::mem::take(&mut self.locals);
+        let saved_upvalues = std::mem::take(&mut self.upvalues);
         let saved_call_frames = std::mem::take(&mut self.call_frames);
         let saved_resume_ip = self.resume_ip.take();
         let saved_last_topic = self.last_topic_value.take();
@@ -613,6 +615,7 @@ impl Interpreter {
         // Restore the outer execution registers.
         self.stack = saved_stack;
         self.locals = saved_locals;
+        self.upvalues = saved_upvalues;
         self.call_frames = saved_call_frames;
         self.resume_ip = saved_resume_ip;
         self.last_topic_value = saved_last_topic;
@@ -1168,6 +1171,9 @@ impl Interpreter {
             }
 
             // -- Variables --
+            OpCode::GetUpvalue { index, name_idx } => {
+                self.exec_get_upvalue_op(code, *index, *name_idx, ip)?;
+            }
             OpCode::GetGlobal(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 if name == "?CALLER::LINE" {

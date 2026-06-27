@@ -99,6 +99,20 @@ pub(crate) enum OpCode {
     GetLocalRaw(u32),
     SetLocal(u32),
     GetGlobal(u32),
+    /// Read a captured read-only scalar free variable by index from this frame's
+    /// upvalue array (`self.upvalues`). Emitted in place of `GetGlobal` for a
+    /// closure's read-only plain-scalar free variables (see
+    /// `CompiledCode::compute_upvalues`). `index` indexes `upvalue_syms` / the
+    /// runtime upvalue array; a `ContainerRef` upvalue is auto-dereferenced.
+    /// `name_idx` is the original name constant: when `index` is out of range for
+    /// the live `self.upvalues` (a non-standard execution path — control handler,
+    /// phaser, nested-register run — that did not install this closure's upvalue
+    /// array), execution falls back to a `GetGlobal(name_idx)` env lookup. Env is
+    /// retained as the capture source, so the fallback is always correct.
+    GetUpvalue {
+        index: u32,
+        name_idx: u32,
+    },
     /// Load `self` from the captured environment for a `$.attr` accessor.
     /// Raises X::Syntax::NoSelf (the operand is the constant index of the
     /// accessor's display name, e.g. `$.a`) when `self` is unavailable.
@@ -1404,6 +1418,14 @@ pub(crate) struct CompiledCode {
     /// `FunctionDef` from the AST — and skip perturbing the resolution caches.
     /// Computed once here at compile time (see `add_stmt`).
     pub(crate) sub_fingerprints: std::collections::HashMap<u32, u64>,
+    /// Ordered list of this closure's read-only plain-lexical free variables that
+    /// have been promoted to index-based upvalues. Index `i` in this list is the
+    /// operand of the `GetUpvalue(i)` ops that `compute_upvalues` rewrites in
+    /// `ops`, and the slot the runtime upvalue array (`SubData::upvalues` /
+    /// `Interpreter::upvalues`) is built against. Empty for non-closure code and
+    /// for closures with no upvalue-eligible free variables. Populated by
+    /// `compute_upvalues` (called only for anonymous-closure bodies).
+    pub(crate) upvalue_syms: Vec<Symbol>,
 }
 
 impl CompiledCode {
@@ -1437,6 +1459,7 @@ impl CompiledCode {
             has_calls: false,
             captures_env_by_name: false,
             sub_fingerprints: std::collections::HashMap::new(),
+            upvalue_syms: Vec::new(),
         }
     }
 
@@ -1905,6 +1928,103 @@ impl CompiledCode {
         self.captured_mutated_locals = captured_mutated.into_iter().collect();
         self.needs_cell_locals = needs_cell.into_iter().collect();
         self.needs_cell_free_vars = needs_cell_free.into_iter().collect();
+    }
+
+    /// The constant-pool index of a *pure scalar read* of a lexical by name — the
+    /// only op `compute_upvalues` rewrites to `GetUpvalue` (Phase 1). Deliberately
+    /// a strict subset of [`Self::op_name_const_idx`]: it excludes every
+    /// read-write / write op (`PostIncrement`, `AssignExpr`, …) and the array/hash
+    /// reads (`GetArrayVar`/`GetHashVar`), so only a scalar free variable the
+    /// closure never mutates is ever a candidate.
+    fn op_upvalue_read_const_idx(op: &OpCode) -> Option<u32> {
+        match op {
+            OpCode::GetGlobal(idx) => Some(*idx),
+            _ => None,
+        }
+    }
+
+    /// Promote this closure's *read-only plain-lexical* free variables to
+    /// index-based upvalues: rewrite their pure-read ops to `GetUpvalue(i)` and
+    /// record the captured order in `upvalue_syms`. Must run AFTER
+    /// `compute_free_vars` / `compute_needs_env_sync` (it consumes `free_var_syms`,
+    /// `free_var_writes`, `free_var_container_writes`, `captures_env_by_name`).
+    ///
+    /// Conservative by design (Phase 1):
+    /// - Skips entirely when `captures_env_by_name` (loop/block/gather/whenever or
+    ///   reflective bodies read lexicals by name through paths the op-scan cannot
+    ///   rewrite).
+    /// - A variable is eligible only if it is a plain user lexical, is NEVER
+    ///   written anywhere in the closure subtree (not in `free_var_writes` /
+    ///   `free_var_container_writes`), and appears in this code's ops only through
+    ///   pure-read ops. Read-only capture means the by-value-or-cell snapshot in
+    ///   the upvalue array observes the creator's container correctly (a mutated
+    ///   capture is boxed into a shared `ContainerRef` cell, which the snapshot
+    ///   clones), so reads stay coherent without any write-back.
+    pub(crate) fn compute_upvalues(&mut self, runtime_bound: &std::collections::HashSet<Symbol>) {
+        if self.captures_env_by_name {
+            return;
+        }
+        let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
+        let written: std::collections::HashSet<Symbol> = self
+            .free_var_writes
+            .iter()
+            .chain(self.free_var_container_writes.iter())
+            .copied()
+            .collect();
+        // Eligible = free, read-only, plain *scalar* user lexical, not an own
+        // local. Scalars are stored sigil-less ("$x" -> "x"); arrays/hashes/subs
+        // ("@a"/"%h"/"&f") are excluded in Phase 1 (their reads use distinct ops
+        // and shared-container semantics handled separately). `runtime_bound`
+        // excludes names this body binds at call time but that read via GetGlobal
+        // (sub-signature capture params like `|c(Str $x)`), which only LOOK free.
+        let eligible: std::collections::HashSet<Symbol> = self
+            .free_var_syms
+            .iter()
+            .copied()
+            .filter(|sym| !written.contains(sym))
+            .filter(|sym| !runtime_bound.contains(sym))
+            .filter(|sym| {
+                sym.with_str(|s| {
+                    crate::env::is_plain_user_lexical(s)
+                        && !s.starts_with(['@', '%', '&'])
+                        && !own.contains(s)
+                })
+            })
+            .collect();
+        if eligible.is_empty() {
+            return;
+        }
+        // Assign indices in first-read order so the rewrite and the captured
+        // `upvalue_syms` array stay aligned and deterministic. Record the exact op
+        // positions to rewrite in the same pass (avoids a second self.ops borrow).
+        let mut index_of: std::collections::HashMap<Symbol, u32> = std::collections::HashMap::new();
+        let mut syms: Vec<Symbol> = Vec::new();
+        let mut rewrites: Vec<(usize, u32, u32)> = Vec::new();
+        for (op_pos, op) in self.ops.iter().enumerate() {
+            if let Some(idx) = Self::op_upvalue_read_const_idx(op)
+                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+            {
+                let sym = Symbol::intern(name);
+                if eligible.contains(&sym) {
+                    let uv = *index_of.entry(sym).or_insert_with(|| {
+                        let n = syms.len() as u32;
+                        syms.push(sym);
+                        n
+                    });
+                    rewrites.push((op_pos, uv, idx));
+                }
+            }
+        }
+        if syms.is_empty() {
+            return;
+        }
+        for (op_pos, uv, name_idx) in rewrites {
+            self.ops[op_pos] = OpCode::GetUpvalue {
+                index: uv,
+                name_idx,
+            };
+        }
+        self.upvalue_syms = syms;
     }
 
     /// Store a compiled closure body and return its index. `escapes` records

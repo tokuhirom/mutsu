@@ -1227,6 +1227,12 @@ pub struct Interpreter {
     // former `VM` struct). The Interpreter IS the bytecode VM now. ===
     pub(crate) stack: Vec<Value>,
     pub(crate) locals: Vec<Value>,
+    /// Current frame's captured upvalue array, indexed by the running
+    /// `CompiledCode::upvalue_syms` order. Read by `GetUpvalue(i)`. Set from
+    /// `SubData::upvalues` on closure entry and saved/restored across call frames
+    /// alongside `locals`. A `None` entry (or out-of-range index) makes
+    /// `GetUpvalue` fall back to a by-name env read. Empty for non-closure frames.
+    pub(crate) upvalues: Vec<Option<Value>>,
     pub(crate) in_smartmatch_rhs: bool,
     pub(crate) transliterate_in_smartmatch: bool,
     pub(crate) substitution_in_smartmatch: bool,
@@ -3468,6 +3474,7 @@ impl Interpreter {
             // former `VM::new` installed.
             stack: Vec::new(),
             locals: Vec::new(),
+            upvalues: Vec::new(),
             in_smartmatch_rhs: false,
             transliterate_in_smartmatch: false,
             substitution_in_smartmatch: false,
@@ -6138,6 +6145,7 @@ impl Interpreter {
             // `VM::new(thread_interp)` did for a spawned thread.
             stack: Vec::new(),
             locals: Vec::new(),
+            upvalues: Vec::new(),
             in_smartmatch_rhs: false,
             transliterate_in_smartmatch: false,
             substitution_in_smartmatch: false,
@@ -7017,6 +7025,7 @@ mod tests {
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
+            upvalues: Vec::new(),
         });
 
         let mut interp = Interpreter::new();

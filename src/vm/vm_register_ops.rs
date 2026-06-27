@@ -82,6 +82,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let upvalues = self.capture_upvalues(code, &compiled_code);
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -104,6 +105,7 @@ impl Interpreter {
                 empty_sig: false,
                 is_bare_block: is_block,
                 owned_captures,
+                upvalues,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -137,6 +139,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let upvalues = self.capture_upvalues(code, &compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
             let mut env = self.capture_closure_env(code, &compiled_code);
             if let Some(rt) = return_type {
@@ -171,6 +174,7 @@ impl Interpreter {
                 // stay `Sub`. (`WhateverCode` already overrides via callable_type.)
                 is_bare_block: compiled_code.as_ref().is_some_and(|cc| cc.is_pointy_block),
                 owned_captures,
+                upvalues,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -276,6 +280,58 @@ impl Interpreter {
             }
         }
         crate::env::Env::from_symbol_map(map)
+    }
+
+    /// Build the closure's upvalue array (aligned with `cc.upvalue_syms`) from the
+    /// creating frame's current bindings. Each entry resolves from the creating
+    /// frame's own local slot first (authoritative in the single-store model —
+    /// after `box_captured_lexicals` a mutated/escaping lexical's slot holds the
+    /// shared `ContainerRef` cell, so the snapshot clones the live cell), then the
+    /// enclosing env (transitive captures / outer-frame lexicals). A read-only
+    /// scalar that is never mutated resolves to its plain value. `GetUpvalue` later
+    /// dereferences a `ContainerRef`, so a boxed capture stays coherent with the
+    /// creator.
+    fn capture_upvalues(
+        &self,
+        code: &CompiledCode,
+        cc: &Option<std::sync::Arc<CompiledCode>>,
+    ) -> Vec<Option<Value>> {
+        let Some(cc) = cc else {
+            return Vec::new();
+        };
+        if cc.upvalue_syms.is_empty() {
+            return Vec::new();
+        }
+        cc.upvalue_syms
+            .iter()
+            .map(|sym| {
+                // Resolve the creating frame's current binding: own local slot
+                // first (authoritative in the single-store model), then env.
+                let resolved = if let Some(slot) =
+                    sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
+                    && let Some(val) = self.locals.get(slot)
+                {
+                    val.clone()
+                } else {
+                    self.env().get_sym(*sym).cloned().unwrap_or(Value::Nil)
+                };
+                // Freeze ONLY a shared `ContainerRef` cell into the upvalue array:
+                // reading it always tracks the creator's container, so it is
+                // unconditionally correct (and skips an env HashMap lookup). A
+                // non-cell value is NOT frozen (`None`) -> `GetUpvalue` reads it
+                // live from env, exactly preserving the env-capture behavior.
+                //
+                // We deliberately do NOT snapshot a non-cell "constant" capture by
+                // value: mutsu's compile-time mutation analysis is incomplete (it
+                // does not see writes from separately-registered role/class methods
+                // or rw-arg sinks like `cas`), so a value that merely *looks*
+                // read-only can in fact be mutated by another scope/thread
+                // (S12-construction/roles-6e.t). Promoting such constants to
+                // by-value snapshots requires a complete mutation analysis and is
+                // deferred to a later phase.
+                resolved.is_container_ref().then_some(resolved)
+            })
+            .collect()
     }
 
     /// Box-on-capture (lever C Slice 2): a closure captures the *container* of a
@@ -424,6 +480,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let upvalues = self.capture_upvalues(code, &compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
             let mut env = self.capture_closure_env(code, &compiled_code);
             if let Some(rt) = return_type {
@@ -458,6 +515,7 @@ impl Interpreter {
                 // (`sub {...}`) have `is_pointy_block == false` and stay `Sub`.
                 is_bare_block: compiled_code.as_ref().is_some_and(|cc| cc.is_pointy_block),
                 owned_captures,
+                upvalues,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -481,6 +539,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let upvalues = self.capture_upvalues(code, &compiled_code);
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -502,6 +561,7 @@ impl Interpreter {
                 empty_sig: false,
                 is_bare_block: true,
                 owned_captures,
+                upvalues,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,
