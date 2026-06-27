@@ -437,6 +437,31 @@ impl Compiler {
                 self.code
                     .emit(OpCode::SinkPop(Self::stmt_value_may_user_sink(expr)));
             }
+            // Feed split for an assignment to an already-declared variable:
+            // `@x = SOURCE ==> SINK` — the feed operator is at Sequencer precedence
+            // (looser than `=`), so it parses as `(@x = SOURCE) ==> SINK`. Relocate
+            // the assignment into the feed's textually-left operand and run the feed
+            // as a (sink-context) expression statement. (The `my`-declaration form
+            // is split in the parser; see decl/my_decl_assign.rs.)
+            Stmt::Assign {
+                name,
+                expr: feed @ Expr::Feed { .. },
+                op: AssignOp::Assign,
+            } if name != "*PID" => {
+                let mut feed = feed.clone();
+                {
+                    let slot = crate::parser::feed_leftmost_operand_mut(&mut feed);
+                    let source = std::mem::replace(slot, Expr::Literal(Value::Nil));
+                    *slot = Expr::AssignExpr {
+                        name: name.clone(),
+                        expr: Box::new(source),
+                        is_bind: false,
+                    };
+                }
+                self.compile_condition_expr(&feed);
+                self.code
+                    .emit(OpCode::SinkPop(Self::stmt_value_may_user_sink(&feed)));
+            }
             Stmt::Block(stmts) => {
                 // Check for placeholder conflicts in blocks
                 let placeholders = crate::ast::collect_placeholders(stmts);

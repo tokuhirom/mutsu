@@ -111,8 +111,11 @@
       詳細＝memory `next-session-lazy-seq`・BLOCKERS.md §「Real lazy infinite sequences」。
 - [ ] **Match キャプチャ番号付け / コンテナ kind**: (1) `$<x>=(...)` が positional スロットにも重複格納され番号がずれる、
       (2) `m:g//` を `my @m` 代入後 `@m.gist` が `(…)` を返す（receiver の List-kind dual-store）。S05-capture/array-alias.t（30/37）。
-- [ ] 未実装演算子: `ff`/`fff`（flipflop 8 variants）/ `==>`・`<==`（feed precedence: `==>` が `=` より強く結合する差）/
-      `~<`・`~>`（string bitwise shift・優先度低）。
+- [ ] 未実装演算子（2026-06-27 再調査）: `ff`/`fff`（flipflop 8 variants）は **完了**（flip-flop.t 40/40 PASS）。
+      `==>`・`<==` feed precedence は **完了**（`Expr::Feed` 遅延ノード化＋宣言/代入 split で `=` を `==>` より強く結合させた。
+      `my @a = X ==> map` → `(my @a = X) ==> map`。括弧/`do{}` は隔離。t/feed-operators.t 24 で担保）。残ギャップ＝(1) 改行を
+      またぐ複数行 feed（行頭 `==>`・`parse_list_infix_loop` の `!ws_before.contains('\n')` ガードが阻む）(2) `==>>`/`<<==` は
+      rakudo 自身も未実装。`~<`・`~>`（string bitwise shift）は **rakudo 自身が "not yet implemented"**・仕様未確定（着手不可）。
 - [ ] メタ演算子: generalized negation meta（`!op`）/ hyper assignment（`@a >>+=>> 1`）。
 - [ ] Phasers: rvalue caching（INIT/CHECK/BEGIN as rvalues）/ PRE/POST（contract programming）。
 - [ ] Signatures: type-check enforcement（X::TypeCheck）/ native int/uint overflow・bounds / 単一 sub の複数シグネチャ。

@@ -277,6 +277,48 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         }
         other => other,
     };
+    // Feed split: `my @a = SOURCE ==> SINK` — the feed operator is at Sequencer
+    // precedence (looser than the declaration's `=`), so it parses as
+    // `(my @a = SOURCE) ==> SINK`. Relocate the declaration to wrap the feed's
+    // textually-left operand, then run the whole feed as the statement value.
+    if matches!(expr, Expr::Feed { .. }) {
+        let mut custom_traits = s.custom_traits.clone();
+        if !custom_traits
+            .iter()
+            .any(|(name, _)| name == "__has_initializer")
+        {
+            custom_traits.push(("__has_initializer".to_string(), None));
+        }
+        let mut feed = expr;
+        {
+            let slot = crate::parser::feed_leftmost_operand_mut(&mut feed);
+            let mut source = std::mem::replace(slot, Expr::Literal(crate::value::Value::Nil));
+            if let Some(dims) = s.shape_dims.clone() {
+                source = shaped_array_new_with_data_expr(dims, source);
+            }
+            *slot = Expr::DoStmt(Box::new(Stmt::VarDecl {
+                name: s.name.clone(),
+                expr: source,
+                type_constraint: s.type_constraint.clone(),
+                is_state: s.is_state,
+                is_our: s.is_our,
+                is_dynamic: s.has_dynamic_trait,
+                is_export: s.has_export_trait,
+                export_tags: s.export_tags.clone(),
+                custom_traits,
+                where_constraint: s.where_constraint.clone(),
+            }));
+        }
+        let stmt = wrap_with_will_leave(
+            Stmt::Expr(feed),
+            &var_name_for_leave,
+            s.will_phasers.clone(),
+        );
+        if s.apply_modifier {
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Ok((rest, stmt));
+    }
     let expr = if let Some(dims) = s.shape_dims {
         shaped_array_new_with_data_expr(dims, expr)
     } else {

@@ -375,6 +375,20 @@ pub(crate) enum Expr {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+    /// Feed operator (`==>`, `<==`, `==>>`, `<<==`) — Sequencer precedence (the
+    /// loosest infix). Kept as a deferred node (rather than folded into the sink
+    /// call immediately) so that an assignment/declaration on the textually-left
+    /// side can split it: `my @a = (1,2,3) ==> map {...}` parses with `=` binding
+    /// tighter than `==>`, becoming `(my @a = (1,2,3)) ==> map {...}`. `source`
+    /// flows into `sink`; `append` distinguishes `==>>`/`<<==` from `==>`/`<==`.
+    /// `left_is_source` records whether the textually-left operand is the source
+    /// (`==>`) or the sink (`<==`), so the split knows which side to wrap.
+    Feed {
+        source: Box<Expr>,
+        sink: Box<Expr>,
+        append: bool,
+        left_is_source: bool,
+    },
     DoBlock {
         body: Vec<Stmt>,
         label: Option<String>,
