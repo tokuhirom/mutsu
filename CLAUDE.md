@@ -272,7 +272,22 @@ When deciding whether a change is worth it, use these definitions — NOT a vagu
 Consequences for design choices:
 
 - Prefer **sound mechanisms that cannot go flaky** over clever optimizations that are correct only under an *incomplete* static analysis. Example: capturing a closure's mutable lexical as a **shared cell** always tracks later mutations, so it never flakes; snapshotting it **by value** is only correct if you can prove the variable is never mutated — and mutsu's compile-time mutation analysis is incomplete (it does not see writes from separately-registered role/class methods, nor rw-arg sinks like `cas`), so a missed case turns into a *flaky* failure (see the `S12-construction/roles-6e.t` regression). The by-value route is therefore the **risky** one and the cell route is the **gain**, even though by-value reads are faster.
-- A known-hard prerequisite (e.g. making `ContainerRef` deref universal, §2.1 / Track B) is itself a **gain** to pursue, not a reason to stop — surfacing its gaps as deterministic roast failures and fixing them *is* the architectural progress.
+- A known-hard prerequisite (e.g. making `ContainerRef` deref universal, §2.1 / Track B) is itself a **gain** to pursue, not a reason to stop — surfacing its gaps as deterministic roast failures and fixing them *is* the architectural progress. (**Update (ADR-0001):** Track B is now *fused with GC* and must NOT be started as a standalone campaign — see "Architecture decisions" below.)
+
+## Architecture decisions are recorded as ADRs (`docs/adr/`)
+
+Large architectural decisions — method/order choices that are costly to reverse — are recorded as ADRs under `docs/adr/` (one decision per file, `NNNN-title.md`; conventions in `docs/adr/README.md`). Before starting work that touches such a decision, **read the relevant ADR first**. If you are about to make a new large architectural call, write a `Proposed` ADR for it rather than baking the decision silently into code; supersede (don't rewrite) an ADR when the decision changes.
+
+### GC / JIT roadmap (ADR-0001 — read before any GC, Track B, NaN-boxing, or JIT work)
+
+The strategy is fixed in [docs/adr/0001-gc-strategy-and-phasing.md](docs/adr/0001-gc-strategy-and-phasing.md). The load-bearing rules for agents:
+
+- **GC is table-stakes, not optional.** An interpreter that leaks cycles is treated as defective (mutsu currently has no GC — only `Arc` refcounting — so cycles leak). But GC is sequenced *after* Phase A and *before* JIT.
+- **Phase order: A (catch up to raku on compat + single-thread speed) → A' (root consolidation) → B (Value-representation rework + GC) → C (JIT).** Do NOT start JIT before GC. Do NOT start GC before Phase A is essentially done — GC on a not-yet-competitive interpreter just yields "slow but leak-free".
+- **Do NOT start Track B (array/hash element `ContainerRef` cells, ANALYSIS §2.1) as a standalone campaign.** It is fused with GC as ADR-0001 "layer 3a": the `Arc → Gc<T>` replacement of container-kind variants *and* Track B element-cell-ification are **one** campaign. Touching the ~79 `arc_contents_mut` sites twice (once for Track B, once for GC) is exactly the waste to avoid; the Track B re-entrancy deadlock and the GC safepoint are the same re-entry problem and must be designed together.
+- **Moving GC is rejected** (incompatible with Rust-owned + `Arc` Values: roots can't be fully tracked, and moving breaks the raw-pointer writes in `arc_contents_mut`). The chosen mechanism is a **Bacon-Rajan cycle collector on `Arc`**, with a **type filter**: only container-kind variants (Array/Hash/Set/Bag/Mix/Pair/Instance/Sub/ContainerRef) become `Gc<T>`; scalar variants (Int/Num/Rat/Complex/Str/Bool/Nil) can't form cycles and stay GC-free, so numeric/string hot paths pay **zero** GC cost. Add `MUTSU_VM_STATS` counters (`gc_candidate_pushes`, ...) and prove `push == 0` on the fib bench.
+- **NaN-boxing (layer 3b) and biased reference counting (layer 3c) are post-GC perf work, not prerequisites.**
+- Still open: **level-1** (`Arc→Gc` wrapper, minimal, recommended) vs **level-2** (full VM redesign for MoarVM-style precise tracing — year-scale, effectively a different project). Do NOT commit to level-2 without an explicit decision recorded in a new/updated ADR.
 
 ## Known flaky tests
 
