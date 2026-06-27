@@ -378,12 +378,50 @@ impl Interpreter {
         let raw_indices = args[1..].to_vec();
         let target_val = self.env.get(&var_name).cloned().unwrap_or(Value::Nil);
         let indices = self.resolve_multidim_indices(&target_val, &raw_indices)?;
+        // A shaped array (`my @a[2;2]`) has fixed dimensions; an out-of-range
+        // index in any dimension is an error (raku throws X::AdHoc), not a
+        // silent no-op that yields Any.
+        Self::check_shaped_index_bounds(&target_val, &indices)?;
         let Some(target) = self.env.get_mut(&var_name) else {
             return Ok(Value::Nil);
         };
         let result = multidim_delete(target, &indices);
         self.writeback_multidim_var_to_local(&var_name);
         Ok(result)
+    }
+
+    /// Validate multidim indices against a shaped array's fixed dimensions.
+    /// Returns an X::AdHoc error (matching raku) for the first out-of-range
+    /// dimension. A no-op for non-shaped arrays / hashes, and for `Whatever` or
+    /// multi-index (list/range) subscripts which select within bounds.
+    fn check_shaped_index_bounds(target: &Value, indices: &[Value]) -> Result<(), RuntimeError> {
+        let Value::Array(data, ArrayKind::Shaped) = target else {
+            return Ok(());
+        };
+        let Some(shape) = data.shape.as_ref() else {
+            return Ok(());
+        };
+        for (dim, idx) in indices.iter().enumerate() {
+            let Some(&size) = shape.get(dim) else { break };
+            // Only plain integer indices are bounds-checked here; Whatever and
+            // list/range selectors stay within the dimension by construction.
+            let n = match idx {
+                Value::Int(n) => *n,
+                _ => continue,
+            };
+            let size = size as i64;
+            // Negative indices count from the end; raku rejects those past -size.
+            let resolved = if n < 0 { n + size } else { n };
+            if resolved < 0 || resolved >= size {
+                return Err(RuntimeError::new(format!(
+                    "Index {} for dimension {} out of range (must be 0..{})",
+                    n,
+                    dim + 1,
+                    size - 1
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// After a multidim `:delete` mutates the env copy of `@a`/`%h` in place,
