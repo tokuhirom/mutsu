@@ -1551,6 +1551,28 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
     let name = normalize_raku_identifier(name);
 
+    // C++ constructor syntax: `new TypeName` (indirect object notation) is
+    // unsupported in Raku — `Foo.new` must be used instead. Detect `new`
+    // followed by whitespace and an uppercase-initial bareword type name and
+    // reject with X::Obsolete (matching rakudo). Restricting to an uppercase
+    // initial keeps operator/keyword words (all lowercase: `new and`, `new if`)
+    // and `new(...)` / `newFoo` from triggering.
+    if name == "new" && rest.starts_with([' ', '\t']) {
+        let after = rest.trim_start_matches([' ', '\t']);
+        if after.chars().next().is_some_and(char::is_uppercase)
+            && let Ok((tail, _typename)) = super::super::stmt::parse_raku_ident(after)
+            // `new Foo: args` is the valid colon-invocant method call (== Foo.new(args));
+            // only the bare `new Foo` / `new Foo(...)` indirect form is C++ syntax.
+            && (!tail.starts_with(':') || tail.starts_with("::"))
+        {
+            return Err(PError::fatal(
+                "X::Obsolete: Unsupported use of C++ constructor syntax.  \
+                 In Raku please use: method call syntax."
+                    .to_string(),
+            ));
+        }
+    }
+
     // A statement-control keyword immediately followed by `(...) { ... }` (no
     // whitespace before the parens) is a `keyword()`-as-function mistake
     // (`if() {}`, `with() {}`). Raku rejects this with an X::Comp::Group whose
