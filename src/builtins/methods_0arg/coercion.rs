@@ -686,6 +686,30 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         Value::Capture { .. } => Ok(target.clone()),
         // Match.Capture returns self
         Value::Instance { class_name, .. } if class_name.resolve() == "Match" => Ok(target.clone()),
+        // Blob/Buf/utf8/utf16 .Capture behaves like List.Capture: each byte
+        // becomes a positional argument (no nameds).
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if {
+            let cn = class_name.resolve();
+            cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+        } =>
+        {
+            let positional = match attributes.as_map().get("bytes") {
+                Some(Value::Array(items, ..)) => items.iter().cloned().collect(),
+                _ => vec![],
+            };
+            Ok(Value::capture(positional, HashMap::new()))
+        }
         // Pair.Capture → \(:key($pair.key), :value($pair.value))
         Value::Pair(k, v) => {
             let mut named = HashMap::new();
