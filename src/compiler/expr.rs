@@ -30,6 +30,19 @@ impl Compiler {
             Expr::Grouped(inner) => {
                 self.compile_expr(inner);
             }
+            // Feed operator (`==>`, `<==`, `==>>`, `<<==`). Lower the deferred node
+            // into its sink-call form and compile that. Nested feeds (chains) are
+            // lowered recursively by `lower_feed_node`.
+            Expr::Feed {
+                source,
+                sink,
+                append,
+                ..
+            } => {
+                let lowered =
+                    crate::parser::lower_feed_node((**source).clone(), (**sink).clone(), *append);
+                self.compile_expr(&lowered);
+            }
             // m/regex/ -- compile as $_ ~~ /regex/, matching against $_
             Expr::MatchRegex(v) => {
                 self.compile_match_regex(v);

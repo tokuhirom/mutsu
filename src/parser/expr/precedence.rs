@@ -1719,7 +1719,7 @@ fn parse_list_infix_loop<'a>(
             .map_err(|err| {
                 enrich_expected_error(err, "expected expression after feed operator", r.len())
             })?;
-            *left = build_feed_expr(feed_op, left.clone(), right);
+            *left = make_feed_node(feed_op, left.clone(), right);
             rest = r;
             continue;
         }
@@ -1824,12 +1824,74 @@ fn parse_list_infix_loop<'a>(
     Ok(rest)
 }
 
-fn build_feed_expr(op: FeedOp, left: Expr, right: Expr) -> Expr {
-    match op {
-        FeedOp::ToRight => build_pipe_feed_expr(left, right),
-        FeedOp::ToLeft => build_pipe_feed_expr(right, left),
-        FeedOp::AppendRight => build_append_feed_expr(left, right),
-        FeedOp::AppendLeft => build_append_feed_expr(right, left),
+/// Build a deferred `Expr::Feed` node, resolving the operator's direction so the
+/// node always means "`source` flows into `sink`". Deferring the fold (rather than
+/// folding into the sink call immediately) lets an assignment/declaration on the
+/// textually-left side split it at Sequencer precedence (looser than `=`); see
+/// `Expr::Feed`, `lower_feed_node`, and `feed_leftmost_operand_mut`.
+fn make_feed_node(op: FeedOp, left: Expr, right: Expr) -> Expr {
+    let (source, sink, append, left_is_source) = match op {
+        FeedOp::ToRight => (left, right, false, true),
+        FeedOp::ToLeft => (right, left, false, false),
+        FeedOp::AppendRight => (left, right, true, true),
+        FeedOp::AppendLeft => (right, left, true, false),
+    };
+    Expr::Feed {
+        source: Box::new(source),
+        sink: Box::new(sink),
+        append,
+        left_is_source,
+    }
+}
+
+/// Lower a (possibly chained) `Expr::Feed` node into its executable form. Nested
+/// feeds on the source/sink sides are lowered first; non-feed operands are left
+/// for the compiler to handle normally. Called by the compiler's `Expr::Feed` arm.
+pub(crate) fn lower_feed_node(source: Expr, sink: Expr, append: bool) -> Expr {
+    let source = match source {
+        Expr::Feed {
+            source: s,
+            sink: k,
+            append: a,
+            ..
+        } => lower_feed_node(*s, *k, a),
+        other => other,
+    };
+    let sink = match sink {
+        Expr::Feed {
+            source: s,
+            sink: k,
+            append: a,
+            ..
+        } => lower_feed_node(*s, *k, a),
+        other => other,
+    };
+    if append {
+        build_append_feed_expr(source, sink)
+    } else {
+        build_pipe_feed_expr(source, sink)
+    }
+}
+
+/// Descend a (possibly chained) `Expr::Feed` to the mutable slot holding its
+/// textually-leftmost operand — the one adjacent to a preceding `=`. For `==>`
+/// chains that is the deepest `source`; for `<==` chains the deepest `sink`.
+/// Used to split `my @a = … ==> …` so the declaration wraps that operand.
+pub(crate) fn feed_leftmost_operand_mut(feed: &mut Expr) -> &mut Expr {
+    match feed {
+        Expr::Feed {
+            source,
+            sink,
+            left_is_source,
+            ..
+        } => {
+            if *left_is_source {
+                feed_leftmost_operand_mut(source)
+            } else {
+                feed_leftmost_operand_mut(sink)
+            }
+        }
+        other => other,
     }
 }
 

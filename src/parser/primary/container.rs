@@ -216,6 +216,11 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
                 ..
             }
         ) || matches!(&result, Expr::BareWord(_))
+            // A parenthesized feed (`(@a ==> grep ...)`) must stay wrapped so an
+            // enclosing `my @g = (...)` does NOT split it (the parens isolate the
+            // feed: `my @g = (@a ==> grep)` assigns the feed result, whereas
+            // `my @g = @a ==> grep` binds `=` tighter and feeds `(my @g = @a)`).
+            || matches!(&result, Expr::Feed { .. })
         {
             Expr::Grouped(Box::new(result))
         } else {

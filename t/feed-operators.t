@@ -1,6 +1,6 @@
 use Test;
 
-plan 16;
+plan 24;
 
 {
     my @a = (1, 2);
@@ -68,4 +68,43 @@ dies-ok { my @a <== 0..Inf }, 'feeding an infinite range into an array dies';
 {
     42 ==> my $z;
     is(~$z, '42', 'feed of a single value into a scalar is a 1-element Array');
+}
+
+# Feed precedence: `==>` is at Sequencer precedence — the loosest infix, looser
+# than item assignment `=`. So `my @a = SOURCE ==> SINK` binds the `=` tighter
+# and parses as `(my @a = SOURCE) ==> SINK`: the declaration assigns SOURCE, then
+# that value is fed into SINK (whose result is the statement value, not @a).
+{
+    my @a = (1, 2, 3) ==> map { $_ * 2 };
+    is(~@a, '1 2 3', '`my @a = X ==> map` assigns X (= binds tighter than ==>)');
+}
+{
+    my $r = (my @a = (1, 2, 3) ==> map { $_ * 2 });
+    is(~@a, '1 2 3', 'declaration in a feed assigns its own source');
+    is(~$r, '2 4 6', 'the feed expression value is the SINK result');
+}
+{
+    my @s = (1 .. 5) ==> map { $_ ** 2 } ==> grep { $_ %% 2 };
+    is(~@s, '1 2 3 4 5', 'chained feed: `=` still binds tighter than the chain');
+}
+{
+    my $x = (1, 2, 3) ==> map { $_ * 2 };
+    is(~$x, '1 2 3', 'scalar declaration in a feed assigns its source');
+}
+{
+    my @x;
+    @x = (1, 2, 3) ==> map { $_ * 2 };
+    is(~@x, '1 2 3', 'assignment to a pre-declared array also binds `=` tighter');
+}
+# Parentheses isolate the feed: `my @g = (SOURCE ==> SINK)` assigns the feed
+# result, NOT the source — distinct from the unparenthesized form above.
+{
+    my @a = 1 .. 5;
+    my @g = (@a ==> grep { $_ %% 2 });
+    is(~@g, '2 4', 'parenthesized feed assigns the SINK result');
+}
+{
+    my @a = 1 .. 5;
+    my @f = do { @a ==> grep { $_ %% 2 } };
+    is(~@f, '2 4', 'feed inside a do-block assigns the SINK result');
 }

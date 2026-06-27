@@ -22,6 +22,14 @@ pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
 
 pub use stmt::simple::{clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path};
 
+/// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
+/// Re-exported for the compiler's `Expr::Feed` arm.
+pub(crate) use expr::precedence::lower_feed_node;
+
+/// Descend a feed chain to its textually-leftmost operand slot — for splitting a
+/// declaration/assignment that binds tighter than the feed.
+pub(crate) use expr::precedence::feed_leftmost_operand_mut;
+
 pub(crate) fn current_language_version() -> String {
     stmt::simple::current_language_version()
 }
