@@ -209,7 +209,7 @@ pub(crate) mod regex;
 pub(crate) mod regex_parse;
 mod registration;
 mod registration_class;
-mod registration_sub;
+pub(crate) mod registration_sub;
 mod registry;
 pub(crate) mod resolution;
 mod run;
@@ -1328,6 +1328,14 @@ pub struct Interpreter {
     /// `lexical_override` check resolves the correct callable). Populated at sub
     /// registration; checked cheaply (guarded by `is_empty()`) on each call.
     pub(crate) amp_param_shadowed_names: std::collections::HashSet<Symbol>,
+    /// Fingerprint of the sub declaration currently installed under each
+    /// `package::name` (single, non-multi) routine key. A re-executed
+    /// `RegisterSub` whose compile-time fingerprint matches the installed one is
+    /// an idempotent no-op (see [`crate::ast::sub_registration_fingerprint`]),
+    /// so the registrar can return early without re-deriving the FunctionDef and
+    /// without invalidating the resolution caches. Entries are best-effort: a
+    /// miss simply takes the full registration path.
+    pub(crate) registered_fn_fingerprints: HashMap<Symbol, u64>,
     pub(crate) method_resolve_cache: HashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
     #[allow(clippy::type_complexity)]
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, String, Arc<MethodDef>)>,
@@ -3503,6 +3511,7 @@ impl Interpreter {
             pos_light_call_cache: HashMap::new(),
             pos_light_call_cache_gen: 0,
             amp_param_shadowed_names: std::collections::HashSet::new(),
+            registered_fn_fingerprints: HashMap::new(),
             method_resolve_cache: HashMap::new(),
             last_method_resolve: None,
             fast_method_cache: HashMap::new(),
@@ -6172,6 +6181,7 @@ impl Interpreter {
             pos_light_call_cache: HashMap::new(),
             pos_light_call_cache_gen: 0,
             amp_param_shadowed_names: std::collections::HashSet::new(),
+            registered_fn_fingerprints: HashMap::new(),
             method_resolve_cache: HashMap::new(),
             last_method_resolve: None,
             fast_method_cache: HashMap::new(),

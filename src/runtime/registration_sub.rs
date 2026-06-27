@@ -3,6 +3,20 @@ use crate::symbol::Symbol;
 use std::cell::RefCell;
 use std::collections::HashSet;
 
+/// Outcome of a `register_sub_decl` call, distinguishing a genuine
+/// (re-)installation from an idempotent no-op re-registration of an already
+/// present, structurally identical declaration. The VM uses this to decide
+/// whether the resolution caches must be invalidated: an `Unchanged` outcome
+/// means the registry is exactly as it was, so the caches stay valid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SubRegisterOutcome {
+    /// The declaration was (re-)derived and installed; resolution state changed.
+    Installed,
+    /// An identical declaration was already installed under this key; nothing
+    /// was derived or installed beyond refreshing the routine's callable id.
+    Unchanged,
+}
+
 thread_local! {
     /// Stack (for nested EVALs) of the `&name` code-variable keys that already
     /// existed in the enclosing scope when an `EVAL` began. A sub declared inside
@@ -376,13 +390,109 @@ impl Interpreter {
         is_test_assertion: bool,
         supersede: bool,
         custom_traits: &[(String, Option<crate::ast::Expr>)],
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<SubRegisterOutcome, RuntimeError> {
+        self.register_sub_decl_fp(
+            name,
+            params,
+            param_defs,
+            return_type,
+            associativity,
+            body,
+            multi,
+            is_rw,
+            is_raw,
+            is_test_assertion,
+            supersede,
+            custom_traits,
+            None,
+        )
+    }
+
+    /// Whether registering a sub named `name` would raise `X::Redeclaration`
+    /// because a conflicting `&name` (e.g. an earlier `my &name`) is already
+    /// bound in the lexical env. Mirrors the env-`&name` check in
+    /// `register_sub_decl_fp`; the idempotent fast path consults it so it never
+    /// short-circuits past a redeclaration error (the registry can hold an
+    /// identical entry from a hoisted pass while a `my &name` declared afterward
+    /// must still make the textual `sub name` a redeclaration).
+    fn sub_decl_would_redeclare(&self, name: &str, is_lexical_hoist: bool) -> bool {
+        let code_var_key = format!("&{}", name);
+        let Some(existing) = self.env.get(&code_var_key) else {
+            return false;
+        };
+        if matches!(existing, Value::Mixin(..)) {
+            return false;
+        }
+        let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
+            && !matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)))
+            && !matches!(
+                self.env.get("__mutsu_eval_wrapped_decls"),
+                Some(Value::Bool(true))
+            );
+        if allow_lexical_shadow {
+            return false;
+        }
+        let is_in_eval = matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)));
+        let shadows_outer_eval_name = is_in_eval && is_outer_amp_name(&code_var_key);
+        !shadows_outer_eval_name
+    }
+
+    /// `register_sub_decl` with an optional compile-time declaration fingerprint
+    /// (`site_fingerprint`) enabling the idempotent-reregistration fast path. The
+    /// `register_sub_decl` wrapper passes `None` for call sites (EVAL, the
+    /// interpreter run path) where the fast path does not apply.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn register_sub_decl_fp(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[ParamDef],
+        return_type: Option<&String>,
+        associativity: Option<&String>,
+        body: &[Stmt],
+        multi: bool,
+        is_rw: bool,
+        is_raw: bool,
+        is_test_assertion: bool,
+        supersede: bool,
+        custom_traits: &[(String, Option<crate::ast::Expr>)],
+        site_fingerprint: Option<u64>,
+    ) -> Result<SubRegisterOutcome, RuntimeError> {
         let is_method_value_decl = custom_traits
             .iter()
             .any(|(t, _)| t == "__mutsu_method_decl");
         let allow_redeclare = supersede || is_method_value_decl;
         let is_our_scoped = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
         let is_lexical_hoist = custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
+        // Idempotent re-registration fast path. A `RegisterSub` re-executes every
+        // time its enclosing frame runs (e.g. a `my sub` inside a hot routine),
+        // but the declaration it installs is constant. When a structurally
+        // identical single (non-multi) sub with no user-visible traits is already
+        // installed under this key, there is nothing to re-derive: refresh the
+        // routine's callable id and return `Unchanged` so the caller leaves the
+        // resolution caches intact. The `contains_key` guard keeps this correct
+        // across block-scope restoration (a `my sub` removed when its scope exits
+        // misses here and takes the full path).
+        if let Some(site_fp) = site_fingerprint
+            && !multi
+            && !is_method_value_decl
+            && !custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
+            && !self.sub_decl_would_redeclare(name, is_lexical_hoist)
+        {
+            let fq = format!("{}::{}", self.current_package(), name);
+            let fq_sym = Symbol::intern(&fq);
+            if self.registered_fn_fingerprints.get(&fq_sym) == Some(&site_fp)
+                && self.registry().functions.contains_key(&fq_sym)
+            {
+                let callable_key =
+                    format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
+                self.env.insert(
+                    callable_key,
+                    Value::Int(crate::value::next_instance_id() as i64),
+                );
+                return Ok(SubRegisterOutcome::Unchanged);
+            }
+        }
         Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
@@ -537,7 +647,7 @@ impl Interpreter {
                     callable_key,
                     Value::Int(crate::value::next_instance_id() as i64),
                 );
-                return Ok(());
+                return Ok(SubRegisterOutcome::Unchanged);
             }
             // When re-registering a hoisted sub with custom traits, skip redeclaration
             // checks but don't return early — fall through to apply trait_mod:<is>.
@@ -555,7 +665,7 @@ impl Interpreter {
                         callable_key,
                         Value::Int(crate::value::next_instance_id() as i64),
                     );
-                    return Ok(());
+                    return Ok(SubRegisterOutcome::Unchanged);
                 }
             }
         }
@@ -642,9 +752,19 @@ impl Interpreter {
             }
         } else {
             let fq = format!("{}::{}", self.current_package(), name);
-            self.registry_mut()
-                .functions
-                .insert(Symbol::intern(&fq), def);
+            let fq_sym = Symbol::intern(&fq);
+            self.registry_mut().functions.insert(fq_sym, def);
+            // Record this declaration's fingerprint so a later re-execution of the
+            // same `RegisterSub` site is recognized as an idempotent no-op. Reuse
+            // the compile-time `site_fingerprint` rather than recomputing it here:
+            // the recomputation would `Debug`-format the body on every install,
+            // which (for a `my sub` whose lexical scope is snapshot/restored each
+            // enclosing call) is exactly the per-call cost this is meant to avoid.
+            if let Some(fp) = site_fingerprint {
+                self.registered_fn_fingerprints.insert(fq_sym, fp);
+            } else {
+                self.registered_fn_fingerprints.remove(&fq_sym);
+            }
         }
         // If this is an our-scoped sub, also store it in the persistent our_scoped_functions
         // so it survives block scope restoration.
@@ -756,7 +876,7 @@ impl Interpreter {
                 }
             }
         }
-        Ok(())
+        Ok(SubRegisterOutcome::Installed)
     }
 
     /// Resolve a name to a type object (Package value) if the name refers to a known class or role.
