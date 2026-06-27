@@ -172,6 +172,13 @@ impl Interpreter {
                         insert_value(&pair, &mut elems, &mut original_keys, &mut has_typed_keys);
                     }
                 }
+                // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
+                // opaque value — flatten it like a regular array.
+                Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                    for item in items.iter() {
+                        insert_value(item, &mut elems, &mut original_keys, &mut has_typed_keys);
+                    }
+                }
                 other => {
                     insert_value(other, &mut elems, &mut original_keys, &mut has_typed_keys);
                 }
@@ -242,6 +249,13 @@ impl Interpreter {
                 Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _) => {
                     add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
                 }
+                // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
+                // opaque value — flatten it like a regular array.
+                Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                    for item in items.iter() {
+                        add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, item);
+                    }
+                }
                 other => {
                     add_item(
                         &mut counts,
@@ -300,6 +314,13 @@ impl Interpreter {
                     for (k, v) in map.iter() {
                         let pair = Value::Pair(k.clone(), Box::new(v.clone()));
                         insert_value(&pair, &mut weights, &mut original_keys, &mut has_typed_keys);
+                    }
+                }
+                // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
+                // opaque value — flatten it like a regular array.
+                Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                    for item in items.iter() {
+                        insert_value(item, &mut weights, &mut original_keys, &mut has_typed_keys);
                     }
                 }
                 other => {
