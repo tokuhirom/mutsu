@@ -32,6 +32,16 @@ fn global_base() -> Option<&'static HashMap<Symbol, Value>> {
     GLOBAL_BASE.get()
 }
 
+/// True if `name` is a built-in global-base constant — the process-wide enum
+/// values such as `Endian` (`NativeEndian`/`LittleEndian`/`BigEndian`), `Order`
+/// (`Less`/`Same`/`More`), `ProtocolFamily`, `Signal`, .... Used to recognise a
+/// bare enum-value parameter (`sub f(LittleEndian)`) as a valid value-param
+/// rather than an undeclared type name. Checks only the immutable base tier, so
+/// a user lexical of the same name cannot mask the answer.
+pub(crate) fn global_base_contains(name: &str) -> bool {
+    global_base().is_some_and(|b| b.contains_key(&Symbol::intern(name)))
+}
+
 /// True if `name` is a *plain user lexical* env key — a `my`/`our`-declared
 /// scalar/array/hash/sub whose name is an ordinary lowercase identifier (stored
 /// scalar-sigilless, e.g. `$x` → `"x"`, `@a` → `"@a"`). These are the only env

@@ -197,13 +197,15 @@ impl Interpreter {
             {
                 continue;
             }
-            // Uppercase value-terms (`Inf`, `NaN`, `True`, `False`) are valid as
-            // bare value-params, not type names — don't reject them.
+            // Bare value-params are not type names and must not be rejected:
+            // uppercase value-terms (`Inf`, `NaN`, `True`, `False`) and built-in
+            // enum values (`LittleEndian`, `Less`, ... — kept in the global base).
             if captures.contains(tc)
                 || declared_types.contains(tc)
                 || self.is_resolvable_type(tc)
                 || self.has_type(tc)
-                || matches!(tc, "Inf" | "NaN" | "True" | "False")
+                || matches!(tc, "Inf" | "NaN" | "True" | "False" | "Empty")
+                || crate::env::global_base_contains(tc)
             {
                 continue;
             }

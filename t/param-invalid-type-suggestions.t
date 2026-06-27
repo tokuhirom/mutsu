@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 10;
 
 # A type-only parameter naming an undeclared type is X::Parameter::InvalidType,
 # and enum values declared in the same unit are offered as suggestions.
@@ -31,3 +31,8 @@ lives-ok { EVAL 'class Foo {}; sub d(Foo) {}' },
 # A genuine literal value-param is never treated as a type.
 lives-ok { EVAL 'sub e(42) {}' },  'a numeric literal value-param is fine';
 lives-ok { EVAL 'sub f("x") {}' }, 'a string literal value-param is fine';
+
+# Built-in enum values and value-terms are valid bare value-params.
+lives-ok { EVAL 'sub g(LittleEndian) {}' },
+    'a built-in enum value (LittleEndian) is a valid value-param';
+lives-ok { EVAL 'sub h(Empty) {}' }, 'the Empty value-term is a valid value-param';
