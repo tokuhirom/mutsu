@@ -34,14 +34,14 @@ impl Interpreter {
             )
     }
 
-    pub(super) fn resolve_function(&self, name: &str) -> Option<FunctionDef> {
+    pub(super) fn resolve_function(&self, name: &str) -> Option<Arc<FunctionDef>> {
         if name.contains("::") {
             // Try direct lookup first
             if let Some(def) = self
                 .registry()
                 .functions
                 .get(&Symbol::intern(name))
-                .map(|d| (**d).clone())
+                .cloned()
             {
                 return Some(def);
             }
@@ -63,7 +63,7 @@ impl Interpreter {
                         .registry()
                         .functions
                         .get(&Symbol::intern(&qualified))
-                        .map(|d| (**d).clone())
+                        .cloned()
                     {
                         return Some(def);
                     }
@@ -75,12 +75,12 @@ impl Interpreter {
         self.registry()
             .functions
             .get(&Symbol::intern(&local))
-            .map(|d| (**d).clone())
+            .cloned()
             .or_else(|| {
                 self.registry()
                     .functions
                     .get(&Symbol::intern(&format!("GLOBAL::{}", name)))
-                    .map(|d| (**d).clone())
+                    .cloned()
             })
     }
 

@@ -95,9 +95,15 @@ CP-3 collapse で VM と Interpreter の二重構造は消えた。
     プログラムで顕著に軽くなる (200-sub のマイクロベンチで ~28%)。registry は**不変・共有可能な定義**を
     保持する設計になった (in-place 変異サイトは皆無＝`make_mut` 不要)。dispatch 側の戻り値型は
     `FunctionDef` のまま (resolution 境界で `(**arc).clone()`)。
-  - **残 (次スライス)**: 導出済み `Arc<FunctionDef>` をキャッシュし再 install 時に再利用 (真の
-    「derive once」)。dispatch resolution が `Arc<FunctionDef>` を直接返すよう貫通させると
-    resolution ごとの body deep-clone も消せる (より広い波及・別スライス)。
+  - **dispatch resolution への Arc 貫通 (slice 3)**: ホットな単一結果リゾルバ
+    (`resolve_function`/`resolve_function_with_types`/`_with_arity`/`_with_alias`/
+    `choose_best_matching_candidate`) の戻り値を `Option<Arc<FunctionDef>>` 化。**呼び出し毎の
+    resolution が body を deep-clone していたのを Arc bump に**。caller は Deref 経由で読み、所有 FunctionDef
+    が要る数箇所のみ明示 clone。multi 候補列挙 (`resolve_all_*`) と proto/redispatch
+    (`MultiDispatchEntry`) はレアパスなので境界で `FunctionDef` に変換し、core struct への波及を回避。
+  - **残 (次スライス)**: 導出済み `Arc<FunctionDef>` を fingerprint キーでキャッシュし再 install 時に
+    再利用 (真の「derive once」)。`MultiDispatchEntry` も `Arc<FunctionDef>` 化すると redispatch の
+    候補 clone も消える (core struct 波及・別スライス)。
 - **メソッド dispatch の resolver オーバーヘッド**: multi/submethod や `samewith`/`nextsame` は
   `run_instance_method` (resolve + frame setup) を**入口として**通る (本体は compiled)。`MUTSU_VM_STATS` の
   `resolver-path method dispatches` カウンタはこの dispatch 入口数を測る (tree-walk 実行ではない)。
@@ -305,7 +311,7 @@ env 変異は「別スレッドからの並行 env アクセスが UB」、alias
 | 4 | 制御フローを `RuntimeError` から `enum Control` へ分離は **完了** (§2.2・#3701/#3706 ほか)。残: `RuntimeError` 本体の縮小・Box 化で `result_large_err` 23 箇所を撤去 (高 churn・別 PR 群) | 設計 | 中 |
 | 5 | `.^methods`/`.can` の型別リスト: 確認済みドリフトは是正 (Str/Int/List・§4.1)。完全な実ディスパッチ表からの導出は arity-dispatch 非列挙のため別軸 | ドリフト解消 | 中 |
 | 6 | 陳腐化した `unsafe` SAFETY コメント是正は **完了** (§2.1)。残: 配列・ハッシュ要素の `ContainerRef` 化で生ポインタ unsoundness を撤廃 (高ブラスト・別 PR) | 健全性 (UB) | 中 |
-| 7 | 宣言登録の bytecode 化: sub 登録の冪等化 (**slice 1**・`SubRegisterOutcome`+fingerprint) と registry の `Arc<FunctionDef>` 化 (**slice 2**・snapshot を O(n) 共有に) 着手済 (§1.1)。残: 導出済み `Arc<FunctionDef>` キャッシュ再利用 (真の derive-once) + resolution への Arc 貫通。method dispatch の resolution caching (multi は #3684 着手) | 設計 + 性能 | 中 |
+| 7 | 宣言登録の bytecode 化: sub 登録の冪等化 (**slice 1**・`SubRegisterOutcome`+fingerprint) と registry Arc 化 (**slice 2**・snapshot 共有) + dispatch resolution への Arc 貫通 (**slice 3**・resolution 毎の body clone を Arc bump に) 着手済 (§1.1)。残: 導出済み `Arc<FunctionDef>` キャッシュ再利用 (真の derive-once) + `MultiDispatchEntry` の Arc 化。method dispatch の resolution caching (multi は #3684 着手) | 設計 + 性能 | 中 |
 | 8 | 一時ファイルを `tmp/` へ (root の `bom-test-*`) / 巨大ファイル分割 (500 行規約) | 衛生 | 低〜中 |
 
 ### Interpreter 除去という長期目標について — **達成 (2026-06)**

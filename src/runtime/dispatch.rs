@@ -108,7 +108,7 @@ impl Interpreter {
         &self,
         name: &str,
         args: &[Value],
-        defs: &[FunctionDef],
+        defs: &[Arc<FunctionDef>],
     ) -> RuntimeError {
         let arg_types = args
             .iter()
@@ -149,8 +149,8 @@ impl Interpreter {
         &mut self,
         name: &str,
         args: &[Value],
-        candidates: Vec<(String, FunctionDef)>,
-    ) -> Option<FunctionDef> {
+        candidates: Vec<(String, Arc<FunctionDef>)>,
+    ) -> Option<Arc<FunctionDef>> {
         let mut matches = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for (_, def) in candidates {
@@ -205,7 +205,7 @@ impl Interpreter {
                     .then(a.1.1.cmp(&b.1.1))
                     .then(b.1.2.cmp(&a.1.2))
             });
-            let sorted_matches: Vec<FunctionDef> =
+            let sorted_matches: Vec<Arc<FunctionDef>> =
                 ranked.iter().map(|(i, _)| matches[*i].clone()).collect();
             matches = sorted_matches;
         }
@@ -214,7 +214,7 @@ impl Interpreter {
         let best_shape = self.candidate_dispatch_shape(&matches[0]);
         let best_distance = self.candidate_type_distance(args, &matches[0]);
         let best_req_named = Self::candidate_required_named_count(&matches[0]);
-        let tied: Vec<FunctionDef> = matches
+        let tied: Vec<Arc<FunctionDef>> = matches
             .iter()
             .filter(|def| {
                 self.candidate_specificity_rank(def) == best_rank
@@ -240,7 +240,7 @@ impl Interpreter {
         {
             // `is default` trait tie-breaking: if exactly one tied candidate
             // has `is_default`, prefer it over the others.
-            let default_candidates: Vec<&FunctionDef> =
+            let default_candidates: Vec<&Arc<FunctionDef>> =
                 tied.iter().filter(|def| def.is_default).collect();
             if default_candidates.len() == 1 {
                 return Some(default_candidates[0].clone());
@@ -598,7 +598,7 @@ impl Interpreter {
         }
     }
 
-    fn sort_candidates_by_specificity(&self, candidates: &mut [(String, FunctionDef)]) {
+    fn sort_candidates_by_specificity(&self, candidates: &mut [(String, Arc<FunctionDef>)]) {
         candidates.sort_by(|a, b| {
             let a_rank = self.candidate_specificity_rank(&a.1);
             let b_rank = self.candidate_specificity_rank(&b.1);
@@ -610,7 +610,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
-    ) -> Option<FunctionDef> {
+    ) -> Option<Arc<FunctionDef>> {
         self.clear_pending_dispatch_error();
         if let Some(def) = self.resolve_function_with_types(name, arg_values) {
             return Some(def);
@@ -633,22 +633,22 @@ impl Interpreter {
         &self,
         name: &str,
         arity: usize,
-    ) -> Option<FunctionDef> {
+    ) -> Option<Arc<FunctionDef>> {
         if name.contains("::") {
             let multi_key = format!("{}/{}", name, arity);
             if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_key)) {
-                return Some((**def).clone());
+                return Some(def.clone());
             }
             return self
                 .registry()
                 .functions
                 .get(&Symbol::intern(name))
-                .map(|d| (**d).clone());
+                .cloned();
         }
         // Try multi-dispatch with arity first
         let multi_local = format!("{}::{}/{}", self.current_package(), name, arity);
         if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_local)) {
-            return Some((**def).clone());
+            return Some(def.clone());
         }
         let multi_global = format!("GLOBAL::{}/{}", name, arity);
         if let Some(def) = self
@@ -656,7 +656,7 @@ impl Interpreter {
             .functions
             .get(&Symbol::intern(&multi_global))
         {
-            return Some((**def).clone());
+            return Some(def.clone());
         }
         // Fall back to regular lookup
         self.resolve_function(name)
@@ -666,7 +666,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
-    ) -> Option<FunctionDef> {
+    ) -> Option<Arc<FunctionDef>> {
         // Arity counts only positional args, excluding named args (Pair values)
         let arity = arg_values
             .iter()
@@ -677,7 +677,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .get(&Symbol::intern(name))
-                .map(|d| (**d).clone())
+                .cloned()
             {
                 // Block access to my-scoped (non-our) package items from outside
                 // their declaring package.
@@ -696,7 +696,7 @@ impl Interpreter {
             let untyped_key = format!("{}/{}", name, arity);
             let untyped_key_sym = Symbol::intern(&untyped_key);
             let untyped_m_prefix = format!("{}__m", untyped_key);
-            let mut candidates: Vec<(String, FunctionDef)> = self
+            let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()
@@ -706,7 +706,7 @@ impl Interpreter {
                         || **key == untyped_key_sym
                         || ks.starts_with(&untyped_m_prefix)
                 })
-                .map(|(key, def)| (key.resolve(), (**def).clone()))
+                .map(|(key, def)| (key.resolve(), def.clone()))
                 .collect();
             self.sort_candidates_by_specificity(&mut candidates);
             if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
@@ -718,7 +718,7 @@ impl Interpreter {
             // not found by the arity-keyed lookup above, so collect them
             // separately (across all arities under `name/`) and dispatch on them.
             let subsig_prefix = format!("{}/", name);
-            let mut subsig_candidates: Vec<(String, FunctionDef)> = self
+            let mut subsig_candidates: Vec<(String, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()
@@ -726,7 +726,7 @@ impl Interpreter {
                     key.resolve().starts_with(&subsig_prefix)
                         && def.param_defs.iter().any(|p| p.is_capture_subsignature())
                 })
-                .map(|(key, def)| (key.resolve(), (**def).clone()))
+                .map(|(key, def)| (key.resolve(), def.clone()))
                 .collect();
             if !subsig_candidates.is_empty() {
                 self.sort_candidates_by_specificity(&mut subsig_candidates);
@@ -740,7 +740,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .get(&Symbol::intern(name))
-                .map(|d| (**d).clone())
+                .cloned()
             {
                 if !self.is_my_scoped_package_item(name) {
                     return Some(def);
@@ -776,7 +776,7 @@ impl Interpreter {
                         .registry()
                         .functions
                         .get(&Symbol::intern(&qualified))
-                        .map(|d| (**d).clone())
+                        .cloned()
                     {
                         return Some(def);
                     }
@@ -784,7 +784,7 @@ impl Interpreter {
                     let q_untyped_key = format!("{qualified}/{}", arity);
                     let q_untyped_key_sym = Symbol::intern(&q_untyped_key);
                     let q_untyped_m_prefix = format!("{}__m", q_untyped_key);
-                    let mut q_candidates: Vec<(String, FunctionDef)> = self
+                    let mut q_candidates: Vec<(String, Arc<FunctionDef>)> = self
                         .registry()
                         .functions
                         .iter()
@@ -794,7 +794,7 @@ impl Interpreter {
                                 || **key == q_untyped_key_sym
                                 || ks.starts_with(&q_untyped_m_prefix)
                         })
-                        .map(|(key, def)| (key.resolve(), (**def).clone()))
+                        .map(|(key, def)| (key.resolve(), def.clone()))
                         .collect();
                     self.sort_candidates_by_specificity(&mut q_candidates);
                     if let Some(def) =
@@ -811,7 +811,7 @@ impl Interpreter {
             .registry()
             .functions
             .get(&Symbol::intern(&exact_local))
-            .map(|d| (**d).clone())
+            .cloned()
         {
             return Some(def);
         }
@@ -820,7 +820,7 @@ impl Interpreter {
             .registry()
             .functions
             .get(&Symbol::intern(&exact_global))
-            .map(|d| (**d).clone())
+            .cloned()
         {
             return Some(def);
         }
@@ -831,7 +831,7 @@ impl Interpreter {
             format!("GLOBAL::{}/{}", name, arity),
         ];
         let mut found_multi_candidates = false;
-        let mut candidates: Vec<(String, FunctionDef)> = self
+        let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions
             .iter()
@@ -839,17 +839,17 @@ impl Interpreter {
                 let ks = key.resolve();
                 ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
             })
-            .map(|(key, def)| (key.resolve(), (**def).clone()))
+            .map(|(key, def)| (key.resolve(), def.clone()))
             .collect();
         for key in &generic_keys {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
-            let more: Vec<(String, FunctionDef)> = self
+            let more: Vec<(String, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
-                .map(|(k, def)| (k.resolve(), (**def).clone()))
+                .map(|(k, def)| (k.resolve(), def.clone()))
                 .collect();
             if !more.is_empty() {
                 found_multi_candidates = true;
@@ -866,7 +866,7 @@ impl Interpreter {
             format!("{}::{}/", self.current_package(), name),
             format!("GLOBAL::{}/", name),
         ];
-        let mut optional_candidates: Vec<(String, FunctionDef)> = self
+        let mut optional_candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions
             .iter()
@@ -880,7 +880,7 @@ impl Interpreter {
                         .iter()
                         .any(|p| !p.named && (p.optional_marker || p.default.is_some()))
             })
-            .map(|(k, def)| (k.resolve(), (**def).clone()))
+            .map(|(k, def)| (k.resolve(), def.clone()))
             .collect();
         if !optional_candidates.is_empty() {
             found_multi_candidates = true;
@@ -906,7 +906,7 @@ impl Interpreter {
             format!("{}::{}/", self.current_package(), name),
             format!("GLOBAL::{}/", name),
         ];
-        let mut slurpy_candidates: Vec<(String, FunctionDef)> = self
+        let mut slurpy_candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions
             .iter()
@@ -918,7 +918,7 @@ impl Interpreter {
                         .iter()
                         .any(|p| p.slurpy || p.is_capture_subsignature())
             })
-            .map(|(k, def)| (k.resolve(), (**def).clone()))
+            .map(|(k, def)| (k.resolve(), def.clone()))
             .collect();
         if !slurpy_candidates.is_empty() {
             found_multi_candidates = true;
@@ -934,7 +934,7 @@ impl Interpreter {
             format!("{}::{name}/", self.current_package()),
             format!("GLOBAL::{name}/"),
         ];
-        let mut any_arity_candidates: Vec<(String, FunctionDef)> = self
+        let mut any_arity_candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions
             .iter()
@@ -944,7 +944,7 @@ impl Interpreter {
                     .iter()
                     .any(|prefix| ks.starts_with(prefix))
             })
-            .map(|(k, def)| (k.resolve(), (**def).clone()))
+            .map(|(k, def)| (k.resolve(), def.clone()))
             .collect();
         if !any_arity_candidates.is_empty() {
             found_multi_candidates = true;
@@ -1002,12 +1002,12 @@ impl Interpreter {
         for key in &generic_keys {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
-            let mut candidates: Vec<(String, FunctionDef)> = self
+            let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
-                .map(|(k, def)| (k.resolve(), (**def).clone()))
+                .map(|(k, def)| (k.resolve(), def.clone()))
                 .collect();
             candidates.sort_by(|a, b| {
                 let a_has_subsig = a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
@@ -1025,7 +1025,7 @@ impl Interpreter {
                         crate::ast::function_body_fingerprint(&m.params, &m.param_defs, &m.body)
                             == fp
                     }) {
-                        all_matches.push(def);
+                        all_matches.push((*def).clone());
                     }
                 }
             }
@@ -1036,7 +1036,7 @@ impl Interpreter {
             format!("{}::{}/", self.current_package(), name),
             format!("GLOBAL::{}/", name),
         ];
-        let mut slurpy_candidates: Vec<(String, FunctionDef)> = self
+        let mut slurpy_candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions
             .iter()
@@ -1048,7 +1048,7 @@ impl Interpreter {
                         .iter()
                         .any(|p| p.slurpy || p.is_capture_subsignature())
             })
-            .map(|(k, def)| (k.resolve(), (**def).clone()))
+            .map(|(k, def)| (k.resolve(), def.clone()))
             .collect();
         slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
         for (_, def) in slurpy_candidates {
@@ -1058,7 +1058,7 @@ impl Interpreter {
                 if !all_matches.iter().any(|m: &FunctionDef| {
                     crate::ast::function_body_fingerprint(&m.params, &m.param_defs, &m.body) == fp
                 }) {
-                    all_matches.push(def);
+                    all_matches.push((*def).clone());
                 }
             }
         }
@@ -1070,19 +1070,19 @@ impl Interpreter {
     /// arity or type matching.  Used to build the full candidate list for
     /// callwith(), which may re-dispatch with different arguments.
     pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<FunctionDef> {
-        let mut all: Vec<(String, FunctionDef)> = Vec::new();
+        let mut all: Vec<(String, Arc<FunctionDef>)> = Vec::new();
         let prefixes = [
             format!("{}::{}/", self.current_package(), name),
             format!("GLOBAL::{}/", name),
         ];
         let mut seen_fps = Vec::new();
         for prefix in &prefixes {
-            let candidates: Vec<(String, FunctionDef)> = self
+            let candidates: Vec<(String, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()
                 .filter(|(k, _)| k.resolve().starts_with(prefix.as_str()))
-                .map(|(k, def)| (k.resolve(), (**def).clone()))
+                .map(|(k, def)| (k.resolve(), def.clone()))
                 .collect();
             for (key, def) in candidates {
                 let fp =
@@ -1106,7 +1106,7 @@ impl Interpreter {
         // S12-methods/defer-next.t `nextsame + multi + where`). Mirrors the
         // deterministic winner resolution PR-4 added to `push_multi_dispatch_frame`.
         self.sort_candidates_by_specificity(&mut all);
-        all.into_iter().map(|(_, def)| def).collect()
+        all.into_iter().map(|(_, def)| (*def).clone()).collect()
     }
 
     pub(super) fn eval_token_call_values(
@@ -1692,7 +1692,7 @@ impl Interpreter {
             format!("GLOBAL::{}/{}", name, arity),
         ];
         // Collect all candidates (typed + generic) like resolve_function_with_types
-        let mut candidates: Vec<(String, FunctionDef)> = self
+        let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions
             .iter()
@@ -1700,17 +1700,17 @@ impl Interpreter {
                 let ks = key.resolve();
                 ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
             })
-            .map(|(key, def)| (key.resolve(), (**def).clone()))
+            .map(|(key, def)| (key.resolve(), def.clone()))
             .collect();
         for key in &generic_keys {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
-            let more: Vec<(String, FunctionDef)> = self
+            let more: Vec<(String, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
-                .map(|(k, def)| (k.resolve(), (**def).clone()))
+                .map(|(k, def)| (k.resolve(), def.clone()))
                 .collect();
             candidates.extend(more);
         }
@@ -1741,7 +1741,7 @@ impl Interpreter {
                 }
                 continue;
             }
-            remaining.push(cand.clone());
+            remaining.push((**cand).clone());
         }
         remaining
     }
@@ -1761,7 +1761,7 @@ impl Interpreter {
             let untyped_key = format!("{}/{}", name, arity);
             let untyped_key_sym = Symbol::intern(&untyped_key);
             let untyped_m_prefix = format!("{}__m", untyped_key);
-            let mut candidates: Vec<(String, FunctionDef)> = self
+            let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()
@@ -1771,7 +1771,7 @@ impl Interpreter {
                         || **key == untyped_key_sym
                         || ks.starts_with(&untyped_m_prefix)
                 })
-                .map(|(key, def)| (key.resolve(), (**def).clone()))
+                .map(|(key, def)| (key.resolve(), def.clone()))
                 .collect();
             candidates.sort_by(|a, b| {
                 let a_has_where = a.1.param_defs.iter().any(|p| p.where_constraint.is_some());
@@ -1779,11 +1779,12 @@ impl Interpreter {
                 b_has_where.cmp(&a_has_where).then(a.0.cmp(&b.0))
             });
             if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
-                return Some(def);
+                return Some((*def).clone());
             }
             return None;
         }
         self.resolve_function_with_types(name, arg_values)
+            .map(|a| (*a).clone())
     }
 
     /// Collect formatted signature lines from multi dispatch candidates.

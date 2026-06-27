@@ -205,7 +205,7 @@ impl Interpreter {
         if candidates.is_empty()
             && let Some(def) = self.resolve_function("MAIN")
         {
-            candidates.push(def);
+            candidates.push((*def).clone());
         }
         candidates
             .sort_by(|a, b| Self::candidate_specificity(b).cmp(&Self::candidate_specificity(a)));
