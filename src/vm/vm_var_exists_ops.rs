@@ -562,11 +562,36 @@ impl Interpreter {
             return Ok(());
         }
 
-        let (items, is_shaped): (&[Value], bool) = match &target {
-            Value::Array(items, kind) => {
-                (items.as_slice(), *kind == crate::value::ArrayKind::Shaped)
+        let (items, is_shaped, arr_initialized): (
+            &[Value],
+            bool,
+            Option<&std::collections::HashSet<usize>>,
+        ) = match &target {
+            Value::Array(items, kind) => (
+                items.as_slice(),
+                *kind == crate::value::ArrayKind::Shaped,
+                items.initialized.as_ref(),
+            ),
+            _ => (&[] as &[Value], false, None),
+        };
+        // An in-range slot exists unless it is a `Value::Nil` (deleted) or an
+        // autovivification gap (`Package("Any")` not in the embedded
+        // `initialized` set). Mirrors the `:k`/`:p` predicate in
+        // builtins_multidim_subscript so `:exists` agrees with them.
+        let slot_present_at = |i: i64| -> bool {
+            if is_shaped {
+                return i >= 0 && (i as usize) < items.len();
             }
-            _ => (&[] as &[Value], false),
+            if i < 0 {
+                return false;
+            }
+            match items.get(i as usize) {
+                None | Some(Value::Nil) => false,
+                Some(Value::Package(name)) if name == "Any" => {
+                    arr_initialized.is_none_or(|s| s.contains(&(i as usize)))
+                }
+                Some(_) => true,
+            }
         };
 
         let is_multi = indices.len() != 1 || is_zen;
@@ -576,14 +601,7 @@ impl Interpreter {
             let i = indices[0];
             // Shaped arrays are fixed-size: any in-range index exists,
             // regardless of whether the slot holds the (default) Nil value.
-            let slot_present = if is_shaped {
-                i >= 0 && (i as usize) < items.len()
-            } else {
-                i >= 0
-                    && items
-                        .get(i as usize)
-                        .is_some_and(|v| !matches!(v, Value::Nil))
-            };
+            let slot_present = slot_present_at(i);
             let is_deleted = array_var_name
                 .as_deref()
                 .is_some_and(|n| self.is_deleted_index(n, i));
@@ -622,14 +640,7 @@ impl Interpreter {
         let pairs: Vec<(i64, bool)> = indices
             .iter()
             .map(|&i| {
-                let slot_present = if is_shaped {
-                    i >= 0 && (i as usize) < items.len()
-                } else {
-                    i >= 0
-                        && items
-                            .get(i as usize)
-                            .is_some_and(|v| !matches!(v, Value::Nil))
-                };
+                let slot_present = slot_present_at(i);
                 let is_deleted = array_var_name
                     .as_deref()
                     .is_some_and(|n| self.is_deleted_index(n, i));

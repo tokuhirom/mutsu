@@ -269,13 +269,11 @@ impl Interpreter {
         let mut rows: Vec<(Value, Value, bool)> = Vec::with_capacity(indices.len());
         match &target {
             Value::Array(items, ..) => {
-                let bound_map = var_name
-                    .as_ref()
-                    .and_then(|name| self.env.get(&format!("__mutsu_initialized_index::{name}")))
-                    .and_then(|v| match v {
-                        Value::Hash(map) => Some(map),
-                        _ => None,
-                    });
+                // The set of explicitly element-assigned indices travels with
+                // the array value (embedded `ArrayData::initialized`), so a slot
+                // holding a `Package("Any")` hole is distinguished from a real
+                // `Any` value even after the array crosses scopes/closures.
+                let bound_map = items.initialized.as_ref();
                 // The missing-element default comes from the array's *element
                 // type*. Read it from the container value itself (embedded
                 // metadata / `is default`) FIRST so it survives rebinding — e.g.
@@ -312,12 +310,9 @@ impl Interpreter {
                         continue;
                     }
                     let ui = i as usize;
-                    let exists = if let Some(map) = bound_map {
-                        if map.contains_key(&i.to_string()) {
-                            true
-                        } else {
-                            !matches!(&items[ui], Value::Package(name) if name == "Any")
-                        }
+                    let exists = if let Some(set) = bound_map {
+                        set.contains(&ui)
+                            || !matches!(&items[ui], Value::Package(name) if name == "Any")
                     } else {
                         true
                     };

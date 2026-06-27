@@ -1223,7 +1223,7 @@ impl Interpreter {
                             {
                                 let mut arr = vec![Value::Package(Symbol::intern("Any")); i + 1];
                                 arr[i] = val.clone();
-                                *container = Value::real_array(arr);
+                                *container = Value::real_array_initialized_at(arr, i);
                             } else {
                                 let mut hash = std::collections::HashMap::new();
                                 hash.insert(key.clone(), val.clone());
@@ -1246,7 +1246,7 @@ impl Interpreter {
                         let mut arr = vec![Value::Package(Symbol::intern("Any")); i + 1];
                         arr[i] = val.clone();
                         self.env_mut()
-                            .insert(var_name.clone(), Value::real_array(arr));
+                            .insert(var_name.clone(), Value::real_array_initialized_at(arr, i));
                     } else {
                         let mut hash = std::collections::HashMap::new();
                         hash.insert(key.clone(), val.clone());

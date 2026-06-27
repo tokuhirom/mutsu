@@ -207,8 +207,12 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
     「Unhandled exception in code scheduled on thread」（空メッセージ）でプロセス終了（bin/非 bin 共通・`.tap` 回避なら OK）。
     real-TCP Supply の tap コールバックが worker thread 上で走り react の control-flow フレームから切れているため。
     HTTP::Server::Tiny のリクエストループが `done` を使うなら要修正。
-  - **HTTP::Status v0.0.5**: user `method sink` がシンクコンテキストで呼ばれず status table が空。
-    ⚠️ 注意: 過去に sink 修正は sink.t を回帰させた（メモリ `sink-context-blocked-container-identity` 参照）。
+  - **✅ HTTP::Status v0.0.5 全テスト PASS（68 subtests・#3832）**: 当初診断「`method sink` が呼ばれず空」は誤り。
+    実際の 2 ブロッカーは①配列ホール追跡がスコープを越えなかった（autoviv ギャップの `Package("Any")` を実 `Any` と
+    区別する `__mutsu_initialized_index::name` env side table がフレーム scope で、外側配列をメソッド/クロージャから
+    埋めると喪失→`:exists`/`:k`/`:p`/`.keys` がギャップを存在扱い）。`ArrayData::initialized` 埋め込みセット化で値と共に
+    COW 伝播（`default`/`shape` と同パターン）。②`eq`/`is` がユーザ `Str` メソッドを使わず `.gist` 文字列化していた→
+    infix `~` と同じ user-stringifier coercion を流用。`:exists` がホール追跡を一切参照しなかった既存バグも併せて修正。
 - [ ] **NativeCall（C FFI）— MVP landed、DBDish への正攻法。**
   - **✅ MVP（#TBD）**: `is native(...)` の sub を `dlopen`+`libffi` で実 C 呼び出し。スカラ整数/浮動小数・
     `Str`→`char*`・`Pointer`・戻り値 `char*`→`Str`・`is symbol(...)`・非デフォルトライブラリ（`is native('m')`/

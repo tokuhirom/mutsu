@@ -133,19 +133,21 @@ impl Interpreter {
         // an internal redispatch with no surrounding CallMethod op, so drain any
         // captured-outer writeback into the caller's slot (Slice 1b render pattern).
         let caller_code = self.current_code;
-        let left = self.concat_coerce_operand(left)?;
-        let right = self.concat_coerce_operand(right)?;
+        let left = self.coerce_stringy_operand(left)?;
+        let right = self.coerce_stringy_operand(right)?;
         self.reconcile_caller_after_internal_dispatch(caller_code);
         let result = Self::concat_values(left, right);
         self.stack.push(result);
         Ok(())
     }
 
-    /// Coerce a concat operand whose class defines a user `Stringy`/`Str` to its
-    /// string value (Raku infix `~` uses `.Stringy`, falling back to `.Str`). Plain
-    /// values and instances without a user stringifier pass through unchanged (the
-    /// pure `concat_values` handles those, including built-in `.gist`/`.Str`).
-    fn concat_coerce_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
+    /// Coerce an operand whose class defines a user `Stringy`/`Str` to its
+    /// string value (Raku infix `~` uses `.Stringy`, falling back to `.Str`;
+    /// the string comparators `eq`/`lt`/… use `.Str`). Plain values and
+    /// instances without a user stringifier pass through unchanged (the pure
+    /// `concat_values` / `to_str_context` handle those, including built-in
+    /// `.gist`/`.Str`). Shared by infix `~` and the string-comparison ops.
+    pub(super) fn coerce_stringy_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
         let cn = match &v {
             Value::Instance { class_name, .. } => class_name.resolve().to_string(),
             Value::Package(name) => name.resolve().to_string(),

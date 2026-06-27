@@ -670,14 +670,33 @@ impl Interpreter {
                 Arc::make_mut(map).remove(&encoded);
             }
         }
-        let key = format!("__mutsu_initialized_index::{}", var_name);
-        if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            Arc::make_mut(map).insert(encoded, Value::Bool(true));
+        // Record the assigned index in the array's *embedded* `initialized`
+        // set so it travels with the value across scopes/closures/method calls
+        // (the former env-name-keyed side table was scoped to the assigning
+        // frame and lost on scope exit). Only array indices (plain integers)
+        // are tracked — hash existence is determined by key presence.
+        let Ok(idx) = encoded.parse::<usize>() else {
             return;
+        };
+        // Mutate the array in place when it is shared by-ref through a scalar
+        // ($) container, mirroring the assignment path's `use_inplace` choice
+        // (vm_var_assign_index_named). Using `Arc::make_mut` here would clone a
+        // shared array and sever the by-ref alias, so a subsequent `.push` on
+        // the original would be lost (t/array-push-byref-coherence).
+        let use_inplace = !var_name.starts_with('@');
+        if let Some(Value::Array(items, _)) = self.env_root_descended_mut(var_name) {
+            let data: &mut crate::value::ArrayData = if use_inplace && Arc::strong_count(items) > 1
+            {
+                // SAFETY: aliased in-place mutation of a shared array; same
+                // contract as the assignment site's `arc_contents_mut` use.
+                unsafe { crate::value::arc_contents_mut(items) }
+            } else {
+                Arc::make_mut(items)
+            };
+            data.initialized
+                .get_or_insert_with(std::collections::HashSet::new)
+                .insert(idx);
         }
-        let mut map = std::collections::HashMap::new();
-        map.insert(encoded, Value::Bool(true));
-        self.env_mut().insert(key, Value::hash(map));
     }
 
     /// Mark the given indices as deleted. `:exists` on an array consults
@@ -761,12 +780,49 @@ impl Interpreter {
     /// `trim_trailing_array_holes` so that deleted slots are recognized
     /// as holes and can be trimmed.
     pub(super) fn unmark_initialized_indices(&mut self, var_name: &str, idx: &Value) {
-        let key = format!("__mutsu_initialized_index::{}", var_name);
-        let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) else {
+        // Collect the integer indices addressed by `idx` (scalar, slice, or
+        // range) and drop them from the array's embedded `initialized` set so
+        // the deleted slots are recognized as holes and can be trimmed.
+        let mut to_remove: Vec<usize> = Vec::new();
+        Self::collect_usize_indices(idx, &mut to_remove);
+        if to_remove.is_empty() {
             return;
-        };
-        let m = Arc::make_mut(map);
-        Self::unmark_index_entries(m, idx);
+        }
+        if let Some(Value::Array(items, _)) = self.env_root_descended_mut(var_name)
+            && let Some(set) = Arc::make_mut(items).initialized.as_mut()
+        {
+            for i in to_remove {
+                set.remove(&i);
+            }
+        }
+    }
+
+    /// Flatten a subscript index `Value` (scalar / array slice / range) into the
+    /// list of non-negative integer array indices it addresses.
+    fn collect_usize_indices(idx: &Value, out: &mut Vec<usize>) {
+        match idx {
+            Value::Array(items, ..) => {
+                for item in items.iter() {
+                    Self::collect_usize_indices(item, out);
+                }
+            }
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
+                for item in &crate::runtime::utils::value_to_list(idx) {
+                    Self::collect_usize_indices(item, out);
+                }
+            }
+            Value::Int(i) if *i >= 0 => out.push(*i as usize),
+            Value::Num(f) if *f >= 0.0 => out.push(*f as usize),
+            _ => {
+                if let Ok(i) = idx.to_string_value().parse::<usize>() {
+                    out.push(i);
+                }
+            }
+        }
     }
 
     fn unmark_index_entries(map: &mut std::collections::HashMap<String, Value>, idx: &Value) {

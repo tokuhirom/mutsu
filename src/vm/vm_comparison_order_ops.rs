@@ -6,9 +6,28 @@ use super::vm_comparison_ops::{
 use super::*;
 
 impl Interpreter {
+    /// Coerce both operands of a string comparator (`eq`/`ne`/`lt`/`gt`/`le`/
+    /// `ge`) through a user-defined `Str`/`Stringy` method when present, so an
+    /// instance compares by its string value (Raku's `infix:<eq>` is `.Str`
+    /// coercion). Junctions and plain values pass through unchanged, preserving
+    /// autothreading. This is an internal redispatch with no surrounding
+    /// CallMethod op, so drain any captured-outer writeback into the caller.
+    fn coerce_str_compare_operands(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<(Value, Value), RuntimeError> {
+        let caller_code = self.current_code;
+        let left = self.coerce_stringy_operand(left)?;
+        let right = self.coerce_stringy_operand(right)?;
+        self.reconcile_caller_after_internal_dispatch(caller_code);
+        Ok((left, right))
+    }
+
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
                 Ok(Value::Bool(
@@ -25,6 +44,7 @@ impl Interpreter {
     pub(super) fn exec_str_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self.coerce_str_compare_operands(left, right)?;
         // ne is a negation meta-operator shortcut for !eq.
         // It first evaluates eq (which autothreads through junctions),
         // then negates the boolean-collapsed result, always returning Bool.
@@ -50,6 +70,7 @@ impl Interpreter {
     pub(super) fn exec_str_lt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
                 Ok(Value::Bool(
@@ -66,6 +87,7 @@ impl Interpreter {
     pub(super) fn exec_str_gt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
                 Ok(Value::Bool(
@@ -82,6 +104,7 @@ impl Interpreter {
     pub(super) fn exec_str_le_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
                 Ok(Value::Bool(
@@ -98,6 +121,7 @@ impl Interpreter {
     pub(super) fn exec_str_ge_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
                 Ok(Value::Bool(
