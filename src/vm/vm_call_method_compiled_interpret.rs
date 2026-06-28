@@ -167,6 +167,11 @@ impl Interpreter {
             // otherwise pre-empt them. Returns `None` (falling through to that
             // fallback unchanged) for any receiver/method/args it cannot handle
             // natively, so this is behavior-invariant.
+            // User-subclassed IO::Handle (overrides WRITE/READ/EOF): route the
+            // high-level methods through the user methods before the native path.
+            if let Some(result) = self.try_user_io_handle_method(&target, method, &args) {
+                return result;
+            }
             if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
                 return result;
             }
