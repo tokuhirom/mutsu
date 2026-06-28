@@ -60,33 +60,41 @@ bytecode.
   regexes), delegating to the same native implementations — it is no longer a
   separate execution engine.
 
-### `env_dirty` dual store
-- The VM keeps both indexed `locals` slots and an `env: HashMap<Symbol, Value>`.
-  The `env` is needed for closure captures, dynamic variables (`$*VAR`), and
-  package-scoped resolution. Keeping the two in sync (reverse-sync, guarded by
-  `env_dirty` / `sync_locals_from_env`) is the main internal optimization debt
-  still being paid down (Slice F campaign).
+### Single store (`locals` authoritative, `env` derived)
 
-## Remaining Bottleneck: Method Dispatch (~2.5x slower)
+- The VM keeps indexed `locals` slots as the **single authoritative store**; the
+  `env: HashMap<Symbol, Value>` is a *derived view* needed for closure captures,
+  dynamic variables (`$*VAR`), and package-scoped resolution. Coherence is
+  maintained by **cell-boxing** (shared `ContainerRef` cells for
+  captured-and-mutated lexicals), made permanent in #3450.
+- The old `env_dirty` / reverse-`sync_locals_from_env` dual-store machinery was
+  **physically removed in #3455** — it is no longer a source of cost.
 
-**Current cost**: ~31μs per method call (fast path). raku achieves ~5μs.
+## Remaining Bottleneck: Method Dispatch
 
-| Step | Cost | Description |
-|------|------|-------------|
-| `exec_call_method_op` entry | ~2μs | Arg processing, stack ops |
-| Method resolution | ~1μs | FastMethodCacheEntry hit (pre-computed dispatch) |
-| `push_call_frame` | ~0.1μs | Arc bump for env |
-| **env deep clone** | **~9μs** | **Arc::make_mut on HashMap<Symbol, Value>** |
-| Direct locals init | ~2μs | Populate from source data |
-| **Bytecode execution** | **~1μs** | The actual method body |
-| Cleanup | ~3μs | Writeback attrs, restore env |
-| **Total** | **~31μs** | |
+> **Update 2026-06-28 (re-measured, machine-quiet, release build).** The cost
+> model below replaces the stale "env deep clone ~9μs/call" analysis: that
+> bottleneck no longer exists. With the single-store campaign done, a
+> `MUTSU_VM_STATS=1` run of the method-call benchmark shows
+> `env_deep_copies=1` and `clone_env=10000` (O(1) Arc bumps) over the *entire*
+> 10000-iteration run — i.e. **there is no per-call env deep clone**. The
+> `vm_call_fast` path's `saved_env.ptr_eq(self.env())` check already skips the
+> merge when the body did not mutate env, so `Arc::make_mut` essentially never
+> fires.
 
-**Root cause**: `Arc::make_mut` deep clones the entire ~100-entry HashMap when shared (refcount > 1). Symbol keys reduced clone cost ~30% vs String keys, but the clone itself is still the dominant cost.
+**Actual per-call costs (release perf profile, method-call / bench-class):**
 
-**Why env clone can't be eliminated**: Inner method calls inherit the current env as their outer scope. Closures capture outer-scope variables from env. Dynamic variables (`$*VAR`) must be visible through the env chain.
+| Cost | Share | Notes |
+|------|-------|-------|
+| ~~per-call body fingerprint~~ | ~~6–15%~~ | **fixed in #3853** — `push_method_dispatch_frame` `format!("{:?}", body)`-hashed the whole method-body AST on every call; now short-circuited for the single-candidate case + allocation-free fingerprint. |
+| `Symbol::intern` + `memcmp` | ~14% | class/method names are `resolve()`d to `String` then re-`intern()`ed per call (a `Symbol → String → Symbol` round-trip); each intern takes a global `RwLock` read + `FxHashMap` lookup. **Next target.** |
+| `Value::clone` / `drop_in_place::<Value>` / `Vec::clone` | ~50% on bench-class | the 48-byte `Value` enum copied/dropped throughout dispatch + instance attribute handling. Addressed long-term by NaN-boxing (Lever 2 / ADR-0001 layer 3b, *after* GC). |
 
-### Approaches investigated and rejected
+**Why env clone is no longer the issue**: the single-store work made `locals`
+authoritative and `env` a cheap derived view; method calls no longer snapshot
+the whole env.
+
+### Approaches investigated and rejected (historical — pre single-store)
 
 1. **Two-level Env (base + delta)**: Branch overhead on every `get()` offset clone savings. Net regression on non-method benchmarks.
 2. **Fresh env (bypass clone)**: Broke closure captures, dynamic variable visibility, package-scoped sub resolution.
@@ -95,14 +103,24 @@ bytecode.
 
 ## Improvement Plan
 
-### Phase 3b: Closure captures as indexed slots — target: method-call < 2x
+### Method-dispatch hot-path cleanups — target: method-call < 2x
 
-Currently closures capture the entire env HashMap. Replace with indexed capture slots:
-- At compile time, analyze which variables the closure reads/writes
-- Store only those values in a `Vec<Value>` (indexed by slot)
-- Closure execution reads/writes slots directly, no HashMap
+> The previously-listed "closure captures as indexed slots / eliminate env
+> clone" item is **obsolete**: the single-store campaign already removed the
+> per-call env deep clone (see the bottleneck section above; `env_deep_copies ≈ 0`).
+> The remaining method-call cost is in dispatch bookkeeping, not env cloning.
 
-This eliminates env clone for closure creation (currently clones ~100 entries).
+Remaining, in priority order (measured 2026-06-28):
+- **Done (#3853)**: stop Debug-formatting the method-body AST per call for
+  candidate identity (single-candidate fast path + allocation-free fingerprint).
+- **Next — symbol round-trips**: dispatch resolves `Value::Package(Symbol)` /
+  `Value::Instance { class_name: Symbol }` to a `String` (`resolve()`, allocates)
+  and then re-`intern()`s it to a `Symbol` for cache keys and re-built invocant
+  values. Reuse the original `Symbol` and migrate the `&str`-based dispatch APIs
+  toward `Symbol` to drop both the allocation and the `FxHashMap` intern lookup.
+- **Longer-term — `Value` size**: `Value::clone`/`drop` dominate class benchmarks;
+  NaN-boxing (Lever 2, ADR-0001 layer 3b) shrinks the common variants but is
+  sequenced *after* GC.
 
 ### Phase 4a: Value representation (NaN-boxing)
 
