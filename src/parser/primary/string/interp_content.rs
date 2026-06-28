@@ -55,8 +55,7 @@ pub(crate) fn interpolate_string_content_with_modes(
         if interpolate_closures
             && rest.starts_with('{')
             && let Some((after, inner)) = parse_braced_interpolation(rest)
-            && let Ok((remaining, expr)) = expression(inner.trim())
-            && remaining.trim().is_empty()
+            && let Some(expr) = parse_braced_closure_body(inner.trim())
         {
             if !current.is_empty() {
                 parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
@@ -75,6 +74,32 @@ pub(crate) fn interpolate_string_content_with_modes(
     }
 
     finalize_interpolation(parts, current)
+}
+
+/// Parse the body of a `{ … }` string-interpolation block. A block may hold a
+/// full statement list (`{$c++; "new"}`), not just a single expression — mirror
+/// the `$( … )` interpolation path: try a statement list first (so multi-statement
+/// blocks and statement-modifiers work), then fall back to a single expression.
+fn parse_braced_closure_body(inner: &str) -> Option<Expr> {
+    if let Ok((leftover, stmts)) = crate::parser::stmt::stmt_list_pub(inner)
+        && leftover.trim().is_empty()
+        && !stmts.is_empty()
+    {
+        return Some(if stmts.len() == 1 {
+            Expr::DoStmt(Box::new(stmts.into_iter().next().unwrap()))
+        } else {
+            Expr::DoBlock {
+                body: stmts,
+                label: None,
+            }
+        });
+    }
+    if let Ok((leftover, expr)) = expression(inner)
+        && leftover.trim().is_empty()
+    {
+        return Some(expr);
+    }
+    None
 }
 
 pub(crate) fn parse_braced_interpolation(input: &str) -> Option<(&str, &str)> {

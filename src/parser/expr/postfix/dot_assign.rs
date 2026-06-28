@@ -13,6 +13,20 @@ pub(crate) fn atomic_var_name(expr: &Expr) -> Option<String> {
     }
 }
 
+/// The writeback variable name (`AssignExpr`-convention: `x` / `@a` / `%h`) for an
+/// expression whose value is a simple-variable lvalue, or `None` otherwise. Used to
+/// route an outer `.=` through a `do { … }`-block target back to its lvalue.
+fn lvalue_assign_name(e: &Expr) -> Option<String> {
+    match e {
+        Expr::Grouped(inner) => lvalue_assign_name(inner),
+        Expr::AssignExpr { name, .. } => Some(name.clone()),
+        Expr::Var(n) => Some(n.clone()),
+        Expr::ArrayVar(n) => Some(format!("@{}", n)),
+        Expr::HashVar(n) => Some(format!("%{}", n)),
+        _ => None,
+    }
+}
+
 /// Wrap a `.=` method call result in the appropriate assignment expression.
 /// For simple variables, generates `AssignExpr { name, expr }`.
 /// For index expressions, generates an `IndexAssign` wrapped in a `DoBlock`.
@@ -83,6 +97,71 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
         // ($var = expr).=method => evaluate the assignment, then $var = $var.method
         Expr::AssignExpr { name, .. } => {
             let assign_name = name.clone();
+            let var_expr = if let Some(rest) = assign_name.strip_prefix('@') {
+                Expr::ArrayVar(rest.to_string())
+            } else if let Some(rest) = assign_name.strip_prefix('%') {
+                Expr::HashVar(rest.to_string())
+            } else {
+                Expr::Var(assign_name.clone())
+            };
+            let method_result = method_call_fn(var_expr);
+            Expr::DoBlock {
+                body: vec![
+                    Stmt::Expr(target),
+                    Stmt::Expr(Expr::AssignExpr {
+                        name: assign_name,
+                        expr: Box::new(method_result),
+                        is_bind: false,
+                    }),
+                ],
+                label: None,
+            }
+        }
+        // An inline declaration target (`(my Int $x .= new).= new: 42`) parses to
+        // `DoStmt(VarDecl)`. Run the declaration (which declares and initializes the
+        // variable), then assign the method result back to the just-declared
+        // variable so the outer `.=` writes through, mirroring the AssignExpr case.
+        Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::VarDecl { .. }) => {
+            let decl_name = match stmt.as_ref() {
+                Stmt::VarDecl { name, .. } => name.clone(),
+                _ => unreachable!(),
+            };
+            let var_expr = if let Some(rest) = decl_name.strip_prefix('@') {
+                Expr::ArrayVar(rest.to_string())
+            } else if let Some(rest) = decl_name.strip_prefix('%') {
+                Expr::HashVar(rest.to_string())
+            } else {
+                Expr::Var(decl_name.clone())
+            };
+            let method_result = method_call_fn(var_expr);
+            Expr::DoBlock {
+                body: vec![
+                    Stmt::Expr(target),
+                    Stmt::Expr(Expr::AssignExpr {
+                        name: decl_name,
+                        expr: Box::new(method_result),
+                        is_bind: false,
+                    }),
+                ],
+                label: None,
+            }
+        }
+        // A `do { … }` block whose value is an lvalue (`do { …; ($x .= new) }.= new`)
+        // writes the outer `.=` result back to that lvalue. Run the block once (its
+        // side effects included), then assign `$x = $x.method`.
+        Expr::DoBlock { body, .. }
+            if body
+                .last()
+                .and_then(|s| match s {
+                    Stmt::Expr(e) => lvalue_assign_name(e),
+                    _ => None,
+                })
+                .is_some() =>
+        {
+            let assign_name = match body.last() {
+                Some(Stmt::Expr(e)) => lvalue_assign_name(e).unwrap(),
+                _ => unreachable!(),
+            };
             let var_expr = if let Some(rest) = assign_name.strip_prefix('@') {
                 Expr::ArrayVar(rest.to_string())
             } else if let Some(rest) = assign_name.strip_prefix('%') {

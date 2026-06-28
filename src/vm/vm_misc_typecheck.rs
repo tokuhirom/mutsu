@@ -81,6 +81,12 @@ impl Interpreter {
         };
         if let Value::Array(..) = &value
             && !is_container_constraint
+            // Element-level matching is for `@`-sigil typed arrays (`my Int @a`),
+            // whose constraint is the ELEMENT type. A `$`-scalar holding an array
+            // (`my Array[Numeric] $x = …`, `my Array[Numeric] constant c .= new`)
+            // matches the WHOLE value against the (parameterized) type, not its
+            // elements — fall through to the whole-value type check below.
+            && !var_name.is_some_and(|n| n.starts_with('$'))
         {
             if !self.array_elements_match_constraint(constraint, &value) {
                 return Err(self.typed_array_element_error(
