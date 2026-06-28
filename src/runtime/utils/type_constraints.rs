@@ -214,6 +214,8 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "IO::Spec::Win32"
             | "IO::Special"
             | "Metamodel::Primitives"
+            | "Rakudo::Internals"
+            | "Rakudo::Internals::JSON"
             | "Pod::Block"
             | "Pod::Block::Code"
             | "Pod::Block::Comment"
