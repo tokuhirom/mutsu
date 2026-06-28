@@ -232,7 +232,10 @@ impl Interpreter {
                     self.scheduler_run_sync(params)?;
                 } else {
                     let mut thread_interp = self.clone_for_thread();
-                    std::thread::spawn(move || {
+                    // Large user-code stack: the scheduled callback runs user VM
+                    // code, which overflows the default thread stack on deep
+                    // nesting. See `USER_THREAD_STACK_SIZE`.
+                    crate::runtime::builtins_system::spawn_user_thread(move || {
                         thread_interp.scheduler_run_async(params);
                     });
                 }

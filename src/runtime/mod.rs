@@ -160,7 +160,7 @@ mod builtins_operators_infix;
 mod builtins_operators_repeat;
 pub(crate) mod builtins_reduce;
 mod builtins_string;
-mod builtins_system;
+pub(crate) mod builtins_system;
 mod builtins_system_async;
 mod builtins_system_proc;
 mod builtins_system_require;
