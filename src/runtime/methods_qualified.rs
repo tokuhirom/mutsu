@@ -143,24 +143,58 @@ impl Interpreter {
             if concs.len() == 1 {
                 let conc = concs.into_iter().next().unwrap();
                 if conc.contains('[')
-                    && let Ok(Some((role_def, _tparams, _tvals))) =
-                        self.resolve_role_candidate(&conc)
+                    && let Ok(Some((role_def, tparams, tvals))) = self.resolve_role_candidate(&conc)
                     && let Some(overloads) = role_def.methods.get(actual_method).cloned()
                 {
                     for def in overloads {
                         if !def.is_private && self.method_args_match(&args, &def.param_defs) {
                             let attrs_map = attributes.to_map();
                             let inst_cn = inst_cn_str.to_string();
-                            let (result, updated) = match self
-                                .run_resolved_method_compiled_or_treewalk(
-                                    &inst_cn,
-                                    qualifier,
-                                    actual_method,
-                                    def,
-                                    attrs_map,
-                                    args,
-                                    Some(target.clone()),
-                                ) {
+                            // Bind THIS concretization's type parameters (`T`=`Int`)
+                            // under the qualifier role name for the duration of the
+                            // call. The method body reads `T` from the role-param
+                            // bindings; the consuming class's own bindings
+                            // (`class_role_param_bindings[C1]`) are keyed by bare
+                            // param name and collide when several roles share the
+                            // name `T`, so we must use the resolved per-concretization
+                            // values instead. The run path prefers the owner's
+                            // bindings (`else if` over the receiver's), so setting
+                            // them under `qualifier` overrides the collided class
+                            // bindings. Save/restore to avoid leaking.
+                            let saved = self
+                                .registry()
+                                .class_role_param_bindings
+                                .get(qualifier)
+                                .cloned();
+                            {
+                                let bindings: std::collections::HashMap<String, Value> =
+                                    tparams.iter().cloned().zip(tvals.iter().cloned()).collect();
+                                self.registry_mut()
+                                    .class_role_param_bindings
+                                    .insert(qualifier.to_string(), bindings);
+                            }
+                            let run = self.run_resolved_method_compiled_or_treewalk(
+                                &inst_cn,
+                                qualifier,
+                                actual_method,
+                                def,
+                                attrs_map,
+                                args,
+                                Some(target.clone()),
+                            );
+                            match saved {
+                                Some(b) => {
+                                    self.registry_mut()
+                                        .class_role_param_bindings
+                                        .insert(qualifier.to_string(), b);
+                                }
+                                None => {
+                                    self.registry_mut()
+                                        .class_role_param_bindings
+                                        .remove(qualifier);
+                                }
+                            }
+                            let (result, updated) = match run {
                                 Ok(v) => v,
                                 Err(e) => return Some(Err(e)),
                             };
@@ -280,10 +314,15 @@ impl Interpreter {
         base_role: &str,
     ) -> std::collections::BTreeSet<String> {
         use std::collections::{BTreeSet, VecDeque};
-        // The consumer's directly-composed roles: classes use class_composed_roles,
-        // roles use role_parents (which records `does`-composed sub-roles).
+        // The consumer's directly-composed roles: classes use their DIRECT
+        // `does` list (NOT the transitive `class_composed_roles` closure, which
+        // would surface a concretization reached only via another role and make a
+        // directly-declared one falsely ambiguous); roles use role_parents (which
+        // records `does`-composed sub-roles, already direct).
         let direct_roles = |node: &str| -> Vec<String> {
-            if let Some(roles) = self.registry().class_composed_roles.get(node) {
+            if let Some(roles) = self.registry().class_direct_composed_roles.get(node) {
+                roles.clone()
+            } else if let Some(roles) = self.registry().class_composed_roles.get(node) {
                 roles.clone()
             } else if let Some(parents) = self.registry().role_parents.get(node) {
                 parents.clone()
