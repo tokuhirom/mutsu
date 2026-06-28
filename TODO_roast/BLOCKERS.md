@@ -759,13 +759,38 @@ container identity や lazy 配列とは別に、
    lazy 配列と混ぜずに `X::Seq::Consumed` 軸を切り出す。
 5. S17 を 4 軸へ分解した上で、まず semaphore / scheduler を触る。
 
-その一方で、次は**局所修正を積み上げても効率が悪い**ので、原則として後回し。
+その一方で、次は**個別テストを直接殴るより、先に基盤 campaign を系統だって進めた方が速い**ので、原則として後回し。
+
+ここでいう「後回し」は、
+
+- 難しいから放置する
+- 価値が低いから無視する
+
+という意味ではない。
+
+意味は逆で、これらは **main track の canary** であり、
+個別に special case を足すより
+
+- 第一級コンテナ
+- lazy / Seq 消費モデル
+- dispatch 基盤
+
+のどれかを先に前進させた方が、結果としてまとめて解ける、という判断である。
 
 - `S26-documentation/12-non-breaking-space.t`
 - `S12-introspection/walk.t`
 - `S32-array/splice.t`
 - `S32-hash/adverbs.t` の typed-hash default 群
 - `S09-subscript/slice.t`
+
+補足:
+
+- `S32-array/splice.t` は「splice 固有のロジック不足」が主因ではなく、
+  self-splice / push-replace-self が **true first-class element containers** を要求する
+  [container identity canary](/home/tokuhirom/work/mutsu-codex/TODO_roast/S32.md:83)。
+- `S32-hash/adverbs.t` の typed-hash default 群も、missing-key default の one-off というより
+  container/default survival の canary。
+- `S09-subscript/slice.t` も parser 小修正だけでは閉じず、lazy source 保持と nested slice semantics の両方に触れる。
 
 ## 6.1 `S32-exceptions/misc.t` をやるなら、何を順にやるか
 
