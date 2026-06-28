@@ -899,6 +899,7 @@ impl Interpreter {
                     && name.len() > 1
                     && !name.contains("__")
                     && loan_env!(self, var_type_constraint(&name)).is_none()
+                    && matches!(&val, Value::Array(d, _) if d.value_type.is_none() && d.declared_type.is_none())
                 {
                     // `@a = list` where `@a` has no *declared* element type but is
                     // an alias / for-loop binding of an element-typed array
@@ -906,7 +907,11 @@ impl Interpreter {
                     // preserve its declared element type rather than replacing it
                     // with an untyped `Array`. Internal/anonymous names
                     // (`@__ANON_ARRAY__`, `@__mutsu_*`) are excluded: they are
-                    // fresh per use and must not inherit a stale slot's type.
+                    // fresh per use and must not inherit a stale slot's type. The
+                    // guard `val` is itself untyped is essential: when the RHS
+                    // already carries a type (e.g. a `DeitemizeForBind` chunk
+                    // element), that type wins — reading a possibly-stale slot here
+                    // would clobber it (the cross-type for-loop contamination).
                     let old_info = match self.get_env_with_main_alias(&name) {
                         Some(Value::Array(old, _))
                             if old.value_type.is_some() || old.declared_type.is_some() =>
@@ -1327,6 +1332,12 @@ impl Interpreter {
             OpCode::Itemize => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 self.stack.push(Self::itemize_value(val));
+                *ip += 1;
+            }
+            OpCode::DeitemizeForBind => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let deitemized = self.deitemize_for_bind(val)?;
+                self.stack.push(deitemized);
                 *ip += 1;
             }
             OpCode::ItemizeVar(name_idx) => {

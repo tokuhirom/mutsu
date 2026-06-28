@@ -176,6 +176,10 @@ pub(crate) enum OpCode {
     /// item in list context. Emitted when `$` variable values are used inside
     /// `ArrayLiteral` or assigned to `@`/`%` targets.
     Itemize,
+    /// De-itemize a `for … -> @a` chunk element while preserving the source
+    /// array's element type (see `Expr::DeitemizeForBind`). Falls back to plain
+    /// list flattening for non-array values.
+    DeitemizeForBind,
     /// Like `Itemize`, but skips itemization when the named scalar variable is
     /// bound (`:=`) to a Positional value. A bound scalar is NOT a Scalar
     /// container, so `@a = $bound` must flatten (matching Raku). The argument is

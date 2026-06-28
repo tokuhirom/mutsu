@@ -387,6 +387,11 @@ pub(crate) enum Expr {
     /// Item context coercion: `$%hash` or `$@array` — wraps value in Scalar container
     /// so it won't be flattened in list context.
     Itemize(Box<Expr>),
+    /// De-itemize the chunk element of a `for … -> @a` binding. Like `.list`
+    /// (flattens a one-element itemized-array wrap into its elements), but
+    /// preserves the source array's element type so `@a` keeps `array[int]`
+    /// instead of collapsing to an untyped `Array`.
+    DeitemizeForBind(Box<Expr>),
     Reduction {
         op: String,
         expr: Box<Expr>,
@@ -1571,9 +1576,10 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_ph_expr(expr, out);
             collect_ph_expr(value, out);
         }
-        Expr::Reduction { expr, .. } | Expr::Eager(expr) | Expr::Itemize(expr) => {
-            collect_ph_expr(expr, out)
-        }
+        Expr::Reduction { expr, .. }
+        | Expr::Eager(expr)
+        | Expr::Itemize(expr)
+        | Expr::DeitemizeForBind(expr) => collect_ph_expr(expr, out),
         Expr::HyperOp { left, right, .. }
         | Expr::HyperFuncOp { left, right, .. }
         | Expr::MetaOp { left, right, .. } => {
@@ -1865,9 +1871,10 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
                 collect_ph_stmt_shallow(s, out);
             }
         }
-        Expr::Reduction { expr, .. } | Expr::Eager(expr) | Expr::Itemize(expr) => {
-            collect_ph_expr_shallow(expr, out)
-        }
+        Expr::Reduction { expr, .. }
+        | Expr::Eager(expr)
+        | Expr::Itemize(expr)
+        | Expr::DeitemizeForBind(expr) => collect_ph_expr_shallow(expr, out),
         Expr::HyperOp { left, right, .. }
         | Expr::HyperFuncOp { left, right, .. }
         | Expr::MetaOp { left, right, .. } => {
