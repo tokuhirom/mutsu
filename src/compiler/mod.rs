@@ -44,6 +44,14 @@ pub(crate) struct Compiler {
     /// prefix at compile time, since the runtime does not get a
     /// PackageScope opcode for unit declarations.
     pub(crate) in_unit_package: bool,
+    /// When `Some`, every `my`/`state` variable declaration compiled while the
+    /// stack-top frame is active is recorded here. A scope-isolating do-block
+    /// expression (e.g. a string-interpolation `{...}`) uses this to learn the
+    /// names it declares — including ones nested in expressions (`(state $a)++`)
+    /// or shadowing an outer same-name — so its isolating exit reverts exactly
+    /// those while letting OUTER-variable mutations persist. A nested closure
+    /// compiles in a fresh `Compiler` (own scope) so it never pollutes this.
+    pub(crate) block_decl_tracker: Vec<Vec<String>>,
     /// The kind of package (`module`/`package`/`grammar`) whose body is
     /// currently being compiled, or `None` in the mainline. Used to raise
     /// X::Attribute::Package when a `has` attribute is declared in a
@@ -149,6 +157,7 @@ impl Compiler {
             compiled_functions: HashMap::new(),
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
+            block_decl_tracker: Vec::new(),
             current_package_kind: None,
             enclosing_package: None,
             tmp_counter: 0,
@@ -264,6 +273,15 @@ impl Compiler {
             return format!("{sigil}{}::{}", self.current_package, &name[1..]);
         }
         format!("{}::{}", self.current_package, name)
+    }
+
+    /// Record a `my`/`state` declaration name for the innermost active
+    /// scope-isolation tracker (see `block_decl_tracker`). No-op when no
+    /// scope-isolating do-block is being compiled.
+    pub(crate) fn record_block_decl(&mut self, name: &str) {
+        if let Some(top) = self.block_decl_tracker.last_mut() {
+            top.push(name.to_string());
+        }
     }
 
     fn alloc_local(&mut self, name: &str) -> u32 {

@@ -672,6 +672,10 @@ impl Compiler {
                 custom_traits,
                 where_constraint,
             } => {
+                // Record this declaration for an enclosing scope-isolating
+                // do-block (string-interpolation `{...}`) so it can revert
+                // exactly its own block-local declarations on exit.
+                self.record_block_decl(name);
                 // An inline `where` constraint on a scalar/sigilless variable
                 // (e.g. `my $x where * > 0`, `my Int $n where { $_ %% 2 }`,
                 // `my $v where &predicate`) is desugared into an anonymous subset

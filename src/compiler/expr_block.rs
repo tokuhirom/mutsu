@@ -46,6 +46,9 @@ impl Compiler {
                 custom_traits,
                 ..
             } => {
+                // Record this inline declaration (`(my $x = ...)`, `(state $a)`)
+                // for an enclosing scope-isolating do-block.
+                self.record_block_decl(name);
                 let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
                 // my $x = expr in expression context -> declare, assign, return value
                 if *is_state {

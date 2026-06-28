@@ -600,6 +600,12 @@ pub(crate) enum OpCode {
         body_end: u32,
         label: Option<String>,
         scope_isolate: bool,
+        /// Constant-pool index of a `Value::Array` of the scalar/array variable
+        /// names the block declares with `my`/`state` (sigil-keyed as stored in
+        /// env). On a `scope_isolate` exit those names revert to their pre-block
+        /// values (block-local declarations don't leak), while mutations of OUTER
+        /// variables persist. `u32::MAX` when there are none / not isolated.
+        isolate_decls_idx: u32,
     },
     OnceExpr {
         key_idx: u32,

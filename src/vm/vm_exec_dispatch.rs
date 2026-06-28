@@ -3496,12 +3496,14 @@ impl Interpreter {
                 body_end,
                 label,
                 scope_isolate,
+                isolate_decls_idx,
             } => {
                 self.exec_do_block_expr_op(
                     code,
                     *body_end,
                     label,
                     *scope_isolate,
+                    *isolate_decls_idx,
                     ip,
                     compiled_fns,
                 )?;
