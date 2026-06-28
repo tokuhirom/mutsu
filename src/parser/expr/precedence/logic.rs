@@ -136,6 +136,37 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         }
     }
 
+    // Binding (`:=`) is an expression-level operator at item-assignment
+    // precedence (raku), so it must work unparenthesized after `return`, in a
+    // declarator RHS, etc. -- e.g. `return @!specs := @specs`. mutsu otherwise
+    // only handled `:=` at the statement level. Compile-time `::=` is left to
+    // its own statement-level handler. Only simple sigil-variable lvalues bind
+    // here; other lvalue shapes (bareword pseudo-packages like `OUTER`, call
+    // results, indexed elements) fall through to the statement-level handler,
+    // which validates them and throws X::Bind where appropriate.
+    if r.starts_with(":=") && !r.starts_with("::=") {
+        let after = &r[2..];
+        let (after, _) = ws(after)?;
+        if let Ok((r2, rhs)) = ternary_mode(after, mode) {
+            let bind_name = match unwrap_grouped_lvalue(expr.clone()) {
+                Expr::Var(name) => Some(name),
+                Expr::ArrayVar(name) => Some(format!("@{name}")),
+                Expr::HashVar(name) => Some(format!("%{name}")),
+                _ => None,
+            };
+            if let Some(name) = bind_name {
+                return Ok((
+                    r2,
+                    Expr::AssignExpr {
+                        name,
+                        expr: Box::new(rhs),
+                        is_bind: true,
+                    },
+                ));
+            }
+        }
+    }
+
     if !(r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>")) {
         return Ok((rest, expr));
     }
