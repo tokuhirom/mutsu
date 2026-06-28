@@ -129,14 +129,19 @@ impl Interpreter {
         }
         let lhs = args[0].clone();
         let rhs = args[1].clone();
-        if matches!(
-            rhs,
-            Value::Sub(_)
-                | Value::WeakSub(_)
-                | Value::Routine { .. }
-                | Value::Instance { .. }
-                | Value::Mixin(..)
-        ) {
+        // The RHS of `andthen`/`orelse`/`notandthen` is invoked with the topic
+        // only when it is actually callable. A plain instance (`$x orelse
+        // Foo.new`) is a value, not a block — call it only if it is `Callable`
+        // (has a `CALL-ME`), otherwise `Foo.new` would be mis-invoked as `Foo()`.
+        let rhs_is_callable = match &rhs {
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Mixin(..) => true,
+            Value::Instance { class_name, .. } => {
+                let cn = class_name.resolve();
+                self.class_has_method(&cn, "CALL-ME")
+            }
+            _ => false,
+        };
+        if rhs_is_callable {
             let saved_topic = self.env.get("_").cloned();
             self.env.insert("_".to_string(), lhs.clone());
             let result = self.eval_call_on_value(rhs, vec![lhs]);
