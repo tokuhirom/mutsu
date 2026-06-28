@@ -105,13 +105,28 @@ impl Interpreter {
             }
         } else if name.starts_with('@') {
             let mut assigned = runtime::coerce_to_array(raw_val);
-            // Check for shaped array on current value, and preserve on re-assignment
-            let current_val = code
+            // Check for shaped array on current value, and preserve on re-assignment.
+            // The local slot and the env copy of a variable can diverge (the
+            // `env_dirty` dual store): a method call between two assignments may
+            // flush an unshaped copy into one store while the other still holds
+            // the shaped array. A shaped array's shape is authoritative, so prefer
+            // whichever store currently presents a shaped value; otherwise fall
+            // back to the local slot (then env). Without this, an `@arr = (...)`
+            // used as an expression (`is (@arr = ()), ...`) reads the stale
+            // unshaped local and silently shrinks a fixed-dimension array.
+            let local_val = code
                 .locals
                 .iter()
                 .position(|n| n == &name)
-                .and_then(|idx| self.locals.get(idx).cloned())
-                .or_else(|| self.get_env_with_main_alias(&name));
+                .and_then(|idx| self.locals.get(idx).cloned());
+            let env_val = self.get_env_with_main_alias(&name);
+            let is_shaped = |v: &Value| crate::runtime::utils::shaped_array_shape(v).is_some();
+            let current_val = match (&local_val, &env_val) {
+                (Some(l), _) if is_shaped(l) => local_val.clone(),
+                (_, Some(e)) if is_shaped(e) => env_val.clone(),
+                (Some(_), _) => local_val.clone(),
+                _ => env_val.clone(),
+            };
             let current_shape = current_val
                 .as_ref()
                 .and_then(crate::runtime::utils::shaped_array_shape)

@@ -1417,6 +1417,10 @@ pub struct Interpreter {
     pub(crate) element_share_pending: bool,
     pub(crate) explicit_initializer_context: bool,
     pub(crate) vardecl_context: bool,
+    /// Set by `MarkShapedDeclContext` before a `SetLocal` whose `my @a[N]` /
+    /// `my @a[N;M] = ...` declaration is itself shaped — so the assignment KEEPS
+    /// the shape instead of dropping it as a value copy (`my @u = @shaped` does).
+    pub(crate) shaped_decl_context: bool,
     /// Slice F (env<->locals coherence): the caller-variable *source* names that
     /// the most recent compiled-function return wrote back via an `is rw` /
     /// `is raw` / aliased-container parameter (`apply_rw_bindings_to_env`). The

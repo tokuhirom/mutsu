@@ -1389,6 +1389,10 @@ impl Interpreter {
                 self.vardecl_context = true;
                 *ip += 1;
             }
+            OpCode::MarkShapedDeclContext => {
+                self.shaped_decl_context = true;
+                *ip += 1;
+            }
 
             // -- String --
             OpCode::Concat => {

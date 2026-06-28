@@ -604,11 +604,14 @@ impl Interpreter {
                 }
             }
             (target @ Value::Array(..), Value::Array(indices, ..)) => {
-                // A comma-list index (`@a[0,1]`) is always a positional slice,
-                // EXCEPT on shaped arrays where it is multi-dimensional access
-                // (`@a[0;1]` uses MultiDimIndex, a separate opcode). A plain
-                // array-of-arrays is NOT shaped, so it slices.
-                let is_shaped = crate::runtime::utils::is_shaped_array(&target);
+                // A comma-list index (`@a[0,1]`) is a positional slice, EXCEPT on
+                // a MULTI-dimensional shaped array where it is partial-dimension
+                // access (`@a[0;1]` true multidim uses MultiDimIndex, a separate
+                // opcode). On a *1-dim* shaped array `@a[0,1]` is an ordinary
+                // slice (raku: `array[str].new(:shape(4),...)[0,2]` is `("m","a")`),
+                // and a plain array-of-arrays is not shaped at all — both slice.
+                let is_shaped =
+                    crate::runtime::utils::shaped_array_shape(&target).is_some_and(|s| s.len() > 1);
                 if !is_shaped {
                     // Positional slice: @a[0,1,2] returns (@a[0], @a[1], @a[2]).
                     // An array-valued subscript is ALWAYS a slice, so a single

@@ -141,6 +141,11 @@ pub(crate) enum OpCode {
     /// Mark that the next SetLocal is from a `my` VarDecl (allows overwriting
     /// immutable Blob containers when the local slot is reused in a loop).
     MarkVarDeclContext,
+    /// Mark that the next SetLocal declares a *shaped* (fixed-dimension) array
+    /// (`my @a[5]`, `my int @a[3;3] = ...`). The shape comes from the declaration
+    /// itself, so SetLocal must KEEP it (unlike `my @u = @shaped`, which copies
+    /// values and drops shaped-ness).
+    MarkShapedDeclContext,
     SetVarType {
         name_idx: u32,
         tc_idx: u32,

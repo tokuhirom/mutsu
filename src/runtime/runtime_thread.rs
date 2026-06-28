@@ -300,6 +300,7 @@ impl Interpreter {
             element_share_pending: false,
             explicit_initializer_context: false,
             vardecl_context: false,
+            shaped_decl_context: false,
             pending_rw_writeback_sources: Vec::new(),
             pending_caller_var_writeback: Vec::new(),
             local_bind_pairs: Vec::new(),

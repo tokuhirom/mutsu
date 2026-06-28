@@ -289,6 +289,9 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         {
             custom_traits.push(("__has_initializer".to_string(), None));
         }
+        if s.shape_dims.is_some() {
+            custom_traits.push(("__shaped_decl".to_string(), None));
+        }
         let mut feed = expr;
         {
             let slot = crate::parser::feed_leftmost_operand_mut(&mut feed);
@@ -319,6 +322,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         }
         return Ok((rest, stmt));
     }
+    let is_shaped_decl = s.shape_dims.is_some();
     let expr = if let Some(dims) = s.shape_dims {
         shaped_array_new_with_data_expr(dims, expr)
     } else {
@@ -330,6 +334,12 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         .any(|(name, _)| name == "__has_initializer")
     {
         custom_traits.push(("__has_initializer".to_string(), None));
+    }
+    // A shaped declaration (`my @a[5] = ...`) keeps its declared shape; mark it so
+    // SetLocal does not strip the shape the way a value-copy (`my @u = @shaped`)
+    // does.
+    if is_shaped_decl {
+        custom_traits.push(("__shaped_decl".to_string(), None));
     }
     let base_stmt = Stmt::VarDecl {
         name: s.name.clone(),
@@ -376,6 +386,9 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         .any(|(name, _)| name == "__has_initializer")
     {
         custom_traits.push(("__has_initializer".to_string(), None));
+    }
+    if is_shaped_decl {
+        custom_traits.push(("__shaped_decl".to_string(), None));
     }
     let stmt = Stmt::VarDecl {
         name: s.name.clone(),
