@@ -874,6 +874,33 @@ impl Interpreter {
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())
                 {
                     val = self.coerce_typed_container_assignment(&name, val, false)?;
+                } else if name.starts_with('@')
+                    && name.len() > 1
+                    && !name.contains("__")
+                    && loan_env!(self, var_type_constraint(&name)).is_none()
+                {
+                    // `@a = list` where `@a` has no *declared* element type but is
+                    // an alias / for-loop binding of an element-typed array
+                    // (`array[int]`): the assignment writes INTO that container, so
+                    // preserve its declared element type rather than replacing it
+                    // with an untyped `Array`. Internal/anonymous names
+                    // (`@__ANON_ARRAY__`, `@__mutsu_*`) are excluded: they are
+                    // fresh per use and must not inherit a stale slot's type.
+                    let old_info = match self.get_env_with_main_alias(&name) {
+                        Some(Value::Array(old, _))
+                            if old.value_type.is_some() || old.declared_type.is_some() =>
+                        {
+                            Some(crate::runtime::ContainerTypeInfo {
+                                value_type: old.value_type.clone().unwrap_or_default(),
+                                key_type: None,
+                                declared_type: old.declared_type.clone(),
+                            })
+                        }
+                        _ => None,
+                    };
+                    if let Some(info) = old_info {
+                        val = self.tag_container_metadata(val, info);
+                    }
                 }
                 if let Some(constraint) = loan_env!(self, var_type_constraint(&name))
                     && !name.starts_with('%')
