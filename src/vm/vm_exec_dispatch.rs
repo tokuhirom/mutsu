@@ -1154,6 +1154,7 @@ impl Interpreter {
                     });
                 }
                 if name == "_"
+                    && !Self::is_topic_ro_assignment(&val)
                     && let Some(ref source_var) = self.topic_source_var
                     && !source_var.starts_with('@')
                     && !source_var.starts_with('%')
