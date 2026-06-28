@@ -194,18 +194,25 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             parse_tag(input, "!!")?
         };
         let (input, _) = ws(input)?;
-        // Parse else-expr at ternary precedence (allows nested ternary)
+        // Parse the else-expr. In Full mode do NOT absorb a trailing assignment:
+        // `=` is LOOSER than the conditional `?? !!`, so `cond ?? t !! lhs = rhs`
+        // parses as `(cond ?? t !! lhs) = rhs` (an lvalue-ternary assignment),
+        // not as an assignment nested inside the else-branch. Parsing the
+        // else-branch no-assign leaves `= rhs` for the trailing handler below.
         let (input, else_expr) = if mode == ExprMode::Full {
-            ternary_mode(input, mode).map_err(|err| {
+            ternary_no_assign(input).map_err(|err| {
                 enrich_expected_error(err, "expected else-expression after '!!'", input.len())
             })?
         } else {
             ternary_mode(input, mode)?
         };
+        // A then-branch assignment is a genuine error (the `=` would sit between
+        // `??` and `!!`); raku rejects it too. In non-Full modes the else-branch
+        // may still have greedily taken an assignment, which is likewise too loose.
         if is_assignment_expr(&then_expr) || is_assignment_expr(&else_expr) {
             return Err(conditional_precedence_too_loose_error());
         }
-        if let Expr::Binary { left, op, right } = cond {
+        let ternary_expr = if let Expr::Binary { left, op, right } = cond {
             // The loose word-logicals (`and`/`andthen`/`notandthen`/`or`/`orelse`)
             // are LOOSER than the conditional `?? !!`, so when one was greedily
             // folded into the condition the ternary must re-associate to bind
@@ -222,36 +229,53 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     | TokenKind::OrWord
                     | TokenKind::OrElse
             ) {
-                return Ok((
-                    input,
-                    Expr::Binary {
-                        left,
-                        op,
-                        right: Box::new(Expr::Ternary {
-                            cond: right,
-                            then_expr: Box::new(then_expr),
-                            else_expr: Box::new(else_expr),
-                        }),
-                    },
-                ));
-            }
-            return Ok((
-                input,
+                Expr::Binary {
+                    left,
+                    op,
+                    right: Box::new(Expr::Ternary {
+                        cond: right,
+                        then_expr: Box::new(then_expr),
+                        else_expr: Box::new(else_expr),
+                    }),
+                }
+            } else {
                 Expr::Ternary {
                     cond: Box::new(Expr::Binary { left, op, right }),
                     then_expr: Box::new(then_expr),
                     else_expr: Box::new(else_expr),
-                },
-            ));
-        }
-        return Ok((
-            input,
+                }
+            }
+        } else {
             Expr::Ternary {
                 cond: Box::new(cond),
                 then_expr: Box::new(then_expr),
                 else_expr: Box::new(else_expr),
-            },
-        ));
+            }
+        };
+        // A trailing simple assignment binds the whole ternary as an lvalue:
+        // `cond ?? $a !! $b = rhs` is `(cond ?? $a !! $b) = rhs` (raku precedence).
+        if mode == ExprMode::Full {
+            let (after_ws, _) = ws(input)?;
+            if after_ws.starts_with('=')
+                && !after_ws.starts_with("==")
+                && !after_ws.starts_with("=>")
+                && !after_ws.starts_with("=:=")
+                && !after_ws.starts_with("=~=")
+            {
+                let (rhs_in, _) = ws(&after_ws[1..])?;
+                let (input2, rhs) = ternary_mode(rhs_in, mode).map_err(|err| {
+                    enrich_expected_error(err, "expected value after '='", rhs_in.len())
+                })?;
+                return Ok((
+                    input2,
+                    Expr::Call {
+                        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                        args: vec![ternary_expr, Expr::ArrayLiteral(Vec::new()), rhs],
+                    },
+                ));
+            }
+        }
+        return Ok((input, ternary_expr));
     }
     // No ternary operator: fall back to regular OR-level parsing, which includes
     // assignment expressions.
