@@ -182,7 +182,17 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         if mode == ExprMode::Full
             && let Expr::BareWord(name) = &then_expr
             && !name.contains("::")
+            && !crate::runtime::utils::is_known_type_constraint(name)
         {
+            // A bare identifier in then-position is usually the head of a listop
+            // call (`?? is-deeply $x, $y !! ...`) whose comma args were not yet
+            // consumed -- including the case where the listop gobbles the `!!`
+            // (`1 ?? rt123115 !! 3` => X::Syntax::ConditionalOperator::
+            // SecondPartGobbled). Erroring lets the caller retry/report it. A
+            // bareword that names a known TYPE, though, is a complete
+            // then-expression -- a type object in `1 ?? Int !! Str` or a native
+            // type in `ptrsize == 4 ?? uint32 !! uint64` -- so types are excluded
+            // from this guard above and accepted.
             return Err(PError::expected("expected '!!' in ternary expression"));
         }
         let (input, _) = ws(input)?;
