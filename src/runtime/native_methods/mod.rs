@@ -289,6 +289,7 @@ impl Interpreter {
             })
         };
         match dispatch_class.as_deref().unwrap_or(class_name) {
+            "IO::Handle" => self.native_io_handle_mut(attributes, method, args),
             "Proc" => self.native_proc_mut(attributes, method, args),
             "Promise" => self.native_promise_mut(attributes, method, args),
             "Channel" => self.native_channel_mut(attributes, method, args),

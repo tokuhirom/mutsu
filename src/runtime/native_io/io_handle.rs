@@ -1,6 +1,45 @@
 use super::*;
 
 impl Interpreter {
+    /// Mutable dispatch for `IO::Handle` methods that mutate the receiver in
+    /// place. Currently only `.open`: in Raku `$fh.open(...)` opens the handle
+    /// *and returns self*, so a later `$fh.print`/`$fh.print-nl` operates on the
+    /// now-opened handle. mutsu's `.open` builds a fresh opened-handle instance
+    /// (the handle id lives in the handle table); to match Raku, the receiver's
+    /// attributes must be replaced with the opened handle's so the caller's
+    /// binding (`$fh`, or the `with` topic `$_`) reflects the open. The returned
+    /// `updated` map is written back to the receiver by the caller
+    /// (`write_back_sharing`). Any other method falls back to the immutable path
+    /// via the sentinel "No native mutable method" error.
+    pub(crate) fn native_io_handle_mut(
+        &mut self,
+        attributes: HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        if method == "open" {
+            let result = self.native_io_handle(&attributes, "open", args)?;
+            // A successful open returns an `IO::Handle` instance carrying the new
+            // handle id; an error returns a `Failure`. Only mutate the receiver on
+            // success — on failure the handle stays unopened (as in Raku).
+            if let Value::Instance {
+                class_name,
+                attributes: new_attrs,
+                ..
+            } = &result
+                && class_name == "IO::Handle"
+            {
+                let updated = new_attrs.as_map().clone();
+                return Ok((result, updated));
+            }
+            return Ok((result, attributes));
+        }
+        Err(RuntimeError::new(format!(
+            "No native mutable method '{}' on 'IO::Handle'",
+            method
+        )))
+    }
+
     pub(crate) fn native_io_handle(
         &mut self,
         target: &HashMap<String, Value>,
