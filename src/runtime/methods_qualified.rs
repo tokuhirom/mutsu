@@ -181,10 +181,11 @@ impl Interpreter {
                     }
                 })
             };
-            if let Some(conc) = conc {
-                if conc.contains('[')
-                    && let Ok(Some((role_def, tparams, tvals))) = self.resolve_role_candidate(&conc)
-                    && let Some(overloads) = role_def.methods.get(actual_method).cloned()
+            if let Some(conc) = conc
+                && conc.contains('[')
+                && let Ok(Some((role_def, tparams, tvals))) = self.resolve_role_candidate(&conc)
+                && let Some(overloads) = role_def.methods.get(actual_method).cloned()
+            {
                 {
                     for def in overloads {
                         if !def.is_private && self.method_args_match(&args, &def.param_defs) {
