@@ -169,16 +169,43 @@ impl Interpreter {
     /// block (running under GLOBAL) never resolves here. A name shadowed by the
     /// sub's own `my`/param is a local slot (GetLocal), so it never reaches here.
     pub(super) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
-        if name.contains("::") {
-            return None;
-        }
         let cur = self.current_package();
         if cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
             return None;
         }
+        // `package_lexicals` is keyed by the package's own env name for the
+        // lexical: scalars sigil-less (`CONFIG`), `@`/`%`/`&` keep their sigil
+        // (`@a`). A free-var read reaches this with the name in one of two shapes:
+        //   * BARE (`CONFIG` / `@a`) — emitted when the body compiles under the
+        //     mangled `Pkg::&sub/arity` scope (`compile_sub_body`), which does not
+        //     qualify names. Looked up directly.
+        //   * QUALIFIED (`MyCLI::CONFIG` / `@MyCLI::a`) — emitted when the body
+        //     compiles under the PLAIN package name (`compile_block_raw`, used by
+        //     the `call_function_def` slow path that runs an exported `MAIN`), which
+        //     auto-qualifies free vars. Resolve ONLY when the qualifier is the
+        //     current package, so `$Other::x` from outside never reaches another
+        //     package's `my` lexical (Raku: `my` lexicals are not package-public).
+        let key: std::borrow::Cow<str> = if name.contains("::") {
+            let (sigil, rest) = match name.as_bytes().first() {
+                Some(b @ (b'$' | b'@' | b'%' | b'&')) => (Some(*b as char), &name[1..]),
+                _ => (None, name),
+            };
+            let (pkg, bare) = rest.rsplit_once("::")?;
+            if pkg != cur {
+                return None;
+            }
+            match sigil {
+                // `@`/`%`/`&` lexicals are stored WITH their sigil; a scalar (`$`
+                // or sigil-less) is stored sigil-less.
+                Some(s @ ('@' | '%' | '&')) => std::borrow::Cow::Owned(format!("{s}{bare}")),
+                _ => std::borrow::Cow::Borrowed(bare),
+            }
+        } else {
+            std::borrow::Cow::Borrowed(name)
+        };
         self.package_lexicals
             .get(&cur)
-            .and_then(|m| m.get(name))
+            .and_then(|m| m.get(key.as_ref()))
             .cloned()
     }
 
