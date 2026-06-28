@@ -519,7 +519,15 @@ impl Interpreter {
                 _ => {}
             }
         }
-        if let Some(Value::Package(bound)) = self.env.get(constraint).cloned()
+        // A type-name constraint may be an env-bound alias (e.g. `::T`, an
+        // imported short name) -> follow it. BUT never let such an alias shadow a
+        // core builtin type: declaring a user class like `Foo::Any` registers an
+        // unqualified `Any` env binding, and following it here would make
+        // `42 ~~ Any` (and untyped-param binding, which checks `Any`) resolve to
+        // the user `Foo::Any` and wrongly fail. Core type names always mean the
+        // core type in type matching.
+        if !crate::runtime::utils::is_known_type_constraint(constraint)
+            && let Some(Value::Package(bound)) = self.env.get(constraint).cloned()
             && bound != *constraint
         {
             return self.type_matches_value(&bound.resolve(), value);
