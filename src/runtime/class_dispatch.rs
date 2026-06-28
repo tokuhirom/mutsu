@@ -82,16 +82,11 @@ impl Interpreter {
                                method_def: &MethodDef|
          -> Vec<(String, MethodDef)> {
             let all = this.resolve_all_methods_with_owner(receiver_class_name, method_name, &args);
-            let chosen_fp = crate::ast::function_body_fingerprint(
-                &method_def.params,
-                &method_def.param_defs,
-                &method_def.body,
-            );
+            let chosen_fp = this.method_def_fingerprint(method_def);
             let mut remaining = Vec::new();
             let mut skipped = false;
             for (owner, def) in all {
-                let fp =
-                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                let fp = this.method_def_fingerprint(&def);
                 if !skipped && fp == chosen_fp {
                     skipped = true;
                     continue;

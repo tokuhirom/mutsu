@@ -324,6 +324,23 @@ impl Interpreter {
         multi
     }
 
+    /// Structural fingerprint of a method body, memoized by its body-`Arc`
+    /// pointer (see `method_body_fp_cache`). Use this instead of calling
+    /// `function_body_fingerprint` directly on the method-redispatch hot path
+    /// (`nextsame`/`samewith`/multi-method deferral): the raw call
+    /// Debug-traverses the entire body AST every time, which a perf profile of a
+    /// samewith-tight loop showed dominating the redispatch cost.
+    pub(crate) fn method_def_fingerprint(&mut self, def: &MethodDef) -> u64 {
+        let key = Arc::as_ptr(&def.body) as usize;
+        if let Some((_, fp)) = self.method_body_fp_cache.get(&key) {
+            return *fp;
+        }
+        let fp = crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+        self.method_body_fp_cache
+            .insert(key, (def.body.clone(), fp));
+        fp
+    }
+
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -355,13 +372,13 @@ impl Interpreter {
         }
         // Identify the chosen candidate and skip exactly that one
         let chosen = self.resolve_method_with_owner(receiver_class, method_name, args);
-        let chosen_fp = chosen.as_ref().map(|(_, def)| {
-            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
-        });
+        let chosen_fp = chosen
+            .as_ref()
+            .map(|(_, def)| self.method_def_fingerprint(def));
         let mut remaining: Vec<(String, super::MethodDef)> = Vec::new();
         let mut skipped_chosen = false;
         for (owner, def) in all_candidates {
-            let fp = crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+            let fp = self.method_def_fingerprint(&def);
             if !skipped_chosen && Some(fp) == chosen_fp {
                 skipped_chosen = true;
                 continue;
