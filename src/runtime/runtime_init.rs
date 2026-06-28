@@ -1945,6 +1945,7 @@ impl Interpreter {
             strict_mode: false,
             fatal_mode: false,
             our_vars: HashMap::new(),
+            package_lexicals: HashMap::new(),
             state_vars: HashMap::new(),
             closure_captured_state: HashMap::new(),
             once_values: HashMap::new(),

@@ -1170,6 +1170,17 @@ pub struct Interpreter {
     /// by `SetGlobal` so they survive block-scope restoration (which only
     /// preserves env keys that existed before the block).
     our_vars: HashMap<String, Value>,
+    /// Package-block `my` lexicals, keyed by package name then env var name.
+    /// A named sub defined in a `package Foo { my $x = ...; sub f { $x } }` block
+    /// closes over `$x`, but mutsu's registry subs have no per-sub closure env and
+    /// resolve free vars from the call-time env; the block scope is dropped on exit
+    /// (`exec_package_scope_op`) so a by-name/exported call (`Foo::f`, an exported
+    /// `MAIN`) can no longer see `$x`. After the block runs, its `my` lexicals are
+    /// recorded here keyed by the package, and a `GetGlobal` miss falls back to
+    /// `package_lexicals[current_package]`. This fires ONLY inside that package's
+    /// subs (where `current_package == Foo`), so it does not leak the lexical to
+    /// bare references after the block (which run under `GLOBAL`).
+    pub(crate) package_lexicals: HashMap<String, HashMap<String, Value>>,
     state_vars: HashMap<String, Value>,
     /// Per-closure-instance captured-variable state, keyed by
     /// (closure instance id, captured variable Symbol). This is the hot

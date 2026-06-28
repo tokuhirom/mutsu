@@ -201,6 +201,7 @@ impl Interpreter {
             strict_mode: self.strict_mode,
             fatal_mode: self.fatal_mode,
             our_vars: HashMap::new(),
+            package_lexicals: self.package_lexicals.clone(),
             state_vars: HashMap::new(),
             // Mirror state_vars: a thread clone starts with no persisted
             // closure captured state (falls back to the captured-env initial
