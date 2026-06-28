@@ -181,6 +181,8 @@ impl Compiler {
                         ..
                     } => {
                         // my $x = expr in block-final position: declare and return value
+                        // Record for an enclosing scope-isolating do-block.
+                        self.record_block_decl(name);
                         let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
                         let name_idx = self.code.add_constant(Value::Str(name.clone().into()));
                         self.code.emit(OpCode::SetVarDynamic {

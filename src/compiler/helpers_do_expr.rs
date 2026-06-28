@@ -42,6 +42,7 @@ impl Compiler {
                 body_end: 0,
                 label: label.clone(),
                 scope_isolate: false,
+                isolate_decls_idx: u32::MAX,
             });
             let saved = self.push_dynamic_scope_lexical();
             self.compile_phaser_block_scope(body, true);
@@ -53,6 +54,7 @@ impl Compiler {
             body_end: 0,
             label: label.clone(),
             scope_isolate: false,
+            isolate_decls_idx: u32::MAX,
         });
         self.compile_block_inline(body);
         self.code.patch_body_end(idx);
@@ -63,8 +65,30 @@ impl Compiler {
             body_end: 0,
             label: label.clone(),
             scope_isolate: true,
+            isolate_decls_idx: u32::MAX,
         });
+        // Record every `my`/`state` declaration compiled in the body (including
+        // ones nested in expressions like `(state $a)++` and ones shadowing an
+        // outer same-name) so the scope-isolating exit reverts exactly those
+        // while letting OUTER-variable mutations persist. A nested closure
+        // compiles in a fresh `Compiler`, so it never contributes here.
+        self.block_decl_tracker.push(Vec::new());
         self.compile_block_inline(body);
+        let mut decls = self.block_decl_tracker.pop().unwrap_or_default();
+        // Hashes are intentionally NOT isolated: a `my %h` (e.g.
+        // `:into(my %h := :{})`) must survive into the enclosing scope.
+        decls.retain(|n| !n.starts_with('%') && !n.starts_with('&'));
+        if !decls.is_empty() {
+            let decls_idx = self.code.add_constant(Value::array(
+                decls.into_iter().map(Value::str).collect::<Vec<_>>(),
+            ));
+            if let OpCode::DoBlockExpr {
+                isolate_decls_idx, ..
+            } = &mut self.code.ops[idx]
+            {
+                *isolate_decls_idx = decls_idx;
+            }
+        }
         self.code.patch_body_end(idx);
     }
 

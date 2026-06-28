@@ -67,12 +67,14 @@ impl Interpreter {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_do_block_expr_op(
         &mut self,
         code: &CompiledCode,
         body_end: u32,
         label: &Option<String>,
         scope_isolate: bool,
+        isolate_decls_idx: u32,
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
@@ -133,25 +135,63 @@ impl Interpreter {
         // Restore scope if scope_isolate is true
         if let Some((saved_env, saved_locals)) = saved_env {
             let block_result = self.stack.pop().unwrap_or(Value::Nil);
-            // Preserve hash variables declared or re-declared inside the
-            // block so that inline `my %h` declarations (e.g. in
-            // `:into(my %h := :{})`) remain visible in the outer scope.
-            // Only hash variables are preserved to avoid side effects
-            // on other container types.
+            // Scope-isolating exit. The block isolates its OWN scalar/array `my`/
+            // `state` declarations (reverted to the pre-block value so they don't
+            // leak), but a mutation of an OUTER variable must persist —
+            // `"{ $x = 1 }"` / `"{ foo() }"` where `foo` writes an outer/`our`
+            // var. New hashes still leak (the `:into(my %h := :{})` idiom).
+            //   - declared scalar/array name (isolate set) -> revert (skip).
+            //   - other plain user var that changed            -> keep (outer mutation).
+            //   - new hash                                      -> keep (`:into`).
+            //   - internal `__mutsu_*` / specials / dynamics    -> revert.
+            // Isolate-set keyed by BARE name (sigil stripped) so it matches an env
+            // key regardless of whether that scalar/array is stored with or
+            // without its sigil (e.g. a `state $a` whose env mirror would
+            // otherwise be re-carried and pollute the next evaluation's init).
+            let strip_sigil = |n: &str| -> String {
+                n.strip_prefix(['$', '@', '%', '&'])
+                    .unwrap_or(n)
+                    .to_string()
+            };
+            let isolate_set: std::collections::HashSet<String> = if isolate_decls_idx != u32::MAX {
+                if let Value::Array(items, ..) = &code.constants[isolate_decls_idx as usize] {
+                    items
+                        .iter()
+                        .filter_map(|v| match v {
+                            Value::Str(s) => Some(strip_sigil(s.as_ref())),
+                            _ => None,
+                        })
+                        .collect()
+                } else {
+                    std::collections::HashSet::new()
+                }
+            } else {
+                std::collections::HashSet::new()
+            };
+            let is_plain_user_var = |name: &str| -> bool {
+                if name.starts_with("__") {
+                    return false;
+                }
+                let body = name.strip_prefix(['$', '@', '%', '&']).unwrap_or(name);
+                if body.starts_with(['*', '!', '.', '?']) || body == "_" {
+                    return false;
+                }
+                body.chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            };
             let current_env = self.env().clone();
             let mut new_vars: Vec<(Symbol, Value)> = Vec::new();
             for (name, value) in current_env.iter() {
-                if !name.starts_with("%") || name.starts_with("%*") {
+                let nm = name.resolve();
+                if isolate_set.contains(&strip_sigil(&nm)) {
                     continue;
                 }
-                let is_new_or_changed = match saved_env.get_sym(*name) {
-                    None => true,
-                    Some(saved_val) => match (value, saved_val) {
-                        (Value::Hash(a), Value::Hash(b)) => !std::sync::Arc::ptr_eq(a, b),
-                        _ => std::mem::discriminant(value) != std::mem::discriminant(saved_val),
-                    },
+                let keep = match saved_env.get_sym(*name) {
+                    None => nm.starts_with('%') && !nm.starts_with("%*"),
+                    Some(saved_val) => is_plain_user_var(&nm) && value != saved_val,
                 };
-                if is_new_or_changed {
+                if keep {
                     new_vars.push((*name, value.clone()));
                 }
             }
