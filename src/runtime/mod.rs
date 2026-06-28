@@ -1474,10 +1474,12 @@ pub struct Interpreter {
     /// an identical body but differ in name never alias; the stored fingerprint is
     /// re-checked on lookup so a redefined body at the same name re-derives.
     pub(crate) prepared_fn_defs: HashMap<Symbol, (u64, Arc<FunctionDef>)>,
-    pub(crate) method_resolve_cache: HashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
+    pub(crate) method_resolve_cache:
+        rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
     #[allow(clippy::type_complexity)]
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, String, Arc<MethodDef>)>,
-    pub(crate) fast_method_cache: HashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
+    pub(crate) fast_method_cache:
+        rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
     /// Sound multi-method resolution cache (§B): for a multi whose dispatch is
     /// purely type+arity based (no `where` / literal / subset / `:D`/`:U` smiley /
     /// coercion candidate), the resolved candidate is a function of the receiver
@@ -1486,11 +1488,11 @@ pub struct Interpreter {
     /// method caches when the registry changes.
     #[allow(clippy::type_complexity)]
     pub(crate) multi_resolve_cache:
-        HashMap<(Symbol, Symbol, Vec<Symbol>), Option<(String, Arc<MethodDef>)>>,
+        rustc_hash::FxHashMap<(Symbol, Symbol, Vec<Symbol>), Option<(String, Arc<MethodDef>)>>,
     /// Memoized `(class, method) -> is this multi's dispatch type+arity deterministic`
     /// (i.e. cacheable in `multi_resolve_cache`). Computed once by scanning the MRO
     /// candidates for value-dependent constraints.
-    pub(crate) multi_type_cacheable: HashMap<(Symbol, Symbol), bool>,
+    pub(crate) multi_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     pub(crate) block_declared_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_saved_env: Vec<HashMap<String, Value>>,
