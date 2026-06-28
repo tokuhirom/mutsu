@@ -321,14 +321,18 @@ impl Interpreter {
                 }
             }
         }
-        let class_name = match &target {
-            Value::Instance { class_name, .. } => Some(class_name.resolve()),
-            Value::Package(name) => Some(name.resolve()),
+        // Reuse the receiver's already-interned class Symbol instead of
+        // resolving it to a String and re-interning that String back to a
+        // Symbol (`Symbol -> resolve() -> intern()` round-trip) on every call.
+        let class_sym_opt = match &target {
+            Value::Instance { class_name, .. } => Some(*class_name),
+            Value::Package(name) => Some(*name),
             _ => None,
         };
+        let class_name = class_sym_opt.map(|s| s.resolve());
         if let Some(cn) = class_name
+            && let Some(class_sym) = class_sym_opt
             && let Some((owner_class, method_def)) = {
-                let class_sym = crate::symbol::Symbol::intern(&cn);
                 let method_sym = crate::symbol::Symbol::intern(method);
                 self.resolve_method_cached(&cn, method, class_sym, method_sym, &args, &target)
             }
@@ -376,7 +380,7 @@ impl Interpreter {
                     _ => std::collections::HashMap::new(),
                 };
                 let invocant_for_dispatch = if attributes.is_empty() {
-                    Value::Package(crate::symbol::Symbol::intern(&cn))
+                    Value::Package(class_sym)
                 } else {
                     target.clone()
                 };
