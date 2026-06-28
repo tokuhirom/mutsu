@@ -1530,6 +1530,20 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 
+    // Perl 5 unary functions used bare (no argument). `ord`/`chr`/`lc`/`uc`/`abs`
+    // defaulted to `$_` in Perl 5 but require an explicit argument/invocant in
+    // Raku, so a bare use — end of statement or immediately a `.method` (i.e. no
+    // argument follows) — is X::Obsolete, matching Rakudo's "Unsupported use of
+    // bare ..." (e.g. `ord.Cool`). A real call (`ord $x` / `ord('A')`) parses as
+    // a listop/call before reaching this fallback, so it is unaffected.
+    if is_terminator_or_dot && matches!(name.as_str(), "ord" | "chr" | "lc" | "uc" | "abs") {
+        return Err(PError::fatal(format!(
+            "X::Obsolete: Unsupported use of bare \"{name}\".  In Raku please use: \
+             .{name} if you meant to call it as a method on $_, or use an explicit \
+             invocant or argument."
+        )));
+    }
+
     // Method-like: .new, .elems etc. is handled at expression level
     Ok((rest, Expr::BareWord(name)))
 }
