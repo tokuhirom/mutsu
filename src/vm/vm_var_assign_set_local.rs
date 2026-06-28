@@ -683,7 +683,8 @@ impl Interpreter {
             let assigned_has_own_shape = crate::runtime::utils::shaped_array_shape(&assigned)
                 .is_some()
                 || matches!(&assigned, Value::Array(_, crate::value::ArrayKind::Shaped));
-            if let Some(shape) = crate::runtime::utils::shaped_array_shape(&self.locals[idx])
+            let lhs_shape = crate::runtime::utils::shaped_array_shape(&self.locals[idx]);
+            if let Some(shape) = &lhs_shape
                 && shape.len() == 1
                 && !assigned_has_own_shape
             {
@@ -691,17 +692,43 @@ impl Interpreter {
                 let item_count = items.len();
                 let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
                 if item_count < shape[0] {
-                    Self::autoviv_resize(&mut shaped_items, shape[0], Value::Nil)?;
+                    // Pad with the element type's default (native arrays: int->0,
+                    // num->0e0, str->""), not Nil, so clearing a shaped num array
+                    // yields `0 0 0 0` rather than empty slots.
+                    let default = {
+                        let old = self.locals[idx].clone();
+                        self.typed_container_default(&old)
+                    };
+                    Self::autoviv_resize(&mut shaped_items, shape[0], default)?;
                 }
                 assigned = Value::Array(
                     std::sync::Arc::new(crate::value::ArrayData::new(shaped_items)),
                     crate::value::ArrayKind::Shaped,
                 );
-                crate::runtime::utils::mark_shaped_array(&assigned, Some(&shape));
+                crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
                 // Preserve container type metadata
                 if let Some(info) = self.container_type_metadata(&self.locals[idx]) {
                     assigned = self.tag_container_metadata(assigned, info);
                 }
+            } else if !is_bind
+                && lhs_shape.is_none()
+                && assigned_has_own_shape
+                && let Value::Array(items, _) = &assigned
+            {
+                // The LHS is a plain (non-shaped) `@` array but the RHS is a
+                // shaped array. Raku `=` copies element VALUES and drops
+                // shaped-ness: `my @u = @shaped` yields a growable unshaped
+                // Array (`.shape` is `(*)`), so a later `@u = ...` is not
+                // truncated to the original fixed dimension. Binding (`:=`)
+                // keeps the shaped value, so this is guarded on `!is_bind`.
+                let items = if items.shape.is_some() {
+                    let mut data = (**items).clone();
+                    data.shape = None;
+                    std::sync::Arc::new(data)
+                } else {
+                    items.clone()
+                };
+                assigned = Value::Array(items, crate::value::ArrayKind::Array);
             }
             let class_name = match &self.locals[idx] {
                 Value::Instance { class_name, .. } => Some(*class_name),

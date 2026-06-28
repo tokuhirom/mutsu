@@ -72,6 +72,14 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     {
         return Some(cached_shape.clone());
     }
+    // A flat (1-dim) shaped array's shape is unambiguously `[len]`. Recover it
+    // even when the cached `ArrayData.shape` was dropped crossing a store
+    // boundary (the dual-store sync does not always carry it), so a re-assignment
+    // (`@arr = ...` after an earlier `@arr = ...`) still sees the array as shaped
+    // and refills to its fixed dimension instead of silently shrinking.
+    if items.iter().all(|v| !matches!(v, Value::Array(..))) {
+        return Some(vec![items.len()]);
+    }
     let inferred_shape = infer_shape_from_array(items.as_ref())?;
     if !shape_matches_structure(value, &inferred_shape) {
         return None;

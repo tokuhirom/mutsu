@@ -563,6 +563,9 @@ roast/S09-typed-arrays/hashes.t
 roast/S09-typed-arrays/native-decl.t
 roast/S09-typed-arrays/native-int.t
 roast/S09-typed-arrays/native-num.t
+roast/S09-typed-arrays/native-shape1-int.t
+roast/S09-typed-arrays/native-shape1-num.t
+roast/S09-typed-arrays/native-shape1-str.t
 roast/S09-typed-arrays/native-str.t
 roast/S09-typed-arrays/native.t
 roast/S10-packages/export.t

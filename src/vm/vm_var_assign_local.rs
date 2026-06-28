@@ -179,6 +179,47 @@ impl Interpreter {
                     )?;
                 }
             }
+            // Preserve a shaped (fixed-dimension) LHS across an expression-context
+            // reassignment (`is (@arr = ()), ...`), mirroring the statement-form
+            // `SetLocal` path: a fixed-dimension array refills to its dimension
+            // instead of shrinking. The local slot and the env copy can diverge
+            // (the `env_dirty` dual store), so consult whichever currently holds a
+            // shaped value.
+            let lhs_shape =
+                crate::runtime::utils::shaped_array_shape(&self.locals[idx]).or_else(|| {
+                    self.get_env_with_main_alias(name)
+                        .as_ref()
+                        .and_then(crate::runtime::utils::shaped_array_shape)
+                });
+            let assigned_has_own_shape = crate::runtime::utils::shaped_array_shape(&assigned)
+                .is_some()
+                || matches!(&assigned, Value::Array(_, crate::value::ArrayKind::Shaped));
+            if let Some(shape) = &lhs_shape
+                && shape.len() == 1
+                && !assigned_has_own_shape
+            {
+                let items = runtime::value_to_list(&assigned);
+                let item_count = items.len();
+                let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
+                if item_count < shape[0] {
+                    // Pad with the element type's default (native arrays: int->0,
+                    // num->0e0, str->""), not Nil, so clearing a shaped num array
+                    // yields `0 0 0 0` rather than empty slots.
+                    let default = {
+                        let old = self.locals[idx].clone();
+                        self.typed_container_default(&old)
+                    };
+                    Self::autoviv_resize(&mut shaped_items, shape[0], default)?;
+                }
+                assigned = Value::Array(
+                    Arc::new(crate::value::ArrayData::new(shaped_items)),
+                    crate::value::ArrayKind::Shaped,
+                );
+                crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
+                if let Some(info) = self.container_type_metadata(&self.locals[idx]) {
+                    assigned = self.tag_container_metadata(assigned, info);
+                }
+            }
             assigned
         } else {
             Self::normalize_scalar_assignment_value(raw_val)
