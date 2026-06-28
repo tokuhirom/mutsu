@@ -1663,12 +1663,21 @@ impl Interpreter {
     /// the parser stamped on the call's caller-line marker).
     pub(super) fn def_is_otf_compilable_module_single(def: &crate::ast::FunctionDef) -> bool {
         !def.is_rw && !def.is_raw
-            // A return type — especially a coercion return (`--> Foo:D()`) or a
-            // definite/subset constraint — drives extra return-time dispatch
-            // (COERCE / type-check) that the standalone OTF compile does not
-            // reproduce identically when several such subs coexist
-            // (roast/S12-coercion/coercion-return.t). Keep them on the interpreter.
-            && def.return_type.is_none()
+            // A *coercion* return (`--> Foo:D()`, the parens) drives extra
+            // return-time COERCE dispatch that the standalone OTF compile does
+            // not reproduce identically when several such subs coexist
+            // (roast/S12-coercion/coercion-return.t), so it stays on the
+            // interpreter. A plain / definite / subset return (`--> Str:D`,
+            // `--> IO::Path:D`) is fine: the compiled binding re-checks it the
+            // same way the interpreter does. This lets Test::Util's
+            // `make-temp-file`/`make-rand-path` (`--> IO::Path:D`, calling a
+            // module-private sibling) OTF-compile (PR closure-env #3899/#3902
+            // made module-level lexical + private-sibling reads work under OTF;
+            // the chmod-IntStr allomorph fix unblocked S32-io/chdir.t).
+            && def
+                .return_type
+                .as_ref()
+                .is_none_or(|rt| !rt.contains('('))
             && def.param_defs.iter().all(|pd| {
                 !pd.sigilless && pd.sub_signature.is_none() && pd.traits.is_empty()
             })
