@@ -279,6 +279,15 @@ impl Interpreter {
         self.samewith_context_stack
             .push((method_name.to_string(), Some(invocant.clone())));
         let all_candidates = self.resolve_all_methods_with_owner(receiver_class, method_name, args);
+        // Fast path: with zero or one candidate there is nothing to defer to, so no
+        // dispatch frame is ever pushed (the single candidate is the chosen one and
+        // gets skipped, leaving `remaining` empty). Returning early here avoids the
+        // per-call `function_body_fingerprint` work below — which Debug-traverses the
+        // whole method body AST to derive a candidate identity — for the overwhelmingly
+        // common single-method case. Mirrors `push_multi_dispatch_frame`'s `<= 1` guard.
+        if all_candidates.len() <= 1 {
+            return false;
+        }
         // Identify the chosen candidate and skip exactly that one
         let chosen = self.resolve_method_with_owner(receiver_class, method_name, args);
         let chosen_fp = chosen.as_ref().map(|(_, def)| {

@@ -93,15 +93,31 @@ pub(crate) struct FunctionDef {
     pub(crate) deprecated_message: Option<String>,
 }
 
+/// A `fmt::Write` sink that streams formatted bytes straight into a `Hasher`,
+/// so `write!(.., "{:?}", x)` hashes the Debug rendering without ever
+/// allocating an intermediate `String`. `function_body_fingerprint` runs on the
+/// per-dispatch hot path (candidate identity in multi/method dispatch), so the
+/// three `format!` allocations it used to do showed up as a large share of the
+/// allocator traffic in method-call / class benchmarks.
+struct HashWrite<'a, H: Hasher>(&'a mut H);
+
+impl<H: Hasher> std::fmt::Write for HashWrite<'_, H> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.write(s.as_bytes());
+        Ok(())
+    }
+}
+
 pub(crate) fn function_body_fingerprint(
     params: &[String],
     param_defs: &[ParamDef],
     body: &[Stmt],
 ) -> u64 {
+    use std::fmt::Write as _;
     let mut hasher = DefaultHasher::new();
-    format!("{:?}", params).hash(&mut hasher);
-    format!("{:?}", param_defs).hash(&mut hasher);
-    format!("{:?}", body).hash(&mut hasher);
+    let mut sink = HashWrite(&mut hasher);
+    // Separators keep distinct fields from colliding when their renderings abut.
+    let _ = write!(sink, "{params:?}\x00{param_defs:?}\x00{body:?}");
     hasher.finish()
 }
 
