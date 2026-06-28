@@ -44,6 +44,78 @@ fn check_two_terms_across_lines(r: &str) -> Result<(), PError> {
     Ok(())
 }
 
+/// A `my`/`our` declaration carrying a conditional statement modifier
+/// (`my $x = 5 if COND`, `my $x unless COND`) keeps its *declaration* lexically
+/// unconditional — in Raku declarations take effect at compile time regardless
+/// of the runtime modifier; only the *initializer* is gated. So split such a
+/// declaration into an always-run declaration plus a conditional assignment:
+///
+///   `my $x = INIT if COND`  ->  `my $x; ($x = INIT) if COND`
+///   `my $x if COND`         ->  `my $x`            (no init to gate)
+///
+/// `effective_cond` is the condition the surrounding modifier would test (already
+/// negated for `unless`). Returns `None` for anything that is not a hoistable
+/// scalar/array/hash `my`/`our` declaration (e.g. `state`, routines), leaving the
+/// generic modifier wrapping in place.
+fn try_split_decl_modifier(stmt: &Stmt, effective_cond: &Expr) -> Option<Stmt> {
+    let Stmt::VarDecl {
+        name,
+        expr,
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic,
+        is_export,
+        export_tags,
+        custom_traits,
+        where_constraint,
+    } = stmt
+    else {
+        return None;
+    };
+    // `state` has once-only initialization semantics that this split would
+    // break, so leave it to the generic modifier wrapping.
+    if *is_state {
+        return None;
+    }
+    // Only sigil'd variables are hoistable here; a sigilless `\x` or other form
+    // is left untouched.
+    let is_array = name.starts_with('@');
+    let is_hash = name.starts_with('%');
+    let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+    let decl = Stmt::VarDecl {
+        name: name.clone(),
+        expr: super::decl::default_decl_expr(is_array, is_hash, None, type_constraint.as_deref()),
+        type_constraint: type_constraint.clone(),
+        is_state: false,
+        is_our: *is_our,
+        is_dynamic: *is_dynamic,
+        is_export: *is_export,
+        export_tags: export_tags.clone(),
+        custom_traits: custom_traits
+            .iter()
+            .filter(|(n, _)| n != "__has_initializer")
+            .cloned()
+            .collect(),
+        where_constraint: where_constraint.clone(),
+    };
+    if !has_init {
+        // No initializer to gate: the declaration is simply unconditional.
+        return Some(decl);
+    }
+    let init = Stmt::If {
+        cond: effective_cond.clone(),
+        then_branch: vec![Stmt::Assign {
+            name: name.clone(),
+            expr: expr.clone(),
+            op: crate::ast::AssignOp::Assign,
+        }],
+        else_branch: Vec::new(),
+        binding_var: None,
+    };
+    Some(Stmt::SyntheticBlock(vec![decl, init]))
+}
+
 fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
     if let Stmt::Block(body) = &stmt
         && let placeholders = crate::ast::collect_placeholders_shallow(body)
@@ -232,6 +304,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         }
         check_two_terms_across_lines(r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
+        if let Some(split) = try_split_decl_modifier(&then_stmt, &cond) {
+            return Ok(Some((r, split)));
+        }
         return Ok(Some((
             r,
             Stmt::If {
@@ -257,13 +332,17 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         }
         check_two_terms_across_lines(r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
+        let neg_cond = Expr::Unary {
+            op: TokenKind::Bang,
+            expr: Box::new(cond),
+        };
+        if let Some(split) = try_split_decl_modifier(&then_stmt, &neg_cond) {
+            return Ok(Some((r, split)));
+        }
         return Ok(Some((
             r,
             Stmt::If {
-                cond: Expr::Unary {
-                    op: TokenKind::Bang,
-                    expr: Box::new(cond),
-                },
+                cond: neg_cond,
                 then_branch: vec![then_stmt],
                 else_branch: Vec::new(),
                 binding_var: None,

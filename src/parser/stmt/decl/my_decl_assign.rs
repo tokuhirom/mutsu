@@ -1,8 +1,6 @@
 use super::super::super::expr::expression;
 use super::super::super::helpers::ws;
-use super::super::super::parse_result::{
-    PError, PResult, merge_expected_messages, opt_char, parse_char,
-};
+use super::super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char};
 use super::super::keyword;
 use super::helpers::shaped_array_new_with_data_expr;
 use super::my_decl::MyDeclState;
@@ -89,16 +87,14 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         return handle_binding(stripped, s);
     }
 
-    // No assignment — default value. Optionally consume a trailing `;` only in
-    // statement context. In EXPRESSION context (e.g. a feed sink
-    // `(1,2,3) ==> my @o; say @o`) the `;` terminates the *enclosing* statement
-    // and must be left for it; eating it here swallows the following statement
-    // into the expression (`say` then parses as an infix word on the feed).
-    let rest = if s.apply_modifier {
-        opt_char(rest, ';').0
-    } else {
-        rest
-    };
+    // No assignment — default value. A bare declaration may carry a postfix
+    // statement modifier (`my $x if 0`, `my $x for @a`), so route through
+    // `parse_statement_modifier` in statement context — it both attaches any
+    // modifier and consumes the terminating `;`. In EXPRESSION context (e.g. a
+    // feed sink `(1,2,3) ==> my @o; say @o`) the `;` terminates the *enclosing*
+    // statement and must be left for it; eating it here swallows the following
+    // statement into the expression (`say` then parses as an infix word on the
+    // feed), so leave `rest` untouched there.
     let expr = default_decl_expr(
         s.is_array,
         s.is_hash,
@@ -118,6 +114,9 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         where_constraint: s.where_constraint.clone(),
     };
     let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
+    if s.apply_modifier {
+        return parse_statement_modifier(rest, stmt);
+    }
     Ok((rest, stmt))
 }
 
