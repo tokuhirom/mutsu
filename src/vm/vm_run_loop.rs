@@ -611,4 +611,18 @@ impl Interpreter {
             other => other,
         }
     }
+
+    /// De-itemize a `for … -> @a` chunk element while preserving its element
+    /// type. An element-typed array (`array[int]`) keeps its type — only the
+    /// itemization/scalar wrap is stripped, which is exactly the de-itemization
+    /// the binding needs. Every other value flattens via the existing `.list`
+    /// semantics (preserving prior behavior exactly).
+    pub(crate) fn deitemize_for_bind(&mut self, val: Value) -> Result<Value, RuntimeError> {
+        if let Value::Array(data, kind) = &val
+            && (data.value_type.is_some() || data.declared_type.is_some())
+        {
+            return Ok(Value::Array(data.clone(), kind.decontainerize()));
+        }
+        self.call_method_with_values(val, "list", vec![])
+    }
 }
