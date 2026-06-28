@@ -81,6 +81,15 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         })
         .unwrap_or(false);
     let use_given_alias = cond_is_lvalue && (param_name.is_none() || pointy_routes_through_given);
+    // A non-lvalue, non-literal topic (`with foo()`) with no pointy parameter is
+    // run under `given $tmp` (the once-evaluated condition value), so `$_` is
+    // properly scoped: it is saved/restored around the body and the enclosing
+    // `given`/`with`'s topic-source writeback is suspended for the inner body.
+    // Without this, the flat `$_ = $tmp` topicalization runs in the outer scope
+    // and leaks back into the outer topic source — e.g. nested
+    // `with $x { with foo() { } }` clobbered `$x` with `foo()`'s value.
+    let is_literal_topic = matches!(&cond_expr, Expr::Literal(_));
+    let route_through_given_tmp = !cond_is_lvalue && !is_literal_topic && param_name.is_none();
     // Topicalize `$_` for the body. For a literal, wrap it in a Mixin marked
     // read-only so in-place mutation of `$_` throws X::Assignment::RO. Otherwise
     // reuse the `$tmp` holding the (once-evaluated) condition value.
@@ -230,6 +239,11 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         with_body = vec![Stmt::Given {
             topic: cond_expr.clone(),
             body: given_body,
+        }];
+    } else if route_through_given_tmp {
+        with_body = vec![Stmt::Given {
+            topic: tmp_var.clone(),
+            body,
         }];
     } else {
         with_body.extend(body);

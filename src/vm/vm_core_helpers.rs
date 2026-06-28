@@ -200,4 +200,15 @@ impl Interpreter {
     pub(crate) fn set_topic_source_var(&mut self, name: Option<String>) {
         self.topic_source_var = name;
     }
+
+    /// A `with LITERAL { ... }` block desugars to `$_ = (literal marked
+    /// __mutsu_topic_ro__)`, which *establishes a fresh topic scope* rather than
+    /// mutating an outer `given`/`with`'s aliased topic. When such an assignment
+    /// runs inside an enclosing `given $x` (whose `topic_source_var` is `$x`), the
+    /// topic-source writeback must be suppressed — otherwise the inner literal
+    /// topic leaks back into the outer source variable (e.g. nested
+    /// `with $x { with 12345 { } }` would clobber `$x` with `12345`).
+    pub(super) fn is_topic_ro_assignment(val: &Value) -> bool {
+        matches!(val, Value::Mixin(_, ov) if ov.contains_key("__mutsu_topic_ro__"))
+    }
 }
