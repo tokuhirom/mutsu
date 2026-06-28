@@ -1571,12 +1571,20 @@ impl Interpreter {
         // resolved def already satisfies it and the compiled binding just binds the
         // callable — byte-identical to the interpreter. Any cross-candidate
         // ambiguity (`&c:(Int)` vs untyped `&c`) is a *resolution*-level gap that
-        // fires identically with or without OTF, so it is unaffected. Only a param
-        // with a default value stays excluded here (the name-cache-pollution /
-        // builtin-shadow hazard, PR #3546 — allowed at genuine multi sites via
-        // `def_is_otf_compilable_multi_candidate`).
+        // fires identically with or without OTF, so it is unaffected.
+        //
+        // A param with a default value is ALSO no longer excluded. It once was, to
+        // avoid the builtin-shadow name-cache hazard (PR #3546: Test::Util's
+        // `our sub run(Str, Str = '')` shadowing the `run` builtin — the OTF cache
+        // could pin the user sub so a later builtin `run` mis-bound). That hazard is
+        // now closed by the `otf_call_cache` scope-coherence fix: the cache is gated
+        // on `fn_resolve_gen`, which bumps when the shadowing scope changes (import
+        // pop / lexical scope exit), so the user `run` is evicted and a later builtin
+        // `run` (process spawn) re-resolves correctly. Verified: `{ sub run($c,$i='')
+        // {...}; run(...) }; run("echo", ..., :out)` binds the user sub inside the
+        // block and the builtin outside, matching raku. Within a single scope a name
+        // resolves to one routine, so no same-scope mis-bind is possible.
         !Self::function_body_needs_interpreter(&def.body)
-            && def.param_defs.iter().all(|pd| pd.default.is_none())
     }
 
     /// Like `def_is_otf_compilable`, but also permits a parameter with a default
