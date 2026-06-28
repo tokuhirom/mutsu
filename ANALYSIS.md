@@ -307,11 +307,16 @@ Track B は規模・難度ともに大きく、着手前に次を踏まえるこ
 
 露骨な「テスト専用ハードコード出力」は見つからなかった。以下は導出を怠った直書きでドリフトリスクがある。
 
-1. **`.^methods`/`.can` の型別メソッド一覧が直書き**:
-   `collect_builtin_type_methods` (`runtime/methods_classhow.rs`) が `"Str" => &["chars","codes",...]` 等を
-   実ディスパッチ表 (`builtins/methods_*`) から **導出せず直書き**。継承表も `"Bool" => &["Bool","Int","Cool"]`
-   と直書き。自認コメントあり ("We model a subset that matches what the roast tests check")。
-   メソッド追加で必ずドリフトする。**改善**: 実ディスパッチ表からメソッド集合を導出。
+1. **`.^methods`/`.can` の型別メソッド一覧が直書き** 【単一の正典モジュールに集約済み】:
+   旧来 `collect_builtin_type_methods` (`runtime/methods_classhow*`) と組込 MRO (`classhow_mro.rs`) が
+   `"Str" => &["chars","codes",...]` / `"Bool" => &["Bool","Int","Cool"]` 等を **2 箇所に分散して直書き**していた。
+   ネイティブメソッドディスパッチは `match method { "chars" => ... }` のアーム実装で **列挙可能なレジストリが無く**、
+   実行時に型→メソッド集合をリフレクションで導出できない (完全な自動導出は §3 の統合 type×method ディスパッチ表が前提)。
+   現状の対応: 型別メソッド表と組込 MRO を **唯一の正典モジュール `builtins/builtin_type_methods.rs` に集約**し、
+   `.^methods`/`.^can`/`.^mro` が全てそこから読む単一情報源化。共有 coercion 群 (`NUMERIC_COERCIONS`) を
+   一度だけ宣言し Str/Int/Bool/Cool が共有 (出力はバイト等価)。同期契約をモジュール doc に明記し、
+   構造テスト (重複なし・MRO 親の解決) と `t/can-methods-drift.t` がドリフトを検出。
+   **残**: §3 の統合ディスパッチ表が入れば、この表自体を撤去してディスパッチから真に導出できる。
 
 2. **パーサの roast 向け文法緩和** (軽微): `parser/.../helpers.rs` (`is List` 受理)、
    `misc.rs` (Test::Assuming 周辺)、`stmt/mod.rs` (`throws-like` 特例構文)。
