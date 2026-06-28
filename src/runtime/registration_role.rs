@@ -537,48 +537,55 @@ impl Interpreter {
                     // Use resolve_role_candidate to properly handle named
                     // arguments and default values in parameterized role
                     // composition.
-                    let type_subs: Vec<(String, String)> =
-                        if let Some((_, resolved_param_names, resolved_values)) =
+                    // `does R1[::T]` inside a parameterized role forwards this
+                    // role's type parameter into the parent role. The concrete
+                    // value of `::T` is not known until THIS role is itself
+                    // concretized, so don't resolve the parent now (that errors
+                    // with "cannot use ::T in role application"); record the
+                    // forwarding binding (parent-param -> `::T`) via the
+                    // role_type_params branch below and defer real composition to
+                    // class-application time.
+                    let forwards_type_param = role_name_str.contains("::");
+                    let type_subs: Vec<(String, String)> = if !forwards_type_param
+                        && let Some((_, resolved_param_names, resolved_values)) =
                             self.resolve_role_candidate(&role_name_str)?
+                    {
+                        // Store the resolved param bindings so they are
+                        // available when the child role is punned to a class
+                        // and methods referencing role params are dispatched.
                         {
-                            // Store the resolved param bindings so they are
-                            // available when the child role is punned to a class
-                            // and methods referencing role params are dispatched.
-                            {
-                                let mut registry = self.registry_mut();
-                                let bindings = registry
-                                    .class_role_param_bindings
-                                    .entry(name.to_string())
-                                    .or_default();
-                                for (p, v) in
-                                    resolved_param_names.iter().zip(resolved_values.iter())
-                                {
-                                    bindings.insert(p.clone(), v.clone());
-                                }
+                            let mut registry = self.registry_mut();
+                            let bindings = registry
+                                .class_role_param_bindings
+                                .entry(name.to_string())
+                                .or_default();
+                            for (p, v) in resolved_param_names.iter().zip(resolved_values.iter()) {
+                                bindings.insert(p.clone(), v.clone());
                             }
-                            resolved_param_names
+                        }
+                        resolved_param_names
+                            .iter()
+                            .zip(resolved_values.iter())
+                            .map(|(p, v)| (p.clone(), type_value_name(v)))
+                            .collect()
+                    } else if let Some(parent_type_params) =
+                        self.registry().role_type_params.get(base_role_name)
+                    {
+                        if let Some(bracket_start) = role_name_str.find('[') {
+                            let args_str =
+                                &role_name_str[bracket_start + 1..role_name_str.len() - 1];
+                            let type_args = parse_role_type_args(args_str);
+                            parent_type_params
                                 .iter()
-                                .zip(resolved_values.iter())
-                                .map(|(p, v)| (p.clone(), type_value_name(v)))
+                                .zip(type_args.iter())
+                                .map(|(p, a)| (p.clone(), a.clone()))
                                 .collect()
-                        } else if let Some(parent_type_params) =
-                            self.registry().role_type_params.get(base_role_name)
-                        {
-                            if let Some(bracket_start) = role_name_str.find('[') {
-                                let args_str =
-                                    &role_name_str[bracket_start + 1..role_name_str.len() - 1];
-                                let type_args = parse_role_type_args(args_str);
-                                parent_type_params
-                                    .iter()
-                                    .zip(type_args.iter())
-                                    .map(|(p, a)| (p.clone(), a.clone()))
-                                    .collect()
-                            } else {
-                                Vec::new()
-                            }
                         } else {
                             Vec::new()
-                        };
+                        }
+                    } else {
+                        Vec::new()
+                    };
                     for attr in &role.attributes {
                         if role_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
                             // Already present. Only a real conflict if both

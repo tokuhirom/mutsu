@@ -249,6 +249,8 @@ impl Interpreter {
         let hidden_classes_snapshot = self.registry().hidden_classes.clone();
         let hidden_defer_parents_snapshot = self.registry().hidden_defer_parents.clone();
         let class_composed_roles_snapshot = self.registry().class_composed_roles.clone();
+        let class_direct_composed_roles_snapshot =
+            self.registry().class_direct_composed_roles.clone();
         let class_role_param_bindings_snapshot = self.registry().class_role_param_bindings.clone();
         let env_snapshot = self.env.clone();
         let saved_topic = self.env.get("_").cloned();
@@ -363,6 +365,8 @@ impl Interpreter {
         let current_hidden_classes = self.registry().hidden_classes.clone();
         let current_hidden_defer_parents = self.registry().hidden_defer_parents.clone();
         let current_class_composed_roles = self.registry().class_composed_roles.clone();
+        let current_class_direct_composed_roles =
+            self.registry().class_direct_composed_roles.clone();
         let current_class_role_param_bindings = self.registry().class_role_param_bindings.clone();
         let current_env = self.env.clone();
         let current_type_keys: std::collections::HashSet<String> = self
@@ -387,6 +391,7 @@ impl Interpreter {
         self.registry_mut().hidden_classes = hidden_classes_snapshot;
         self.registry_mut().hidden_defer_parents = hidden_defer_parents_snapshot;
         self.registry_mut().class_composed_roles = class_composed_roles_snapshot;
+        self.registry_mut().class_direct_composed_roles = class_direct_composed_roles_snapshot;
         self.registry_mut().class_role_param_bindings = class_role_param_bindings_snapshot;
         self.registry_mut().roles.extend(current_roles);
         // Don't extend user_declared_roles: roles declared in EVAL are EVAL-scoped
@@ -411,6 +416,9 @@ impl Interpreter {
         self.registry_mut()
             .class_composed_roles
             .extend(current_class_composed_roles);
+        self.registry_mut()
+            .class_direct_composed_roles
+            .extend(current_class_direct_composed_roles);
         self.registry_mut()
             .class_role_param_bindings
             .extend(current_class_role_param_bindings);

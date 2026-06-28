@@ -390,6 +390,11 @@ impl Interpreter {
         }
         // Compose roles listed in the parents (from "does Role" or "is Role" in class header)
         let mut composed_roles_list = Vec::new();
+        // The DIRECTLY-declared role parents (one per class-header `does`/`is`
+        // role), captured before any transitive sub-role concretizations are
+        // flattened into `composed_roles_list`. Used for qualified-call
+        // concretization resolution (see `class_direct_composed_roles`).
+        let mut direct_composed_roles: Vec<String> = Vec::new();
         let mut punned_roles = Vec::new();
         let mut hidden_punned_role_bases: HashSet<String> = HashSet::new();
         let mut class_role_param_bindings: HashMap<String, Value> = HashMap::new();
@@ -424,6 +429,7 @@ impl Interpreter {
                     }
                 }
                 composed_roles_list.push(resolved_parent_name.clone());
+                direct_composed_roles.push(resolved_parent_name.clone());
                 // Look up the role's language revision for submethod composition rules.
                 let role_lang_rev = self
                     .type_metadata
@@ -797,6 +803,9 @@ impl Interpreter {
             self.registry_mut()
                 .class_composed_roles
                 .insert(name.to_string(), composed_roles_list.clone());
+            self.registry_mut()
+                .class_direct_composed_roles
+                .insert(name.to_string(), direct_composed_roles.clone());
             // Propagate `hides` from composed roles (and sub-roles) to the class
             {
                 let mut role_stack: Vec<String> = composed_roles_list

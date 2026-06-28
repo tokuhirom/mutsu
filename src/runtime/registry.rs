@@ -69,8 +69,18 @@ pub(crate) struct Registry {
     pub(crate) class_trusts: HashMap<String, HashSet<String>>,
     /// Per-class metaclass (`HOW`) value override.
     pub(crate) class_how_values: HashMap<String, Value>,
-    /// Roles composed into each class: class -> [role names].
+    /// Roles composed into each class: class -> [role names]. This is the
+    /// FLATTENED set (includes roles reached transitively through a composed
+    /// role's own `does`), used for `~~`/role-membership checks.
     pub(crate) class_composed_roles: HashMap<String, Vec<String>>,
+    /// Roles DIRECTLY declared on each class's `does` list (NOT the transitive
+    /// closure): class -> [role names]. Qualified `self.Role::method` resolution
+    /// of a parametric role uses this so a concretization reached only
+    /// transitively (e.g. `R1[Num]` pulled in via `does R2[Num]` where
+    /// `R2[::T] does R1[::T]`) does not make a directly-declared `R1[Int]`
+    /// ambiguous (Raku resolves a qualified role call against the immediate
+    /// roles of the consumer).
+    pub(crate) class_direct_composed_roles: HashMap<String, Vec<String>>,
     /// Roles implicitly composed by enums: enum -> [role names].
     pub(crate) class_enum_roles: HashMap<String, Vec<String>>,
     /// Subs declared inside a class body: class -> (sub name -> value).
