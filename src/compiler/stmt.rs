@@ -2266,6 +2266,13 @@ impl Compiler {
                     } else {
                         Some(*kind)
                     };
+                    // Hoist `my sub` declarations so they are visible to earlier
+                    // statements in the same package block (a `my sub` is lexically
+                    // scoped and compile-time-visible throughout its block). Without
+                    // this, a forward reference inside `package P { f(); my sub f {…} }`
+                    // failed with "Unknown function". Sub bodies and inline blocks
+                    // already hoist; the non-unit package body did not.
+                    self.hoist_sub_decls(body, true);
                     for s in body {
                         self.compile_stmt(s);
                     }
