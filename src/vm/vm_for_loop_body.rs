@@ -12,7 +12,12 @@ impl Interpreter {
         loop_end: usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
         resume_index: usize,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<bool, RuntimeError> {
+        // `true`  = the loop ran every item to completion;
+        // `false` = it exited early via `last` or `return` (the live-array
+        // continuation in `exec_for_loop_op` must NOT pick up newly-pushed tail
+        // elements after an early exit).
+        let mut completed_all = true;
         let param_name = spec
             .param_idx
             .map(|idx| match &code.constants[idx as usize] {
@@ -449,6 +454,7 @@ impl Interpreter {
                                 self.stack.push(v);
                             }
                         }
+                        completed_all = false;
                         break 'for_loop;
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
@@ -482,6 +488,7 @@ impl Interpreter {
                             &param_name,
                             idx,
                         );
+                        completed_all = false;
                         break 'for_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
@@ -681,6 +688,6 @@ impl Interpreter {
             }
             self.stack.push(Value::array(coll));
         }
-        Ok(())
+        Ok(completed_all)
     }
 }

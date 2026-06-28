@@ -1582,6 +1582,7 @@ impl Compiler {
                         .collect(),
                     loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
                     values_mode: Self::for_iterable_is_values_alias(iterable),
+                    single_array_source: Self::for_single_array_source(iterable),
                 });
                 // Register sigilless for-params (`-> \v`, `-> \k, \v`) as
                 // sigilless locals while compiling the body so postfix/prefix

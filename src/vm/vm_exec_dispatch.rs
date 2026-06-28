@@ -2928,6 +2928,7 @@ impl Interpreter {
                 multi_param_names,
                 loop_var_wraps_element,
                 values_mode,
+                single_array_source,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
@@ -2948,6 +2949,7 @@ impl Interpreter {
                     multi_param_names: multi_param_names.clone(),
                     loop_var_wraps_element: *loop_var_wraps_element,
                     values_mode: *values_mode,
+                    single_array_source: single_array_source.clone(),
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }

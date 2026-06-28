@@ -28,6 +28,9 @@ pub(super) struct ForLoopSpec {
     /// container's value, so a `$_ = ...` topic writeback updates the source
     /// (plain Hash or mutable MixHash/BagHash) by key order.
     pub(super) values_mode: bool,
+    /// Bare source array name for `for @a` (live-array iteration). See the
+    /// `OpCode::ForLoop` field of the same name.
+    pub(super) single_array_source: Option<String>,
 }
 
 pub(super) struct WhileLoopSpec {
