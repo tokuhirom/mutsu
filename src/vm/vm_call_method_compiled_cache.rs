@@ -104,6 +104,35 @@ impl Interpreter {
         args: &[Value],
         target: &Value,
     ) -> Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> {
+        // Non-multi resolution depends only on (class, method) — not on arg
+        // types/values — so it can be memoized. This mirrors the cache hierarchy
+        // already used by the interpret path (`vm_call_method_compiled_interpret`);
+        // without it the compiled-mut hot path re-ran the full MRO/specificity
+        // walk in `resolve_method_with_owner_invocant` on *every* call to a plain
+        // (non-multi) method. Both caches are invalidated together at every
+        // registry/type/module mutation site (see `method_resolve_cache.clear()`
+        // / `last_method_resolve = None`).
+
+        // 1. Monomorphic inline cache: single-entry check before any HashMap.
+        if let Some((cc, cm, ref co, ref cd)) = self.last_method_resolve
+            && cc == class_sym
+            && cm == method_sym
+            && !cd.is_multi
+        {
+            return Some((co.clone(), cd.clone()));
+        }
+        // 2. Non-multi HashMap cache.
+        if let Some(hit) = self
+            .method_resolve_cache
+            .get(&(class_sym, method_sym))
+            .cloned()
+            && let Some((ref owner, ref def)) = hit
+            && !def.is_multi
+        {
+            self.last_method_resolve = Some((class_sym, method_sym, owner.clone(), def.clone()));
+            return hit;
+        }
+        // 3. Sound multi-method resolution cache (type+arity deterministic).
         if let Some(arg_keys) = Self::multi_arg_type_keys(args)
             && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
         {
@@ -121,11 +150,21 @@ impl Interpreter {
             }
             return resolved_arc;
         }
-        loan_env!(
+        // 4. Resolve fresh; cache the result when it is non-multi.
+        let resolved_arc = loan_env!(
             self,
             resolve_method_with_owner_invocant(cn, method, args, target)
         )
-        .map(|(o, d)| (o, std::sync::Arc::new(d)))
+        .map(|(o, d)| (o, std::sync::Arc::new(d)));
+        if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
+            self.method_resolve_cache
+                .insert((class_sym, method_sym), resolved_arc.clone());
+            if let Some((ref owner, ref def)) = resolved_arc {
+                self.last_method_resolve =
+                    Some((class_sym, method_sym, owner.clone(), def.clone()));
+            }
+        }
+        resolved_arc
     }
 
     /// Compile a resolved user method's body on demand when it lacks bytecode,
