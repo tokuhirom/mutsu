@@ -3228,6 +3228,7 @@ impl Interpreter {
             }
             OpCode::RegisterPackage { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
+                self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::Package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
                 self.chain_declared_packages.insert(name.clone());
@@ -3236,6 +3237,7 @@ impl Interpreter {
             }
             OpCode::RegisterPackageMy { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
+                self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::Package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
                 self.chain_declared_packages.insert(name.clone());
