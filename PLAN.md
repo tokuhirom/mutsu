@@ -200,13 +200,16 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
 すべて NativeCall 非依存**（pure Raku）で、原理的に動作可能。各ブロッカーは独立した一般機能の欠落。
 ハーネス＝`tmp/webstack/`（gitignored）。
 
-- [ ] **HTTP::Server::Tiny スタック（全て pure Raku, NativeCall なし）— 想像以上に近い。**
-      本体は `use`＋`.new`＋非同期サーバが TCP listen/accept まで実際に動く。`:bin` Supply→`Buf[uint8]`（#TBD）と
-      HTTP::Parser 14/14（#3420/#3422/#3423）は landed（news 参照）。リクエスト/レスポンス往復を阻む**残ブロッカー**:
-  - **`whenever $conn.Supply(...)` の内側で `done`/`last`** を呼ぶと制御シグナルが react ハンドラに捕捉されず
-    「Unhandled exception in code scheduled on thread」（空メッセージ）でプロセス終了（bin/非 bin 共通・`.tap` 回避なら OK）。
-    real-TCP Supply の tap コールバックが worker thread 上で走り react の control-flow フレームから切れているため。
-    HTTP::Server::Tiny のリクエストループが `done` を使うなら要修正。
+- **✅ HTTP::Server::Tiny が end-to-end で動作（2026-06-28・全て pure Raku, NativeCall なし）**:
+      **未改変の upstream モジュールが mutsu で `use`＋`.new`＋`.run` し、実 TCP で HTTP 応答を配信**（GET=`hello`、
+      POST+body+`start{}` Promise 返却アプリ=content-length パス／TempFile・IO::Blob 経由で正しく往復）。
+      真因＝`Thread.start`（`socket_thread.rs`）だけが素の `std::thread::spawn`（OS デフォルト ~2-8 MiB スタック）を使い、
+      `start{}`/Promise/Supply worker が使う 256 MiB の `spawn_user_thread` から漏れていた。非同期サーバの react ループが
+      BUILD で VM を再入する深いネストで 8 MiB を超過しオーバーフロー（gdb で 83 フレーム＝小スタックと確定）。修正で
+      `Thread.start`／`$*SCHEDULER.cue`／hyper-race の全 user-code spawn を `spawn_user_thread` に統一。担保＝`t/thread-deep-stack.t`。
+  - **残（深掘り時）**: keep-alive 連続リクエスト・chunked request body・`whenever $conn.Supply(...)` 内の `done`/`last`
+    制御シグナル（real-TCP Supply の tap コールバックが worker thread 上で走り react の control-flow フレームから切れる）。
+    upstream のデフォルト構成（max-keepalive-reqs=1・HTTP/1.0）では発火しないため、基本配信はブロックされない。
   - **✅ HTTP::Status v0.0.5 全テスト PASS（68 subtests・#3832）**: 当初診断「`method sink` が呼ばれず空」は誤り。
     実際の 2 ブロッカーは①配列ホール追跡がスコープを越えなかった（autoviv ギャップの `Package("Any")` を実 `Any` と
     区別する `__mutsu_initialized_index::name` env side table がフレーム scope で、外側配列をメソッド/クロージャから
@@ -279,7 +282,7 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
 | 起動時間 vs raku | **0.04x** | 0.04x |
 | tree-walk フォールバック（メソッド/関数） | **~1% / ~18.6%（大半 carrier）** | 0%（carrier 除く） |
 | 動作モジュール数 | **5（Mustache, File::Temp, File::Directory::Tree, HTTP::Parser, MIME::Base64〔own test PASS〕）** | 5+（ウェブブログスタック） |
-| Template::Mustache / HTTP::Server::Tiny | **Mustache ✅** / Tiny ❌ | ✅ |
+| Template::Mustache / HTTP::Server::Tiny | **Mustache ✅** / **Tiny ✅（end-to-end 配信・2026-06-28）** | ✅ |
 
 ---
 

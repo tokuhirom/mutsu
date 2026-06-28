@@ -46,51 +46,55 @@ impl Interpreter {
             let thread_interp = self.clone_for_thread();
             let block_clone = block.clone();
             let is_map_flag = is_map;
-            handles.push(std::thread::spawn(move || {
-                // CP-3 collapse: the cloned per-thread Interpreter *is* the Interpreter.
-                let mut vm = thread_interp;
-                let mut results = Vec::with_capacity(batch.len());
-                let mut error: Option<RuntimeError> = None;
-                for item in &batch {
-                    if error.is_some() {
-                        break;
-                    }
-                    // Route the per-item user-code call through the same
-                    // panic->X::AdHoc boundary that `start{}`/Promise workers use
-                    // (`guard_worker_panic`). Without it, a Rust panic raised by
-                    // user code in this batch thread only surfaces as a generic
-                    // "Thread panicked in hyper/race" at `join()` and leaks the raw
-                    // Rust panic message to stderr; the guard converts it into a
-                    // catchable X::AdHoc and suppresses the default backtrace dump,
-                    // making worker panic handling uniform across all spawn sites.
-                    let call_result = crate::vm::guard_worker_panic(|| {
-                        vm.vm_call_on_value(block_clone.clone(), vec![item.clone()], None)
-                    });
-                    match call_result {
-                        Ok(val) => {
-                            if is_map_flag {
-                                if let Value::Slip(ref s) = val {
-                                    results.extend(s.iter().cloned());
-                                } else {
-                                    results.push(val);
+            // Large user-code stack: hyper/race batch threads run user VM code,
+            // which overflows the default thread stack on deep nesting.
+            handles.push(crate::runtime::builtins_system::spawn_user_thread(
+                move || {
+                    // CP-3 collapse: the cloned per-thread Interpreter *is* the Interpreter.
+                    let mut vm = thread_interp;
+                    let mut results = Vec::with_capacity(batch.len());
+                    let mut error: Option<RuntimeError> = None;
+                    for item in &batch {
+                        if error.is_some() {
+                            break;
+                        }
+                        // Route the per-item user-code call through the same
+                        // panic->X::AdHoc boundary that `start{}`/Promise workers use
+                        // (`guard_worker_panic`). Without it, a Rust panic raised by
+                        // user code in this batch thread only surfaces as a generic
+                        // "Thread panicked in hyper/race" at `join()` and leaks the raw
+                        // Rust panic message to stderr; the guard converts it into a
+                        // catchable X::AdHoc and suppresses the default backtrace dump,
+                        // making worker panic handling uniform across all spawn sites.
+                        let call_result = crate::vm::guard_worker_panic(|| {
+                            vm.vm_call_on_value(block_clone.clone(), vec![item.clone()], None)
+                        });
+                        match call_result {
+                            Ok(val) => {
+                                if is_map_flag {
+                                    if let Value::Slip(ref s) = val {
+                                        results.extend(s.iter().cloned());
+                                    } else {
+                                        results.push(val);
+                                    }
+                                } else if val.truthy() {
+                                    results.push(item.clone());
                                 }
-                            } else if val.truthy() {
-                                results.push(item.clone());
+                            }
+                            Err(e) => {
+                                error = Some(e);
                             }
                         }
-                        Err(e) => {
-                            error = Some(e);
-                        }
                     }
-                }
-                let output = vm.take_output();
-                let stderr = vm.take_stderr_output();
-                let final_result = match error {
-                    Some(e) => Err(e),
-                    None => Ok(results),
-                };
-                (vm, final_result, output, stderr)
-            }));
+                    let output = vm.take_output();
+                    let stderr = vm.take_stderr_output();
+                    let final_result = match error {
+                        Some(e) => Err(e),
+                        None => Ok(results),
+                    };
+                    (vm, final_result, output, stderr)
+                },
+            ));
         }
         let mut all_results = Vec::with_capacity(items.len());
         let mut first_error: Option<RuntimeError> = None;

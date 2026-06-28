@@ -10,9 +10,10 @@ pub(crate) const USER_THREAD_STACK_SIZE: usize = 256 * 1024 * 1024;
 
 /// Spawn a worker thread with a large stack for running user code, so deep VM
 /// recursion does not overflow the default thread stack.
-pub(crate) fn spawn_user_thread<F>(f: F) -> std::thread::JoinHandle<()>
+pub(crate) fn spawn_user_thread<F, T>(f: F) -> std::thread::JoinHandle<T>
 where
-    F: FnOnce() + Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
 {
     std::thread::Builder::new()
         .stack_size(USER_THREAD_STACK_SIZE)

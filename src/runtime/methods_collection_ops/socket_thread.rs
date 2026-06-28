@@ -385,7 +385,12 @@ impl Interpreter {
         // Enable immediate stdout so thread output goes directly to stdout
         thread_interp.set_immediate_stdout(true);
         let mutsu_tid = thread_id as i64;
-        let handle = std::thread::spawn(move || {
+        // Use the large user-code stack (matches `start {}` / Promise / Supply
+        // worker threads): `Thread.start` runs arbitrary user code, and the
+        // default ~2-8 MiB thread stack overflows on deep VM nesting (e.g. an
+        // async server whose react loop constructs objects whose BUILD re-enters
+        // the VM -- HTTP::Server::Tiny). See `USER_THREAD_STACK_SIZE`.
+        let handle = crate::runtime::builtins_system::spawn_user_thread(move || {
             // Set the mutsu thread ID for $*THREAD.id consistency
             super::set_current_mutsu_thread_id(mutsu_tid);
             match thread_interp.call_sub_value(block, vec![], false) {
