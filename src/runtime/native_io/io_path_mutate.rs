@@ -177,6 +177,11 @@ impl Interpreter {
                     .ok_or_else(|| RuntimeError::new("chmod requires mode"))?;
                 let mode_int = match mode_value {
                     Value::Int(i) => i as u32,
+                    // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
+                    // already-evaluated integer in the inner value; coerce through it.
+                    Value::Mixin(..) | Value::BigInt(_) => {
+                        crate::runtime::to_int(&mode_value) as u32
+                    }
                     Value::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
                     other => {
                         return Err(RuntimeError::new(format!(
