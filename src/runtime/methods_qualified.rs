@@ -127,6 +127,50 @@ impl Interpreter {
                 }
             }
         }
+        // When the qualifier names a parametric role base that the receiver
+        // consumed under exactly ONE concretization (`class C1 does R1[Int]`),
+        // resolve the method from THAT concretization's role definition rather
+        // than the by-name `roles` map. Two same-named roles (a parameterized
+        // `R1[::T]` and an unparameterized `R1`) collide in `roles`, so the map
+        // holds only the last-declared one and `resolve_method_with_owner` below
+        // can pick the wrong (unparameterized) variant — leaving the type
+        // parameter `T` unbound. Running the resolved method with the receiver
+        // class as `receiver_class_name` binds the consumed `T` (`=Int`) from the
+        // class's role-param bindings. The >1-concretization (ambiguous) case is
+        // rejected above.
+        if self.registry().roles.contains_key(qualifier) {
+            let concs = self.role_concretizations_at_nearest(&inst_cn_str, qualifier);
+            if concs.len() == 1 {
+                let conc = concs.into_iter().next().unwrap();
+                if conc.contains('[')
+                    && let Ok(Some((role_def, _tparams, _tvals))) =
+                        self.resolve_role_candidate(&conc)
+                    && let Some(overloads) = role_def.methods.get(actual_method).cloned()
+                {
+                    for def in overloads {
+                        if !def.is_private && self.method_args_match(&args, &def.param_defs) {
+                            let attrs_map = attributes.to_map();
+                            let inst_cn = inst_cn_str.to_string();
+                            let (result, updated) = match self
+                                .run_resolved_method_compiled_or_treewalk(
+                                    &inst_cn,
+                                    qualifier,
+                                    actual_method,
+                                    def,
+                                    attrs_map,
+                                    args,
+                                    Some(target.clone()),
+                                ) {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            };
+                            attributes.commit_attrs(updated);
+                            return Some(Ok(result));
+                        }
+                    }
+                }
+            }
+        }
         // Try running the actual method on the qualifier class
         if let Some((_owner, method_def)) =
             self.resolve_method_with_owner(qualifier, actual_method, &args)
