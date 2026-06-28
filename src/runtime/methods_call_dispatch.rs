@@ -32,6 +32,11 @@ impl Interpreter {
             }
             return Err(RuntimeError::emit_signal(target));
         }
+        // `.self` ignores any arguments (e.g. the fake-infix adverbs on
+        // `$x .= self :42moews`); it always returns the invocant.
+        if method == "self" && !args.is_empty() {
+            return self.call_method_with_values(target, "self", Vec::new());
+        }
         // `.sum(:wrap)` / `.sum(:method)`: the only adverb that affects native
         // arrays (`:wrap` selects wrapping overflow) is equivalent here; treat a
         // named-only argument list as a plain `.sum`.
