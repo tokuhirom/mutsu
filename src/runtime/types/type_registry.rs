@@ -254,6 +254,14 @@ impl Interpreter {
 
     /// Check if a type name is known (either a class, role, or enum).
     pub(crate) fn has_type(&self, name: &str) -> bool {
+        // A `my`-scoped class/role/enum whose enclosing block has exited is moved
+        // into `suppressed_names`: once out of lexical scope it is no longer a
+        // visible type under its bare short name (raku: "Type 'A' is not declared"
+        // after the block). Fully-qualified names (`Foo::Bar`) are never suppressed
+        // through this mechanism, and a later re-declaration un-suppresses the name.
+        if !name.contains("::") && self.is_name_suppressed(name) {
+            return false;
+        }
         if self.has_type_direct(name) {
             return true;
         }
@@ -380,6 +388,12 @@ impl Interpreter {
         } else {
             base
         };
+        // A `my`-scoped user type whose enclosing block has exited is suppressed
+        // and no longer resolvable under its bare short name (built-in types are
+        // never suppressed, so this never hides a core type). Mirrors `has_type`.
+        if !base.contains("::") && self.is_name_suppressed(base) {
+            return false;
+        }
         // Check built-in types
         if matches!(
             base,

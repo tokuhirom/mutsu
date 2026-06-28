@@ -11,6 +11,15 @@ impl Interpreter {
     /// of a generic "not declared" error. A `class`/`role`/`enum`/`subset` is a
     /// real type and is NOT recorded here (it goes through the class registry).
     pub(crate) fn is_declared_package(&self, name: &str) -> bool {
+        // A `my`-scoped package/class whose enclosing block has exited is in
+        // `suppressed_names`: out of lexical scope it is no longer a declared
+        // package under its bare short name (a later re-declaration un-suppresses
+        // it). Without this, `{ my class A {} }; my A $x` would report the
+        // in-scope "insufficiently type-like" BadType instead of raku's
+        // "Type 'A' is not declared".
+        if !name.contains("::") && self.is_name_suppressed(name) {
+            return false;
+        }
         self.chain_declared_packages.contains(name)
             || matches!(self.env.get(name), Some(Value::Package(_)))
     }
