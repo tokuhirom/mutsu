@@ -206,6 +206,7 @@ mod vm_register_ops;
 mod vm_register_sub_ops;
 mod vm_run_loop;
 mod vm_scope_ops;
+mod vm_set_arith_ops;
 mod vm_set_ops;
 pub(crate) mod vm_smart_match;
 mod vm_smartmatch_ops;
