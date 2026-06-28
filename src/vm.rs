@@ -200,6 +200,8 @@ mod vm_native_sort;
 mod vm_native_subst;
 mod vm_native_test;
 mod vm_react_loop;
+mod vm_react_subscriptions;
+mod vm_react_supply_helpers;
 mod vm_register_ops;
 mod vm_register_sub_ops;
 mod vm_run_loop;
