@@ -714,6 +714,16 @@ impl Compiler {
 
     /// Extract per-element variable names when the iterable is a list of
     /// scalar variables (e.g. `($a, $b, $c)`). Returns an empty vec otherwise.
+    /// The bare array variable name for a `for @a` loop (iterable is a single
+    /// plain `@`-variable), used for live-array iteration. `None` for anything
+    /// else (a transform, a literal list, a scalar, an index expression, …).
+    fn for_single_array_source(iterable: &Expr) -> Option<String> {
+        match iterable {
+            Expr::ArrayVar(name) => Some(name.clone()),
+            _ => None,
+        }
+    }
+
     fn for_iterable_var_names(iterable: &Expr) -> Vec<String> {
         if let Expr::ArrayLiteral(items) = iterable {
             let names: Vec<String> = items

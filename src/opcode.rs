@@ -852,6 +852,13 @@ pub(crate) enum OpCode {
         /// type. Distinguished from bare `for %h` (Pairs, no value writeback) and
         /// `.keys` (read-only).
         values_mode: bool,
+        /// The bare source array variable name for `for @a` (without sigil), when
+        /// the iterable is a single plain array variable. Enables live-array
+        /// iteration: if the loop body pushes onto `@a`, the loop keeps yielding
+        /// the newly-appended tail (raku semantics). `None` for any non-trivial
+        /// iterable. Separate from `source_var_names` (a per-index scalar-list
+        /// writeback mechanism that must NOT be populated for a `@`-source).
+        single_array_source: Option<String>,
     },
     /// Restore the single named for-loop param's prior binding, deferred until
     /// after the loop's LAST/post phasers have run (which must still see the

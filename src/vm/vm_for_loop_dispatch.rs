@@ -38,7 +38,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 crate::value::ForLoopResumeState::List { items, next_index } => {
-                    self.exec_for_loop_body(
+                    let _ = self.exec_for_loop_body(
                         code,
                         spec,
                         &items,
@@ -217,10 +217,63 @@ impl Interpreter {
                 .unwrap_or_else(|_| Err(RuntimeError::new("thread panicked in race/hyper for")))
             });
             *ip = loop_end;
-            return result;
+            return result.map(|_| ());
         }
 
-        self.exec_for_loop_body(code, spec, &items, body_start, loop_end, compiled_fns, 0)?;
+        // Live-array iteration (RT113026): `for @a -> $n { @a.push: ... }` must
+        // iterate the *live* array — raku keeps yielding elements pushed during the
+        // loop. mutsu materialized `items` once via `value_to_list`, so it stopped
+        // at the original length. After each pass, if the single plain source array
+        // grew AND the loop ran to completion (no `last`/`return`), pick up the new
+        // tail (`resume_index = old_len`) and continue. Gated narrowly so only a
+        // bare `for @array` (no multi-arity / kv / values / pairs / non-array
+        // source) takes this path; everything else runs exactly as before.
+        let live_src: Option<&String> = spec.single_array_source.as_ref().filter(|_| {
+            spec.arity <= 1
+                && !spec.kv_mode
+                && !spec.values_mode
+                && !spec.loop_var_wraps_element
+                // A collecting loop (`my @r = (for @a {...})`) pushes its result
+                // array at the END of each `exec_for_loop_body` pass, so a
+                // continuation would emit one collected array per pass — keep
+                // those on the single-pass path (live-array growth in a collect
+                // context is not exercised by roast and needs cross-pass accum.).
+                && !spec.collect
+                && matches!(iterable, Value::Array(..))
+        });
+        let mut all_items = items;
+        let mut resume = 0usize;
+        loop {
+            let completed = self.exec_for_loop_body(
+                code,
+                spec,
+                &all_items,
+                body_start,
+                loop_end,
+                compiled_fns,
+                resume,
+            )?;
+            let Some(name) = live_src else { break };
+            if !completed {
+                break;
+            }
+            // Re-read the live source array. In the single-store model `@a` is
+            // authoritative in its local slot (the env copy can be stale), so try
+            // the local slot first (bare and `@`-sigiled names), then env.
+            let live = self
+                .find_local_slot(code, name)
+                .or_else(|| self.find_local_slot(code, &format!("@{name}")))
+                .map(|s| self.locals[s].clone())
+                .or_else(|| self.env().get(name).cloned());
+            let grown = match live {
+                Some(Value::Array(arc, _)) if arc.len() > all_items.len() => {
+                    arc.as_slice().to_vec()
+                }
+                _ => break,
+            };
+            resume = all_items.len();
+            all_items = grown;
+        }
         *ip = loop_end;
         Ok(())
     }
