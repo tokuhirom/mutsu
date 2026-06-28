@@ -507,20 +507,46 @@ impl Interpreter {
                     }
                 }
 
-                // Check where constraint on named param
-                if let Some(where_expr) = &pd.where_constraint
-                    && let Some(ref val) = arg_val
-                {
+                // Check where constraint on named param. When the named arg is
+                // absent, the constraint is still evaluated against the value the
+                // parameter would bind to (its default, or the type-object
+                // fallback for an optional named), matching Raku: a candidate
+                // `:version($) where .so` must not match a no-`version` call, since
+                // the topic is then the `Bool` type object and `.so` is False.
+                if let Some(where_expr) = &pd.where_constraint {
+                    let val = match &arg_val {
+                        Some(v) => v.clone(),
+                        None => {
+                            if let Some(default_expr) = &pd.default {
+                                match self.eval_param_default(pd, default_expr) {
+                                    Ok(v) => v,
+                                    Err(_) => return false,
+                                }
+                            } else {
+                                Self::missing_optional_param_value(pd)
+                            }
+                        }
+                    };
                     let saved = self.env.clone();
                     self.env.insert("_".to_string(), val.clone());
+                    // Bind the parameter name so `where {$param ...}` can reference
+                    // it during dispatch matching (mirrors the positional path).
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), val.clone());
+                    }
                     let ok = match where_expr.as_ref() {
                         Expr::AnonSub { body, .. } => self
                             .eval_block_value(body)
                             .map(|v| v.truthy())
                             .unwrap_or(false),
+                        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
+                            self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
+                                .map(|v| v.truthy())
+                                .unwrap_or(false)
+                        }
                         expr => self
                             .eval_block_value(&[Stmt::Expr(expr.clone())])
-                            .map(|v| self.smart_match(val, &v))
+                            .map(|v| self.smart_match(&val, &v))
                             .unwrap_or(false),
                     };
                     self.env = saved;
