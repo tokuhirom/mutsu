@@ -1517,6 +1517,20 @@ pub struct Interpreter {
     /// Structural (registry-shape) only, so it is sound to key on `(class, method)`
     /// and is cleared with the other method caches on any registry change.
     pub(crate) dispatch_multi_candidate: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Memoized structural fingerprint of a method body, keyed by the *pointer*
+    /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` Debug-traverses
+    /// the whole body AST, which dominated the method-redispatch hot path
+    /// (`build_remaining` / `prepare_method_dispatch_frame`, reached by every
+    /// `nextsame`/`samewith` and multi-method call) — perf showed ~8% of a
+    /// samewith-tight-loop in SipHash-over-Debug. A `MethodDef` clone shares its
+    /// body `Arc`, and two *distinct* methods always have distinct body `Arc`s
+    /// (clones are the only way to share one, and clones carry identical
+    /// params/param_defs), so the body-`Arc` pointer uniquely identifies the
+    /// `(params, param_defs, body)` tuple the fingerprint covers. The cache holds
+    /// a strong `Arc` clone of each body so the pointer can never be freed and
+    /// reused under a stale entry — it needs no invalidation and is bounded by
+    /// the number of distinct method bodies in the program.
+    pub(crate) method_body_fp_cache: rustc_hash::FxHashMap<usize, (Arc<Vec<Stmt>>, u64)>,
     pub(crate) block_declared_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_saved_env: Vec<HashMap<String, Value>>,
