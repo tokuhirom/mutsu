@@ -9,7 +9,7 @@ use Test;
 # parameters must not collide. Distinct role names per case avoid the global
 # role-registry name collision between independent lexical roles.
 
-plan 4;
+plan 5;
 
 my sub ts(Mu \a, Mu $b = Nil) { a.^name ~ ($b ~~ Nil ?? "" !! "[" ~ $b.^name ~ "]") }
 
@@ -47,4 +47,17 @@ my sub ts(Mu \a, Mu $b = Nil) { a.^name ~ ($b ~~ Nil ?? "" !! "[" ~ $b.^name ~ "
         method via-s1 { self.S1::of-type }
     }
     is CS.new.via-s1, "S1[Str]", 'direct concretization resolves with its own type';
+}
+
+{
+    # Context-relative resolution: `self.W1::of-type` called from INSIDE a
+    # forwarding role's method must see that role's forwarded concretization
+    # (W2[Num] forwards W1[Num]), not the receiver class's own direct W1[Int].
+    my role W1[::T] { method of-type { ts($?ROLE, T) } }
+    my role W2[::T] does W1[::T] { method from-r2 { self.W1::of-type } }
+    my class CW does W1[Int] does W2[Num] {
+        method outer { (self.W1::of-type, self.W2::from-r2) }
+    }
+    is-deeply CW.new.outer, ("W1[Int]", "W1[Num]"),
+        'qualified call resolves relative to the executing role context';
 }

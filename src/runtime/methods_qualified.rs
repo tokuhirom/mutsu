@@ -139,9 +139,49 @@ impl Interpreter {
         // class's role-param bindings. The >1-concretization (ambiguous) case is
         // rejected above.
         if self.registry().roles.contains_key(qualifier) {
-            let concs = self.role_concretizations_at_nearest(&inst_cn_str, qualifier);
-            if concs.len() == 1 {
-                let conc = concs.into_iter().next().unwrap();
+            // Pick the concretization of the qualifier role to dispatch to.
+            // (1) Context-relative: when executing INSIDE a role method whose role
+            //     FORWARDS the qualifier (`role R2[::T] does R1[::T]`), resolve
+            //     relative to that role's forwarded parent with its current type
+            //     binding — so `self.R1::of-type` called within `R2[Num]`'s method
+            //     sees `R1[Num]`, not the receiver class's own `R1[Int]`.
+            // (2) Otherwise: the receiver's single directly-declared concretization.
+            let conc: Option<String> = {
+                let mut ctx = None;
+                if let Some(cur_role) = self.method_class_stack_top()
+                    && cur_role != qualifier
+                    && self.registry().roles.contains_key(&cur_role)
+                    && let Some(parents) = self.registry().role_parents.get(&cur_role).cloned()
+                    && let Some(parent_spec) = parents.iter().find(|p| {
+                        p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str()) == qualifier
+                    })
+                    && let Some(bindings) = self
+                        .registry()
+                        .class_role_param_bindings
+                        .get(&cur_role)
+                        .cloned()
+                {
+                    let mut spec = parent_spec.clone();
+                    for (param, val) in &bindings {
+                        spec = spec.replace(
+                            &format!("::{param}"),
+                            &super::registration_class::type_value_name(val),
+                        );
+                    }
+                    if spec.contains('[') && !spec.contains("::") {
+                        ctx = Some(spec);
+                    }
+                }
+                ctx.or_else(|| {
+                    let concs = self.role_concretizations_at_nearest(&inst_cn_str, qualifier);
+                    if concs.len() == 1 {
+                        concs.into_iter().next()
+                    } else {
+                        None
+                    }
+                })
+            };
+            if let Some(conc) = conc {
                 if conc.contains('[')
                     && let Ok(Some((role_def, tparams, tvals))) = self.resolve_role_candidate(&conc)
                     && let Some(overloads) = role_def.methods.get(actual_method).cloned()
