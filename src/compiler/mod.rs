@@ -261,6 +261,15 @@ impl Compiler {
             && matches!(sigil, '$' | '@' | '%' | '&')
             && name.len() > 1
         {
+            // A twigil immediately after the sigil marks a non-package variable:
+            // dynamic (`@*ARGS`, `$*OUT`), compile-time (`$?FILE`), attribute
+            // (`$!x`, `$.y`), etc. These must NOT be package-qualified (e.g. an
+            // `@*ARGS = ...` inside `package Zef::CLI` must stay `@*ARGS`, not
+            // become `@Zef::CLI::*ARGS`). Mirrors the sigilless twigil check above.
+            let twigil = name[1..].chars().next();
+            if matches!(twigil, Some('_' | '/' | '!' | '?' | '*' | '.' | '=')) {
+                return name.to_string();
+            }
             return format!("{sigil}{}::{}", self.current_package, &name[1..]);
         }
         format!("{}::{}", self.current_package, name)
