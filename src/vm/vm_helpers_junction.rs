@@ -372,11 +372,47 @@ impl Interpreter {
                 }
                 crate::value::SequenceSpec::GeometricRat { num, den } => {
                     if let Value::Int(n) = last {
-                        let result = n * num;
-                        if result % den == 0 {
-                            Value::Int(result / den)
+                        // `n * num` can overflow i64 for a growing geometric
+                        // sequence (`1, 2, 4 ... *`). Raku's Int is arbitrary
+                        // precision, so promote to BigInt on overflow instead of
+                        // panicking.
+                        match n.checked_mul(*num) {
+                            Some(result) if result % den == 0 => Value::Int(result / den),
+                            Some(result) => match result.checked_mul(*num) {
+                                Some(rn) => Value::Rat(rn, *den),
+                                None => {
+                                    use num_bigint::BigInt;
+                                    crate::value::make_big_rat_arith(
+                                        BigInt::from(result) * BigInt::from(*num),
+                                        BigInt::from(*den),
+                                    )
+                                }
+                            },
+                            None => {
+                                use num_bigint::BigInt;
+                                let prod = BigInt::from(n) * BigInt::from(*num);
+                                let bden = BigInt::from(*den);
+                                if (&prod % &bden) == BigInt::from(0) {
+                                    crate::value::Value::from_bigint(prod / bden)
+                                } else {
+                                    crate::value::make_big_rat_arith(
+                                        prod * BigInt::from(*num),
+                                        bden,
+                                    )
+                                }
+                            }
+                        }
+                    } else if let Value::BigInt(n) = last {
+                        // Continue an already-promoted geometric sequence in exact
+                        // BigInt arithmetic (raku keeps `1, 2, 4 ... *` exact past
+                        // i64), rather than dropping to lossy f64.
+                        use num_bigint::BigInt;
+                        let prod = n.as_ref().clone() * BigInt::from(*num);
+                        let bden = BigInt::from(*den);
+                        if (&prod % &bden) == BigInt::from(0) {
+                            crate::value::Value::from_bigint(prod / bden)
                         } else {
-                            Value::Rat(result * num, *den)
+                            crate::value::make_big_rat_arith(prod * BigInt::from(*num), bden)
                         }
                     } else {
                         let n = last.to_f64();
