@@ -684,7 +684,24 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        if !self.has_proto(&name)
+        if self.has_proto(&name)
+            && let Some(def) = self.vm_resolve_trivial_proto_candidate(&name, &args)
+        {
+            // VM-native trivial-proto dispatch with slipped args (`proto pp(|){*};
+            // multi pp($a,$b); pp(1, |@x)`). Mirrors the non-slip proto branch in
+            // `dispatch_func_call_inner`: resolve the winning candidate via the
+            // VM-owned registry and run it as compiled bytecode. Without this the
+            // slip path tree-walks every proto'd call whose args slip.
+            let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
+            self.stack.push(result);
+        } else if self.has_proto(&name)
+            && let Some(result) =
+                self.vm_try_run_nontrivial_proto_body(&name, args.clone(), compiled_fns)
+        {
+            // Non-trivial proto body (`proto pp($x){ ...; {*} }`) run as compiled
+            // bytecode; the `{*}` still redispatches to the winning candidate.
+            self.stack.push(result?);
+        } else if !self.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
             let cf_auto_fetch = !cf.is_raw;
