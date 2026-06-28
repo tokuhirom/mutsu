@@ -1564,15 +1564,19 @@ impl Interpreter {
         //
         // A `&callback` parameter is also NOT excluded: it binds and is invoked
         // (`cb()`, `cb($x)`) exactly like any compiled local, including blocks,
-        // `&name`-passed subs, and closures over outer lexicals. Only a `&cb` with
-        // an explicit code signature (`&cb:(Int)`, `code_signature`) and a param
-        // with a default value stay excluded (the former still has a separate
-        // resolution-ambiguity gap; the latter is the deferred default-OTF case).
+        // `&name`-passed subs, and closures over outer lexicals. A `&cb` with an
+        // explicit code signature (`&cb:(Int)`, `code_signature`) is now allowed
+        // too: the winning candidate is picked by `resolve_function_with_types`
+        // (which matches the callback's signature against `code_signature`), so the
+        // resolved def already satisfies it and the compiled binding just binds the
+        // callable — byte-identical to the interpreter. Any cross-candidate
+        // ambiguity (`&c:(Int)` vs untyped `&c`) is a *resolution*-level gap that
+        // fires identically with or without OTF, so it is unaffected. Only a param
+        // with a default value stays excluded here (the name-cache-pollution /
+        // builtin-shadow hazard, PR #3546 — allowed at genuine multi sites via
+        // `def_is_otf_compilable_multi_candidate`).
         !Self::function_body_needs_interpreter(&def.body)
-            && def
-                .param_defs
-                .iter()
-                .all(|pd| pd.default.is_none() && pd.code_signature.is_none())
+            && def.param_defs.iter().all(|pd| pd.default.is_none())
     }
 
     /// Like `def_is_otf_compilable`, but also permits a parameter with a default
@@ -1590,8 +1594,11 @@ impl Interpreter {
     /// `def_is_otf_compilable_module_single`, which carries extra body/signature
     /// gates those subs need.)
     pub(super) fn def_is_otf_compilable_multi_candidate(def: &crate::ast::FunctionDef) -> bool {
+        // `code_signature` params (`&cb:(Int)`) are allowed: the multi resolver
+        // already picked this candidate by matching the callback's signature, so
+        // the compiled binding only binds the callable (byte-identical). Defaults
+        // are allowed because a multi site does not name-cache the candidate.
         !Self::function_body_needs_interpreter(&def.body)
-            && def.param_defs.iter().all(|pd| pd.code_signature.is_none())
     }
 
     /// Check if a function body contains constructs that require
@@ -1663,10 +1670,7 @@ impl Interpreter {
             // (roast/S12-coercion/coercion-return.t). Keep them on the interpreter.
             && def.return_type.is_none()
             && def.param_defs.iter().all(|pd| {
-                pd.code_signature.is_none()
-                    && !pd.sigilless
-                    && pd.sub_signature.is_none()
-                    && pd.traits.is_empty()
+                !pd.sigilless && pd.sub_signature.is_none() && pd.traits.is_empty()
             })
             && !Self::function_body_declares_state(&def.body)
             && !Self::module_otf_body_needs_interpreter(&def.body)
