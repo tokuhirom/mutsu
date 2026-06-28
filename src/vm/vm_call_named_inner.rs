@@ -116,10 +116,24 @@ impl Interpreter {
         }
 
         // Set current_package to the function's defining package so that default
-        // value expressions can resolve package-scoped functions (e.g. &double).
+        // value expressions can resolve package-scoped functions (e.g. &double)
+        // AND package-scoped variables (`our $x`, a `package { my $x }` lexical)
+        // are resolvable from inside the sub on every call. Callers pass the
+        // *caller's* package as `fn_package`, which is wrong for a by-name call
+        // into another package (`P::inc()` from `GLOBAL`); the authoritative
+        // declaring package lives on the CompiledFunction. Only the first OTF
+        // compile previously set it correctly (via `def.package`), so a 2nd+
+        // call read/wrote package vars under `GLOBAL` and silently lost them.
+        // Skip a mangled state-scope package (`Pkg::&sub/arity`, used for nested
+        // subs) and fall back to the passed name in that case.
+        let def_package: &str = if !cf.package.is_empty() && !cf.package.contains("::&") {
+            cf.package.as_str()
+        } else {
+            fn_package
+        };
         let saved_package = self.current_package().to_string();
-        if !fn_package.is_empty() && fn_package != "GLOBAL" {
-            self.set_current_package(fn_package.to_string());
+        if !def_package.is_empty() && def_package != "GLOBAL" {
+            self.set_current_package(def_package.to_string());
         }
         // When the function has where constraints and there is a &name Sub in
         // env (which carries closure env), merge the Sub's captured variables

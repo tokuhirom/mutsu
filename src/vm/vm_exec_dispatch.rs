@@ -191,7 +191,17 @@ impl Interpreter {
                     return Ok(());
                 }
                 let val = self
-                    .get_env_with_main_alias(name)
+                    // A package-block `my` lexical is stored in `package_lexicals`;
+                    // it is the authoritative store for a bare free-variable read from
+                    // inside that package's named subs, and must be read BEFORE `env`.
+                    // Two stale `env` shadows would otherwise win: a boxed lexical's
+                    // prior-call return-merge copy, and the package block's own
+                    // `my $x` top-level local slot flushed to `env` as the type object
+                    // after the block exits (`sync_env_from_locals`). Gated on a real
+                    // `current_package`, so a bare reference after the block (under
+                    // GLOBAL) does not resolve here.
+                    .package_scope_lexical(name)
+                    .or_else(|| self.get_env_with_main_alias(name))
                     .or_else(|| {
                         // Fall back to the persistent our_vars store for `our`-scoped
                         // variables accessed via package-qualified names (e.g., $Pkg::var).
@@ -1116,6 +1126,12 @@ impl Interpreter {
                 // restoration (which only preserves env keys that existed
                 // before the block).  `::('name')` falls back to this store.
                 self.set_our_var(name.clone(), val.clone());
+                // A plain assignment to a package-scope free variable (`our $X`
+                // or a `package { my $X }` lexical) reached by bare name from
+                // inside a named sub must reach the canonical package store too,
+                // otherwise the write lands only on the bare env/our key that the
+                // `GetGlobal` read fallback never consults. No-op otherwise.
+                self.writeback_package_scope_var(&name, &val);
                 // Track topic mutations for map rw writeback
                 if name == "_" {
                     self.env_mut()

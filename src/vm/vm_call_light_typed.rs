@@ -246,6 +246,9 @@ impl Interpreter {
 
         let saved_stack_depth = self.stack.len();
         let let_mark = self.let_saves_len();
+        // Run the body under the routine's declaring package (set after the
+        // required-param early returns above). Restored after the env merge below.
+        let saved_package = self.enter_routine_package(cf);
 
         // Execute the function body
         let mut ip = 0;
@@ -329,6 +332,7 @@ impl Interpreter {
                 }
             }
         }
+        self.leave_routine_package(saved_package);
 
         // Slice F (env<->locals coherence): record the captured-outer variables
         // this body writes so the call-site op writes them straight through to the

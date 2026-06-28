@@ -2430,6 +2430,15 @@ pub(crate) struct CompiledFunction {
     /// (which should be restored after recursive calls) from captured outer vars
     /// (which should keep their modified values).
     pub(crate) declared_locals: Option<std::collections::HashSet<String>>,
+    /// The package this routine was declared in (e.g. `"P"` for a sub in
+    /// `package P { ... }`, `"GLOBAL"` for a top-level sub). The dispatch sets
+    /// `current_package` from this on entry so package-scoped variable
+    /// resolution (`our $x` / a `package { my $x }` lexical read or written from
+    /// inside the sub) works on EVERY call — not just the first OTF compile,
+    /// which was the only path that previously used the defining package. Call
+    /// sites pass the *caller's* package, which is wrong for a by-name call into
+    /// another package; this authoritative field fixes all of them at once.
+    pub(crate) package: String,
 }
 
 impl CompiledFunction {

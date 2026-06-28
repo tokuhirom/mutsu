@@ -272,10 +272,22 @@ impl Interpreter {
         // `package Zef::CLI { my $CONFIG = preprocess-args-config-mutate(...); ... }`).
         for (k, v) in current_env.iter() {
             if !saved_env.contains_key_sym(*k) && !k.contains_str("::") && !k.starts_with("__") {
+                let bare = k.resolve();
+                // Record ONLY genuine `my` lexicals. An `our` package variable also
+                // leaves a bare env key here, but it has a qualified twin in the
+                // `our` store (`Pkg::name`) that is the authoritative value — and it
+                // can be set from OUTSIDE the package (`$Pkg::msg = ...`), which this
+                // bare snapshot would not see. Recording it would let the stale
+                // declaration-time snapshot shadow the real `our` value on read
+                // (`package_scope_lexical` is consulted before the `our` fallback).
+                let qualified = format!("{name}::{bare}");
+                if self.get_our_var(&qualified).is_some() || current_env.contains_key(&qualified) {
+                    continue;
+                }
                 self.package_lexicals
                     .entry(name.clone())
                     .or_default()
-                    .insert(k.resolve(), v.clone());
+                    .insert(bare, v.clone());
             }
         }
         for (k, v) in current_env.iter() {

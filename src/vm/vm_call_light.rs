@@ -105,6 +105,10 @@ impl Interpreter {
 
         let saved_stack_depth = self.stack.len();
         let let_mark = self.let_saves_len();
+        // Run the body under the routine's declaring package (set after the
+        // arity/type-check early returns above, which run under the caller's
+        // package). Restored after the env merge below.
+        let saved_package = self.enter_routine_package(cf);
 
         let mut ip = 0;
         let mut result = Ok(());
@@ -188,6 +192,7 @@ impl Interpreter {
                 }
             }
         }
+        self.leave_routine_package(saved_package);
 
         // Return type check (if specified). Allows type objects, Nil, and Failure through.
         if result.is_ok()

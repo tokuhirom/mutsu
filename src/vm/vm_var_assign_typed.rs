@@ -679,6 +679,12 @@ impl Interpreter {
         let new_val = self.maybe_wrap_native_int(name, new_val);
         self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
+        // A compound assign / inc-dec to a package-scope free variable (`our $X`
+        // or a `package { my $X }` lexical) reached from inside a named sub uses
+        // the bare name; mirror the value back into the canonical package store
+        // so the mutation persists across calls (the env write above is only the
+        // same-frame view). No-op for non-package-scope names.
+        self.writeback_package_scope_var(name, &new_val);
         // Track topic mutations for the rw-map writeback (`@a.map({ $_ += 1 })`).
         // A compound assign / inc-dec to `$_` lands here via the fused
         // `AtomicCompoundVar` path; the plain-assign path (`AssignExpr`) records

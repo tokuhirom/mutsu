@@ -382,6 +382,9 @@ impl Compiler {
             named_param_slots: None,
             deprecated_info,
             declared_locals: None,
+            // The declaring package, matching the package component of this
+            // function's `compiled_fns` key (built from `self.current_package`).
+            package: self.current_package.clone(),
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_param_slots();

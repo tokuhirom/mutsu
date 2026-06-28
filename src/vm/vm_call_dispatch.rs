@@ -170,6 +170,7 @@ impl Interpreter {
             named_param_slots: None,
             deprecated_info,
             declared_locals: None,
+            package: pkg.clone(),
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_param_slots();
