@@ -679,6 +679,16 @@ impl Interpreter {
         let new_val = self.maybe_wrap_native_int(name, new_val);
         self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
+        // Track topic mutations for the rw-map writeback (`@a.map({ $_ += 1 })`).
+        // A compound assign / inc-dec to `$_` lands here via the fused
+        // `AtomicCompoundVar` path; the plain-assign path (`AssignExpr`) records
+        // this already, so without it `+=`/`~=`/`++` mutations inside a map block
+        // are silently dropped on the source array (only `*=`/`/=`, whose LHS
+        // desugars through a `defined`-ternary and so skips fusion, worked).
+        if name == "_" {
+            self.env_mut()
+                .insert("__mutsu_rw_map_topic__".to_string(), new_val.clone());
+        }
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
         // Slice F: an inc/dec (`$*foo++`) of a caller-declared dynamic variable
