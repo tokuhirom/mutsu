@@ -1855,6 +1855,56 @@ impl Interpreter {
                             },
                         );
                     }
+                    // `Distribution` built-in interface role. Real Rakudo defines
+                    // it with required stub methods `meta` and `content`; user
+                    // distribution classes (e.g. `Zef::Distribution does
+                    // Distribution`) supply the implementations. Registering the
+                    // role lets such classes compose and lets `~~ Distribution`
+                    // recognize them.
+                    {
+                        let stub_body = vec![Stmt::Expr(Expr::Call {
+                            name: Symbol::intern("__mutsu_stub_die"),
+                            args: vec![],
+                        })];
+                        let stub_method = |body: Vec<Stmt>| MethodDef {
+                            params: Vec::new(),
+                            param_defs: Vec::new(),
+                            body: std::sync::Arc::new(body),
+                            is_rw: false,
+                            is_private: false,
+                            is_multi: false,
+                            is_my: false,
+                            role_origin: None,
+                            original_role: None,
+                            return_type: None,
+                            compiled_code: None,
+                            delegation: None,
+                            is_default: false,
+                            deprecated_message: None,
+                            is_submethod: false,
+                        };
+                        let mut methods = HashMap::new();
+                        for name in ["meta", "content"] {
+                            methods.insert(name.to_string(), vec![stub_method(stub_body.clone())]);
+                        }
+                        roles.insert(
+                            "Distribution".to_string(),
+                            RoleDef {
+                                attributes: Vec::new(),
+                                methods,
+                                is_stub_role: false,
+                                is_hidden: false,
+                                is_rw: false,
+                                captured_env: None,
+                                wildcard_handles: Vec::new(),
+                                role_id: 0,
+                                attribute_conflicts: Vec::new(),
+                                own_attribute_names: std::collections::HashSet::new(),
+                                deferred_body_stmts: Vec::new(),
+                                deferred_custom_traits: Vec::new(),
+                            },
+                        );
+                    }
                     roles
                 };
                 Arc::new(RwLock::new(registry))
