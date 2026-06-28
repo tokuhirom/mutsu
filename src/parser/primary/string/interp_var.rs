@@ -5,6 +5,39 @@ use crate::parser::primary::var::parse_var_name_from_str;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
+/// Split a subscript's content on commas that are at the top nesting level
+/// (outside `[]`/`{}`/`()`/`<>` and string quotes), so `"@a[1,2]"` /
+/// `"%h{$x, $y}"` interpolation builds a slice rather than parsing only the
+/// first index. Returns the original string as a single part when there is no
+/// top-level comma.
+fn split_top_level_commas(content: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    let mut in_s = false;
+    let mut in_d = false;
+    let bytes = content.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        match c {
+            '\'' if !in_d => in_s = !in_s,
+            '"' if !in_s => in_d = !in_d,
+            _ if in_s || in_d => {}
+            '[' | '{' | '(' | '<' => depth += 1,
+            ']' | '}' | ')' | '>' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&content[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    parts.push(&content[start..]);
+    parts
+}
+
 /// Try to interpolate a `$var` or `@var` at the current position.
 /// Returns `Some(remaining_input)` if interpolation was performed, `None` otherwise.
 pub(crate) fn try_interpolate_var<'a>(
@@ -73,16 +106,26 @@ pub(crate) fn try_interpolate_var<'a>(
             && let Some(end) = after_bracket.find(']')
         {
             let content = after_bracket[..end].trim();
-            // Parse the index expression (integer literal or simple expression)
-            let index = if let Ok(n) = content.parse::<i64>() {
-                Expr::Literal(Value::Int(n))
-            } else {
-                // Try parsing as an expression
-                if let Ok((_, expr)) = crate::parser::expr::expression(content) {
+            // Parse the index expression. A top-level comma makes it a slice
+            // (`@a[1,2]`), which the non-interpolated parser represents as an
+            // `ArrayLiteral` of the elements; split on top-level commas and build
+            // the same so `"@a[1,2]"` interpolates both elements (and a trailing
+            // `.method` chains correctly).
+            let parse_one = |s: &str| -> Expr {
+                let s = s.trim();
+                if let Ok(n) = s.parse::<i64>() {
+                    Expr::Literal(Value::Int(n))
+                } else if let Ok((_, expr)) = crate::parser::expr::expression(s) {
                     expr
                 } else {
-                    Expr::Literal(Value::str(content.to_string()))
+                    Expr::Literal(Value::str(s.to_string()))
                 }
+            };
+            let parts = split_top_level_commas(content);
+            let index = if parts.len() > 1 {
+                Expr::ArrayLiteral(parts.iter().map(|p| parse_one(p)).collect())
+            } else {
+                parse_one(content)
             };
             return (
                 Expr::Index {
@@ -111,17 +154,36 @@ pub(crate) fn try_interpolate_var<'a>(
             }
             if let Some(end) = brace_end {
                 let content = after_brace[..end].trim();
-                if !content.is_empty()
-                    && let Ok((_, expr)) = crate::parser::expr::expression(content)
-                {
-                    return (
-                        Expr::Index {
-                            target: Box::new(target),
-                            index: Box::new(expr),
-                            is_positional: false,
-                        },
-                        &after_brace[end + 1..],
-                    );
+                if !content.is_empty() {
+                    // A top-level comma makes it a hash slice (`%h{'a','c'}`):
+                    // build an ArrayLiteral of the keys, matching the
+                    // non-interpolated parser, so all selected values interpolate.
+                    let parts = split_top_level_commas(content);
+                    let index = if parts.len() > 1 {
+                        let elems: Option<Vec<Expr>> = parts
+                            .iter()
+                            .map(|p| {
+                                crate::parser::expr::expression(p.trim())
+                                    .ok()
+                                    .map(|(_, e)| e)
+                            })
+                            .collect();
+                        elems.map(Expr::ArrayLiteral)
+                    } else {
+                        crate::parser::expr::expression(content)
+                            .ok()
+                            .map(|(_, e)| e)
+                    };
+                    if let Some(index) = index {
+                        return (
+                            Expr::Index {
+                                target: Box::new(target),
+                                index: Box::new(index),
+                                is_positional: false,
+                            },
+                            &after_brace[end + 1..],
+                        );
+                    }
                 }
             }
         }
