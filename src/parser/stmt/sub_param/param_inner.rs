@@ -116,7 +116,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         while let Some(r2) = super::super::keyword("is", r) {
             let (r2, _) = ws1(r2)?;
             let (r2, trait_name) = super::super::ident(r2)?;
-            super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+            let (r2, _) = super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
             param_traits.push(trait_name);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -160,7 +160,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             while let Some(rt) = super::super::keyword("is", r) {
                 let (rt, _) = ws1(rt)?;
                 let (rt, trait_name) = super::super::ident(rt)?;
-                super::super::sub::validate_param_trait(&trait_name, &param_traits, rt)?;
+                let (rt, _) =
+                    super::super::sub::validate_param_trait(&trait_name, &param_traits, rt)?;
                 param_traits.push(trait_name);
                 let (rt, _) = ws(rt)?;
                 r = rt;
@@ -405,7 +406,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 while let Some(r) = super::super::keyword("is", rest) {
                     let (r, _) = ws1(r)?;
                     let (r, trait_name) = super::super::ident(r)?;
-                    super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+                    let (r, _) =
+                        super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
                     param_traits.push(trait_name);
                     let (r, _) = ws(r)?;
                     rest = r;
@@ -494,7 +496,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             while let Some(r) = super::super::keyword("is", r3) {
                 let (r, _) = ws1(r)?;
                 let (r, trait_name) = super::super::ident(r)?;
-                super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+                let (r, _) =
+                    super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
                 param_traits.push(trait_name);
                 let (r, _) = ws(r)?;
                 r3 = r;
@@ -618,7 +621,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         while let Some(rt) = super::super::keyword("is", r) {
             let (rt, _) = ws1(rt)?;
             let (rt, trait_name) = super::super::ident(rt)?;
-            super::super::sub::validate_param_trait(&trait_name, &sigilless_traits, rt)?;
+            let (rt, _) =
+                super::super::sub::validate_param_trait(&trait_name, &sigilless_traits, rt)?;
             sigilless_traits.push(trait_name);
             let (rt, _) = ws(rt)?;
             r = rt;
@@ -707,7 +711,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                     while let Some(r) = super::super::keyword("is", rest) {
                         let (r, _) = ws1(r)?;
                         let (r, trait_name) = super::super::ident(r)?;
-                        super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+                        let (r, _) =
+                            super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
                         param_traits.push(trait_name);
                         let (r, _) = ws(r)?;
                         rest = r;
@@ -749,7 +754,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 while let Some(r) = super::super::keyword("is", rest) {
                     let (r, _) = ws1(r)?;
                     let (r, trait_name) = super::super::ident(r)?;
-                    super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+                    let (r, _) =
+                        super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
                     param_traits.push(trait_name);
                     let (r, _) = ws(r)?;
                     rest = r;
@@ -795,7 +801,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             while let Some(r) = super::super::keyword("is", rest) {
                 let (r, _) = ws1(r)?;
                 let (r, trait_name) = super::super::ident(r)?;
-                super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+                let (r, _) =
+                    super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
                 param_traits.push(trait_name);
                 let (r, _) = ws(r)?;
                 rest = r;
@@ -878,7 +885,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         while let Some(r2) = super::super::keyword("is", r) {
             let (r2, _) = ws1(r2)?;
             let (r2, trait_name) = super::super::ident(r2)?;
-            super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+            let (r2, _) = super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
             param_traits.push(trait_name);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -1001,7 +1008,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         while let Some(r2) = super::super::keyword("is", r) {
             let (r2, _) = ws1(r2)?;
             let (r2, trait_name) = super::super::ident(r2)?;
-            super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+            let (r2, _) = super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
             param_traits.push(trait_name);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -1051,7 +1058,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         while let Some(r2) = super::super::keyword("is", r) {
             let (r2, _) = ws1(r2)?;
             let (r2, trait_name) = super::super::ident(r2)?;
-            super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+            let (r2, _) = super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
             param_traits.push(trait_name);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -1133,7 +1140,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     while let Some(r) = super::super::keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = super::super::ident(r)?;
-        super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+        let (r, _) = super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
         param_traits.push(trait_name);
         let (r, _) = ws(r)?;
         rest = r;

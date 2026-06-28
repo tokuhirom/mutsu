@@ -242,8 +242,19 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
     `connect`→`Connection`・`.execute`→行ハッシュ配列・`.close`）が実 SQLite で CREATE/INSERT/ORDER BY/WHERE SELECT を
     往復（担保＝`t/dbdish-lite.t`）。= ウェブブログの DB 層が再利用可能モジュールとして揃った。これを暴いた precomp
     キャッシュ staleness バグ（注入後 AST をキャッシュするが version stamp が dev ビルド間で不変）は exe-mtime stamp で修正済。
-  - **DBIish/DBDish（off-the-shelf）**: 実配布版はまだ 3 機能待ち（regex "Unmatched (" parse / `Rakudo::Internals.REGISTER-DYNAMIC` /
-    `is encoded(...)` NativeCall param trait）。手書き互換層は上記の通り動く。
+  - **DBIish/DBDish（off-the-shelf）調査（2026-06-28・DBIish 0.6.8）**: zef で取得し mutsu でロード試行。スタック全体
+    （`DBDish`/`Connection`/`StatementHandle`/`SQLite`/`SQLite::Native`/`ErrorHandling`）はパース可能。3 件の一般修正で
+    **`NativeLibs` と `DBDish::SQLite::Native` がロード可能に**（#TBD）: ① `&trait_mod:<is>`（拡張識別子 `&`-参照に
+    `trait_mod` カテゴリ追加）② `Rakudo::Internals.IS-WIN`/`.IS-MACOS`（host target から解決）③ `is encoded('utf8')`
+    param trait（許可＋括弧引数消費・`skip_optional_trait_arg`）。担保＝`t/nativecall-module-compat.t`。
+    **🧱 残る壁（アーキテクチャ非互換）**: `DBDish::SQLite` は `NativeHelpers::Blob` → **`MoarVM::Guts::REPRs`** に依存し、
+    これが MoarVM の**内部メモリ表現を直接エミュレート**（`nativesizeof`〔未実装〕・`Pointer.WHERE` ポインタ演算で
+    VMArray/CStruct のオフセットを実メモリ走査・`constant Offset = do{…}` を load 時に eager 実行）。mutsu は MoarVM では
+    ないためこの層は原理的に動かせない（BLOB 列の `blob-from-pointer` 専用で、int/text CRUD には本来不要）。
+    **= off-the-shelf DBDish::SQLite の完動は MoarVM REPR エミュレーション待ち＝事実上の壁**。実用 SQLite は手書き
+    `DBDishLite` + NativeCall MVP が正道。副次的に発見した一般パースバグ（別軸・未修正）: `constant NAME is export =
+    <cond> ?? <Type> !! <Type>` が then 枝 bareword/型で失敗（非 export は `constant` を関数呼び出しに誤フォールバックして
+    黙って誤パース）＝文レベル `expression` の ternary then 枝 greediness。
 - **JSON は native 実装済み**（`to-json`/`from-json`・#3402・news 参照）。Template::Mustache 91/92-specs の残（別軸・
   本タスク外）= 実 spec の rendering ギャップ（delimiter 永続化／inheritable partials／lambda）＋ 最初の spec のみ
   `+$spec.value`=0 になる subtest/Seq-consumption 系バグ（itemization とは独立）。

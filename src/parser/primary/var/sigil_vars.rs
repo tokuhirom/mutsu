@@ -401,6 +401,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                 || n.starts_with("term:<")
                 || n.starts_with("circumfix:<")
                 || n.starts_with("postcircumfix:<")
+                || n.starts_with("trait_mod:<")
         )
     {
         return Ok((op_rest, Expr::CodeVar(op_name)));
@@ -412,7 +413,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
     if twigil.is_empty()
         && matches!(
             name,
-            "infix" | "prefix" | "postfix" | "term" | "circumfix" | "postcircumfix"
+            "infix" | "prefix" | "postfix" | "term" | "circumfix" | "postcircumfix" | "trait_mod"
         )
         && let Some((r, full_name)) = parse_operator_code_ref_suffix(name, rest)
     {
