@@ -82,6 +82,7 @@ impl Interpreter {
         let is_constant = self.constant_context;
         let has_explicit_initializer = self.explicit_initializer_context;
         let is_vardecl = self.vardecl_context;
+        let is_shaped_decl = self.shaped_decl_context;
         let scalar_bind = self.scalar_bind_context;
         let array_share = self.array_share_context;
         self.bind_context = false;
@@ -91,6 +92,7 @@ impl Interpreter {
         self.array_share_context = false;
         self.explicit_initializer_context = false;
         self.vardecl_context = false;
+        self.shaped_decl_context = false;
         // Slice 2a/2b: `$scalar = @arr` / `$scalar = %hash` / chained `$r = $q`
         // promotes the source container to a shared `ContainerRef` cell (raku
         // reference semantics). Handled before the decont marker and fast/slow
@@ -711,6 +713,8 @@ impl Interpreter {
                     assigned = self.tag_container_metadata(assigned, info);
                 }
             } else if !is_bind
+                && !is_shaped_decl
+                && (has_explicit_initializer || !is_vardecl)
                 && lhs_shape.is_none()
                 && assigned_has_own_shape
                 && let Value::Array(items, _) = &assigned
@@ -721,6 +725,9 @@ impl Interpreter {
                 // Array (`.shape` is `(*)`), so a later `@u = ...` is not
                 // truncated to the original fixed dimension. Binding (`:=`)
                 // keeps the shaped value, so this is guarded on `!is_bind`.
+                // A *shaped declaration* (`my @a[5]`) has no RHS initializer —
+                // its shaped value comes from the `[5]` spec, not a source array —
+                // so `has_explicit_initializer || !is_vardecl` keeps that shape.
                 let items = if items.shape.is_some() {
                     let mut data = (**items).clone();
                     data.shape = None;

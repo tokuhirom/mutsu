@@ -1003,6 +1003,12 @@ impl Compiler {
                     // can allow overwriting immutable containers (e.g. Blob)
                     // when the local slot is reused across loop iterations.
                     self.code.emit(OpCode::MarkVarDeclContext);
+                    // A shaped declaration (`my @a[5] = ...`) keeps its declared
+                    // shape; mark it so SetLocal does not strip the shape the way
+                    // an unshaped value-copy (`my @u = @shaped`) does.
+                    if custom_traits.iter().any(|(t, _)| t == "__shaped_decl") {
+                        self.code.emit(OpCode::MarkShapedDeclContext);
+                    }
                     // For % variables with QuantHash `is` traits, skip hash coercion
                     // so the trait handler gets the raw array/list value.
                     let has_quant_hash_trait = name.starts_with('%')
