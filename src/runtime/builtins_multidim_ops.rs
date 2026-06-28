@@ -439,7 +439,18 @@ impl Interpreter {
             // that invoked this builtin (an ancestor on the call stack, valid
             // for the synchronous duration of this call).
             let code = unsafe { &*(caller_code as *const crate::opcode::CompiledCode) };
-            if let Some(slot) = code.locals.iter().position(|n| n == var_name) {
+            // `slot` is a position in the *caller code's* local-name table, but
+            // `self.locals` is the currently-executing frame's locals vec. When
+            // this builtin runs nested below a different frame, that frame can
+            // have fewer locals than the caller code names (the two are not the
+            // same length), so the slot index may be out of range — guard it to
+            // avoid an index-out-of-bounds panic (regression from #3748 surfaced
+            // by S32-array/multislice-6e.t). A missing slot means the local does
+            // not exist in this frame, so the env value already holds the result
+            // and skipping the mirror is correct.
+            if let Some(slot) = code.locals.iter().position(|n| n == var_name)
+                && slot < self.locals.len()
+            {
                 self.locals[slot] = updated;
             }
         }
