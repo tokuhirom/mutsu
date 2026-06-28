@@ -213,9 +213,14 @@ pub(crate) fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMetho
         return Some((rest, QuotedMethodName::Static(content.to_string())));
     }
     if input.starts_with('"') {
-        // Double-quoted: may have interpolation
+        // Double-quoted: may have interpolation. A `{ … }` interpolation block can
+        // itself contain `"`-delimited string literals (`."{$c++; "new"}"`), so the
+        // closing quote of the method name is only the `"` seen at brace-depth 0
+        // and outside any inner string literal.
         let start = 1;
         let mut escaped = false;
+        let mut brace_depth = 0i32;
+        let mut in_inner_str = false;
         let mut end = None;
         for (i, c) in input[start..].char_indices() {
             if escaped {
@@ -226,9 +231,23 @@ pub(crate) fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMetho
                 escaped = true;
                 continue;
             }
-            if c == '"' {
-                end = Some(i);
-                break;
+            if in_inner_str {
+                // Inside a `"…"` literal nested in a `{ … }` block: only its own
+                // closing quote matters; braces here are string content.
+                if c == '"' {
+                    in_inner_str = false;
+                }
+                continue;
+            }
+            match c {
+                '{' => brace_depth += 1,
+                '}' => brace_depth = (brace_depth - 1).max(0),
+                '"' if brace_depth == 0 => {
+                    end = Some(i);
+                    break;
+                }
+                '"' => in_inner_str = true,
+                _ => {}
             }
         }
         let end = end?;
