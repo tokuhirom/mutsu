@@ -405,25 +405,24 @@ impl Interpreter {
                     )
                 })
                 .unwrap_or_default();
-            if let Some(candidates) = self.registry().role_candidates.get(&base) {
-                if let Some(cand) = candidates
+            if let Some(candidates) = self.registry().role_candidates.get(&base)
+                && let Some(cand) = candidates
                     .iter()
                     .rev()
                     .find(|c| c.type_params.len() == args.len())
                     .or_else(|| candidates.last())
-                {
-                    return cand
-                        .parents
-                        .iter()
-                        .map(|p| {
-                            let mut s = p.clone();
-                            for (tp, arg) in cand.type_params.iter().zip(args.iter()) {
-                                s = s.replace(&format!("::{tp}"), arg);
-                            }
-                            s
-                        })
-                        .collect();
-                }
+            {
+                return cand
+                    .parents
+                    .iter()
+                    .map(|p| {
+                        let mut s = p.clone();
+                        for (tp, arg) in cand.type_params.iter().zip(args.iter()) {
+                            s = s.replace(&format!("::{tp}"), arg);
+                        }
+                        s
+                    })
+                    .collect();
             }
             self.registry()
                 .role_parents
