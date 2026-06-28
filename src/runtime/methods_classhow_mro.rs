@@ -12,24 +12,11 @@ impl Interpreter {
             self.class_mro(&class_name)
         } else {
             // Built-in type hierarchies for types that are not user-defined classes.
-            // Any/Mu are appended unconditionally below, so we only list the chain
-            // up to (but not including) Any here.
-            let builtin: &[&str] = match class_name.as_str() {
-                "Int" => &["Int", "Cool"],
-                "Num" => &["Num", "Cool"],
-                "Rat" | "FatRat" => &["Rat", "Cool"],
-                "Complex" => &["Complex", "Cool"],
-                "Str" => &["Str", "Cool"],
-                "Bool" => &["Bool", "Int", "Cool"],
-                "Array" => &["Array", "List", "Cool"],
-                "List" => &["List", "Cool"],
-                "Hash" => &["Hash", "Map", "Cool"],
-                "Map" => &["Map", "Cool"],
-                "Range" => &["Range", "Cool"],
-                "Seq" => &["Seq", "Cool"],
-                "Pair" => &["Pair"],
-                _ => &[],
-            };
+            // Any/Mu are appended unconditionally below, so the table lists the
+            // chain up to (but not including) Any. The parent chains live in the
+            // single source of truth `builtins::builtin_type_methods`.
+            let builtin =
+                crate::builtins::builtin_type_methods::builtin_type_parents(class_name.as_str());
             if builtin.is_empty() {
                 vec![class_name.clone()]
             } else {
