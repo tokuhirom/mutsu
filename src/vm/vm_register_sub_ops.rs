@@ -193,6 +193,7 @@ impl Interpreter {
                 self.fast_method_cache.clear();
                 self.multi_resolve_cache.clear();
                 self.multi_type_cacheable.clear();
+                self.dispatch_multi_candidate.clear();
                 // Record `&`-sigil parameter names so calls to a same-named routine
                 // inside this sub bypass the name-keyed light-call caches (the param
                 // can shadow a package sub of the same name).

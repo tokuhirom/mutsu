@@ -268,6 +268,62 @@ impl Interpreter {
     /// Set up a method dispatch frame for nextsame/callsame support.
     /// Returns true if a frame was pushed (caller must call pop_method_dispatch).
     /// Also pushes a samewith context unconditionally for samewith() support.
+    /// True if `(class, method)` has >= 2 *structural* dispatch candidates across
+    /// the MRO — i.e. enough overloads that `push_method_dispatch_frame` might build
+    /// a deferral (`nextsame`/`callsame`) frame. Counts the same defs
+    /// `resolve_all_methods_with_owner` iterates (non-private; submethods only at
+    /// the receiver level) but BEFORE arg-matching and without cloning, so the
+    /// result depends only on the registry shape and is memoized in
+    /// `dispatch_multi_candidate`. A `false` answer lets the caller skip the full
+    /// per-call resolve: arg-matching only reduces the count, so <=1 structural
+    /// candidate can never yield >=2 matched candidates (no frame is ever pushed).
+    pub(crate) fn has_multiple_dispatch_candidates(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> bool {
+        let class_sym = crate::symbol::Symbol::intern(class_name);
+        let method_sym = crate::symbol::Symbol::intern(method_name);
+        if let Some(&c) = self.dispatch_multi_candidate.get(&(class_sym, method_sym)) {
+            return c;
+        }
+        let mro = self.class_mro(class_name);
+        let mut count = 0usize;
+        'outer: for cn in &mro {
+            let is_ancestor = cn != class_name;
+            let registry = self.registry();
+            let overloads = registry
+                .classes
+                .get(cn.as_str())
+                .and_then(|c| c.methods.get(method_name))
+                .or_else(|| {
+                    registry
+                        .roles
+                        .get(cn.as_str())
+                        .and_then(|r| r.methods.get(method_name))
+                });
+            if let Some(overloads) = overloads {
+                for def in overloads {
+                    if def.is_private {
+                        continue;
+                    }
+                    // Submethods are NOT inherited (mirrors resolve_all_methods_with_owner).
+                    if def.is_my && is_ancestor {
+                        continue;
+                    }
+                    count += 1;
+                    if count >= 2 {
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        let multi = count >= 2;
+        self.dispatch_multi_candidate
+            .insert((class_sym, method_sym), multi);
+        multi
+    }
+
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -278,6 +334,15 @@ impl Interpreter {
         // Always push samewith context so samewith() can find the method name/invocant
         self.samewith_context_stack
             .push((method_name.to_string(), Some(invocant.clone())));
+        // Fast path: a name with at most one *structural* dispatch candidate across
+        // the MRO can never produce a deferral frame (arg-matching only reduces the
+        // candidate count), so skip the per-call `resolve_all_methods_with_owner`
+        // MRO walk + MethodDef clones. The structural shape depends only on
+        // (class, method), so it is memoized in `dispatch_multi_candidate` and
+        // invalidated with the other method caches on any registry change.
+        if !self.has_multiple_dispatch_candidates(receiver_class, method_name) {
+            return false;
+        }
         let all_candidates = self.resolve_all_methods_with_owner(receiver_class, method_name, args);
         // Fast path: with zero or one candidate there is nothing to defer to, so no
         // dispatch frame is ever pushed (the single candidate is the chosen one and
