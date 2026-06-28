@@ -27,6 +27,72 @@ fn legacy_has_plain_positional_param(params: &[String]) -> bool {
 }
 
 impl Interpreter {
+    /// Evaluate a named parameter's `where` constraint against its currently
+    /// bound value (already stored in `env` under `pd.name`). The constraint is
+    /// checked whether the value was supplied, defaulted, or fell back to the
+    /// type object for an unsupplied optional named param.
+    fn check_named_param_where_constraint(&mut self, pd: &ParamDef) -> Result<(), RuntimeError> {
+        let Some(where_expr) = &pd.where_constraint else {
+            return Ok(());
+        };
+        let bound_val = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), bound_val.clone());
+        // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
+        // a `where { $t ~= 'a' }` clause can mutate a captured-outer caller
+        // lexical by name. The write reaches env, but the owning caller slot is
+        // refreshed only by the call site's blanket pull — a no-op once
+        // env_dirty is removed. Snapshot the env scalars before the clause runs
+        // and record the names it changes into the retain-on-miss caller-var
+        // writeback, drained at the call site.
+        let pre_env: std::collections::HashMap<crate::symbol::Symbol, Value> = self
+            .env
+            .iter()
+            .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        let ok = match where_expr.as_ref() {
+            Expr::AnonSub { body, .. } => self
+                .eval_block_value(body)
+                .map(|v| v.truthy())
+                .unwrap_or(false),
+            Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
+                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
+                    .map(|v| v.truthy())
+                    .unwrap_or(false)
+            }
+            expr => self
+                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                .map(|v| self.smart_match(&bound_val, &v))
+                .unwrap_or(false),
+        };
+        let changed: Vec<String> = self
+            .env
+            .iter()
+            .filter(|(k, v)| {
+                k.resolve() != "_"
+                    && Self::is_writeback_safe_scalar(v)
+                    && pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
+            })
+            .map(|(k, _)| k.resolve())
+            .collect();
+        for name in changed {
+            self.record_caller_var_writeback(&name);
+        }
+        if let Some(previous) = saved_topic {
+            self.env.insert("_".to_string(), previous);
+        } else {
+            self.env.remove("_");
+        }
+        if !ok {
+            return Err(Self::parameter_binding_error(format!(
+                "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
+                pd.name
+            )));
+        }
+        Ok(())
+    }
+
     fn parameter_binding_error(message: String) -> RuntimeError {
         let mut err = RuntimeError::new(message);
         let mut ex_attrs = std::collections::HashMap::new();
@@ -717,68 +783,6 @@ impl Interpreter {
                         }
                     }
                 }
-                // Check where constraint for named params after binding
-                if found && let Some(where_expr) = &pd.where_constraint {
-                    let bound_val = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
-                    let saved_topic = self.env.get("_").cloned();
-                    self.env.insert("_".to_string(), bound_val.clone());
-                    // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
-                    // a `where { $t ~= 'a' }` clause can mutate a captured-outer
-                    // caller lexical by name. The write reaches env, but the owning
-                    // caller slot is refreshed only by the call site's blanket pull
-                    // — a no-op once env_dirty is removed. Snapshot the env scalars
-                    // before the clause runs and record the names it changes into the
-                    // retain-on-miss caller-var writeback, drained at the call site.
-                    let pre_env: Option<std::collections::HashMap<crate::symbol::Symbol, Value>> =
-                        Some(
-                            self.env
-                                .iter()
-                                .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
-                                .map(|(k, v)| (*k, v.clone()))
-                                .collect(),
-                        );
-                    let ok = match where_expr.as_ref() {
-                        Expr::AnonSub { body, .. } => self
-                            .eval_block_value(body)
-                            .map(|v| v.truthy())
-                            .unwrap_or(false),
-                        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                            self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
-                                .map(|v| v.truthy())
-                                .unwrap_or(false)
-                        }
-                        expr => self
-                            .eval_block_value(&[Stmt::Expr(expr.clone())])
-                            .map(|v| self.smart_match(&bound_val, &v))
-                            .unwrap_or(false),
-                    };
-                    if let Some(pre_env) = pre_env {
-                        let changed: Vec<String> = self
-                            .env
-                            .iter()
-                            .filter(|(k, v)| {
-                                k.resolve() != "_"
-                                    && Self::is_writeback_safe_scalar(v)
-                                    && pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
-                            })
-                            .map(|(k, _)| k.resolve())
-                            .collect();
-                        for name in changed {
-                            self.record_caller_var_writeback(&name);
-                        }
-                    }
-                    if let Some(previous) = saved_topic {
-                        self.env.insert("_".to_string(), previous);
-                    } else {
-                        self.env.remove("_");
-                    }
-                    if !ok {
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
-                            pd.name
-                        )));
-                    }
-                }
                 if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_param_default(pd, default_expr)?;
                     let value = self.checked_default_param_value(pd, value)?;
@@ -844,6 +848,15 @@ impl Interpreter {
                         self.bind_param_value(&pd.name, value);
                         self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
+                }
+                // Check the where constraint against the *bound* value, whether it
+                // came from the supplied argument, the parameter default, or the
+                // type-object fallback for an unsupplied optional named param. Raku
+                // checks `:version($) where .so` even with no `--version` (the topic
+                // is then the `Bool` type object, so `.so` is False and the candidate
+                // is rejected) -- gating this on `found` skipped that case.
+                if pd.where_constraint.is_some() {
+                    self.check_named_param_where_constraint(pd)?;
                 }
             } else if pd.name == "__subsig__"
                 && let Some(sub_params) = &pd.sub_signature
