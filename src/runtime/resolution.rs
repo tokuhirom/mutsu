@@ -123,6 +123,24 @@ impl Interpreter {
 
     /// Walk MRO (read-only) collecting ancestor names.
     pub(crate) fn mro_readonly(&self, class_name: &str) -> Vec<String> {
+        // Fast path: when the registry already holds the precomputed C3 MRO it
+        // *is* the full ancestor list in order (its first element is the class
+        // itself). The BFS below would only re-derive exactly that — and worse,
+        // it calls `class_parents_readonly` per node, each of which clones the
+        // whole `class_def.mro`, so the walk is O(N^2) string clones for an
+        // N-deep hierarchy. `mro_readonly` runs on hot paths (constructor
+        // BUILD/TWEAK/smiley probes, dispatch), so return the cached MRO with a
+        // single clone instead. Equivalence: the BFS seeds `result` with
+        // `[class_name]`, the first pop expands `class_parents_readonly(class_name)
+        // == class_def.mro`, and every later node is already visited, so the
+        // result is exactly `class_def.mro`.
+        if let Some(class_def) = self.registry().classes.get(class_name)
+            && !class_def.mro.is_empty()
+        {
+            return class_def.mro.clone();
+        }
+        // Fallback: built-in/unregistered classes, or a registered class whose
+        // MRO has not been computed yet (parents-only walk).
         let mut result = vec![class_name.to_string()];
         let mut visited = std::collections::HashSet::new();
         visited.insert(class_name.to_string());
