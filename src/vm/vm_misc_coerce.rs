@@ -274,7 +274,9 @@ impl Interpreter {
             return Ok(());
         }
         let val = self
-            .get_env_with_main_alias(name)
+            .package_scope_lexical(name)
+            .or_else(|| self.get_env_with_main_alias(name))
+            .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
@@ -297,6 +299,7 @@ impl Interpreter {
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
+        self.writeback_package_scope_var(name, &new_val);
         self.stack.push(new_val);
         Ok(())
     }
@@ -375,7 +378,9 @@ impl Interpreter {
             return Ok(());
         }
         let val = self
-            .get_env_with_main_alias(name)
+            .package_scope_lexical(name)
+            .or_else(|| self.get_env_with_main_alias(name))
+            .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
@@ -398,6 +403,7 @@ impl Interpreter {
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
+        self.writeback_package_scope_var(name, &new_val);
         self.stack.push(new_val);
         Ok(())
     }

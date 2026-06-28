@@ -87,6 +87,13 @@ impl Interpreter {
             }
         }
 
+        // Set current_package to the routine's declaring package so package-scoped
+        // variable resolution (`our $x` / a `package { my $x }` lexical) works on
+        // this fast path too. The fast path is taken for cached 2nd+ calls and does
+        // NOT otherwise set current_package, so a by-name call into another package
+        // (`P::show()` from GLOBAL) would run the body under GLOBAL and silently
+        // lose package-var reads/writes.
+        let saved_package = self.enter_routine_package(cf);
         let let_mark = self.let_saves_len();
         let mut ip = 0;
         let mut result = Ok(());
@@ -254,6 +261,8 @@ impl Interpreter {
                 }
             });
         }
+
+        self.leave_routine_package(saved_package);
 
         let final_result = match result {
             Ok(()) if fail_bypass => Ok(ret_val),

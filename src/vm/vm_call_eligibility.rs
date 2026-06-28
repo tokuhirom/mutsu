@@ -2,6 +2,31 @@ use super::*;
 use crate::runtime::types::unwrap_varref_value;
 
 impl Interpreter {
+    /// Switch `current_package` to a compiled routine's declaring package for the
+    /// duration of its body, returning the previous package to restore on exit
+    /// (`None` when no switch was needed). This is what makes package-scoped
+    /// variable resolution (`our $x` / a `package { my $x }` lexical read or
+    /// written from inside the routine) work on EVERY dispatch path — fast, light,
+    /// positional-light — not just the OTF/named path that already set it. The
+    /// gate (real, non-mangled, non-GLOBAL package) keeps the hot GLOBAL-function
+    /// path (fib, ...) free of any lock/string churn: it returns `None` cheaply.
+    pub(super) fn enter_routine_package(&mut self, cf: &CompiledFunction) -> Option<String> {
+        if !cf.package.is_empty() && cf.package != "GLOBAL" && !cf.package.contains("::&") {
+            let saved = self.current_package();
+            self.set_current_package(cf.package.clone());
+            Some(saved)
+        } else {
+            None
+        }
+    }
+
+    /// Restore the package saved by [`enter_routine_package`].
+    pub(super) fn leave_routine_package(&mut self, saved: Option<String>) {
+        if let Some(s) = saved {
+            self.set_current_package(s);
+        }
+    }
+
     /// Check if a compiled function is eligible for the fast call path.
     /// Returns true for simple functions that don't need the full call machinery.
     /// State variables are supported: both `state_locals` load/sync and anonymous

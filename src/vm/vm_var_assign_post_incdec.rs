@@ -61,7 +61,15 @@ impl Interpreter {
         // Default to Nil (NOT Int(0) like `++`) so `my $w; $w ~= "z"` yields "z",
         // not "0z"; the binary op descalarizes/numifies/stringifies Nil itself.
         let raw_val = self
-            .get_env_with_main_alias(name)
+            // A package-scope free variable (`our $X` / `package { my $X }`)
+            // reached by bare name from inside a named sub is not in the local
+            // env; read it from the canonical package store so the fused RMW
+            // operates on the current value, not Nil (mirrors `GetGlobal`). A
+            // boxed lexical's cell is authoritative and must win over a stale
+            // plain `env` copy left by a prior call's return-merge.
+            .package_scope_lexical(name)
+            .or_else(|| self.get_env_with_main_alias(name))
+            .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Nil);
         // ContainerRef cell: atomic RMW under the cell lock so concurrent
@@ -201,7 +209,9 @@ impl Interpreter {
             return Ok(());
         }
         let raw_val = self
-            .get_env_with_main_alias(name)
+            .package_scope_lexical(name)
+            .or_else(|| self.get_env_with_main_alias(name))
+            .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
         // ContainerRef: deref for increment, write back through the shared container.
@@ -289,7 +299,9 @@ impl Interpreter {
             return Ok(());
         }
         let raw_val = self
-            .get_env_with_main_alias(name)
+            .package_scope_lexical(name)
+            .or_else(|| self.get_env_with_main_alias(name))
+            .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
         // ContainerRef: deref for decrement, write back through the shared container.

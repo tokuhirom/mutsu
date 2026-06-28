@@ -105,6 +105,119 @@ impl Interpreter {
             .and_then(|bare| self.get_our_var(&bare).cloned())
     }
 
+    /// Reconstruct the package-qualified key for a bare free-variable name
+    /// referenced from inside one of `cur`'s named subs (where the compiler
+    /// leaves the name unqualified because the sub-body compile scope is a
+    /// mangled `Pkg::&sub/arity` name). e.g. `("X", "P")` -> `Some("P::X")`,
+    /// `("@a", "P")` -> `Some("@P::a")`. Returns `None` for names that are
+    /// already qualified, sigil-stripped twigils, or positional captures —
+    /// mirroring the `GetGlobal` bare-name read fallback so reads and writes
+    /// resolve to the same canonical store.
+    fn package_qualified_candidate(name: &str, cur: &str) -> Option<String> {
+        if name.contains("::") || cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
+            return None;
+        }
+        let bare_first = name.trim_start_matches(['$', '@', '%', '&']);
+        let first_ch = bare_first.chars().next()?;
+        if matches!(first_ch, '_' | '/' | '!' | '?' | '*' | '.' | '=') || first_ch.is_ascii_digit()
+        {
+            return None;
+        }
+        let candidate = if let Some(rest) = name.strip_prefix('$') {
+            format!("${cur}::{rest}")
+        } else if let Some(rest) = name.strip_prefix('@') {
+            format!("@{cur}::{rest}")
+        } else if let Some(rest) = name.strip_prefix('%') {
+            format!("%{cur}::{rest}")
+        } else if let Some(rest) = name.strip_prefix('&') {
+            format!("&{cur}::{rest}")
+        } else {
+            format!("{cur}::{name}")
+        };
+        Some(candidate)
+    }
+
+    /// Read a bare free-variable name from the enclosing package's variable
+    /// store: the `our` store via the reconstructed `Pkg::name` key, or the
+    /// package-block `my` lexical store (`package_lexicals`). Mirrors the
+    /// `GetGlobal` read fallbacks so the fused `AtomicCompoundVar` / inc-dec
+    /// RMW paths see the same value a plain `Var` read would. Returns the raw
+    /// stored value (the caller decont's if needed).
+    pub(super) fn read_package_scope_var(&self, name: &str) -> Option<Value> {
+        let cur = self.current_package();
+        if let Some(candidate) = Self::package_qualified_candidate(name, &cur)
+            && let Some(v) = self.get_our_var(&candidate)
+        {
+            return Some(v.clone());
+        }
+        self.package_lexicals
+            .get(&cur)
+            .and_then(|m| m.get(name))
+            .cloned()
+    }
+
+    /// Return the value of a bare package-block `my` lexical (`package P { my $x;
+    /// sub f { $x } }`) recorded in `package_lexicals` by `exec_package_scope_op`.
+    /// This store is the *authoritative* lexical scope a package's named subs close
+    /// over, so callers consult it BEFORE `env`: two stale `env` shadows would
+    /// otherwise win — a boxed lexical's prior-call return-merge copy, and the
+    /// package block's own `my $x` top-level local slot flushed to `env` as the
+    /// type object after the block exits. A returned `ContainerRef` is the live
+    /// shared cell (writes mutate it in place); a plain value is the current
+    /// snapshot (writes go via `writeback_package_scope_var`). Gated on a real
+    /// (non-GLOBAL, non-mangled) `current_package`, so a bare reference after the
+    /// block (running under GLOBAL) never resolves here. A name shadowed by the
+    /// sub's own `my`/param is a local slot (GetLocal), so it never reaches here.
+    pub(super) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
+        if name.contains("::") {
+            return None;
+        }
+        let cur = self.current_package();
+        if cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
+            return None;
+        }
+        self.package_lexicals
+            .get(&cur)
+            .and_then(|m| m.get(name))
+            .cloned()
+    }
+
+    /// Write-back companion of [`read_package_scope_var`]: if a bare free
+    /// variable resolves to an existing package-scope store entry (`our` var
+    /// or package-block `my` lexical), update it in place so a mutation made
+    /// from inside a named sub persists across calls. Returns `true` when an
+    /// entry was found and updated. A SetGlobal / RMW of a name that is NOT a
+    /// package-scope var (a fresh global, a dynamic var, `$_`, ...) returns
+    /// `false` and the caller's normal store path applies unchanged.
+    pub(super) fn writeback_package_scope_var(&mut self, name: &str, val: &Value) -> bool {
+        let cur = self.current_package();
+        if let Some(candidate) = Self::package_qualified_candidate(name, &cur)
+            && self.get_our_var(&candidate).is_some()
+        {
+            self.set_our_var(candidate.clone(), val.clone());
+            // Keep an existing qualified env entry coherent for a same-frame
+            // read by the qualified name (`$P::X`).
+            if self.env().contains_key(&candidate) {
+                self.set_env_with_main_alias(&candidate, val.clone());
+            }
+            return true;
+        }
+        if let Some(m) = self.package_lexicals.get_mut(&cur)
+            && let Some(slot) = m.get_mut(name)
+        {
+            // A boxed lexical's cell is shared with every reader; mutate it in
+            // place rather than replacing the entry with a plain value (which
+            // would sever the sharing). A plain entry is replaced directly.
+            if let Value::ContainerRef(arc) = slot {
+                arc.lock().unwrap().clone_from(val);
+            } else {
+                *slot = val.clone();
+            }
+            return true;
+        }
+        false
+    }
+
     /// Strip pseudo-package qualifiers (GLOBAL::, OUR::, MY::) from a
     /// sigiled variable name, returning the bare variable name.
     /// e.g. "$GLOBAL::x" → Some("x"), "$OUR::x" → Some("x")
