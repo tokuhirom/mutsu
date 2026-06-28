@@ -140,6 +140,25 @@ impl Interpreter {
         }
     }
 
+    /// A `package`/`module` declaration with a bare `name` shadows any same-named
+    /// `class`/`role`/`enum` whose lexical scope has already exited (i.e. the name
+    /// is in `suppressed_names`). Without this, a stale out-of-scope `class A` left
+    /// in the registry keeps `has_type("A")` true, so a later `my package A {}; my A $x`
+    /// resolves `A` to the dead class and never reports X::Syntax::Variable::BadType.
+    /// Remove the stale type and un-suppress the name so the package becomes the
+    /// active `A`. Only out-of-scope (suppressed) types are removed — an in-scope
+    /// same-named class is a genuine redeclaration handled elsewhere.
+    pub(crate) fn shadow_suppressed_type_with_package(&mut self, name: &str) {
+        if name.contains("::") || !self.suppressed_names.contains(name) {
+            return;
+        }
+        self.registry_mut().classes.remove(name);
+        self.registry_mut().roles.remove(name);
+        self.registry_mut().enum_types.remove(name);
+        self.registry_mut().subsets.remove(name);
+        self.suppressed_names.remove(name);
+    }
+
     /// Mark a fully-qualified name as `my`-scoped within its parent package.
     /// Items in this set are excluded from the parent package's stash.
     pub(crate) fn mark_my_scoped_package_item(&mut self, fq_name: String) {
