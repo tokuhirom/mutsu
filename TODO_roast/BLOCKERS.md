@@ -24,10 +24,15 @@
 - `S06-signature/slurpy-params.t`（§2.1） → **Seq single-pass consumption**
   （Seq を materialize し `X::Seq::Consumed` を投げない）。
 
-→ **「1 失敗の浅いターゲットは枯渇」が今の正しい結論。** 残りは container identity /
-lazy-iterator / lexical-scope (dual-store) / 並行実行 という §3〜§4 の基盤工事に
-帰着する。次の前進はこれら基盤のいずれかに腰を据えて着手すること。各ファイルの
-最小再現と詳細は §2 / `TODO_roast/S02.md` / `S04.md` に記録済み。
+→ **curated §2 Medium 群について「1 失敗の浅いターゲットは枯渇」が結論。** 残りは
+container identity / lazy-iterator / lexical-scope (dual-store) / 並行実行 という
+§3〜§4 の基盤工事に帰着する。次の前進はこれら基盤のいずれかに腰を据えて着手すること。
+各ファイルの最小再現と詳細は §2 / `TODO_roast/S02.md` / `S04.md` に記録済み。
+
+未 probe バケット（保留）: `tmp/near-pass.tsv` の `integration/advent*` 系（1 失敗が
+~10 ファイル）は「実プログラムが特定 1 機能で落ちる」別カテゴリで、今回は未調査。
+個別に浅い可能性はあるが、まとまった共通根があるとは限らないため、基盤工事より
+優先度は低い。掘るなら 1 ファイルずつ failure を特定してから判断する。
 
 ## この版での再評価結果
 
