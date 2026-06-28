@@ -519,8 +519,23 @@ impl Interpreter {
                     for (param_name, param_value) in &role_param_values {
                         self.bind_type_capture(param_name, param_value);
                     }
+                    // Run a nested TYPE declaration (`my class CR2`) in the role
+                    // body with the ROLE as the current package so it is named
+                    // `R2::CR2`, not the composing class. Only type declarations get
+                    // the role package — a lexical `sub`/`my $x` keeps the outer
+                    // package so a bare reference from a role method still resolves.
+                    let saved_body_pkg = self.current_package().to_string();
                     for stmt in &role.deferred_body_stmts {
-                        self.run_block_raw(std::slice::from_ref(stmt))?;
+                        let is_type_decl =
+                            matches!(stmt, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. });
+                        if is_type_decl {
+                            self.set_current_package(base_role_name.to_string());
+                        }
+                        let r = self.run_block_raw(std::slice::from_ref(stmt));
+                        if is_type_decl {
+                            self.set_current_package(saved_body_pkg.clone());
+                        }
+                        r?;
                     }
                     // Remove type capture markers (but keep the variables
                     // created by the deferred stmts for method closures)

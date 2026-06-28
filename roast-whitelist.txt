@@ -680,6 +680,7 @@ roast/S12-methods/method-vs-sub.t
 roast/S12-methods/multi.t
 roast/S12-methods/parallel-dispatch.t
 roast/S12-methods/private.t
+roast/S12-methods/qualified.t
 roast/S12-methods/submethods.t
 roast/S12-methods/syntax.t
 roast/S12-methods/topic.t
