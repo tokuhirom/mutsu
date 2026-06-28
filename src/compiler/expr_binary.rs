@@ -18,6 +18,97 @@ impl Compiler {
         )
     }
 
+    /// The chain's root lvalue variable name (`x` / `@a` / `%h`), if the leftmost
+    /// operand of an `andthen`/`orelse`/`notandthen` chain is a simple variable.
+    fn chain_root_lvalue_name(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Var(n) => Some(n.clone()),
+            Expr::ArrayVar(n) => Some(format!("@{}", n)),
+            Expr::HashVar(n) => Some(format!("%{}", n)),
+            Expr::Grouped(inner) => Self::chain_root_lvalue_name(inner),
+            Expr::Binary {
+                left,
+                op: TokenKind::AndThen | TokenKind::OrElse | TokenKind::NotAndThen,
+                ..
+            } => Self::chain_root_lvalue_name(left),
+            _ => None,
+        }
+    }
+
+    /// Replace the implied topic `$_` with `var` in a `.=`-method-call target so
+    /// the mutation writes through to the chain's root variable.
+    fn subst_topic_var(expr: &Expr, var: &str) -> Expr {
+        match expr {
+            Expr::Var(n) if n == "_" => Expr::Var(var.to_string()),
+            Expr::Grouped(inner) => Expr::Grouped(Box::new(Self::subst_topic_var(inner, var))),
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                quoted,
+            } => Expr::MethodCall {
+                target: Box::new(Self::subst_topic_var(target, var)),
+                name: *name,
+                args: args.clone(),
+                modifier: *modifier,
+                quoted: *quoted,
+            },
+            Expr::DynamicMethodCall {
+                target,
+                name_expr,
+                args,
+                modifier,
+            } => Expr::DynamicMethodCall {
+                target: Box::new(Self::subst_topic_var(target, var)),
+                name_expr: name_expr.clone(),
+                args: args.clone(),
+                modifier: *modifier,
+            },
+            other => other.clone(),
+        }
+    }
+
+    /// `$var andthen/orelse/notandthen .=method` — an implied-`$_` `.=` in the RHS
+    /// mutates the topic, which raku aliases to the chain's root lvalue, so it must
+    /// write back to that variable. Recursively retarget every implied-`$_` `.=`
+    /// (`AssignExpr` to `_`) in the RHS subtree to `root`, descending through nested
+    /// `andthen`/`orelse`/`notandthen` chains (so `$x orelse .=new andthen .=new`
+    /// parses as `$x orelse (… andthen …)` and both `.=` still target `$x`). A
+    /// sub-chain whose own left names a variable rebinds the root for its right.
+    /// Non-`.=` RHS forms (e.g. `$x andthen .say`) are left untouched.
+    fn retarget_chain_rhs(node: &Expr, root: &str) -> Expr {
+        match node {
+            Expr::AssignExpr {
+                name,
+                expr: inner,
+                is_bind: false,
+            } if name == "_" => Expr::AssignExpr {
+                name: root.to_string(),
+                expr: Box::new(Self::subst_topic_var(inner, root)),
+                is_bind: false,
+            },
+            Expr::Grouped(inner) => Expr::Grouped(Box::new(Self::retarget_chain_rhs(inner, root))),
+            Expr::Binary { left, op, right }
+                if matches!(
+                    op,
+                    TokenKind::AndThen | TokenKind::OrElse | TokenKind::NotAndThen
+                ) =>
+            {
+                let left_new = Self::retarget_chain_rhs(left, root);
+                let right_root =
+                    Self::chain_root_lvalue_name(left).unwrap_or_else(|| root.to_string());
+                let right_new = Self::retarget_chain_rhs(right, &right_root);
+                Expr::Binary {
+                    left: Box::new(left_new),
+                    op: op.clone(),
+                    right: Box::new(right_new),
+                }
+            }
+            other => other.clone(),
+        }
+    }
+
     pub(super) fn compile_expr_binary(
         &mut self,
         expr: &Expr,
@@ -25,6 +116,19 @@ impl Compiler {
         op: &TokenKind,
         right: &Expr,
     ) {
+        // `$var andthen/orelse/notandthen .=method` writes the `.=` result back to
+        // the chain's root variable (the topic `$_` aliases it in raku).
+        let retargeted_right;
+        let right: &Expr = if matches!(
+            op,
+            TokenKind::AndThen | TokenKind::OrElse | TokenKind::NotAndThen
+        ) && let Some(root) = Self::chain_root_lvalue_name(left)
+        {
+            retargeted_right = Self::retarget_chain_rhs(right, &root);
+            &retargeted_right
+        } else {
+            right
+        };
         // Special handling for `but` with a literal tuple RHS:
         // `True but (1, "x")` compiles as multiple ButMixinTupleElem operations
         // (one per element), generating per-element type methods with conflict
