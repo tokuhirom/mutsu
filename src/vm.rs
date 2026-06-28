@@ -226,6 +226,8 @@ mod vm_var_delete_ops;
 mod vm_var_exists_ops;
 mod vm_var_get_ops;
 mod vm_var_index_ops;
+mod vm_var_index_tracking;
+mod vm_var_multidim_helpers;
 mod vm_var_multidim_ops;
 mod vm_var_ops;
 mod vm_var_trait_ops;
