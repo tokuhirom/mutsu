@@ -258,11 +258,26 @@ impl Interpreter {
         let saved = self.current_package().to_string();
         let saved_env = self.env().clone();
         let saved_locals = self.locals.clone();
-        self.set_current_package(name);
+        self.set_current_package(name.clone());
         self.run_range(code, *ip + 1, body_end, compiled_fns)?;
         self.set_current_package(saved);
         let current_env = self.env().clone();
         let mut restored_env = saved_env.clone();
+        // The block's own `my` lexicals (new env keys, not package-qualified or
+        // internal) are dropped from the outer scope below (lexical scoping), but
+        // a named sub defined in this `package Foo {...}` block closes over them and
+        // is called by-name AFTER the block exits. Record them keyed by the package
+        // so a `GetGlobal` miss inside Foo's subs can fall back to them. Stored
+        // post-body, so the values reflect the block's assignments (e.g. zef's
+        // `package Zef::CLI { my $CONFIG = preprocess-args-config-mutate(...); ... }`).
+        for (k, v) in current_env.iter() {
+            if !saved_env.contains_key_sym(*k) && !k.contains_str("::") && !k.starts_with("__") {
+                self.package_lexicals
+                    .entry(name.clone())
+                    .or_default()
+                    .insert(k.resolve(), v.clone());
+            }
+        }
         for (k, v) in current_env.iter() {
             if saved_env.contains_key_sym(*k) || k.contains_str("::") {
                 restored_env.insert_sym(*k, v.clone());

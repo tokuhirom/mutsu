@@ -315,6 +315,27 @@ impl Interpreter {
                             .cloned()
                             .or_else(|| self.get_env_with_main_alias(&candidate))
                     })
+                    .or_else(|| {
+                        // Package-block `my` lexical fallback: a named sub defined in
+                        // a `package Foo { my $x = ...; sub f { $x } }` block closes
+                        // over `$x`, but the block scope is dropped on exit and named
+                        // registry subs have no per-sub closure env. When `f` runs
+                        // by-name `current_package` is `Foo`, so resolve the miss via
+                        // the per-package store recorded by `exec_package_scope_op`.
+                        // Gated on `current_package` so it never leaks to bare refs
+                        // after the block (those run under `GLOBAL`).
+                        if name.contains("::") {
+                            return None;
+                        }
+                        let cur = self.current_package().to_string();
+                        if cur.is_empty() || cur == "GLOBAL" {
+                            return None;
+                        }
+                        self.package_lexicals
+                            .get(&cur)
+                            .and_then(|m| m.get(name))
+                            .cloned()
+                    })
                     // Anonymous state variable (`$`): fall back to persisted
                     // state so the value survives across closure calls.
                     .or_else(|| self.anon_state_value(name))
