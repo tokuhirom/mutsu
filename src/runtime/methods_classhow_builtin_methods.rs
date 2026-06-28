@@ -77,10 +77,12 @@ impl Interpreter {
     }
 
     pub(super) fn collect_builtin_type_methods(&self, type_name: &str, result: &mut Vec<Value>) {
-        // Canonical per-type method names live in the single source of truth
-        // `builtins::builtin_type_methods` — see that module's docs for why this
-        // is a maintained table and where to keep it in sync with dispatch.
-        let methods = crate::builtins::builtin_type_methods::builtin_type_method_names(type_name);
+        // Method names are *derived from the real native dispatch* for concrete
+        // types (probe a sample value against `METHOD_UNIVERSE`), falling back to
+        // a declared list only for abstract/sample-less types. See
+        // `builtins::builtin_type_methods` for the rationale.
+        let methods =
+            crate::builtins::builtin_type_methods::introspected_type_method_names(type_name);
         for name in &methods {
             if !result.iter().any(|v| {
                 if let Value::Instance { attributes, .. } = v {
