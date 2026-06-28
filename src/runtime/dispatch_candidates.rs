@@ -68,8 +68,7 @@ impl Interpreter {
                 self.args_match_param_types(args, &def.param_defs)
             };
             if type_ok {
-                let fingerprint =
-                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                let fingerprint = self.func_def_fingerprint(&def);
                 if !seen.insert(fingerprint) {
                     continue;
                 }

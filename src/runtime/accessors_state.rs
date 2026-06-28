@@ -341,6 +341,21 @@ impl Interpreter {
         fp
     }
 
+    /// Structural fingerprint of a *function* def, memoized by its
+    /// `Arc<FunctionDef>` pointer (see `func_def_fp_cache`). Use this instead of
+    /// `function_body_fingerprint` on the multi-function redispatch hot path
+    /// (`push_multi_dispatch_frame`, which runs over every candidate per multi
+    /// call): the raw call Debug-traverses the whole body AST every time.
+    pub(crate) fn func_def_fingerprint(&mut self, def: &Arc<FunctionDef>) -> u64 {
+        let key = Arc::as_ptr(def) as usize;
+        if let Some((_, fp)) = self.func_def_fp_cache.get(&key) {
+            return *fp;
+        }
+        let fp = crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+        self.func_def_fp_cache.insert(key, (def.clone(), fp));
+        fp
+    }
+
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -489,16 +504,17 @@ impl Interpreter {
         // the time with the process hash seed. The winner is excluded from
         // `remaining` so redispatch targets the OTHER candidates.
         let saved_err = self.take_pending_dispatch_error();
-        let current_fp = self.resolve_function_with_alias(name, args).map(|def| {
-            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
-        });
+        let current_def = self.resolve_function_with_alias(name, args);
+        let current_fp = current_def
+            .as_ref()
+            .map(|def| self.func_def_fingerprint(def));
         if let Some(err) = saved_err {
             self.set_pending_dispatch_error(err);
         }
         let remaining: Vec<std::sync::Arc<super::FunctionDef>> = all_candidates
             .into_iter()
             .filter(|c| {
-                let fp = crate::ast::function_body_fingerprint(&c.params, &c.param_defs, &c.body);
+                let fp = self.func_def_fingerprint(c);
                 Some(fp) != current_fp
             })
             .collect();
