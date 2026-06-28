@@ -168,9 +168,14 @@ pub(crate) fn default_type_matches_constraint(
         return Some(false);
     }
     match base {
-        "Int" | "UInt" | "Bool" | "Str" | "List" | "Array" | "Hash" | "Pair" | "Junction"
-        | "Complex" | "Signature" | "Capture" => Some(false),
-        "Numeric" | "Real" => Some(matches!(default_type, "Int" | "Num" | "Rat")),
+        // `Bool` enumerates to `Int` (`enum Bool does Int`), so a `Bool` default
+        // conforms to an `Int`/`Numeric`/`Real` (and `Cool`/`Any`/`Mu`, handled
+        // above) parameter -- e.g. `Int :$wrap = False` is valid (used by zef's
+        // CLI). It does NOT conform to `Num` or `Rat`.
+        "Int" => Some(default_type == "Bool"),
+        "UInt" | "Bool" | "Str" | "List" | "Array" | "Hash" | "Pair" | "Junction" | "Complex"
+        | "Signature" | "Capture" => Some(false),
+        "Numeric" | "Real" => Some(matches!(default_type, "Int" | "Num" | "Rat" | "Bool")),
         "Num" => Some(matches!(default_type, "Int" | "Num" | "Rat")),
         "Rat" => Some(matches!(default_type, "Int" | "Rat")),
         "Callable" | "Code" | "Block" => Some(default_type == "Callable"),
