@@ -350,8 +350,25 @@ impl Interpreter {
                     .get_role_def(&qualified_name)
                     .map(|r| r.deferred_body_stmts.clone())
                     .unwrap_or_default();
+                // Run a nested TYPE declaration (`my class CR2` / `my role`) in the
+                // role body with the ROLE as the current package, so it is named
+                // `R2::CR2` (qualified by its lexical role) and `$?CLASS.^name`
+                // reports the full name. Only type declarations get the role
+                // package — a lexical `sub`/`my $x` in the role body must keep the
+                // outer package so a bare `&a` reference from a role method still
+                // resolves (else it would register as `Role::a` and vanish).
+                let saved_role_body_pkg = self.current_package().to_string();
                 for stmt in &deferred {
-                    self.vm_run_block_raw(std::slice::from_ref(stmt))?;
+                    let is_type_decl =
+                        matches!(stmt, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. });
+                    if is_type_decl {
+                        self.set_current_package(qualified_name.clone());
+                    }
+                    let r = self.vm_run_block_raw(std::slice::from_ref(stmt));
+                    if is_type_decl {
+                        self.set_current_package(saved_role_body_pkg.clone());
+                    }
+                    r?;
                 }
                 // Slice F: write the deferred body's outer-lexical mutations
                 // through to this caller frame's local slots (vm_run_block_raw

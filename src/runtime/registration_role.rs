@@ -500,7 +500,26 @@ impl Interpreter {
                             .push(role_name_str);
                         continue;
                     }
-                    let role = match self.registry().roles.get(base_role_name).cloned() {
+                    // For a CONCRETE parametric parent (`does R1[Bool]`), resolve the
+                    // specific concretization's RoleDef by arity rather than the
+                    // by-name `roles` map — with a same-named role group (a
+                    // parameterized `R1[::T]` AND an unparameterized `R1`) the map
+                    // holds only the last-declared variant, so composing by bare name
+                    // would pull the wrong one and drop the parametric role's methods.
+                    // Skip when the application forwards a type param (`R1[::T]`),
+                    // which `resolve_role_candidate` rejects.
+                    let concretized_parent =
+                        if role_name_str.contains('[') && !role_name_str.contains("::") {
+                            self.resolve_role_candidate(&role_name_str)
+                                .ok()
+                                .flatten()
+                                .map(|(rd, _, _)| rd)
+                        } else {
+                            None
+                        };
+                    let role = match concretized_parent
+                        .or_else(|| self.registry().roles.get(base_role_name).cloned())
+                    {
                         Some(r) => r,
                         None => {
                             // If trait_mod:<is> is defined and this is a lowercase name,
