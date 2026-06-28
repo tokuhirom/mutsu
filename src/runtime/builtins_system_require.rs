@@ -130,11 +130,15 @@ impl Interpreter {
         run_result?;
 
         // A `sub MAIN` defined in a required module is NOT the program's MAIN
-        // and must not be auto-dispatched at program end. Remove any top-level
-        // MAIN routines that this module introduced.
+        // and must not be auto-dispatched at program end -- unless the module
+        // *exported* MAIN (`proto MAIN(|) is export`, as zef does), in which case
+        // it becomes the importer's MAIN. Remove only non-exported leaked MAINs.
+        self.promote_exported_main_to_global();
+        let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
         Self::remove_leaked_main_routines(
             &mut self.registry_mut().functions,
             &before_function_keys,
+            main_exported,
         );
 
         if let Some(pkg) = package_hint
@@ -203,10 +207,53 @@ impl Interpreter {
     /// is not the program's MAIN and must not be auto-dispatched at program
     /// end. `before_keys` is the set of function-registry keys that existed
     /// before the module body ran; only newly-added MAIN keys are removed.
+    /// Promote an *exported* `MAIN` defined in a non-GLOBAL package (e.g. zef's
+    /// `package Zef::CLI { proto MAIN(|) is export … }`) to the dispatchable
+    /// `GLOBAL::MAIN` slot, so the importing program's auto-MAIN dispatch finds
+    /// it. Exported MAIN in a `unit module` already lands under GLOBAL; a MAIN in
+    /// a nested `package` block lands under `Pkg::MAIN` and would otherwise be
+    /// invisible to dispatch (and dropped as a leak).
+    pub(crate) fn promote_exported_main_to_global(&mut self) {
+        let pkgs_with_main: Vec<String> = self
+            .exported_subs
+            .iter()
+            .filter(|(p, m)| p.as_str() != "GLOBAL" && m.contains_key("MAIN"))
+            .map(|(p, _)| p.clone())
+            .collect();
+        if pkgs_with_main.is_empty() {
+            return;
+        }
+        for pkg in pkgs_with_main {
+            let prefix = format!("{pkg}::MAIN");
+            // Collect `Pkg::MAIN`, `Pkg::MAIN/<arity>`, `Pkg::MAIN/<...>:<sig>`.
+            let to_promote: Vec<(String, std::sync::Arc<FunctionDef>)> = self
+                .registry()
+                .functions
+                .iter()
+                .filter(|(k, _)| {
+                    let ks = k.resolve();
+                    ks == prefix || ks.starts_with(&format!("{prefix}/"))
+                })
+                .map(|(k, v)| (k.resolve().to_string(), v.clone()))
+                .collect();
+            for (key, def) in to_promote {
+                let global_key = key.replacen(&format!("{pkg}::"), "GLOBAL::", 1);
+                let gsym = Symbol::intern(&global_key);
+                self.registry_mut().functions.entry(gsym).or_insert(def);
+            }
+        }
+    }
+
     pub(crate) fn remove_leaked_main_routines(
         functions: &mut HashMap<Symbol, std::sync::Arc<FunctionDef>>,
         before_keys: &std::collections::HashSet<Symbol>,
+        main_exported: bool,
     ) {
+        // A module's *exported* `proto/sub MAIN is export` IS meant to become the
+        // importing program's MAIN (e.g. zef's `proto MAIN(|) is export`); its
+        // candidates land under the dispatchable `GLOBAL::MAIN`. When the loaded
+        // module exported MAIN, keep those; otherwise drop every leaked MAIN (a
+        // non-exported `sub MAIN` in a used module is not the program's MAIN).
         let leaked: Vec<Symbol> = functions
             .keys()
             .filter(|k| {
@@ -214,11 +261,13 @@ impl Interpreter {
                     return false;
                 }
                 let ks = k.resolve();
-                // Match GLOBAL::MAIN, GLOBAL::MAIN/<arity>, GLOBAL::MAIN/<...>:<sig>
-                // i.e. the routine's short name is exactly `MAIN`.
                 let after_pkg = ks.rsplit_once("::").map(|(_, t)| t).unwrap_or(&ks);
                 let short = after_pkg.split(['/', ':']).next().unwrap_or(after_pkg);
-                short == "MAIN"
+                if short != "MAIN" {
+                    return false;
+                }
+                // Keep the exported, dispatchable GLOBAL::MAIN candidates.
+                !(main_exported && ks.starts_with("GLOBAL::"))
             })
             .copied()
             .collect();

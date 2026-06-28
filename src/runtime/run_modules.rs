@@ -396,10 +396,14 @@ impl Interpreter {
             self.set_current_package(saved_package);
             result?;
             // A `sub MAIN` defined in a used module is NOT the program's MAIN
-            // and must not be auto-dispatched at program end.
+            // and must not be auto-dispatched at program end -- unless the module
+            // *exported* MAIN (`proto MAIN(|) is export`, as zef's CLI does).
+            self.promote_exported_main_to_global();
+            let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
             Self::remove_leaked_main_routines(
                 &mut self.registry_mut().functions,
                 &before_function_keys,
+                main_exported,
             );
         }
         crate::parser::set_current_language_version(&saved_language_version);
