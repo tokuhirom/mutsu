@@ -6,6 +6,15 @@ use std::sync::{Arc, OnceLock};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
+/// The lexical environment's backing map. Keyed by interned `Symbol` (an 8-byte
+/// `(u32, u32)`-free `u32` handle), looked up on every variable read/write — the
+/// single hottest map in the interpreter. `FxHashMap` (a non-cryptographic hash
+/// over the small integer key) replaces the default `SipHash`, whose per-lookup
+/// cost dominated method/variable-heavy benchmarks (perf: ~7% of self time in
+/// `SipHasher::write`/`hash_one`). Iteration order is unspecified either way, so
+/// no env-iteration consumer (`iter`/`keys`/`values`/pseudo-stash) is affected.
+type SymMap = rustc_hash::FxHashMap<Symbol, Value>;
+
 /// Process-wide immutable "base" tier of the environment.
 ///
 /// Holds the built-in enum constants (`Order`, `Endian`, `ProtocolFamily`,
@@ -18,17 +27,17 @@ use crate::value::Value;
 /// it, an O(env_size) cost. With ~70 of the ~119 entries hoisted into this
 /// shared, never-copied base, the per-call deep copy shrinks to the handful of
 /// real lexicals. See docs/vm-dual-store.md (Slice 4b).
-static GLOBAL_BASE: OnceLock<HashMap<Symbol, Value>> = OnceLock::new();
+static GLOBAL_BASE: OnceLock<SymMap> = OnceLock::new();
 
 /// Install the immutable base tier. Idempotent: the first caller wins and
 /// later calls are ignored (the base is identical for every interpreter in a
 /// process, so re-installation is a no-op rather than an error).
 pub(crate) fn set_global_base(map: HashMap<Symbol, Value>) {
-    let _ = GLOBAL_BASE.set(map);
+    let _ = GLOBAL_BASE.set(map.into_iter().collect());
 }
 
 #[inline(always)]
-fn global_base() -> Option<&'static HashMap<Symbol, Value>> {
+fn global_base() -> Option<&'static SymMap> {
     GLOBAL_BASE.get()
 }
 
@@ -139,7 +148,7 @@ fn note_closure_meta_key(key: &str) {
 /// environment, so it is invisible to `iter`/`keys`/`values`/`len`/`remove`.
 #[derive(Clone)]
 pub struct Env {
-    inner: Arc<HashMap<Symbol, Value>>,
+    inner: Arc<SymMap>,
     /// Optional read-through "parent" tier: the enclosing call frame's whole env
     /// (itself possibly scoped, forming a *chain*). When present (a *scoped* env),
     /// name lookups fall through overlay -> parent-chain -> [`GLOBAL_BASE`], but
@@ -191,7 +200,7 @@ const MAX_OVERLAY_DEPTH: u16 = 16;
 impl Env {
     pub(crate) fn new() -> Self {
         Self {
-            inner: Arc::new(HashMap::new()),
+            inner: Arc::new(SymMap::default()),
             parent: None,
             tombstones: None,
             depth: 0,
@@ -207,7 +216,7 @@ impl Env {
     /// every plain user lexical in scope.
     pub(crate) fn from_symbol_map(map: HashMap<Symbol, Value>) -> Self {
         Self {
-            inner: Arc::new(map),
+            inner: Arc::new(map.into_iter().collect()),
             parent: None,
             tombstones: None,
             depth: 0,
@@ -230,7 +239,7 @@ impl Env {
             parent
         };
         Self {
-            inner: Arc::new(HashMap::new()),
+            inner: Arc::new(SymMap::default()),
             depth: parent.depth + 1,
             parent: Some(Arc::new(parent)),
             tombstones: None,
@@ -263,7 +272,7 @@ impl Env {
                 // (the base tier stays shared, never materialized), then layer
                 // this frame's tombstones and overlay on top.
                 let parent_flat = parent.flattened();
-                let mut merged: HashMap<Symbol, Value> = (*parent_flat.inner).clone();
+                let mut merged: SymMap = (*parent_flat.inner).clone();
                 // Apply tombstones: a key removed in this scope must not survive
                 // into the flattened (flat) env.
                 if let Some(tomb) = &self.tombstones {
@@ -348,7 +357,7 @@ impl Env {
     /// O(env_size) deep copy whenever the env is shared (the real dual-store
     /// cost; see docs/vm-dual-store.md and `vm_stats::record_env_deep_copy`).
     #[inline]
-    fn cow_mut(&mut self) -> &mut HashMap<Symbol, Value> {
+    fn cow_mut(&mut self) -> &mut SymMap {
         if crate::vm::vm_stats::enabled() && Arc::strong_count(&self.inner) > 1 {
             crate::vm::vm_stats::record_env_deep_copy();
         }
@@ -515,13 +524,13 @@ impl Env {
 
     /// Direct access to the inner HashMap (for bulk mutation).
     #[allow(dead_code)]
-    pub(crate) fn inner_mut(&mut self) -> &mut HashMap<Symbol, Value> {
+    pub(crate) fn inner_mut(&mut self) -> &mut SymMap {
         self.cow_mut()
     }
 
     /// Direct read access to the inner HashMap.
     #[allow(dead_code)]
-    pub(crate) fn inner(&self) -> &HashMap<Symbol, Value> {
+    pub(crate) fn inner(&self) -> &SymMap {
         &self.inner
     }
 }
@@ -534,7 +543,7 @@ impl Default for Env {
 
 impl From<HashMap<String, Value>> for Env {
     fn from(map: HashMap<String, Value>) -> Self {
-        let sym_map: HashMap<Symbol, Value> = map
+        let sym_map: SymMap = map
             .into_iter()
             .map(|(k, v)| (Symbol::intern(&k), v))
             .collect();
@@ -550,7 +559,7 @@ impl From<HashMap<String, Value>> for Env {
 impl From<HashMap<Symbol, Value>> for Env {
     fn from(map: HashMap<Symbol, Value>) -> Self {
         Self {
-            inner: Arc::new(map),
+            inner: Arc::new(map.into_iter().collect()),
             parent: None,
             tombstones: None,
             depth: 0,
