@@ -150,7 +150,7 @@ fn typed_default_expr(type_name: &str) -> Expr {
     }
 }
 
-fn default_decl_expr(
+pub(in crate::parser::stmt) fn default_decl_expr(
     is_array: bool,
     is_hash: bool,
     shape_dims: Option<&[Expr]>,
