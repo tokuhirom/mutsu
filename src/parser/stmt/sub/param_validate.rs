@@ -1,7 +1,50 @@
 use super::*;
 
 /// Known valid parameter traits for `is <trait>` in signatures.
-const VALID_PARAM_TRAITS: &[&str] = &["rw", "readonly", "copy", "required", "raw"];
+/// `encoded` is a NativeCall string-marshalling trait (`Str $s is encoded('utf8')`)
+/// that carries a parenthesized argument; see `skip_optional_trait_arg`.
+const VALID_PARAM_TRAITS: &[&str] = &["rw", "readonly", "copy", "required", "raw", "encoded"];
+
+/// After a parameter trait name, skip an optional parenthesized argument such as
+/// the `('utf8')` in `is encoded('utf8')`. Balances nested parens and ignores
+/// parens inside single/double-quoted string literals. Leading whitespace before
+/// the `(` is permitted. Returns the input unchanged when no `(` follows.
+pub(crate) fn skip_optional_trait_arg(input: &str) -> &str {
+    let trimmed = input.trim_start();
+    if !trimmed.starts_with('(') {
+        return input;
+    }
+    let bytes = trimmed.as_bytes();
+    let mut depth = 0u32;
+    let mut quote: Option<u8> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        match quote {
+            Some(q) => {
+                if c == b'\\' {
+                    i += 1; // skip escaped char
+                } else if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                b'\'' | b'"' => quote = Some(c),
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &trimmed[i + 1..];
+                    }
+                }
+                _ => {}
+            },
+        }
+        i += 1;
+    }
+    // Unbalanced: leave the input as-is so the normal parser reports the error.
+    input
+}
 
 /// Public wrapper for `validate_param_trait` used by control.rs.
 pub(crate) fn validate_param_trait_pub<'a>(
@@ -31,7 +74,8 @@ pub(crate) fn validate_param_trait<'a>(
             trait_name
         ));
     }
-    Ok((input, ()))
+    // Consume an optional parenthesized trait argument, e.g. `is encoded('utf8')`.
+    Ok((skip_optional_trait_arg(input), ()))
 }
 
 pub(crate) fn static_default_type(expr: &Expr) -> Option<String> {
