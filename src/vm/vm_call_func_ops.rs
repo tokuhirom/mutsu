@@ -693,6 +693,31 @@ impl Interpreter {
             let result = self.maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
             self.stack.push(result);
             // Slice 6.3 step 2: precise env_dirty from the named-call merge.
+        } else if self.has_multi_candidates_cached(&name) && !self.has_proto(&name) {
+            // User-defined multi candidates reached with *slipped* args
+            // (`multi f($a,$b); f(1, |@x)`). The non-slip path resolves and
+            // OTF-compiles the winning candidate in `dispatch_func_call_inner`;
+            // the slip path lacked that branch, so the `user_function_matches_call`
+            // arm below swallowed the multi call and always tree-walked. Mirror
+            // the non-slip multi branch: resolve the unambiguous winner (the
+            // resolver already flattened/saw the slipped args) and run it as
+            // compiled bytecode when OTF-compilable, else fall back. Ambiguity is
+            // signalled by `None` + a pending dispatch error, so clear any stale
+            // one first.
+            let _ = self.take_pending_dispatch_error();
+            if !self.is_interpreter_handled_function(&name)
+                && let Some(def) = loan_env!(self, resolve_function_with_types(&name, &args))
+                && Self::def_is_otf_compilable_multi_candidate(&def)
+                && !Self::function_body_declares_state(&def.body)
+            {
+                let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                self.stack.push(result);
+            } else {
+                crate::vm::vm_stats::record_function_fallback(&name);
+                let result = self.vm_call_function_fallback(&name, &args)?;
+                let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
+                self.stack.push(result);
+            }
         } else if loan_env!(self, user_function_matches_call(&name, &args)) {
             // A user-defined sub shadows a same-named builtin (③ PR-2). OTF-compile
             // the resolved def to bytecode when it is a plain single candidate and
