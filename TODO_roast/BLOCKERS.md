@@ -5,7 +5,29 @@
 個々の失敗を片端から潰すためではなく、
 **今どこを直せば何がまとめて動くか**を判断するために使う。
 
-**最終更新 2026-06-27**
+**最終更新 2026-06-28**
+
+## 2026-06-28 near-pass sweep の結論
+
+`tmp/near-pass.tsv`（残 1 失敗のファイル群）を起点に「浅いターゲット」を探したが、
+1 失敗で残っている §2 の Medium 級は**いずれも深いアーキテクチャ機能がブロッカー**だと
+確認した。今セッションで isolation 再現まで取って verdict を確定したもの:
+
+- `S04-declarations/my-6e.t` → dual-store の **block-local scope 漏れ**
+  （`if (1) { my $b = 1 }` 後に `$b` が見える；EVAL 固有ではない）。
+- `S02-types/generics.t` → 6.e **coercion type 項 + `Array[T]` サブクラス化**
+  （ローカル raku v2022.12=6.d でも実行不可で全体検証もできない）。
+- `S04-declarations/constant.t` → 演算子 `constant &op := &other` の
+  **共有 alias**（現状コピー実装）。68/72、唯一の file-stopper。
+- `S02-literals/allomorphic.t`（§2.6） → **lexical class identity**
+  （同名 `my class` が global registry で後勝ち）。
+- `S06-signature/slurpy-params.t`（§2.1） → **Seq single-pass consumption**
+  （Seq を materialize し `X::Seq::Consumed` を投げない）。
+
+→ **「1 失敗の浅いターゲットは枯渇」が今の正しい結論。** 残りは container identity /
+lazy-iterator / lexical-scope (dual-store) / 並行実行 という §3〜§4 の基盤工事に
+帰着する。次の前進はこれら基盤のいずれかに腰を据えて着手すること。各ファイルの
+最小再現と詳細は §2 / `TODO_roast/S02.md` / `S04.md` に記録済み。
 
 ## この版での再評価結果
 
@@ -214,6 +236,22 @@ S15 全 81 ファイル、および tractable な S32-str Unicode 機能
 つまり、このファイルは「slurpy だけの局所修正」では終わらない。
 一部は §3 に送るべき。
 
+- **2026-06-28 確認**: 残り失敗は 70/71/74/75/76 で、すべて #2 (Seq single-pass) 軸。
+  最小再現:
+  ```raku
+  sub f(+a) { a };
+  say f((1,2,3).grep({$_})).WHAT.^name;   # mutsu: Array / raku: Seq
+  my \seq = f((1,2,3).grep({$_}));
+  my @r; push @r, $_ for seq;             # 1回目: [1 2 3]（両者OK）
+  push @r, $_ for seq;                    # 2回目: mutsu 黙って再反復 / raku throws X::Seq::Consumed
+  ```
+  mutsu は slurpy 受け取り時に Seq を Array へ materialize するため、(a) `.WHAT === Seq`
+  が崩れ、(b) single-pass 消費状態を持たないので `X::Seq::Consumed` を投げられない。
+  対して `+@a`（配列 slurpy）は List 化が正しい。
+  **verdict: deep（lazy iterator / Seq 消費モデル）。** Seq に消費フラグを持たせ、
+  sigilless slurpy が Seq identity を保持する必要があり、ADR-0001 の lazy/iterator track
+  と地続き。局所修正では落ちない → §3.2 寄り。
+
 ### 2.2 `S04-statements/for.t`
 
 - **難度**: Medium
@@ -257,6 +295,22 @@ S15 全 81 ファイル、および tractable な S32-str Unicode 機能
 - **評価**:
   「parser の小ネタ」ではなく **型宣言 identity** の問題。
   ただし container identity ほど基盤工事ではない。
+
+- **2026-06-28 確認**: 残り失敗は 16/32/48（IntStr/RatStr/NumStr の `.ACCEPTS`）。
+  同名 `my class IntFoo` が @true gather（`method Numeric { 3 }`）と @false gather
+  （`method Numeric { 42 }`）で二重宣言され、@true の IntFoo.new は Numeric=3 を
+  保つべきだが mutsu は最後の定義（42）で潰す。最小再現:
+  ```raku
+  my @a = gather { my class Foo { method val { 1  } }; take Foo.new };
+  my @b = gather { my class Foo { method val { 99 } }; take Foo.new };
+  say @a[0].val, @b[0].val;   # mutsu: 99 99 / raku: 1 99
+  ```
+  gather 内で作った instance は値としてキャプチャされるが、メソッド dispatch 時に
+  クラス名 "Foo" を global registry で引くため、後勝ちの定義に解決される。
+  **verdict: deep（lexical class identity / dual-store debt）。** `my class` を
+  宣言ごとに別 identity として lexical scope に閉じ込め、instance がその identity を
+  保持する必要がある。同じ家系の課題: [[my-6e EVAL block-local scope leak]] と
+  同じ「block-local 宣言が global store に漏れる」debt。
 
 ### 2.7 multislice lvalue
 
