@@ -1477,6 +1477,25 @@ impl Interpreter {
                         return Err(constructor_positional_error(&class_name.resolve()));
                     }
                 }
+                // A `|@x` slip (or a `Seq`) passed to an `@`-sigiled attribute
+                // (`:backends(|@x)`) arrives as a `Slip`/`Seq`. Assigning a list to a
+                // `@` container flattens it (just like `my @a = |@x` yields an
+                // `Array`, not a `Slip`), so materialize it into a plain mutable
+                // `Array` here. Without this the attribute keeps a `Slip` whose
+                // `.^name` is `Slip` and whose re-iteration differs from raku's `Array`.
+                for (attr_name, _is_public, _default, _is_rw, _is_required, sigil, _) in
+                    &class_attrs_info
+                {
+                    if *sigil == '@'
+                        && let Some(Value::Slip(items) | Value::Seq(items)) = attrs.get(attr_name)
+                    {
+                        let flattened = Value::Array(
+                            std::sync::Arc::new(crate::value::ArrayData::new((**items).clone())),
+                            ArrayKind::Array,
+                        );
+                        attrs.insert(attr_name.clone(), flattened);
+                    }
+                }
                 // For @-sigiled attributes with shaped array declarations,
                 // convert user-provided values to shaped arrays preserving shape.
                 for (attr_name, _is_public, default, _is_rw, _is_required, sigil, _) in
