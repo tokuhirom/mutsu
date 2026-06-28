@@ -180,6 +180,7 @@ impl Interpreter {
         self.fast_method_cache.clear();
         self.multi_resolve_cache.clear();
         self.multi_type_cacheable.clear();
+        self.dispatch_multi_candidate.clear();
     }
 
     pub(crate) fn push_block_scope_depth(&mut self) {

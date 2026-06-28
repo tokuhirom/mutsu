@@ -1493,6 +1493,15 @@ pub struct Interpreter {
     /// (i.e. cacheable in `multi_resolve_cache`). Computed once by scanning the MRO
     /// candidates for value-dependent constraints.
     pub(crate) multi_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Memoized `(class, method) -> does this name have >= 2 structural dispatch
+    /// candidates across the MRO` (counting overloads BEFORE arg-matching).
+    /// `false` means the name resolves to at most one candidate, so
+    /// `push_method_dispatch_frame` can skip the per-call `resolve_all_methods_with_owner`
+    /// MRO walk + MethodDef clones entirely (a single/zero candidate never produces
+    /// a deferral frame regardless of args — arg-matching only reduces the count).
+    /// Structural (registry-shape) only, so it is sound to key on `(class, method)`
+    /// and is cleared with the other method caches on any registry change.
+    pub(crate) dispatch_multi_candidate: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     pub(crate) block_declared_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_saved_env: Vec<HashMap<String, Value>>,
