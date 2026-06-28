@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 12;
 
 # §2-D multi-dispatch OTF: a multi call whose arguments are *slipped* at the
 # call site (`f(1, |@x)`) is compiled to OpCode::CallFuncSlip, a separate
@@ -32,3 +32,19 @@ my @ints = 2;
 my @strs = "y";
 is tt(1, |@ints),   'ii', 'slip preserves Int typing for dispatch';
 is tt("x", |@strs), 'ss', 'slip preserves Str typing for dispatch';
+
+# A `proto` with slipped args: the slip path also lacked the proto-OTF branches
+# (trivial-proto candidate + non-trivial proto body) the non-slip path has.
+proto pp(|) { * }
+multi pp($a)     { "p-one" }
+multi pp($a, $b) { "p-two" }
+my @pp = 2;
+is pp(1, |@pp), 'p-two', 'trivial proto dispatch with slipped args';
+is pp(1),       'p-one', 'trivial proto without slip still works';
+
+proto deep($x, |) { my $r = {*}; "[$r]" }
+multi deep($x)     { "q1" }
+multi deep($x, $y) { "q2" }
+my @dd = 9;
+is deep(1, |@dd), '[q2]', 'non-trivial proto body with slipped args';
+is deep(5),       '[q1]', 'non-trivial proto body without slip still works';
