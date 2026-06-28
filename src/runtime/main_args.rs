@@ -139,6 +139,35 @@ impl Interpreter {
                     {
                         continue;
                     }
+                    // A literal positional constraint (e.g. `multi MAIN('info', ...)`)
+                    // must match the corresponding argument by value -- otherwise a
+                    // literal candidate would greedily match any call of the same
+                    // arity, dropping the literal arg into the slurpy of the wrong
+                    // command. The CLI string is coerced to the param's type before
+                    // comparison so numeric literals (`MAIN(42, ...)`) match too.
+                    let mut literal_ok = true;
+                    for (idx, pd) in positional_params.iter().enumerate() {
+                        if let Some(lit) = &pd.literal_value {
+                            match parsed.positional.get(idx) {
+                                Some(arg) => {
+                                    let coerced = self.coerce_cli_arg(arg, pd);
+                                    if coerced != *lit
+                                        && coerced.to_string_value() != lit.to_string_value()
+                                    {
+                                        literal_ok = false;
+                                        break;
+                                    }
+                                }
+                                None => {
+                                    literal_ok = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if !literal_ok {
+                        continue;
+                    }
                     let mut named_ok = true;
                     for pd in &candidate.param_defs {
                         if pd.named && pd.required && pd.default.is_none() && !pd.optional_marker {
