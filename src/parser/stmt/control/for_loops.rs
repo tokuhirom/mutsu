@@ -73,6 +73,27 @@ pub(crate) fn lazy_for_body(input: &str) -> PResult<'_, Stmt> {
     for_stmt_with_mode(input, crate::ast::ForMode::Lazy)
 }
 
+fn gobbled_block_anchor(source: &str) -> Option<String> {
+    let before_block = source.rsplit_once('{')?.0.trim_end();
+    let before_block = before_block
+        .strip_suffix(',')
+        .unwrap_or(before_block)
+        .trim_end();
+    if before_block.is_empty() {
+        return None;
+    }
+    let anchor = before_block
+        .rsplit(',')
+        .next()
+        .unwrap_or(before_block)
+        .trim();
+    if anchor.is_empty() {
+        None
+    } else {
+        Some(anchor.to_string())
+    }
+}
+
 /// Scan for `<->` (rw pointy block) in the input, returning its byte offset.
 /// This must handle nesting to avoid matching inside strings, brackets, etc.
 fn find_rw_pointy_block(input: &str) -> Option<usize> {
@@ -134,6 +155,7 @@ fn find_rw_pointy_block(input: &str) -> Option<usize> {
 fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stmt> {
     let rest = keyword("for", input).ok_or_else(|| PError::expected("for statement"))?;
     let (rest, _) = ws1(rest)?;
+    let iterable_input = rest;
     // Perl 5 `for my $x (LIST) { }` foreach syntax.
     if looks_like_p5_foreach(rest) {
         return Err(p5_foreach_error());
@@ -174,6 +196,12 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     // (`for 1, 2` → X::Syntax::Missing, what => 'block'). Fail fatally so the
     // statement dispatcher does not fall back to reparsing `for` as a term.
     if !rest.starts_with('{') {
+        let consumed = &iterable_input[..iterable_input.len().saturating_sub(rest.len())];
+        if consumed.contains('{')
+            && let Some(anchor) = gobbled_block_anchor(consumed)
+        {
+            return Err(make_block_gobbled_group_error(&anchor));
+        }
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("what".to_string(), Value::str("block".to_string()));
         attrs.insert(

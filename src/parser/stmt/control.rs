@@ -68,6 +68,54 @@ fn condition_expr(input: &str) -> PResult<'_, Expr> {
     }
 }
 
+fn render_expr_brief(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::BareWord(s) => Some(s.clone()),
+        Expr::Var(s) => Some(format!("${s}")),
+        Expr::ArrayVar(s) => Some(format!("@{s}")),
+        Expr::HashVar(s) => Some(format!("%{s}")),
+        Expr::Literal(v) => Some(v.to_string_value()),
+        Expr::Grouped(inner) => render_expr_brief(inner),
+        Expr::Unary { expr, .. } => render_expr_brief(expr),
+        Expr::Binary { left, right, .. } => {
+            let l = render_expr_brief(left)?;
+            let r = render_expr_brief(right)?;
+            Some(format!("{l} {r}"))
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn make_block_gobbled_group_error(what: &str) -> PError {
+    let sorrow_message =
+        format!("Expression '{what}' was gobbled by a block; parenthesize it or add a separator");
+    let mut sorrow_attrs = std::collections::HashMap::new();
+    sorrow_attrs.insert("what".to_string(), Value::str(what.to_string()));
+    sorrow_attrs.insert("message".to_string(), Value::str(sorrow_message.clone()));
+    let sorrow = Value::make_instance(Symbol::intern("X::Syntax::BlockGobbled"), sorrow_attrs);
+
+    let mut panic_attrs = std::collections::HashMap::new();
+    panic_attrs.insert("what".to_string(), Value::str("block".to_string()));
+    panic_attrs.insert(
+        "message".to_string(),
+        Value::str("Missing block".to_string()),
+    );
+    let panic = Value::make_instance(Symbol::intern("X::Syntax::Missing"), panic_attrs);
+
+    let group_message = format!("{sorrow_message}\nMissing block");
+    let mut group_attrs = std::collections::HashMap::new();
+    group_attrs.insert("sorrows".to_string(), Value::array(vec![sorrow]));
+    group_attrs.insert("worries".to_string(), Value::array(vec![]));
+    group_attrs.insert("panic".to_string(), panic);
+    group_attrs.insert("message".to_string(), Value::str(group_message.clone()));
+    let exception = Value::make_instance(Symbol::intern("X::Comp::Group"), group_attrs);
+    PError::fatal_with_exception(group_message, Box::new(exception))
+}
+
+pub(super) fn block_gobbled_group_from_expr(expr: &Expr) -> Option<PError> {
+    render_expr_brief(expr).map(|what| make_block_gobbled_group_error(&what))
+}
+
 /// Build a fatal, structured `X::Obsolete` parse error carrying `old` /
 /// `replacement` attributes so that `throws-like` can match them.
 pub(in crate::parser) fn make_obsolete_error(

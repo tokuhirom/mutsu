@@ -6,6 +6,9 @@
 //! `mod.rs` at their original visibility.
 
 use super::*;
+use crate::ast::Expr;
+use crate::symbol::Symbol;
+use crate::value::Value;
 
 /// Parse a block: { stmts }
 /// Pushes/pops a lexical import scope so that `use` inside a block
@@ -187,6 +190,34 @@ fn has_statement_separator(rest: &str) -> bool {
     true
 }
 
+fn first_when_cond(body: &[Stmt]) -> Option<&Expr> {
+    for stmt in body {
+        match stmt {
+            Stmt::When { cond, .. } => return Some(cond),
+            Stmt::SetLine(_) => {}
+            _ => return None,
+        }
+    }
+    None
+}
+
+fn illegal_decimal_group_error() -> PError {
+    let sorrow_message = "Decimal point must be followed by digit".to_string();
+    let mut sorrow_attrs = std::collections::HashMap::new();
+    sorrow_attrs.insert("message".to_string(), Value::str(sorrow_message.clone()));
+    let sorrow = Value::make_instance(
+        Symbol::intern("X::Syntax::Number::IllegalDecimal"),
+        sorrow_attrs,
+    );
+    let mut group_attrs = std::collections::HashMap::new();
+    group_attrs.insert("sorrows".to_string(), Value::array(vec![sorrow]));
+    group_attrs.insert("worries".to_string(), Value::array(vec![]));
+    group_attrs.insert("panic".to_string(), Value::Nil);
+    group_attrs.insert("message".to_string(), Value::str(sorrow_message.clone()));
+    let exception = Value::make_instance(Symbol::intern("X::Comp::Group"), group_attrs);
+    PError::fatal_with_exception(sorrow_message, Box::new(exception))
+}
+
 pub(crate) fn stmt_list_with_mode(
     input: &str,
     allow_mainline_capture: bool,
@@ -302,6 +333,13 @@ pub(crate) fn stmt_list_with_mode(
         let line_valid = crate::parser::primary::is_within_original_source(r);
         match statement(r) {
             Ok((r, stmt)) => {
+                if stmts.is_empty()
+                    && let Stmt::Catch(body) | Stmt::Control(body) = &stmt
+                    && let Some(cond) = first_when_cond(body)
+                    && let Some(err) = super::control::block_gobbled_group_from_expr(cond)
+                {
+                    return Err(err);
+                }
                 // In Raku, after a statement-ending block (e.g. `sub f { 3 }`),
                 // a semicolon, newline, closing brace, or end-of-input is required
                 // before the next statement.  `sub f { 3 } sub g { 3 }` on a
@@ -331,6 +369,16 @@ pub(crate) fn stmt_list_with_mode(
             Err(e) => {
                 if e.is_fatal() {
                     return Err(e);
+                }
+                if stmts.is_empty() {
+                    let probe = r.trim();
+                    if probe.ends_with('.')
+                        && probe[..probe.len().saturating_sub(1)]
+                            .chars()
+                            .all(|c| c.is_ascii_digit())
+                    {
+                        return Err(illegal_decimal_group_error());
+                    }
                 }
                 let consumed = input.len() - r.len();
                 let line_num = input[..consumed].matches('\n').count() + 1;

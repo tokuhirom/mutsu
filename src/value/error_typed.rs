@@ -55,6 +55,9 @@ impl RuntimeError {
         let mut map = HashMap::new();
         map.insert(name.to_string(), Value::array(arr.clone()));
         attrs.insert("type_suggestion".to_string(), Value::hash(map));
+        let mut post_types = HashMap::new();
+        post_types.insert(name.to_string(), Value::Bool(true));
+        attrs.insert("post_types".to_string(), Value::hash(post_types));
         attrs.insert("suggestions".to_string(), Value::array(arr));
         Self::typed("X::Undeclared::Symbols", attrs)
     }

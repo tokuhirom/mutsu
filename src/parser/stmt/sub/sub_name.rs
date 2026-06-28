@@ -41,11 +41,26 @@ pub(crate) fn null_operator_error(name: &str) -> Option<PError> {
     if !inner.trim().is_empty() {
         return None;
     }
-    let message = "Null operator is not allowed".to_string();
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("message".to_string(), Value::str(message.clone()));
-    let ex = Value::make_instance(Symbol::intern("X::Syntax::Extension::Null"), attrs);
-    Some(PError::fatal_with_exception(message, Box::new(ex)))
+    let panic_message = "Null operator is not allowed".to_string();
+    let mut panic_attrs = std::collections::HashMap::new();
+    panic_attrs.insert("message".to_string(), Value::str(panic_message.clone()));
+    let panic = Value::make_instance(Symbol::intern("X::Syntax::Extension::Null"), panic_attrs);
+
+    let mut worry_attrs = std::collections::HashMap::new();
+    worry_attrs.insert(
+        "payload".to_string(),
+        Value::str("Pair with <> really means an empty list, not null string".to_string()),
+    );
+    let worry = Value::make_instance(Symbol::intern("X::AdHoc"), worry_attrs);
+
+    let group_message = panic_message.clone();
+    let mut group_attrs = std::collections::HashMap::new();
+    group_attrs.insert("sorrows".to_string(), Value::array(vec![]));
+    group_attrs.insert("worries".to_string(), Value::array(vec![worry]));
+    group_attrs.insert("panic".to_string(), panic);
+    group_attrs.insert("message".to_string(), Value::str(group_message.clone()));
+    let group = Value::make_instance(Symbol::intern("X::Comp::Group"), group_attrs);
+    Some(PError::fatal_with_exception(group_message, Box::new(group)))
 }
 
 pub(crate) fn parse_sub_name_inner(input: &str) -> PResult<'_, String> {

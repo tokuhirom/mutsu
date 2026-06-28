@@ -1537,11 +1537,17 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // bare ..." (e.g. `ord.Cool`). A real call (`ord $x` / `ord('A')`) parses as
     // a listop/call before reaching this fallback, so it is unaffected.
     if is_terminator_or_dot && matches!(name.as_str(), "ord" | "chr" | "lc" | "uc" | "abs") {
-        return Err(PError::fatal(format!(
+        let message = format!(
             "X::Obsolete: Unsupported use of bare \"{name}\".  In Raku please use: \
              .{name} if you meant to call it as a method on $_, or use an explicit \
              invocant or argument."
-        )));
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("old".to_string(), Value::str(name.clone()));
+        attrs.insert("replacement".to_string(), Value::str(format!(".{name}")));
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let exception = Value::make_instance(Symbol::intern("X::Obsolete"), attrs);
+        return Err(PError::fatal_with_exception(message, Box::new(exception)));
     }
 
     // Method-like: .new, .elems etc. is handled at expression level

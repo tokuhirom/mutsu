@@ -216,8 +216,14 @@ pub(crate) fn sub_decl_body(
     } else {
         rest
     };
-    // Detect forward declaration: `sub name(...);`.
-    if let Some(rest) = rest.strip_prefix(';') {
+    // Detect forward declaration: `sub name(...);` or the same declaration at
+    // end-of-input with no body.
+    if rest.trim().is_empty() || rest.starts_with(';') {
+        let rest = if let Some(rest) = rest.strip_prefix(';') {
+            rest
+        } else {
+            rest
+        };
         // Merge return type for forward declarations too
         let fwd_return_type = return_type.clone().or(traits.return_type.clone());
         if allow_main_semicolon_decl && name == "MAIN" && !multi {

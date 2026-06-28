@@ -90,10 +90,12 @@ pub(super) fn is_literal_expr(expr: &Expr) -> bool {
 /// (`(1,2)[0] := 3`). Binding into such a target is illegal → X::Bind.
 pub(super) fn index_bind_target_is_immutable(target: &Expr) -> bool {
     match target {
+        Expr::Grouped(inner) => index_bind_target_is_immutable(inner),
         Expr::Literal(v) => matches!(
             v,
             Value::Int(_) | Value::Str(_) | Value::Num(_) | Value::Rat(..) | Value::Bool(_)
         ),
+        Expr::BareWord(name) => crate::runtime::Interpreter::is_builtin_type(name),
         Expr::ArrayLiteral(elems) => {
             !elems.is_empty() && elems.iter().all(|e| matches!(e, Expr::Literal(_)))
         }

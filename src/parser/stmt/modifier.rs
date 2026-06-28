@@ -244,11 +244,24 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             && let Some(&first) = parsed_kinds.first()
             && (parsed_kinds.len() >= 2 || !second_modifier_allowed(first, next_kw))
         {
+            let consumed_len = input.len().saturating_sub(rest.len());
+            let pre = input[..consumed_len].trim_end().to_string();
+            let post = rest
+                .strip_prefix(next_kw)
+                .unwrap_or(rest)
+                .trim_start()
+                .to_string();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
                 "message".to_string(),
                 crate::value::Value::str("Missing semicolon".to_string()),
             );
+            attrs.insert(
+                "reason".to_string(),
+                crate::value::Value::str("Missing semicolon".to_string()),
+            );
+            attrs.insert("pre".to_string(), crate::value::Value::str(pre));
+            attrs.insert("post".to_string(), crate::value::Value::str(post));
             let ex = crate::value::Value::make_instance(
                 crate::symbol::Symbol::intern("X::Syntax::Confused"),
                 attrs,
