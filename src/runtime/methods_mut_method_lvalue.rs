@@ -203,6 +203,26 @@ impl Interpreter {
             }
             return Ok(value);
         }
+        // nl-in / nl-out setter for a USER SUBCLASS of IO::Handle (overrides
+        // READ/WRITE/EOF, no OS handle): store the value in the instance attribute
+        // through the shared cell so the user IO read path (`.lines`/`.get`) and
+        // output path see it. See `try_user_io_handle_method`.
+        if matches!(method, "nl-in" | "nl-out" | "encoding")
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+            && attributes.as_map().get("handle").is_none()
+            && self
+                .class_mro(&class_name.resolve())
+                .iter()
+                .any(|c| c == "IO::Handle")
+            && class_name.resolve() != "IO::Handle"
+        {
+            attributes.insert(method.to_string(), value.clone());
+            return Ok(value);
+        }
         // nl-out setter for IO::Handle
         if method == "nl-out"
             && let Value::Instance {

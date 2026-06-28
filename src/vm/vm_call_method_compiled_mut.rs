@@ -99,6 +99,12 @@ impl Interpreter {
             // generic native-method fallback below. These methods mutate only the
             // shared handle-table state (not the receiver binding), so the native
             // path returns the result directly; `None` falls through unchanged.
+            // User-subclassed IO::Handle (overrides WRITE/READ/EOF): route the
+            // high-level methods through the user methods before the native
+            // file-handle path (which would fail — no OS handle).
+            if let Some(result) = self.try_user_io_handle_method(&target, method, &args) {
+                return result;
+            }
             if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
                 return result;
             }

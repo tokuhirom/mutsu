@@ -305,7 +305,7 @@ impl Interpreter {
         target_var: &str,
         target: Value,
         method: &str,
-        _args: Vec<Value>,
+        args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let Value::Instance {
             class_name,
@@ -384,17 +384,69 @@ impl Interpreter {
                 Ok(shifted)
             }
             "splice" => {
-                // .splice() with no args: returns all elements, empties the Buf
-                let spliced_bytes = bytes.clone();
-                bytes.clear();
+                // .splice(offset?, count?, replacement*): remove `count` elements
+                // at `offset` (defaults: offset 0, count = rest), insert the
+                // replacement bytes, return a Buf of the removed elements. With no
+                // args this removes everything (offset 0, count = len). A negative
+                // offset/count counts from the end (Raku semantics).
+                let len = bytes.len() as i64;
+                let resolve = |v: &Value| -> i64 {
+                    match v {
+                        Value::Int(i) => *i,
+                        Value::Whatever => len,
+                        Value::Num(n) => *n as i64,
+                        Value::Str(s) => s.parse::<i64>().unwrap_or(0),
+                        Value::Mixin(inner, _) => match inner.as_ref() {
+                            Value::Int(i) => *i,
+                            _ => 0,
+                        },
+                        _ => 0,
+                    }
+                };
+                let offset = match args.first() {
+                    Some(v) => {
+                        let o = resolve(v);
+                        if o < 0 { (len + o).max(0) } else { o.min(len) }
+                    }
+                    None => 0,
+                };
+                let count = match args.get(1) {
+                    Some(v) => {
+                        let c = resolve(v);
+                        if c < 0 { (len - offset + c).max(0) } else { c }
+                    }
+                    None => len - offset,
+                };
+                let start = offset as usize;
+                let end = ((offset + count).min(len).max(offset)) as usize;
+                // Replacement bytes: flatten any remaining args (Buf/Blob bytes or
+                // integer bytes).
+                let mut replacement: Vec<Value> = Vec::new();
+                for arg in args.iter().skip(2) {
+                    match arg {
+                        Value::Instance { attributes, .. }
+                            if matches!(
+                                attributes.as_map().get("bytes"),
+                                Some(Value::Array(..))
+                            ) =>
+                        {
+                            if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
+                            {
+                                replacement.extend(items.iter().cloned());
+                            }
+                        }
+                        Value::Array(items, ..) => replacement.extend(items.iter().cloned()),
+                        other => replacement.push(Value::Int(resolve(other) & 0xff)),
+                    }
+                }
+                let removed: Vec<Value> = bytes.splice(start..end, replacement).collect();
                 let mut attrs = HashMap::new();
                 attrs.insert("bytes".to_string(), Value::array(bytes));
                 let updated =
                     Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
                 self.env.insert(target_var.to_string(), updated);
-                // Return a Buf with the spliced elements
                 let mut result_attrs = HashMap::new();
-                result_attrs.insert("bytes".to_string(), Value::array(spliced_bytes));
+                result_attrs.insert("bytes".to_string(), Value::array(removed));
                 Ok(Value::make_instance(class_name_sym, result_attrs))
             }
             _ => unreachable!(),
