@@ -201,6 +201,19 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
     vec![Stmt::Expr(call_expr)]
 }
 
+/// `else if` is a C-ism; Raku spells it `elsif`. Raise the dedicated
+/// `X::Syntax::Malformed::Elsif` with Raku's exact diagnostic message.
+fn malformed_elsif_error() -> PError {
+    let msg = "In Raku, please use \"elsif' instead of \"else if\"".to_string();
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+    let ex = crate::value::Value::make_instance(
+        crate::symbol::Symbol::intern("X::Syntax::Malformed::Elsif"),
+        attrs,
+    );
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
 pub(crate) fn parse_elsif_chain(
     input: &str,
 ) -> PResult<'_, (Vec<IfChainClause>, Option<ElseClause>)> {
@@ -290,6 +303,12 @@ pub(crate) fn parse_elsif_chain(
 
     if let Some(r) = keyword("else", rest) {
         let (r, _) = ws(r)?;
+        // `else if ...` is the C-style spelling of `elsif`; Raku rejects it with a
+        // dedicated, helpful diagnostic (X::Syntax::Malformed::Elsif) rather than a
+        // generic "expected '{'" parse error.
+        if keyword("if", r).is_some() {
+            return Err(malformed_elsif_error());
+        }
         let (r, binding_params) = parse_if_binding_params(r)?;
         let (r, _) = ws(r)?;
         let (r, mut body) = block(r)?;
