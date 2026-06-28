@@ -5,6 +5,7 @@ roast/6.c/S14-roles/submethods.t
 roast/6.d/S02-literals/version.t
 roast/6.d/S05-capture/match-object.t
 roast/6.d/S09-multidim/indexing.t
+roast/6.d/S15-unicode-information/uniname.t
 roast/6.d/S32-num/atanh.t
 roast/6.d/S32-num/log.t
 roast/6.d/S32-num/sign.t

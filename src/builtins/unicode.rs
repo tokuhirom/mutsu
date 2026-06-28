@@ -489,14 +489,10 @@ pub(crate) fn uniname_from_int(codepoint: i64) -> Result<String, crate::value::R
     }
     let cp = codepoint as u64;
     if cp > 0x10FFFF {
-        let msg = format!("Unassigned codepoint: 0x{:X}", cp);
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
-        let ex =
-            crate::value::Value::make_instance(crate::symbol::Symbol::intern("X::AdHoc"), attrs);
-        let mut err = crate::value::RuntimeError::new(&msg);
-        err.exception = Some(Box::new(ex));
-        return Err(err);
+        // Codepoints beyond the Unicode maximum (U+10FFFF) have no name; Rakudo
+        // returns "<unassigned>" rather than erroring (mirrors the in-range
+        // unassigned "<reserved-XXXX>" / negative "<illegal>" sentinels).
+        return Ok("<unassigned>".to_string());
     }
     Ok(unicode_char_name_by_codepoint(cp as u32))
 }
