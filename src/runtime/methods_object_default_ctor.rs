@@ -297,6 +297,23 @@ impl Interpreter {
         // path is byte-identical. The gate already excluded `is Type` containers
         // and native/parametric element types, so only plain class elements reach
         // here. Done against the final `attrs` Arcs that move into the instance.
+        // A `|@x` slip (or a `Seq`) passed to an `@`-sigiled attribute
+        // (`:items(|@x)`) arrives as a `Slip`/`Seq`. Assigning a list to a `@`
+        // container flattens it (just like `my @a = |@x` yields an `Array`, not a
+        // `Slip`), so materialize it into a plain mutable `Array` here. Without
+        // this the attribute keeps a `Slip` whose `.^name` is `Slip`.
+        for (attr_name, _, _, _, _, sigil, _) in &class_attrs {
+            if *sigil != '@' {
+                continue;
+            }
+            if let Some(Value::Slip(items) | Value::Seq(items)) = attrs.get(attr_name) {
+                let flattened = Value::Array(
+                    std::sync::Arc::new(crate::value::ArrayData::new((**items).clone())),
+                    crate::value::ArrayKind::Array,
+                );
+                attrs.insert(attr_name.clone(), flattened);
+            }
+        }
         for (attr_name, _, _, _, _, sigil, _) in &class_attrs {
             if !matches!(sigil, '@' | '%') {
                 continue;
