@@ -102,10 +102,16 @@ impl Interpreter {
         // role under two or more *distinct* concretizations, the qualified lookup is
         // ambiguous. Resolution happens against the consumer's immediate roles, so an
         // indirect second concretization (reached through another role) does not count.
-        if in_composed_roles
+        let ambiguity_base = self
+            .method_class_stack_top()
+            .filter(|o| {
+                self.registry().classes.contains_key(o) || self.registry().roles.contains_key(o)
+            })
+            .unwrap_or_else(|| inst_cn_str.clone());
+        if (in_composed_roles || self.registry().roles.contains_key(&ambiguity_base))
             && self.registry().roles.contains_key(qualifier)
             && self
-                .role_concretizations_at_nearest(&inst_cn_str, qualifier)
+                .role_concretizations_at_nearest(&ambiguity_base, qualifier)
                 .len()
                 > 1
         {
@@ -173,7 +179,19 @@ impl Interpreter {
                     }
                 }
                 ctx.or_else(|| {
-                    let concs = self.role_concretizations_at_nearest(&inst_cn_str, qualifier);
+                    // Resolve relative to the DEFINING class/role of the currently
+                    // executing method (its `method_class_stack` owner) — an
+                    // inherited method (`C1.of-type` running on a `C2` instance)
+                    // must see `C1`'s `R1[Int]`, not the receiver `C2`'s roles. Fall
+                    // back to the receiver instance class.
+                    let res_base = self
+                        .method_class_stack_top()
+                        .filter(|o| {
+                            self.registry().classes.contains_key(o)
+                                || self.registry().roles.contains_key(o)
+                        })
+                        .unwrap_or_else(|| inst_cn_str.clone());
+                    let concs = self.role_concretizations_at_nearest(&res_base, qualifier);
                     if concs.len() == 1 {
                         concs.into_iter().next()
                     } else {
@@ -355,26 +373,63 @@ impl Interpreter {
         base_role: &str,
     ) -> std::collections::BTreeSet<String> {
         use std::collections::{BTreeSet, VecDeque};
-        // The consumer's directly-composed roles: classes use their DIRECT
-        // `does` list (NOT the transitive `class_composed_roles` closure, which
-        // would surface a concretization reached only via another role and make a
-        // directly-declared one falsely ambiguous); roles use role_parents (which
-        // records `does`-composed sub-roles, already direct).
-        let direct_roles = |node: &str| -> Vec<String> {
-            if let Some(roles) = self.registry().class_direct_composed_roles.get(node) {
-                roles.clone()
-            } else if let Some(roles) = self.registry().class_composed_roles.get(node) {
-                roles.clone()
-            } else if let Some(parents) = self.registry().role_parents.get(node) {
-                parents.clone()
-            } else {
-                Vec::new()
-            }
-        };
         let base_of = |full: &str| -> String {
             full.split_once('[')
                 .map(|(b, _)| b.to_string())
                 .unwrap_or_else(|| full.to_string())
+        };
+        // The directly-composed roles of `node` (a class concretization, or a role
+        // concretization like `R2` / `R2[Num]`). Classes use their DIRECT `does`
+        // list (NOT the transitive `class_composed_roles` closure, which would
+        // surface a concretization reached only via another role). A role node
+        // resolves to its matching `RoleCandidateDef` BY ARITY — preferring the
+        // LAST-registered same-arity candidate, matching `resolve_role_candidate`'s
+        // "newest wins" so an out-of-scope same-named role from a sibling block
+        // does not shadow the current one — and returns THAT candidate's own
+        // parents with its type parameters substituted by the node's concrete args.
+        // (The by-name `role_parents` MERGES every same-named variant's parents,
+        // which falsely conflates a role group / cross-scope redeclarations.)
+        let direct_roles = |node: &str| -> Vec<String> {
+            if let Some(roles) = self.registry().class_direct_composed_roles.get(node) {
+                return roles.clone();
+            }
+            if let Some(roles) = self.registry().class_composed_roles.get(node) {
+                return roles.clone();
+            }
+            let base = base_of(node);
+            let args: Vec<String> = node
+                .split_once('[')
+                .map(|(_, rest)| {
+                    super::registration_class::parse_role_type_args(
+                        rest.strip_suffix(']').unwrap_or(rest),
+                    )
+                })
+                .unwrap_or_default();
+            if let Some(candidates) = self.registry().role_candidates.get(&base) {
+                if let Some(cand) = candidates
+                    .iter()
+                    .rev()
+                    .find(|c| c.type_params.len() == args.len())
+                    .or_else(|| candidates.last())
+                {
+                    return cand
+                        .parents
+                        .iter()
+                        .map(|p| {
+                            let mut s = p.clone();
+                            for (tp, arg) in cand.type_params.iter().zip(args.iter()) {
+                                s = s.replace(&format!("::{tp}"), arg);
+                            }
+                            s
+                        })
+                        .collect();
+                }
+            }
+            self.registry()
+                .role_parents
+                .get(&base)
+                .cloned()
+                .unwrap_or_default()
         };
         let mut queue: VecDeque<String> = VecDeque::new();
         let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -391,10 +446,21 @@ impl Interpreter {
                 // Nearest consumer found; ambiguity is decided by its own composition.
                 return matches;
             }
+            // Descend, carrying the FULL concretization (not just the base) so a
+            // forwarded type parameter is substituted at the next level.
             for r in composed {
-                let rb = base_of(&r);
-                if seen.insert(rb.clone()) {
-                    queue.push_back(rb);
+                if seen.insert(r.clone()) {
+                    queue.push_back(r);
+                }
+            }
+            // A class that does not itself compose the role inherits its parent
+            // classes' composed roles (`class C3 is C1` sees `C1`'s `R1[Int]`).
+            if let Some(class_def) = self.registry().classes.get(&node) {
+                for parent in &class_def.parents {
+                    let pbase = base_of(parent);
+                    if self.registry().classes.contains_key(&pbase) && seen.insert(parent.clone()) {
+                        queue.push_back(parent.clone());
+                    }
                 }
             }
         }

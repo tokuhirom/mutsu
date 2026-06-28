@@ -9,7 +9,7 @@ use Test;
 # parameters must not collide. Distinct role names per case avoid the global
 # role-registry name collision between independent lexical roles.
 
-plan 5;
+plan 7;
 
 my sub ts(Mu \a, Mu $b = Nil) { a.^name ~ ($b ~~ Nil ?? "" !! "[" ~ $b.^name ~ "]") }
 
@@ -60,4 +60,28 @@ my sub ts(Mu \a, Mu $b = Nil) { a.^name ~ ($b ~~ Nil ?? "" !! "[" ~ $b.^name ~ "
     }
     is-deeply CW.new.outer, ("W1[Int]", "W1[Num]"),
         'qualified call resolves relative to the executing role context';
+}
+
+{
+    # Inherited method resolves relative to its DEFINING class, not the receiver.
+    # `IC.via` is inherited from `IP`; `self.IR::of-type` inside it must see IP's
+    # `IR[Int]` (IP's role), even though IC itself also does `IR[Str]`.
+    my role IR[::T] { method of-type { ts($?ROLE, T) } }
+    my class IP does IR[Int] { method via { self.IR::of-type } }
+    my class IC is IP does IR[Str] { }
+    is IC.new.via, "IR[Int]",
+        'inherited method resolves its qualified role call against its defining class';
+}
+
+{
+    # Full multi-role + forwarding stanza (the qualified.t subtest-6 shape):
+    # C does R1[Int] does R2[Num], R2[::T] does R1[::T]. `self.R1::of-type` from C
+    # sees R1[Int]; from within R2[Num]'s method sees R1[Num].
+    my role G1[::T] { method of-type { ts($?ROLE, T) } }
+    my role G2[::T] does G1[::T] { method of-type { (ts($?ROLE, T), self.G1::of-type) } }
+    my class GC does G1[Int] does G2[Num] {
+        method of-type { (self.G1::of-type, |self.G2::of-type) }
+    }
+    is-deeply GC.new.of-type, ("G1[Int]", "G2[Num]", "G1[Num]"),
+        'multi-role + forwarding: direct vs forwarded concretizations resolve correctly';
 }
