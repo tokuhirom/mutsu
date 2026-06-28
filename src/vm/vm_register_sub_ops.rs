@@ -368,6 +368,13 @@ impl Interpreter {
             self.register_proto_decl(&name_str, params, param_defs, body)?;
             if *is_export {
                 self.register_proto_decl_as_global(&name_str, params, param_defs, body)?;
+                // Record the export so consumers/MAIN-dispatch see the whole multi
+                // family. A `proto … is export` exports its candidates too (raku),
+                // e.g. zef's `proto MAIN(|) is export` over `multi sub MAIN(…)`.
+                if !self.suppress_exports {
+                    let pkg = self.current_package().to_string();
+                    self.register_exported_sub(pkg, name_str.clone(), Vec::new());
+                }
             }
             // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
             if !custom_traits.is_empty() {
