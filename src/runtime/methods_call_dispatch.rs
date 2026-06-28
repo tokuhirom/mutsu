@@ -2502,11 +2502,7 @@ impl Interpreter {
             // first-dimension slice as a separate positional arg for N-D.
             fn render_data(v: &Value) -> String {
                 if let Value::Array(items, _) = v {
-                    let inner = items
-                        .iter()
-                        .map(render_data)
-                        .collect::<Vec<_>>()
-                        .join(", ");
+                    let inner = items.iter().map(render_data).collect::<Vec<_>>().join(", ");
                     format!("[{}]", inner)
                 } else {
                     crate::builtins::methods_0arg::raku_repr::raku_value(v)
@@ -2528,11 +2524,7 @@ impl Interpreter {
             let data = if shape.len() <= 1 {
                 render_data(&target)
             } else {
-                items
-                    .iter()
-                    .map(render_data)
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                items.iter().map(render_data).collect::<Vec<_>>().join(", ")
             };
             return Ok(Value::str(format!(
                 "{}.new(:shape({}), {})",
