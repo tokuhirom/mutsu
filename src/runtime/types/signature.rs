@@ -535,6 +535,29 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 candidate = *inner.clone();
             }
         }
+        // Sigil-based type check for a non-slurpy positional sub-param: a `@`
+        // parameter requires a Positional, a `%` parameter an Associative. In a
+        // destructure like `@a ($first, @rest)`, `@rest` is NOT slurpy, so it
+        // binds the element at its position; a scalar there is a binding error
+        // (e.g. `foo <1 2 3>` -> `@rest` gets the IntStr `2`).
+        if !sub_pd.named {
+            if sub_pd.name.starts_with('@')
+                && !matches!(candidate, Value::Array(..) | Value::Nil | Value::Slip(_))
+            {
+                return Err(RuntimeError::typecheck_binding_parameter_value(
+                    &sub_pd.name,
+                    "Positional",
+                    candidate,
+                ));
+            }
+            if sub_pd.name.starts_with('%') && !matches!(candidate, Value::Hash(..) | Value::Nil) {
+                return Err(RuntimeError::typecheck_binding_parameter_value(
+                    &sub_pd.name,
+                    "Associative",
+                    candidate,
+                ));
+            }
+        }
         if let Some(constraint) = &sub_pd.type_constraint {
             if let Some((target, source)) = parse_coercion_type(constraint) {
                 // A `T(S)` parameter accepts a value already of type `T` as well as
