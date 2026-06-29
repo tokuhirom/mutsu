@@ -25,6 +25,18 @@ pub(crate) fn foreach_stmt(input: &str) -> PResult<'_, Stmt> {
     ))
 }
 
+/// Return true if `expr` is (or ends in) a bare brace block — used to detect a
+/// block gobbled by a comma list / list-op, e.g. the trailing `{ say 3 }` in
+/// `for 1, 2, 3, { say 3 }`. A brace block parses as `AnonSub`/`AnonSubParams`/
+/// `Block`; in a comma list it lands as the final element of an `ArrayLiteral`.
+fn expr_ends_with_block(expr: &Expr) -> bool {
+    match expr {
+        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Block(_) => true,
+        Expr::ArrayLiteral(items) => items.last().is_some_and(expr_ends_with_block),
+        _ => false,
+    }
+}
+
 /// Given input starting at `(`, return true if its matching `)` group contains
 /// a top-level `;` (the C-style `for (init; test; incr)` obsolete form).
 fn paren_has_toplevel_semicolon(input: &str) -> bool {
@@ -174,16 +186,39 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     // (`for 1, 2` → X::Syntax::Missing, what => 'block'). Fail fatally so the
     // statement dispatcher does not fall back to reparsing `for` as a term.
     if !rest.starts_with('{') {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("what".to_string(), Value::str("block".to_string()));
-        attrs.insert(
-            "message".to_string(),
-            Value::str("Missing block".to_string()),
+        let panic = Value::make_exception(
+            "X::Syntax::Missing",
+            &[
+                ("what", Value::str("block".to_string())),
+                ("message", Value::str("Missing block".to_string())),
+            ],
         );
-        let ex = Value::make_instance(Symbol::intern("X::Syntax::Missing"), attrs);
+        // When the iterable expression itself ended with a brace block (e.g.
+        // `for 1, 2, 3, { say 3 }`), the block was gobbled by the comma list, so
+        // raku reports an additional X::Syntax::BlockGobbled sorrow alongside the
+        // X::Syntax::Missing panic, bundled in an X::Comp::Group.
+        if expr_ends_with_block(&iterable) {
+            let sorrow = Value::make_exception(
+                "X::Syntax::BlockGobbled",
+                &[(
+                    "message",
+                    Value::str("Expression needs parens to avoid gobbling block".to_string()),
+                )],
+            );
+            let group = Value::make_comp_group(
+                "Expression needs parens to avoid gobbling block\nMissing block (apparently claimed by expression)".to_string(),
+                Some(panic),
+                vec![sorrow],
+                vec![],
+            );
+            return Err(PError::fatal_with_exception(
+                "X::Comp::Group: Missing block".to_string(),
+                Box::new(group),
+            ));
+        }
         return Err(PError::fatal_with_exception(
             "X::Syntax::Missing: Missing block".to_string(),
-            Box::new(ex),
+            Box::new(panic),
         ));
     }
     // Collect &-sigil parameter names so they can be registered as user subs

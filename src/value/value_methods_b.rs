@@ -346,6 +346,39 @@ impl Value {
         Self::make_instance_with_destroy(class_name, attributes, false)
     }
 
+    /// Build a typed exception instance (`X::Foo`) from `(attr, value)` pairs.
+    /// A `message` attr is added if not supplied. Convenience for compile-time
+    /// error construction (parser/compiler) where the full sorrow/panic model is
+    /// modelled with real exception objects.
+    pub(crate) fn make_exception(class_name: &str, attrs: &[(&str, Value)]) -> Self {
+        let mut map: HashMap<String, Value> = HashMap::new();
+        for (k, v) in attrs {
+            map.insert((*k).to_string(), v.clone());
+        }
+        Self::make_instance(Symbol::intern(class_name), map)
+    }
+
+    /// Build an `X::Comp::Group` wrapping a fatal `panic` exception together with
+    /// accumulated `sorrows` and `worries` (non-fatal compile-time errors and
+    /// warnings). This mirrors rakudo's compile-sorrow accumulator: when a single
+    /// construct produces several diagnostics, they are bundled into one group
+    /// exception rather than thrown one at a time.
+    pub(crate) fn make_comp_group(
+        message: String,
+        panic: Option<Value>,
+        sorrows: Vec<Value>,
+        worries: Vec<Value>,
+    ) -> Self {
+        let mut map: HashMap<String, Value> = HashMap::new();
+        map.insert("message".to_string(), Value::str(message));
+        map.insert("sorrows".to_string(), Value::array(sorrows));
+        map.insert("worries".to_string(), Value::array(worries));
+        if let Some(p) = panic {
+            map.insert("panic".to_string(), p);
+        }
+        Self::make_instance(Symbol::intern("X::Comp::Group"), map)
+    }
+
     /// Build an instance with the given id and a fresh attribute cell. Used for
     /// constructing a value with an explicit id (genuinely new instances, or
     /// sentinel ids). Cross-frame sharing of mutations comes from cloning an
