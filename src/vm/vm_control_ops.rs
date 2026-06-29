@@ -203,11 +203,46 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let body_start = *ip + 1;
         let body_end = body_end as usize;
+        // Snapshot the env keys present before the branch runs so that on exit
+        // we can tell a *fresh* block-local `my` (no outer binding of that name)
+        // apart from one that merely *shadows* an existing outer binding (which
+        // `pop_loop_local_scope` already restores). Snapshot the slots too so a
+        // removed fresh declaration's frame slot can be reset to its pre-branch
+        // value. Both are cheap relative to a full `BlockScope` env restore and
+        // are only paid when the branch actually declares a block-local.
+        let env_had_before: std::collections::HashSet<String> = self
+            .env()
+            .keys()
+            .map(|s| s.with_str(|x| x.to_string()))
+            .collect();
+        let saved_locals = self.locals.clone();
         self.push_loop_local_scope();
+        // Track `my` declarations made directly in this branch.
+        self.block_declared_vars
+            .push(std::collections::HashSet::new());
         let res = self.run_range(code, body_start, body_end, compiled_fns);
+        let block_declared = self.block_declared_vars.pop().unwrap_or_default();
         // Restore shadowed outer bindings on every exit path (including errors
         // such as `next`/`last`/`return`/exceptions) so the scope stays balanced.
         self.pop_loop_local_scope(code);
+        // A branch is its own lexical scope: a `my $x` declared inside it that
+        // does NOT shadow an outer binding must not leak out (Raku semantics).
+        // `pop_loop_local_scope` only restores names that shadowed an existing
+        // outer binding, so remove the fresh declarations here, resetting their
+        // env entry and frame slot to the pre-branch state.
+        for name in &block_declared {
+            // `our`/dynamic/package-qualified names have their own scoping and
+            // must persist; only plain lexicals were recorded as block-local.
+            if env_had_before.contains(name) {
+                continue;
+            }
+            self.env_mut().remove(name);
+            for (idx, slot_name) in code.locals.iter().enumerate() {
+                if slot_name == name && idx < self.locals.len() {
+                    self.locals[idx] = saved_locals.get(idx).cloned().unwrap_or(Value::Nil);
+                }
+            }
+        }
         res?;
         *ip = body_end;
         Ok(())
