@@ -3,6 +3,18 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl Interpreter {
+    /// The invocant of a `.&sub(...)` call is always bound positionally to the
+    /// sub's first parameter, even when it is a literal colonpair (`:42foo.&f`).
+    /// A bare `Value::Pair` in an argument list is otherwise splatted into a
+    /// named argument, so containerize a Pair invocant into a positional
+    /// `ValuePair` (the same conversion `OpCode::ContainerizePair` performs).
+    fn invocant_as_positional(target: Value) -> Value {
+        match target {
+            Value::Pair(k, v) => Value::ValuePair(Box::new(Value::str(k)), v),
+            other => other,
+        }
+    }
+
     pub(super) fn exec_call_method_dynamic_op(
         &mut self,
         code: &CompiledCode,
@@ -64,7 +76,7 @@ impl Interpreter {
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
         ) {
             let mut call_args = Vec::with_capacity(args.len() + 1);
-            call_args.push(target);
+            call_args.push(Self::invocant_as_positional(target));
             call_args.extend(args);
             self.vm_call_on_value(name_val, call_args, None)
         } else {
@@ -292,7 +304,7 @@ impl Interpreter {
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
         ) {
             let mut call_args = Vec::with_capacity(args.len() + 1);
-            call_args.push(target);
+            call_args.push(Self::invocant_as_positional(target));
             call_args.extend(args);
             self.vm_call_on_value(name_val, call_args, None)
         } else if modifier.is_none()

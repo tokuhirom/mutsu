@@ -35,6 +35,15 @@ impl Interpreter {
             }
         }
         let method_name = method_sym.resolve();
+        // `.Capture` that must call user methods / drain a live source (Channel/
+        // Supply, or a non-Str Pair key needing `.Str`) is interpreter-aware; other
+        // targets fall through to the pure native `value_to_capture` below.
+        if method_name == "Capture"
+            && args.is_empty()
+            && let Some(r) = self.try_interpreter_capture(target)
+        {
+            return Some(r);
+        }
         // A `.map`/`.grep` on a lazy source that the interpreter would turn into
         // a lazy pipeline stage (a chained map/grep pipe, an infinite sequence, or
         // a genuinely-lazy `gather { … }.lazy`) must be deferred to the interpreter
