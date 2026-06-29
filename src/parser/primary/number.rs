@@ -180,24 +180,28 @@ fn parse_prefixed_radix<'a>(
     Some(Ok((remaining, parse_int_radix(&clean, radix))))
 }
 
-/// Wrap a numeric primary parse result in `Expr::LiteralSrc` when the source the
-/// user actually wrote differs from the canonical stringification of the parsed
-/// value — e.g. `0xFF`/`0b1010` (radix), `1.5e0`/`6.02e23` (scientific), or `∞`
+/// Wrap a bare numeric-literal statement expression in `Expr::LiteralSrc` when
+/// the `source` the user wrote differs from the canonical stringification of the
+/// parsed value — e.g. `0xFF`/`0b1010` (radix), `6.02e23` (scientific), or `∞`
 /// (Unicode infinity). The sink-context "Useless use of ..." warning then echoes
-/// the original format. Only `Int`/`BigInt`/`Num` literals are wrapped (the
-/// formats the tests exercise); everything else passes through untouched.
-pub(super) fn preserve_source<'a>(input: &'a str, parsed: PResult<'a, Expr>) -> PResult<'a, Expr> {
-    let (rest, expr) = parsed?;
+/// the original format instead of the rounded/decimal value.
+///
+/// This is applied ONLY at the bare-expression-statement level (the sink-warn
+/// position), never inside the primary parser — so a `LiteralSrc` never leaks
+/// into signatures, type-checked assignments, ranges, etc., where downstream
+/// passes pattern-match a plain `Expr::Literal`. Only `Int`/`BigInt`/`Num`
+/// literals are wrapped; everything else passes through untouched.
+pub(crate) fn wrap_divergent_literal(expr: Expr, source: &str) -> Expr {
     if let Expr::Literal(v) = &expr
         && matches!(v, Value::Int(_) | Value::BigInt(_) | Value::Num(_))
     {
-        let consumed = input[..input.len() - rest.len()].trim();
-        if !consumed.is_empty() && consumed != v.to_string_value() {
+        let trimmed = source.trim();
+        if !trimmed.is_empty() && trimmed != v.to_string_value() {
             let value = v.clone();
-            return Ok((rest, Expr::LiteralSrc(value, consumed.into())));
+            return Expr::LiteralSrc(value, trimmed.into());
         }
     }
-    Ok((rest, expr))
+    expr
 }
 
 /// Parse an integer string with given radix, using BigInt for overflow.

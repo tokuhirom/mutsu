@@ -211,6 +211,7 @@ pub(super) fn primary_memo_stats() -> (usize, usize, usize) {
 
 // Re-exports used by other modules
 pub(in crate::parser) use misc::{colonpair_expr, parse_block_body};
+pub(in crate::parser) use number::wrap_divergent_literal;
 pub(in crate::parser) use regex::parse_call_arg_list;
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
@@ -234,14 +235,11 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
             };
         }
 
-        try_primary!(number::preserve_source(input, number::dot_decimal(input)));
-        try_primary!(number::preserve_source(input, number::decimal(input)));
-        try_primary!(number::preserve_source(input, number::integer(input)));
-        try_primary!(number::preserve_source(input, number::generic_radix(input)));
-        try_primary!(number::preserve_source(
-            input,
-            number::unicode_numeric_literal(input)
-        ));
+        try_primary!(number::dot_decimal(input));
+        try_primary!(number::decimal(input));
+        try_primary!(number::integer(input));
+        try_primary!(number::generic_radix(input));
+        try_primary!(number::unicode_numeric_literal(input));
         // User-declared term symbols must be checked before keyword literals so
         // that e.g. `\term:<e²ˣ>` shadows the built-in constant `e`.
         try_primary!(ident::declared_term_symbol(input));
@@ -325,12 +323,7 @@ mod tests {
     fn parse_hex() {
         let (rest, expr) = primary("0xFF").unwrap();
         assert_eq!(rest, "");
-        // `0xFF` stringifies to `255`, so it is wrapped in a source-preserving
-        // literal carrying the original `0xFF` text for sink warnings.
-        match expr {
-            Expr::LiteralSrc(Value::Int(255), src) => assert_eq!(&*src, "0xFF"),
-            other => panic!("expected LiteralSrc(Int(255), \"0xFF\"), got {other:?}"),
-        }
+        assert!(matches!(expr, Expr::Literal(Value::Int(255))));
     }
 
     #[test]

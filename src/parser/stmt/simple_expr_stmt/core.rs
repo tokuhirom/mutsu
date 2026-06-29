@@ -89,6 +89,18 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     };
 
+    // When the whole statement expression is a bare numeric literal whose source
+    // format diverges from its canonical value (`0xFF`, `6.02e23`, `∞`), record
+    // the original text so a sink-context "Useless use" warning preserves it.
+    // Confined to this statement position so the wrapper never leaks into
+    // signatures / type checks / ranges (see `number::wrap_divergent_literal`).
+    let expr = if matches!(expr, Expr::Literal(_)) {
+        let consumed = &input[..input.len() - rest.len()];
+        crate::parser::primary::wrap_divergent_literal(expr, consumed)
+    } else {
+        expr
+    };
+
     if let Expr::BareWord(name) = &expr
         && matches!(name.as_str(), "qx" | "qqx")
         && rest.starts_with('=')

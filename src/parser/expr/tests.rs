@@ -376,14 +376,11 @@ fn parse_upto_with_infinity_literal() {
         Expr::Binary { left, op, right } => {
             assert!(matches!(*left, Expr::Literal(Value::Int(0))));
             assert!(matches!(op, TokenKind::DotDotCaret));
-            // `∞` carries its source glyph in a `LiteralSrc` (it stringifies to
-            // the canonical `Inf`), so accept either literal shape.
             assert!(matches!(
                 *right,
                 Expr::Literal(Value::Int(_))
                     | Expr::Literal(Value::BigInt(_))
                     | Expr::Literal(Value::Num(_))
-                    | Expr::LiteralSrc(Value::Num(_), _)
             ));
         }
         _ => panic!("expected upto range expression"),
