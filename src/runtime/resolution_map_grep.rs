@@ -1,5 +1,55 @@
 use super::*;
 
+/// Convert a `CallArg` to an `Expr` for expression-level call compilation,
+/// preserving named (`k => v`) and slip (`|v`) args. Mirrors the compiler's
+/// `call_args_to_expr_args`.
+fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
+    use crate::ast::{CallArg, Expr};
+    use crate::token_kind::TokenKind;
+    match arg {
+        CallArg::Positional(e) | CallArg::Invocant(e) => e.clone(),
+        CallArg::Named {
+            name,
+            value: Some(e),
+        } => Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str(name.clone()))),
+            op: TokenKind::FatArrow,
+            right: Box::new(e.clone()),
+        },
+        CallArg::Named { name, value: None } => Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str(name.clone()))),
+            op: TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::Bool(true))),
+        },
+        CallArg::Slip(e) => Expr::Unary {
+            op: TokenKind::Pipe,
+            expr: Box::new(e.clone()),
+        },
+    }
+}
+
+/// If the last non-`SetLine` statement of `body` is a bare `Stmt::Call`, replace
+/// it with `Stmt::Expr(Expr::Call)` so the re-compiled block leaves the call's
+/// value on the stack (otherwise a named/slip-arg tail call is compiled as a
+/// value-discarding statement and the map result wrongly falls back to `$_`).
+fn normalize_tail_call_for_value(body: &[crate::ast::Stmt]) -> Vec<crate::ast::Stmt> {
+    use crate::ast::{Expr, Stmt};
+    let Some(last_idx) = body.iter().rposition(|s| !matches!(s, Stmt::SetLine(_))) else {
+        return body.to_vec();
+    };
+    if let Stmt::Call { name, args } = &body[last_idx] {
+        let expr_args = args.iter().map(call_arg_to_expr).collect();
+        let mut out = body.to_vec();
+        out[last_idx] = Stmt::Expr(Expr::Call {
+            name: *name,
+            args: expr_args,
+        });
+        out
+    } else {
+        body.to_vec()
+    }
+}
+
 impl Interpreter {
     pub(super) fn eval_map_over_items(
         &mut self,
@@ -108,7 +158,14 @@ impl Interpreter {
             // a routine is currently on the dynamic call stack.
             let mut compiler = crate::compiler::Compiler::new();
             compiler.lexically_in_routine = !self.routine_stack.is_empty();
-            let (code, compiled_fns) = compiler.compile(&data.body);
+            // The map value is taken from the block's tail-expression result (or
+            // the topic `$_` if none was left on the stack). A bare tail
+            // `Stmt::Call` carrying named/slip args (how an imported sub call like
+            // `f(k => v)` parses) is compiled as a value-discarding statement, so
+            // the result would wrongly fall back to the topic. Normalize such a
+            // tail into `Stmt::Expr(Expr::Call)` so its value is preserved.
+            let normalized_body = normalize_tail_call_for_value(&data.body);
+            let (code, compiled_fns) = compiler.compile(&normalized_body);
 
             let underscore = "_".to_string();
             let dollar_topic = "$_".to_string();

@@ -696,6 +696,54 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "IO::CatHandle".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "get",
+                    "getc",
+                    "lines",
+                    "words",
+                    "comb",
+                    "split",
+                    "slurp",
+                    "readchars",
+                    "read",
+                    "next-handle",
+                    "close",
+                    "DESTROY",
+                    "eof",
+                    "opened",
+                    "chomp",
+                    "nl-in",
+                    "encoding",
+                    "on-switch",
+                    "path",
+                    "IO",
+                    "handles",
+                    "Str",
+                    "gist",
+                    "Supply",
+                    "native-descriptor",
+                    "seek",
+                    "tell",
+                    "t",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["IO::CatHandle".to_string()],
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "Backtrace".to_string(),
             ClassDef {
                 parents: Vec::new(),
