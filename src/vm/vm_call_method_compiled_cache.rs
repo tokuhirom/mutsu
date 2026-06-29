@@ -67,10 +67,23 @@ impl Interpreter {
                         value_dependent = true;
                         break 'outer;
                     }
+                    // A code-signature callback (`&cb:(Int)`) or capture
+                    // subsignature (`|c($a, $b)`) dispatches on the argument's
+                    // signature/shape, not its `value_type_name`.
+                    if pd.code_signature.is_some() || pd.sub_signature.is_some() {
+                        value_dependent = true;
+                        break 'outer;
+                    }
                     if let Some(tc) = &pd.type_constraint {
                         // `:D`/`:U`/`:_` smiley or `Int(Str)` coercion => value/identity
                         // dependent; a subset type carries an implicit `where`.
                         if tc.contains(':') || tc.contains('(') {
+                            value_dependent = true;
+                            break 'outer;
+                        }
+                        // Value-refining numeric pseudo-types match WITHIN a single
+                        // `value_type_name`, so type-keying would mis-route them.
+                        if matches!(tc.as_str(), "Inf" | "NaN" | "-Inf" | "UInt") {
                             value_dependent = true;
                             break 'outer;
                         }
