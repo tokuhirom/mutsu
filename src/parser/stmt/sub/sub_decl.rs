@@ -124,7 +124,17 @@ pub(crate) fn sub_decl_body(
         let (rest, (name, expr)) = parse_indirect_decl_name(input)?;
         (rest, name, Some(expr))
     } else {
-        let (rest, name) = parse_sub_name(input)?;
+        // Parse the name without the built-in null-operator check so we can
+        // build a richer X::Comp::Group (with pre/post source spans and the
+        // `<>`-means-empty-list worry) using the surrounding source text.
+        let (rest, name) = parse_sub_name_inner(input)?;
+        if let Some(err) = null_operator_group_error(
+            &name,
+            &format!("sub {}", &input[..input.len() - rest.len()]),
+            rest,
+        ) {
+            return Err(err);
+        }
         // Validate circumfix/postcircumfix operator part count
         validate_categorical_parts(&name)?;
         // Register user-declared sub so it can be called without parens later

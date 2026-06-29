@@ -11,8 +11,13 @@ pub(crate) fn parse_sub_name(input: &str) -> PResult<'_, String> {
 }
 
 /// Detect an operator declaration with an empty (whitespace-only) operator
-/// symbol, e.g. `infix:sym< >` or `infix:< >` -> X::Syntax::Extension::Null.
-pub(crate) fn null_operator_error(name: &str) -> Option<PError> {
+/// symbol, e.g. `infix:sym< >` or `infix:< >`. Returns `Some(emit_worry)` where
+/// `emit_worry` is `true` only for a *truly empty* `<>` symbol (the `infix:<>`
+/// form) — that is the one Raku additionally warns about ("Pair with <> really
+/// means an empty list"). A whitespace-only symbol (`< >`, `«  »`, `sym< >`)
+/// raises the bare panic with no worry. Returns `None` if `name` is not a
+/// null-operator declaration.
+fn null_operator_detect(name: &str) -> Option<bool> {
     const CATEGORIES: &[&str] = &[
         "infix",
         "prefix",
@@ -31,21 +36,63 @@ pub(crate) fn null_operator_error(name: &str) -> Option<PError> {
     // After the category, the symbol is `<SYM>`, `«SYM»`, or `sym<SYM>`.
     let after = &name[colon + 1..];
     let after = after.strip_prefix("sym").unwrap_or(after);
-    let inner = if let Some(s) = after.strip_prefix('<') {
-        s.strip_suffix('>')?
+    let (inner, used_angle) = if let Some(s) = after.strip_prefix('<') {
+        (s.strip_suffix('>')?, true)
     } else if let Some(s) = after.strip_prefix('\u{ab}') {
-        s.strip_suffix('\u{bb}')?
+        (s.strip_suffix('\u{bb}')?, false)
     } else {
         return None;
     };
     if !inner.trim().is_empty() {
         return None;
     }
+    // The empty-list worry only fires for a literally empty `<>` symbol, not a
+    // whitespace-only one (`< >`).
+    Some(used_angle && inner.is_empty())
+}
+
+/// Detect an operator declaration with an empty (whitespace-only) operator
+/// symbol, e.g. `infix:sym< >` or `infix:< >` -> X::Syntax::Extension::Null.
+pub(crate) fn null_operator_error(name: &str) -> Option<PError> {
+    null_operator_detect(name)?;
     let message = "Null operator is not allowed".to_string();
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(message.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Syntax::Extension::Null"), attrs);
     Some(PError::fatal_with_exception(message, Box::new(ex)))
+}
+
+/// Like [`null_operator_error`], but bundles the fatal `X::Syntax::Extension::Null`
+/// panic (carrying `pre`/`post` source spans) together with any compile-time
+/// worries into an `X::Comp::Group` — mirroring rakudo's compile-sorrow
+/// accumulator. The `<>`-quoted form additionally emits a worry that the `<>`
+/// really means an empty list, not the null string.
+pub(crate) fn null_operator_group_error(name: &str, pre: &str, post: &str) -> Option<PError> {
+    let emit_worry = null_operator_detect(name)?;
+    let message = "Null operator is not allowed".to_string();
+    let mut panic_attrs = std::collections::HashMap::new();
+    panic_attrs.insert("message".to_string(), Value::str(message.clone()));
+    panic_attrs.insert("pre".to_string(), Value::str(pre.to_string()));
+    panic_attrs.insert("post".to_string(), Value::str(post.to_string()));
+    let panic = Value::make_instance(Symbol::intern("X::Syntax::Extension::Null"), panic_attrs);
+
+    // Without an accompanying worry, raku throws the bare panic rather than
+    // bundling it into a single-element group.
+    if !emit_worry {
+        return Some(PError::fatal_with_exception(message, Box::new(panic)));
+    }
+
+    let worry_msg = "Pair with <> really means an empty list, not null string; \
+                     use :('') to represent the null string, or :() to represent \
+                     the empty list more accurately"
+        .to_string();
+    let mut worry_attrs = std::collections::HashMap::new();
+    worry_attrs.insert("payload".to_string(), Value::str(worry_msg.clone()));
+    worry_attrs.insert("message".to_string(), Value::str(worry_msg));
+    let worry = Value::make_instance(Symbol::intern("X::AdHoc"), worry_attrs);
+
+    let group = Value::make_comp_group(message.clone(), Some(panic), vec![], vec![worry]);
+    Some(PError::fatal_with_exception(message, Box::new(group)))
 }
 
 pub(crate) fn parse_sub_name_inner(input: &str) -> PResult<'_, String> {

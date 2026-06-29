@@ -2620,9 +2620,23 @@ impl Interpreter {
                         && other != '_'
                         && !matches!(other, '=' | ',' | '|' | '&')
                     {
-                        PENDING_REGEX_ERROR.with(|e| {
-                            *e.borrow_mut() = Some(make_unrecognized_metachar_error(other));
-                        });
+                        // If an earlier sorrow was already recorded for this
+                        // pattern (e.g. a malformed `**` range), this metachar is
+                        // a follow-on sorrow rather than the top-level error: the
+                        // fatal panic becomes "couldn't find final '/'", and both
+                        // sorrows are bundled into the resulting X::Comp::Group.
+                        let has_sorrows = REGEX_SORROWS.with(|s| !s.borrow().is_empty());
+                        if has_sorrows {
+                            push_regex_sorrow(unrecognized_metachar_exception(other));
+                            let mut panic_err =
+                                RuntimeError::new("Unable to parse regex; couldn't find final '/'");
+                            panic_err.exception = Some(Box::new(regex_unparseable_panic_value()));
+                            PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(panic_err));
+                        } else {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(make_unrecognized_metachar_error(other));
+                            });
+                        }
                         return None;
                     }
                     RegexAtom::Literal(other)
@@ -2702,6 +2716,20 @@ impl Interpreter {
                                         || *ch == '_'
                                 }) {
                                     count_str.push(chars.next().unwrap());
+                                }
+                                // A `** N..M` range whose upper endpoint is not a
+                                // digit / `*` / `^` (e.g. a negative literal
+                                // `1..-1`) is malformed. Record a `MalformedRange`
+                                // sorrow and let parsing continue so the trailing
+                                // metachar (`-`) and the unterminated regex panic
+                                // are accumulated into one `X::Comp::Group`.
+                                if mode == RegexParseMode::Validate
+                                    && count_str.ends_with("..")
+                                    && chars.peek().is_some_and(|ch| {
+                                        !ch.is_ascii_digit() && *ch != '*' && *ch != '^'
+                                    })
+                                {
+                                    push_regex_sorrow(malformed_range_exception());
                                 }
                                 let (min, max) = Self::parse_quantifier_range(&count_str);
                                 RegexQuant::Repeat(min, max)
