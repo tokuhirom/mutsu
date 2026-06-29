@@ -97,22 +97,38 @@ impl Compiler {
                     }
                     // Tag the container's element-type metadata so `.of` survives
                     // (and the missing-element default is the element type) when a
-                    // *named* typed array is declared in EXPRESSION position
-                    // (`my $x = (my Str @c)`, `gen my Str @s`). The statement-
+                    // *named* typed array/hash is declared in EXPRESSION position
+                    // (`my $x = (my Str @c)`, `gen my Int %i`). The statement-
                     // position VarDecl emits the same `SetVarType`; without it the
-                    // expr path left `@c.of` = Mu. Restrictions:
-                    //   - `@`-arrays only (`%`-hash tagging perturbs `Associative[T]`
-                    //     binding);
+                    // expr path left `@c.of`/`%i.of` = Mu and a missing typed-hash
+                    // key returned `Any` instead of the value-type default. Restrictions:
                     //   - boxed element types only (native `int`/`num`/`str` change
-                    //     the array storage and would panic in the auto-vivify here);
-                    //   - NOT anonymous `my Int @` — leaving an anonymous typed
-                    //     array untagged in an argument keeps `Positional[T]`
-                    //     type-capture binding working (a pre-existing limitation
-                    //     where a parameterized Array[T] is rejected by `Positional[T]`).
-                    if name.starts_with('@')
+                    //     the storage and would panic in the auto-vivify here);
+                    //   - NOT anonymous `my Int @`/`my Int %` — leaving an anonymous
+                    //     typed container untagged in an argument keeps `Positional[T]`/
+                    //     `Associative[T]` type-capture binding working (a pre-existing
+                    //     limitation where a parameterized Array[T]/Hash[T] is rejected
+                    //     by the role).
+                    //   - object hashes (`my Int %j{Cool}`, encoded as the
+                    //     `"Int{Cool}"` constraint) are excluded: re-tagging the
+                    //     key type in expression position breaks the string-key
+                    //     subscript (`%j<b>:k` returns `()`), the concrete
+                    //     `Associative[T]` perturbation the array-only guard
+                    //     originally avoided.
+                    let is_native_value_type = type_constraint.as_ref().is_some_and(|tc| {
+                        if name.starts_with('@') {
+                            crate::runtime::native_types::is_native_array_element_type(tc)
+                        } else {
+                            crate::runtime::native_types::is_native_int_type(tc)
+                                || matches!(tc.as_str(), "num" | "num32" | "num64" | "str")
+                        }
+                    });
+                    if (name.starts_with('@') || name.starts_with('%'))
                         && !name.contains("__ANON_ARRAY__")
+                        && !name.contains("__ANON_HASH__")
                         && let Some(tc) = type_constraint
-                        && !crate::runtime::native_types::is_native_array_element_type(tc)
+                        && !is_native_value_type
+                        && !(name.starts_with('%') && tc.contains('{'))
                     {
                         let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                         self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
