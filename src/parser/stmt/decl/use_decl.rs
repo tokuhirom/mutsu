@@ -409,5 +409,10 @@ pub(in crate::parser::stmt) fn no_stmt(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
+    // `no worries` lexically disables compiler "Potential difficulties" warnings
+    // (e.g. the empty-`<>` colonpair warning) for the rest of the current scope.
+    if module == "worries" {
+        crate::parser::stmt::simple::suppress_worries();
+    }
     Ok((rest, Stmt::No { module, arg }))
 }

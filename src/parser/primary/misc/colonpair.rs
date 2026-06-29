@@ -513,6 +513,26 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             let content = &inner[..close];
             let r = &inner[close + 1..];
             let words = split_angle_words(content);
+            if words.is_empty() {
+                // `:name<>` means `name => ()` (an empty list), NOT a null string.
+                // Raku emits a compile-time "Potential difficulties" warning unless
+                // the lexical `no worries` pragma is in effect.
+                if !crate::parser::stmt::simple::worries_suppressed() {
+                    crate::parser::add_parse_warning(format!(
+                        "Pair with <> really means an empty list, not null string; \
+                         use :{name}('') to represent the null string, \
+                         or :{name}() to represent the empty list more accurately"
+                    ));
+                }
+                return Ok((
+                    r,
+                    Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                        op: crate::token_kind::TokenKind::FatArrow,
+                        right: Box::new(Expr::ArrayLiteral(Vec::new())),
+                    },
+                ));
+            }
             if !words.is_empty() {
                 let val_expr = if words.len() == 1 {
                     Expr::Literal(crate::parser::primary::container::angle_word_value(
