@@ -515,6 +515,9 @@ impl Interpreter {
                 return self.build_io_path_instance(*class_name, &cn_resolved, &args);
             }
             match base_class_name {
+                "IO::CatHandle" if !self.has_user_method(class_key, "new") => {
+                    return Ok(self.build_io_cathandle(&args));
+                }
                 "IterationBuffer" => {
                     // Shared with the VM's native fast path.
                     return Ok(Self::build_native_iterationbuffer_value(*class_name, &args));

@@ -290,6 +290,7 @@ impl Interpreter {
         };
         match dispatch_class.as_deref().unwrap_or(class_name) {
             "IO::Handle" => self.native_io_handle_mut(attributes, method, args),
+            "IO::CatHandle" => self.native_io_cathandle_mut(attributes, method, args),
             "Proc" => self.native_proc_mut(attributes, method, args),
             "Promise" => self.native_promise_mut(attributes, method, args),
             "Channel" => self.native_channel_mut(attributes, method, args),
@@ -394,6 +395,15 @@ impl Interpreter {
         match dispatch_class.as_deref().unwrap_or(class_name) {
             "IO::Path" => self.native_io_path(attributes, class_name, method, args),
             "IO::Handle" => self.native_io_handle(attributes, method, args),
+            "IO::CatHandle" => {
+                // All IO::CatHandle methods mutate read state; the immutable entry
+                // is only reached for introspection paths, so run the mutable impl
+                // and drop the writeback (callers needing persistence route through
+                // the mutable path in methods_instance_ops).
+                let (result, _updated) =
+                    self.native_io_cathandle_mut(attributes.clone(), method, args)?;
+                Ok(result)
+            }
             "IO::Special" => self.native_io_special(attributes, method, args),
             "IO::Socket::INET" => self.native_socket_inet(attributes, method, args),
             "IO::Socket::Async" => self.native_socket_async(attributes, method, args),

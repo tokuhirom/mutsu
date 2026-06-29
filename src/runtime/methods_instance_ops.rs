@@ -676,6 +676,20 @@ impl Interpreter {
                     );
                 }
             }
+            if class_name == "IO::CatHandle" && self.is_native_method(&class_name.resolve(), method)
+            {
+                // Every IO::CatHandle method advances internal read state, so route
+                // through the mutable path and commit the updated attributes back to
+                // the receiver's shared cell.
+                let (result, updated) = self.call_native_instance_method_mut(
+                    &class_name.resolve(),
+                    attributes.to_map(),
+                    method,
+                    args,
+                )?;
+                attributes.commit_attrs(updated);
+                return Ok(result);
+            }
             if self.is_native_method(&class_name.resolve(), method) {
                 return self.call_native_instance_method(
                     &class_name.resolve(),
