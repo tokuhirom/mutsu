@@ -1539,6 +1539,20 @@ pub struct Interpreter {
     /// distinct defs have distinct Arcs). Holds a strong `Arc` clone so the
     /// pointer can never free+reuse under a stale entry — no invalidation needed.
     pub(crate) func_def_fp_cache: rustc_hash::FxHashMap<usize, (Arc<FunctionDef>, u64)>,
+    /// Sound multi-*function* resolution cache — the function-dispatch analogue of
+    /// `multi_resolve_cache`. For a multi sub whose dispatch is purely type+arity
+    /// based (no `where` / literal / subset / `:D`/`:U` smiley / coercion
+    /// candidate), the winning candidate is a function of `(package, name,
+    /// positional arg types)`, so it is cached here. Keyed on
+    /// `(package_sym, name_sym, arg-type-keys)`. Cleared with the other dispatch
+    /// caches on any registry change.
+    #[allow(clippy::type_complexity)]
+    pub(crate) func_multi_resolve_cache:
+        rustc_hash::FxHashMap<(Symbol, Symbol, Vec<Symbol>), Option<Arc<FunctionDef>>>,
+    /// Memoized `(package, name) -> is this multi sub's dispatch type+arity
+    /// deterministic` (i.e. cacheable in `func_multi_resolve_cache`). The
+    /// function analogue of `multi_type_cacheable`.
+    pub(crate) func_multi_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     pub(crate) block_declared_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_saved_env: Vec<HashMap<String, Value>>,

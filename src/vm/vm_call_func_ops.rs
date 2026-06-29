@@ -1110,7 +1110,12 @@ impl Interpreter {
                     // is_interpreter_handled_function gate below.
                     let _ = self.take_pending_dispatch_error();
                     if !self.is_interpreter_handled_function(name)
-                        && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
+                        // Sound multi-function resolution cache: for a type+arity-
+                        // deterministic multi this returns the winner without the
+                        // per-call registry walk + candidate match/rank/dedup;
+                        // value-dependent / un-keyable / ambiguous calls resolve
+                        // fresh (byte-identical to `resolve_function_with_types`).
+                        && let Some(def) = loan_env!(self, resolve_function_multi_cached(name, &args))
                         // A genuine multi candidate: the name is multi-cached, so
                         // `compile_and_call_function_def` never name-caches this
                         // candidate — a default param is safe here (unlike the

@@ -356,6 +356,101 @@ impl Interpreter {
         fp
     }
 
+    /// Whether a multi *sub* `name` (in `pkg`) has a dispatch that is purely
+    /// type+arity based — the function analogue of `multi_dispatch_type_cacheable`.
+    /// False when any candidate is value-/identity-dependent (`where` / literal /
+    /// subset / `:D`/`:U` smiley / coercion), so its winner can't be keyed on the
+    /// positional arg types alone. Memoized per `(package, name)`.
+    pub(crate) fn func_multi_dispatch_type_cacheable(
+        &mut self,
+        pkg_sym: Symbol,
+        name_sym: Symbol,
+        name: &str,
+    ) -> bool {
+        if let Some(&c) = self.func_multi_type_cacheable.get(&(pkg_sym, name_sym)) {
+            return c;
+        }
+        let candidates = self.resolve_all_multi_candidates(name);
+        let mut value_dependent = false;
+        'outer: for def in &candidates {
+            for pd in &def.param_defs {
+                if pd.where_constraint.is_some() || pd.literal_value.is_some() {
+                    value_dependent = true;
+                    break 'outer;
+                }
+                // A code-signature callback param (`&cb:(Int)`) or a capture
+                // subsignature (`|c($a, $b)`) dispatches on the argument's
+                // *signature/shape*, not its `value_type_name` (a callback is
+                // always "Sub"), so type-keying would mis-route it.
+                if pd.code_signature.is_some() || pd.sub_signature.is_some() {
+                    value_dependent = true;
+                    break 'outer;
+                }
+                if let Some(tc) = &pd.type_constraint {
+                    // `:D`/`:U`/`:_` smiley or `Int(Str)` coercion => value/identity
+                    // dependent; a subset type carries an implicit `where`. The `:`
+                    // check also excludes enum-value (`E::a`) and qualified-value
+                    // constraints, which refine within one value-type.
+                    if tc.contains(':') || tc.contains('(') {
+                        value_dependent = true;
+                        break 'outer;
+                    }
+                    // Value-refining numeric pseudo-types: `Inf`/`NaN`/`UInt`/`-Inf`
+                    // all match WITHIN a single `value_type_name` ("Num"/"Int") by
+                    // inspecting the value, so type-keying would mis-route them
+                    // (e.g. `multi f(NaN)` vs `multi f(Numeric)` both key as Num).
+                    if matches!(tc.as_str(), "Inf" | "NaN" | "-Inf" | "UInt") {
+                        value_dependent = true;
+                        break 'outer;
+                    }
+                    let base = tc.split(['[', ' ']).next().unwrap_or(tc.as_str());
+                    if self.registry().subsets.contains_key(base) {
+                        value_dependent = true;
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        let cacheable = candidates.len() >= 2 && !value_dependent;
+        self.func_multi_type_cacheable
+            .insert((pkg_sym, name_sym), cacheable);
+        cacheable
+    }
+
+    /// Resolve a multi *sub* winner, consulting the sound multi-function
+    /// resolution cache (`func_multi_resolve_cache`) for a type+arity-deterministic
+    /// multi — avoiding the per-call registry walk + candidate match/rank/dedup in
+    /// `resolve_function_with_types`. Falls back to a fresh resolve for un-keyable
+    /// args (named/Junction/container), value-dependent multis, and AMBIGUOUS
+    /// results (which must re-raise their pending dispatch error every call).
+    /// Behaviorally identical to `resolve_function_with_types` for the caller.
+    pub(crate) fn resolve_function_multi_cached(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Arc<FunctionDef>> {
+        let Some(arg_keys) = Self::multi_arg_type_keys(args) else {
+            return self.resolve_function_with_types(name, args);
+        };
+        let pkg_sym = Symbol::intern(&self.current_package());
+        let name_sym = Symbol::intern(name);
+        if !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name) {
+            return self.resolve_function_with_types(name, args);
+        }
+        let key = (pkg_sym, name_sym, arg_keys);
+        if let Some(hit) = self.func_multi_resolve_cache.get(&key) {
+            return hit.clone();
+        }
+        let resolved = self.resolve_function_with_types(name, args);
+        // Ambiguity is signaled by `None` + a pending dispatch error; that must be
+        // re-raised on every call, so don't cache it.
+        let ambiguous = resolved.is_none() && self.pending_dispatch_error.is_some();
+        if !ambiguous {
+            self.func_multi_resolve_cache.insert(key, resolved.clone());
+        }
+        resolved
+    }
+
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -503,8 +598,12 @@ impl Interpreter {
         // would redispatch to the wrong (or the same) candidate, flaking ~50% of
         // the time with the process hash seed. The winner is excluded from
         // `remaining` so redispatch targets the OTHER candidates.
+        // Resolve the deterministic winner ONCE (the sound multi-resolution cache
+        // skips the registry walk + match/rank for a type+arity-deterministic
+        // multi) and reuse it for both the fingerprint identity and the rw-param
+        // capture below — the previous code resolved it twice per call.
         let saved_err = self.take_pending_dispatch_error();
-        let current_def = self.resolve_function_with_alias(name, args);
+        let current_def = self.resolve_function_multi_cached(name, args);
         let current_fp = current_def
             .as_ref()
             .map(|def| self.func_def_fingerprint(def));
@@ -522,8 +621,8 @@ impl Interpreter {
         if pushed {
             // Capture the FIRST (winning) candidate's scalar rw params so a
             // nextsame+rw redispatch can chain the rw value through it (§D).
-            let rw_params = self
-                .resolve_function_with_alias(name, args)
+            let rw_params = current_def
+                .as_ref()
                 .map(|def| {
                     super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs)
                 })
