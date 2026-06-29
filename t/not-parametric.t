@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 11;
 
 # Parameterizing a non-parametric type (a plain class / package / module) with
 # `[T]` throws X::NotParametric. Only roles and built-in container types accept
@@ -20,6 +20,12 @@ throws-like 'my module M { }; sub foo(M of Int) { }', X::NotParametric,
     'module "of" parameter is not parameterizable';
 throws-like 'my class C { }; sub foo(C of Int) { }', X::NotParametric,
     'class "of" parameter is not parameterizable';
+
+# Even a bodyless sub declaration reports X::NotParametric: raku evaluates the
+# `of` parameterization while parsing the signature, before noticing the missing
+# block, so the parameterization error wins.
+throws-like 'my class C { }; sub foo(C of Int)', X::NotParametric,
+    'bodyless class "of" parameter is not parameterizable';
 
 # Built-in container types and roles ARE parameterizable.
 {

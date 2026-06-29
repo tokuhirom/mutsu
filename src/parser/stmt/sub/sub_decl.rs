@@ -296,6 +296,51 @@ pub(crate) fn sub_decl_body(
         ));
     }
     if rest.is_empty() {
+        // A bodyless `sub foo(C of Int)` whose signature parameterizes a
+        // non-parametric user type (`C[Int]`) must report X::NotParametric, not
+        // "missing block" — raku evaluates the `of` parameterization while
+        // parsing the signature, before noticing the absent body. We can't tell
+        // parametric from non-parametric here, so emit a bodyless stub and let
+        // the compile-time pre-pass (validate_param_type_constraints) raise
+        // X::NotParametric for declared classes/packages. Only do this when the
+        // base names a user-declared type, so builtin parametric forms like
+        // `sub foo(Array[Int])` still report the missing block.
+        let parameterizes_user_type = param_defs.iter().any(|pd| {
+            pd.type_constraint
+                .as_deref()
+                .and_then(|tc| tc.split_once('['))
+                .map(|(base, _)| base.trim())
+                .is_some_and(|base| {
+                    !base.is_empty()
+                        && base.starts_with(|c: char| c.is_ascii_uppercase())
+                        && super::super::simple::is_user_declared_type(base)
+                })
+        });
+        if parameterizes_user_type {
+            let merged_return_type = return_type.or(traits.return_type);
+            return Ok((
+                rest,
+                Stmt::SubDecl {
+                    name: Symbol::intern(&name),
+                    name_expr,
+                    params,
+                    param_defs,
+                    return_type: merged_return_type,
+                    associativity: traits.associativity,
+                    precedence_trait: traits.precedence_trait,
+                    signature_alternates,
+                    body: Vec::new(),
+                    multi,
+                    is_rw: traits.is_rw,
+                    is_raw: traits.is_raw,
+                    is_export: traits.is_export,
+                    export_tags: traits.export_tags,
+                    is_test_assertion: traits.is_test_assertion,
+                    supersede,
+                    custom_traits: traits.custom_traits,
+                },
+            ));
+        }
         return Err(PError::expected("sub body '{ ... }'"));
     }
     let (rest, body) = if param_defs.iter().any(|p| p.sigilless) {
