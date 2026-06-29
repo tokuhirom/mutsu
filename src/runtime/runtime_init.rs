@@ -1693,6 +1693,7 @@ impl Interpreter {
         }
 
         let mut interpreter = Self {
+            user_declared_classes: std::collections::HashSet::new(),
             env: Env::from(env),
             output_sink: Arc::new(RwLock::new(OutputSink::new())),
             warn_output: String::new(),

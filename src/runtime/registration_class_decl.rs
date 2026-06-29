@@ -7,6 +7,28 @@ use crate::ast::{HandleSpec, ParamDef, PhaserKind};
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Recursively surface `has`-attribute declarations nested inside a sub/block
+    /// within a class body (`class C { sub f { has $.x } }`). Descends into
+    /// `sub`/block bodies but NOT into a nested `class`/`role` (which owns its own
+    /// attribute scope). Collects only `HasDecl` statements.
+    fn collect_nested_class_has_decls<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
+        for s in stmts {
+            match s {
+                // Own attribute scope / already collected at the top level.
+                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
+                Stmt::SubDecl { body, .. } => {
+                    for inner in body {
+                        if matches!(inner, Stmt::HasDecl { .. }) {
+                            out.push(inner);
+                        }
+                    }
+                    Self::collect_nested_class_has_decls(body, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub(crate) fn register_class_decl(
         &mut self,
         name: &str,
@@ -15,6 +37,9 @@ impl Interpreter {
         body: &[Stmt],
     ) -> Result<Vec<String>, RuntimeError> {
         self.clear_private_zeroarg_method_cache();
+        // Mark this as a user-declared class so its collected attribute list is
+        // authoritative for accessor resolution (undeclared `.name` -> NotFound).
+        self.user_declared_classes.insert(name.to_string());
         let ClassDeclModifiers {
             class_is_rw,
             is_hidden,
@@ -903,13 +928,19 @@ impl Interpreter {
             .insert("?CLASS".to_string(), Value::Package(Symbol::intern(name)));
         // Flatten SyntheticBlock (from `has ($a, $b)` list form) so inner
         // HasDecl statements are processed at the top level.
-        let flattened_body: Vec<&Stmt> = body
+        let mut flattened_body: Vec<&Stmt> = body
             .iter()
             .flat_map(|s| match s {
                 Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
                 other => vec![other],
             })
             .collect();
+        // An attribute can also be declared inside a nested sub/block within the
+        // class body (`class C { sub f { has $.x } }`) — Rakudo still registers it
+        // on the class. Surface those `has` declarations so the main loop below
+        // registers the attribute (the nested sub itself is still processed
+        // normally; its body's `has` is a compile-time declaration).
+        Self::collect_nested_class_has_decls(body, &mut flattened_body);
         // Pre-scan: collect attribute names declared directly in this class body.
         // Combined with role-composed attributes already in class_def.attributes,
         // this gives the full set of attributes valid for $!attr access.
