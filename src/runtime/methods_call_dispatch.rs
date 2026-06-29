@@ -2469,6 +2469,17 @@ impl Interpreter {
                 _ => None,
             }
         };
+        // `.Capture` on targets that must call user methods or drain a live source
+        // (a `Channel`/`Supply` drains to a list; a List/Array/Seq with a non-Str
+        // Pair key stringifies the key via its `.Str`). The pure native fast path
+        // (`value_to_capture`) handles every other target.
+        if method == "Capture"
+            && args.is_empty()
+            && !bypass_native_fastpath
+            && let Some(r) = self.try_interpreter_capture(&target)
+        {
+            return r;
+        }
         if method == "tail"
             && !bypass_native_fastpath
             && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
@@ -3239,5 +3250,63 @@ impl Interpreter {
 
         // Instance dispatch, package dispatch, and fallback paths
         self.dispatch_instance_and_fallback(target, method, args)
+    }
+
+    /// Interpreter-aware `.Capture` for targets the pure `value_to_capture` can't
+    /// handle: a `Channel`/`Supply` drains to a list first, and a List/Array/Seq
+    /// holding a non-Str `Pair` key needs `.Str` (a custom-class key uses its
+    /// `method Str`) to name it. Returns `None` for every other target (the pure
+    /// native fast path handles those).
+    pub(crate) fn try_interpreter_capture(
+        &mut self,
+        target: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        match target {
+            Value::Channel(_) => Some(
+                self.call_method_with_values(target.clone(), "list", vec![])
+                    .and_then(|list| self.list_to_capture(&list)),
+            ),
+            Value::Instance { class_name, .. } if class_name.resolve() == "Supply" => Some(
+                // `.Seq` taps the supply and collects its emissions (`.list` does
+                // not run an on-demand `supply { ... }` block).
+                self.call_method_with_values(target.clone(), "Seq", vec![])
+                    .and_then(|seq| self.list_to_capture(&seq)),
+            ),
+            Value::Array(..) | Value::Seq(_) | Value::Slip(_) => {
+                let needs_str_key = Self::value_to_list(target).iter().any(
+                    |i| matches!(i, Value::ValuePair(k, _) if !matches!(k.as_ref(), Value::Str(_))),
+                );
+                needs_str_key.then(|| self.list_to_capture(target))
+            }
+            _ => None,
+        }
+    }
+
+    /// Build a Capture from a list: each `Pair` becomes a named argument (its key
+    /// stringified via `.Str`, so a custom-class key uses its `method Str`), every
+    /// other element a positional. Mirrors `List.Capture`.
+    fn list_to_capture(&mut self, list: &Value) -> Result<Value, RuntimeError> {
+        let items = Self::value_to_list(list);
+        let mut positional = Vec::new();
+        let mut named = std::collections::HashMap::new();
+        for item in items {
+            match item {
+                Value::Pair(k, v) => {
+                    named.insert(k, *v);
+                }
+                Value::ValuePair(k, v) => {
+                    let key_str = match k.as_ref() {
+                        Value::Str(s) => s.to_string(),
+                        other => self
+                            .call_method_with_values(other.clone(), "Str", vec![])
+                            .map(|s| s.to_string_value())
+                            .unwrap_or_else(|_| other.to_string_value()),
+                    };
+                    named.insert(key_str, *v);
+                }
+                other => positional.push(other),
+            }
+        }
+        Ok(Value::capture(positional, named))
     }
 }
