@@ -92,6 +92,68 @@ impl Interpreter {
             None
         };
 
+        // Within one class/grammar/package/module body, two non-`multi` `sub`s
+        // (or two `token`s/`regex`es) of the same name are an X::Redeclaration,
+        // just like at the top level. (`my`/`our`-scoped methods/tokens are
+        // covered by `dup_scoped_method`; this covers plain `sub`/`token`.)
+        let dup_routine_in_body = |body: &[Stmt]| -> Option<RuntimeError> {
+            let mut seen_subs: HashMap<String, bool> = HashMap::new();
+            let mut seen_tokens: HashSet<String> = HashSet::new();
+            for s in body {
+                match s {
+                    Stmt::SubDecl { name, multi, .. } => {
+                        let n = name.resolve().to_string();
+                        if n.is_empty() {
+                            continue;
+                        }
+                        match seen_subs.get(&n) {
+                            None => {
+                                seen_subs.insert(n, *multi);
+                            }
+                            Some(prev_all_multi) => {
+                                if *prev_all_multi && *multi {
+                                    // all-multi so far: still allowed
+                                } else {
+                                    let mut attrs = std::collections::HashMap::new();
+                                    attrs.insert("symbol".to_string(), Value::str(n.clone()));
+                                    attrs.insert(
+                                        "what".to_string(),
+                                        Value::str("routine".to_string()),
+                                    );
+                                    attrs.insert(
+                                        "message".to_string(),
+                                        Value::str(format!(
+                                            "Redeclaration of routine '{}'. Did you mean to declare a multi-sub?",
+                                            n
+                                        )),
+                                    );
+                                    return Some(RuntimeError::typed("X::Redeclaration", attrs));
+                                }
+                            }
+                        }
+                    }
+                    Stmt::TokenDecl { name, .. } => {
+                        let n = name.resolve().to_string();
+                        if n.is_empty() {
+                            continue;
+                        }
+                        if !seen_tokens.insert(n.clone()) {
+                            let mut attrs = std::collections::HashMap::new();
+                            attrs.insert("symbol".to_string(), Value::str(n.clone()));
+                            attrs.insert("what".to_string(), Value::str("regex".to_string()));
+                            attrs.insert(
+                                "message".to_string(),
+                                Value::str(format!("Redeclaration of regex '{}'", n)),
+                            );
+                            return Some(RuntimeError::typed("X::Redeclaration", attrs));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        };
+
         let type_redeclaration = |name: &str| -> RuntimeError {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("symbol".to_string(), Value::str(name.to_string()));
@@ -177,6 +239,9 @@ impl Interpreter {
                     if let Some(err) = dup_scoped_method(body) {
                         return Err(err);
                     }
+                    if let Some(err) = dup_routine_in_body(body) {
+                        return Err(err);
+                    }
                     let name = name.resolve().to_string();
                     // X::TooLateForREPR: the repr must be fixed at the initial
                     // declaration. If an earlier declaration of this class had a
@@ -219,6 +284,9 @@ impl Interpreter {
                     if let Some(err) = dup_scoped_method(body) {
                         return Err(err);
                     }
+                    if let Some(err) = dup_routine_in_body(body) {
+                        return Err(err);
+                    }
                     (name.resolve().to_string(), body_is_stub(body))
                 }
                 Stmt::SubsetDecl { name, .. } => (name.resolve().to_string(), false),
@@ -238,6 +306,17 @@ impl Interpreter {
                         seen_types.insert(vname.clone(), false);
                     }
                     (name.resolve().to_string(), false)
+                }
+                Stmt::Package { body, .. } => {
+                    // `package`/`module` bodies: a duplicate `sub` is the same
+                    // X::Redeclaration as inside a class. (The package name itself
+                    // shares the type namespace, but block-scoped leakage makes a
+                    // registry-based check unsafe, so only the in-body routine
+                    // check runs here.)
+                    if let Some(err) = dup_routine_in_body(body) {
+                        return Err(err);
+                    }
+                    continue;
                 }
                 _ => continue,
             };
