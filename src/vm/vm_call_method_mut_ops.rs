@@ -1329,7 +1329,26 @@ impl Interpreter {
                         .and_then(|s| s.as_ref())
                         .is_some_and(|n| !n.contains('\0')) =>
             {
-                if let Value::Array(items, arr_kind) = &target
+                // A natively typed array (`array[int]`) cannot hold a boxed
+                // `ContainerRef` cell — BIND-POS on it must throw "Cannot bind to
+                // a natively typed array". Detect it (a var bound to this same
+                // backing Arc whose element type is native) and fall through to
+                // the slow path, which raises that error.
+                let is_native_array = if let Value::Array(items, ..) = &target {
+                    let native_var = self.env().iter().find_map(|(name, bound)| match bound {
+                        Value::Array(existing, ..) if Arc::ptr_eq(existing, items) => Some(*name),
+                        _ => None,
+                    });
+                    native_var.is_some_and(|name| {
+                        self.var_type_constraint(&name.resolve())
+                            .as_deref()
+                            .is_some_and(crate::runtime::native_types::is_native_array_element_type)
+                    })
+                } else {
+                    false
+                };
+                if !is_native_array
+                    && let Value::Array(items, arr_kind) = &target
                     && let Some(i) = match &args[0] {
                         Value::Int(n) if *n >= 0 => Some(*n as usize),
                         Value::Num(f) if *f >= 0.0 => Some(*f as usize),
