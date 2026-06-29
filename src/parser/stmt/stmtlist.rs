@@ -207,6 +207,16 @@ pub(crate) fn stmt_list_with_mode(
         if r.is_empty() || r.starts_with('}') {
             return Ok((r, stmts));
         }
+        // VCS conflict markers (`<<<<<<<` ... `=======` ... `>>>>>>>`): record the
+        // opening-marker line and skip the whole block, so the surrounding code
+        // still parses. The collected markers become an X::Comp::Group (or a lone
+        // X::Comp::AdHoc) after the parse — mirroring rakudo's
+        // "Found a version control conflict marker" compile error.
+        if let Some((after_block, marker_line)) = detect_vcs_conflict_block(r) {
+            crate::parser::record_vcs_conflict_marker(marker_line);
+            rest = after_block;
+            continue;
+        }
         if allow_mainline_capture
             && let Ok((after_decl, mut main_sub)) = sub::top_level_main_semicolon_decl(r)
         {
@@ -397,4 +407,54 @@ fn consume_stray_close_paren(input: &str) -> &str {
         }
     }
     input
+}
+
+/// Returns true if `line` (a single source line, trailing `\n` already removed)
+/// is a VCS conflict marker: exactly seven of `ch` (`<`/`=`/`>`/`|`), not an
+/// eighth, followed by horizontal whitespace or end-of-line. Matching rakudo,
+/// `<<<<<<< HEAD`, `=======`, and `>>>>>>> branch` all qualify.
+fn is_conflict_marker_line(line: &str, ch: u8) -> bool {
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && bytes[i] == ch {
+        i += 1;
+    }
+    if i != 7 {
+        return false;
+    }
+    match bytes.get(7) {
+        None => true,
+        Some(&b) => b == b' ' || b == b'\t',
+    }
+}
+
+/// First line of `s` (without the trailing newline).
+fn first_line(s: &str) -> &str {
+    match s.find('\n') {
+        Some(i) => &s[..i],
+        None => s,
+    }
+}
+
+/// If `r` begins (at beginning-of-line) with a `<<<<<<<` VCS conflict marker,
+/// returns the input remaining after the whole conflict block — consumed
+/// through the matching `>>>>>>>` line, or to end-of-input if there is none —
+/// together with the 1-based line number of the opening marker.
+fn detect_vcs_conflict_block(r: &str) -> Option<(&str, i64)> {
+    if !is_conflict_marker_line(first_line(r), b'<') {
+        return None;
+    }
+    let line = crate::parser::primary::current_line_number(r);
+    let mut rest = r;
+    loop {
+        let (cur, after) = match rest.find('\n') {
+            Some(i) => (&rest[..i], &rest[i + 1..]),
+            None => (rest, ""),
+        };
+        if is_conflict_marker_line(cur, b'>') || after.is_empty() {
+            return Some((after, line));
+        }
+        rest = after;
+    }
 }

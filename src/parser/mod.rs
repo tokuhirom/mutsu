@@ -46,11 +46,74 @@ use crate::value::{RuntimeError, Value};
 
 thread_local! {
     static PARSE_WARNINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// 1-based line numbers of detected VCS conflict markers (`<<<<<<<` blocks).
+    static VCS_CONFLICT_MARKERS: RefCell<Vec<i64>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Add a warning message during parsing. Collected and emitted after parse completes.
 pub(super) fn add_parse_warning(msg: String) {
     PARSE_WARNINGS.with(|w| w.borrow_mut().push(msg));
+}
+
+/// Record a detected VCS conflict marker (`<<<<<<<` ... `>>>>>>>` block) at the
+/// given 1-based line. Collected during parsing and, if any were found, turned
+/// into an `X::Comp::Group` (or a lone `X::Comp::AdHoc`) after the parse — this
+/// mirrors rakudo's "Found a version control conflict marker" compile error.
+pub(super) fn record_vcs_conflict_marker(line: i64) {
+    VCS_CONFLICT_MARKERS.with(|m| m.borrow_mut().push(line));
+}
+
+/// Take and clear the collected VCS conflict markers, deduplicating by line
+/// (parser backtracking may re-visit the same marker more than once).
+fn take_vcs_conflict_markers() -> Vec<i64> {
+    let all: Vec<i64> = VCS_CONFLICT_MARKERS.with(|m| m.borrow_mut().drain(..).collect());
+    let mut seen = std::collections::HashSet::new();
+    let mut lines = Vec::new();
+    for line in all {
+        if seen.insert(line) {
+            lines.push(line);
+        }
+    }
+    lines
+}
+
+/// Build the compile-time error rakudo raises for VCS conflict markers. A single
+/// marker becomes a bare `X::Comp::AdHoc`; two or more become an
+/// `X::Comp::Group` whose `sorrows` hold all but the last marker and whose
+/// `panic` is the last one. Each carries `payload`/`message`/`line`.
+fn build_vcs_conflict_error(lines: &[i64]) -> RuntimeError {
+    const PAYLOAD: &str = "Found a version control conflict marker";
+    let make_adhoc = |line: i64| -> Value {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("payload".to_string(), Value::str(PAYLOAD.to_string()));
+        attrs.insert("message".to_string(), Value::str(PAYLOAD.to_string()));
+        attrs.insert("line".to_string(), Value::Int(line));
+        Value::make_instance(crate::symbol::Symbol::intern("X::Comp::AdHoc"), attrs)
+    };
+
+    let mut err = RuntimeError::new(PAYLOAD);
+    err.code = Some(RuntimeErrorCode::ParseGeneric);
+    if lines.len() <= 1 {
+        let line = lines.first().copied().unwrap_or(1);
+        err.line = Some(line as usize);
+        err.exception = Some(Box::new(make_adhoc(line)));
+        return err;
+    }
+
+    let (panic_line, sorrow_lines) = lines.split_last().unwrap();
+    let sorrows: Vec<Value> = sorrow_lines.iter().map(|&l| make_adhoc(l)).collect();
+    let panic = make_adhoc(*panic_line);
+    let mut group_attrs = std::collections::HashMap::new();
+    group_attrs.insert("sorrows".to_string(), Value::array(sorrows));
+    group_attrs.insert("worries".to_string(), Value::array(vec![]));
+    group_attrs.insert("panic".to_string(), panic);
+    group_attrs.insert("message".to_string(), Value::str(PAYLOAD.to_string()));
+    err.line = Some(*panic_line as usize);
+    err.exception = Some(Box::new(Value::make_instance(
+        crate::symbol::Symbol::intern("X::Comp::Group"),
+        group_attrs,
+    )));
+    err
 }
 
 /// Take and clear all parse warnings collected during the last parse.
@@ -153,6 +216,7 @@ fn with_parse_hint(mut err: RuntimeError) -> RuntimeError {
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // Clear any stale parse warnings from previous/backtracked parses
     PARSE_WARNINGS.with(|w| w.borrow_mut().clear());
+    VCS_CONFLICT_MARKERS.with(|m| m.borrow_mut().clear());
     let memo_enabled = parse_memo_enabled();
     if memo_enabled {
         expr::reset_expression_memo();
@@ -239,6 +303,14 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
             }
         }
     };
+
+    // A VCS conflict marker is a compile-time error and takes precedence over
+    // whatever the surrounding statements parsed to (rakudo reports it even when
+    // the rest of the unit parses cleanly).
+    let conflict_markers = take_vcs_conflict_markers();
+    if !conflict_markers.is_empty() {
+        return Err(build_vcs_conflict_error(&conflict_markers));
+    }
 
     if memo_enabled && crate::trace::is_enabled("parse") {
         let (stmt_hits, stmt_misses, stmt_stores) = stmt::statement_memo_stats();
