@@ -74,9 +74,16 @@ impl Interpreter {
             };
             let mut result = Vec::new();
 
-            // Compile once, reuse VM for every iteration (same as eval_map_over_items)
+            // Compile once, reuse VM for every iteration (same as eval_map_over_items).
+            // Normalize a bare tail `Stmt::Call` carrying named/slip args (how an
+            // imported sub call like `f(k => v)` parses) into `Stmt::Expr(Expr::Call)`
+            // so its value is preserved as the block's result; otherwise it compiles
+            // as a value-discarding statement and the map result wrongly falls back
+            // to the topic `$_` (see `eval_map_over_items`).
             let compiler = crate::compiler::Compiler::new();
-            let (code, compiled_fns) = compiler.compile(&data.body);
+            let normalized_body =
+                super::resolution_map_grep::normalize_tail_call_for_value(&data.body);
+            let (code, compiled_fns) = compiler.compile(&normalized_body);
 
             let underscore = "_".to_string();
             let dollar_topic = "$_".to_string();

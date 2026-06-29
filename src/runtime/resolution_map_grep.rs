@@ -32,7 +32,7 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
 /// it with `Stmt::Expr(Expr::Call)` so the re-compiled block leaves the call's
 /// value on the stack (otherwise a named/slip-arg tail call is compiled as a
 /// value-discarding statement and the map result wrongly falls back to `$_`).
-fn normalize_tail_call_for_value(body: &[crate::ast::Stmt]) -> Vec<crate::ast::Stmt> {
+pub(super) fn normalize_tail_call_for_value(body: &[crate::ast::Stmt]) -> Vec<crate::ast::Stmt> {
     use crate::ast::{Expr, Stmt};
     let Some(last_idx) = body.iter().rposition(|s| !matches!(s, Stmt::SetLine(_))) else {
         return body.to_vec();
