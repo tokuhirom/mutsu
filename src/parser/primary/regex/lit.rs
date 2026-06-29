@@ -937,10 +937,13 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 let (r, _) = parse_char(r, ')')?;
                 (r, args)
             } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
-                // Colon-arg form: .=method: arg
+                // Colon-arg form: .=method: arg. The arg list is a comma-list at
+                // listop precedence, so each element stops before the loose
+                // word-logical ops (`andthen`/`and`/`or`): `.=new: 1 andthen $y`
+                // is `(.=new: 1) andthen $y`, not `.=new(1 andthen $y)`.
                 let r = &r_before_ws[1..];
                 let (r, _) = ws(r)?;
-                let (r, first_arg) = crate::parser::expr::expression(r)?;
+                let (r, first_arg) = crate::parser::expr::listop_arg_expr(r)?;
                 let mut args = vec![first_arg];
                 let mut r_inner = r;
                 loop {
@@ -959,7 +962,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                     }
                     let r2 = &r2[1..];
                     let (r2, _) = ws(r2)?;
-                    let (r2, next) = crate::parser::expr::expression(r2)?;
+                    let (r2, next) = crate::parser::expr::listop_arg_expr(r2)?;
                     args.push(next);
                     r_inner = r2;
                 }

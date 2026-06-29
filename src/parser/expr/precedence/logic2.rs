@@ -234,7 +234,7 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
     let next_fn: fn(&str) -> PResult<'_, Expr> = match mode {
         ExprMode::Full => sequence_expr,
         ExprMode::NoSequence => list_infix_expr,
-        ExprMode::NoSequenceNoFeed => range_expr,
+        ExprMode::NoSequenceNoFeed | ExprMode::ListopArg => range_expr,
     };
     let (mut rest, mut left) = next_fn(input)?;
     let mut last_junction: Option<JunctionInfixOp> = None;
