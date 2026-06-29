@@ -19,7 +19,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
   - Example: `cargo run -- -I lib script.raku`
   - Example: `MUTSULIB=/path/to/lib1:/path/to/lib2 cargo run -- script.raku`
 - Help: `cargo run -- --help`
-- Environment variables: secrets (e.g. `GH_TOKEN`) are stored in `.env` and loaded via `dotenvx run --`. Use `dotenvx run -- <command>` to run commands that need these secrets.
+- GitHub operations: use the `gh` CLI directly. It is already authenticated via `~/.config/gh/hosts.yml`. Do NOT wrap `gh` in `dotenvx run --` — the `GH_TOKEN` in `.env` is stale and would override the working token with bad credentials.
 
 ## Architecture
 
