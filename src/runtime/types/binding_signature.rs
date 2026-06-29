@@ -396,6 +396,19 @@ impl Interpreter {
                     .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
                     .cloned()
                     .collect();
+                // Type preservation under the single-argument rule for a single
+                // `Seq` argument (Rakudo): a sigilless `+a` keeps the Seq as a Seq
+                // (`a.WHAT === Seq`); an array `+@a` exposes it as a re-iterable
+                // List (`@a.WHAT === List`). Captured before `items` consumes the
+                // borrow; `None` for every other shape (→ plain Array as before).
+                let single_seq = if remaining_positional.len() == 1 {
+                    match unwrap_varref_value(remaining_positional[0].clone()) {
+                        Value::Seq(arr) => Some(arr),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
                 let items = if remaining_positional.len() == 1 {
                     let single = unwrap_varref_value(remaining_positional[0].clone());
                     match single {
@@ -436,7 +449,17 @@ impl Interpreter {
                     items
                 };
                 positional_idx = args.len(); // consume all remaining args
-                let slurpy_value = Value::real_array(items);
+                let slurpy_value = if let Some(seq_arc) = &single_seq {
+                    if pd.sigilless {
+                        // `+a` binding a lone Seq: keep it a Seq.
+                        Value::Seq(seq_arc.clone())
+                    } else {
+                        // `+@a` binding a lone Seq: a re-iterable List.
+                        Value::array(items)
+                    }
+                } else {
+                    Value::real_array(items)
+                };
                 if pd.sigilless {
                     // Sigilless single-argument rule slurpy (`+foo`): bind a
                     // read-only List under the bare name, with no `@` sigil.
