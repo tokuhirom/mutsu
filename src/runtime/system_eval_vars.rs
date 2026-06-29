@@ -202,14 +202,26 @@ impl Interpreter {
             // inside them (e.g. `sub greet($name) { say "$nam" }`) are caught at
             // EVAL/compile time. The body's lexical scope adds the routine's
             // parameters (and, for methods inside a class, the attributes).
-            Stmt::SubDecl { params, body, .. } => {
+            Stmt::SubDecl {
+                params,
+                param_defs,
+                body,
+                ..
+            } => {
                 let mut inner = declared.clone();
                 Self::add_routine_locals(params, body, &mut inner);
+                Self::add_sub_signature_locals(param_defs, &mut inner);
                 self.find_undeclared_var_in_body(body, &inner)
             }
-            Stmt::MethodDecl { params, body, .. } => {
+            Stmt::MethodDecl {
+                params,
+                param_defs,
+                body,
+                ..
+            } => {
                 let mut inner = declared.clone();
                 Self::add_routine_locals(params, body, &mut inner);
+                Self::add_sub_signature_locals(param_defs, &mut inner);
                 self.find_undeclared_var_in_body(body, &inner)
             }
             Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => {
@@ -241,6 +253,31 @@ impl Interpreter {
         }
         for s in body {
             Self::collect_declared_vars(s, out);
+        }
+    }
+
+    /// Seed a scope with the names introduced by parameter sub-signatures
+    /// (destructuring / renaming), e.g. `@a ($first, @rest)` declares `$first`
+    /// and `@rest`. The simplified `params: Vec<String>` only records the outer
+    /// parameter name, so these inner names would otherwise be flagged as
+    /// undeclared when used in the body.
+    fn add_sub_signature_locals(param_defs: &[crate::ast::ParamDef], out: &mut HashSet<String>) {
+        for pd in param_defs {
+            Self::collect_param_sub_signature(&pd.sub_signature, out);
+        }
+    }
+
+    fn collect_param_sub_signature(
+        sub_sig: &Option<Vec<crate::ast::ParamDef>>,
+        out: &mut HashSet<String>,
+    ) {
+        if let Some(params) = sub_sig {
+            for sp in params {
+                if !sp.name.is_empty() {
+                    out.insert(sp.name.trim_start_matches(['$', '@', '%', '&']).to_string());
+                }
+                Self::collect_param_sub_signature(&sp.sub_signature, out);
+            }
         }
     }
 

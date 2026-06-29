@@ -377,6 +377,27 @@ impl RuntimeError {
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }
 
+    /// Like `typecheck_binding_parameter`, but `.got` carries the actual
+    /// offending VALUE (so `got => SomeType` matchers can smartmatch its type)
+    /// instead of just the type-name string.
+    pub(crate) fn typecheck_binding_parameter_value(
+        param: &str,
+        expected: &str,
+        got: Value,
+    ) -> Self {
+        let got_name = crate::value::types::what_type_name(&got);
+        let msg = format!(
+            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+            param, expected, got_name
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("parameter".to_string(), Value::str(param.to_string()));
+        attrs.insert("expected".to_string(), expected_type_object(expected));
+        attrs.insert("got".to_string(), got);
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::TypeCheck::Binding::Parameter", attrs)
+    }
+
     /// Serialize this error as a JSON document of the form
     /// `{"<ClassName>":{<attr>:<value>, ...}}`.
     ///
