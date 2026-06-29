@@ -422,7 +422,7 @@ impl Interpreter {
                 parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["cue", "uncaught_handler"]
+                native_methods: ["cue", "uncaught_handler", "loads"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
@@ -441,7 +441,7 @@ impl Interpreter {
                 parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["cue", "uncaught_handler"]
+                native_methods: ["cue", "uncaught_handler", "loads"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),

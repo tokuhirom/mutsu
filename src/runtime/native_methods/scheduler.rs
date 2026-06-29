@@ -191,6 +191,28 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "cue" => {
+                // Validate mutually-exclusive scheduling adverbs up front (raku
+                // throws synchronously here, before the callback is ever run).
+                let has_in = Self::named_value(&args, "in").is_some();
+                let has_at = Self::named_value(&args, "at").is_some();
+                let has_every = Self::named_value(&args, "every").is_some();
+                let has_times = Self::named_value(&args, "times").is_some();
+                let has_stop = Self::named_value(&args, "stop").is_some();
+                if has_in && has_at {
+                    return Err(RuntimeError::new(
+                        "Cannot specify :in and :at at the same time",
+                    ));
+                }
+                if has_every && has_times && has_stop {
+                    return Err(RuntimeError::new(
+                        "Cannot specify :every, :times and :stop at the same time",
+                    ));
+                }
+                if is_current_thread && has_every {
+                    return Err(RuntimeError::new(
+                        "Cannot specify :every in a CurrentThreadScheduler",
+                    ));
+                }
                 let callback = args.first().cloned().unwrap_or(Value::Nil);
                 let times_explicit = Self::scheduler_times_arg(&args)?;
                 let delay = Self::scheduler_delay(&args)?;
@@ -232,11 +254,16 @@ impl Interpreter {
                     self.scheduler_run_sync(params)?;
                 } else {
                     let mut thread_interp = self.clone_for_thread();
+                    // Track the spawned task so `$*SCHEDULER.loads` reflects it
+                    // until the callback finishes (mark started before spawn so a
+                    // racing `.loads` never undercounts).
+                    state_scheduler::scheduler_task_started();
                     // Large user-code stack: the scheduled callback runs user VM
                     // code, which overflows the default thread stack on deep
                     // nesting. See `USER_THREAD_STACK_SIZE`.
                     crate::runtime::builtins_system::spawn_user_thread(move || {
                         thread_interp.scheduler_run_async(params);
+                        state_scheduler::scheduler_task_finished();
                     });
                 }
                 Ok(cancellation)
@@ -244,6 +271,12 @@ impl Interpreter {
             "uncaught_handler" => {
                 // Getter: return current uncaught_handler or Nil
                 Ok(state_scheduler::get_uncaught_handler().unwrap_or(Value::Nil))
+            }
+            "loads" => {
+                // Number of outstanding (spawned-but-unfinished) scheduled tasks.
+                // A CurrentThreadScheduler cue runs inline (never increments), so
+                // this is 0 once the scheduler is idle.
+                Ok(Value::Int(state_scheduler::scheduler_loads() as i64))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Scheduler",
@@ -330,6 +363,16 @@ impl Interpreter {
                         .map(|boxed| *boxed)
                         .unwrap_or_else(|| Value::str(e.message));
                     let _ = self.call_sub_value(catch.clone(), vec![exception], true);
+                } else if let Some(handler) = state_scheduler::get_uncaught_handler() {
+                    // No per-cue :catch: an uncaught exception goes to the
+                    // scheduler's uncaught_handler (raku semantics). Pass a real
+                    // exception object so `$exception.message` works.
+                    let exception = e.exception.map(|boxed| *boxed).unwrap_or_else(|| {
+                        let mut attrs = HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(e.message.clone()));
+                        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+                    });
+                    let _ = self.call_sub_value(handler, vec![exception], true);
                 }
                 Ok(false)
             }

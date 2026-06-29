@@ -25,6 +25,39 @@ pub(in crate::runtime) fn set_uncaught_handler(handler: Value) {
     }
 }
 
+// --- Outstanding scheduled-task counter (for $*SCHEDULER.loads) ---
+
+static OUTSTANDING_TASKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Record that an asynchronously-scheduled task has been spawned.
+pub(in crate::runtime) fn scheduler_task_started() {
+    OUTSTANDING_TASKS.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Record that a previously-spawned asynchronous task has finished.
+pub(in crate::runtime) fn scheduler_task_finished() {
+    // Saturating decrement so a stray finish can never underflow to a huge count.
+    let mut cur = OUTSTANDING_TASKS.load(Ordering::SeqCst);
+    while cur > 0 {
+        match OUTSTANDING_TASKS.compare_exchange_weak(
+            cur,
+            cur - 1,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(_) => break,
+            Err(actual) => cur = actual,
+        }
+    }
+}
+
+/// Number of outstanding (spawned but not yet completed) scheduled tasks.
+/// A synchronous (CurrentThreadScheduler) cue runs inline and never increments
+/// this, so it is 0 whenever the scheduler is idle.
+pub(in crate::runtime) fn scheduler_loads() -> u64 {
+    OUTSTANDING_TASKS.load(Ordering::SeqCst)
+}
+
 // --- FakeScheduler support (for Test::Tap) ---
 
 /// A scheduled item in a FakeScheduler.
