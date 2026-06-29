@@ -139,6 +139,13 @@ impl Interpreter {
             return Ok(());
         }
 
+        // A bare `Seq` is single-shot: a `for` loop consumes its iterator, so a
+        // second iteration of the SAME Seq throws X::Seq::Consumed (Rakudo). A Seq
+        // assigned into an `@`-array is reified there and stays re-iterable, so
+        // this only fires for a Seq iterated directly (`my \s = …Seq; for s {…}`).
+        if let Value::Seq(ref arc) = iterable {
+            crate::value::seq_consume(arc)?;
+        }
         let raw_items = if let Value::LazyList(ref ll) = iterable {
             self.force_lazy_list_vm(ll)?
         } else if let Value::Channel(ref ch) = iterable {
