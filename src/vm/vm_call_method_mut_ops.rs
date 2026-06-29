@@ -1360,10 +1360,8 @@ impl Interpreter {
                         updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
                     }
                     updated[i] = Value::ContainerRef(cell);
-                    let new_array = Value::Array(
-                        Arc::new(crate::value::ArrayData::new(updated)),
-                        *arr_kind,
-                    );
+                    let new_array =
+                        Value::Array(Arc::new(crate::value::ArrayData::new(updated)), *arr_kind);
                     self.env_mut().insert(target_name.to_string(), new_array);
                     if let Some((source_name, cell_val)) = bind_source_install {
                         self.set_env_with_main_alias(&source_name, cell_val.clone());
