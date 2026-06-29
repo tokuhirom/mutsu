@@ -60,12 +60,23 @@ pub(crate) fn smart_single_quoted_string(input: &str) -> PResult<'_, Expr> {
         '\u{2019}' => &['\u{2019}', '\u{2018}'],
         _ => return Err(PError::expected("smart single quote")),
     };
+    // Describe-by-adverb / goal text for an unterminated string, matching
+    // Rakudo's X::Comp::FailGoal for these smart-quote forms.
+    let (dba, goal): (&str, &str) = match first {
+        '\u{201A}' => ("low curly single quotes", "<[\u{2019}\u{2018}]>"),
+        // `\u{2018}`/`\u{2019}` both report as plain curly single quotes.
+        _ => ("curly single quotes", "'\u{2019}'"),
+    };
     let input = &input[first.len_utf8()..];
     let mut rest = input;
     let start = input;
     loop {
         if rest.is_empty() {
-            return Err(PError::expected("closing smart single quote"));
+            return Err(crate::parser::primary::container::fail_goal_error_at(
+                dba,
+                goal,
+                Some(rest),
+            ));
         }
         let ch = rest.chars().next().unwrap();
         if closers.contains(&ch) {
@@ -304,8 +315,10 @@ pub(crate) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
 
     loop {
         if rest.is_empty() {
-            return Err(crate::parser::primary::container::fail_goal_error(
-                dba, goal,
+            return Err(crate::parser::primary::container::fail_goal_error_at(
+                dba,
+                goal,
+                Some(rest),
             ));
         }
         let next_ch = rest.chars().next().unwrap();

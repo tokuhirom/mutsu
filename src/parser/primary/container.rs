@@ -23,7 +23,7 @@ mod sigil_context;
 pub(super) use angle_words::{
     angle_list, double_angle_list, find_nested_angle_close_pub, french_quote_list,
 };
-pub(super) use array::{array_literal, fail_goal_error, percent_hash_literal};
+pub(super) use array::{array_literal, fail_goal_error_at, percent_hash_literal};
 pub(super) use paren::paren_expr;
 pub(super) use sigil_context::{
     hash_context_paren_expr, itemized_brace_expr, itemized_bracket_expr,
