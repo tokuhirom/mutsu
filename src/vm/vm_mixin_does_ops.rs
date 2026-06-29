@@ -35,7 +35,7 @@ impl Interpreter {
         };
         if let Some(composed) = role_composed {
             if let Some(tn) = &left_type_object {
-                return Err(Self::does_type_object_error("but", tn));
+                return Err(self.but_on_type_object_error(tn));
             }
             let composed = composed?;
             // Reconcile the caller's slots from env so a captured-outer write made
@@ -48,7 +48,7 @@ impl Interpreter {
         // invocant it is X::Does::TypeObject; otherwise not composable.
         if matches!(&right, Value::Package(_)) {
             if let Some(tn) = &left_type_object {
-                return Err(Self::does_type_object_error("but", tn));
+                return Err(self.but_on_type_object_error(tn));
             }
             return Err(Self::mixin_not_composable_error(&left, &right));
         }
@@ -156,6 +156,43 @@ impl Interpreter {
             }
             _ => None,
         }
+    }
+
+    /// Is `name` a role type — a user-declared role or one of the built-in
+    /// roles? A role type object carries a `ParametricRoleGroupHOW`, which is the
+    /// distinction that matters for `but` on a type object (see
+    /// `but_on_type_object_error`).
+    fn is_role_type_name(&self, name: &str) -> bool {
+        const BUILTIN_ROLES: &[&str] = &[
+            "Positional",
+            "Associative",
+            "Callable",
+            "Iterable",
+            "Numeric",
+            "Real",
+            "Stringy",
+            "Mixy",
+            "Setty",
+            "Baggy",
+            "Blob",
+            "Buf",
+        ];
+        self.is_role(name) || BUILTIN_ROLES.contains(&name)
+    }
+
+    /// Error for `but` applied to a *type object* invocant. A role type object
+    /// (e.g. `Callable but role {...}`) carries a `ParametricRoleGroupHOW`, which
+    /// has no `mixin` metamethod, so raku reports X::Method::NotFound. A non-role
+    /// type object cannot be mixed into either (no instance) — that path stays
+    /// X::Does::TypeObject.
+    fn but_on_type_object_error(&self, type_name: &str) -> RuntimeError {
+        if self.is_role_type_name(type_name) {
+            return RuntimeError::method_not_found(
+                "mixin",
+                "Perl6::Metamodel::ParametricRoleGroupHOW",
+            );
+        }
+        Self::does_type_object_error("but", type_name)
     }
 
     /// `does`/`but` used with a type object as the invocant is illegal —
