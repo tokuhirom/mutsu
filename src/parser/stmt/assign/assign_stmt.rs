@@ -267,10 +267,17 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     modifier: None,
                 },
             };
-            let stmt = Stmt::Assign {
-                name,
-                expr: method_expr,
-                op: AssignOp::Assign,
+            let stmt = if name == "_" {
+                Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("__mutsu_topic_dotassign"),
+                    args: vec![method_expr],
+                })
+            } else {
+                Stmt::Assign {
+                    name,
+                    expr: method_expr,
+                    op: AssignOp::Assign,
+                }
             };
             return parse_statement_modifier(r_final, stmt);
         }
@@ -353,10 +360,20 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             modifier: None,
             quoted: false,
         };
-        let stmt = Stmt::Assign {
-            name,
-            expr,
-            op: AssignOp::Assign,
+        // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
+        // so it can reassign a read-only whole-container topic while a plain
+        // `$_ = ...` still throws X::Assignment::RO.
+        let stmt = if name == "_" {
+            Stmt::Expr(Expr::Call {
+                name: Symbol::intern("__mutsu_topic_dotassign"),
+                args: vec![expr],
+            })
+        } else {
+            Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::Assign,
+            }
         };
         return parse_statement_modifier(r, stmt);
     }

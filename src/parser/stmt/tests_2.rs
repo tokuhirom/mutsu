@@ -107,8 +107,13 @@ fn parse_topic_mutating_method_stmt() {
     let (rest, stmts) = program(".=fmt('%03b');").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
-    // .=method on topic assigns back to $_
-    assert!(matches!(&stmts[0], Stmt::Assign { name, .. } if name == "_"));
+    // `.=method` on the topic is the `.=` metaop (`$_ = $_.method`), routed through
+    // the `__mutsu_topic_dotassign` marker so it can reassign a read-only whole-
+    // container topic while a plain `$_ = ...` still throws X::Assignment::RO.
+    assert!(matches!(
+        &stmts[0],
+        Stmt::Expr(Expr::Call { name, .. }) if name.resolve() == "__mutsu_topic_dotassign"
+    ));
 }
 
 #[test]

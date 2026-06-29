@@ -1372,6 +1372,13 @@ pub struct Interpreter {
     pub(crate) container_ref_var: Option<String>,
     pub(crate) container_ref_reversed: bool,
     pub(crate) topic_source_var: Option<String>,
+    /// The `@`/`%` source variable when `$_` is a whole-container topic
+    /// (`given @a` / `with %h`), where `$_` aliases the entire container. A `.=`
+    /// metaop on the topic (`TopicDotAssign`) writes the reassigned `$_` straight
+    /// through to this source with container-assignment coercion. Distinct from
+    /// `topic_source_var`, which a `for @a` element loop also sets but where `$_`
+    /// is a single element (handled by the per-element writeback, not this).
+    pub(crate) topic_container_source: Option<String>,
     pub(crate) element_source: Option<(String, Value, bool)>,
     pub(crate) quanthash_bind_params: Vec<String>,
     pub(crate) for_param_restore_stack: Vec<(String, Option<Value>)>,
