@@ -570,7 +570,10 @@ impl Interpreter {
         indices: &[Value],
     ) -> Result<Vec<Value>, RuntimeError> {
         let mut resolved = Vec::with_capacity(indices.len());
-        let mut current = target.clone();
+        // A file-scoped `@a` shared across frames arrives as a `ContainerRef`
+        // cell; read through it so the WhateverCode length probe (and the
+        // navigation below) sees the real array.
+        let mut current = target.with_deref(|v| v.descalarize().clone());
         for idx in indices {
             if matches!(idx, Value::Whatever) {
                 // * means "all existing indices" - expand to 0..len

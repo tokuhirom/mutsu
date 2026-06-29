@@ -478,7 +478,9 @@ impl Interpreter {
             })
             .collect();
         let mut resolved = Vec::with_capacity(indices.len());
-        let mut current = target.clone();
+        // Read through a `ContainerRef`/`Scalar` so the WhateverCode length probe
+        // (`match current { Array => len }`) sees the real container.
+        let mut current = target.with_deref(|v| v.descalarize().clone());
         for idx in &indices {
             match idx {
                 Value::Sub(..) => {

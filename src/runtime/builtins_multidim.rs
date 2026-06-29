@@ -3,6 +3,15 @@ use crate::value::ArrayKind;
 
 /// Navigate a multi-dimensional array to get a value.
 pub(super) fn multidim_index(target: &Value, indices: &[Value]) -> Value {
+    // A file-scoped `@a`/`%h` shared across frames (or a nested cell-promoted
+    // element) is a `ContainerRef` cell; an itemized container is a `Scalar`.
+    // Read through both so the Array/Hash navigation below sees the container.
+    if let Value::ContainerRef(_) | Value::Scalar(_) = target {
+        return target.with_deref(|inner| {
+            let inner = inner.descalarize();
+            multidim_index(inner, indices)
+        });
+    }
     if indices.is_empty() {
         return target.clone();
     }
@@ -68,6 +77,14 @@ pub(super) fn multidim_index(target: &Value, indices: &[Value]) -> Value {
 /// Delete element from a multi-dimensional array, returning the deleted value.
 pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
     let default = || Value::Package(crate::symbol::Symbol::intern("Any"));
+    // A file-scoped `@a`/`%h` shared across frames (or a nested cell-promoted
+    // element) is a `ContainerRef` cell: mutate the inner container in place
+    // through the lock so every alias (env entry + caller local slot, which
+    // share the same `Arc`) observes the delete.
+    if let Value::ContainerRef(cell) = target {
+        let mut inner = cell.lock().unwrap();
+        return multidim_delete(&mut inner, indices);
+    }
     if indices.is_empty() {
         let old = target.clone();
         *target = default();
@@ -184,6 +201,12 @@ pub(super) fn multidim_collect_leaves(
     prefix: &[i64],
     out: &mut Vec<(Vec<i64>, Value)>,
 ) {
+    if let Value::ContainerRef(_) | Value::Scalar(_) = target {
+        return target.with_deref(|inner| {
+            let inner = inner.descalarize();
+            multidim_collect_leaves(inner, indices, prefix, out)
+        });
+    }
     if indices.is_empty() {
         out.push((prefix.to_vec(), target.clone()));
         return;
