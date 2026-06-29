@@ -372,6 +372,9 @@ fn describe_literal_with_src(v: &Value, src: &str) -> Option<String> {
     match v {
         Value::Int(_) | Value::BigInt(_) => Some(format!("constant integer {}", src)),
         Value::Num(_) => Some(format!("constant floating-point number {}", src)),
+        // A source-preserving colonpair (`:foo(42)`): echo the original syntax
+        // quoted, matching Raku's `Useless use of ":foo(42)" in sink context`.
+        Value::Pair(..) | Value::ValuePair(..) => Some(format!("\"{}\"", src)),
         _ => describe_literal(v),
     }
 }
