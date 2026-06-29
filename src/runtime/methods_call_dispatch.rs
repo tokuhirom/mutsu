@@ -2081,6 +2081,15 @@ impl Interpreter {
                 return Ok(Value::str(gist_item(self, &target)));
             }
         }
+        // An instance-only Supply method invoked on the `Supply` TYPE OBJECT is
+        // an X::Parameter::InvalidConcreteness (the invocant is `Supply:D`). These
+        // ones otherwise fall through to the generic `Any` list methods (e.g.
+        // `Supply.skip` would wrongly return a Seq).
+        if matches!(method, "skip") && matches!(&target, Value::Package(name) if name == "Supply") {
+            return Err(RuntimeError::parameter_invalid_concreteness(
+                "Supply", "Supply", method, "self", true, true,
+            ));
+        }
         // Supply type-object method error
         if matches!(
             method,
