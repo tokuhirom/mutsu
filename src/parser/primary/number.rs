@@ -196,7 +196,19 @@ pub(crate) fn wrap_divergent_literal(expr: Expr, source: &str) -> Expr {
         && matches!(v, Value::Int(_) | Value::BigInt(_) | Value::Num(_))
     {
         let trimmed = source.trim();
-        if !trimmed.is_empty() && trimmed != v.to_string_value() {
+        // Only preserve the format of a *bare* literal token. A parenthesized
+        // or otherwise composite source (`(1)`, `(0xFF)`) must NOT be wrapped:
+        // its consumed span includes grouping syntax that is not part of the
+        // literal, and wrapping it would (a) echo the parens in the sink
+        // warning and (b) hide the plain `Expr::Literal` from the "two terms in
+        // a row" / "block in infix position" parse-error checks that follow.
+        // A numeric literal token never contains parentheses or inner
+        // whitespace, so reject any source that does.
+        let is_clean_token = !trimmed.is_empty()
+            && !trimmed
+                .chars()
+                .any(|c| c == '(' || c == ')' || c.is_whitespace());
+        if is_clean_token && trimmed != v.to_string_value() {
             let value = v.clone();
             return Expr::LiteralSrc(value, trimmed.into());
         }
