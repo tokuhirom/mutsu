@@ -1313,6 +1313,66 @@ impl Interpreter {
                     _ => {}
                 }
             }
+            // `@a.BIND-POS($i, $x)` binds element `$i` to the caller variable
+            // `$x` as a shared `ContainerRef` cell — the array analog of
+            // BIND-KEY above. A later `$x = ...` writes through to `@a[$i]` (and
+            // vice versa). Only the single-index plain-`Array` case with a scalar
+            // *variable* source is handled here; a literal source (no var) and
+            // multi-dimensional BIND-POS fall through to the slow path, which
+            // stores the immutable `Value::Scalar` bind marker.
+            "BIND-POS"
+                if args.len() == 2
+                    && matches!(&target, Value::Array(..))
+                    && arg_sources
+                        .as_ref()
+                        .and_then(|s| s.get(1))
+                        .and_then(|s| s.as_ref())
+                        .is_some_and(|n| !n.contains('\0')) =>
+            {
+                if let Value::Array(items, arr_kind) = &target
+                    && let Some(i) = match &args[0] {
+                        Value::Int(n) if *n >= 0 => Some(*n as usize),
+                        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                        _ => None,
+                    }
+                {
+                    let source_var = arg_sources
+                        .as_ref()
+                        .and_then(|s| s.get(1))
+                        .and_then(|s| s.clone())
+                        .expect("arg_sources[1] present per match guard");
+                    let value = args[1].clone();
+                    // Reuse the source variable's existing cell when it is already
+                    // cell-bound (so all aliases stay shared); otherwise install a
+                    // fresh cell back into the source var.
+                    let mut bind_source_install: Option<(String, Value)> = None;
+                    let cell = match self.env().get(&source_var) {
+                        Some(Value::ContainerRef(cell)) => cell.clone(),
+                        _ => {
+                            let cell = Arc::new(std::sync::Mutex::new(value.clone()));
+                            bind_source_install =
+                                Some((source_var, Value::ContainerRef(cell.clone())));
+                            cell
+                        }
+                    };
+                    let mut updated = items.to_vec();
+                    if i >= updated.len() {
+                        updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                    }
+                    updated[i] = Value::ContainerRef(cell);
+                    let new_array = Value::Array(
+                        Arc::new(crate::value::ArrayData::new(updated)),
+                        *arr_kind,
+                    );
+                    self.env_mut().insert(target_name.to_string(), new_array);
+                    if let Some((source_name, cell_val)) = bind_source_install {
+                        self.set_env_with_main_alias(&source_name, cell_val.clone());
+                        self.update_local_if_exists(code, &source_name, &cell_val);
+                    }
+                    self.stack.push(value);
+                    return Ok(());
+                }
+            }
             _ => {}
         }
 
