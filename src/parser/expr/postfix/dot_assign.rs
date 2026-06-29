@@ -5,6 +5,7 @@ use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PResult, parse_char};
 use crate::parser::primary::{colonpair_expr, parse_call_arg_list, primary};
 use crate::symbol::Symbol;
+use crate::value::Value;
 
 pub(crate) fn atomic_var_name(expr: &Expr) -> Option<String> {
     match expr {
@@ -204,7 +205,70 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 args: vec![lhs, Expr::ArrayLiteral(Vec::new()), value],
             }
         }
-        _ => method_call_fn(target),
+        // A non-lvalue target (`(Foo.new).=meth`, `Foo.new.=meth`, ...). In Raku
+        // `X.=meth` is `X = X.meth`; when X (evaluated once) provides a `STORE`
+        // method it is a custom container, so this becomes `X.STORE(X.meth)` and
+        // the expression value is the container X itself (not STORE's return). An
+        // object without STORE keeps mutsu's historical plain-method-call value
+        // (Raku errors with "Cannot modify an immutable ..." there, but that path
+        // is untested and the lax form is relied on elsewhere). Bind the target to
+        // a temp so it is evaluated exactly once, then branch at runtime on
+        // `.^can("STORE")`:
+        //   do { my $t = TARGET;
+        //        $t.^can("STORE") ?? do { $t.STORE($t.meth); $t } !! $t.meth }
+        _ => {
+            use std::sync::atomic::Ordering;
+            let tmp = format!(
+                "__mutsu_dotassign_{}",
+                crate::parser::stmt::simple::TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+            );
+            let tmp_var = Expr::Var(tmp.clone());
+            // `method_call_fn` is `FnOnce`; call it once against the temp and clone
+            // the resulting `$t.meth(args)` for both the STORE argument and the
+            // no-STORE fallback (both branches share the same target `$t`).
+            let meth_result = method_call_fn(tmp_var.clone());
+            let can_store = Expr::MethodCall {
+                target: Box::new(tmp_var.clone()),
+                name: Symbol::intern("can"),
+                args: vec![Expr::Literal(Value::str("STORE".to_string()))],
+                modifier: Some('^'),
+                quoted: false,
+            };
+            let store_call = Expr::MethodCall {
+                target: Box::new(tmp_var.clone()),
+                name: Symbol::intern("STORE"),
+                args: vec![meth_result.clone()],
+                modifier: None,
+                quoted: false,
+            };
+            let then_expr = Expr::DoBlock {
+                body: vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var.clone())],
+                label: None,
+            };
+            let ternary = Expr::Ternary {
+                cond: Box::new(can_store),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(meth_result),
+            };
+            Expr::DoBlock {
+                body: vec![
+                    Stmt::VarDecl {
+                        name: tmp,
+                        expr: target,
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    },
+                    Stmt::Expr(ternary),
+                ],
+                label: None,
+            }
+        }
     }
 }
 
