@@ -80,6 +80,19 @@ impl Interpreter {
     /// `Backtrace::Frame` instances (each with `.subname`, `.file`, `.line`)
     /// and whose `text` attribute is the formatted backtrace string.
     pub(super) fn build_backtrace_value(&self) -> Value {
+        self.build_backtrace_value_with_leading(None)
+    }
+
+    /// Build a `Backtrace` value from the current routine stack, optionally
+    /// prepending a synthetic leading routine frame (e.g. `throw`).
+    ///
+    /// An explicit `ExceptionObject.throw` is dispatched natively, so the
+    /// `throw` invocation never appears as its own callframe on the routine
+    /// stack. Raku, by contrast, includes the `Exception.throw` setting frame at
+    /// the top of `.backtrace.list` (it is hidden from the rendered gist as a
+    /// setting frame, but still counts toward `.list.elems`). Passing the method
+    /// name here reproduces that extra structured-only frame.
+    pub(super) fn build_backtrace_value_with_leading(&self, leading: Option<&str>) -> Value {
         use crate::symbol::Symbol;
         use std::collections::HashMap;
 
@@ -90,6 +103,30 @@ impl Interpreter {
 
         let mut frames = Vec::new();
         let mut text_lines = Vec::new();
+
+        // Synthetic leading frame (setting `throw`/`rethrow`): structured-only,
+        // omitted from the rendered text just like Raku hides setting frames.
+        if let Some(name) = leading {
+            let mut frame_attrs = HashMap::new();
+            frame_attrs.insert("subname".to_string(), Value::str(name.to_string()));
+            frame_attrs.insert(
+                "file".to_string(),
+                current_file
+                    .clone()
+                    .map(Value::str)
+                    .unwrap_or(Value::str(String::new())),
+            );
+            frame_attrs.insert(
+                "line".to_string(),
+                current_line
+                    .map(|l| Value::Int(l as i64))
+                    .unwrap_or(Value::Int(0)),
+            );
+            frames.push(Value::make_instance(
+                Symbol::intern("Backtrace::Frame"),
+                frame_attrs,
+            ));
+        }
 
         for (i, frame) in reversed.iter().enumerate() {
             let (line, file) = if i == 0 {

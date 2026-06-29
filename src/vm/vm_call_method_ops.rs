@@ -353,7 +353,7 @@ impl Interpreter {
                 ..
             } = &target
             {
-                let backtrace_val = self.build_backtrace_value();
+                let backtrace_val = self.build_backtrace_value_with_leading(Some(method));
                 let mut new_attrs = attributes.as_map().clone();
                 new_attrs.insert("backtrace".to_string(), backtrace_val);
                 if let Some(line) = self.current_source_line() {

@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 12;
 
 # A genuine bare block `{ ... }` is a Raku callframe: a backtrace captured while
 # executing inside it must include an anonymous (non-routine) frame for the
@@ -57,3 +57,17 @@ my $after_leak;
     CATCH { default { $after_leak = .backtrace.list.elems } }
 }
 is $after_leak, $baseline, 'an escaped bare-block frame does not leak into a later backtrace';
+
+# An explicit `ExceptionObject.throw` includes the setting `throw` frame at the
+# top of `.backtrace.list` (hidden from the rendered text). Mirrors
+# roast/S32-exceptions/misc.t test 161: a single bare block around a sub whose
+# body throws gives throw, sub, block, <unit> = 4 frames.
+{
+    my sub baz { X::AdHoc.new.throw }();
+    CATCH { default {
+        my $bt = .backtrace;
+        is $bt.list.elems, 4, '.throw contributes a leading setting frame';
+        is $bt.list[0].subname, 'throw', 'the leading frame is the throw method';
+        unlike $bt.Str, /throw/, 'the throw frame is hidden from the rendered text';
+    }}
+}
