@@ -871,6 +871,7 @@ roast/S17-promise/nonblocking-await.t
 roast/S17-promise/single-assignment.t
 roast/S17-promise/stress.t
 roast/S17-scheduler/at.t
+roast/S17-scheduler/basic.t
 roast/S17-scheduler/every.t
 roast/S17-scheduler/in.t
 roast/S17-scheduler/times.t
