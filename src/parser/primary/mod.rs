@@ -145,6 +145,41 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
     })
 }
 
+/// Reconstruct the `pre`/`post` source spans around an eject point, for the
+/// `pre`/`post` attributes of compile-time errors such as `X::Syntax::Confused`.
+/// `eject` must be a sub-slice of the original source positioned at the point
+/// the parser gave up. Returns the current line's text before the eject (`pre`)
+/// and from the eject onward (`post`), or `None` if the eject is outside the
+/// original source buffer (e.g. a leaked heredoc region).
+pub(in crate::parser) fn source_span_at(eject: &str) -> Option<(String, String)> {
+    ORIGINAL_SOURCE.with(|s| {
+        let (src_ptr, src_len) = *s.borrow();
+        if src_ptr == 0 {
+            return None;
+        }
+        let eject_ptr = eject.as_ptr() as usize;
+        if eject_ptr < src_ptr || eject_ptr > src_ptr + src_len {
+            return None;
+        }
+        let offset = eject_ptr - src_ptr;
+        // SAFETY: (src_ptr, src_len) was recorded from a live `&str` and `offset`
+        // is within `[0, src_len]`, so this reconstructs the original source slice.
+        let full = unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(src_ptr as *const u8, src_len))
+        };
+        let pre_full = &full[..offset];
+        let post_full = &full[offset..];
+        // Limit to the current line (rakudo truncates the eject context per line).
+        let pre = pre_full.rsplit('\n').next().unwrap_or(pre_full).to_string();
+        let post = post_full
+            .split('\n')
+            .next()
+            .unwrap_or(post_full)
+            .to_string();
+        Some((pre, post))
+    })
+}
+
 /// Check if the given parser input pointer is within the original source buffer
 /// or a registered leaked region.
 pub(in crate::parser) fn is_within_original_source(input: &str) -> bool {
@@ -199,11 +234,14 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
             };
         }
 
-        try_primary!(number::dot_decimal(input));
-        try_primary!(number::decimal(input));
-        try_primary!(number::integer(input));
-        try_primary!(number::generic_radix(input));
-        try_primary!(number::unicode_numeric_literal(input));
+        try_primary!(number::preserve_source(input, number::dot_decimal(input)));
+        try_primary!(number::preserve_source(input, number::decimal(input)));
+        try_primary!(number::preserve_source(input, number::integer(input)));
+        try_primary!(number::preserve_source(input, number::generic_radix(input)));
+        try_primary!(number::preserve_source(
+            input,
+            number::unicode_numeric_literal(input)
+        ));
         // User-declared term symbols must be checked before keyword literals so
         // that e.g. `\term:<e²ˣ>` shadows the built-in constant `e`.
         try_primary!(ident::declared_term_symbol(input));
@@ -287,7 +325,12 @@ mod tests {
     fn parse_hex() {
         let (rest, expr) = primary("0xFF").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Literal(Value::Int(255))));
+        // `0xFF` stringifies to `255`, so it is wrapped in a source-preserving
+        // literal carrying the original `0xFF` text for sink warnings.
+        match expr {
+            Expr::LiteralSrc(Value::Int(255), src) => assert_eq!(&*src, "0xFF"),
+            other => panic!("expected LiteralSrc(Int(255), \"0xFF\"), got {other:?}"),
+        }
     }
 
     #[test]

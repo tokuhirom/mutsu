@@ -171,6 +171,13 @@ pub(crate) enum PhaserKind {
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
     Literal(Value),
+    /// A literal whose original source text differs from the canonical
+    /// stringification of its value (e.g. `0xFF` → `Int(255)`, `1.5e0` → a
+    /// rounded `Num`, `∞` → `Inf`). The compiler treats this as fully
+    /// transparent — identical to `Literal(value)` — but the sink-context
+    /// warning analysis uses `source` so the "Useless use of ..." message
+    /// preserves the format the user actually wrote.
+    LiteralSrc(Value, Box<str>),
     /// Marks a parenthesized expression so the compiler can distinguish
     /// `(1|2)|3` (grouped) from `1|2|3` (list-associative chain).
     /// The compiler treats this as transparent — it simply compiles the

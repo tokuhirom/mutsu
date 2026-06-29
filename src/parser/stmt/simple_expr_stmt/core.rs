@@ -778,19 +778,27 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             return parse_statement_modifier(r, stmt);
         }
         let stmt = match expr {
-            // Assigning to an immutable literal (`120 = 3`, `"a" = 3`, `1.0 = 3`)
-            // is illegal: Raku throws X::Assignment::RO. Pass the literal to
-            // `__mutsu_assignment_ro` so it can report the value's type and repr.
-            Expr::Literal(_) => Stmt::Expr(Expr::DoBlock {
-                body: vec![
-                    Stmt::Expr(rhs),
-                    Stmt::Expr(Expr::Call {
-                        name: Symbol::intern("__mutsu_assignment_ro"),
-                        args: vec![expr],
-                    }),
-                ],
-                label: None,
-            }),
+            // Assigning to an immutable literal (`120 = 3`, `"a" = 3`, `1.0 = 3`,
+            // `1e0 = 3`) is illegal: Raku throws X::Assignment::RO. Pass the
+            // literal to `__mutsu_assignment_ro` so it can report the value's type
+            // and repr. A source-preserving `LiteralSrc` is unwrapped to its plain
+            // literal first (the sink-warn source text is irrelevant here).
+            Expr::Literal(_) | Expr::LiteralSrc(..) => {
+                let lit = match expr {
+                    Expr::LiteralSrc(v, _) => Expr::Literal(v),
+                    other => other,
+                };
+                Stmt::Expr(Expr::DoBlock {
+                    body: vec![
+                        Stmt::Expr(rhs),
+                        Stmt::Expr(Expr::Call {
+                            name: Symbol::intern("__mutsu_assignment_ro"),
+                            args: vec![lit],
+                        }),
+                    ],
+                    label: None,
+                })
+            }
             Expr::BareWord(_) => Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]),
             Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
                 sigil,

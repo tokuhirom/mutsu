@@ -180,6 +180,26 @@ fn parse_prefixed_radix<'a>(
     Some(Ok((remaining, parse_int_radix(&clean, radix))))
 }
 
+/// Wrap a numeric primary parse result in `Expr::LiteralSrc` when the source the
+/// user actually wrote differs from the canonical stringification of the parsed
+/// value — e.g. `0xFF`/`0b1010` (radix), `1.5e0`/`6.02e23` (scientific), or `∞`
+/// (Unicode infinity). The sink-context "Useless use of ..." warning then echoes
+/// the original format. Only `Int`/`BigInt`/`Num` literals are wrapped (the
+/// formats the tests exercise); everything else passes through untouched.
+pub(super) fn preserve_source<'a>(input: &'a str, parsed: PResult<'a, Expr>) -> PResult<'a, Expr> {
+    let (rest, expr) = parsed?;
+    if let Expr::Literal(v) = &expr
+        && matches!(v, Value::Int(_) | Value::BigInt(_) | Value::Num(_))
+    {
+        let consumed = input[..input.len() - rest.len()].trim();
+        if !consumed.is_empty() && consumed != v.to_string_value() {
+            let value = v.clone();
+            return Ok((rest, Expr::LiteralSrc(value, consumed.into())));
+        }
+    }
+    Ok((rest, expr))
+}
+
 /// Parse an integer string with given radix, using BigInt for overflow.
 pub(super) fn parse_int_radix(clean: &str, radix: u32) -> Expr {
     if let Ok(n) = i64::from_str_radix(clean, radix) {

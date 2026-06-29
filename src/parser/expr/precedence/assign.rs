@@ -17,6 +17,9 @@ pub(crate) fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
 pub(crate) fn unwrap_grouped_lvalue(target: Expr) -> Expr {
     match target {
         Expr::Grouped(inner) => unwrap_grouped_lvalue(*inner),
+        // A source-preserving literal is an immutable lvalue exactly like the
+        // plain literal it wraps; the sink-warn source text is irrelevant here.
+        Expr::LiteralSrc(v, _) => Expr::Literal(v),
         other => other,
     }
 }

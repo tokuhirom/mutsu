@@ -282,11 +282,12 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("Inf", Value::Num(f64::INFINITY)) {
         return Ok(r);
     }
-    // ∞ (U+221E INFINITY)
+    // ∞ (U+221E INFINITY). Keep the original glyph as source text so a sink
+    // warning renders `∞` rather than the canonical `Inf`.
     if input.starts_with('\u{221E}') {
         return Ok((
             &input['\u{221E}'.len_utf8()..],
-            Expr::Literal(Value::Num(f64::INFINITY)),
+            Expr::LiteralSrc(Value::Num(f64::INFINITY), "\u{221E}".into()),
         ));
     }
     if let Ok(r) = try_kw("-Inf", Value::Num(f64::NEG_INFINITY)) {
