@@ -39,6 +39,13 @@ impl Interpreter {
         if !Self::is_plain_eager_list(target) {
             return None;
         }
+        // A Range's extremum is its first/last element; the index (for `:k`/`:kv`/
+        // `:p`) and the unbounded `n..Inf` case need Range-aware handling that the
+        // generic list fold can't do, so defer Ranges to the slow path
+        // (`dispatch_min_max_method`).
+        if Self::value_is_rangey(target) {
+            return None;
+        }
 
         // Parse args: an optional `:by` callable (a bare Sub/Routine first arg or
         // a `:by(...)` pair) and an optional `:k`/`:v`/`:kv`/`:p` adverb. Any

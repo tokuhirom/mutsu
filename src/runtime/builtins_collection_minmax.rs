@@ -15,7 +15,10 @@ impl Interpreter {
             None => return Ok(result),
         };
 
-        // Get the list items from the first positional arg
+        // Get the list items from the first positional arg. (Ranges are routed to
+        // the Range-aware scalar path in `dispatch_min_max_method` /
+        // `range_extrema_sub_form` and never reach here, so a plain List's
+        // min/max with adverbs reports ALL matching indices as a list.)
         let positional: Vec<Value> = args
             .iter()
             .filter(|arg| {
@@ -79,6 +82,18 @@ impl Interpreter {
             }
             _ => Ok(result),
         }
+    }
+
+    /// Whether a value is a Range (any exclusivity) or GenericRange.
+    pub(crate) fn value_is_rangey(v: &Value) -> bool {
+        matches!(
+            v,
+            Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }
+        )
     }
 
     pub(crate) fn collect_minmax_candidates(value: &Value, out: &mut Vec<Value>) {

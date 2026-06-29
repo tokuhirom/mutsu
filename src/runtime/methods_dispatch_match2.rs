@@ -527,6 +527,41 @@ impl Interpreter {
         {
             return self.dispatch_supply_running_extrema(target, method, &args);
         }
+        // Range.min/.max with adverbs (`:k`/`:kv`/`:p`/`:v`): a Range's extremum
+        // is always its first (min) / last (max) element, so report the index
+        // analytically rather than materialising (which can't handle `n..Inf`).
+        // Only the bare-adverb form (no `:by` comparator) is special-cased.
+        let has_by = args.iter().any(|a| {
+            matches!(a, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+                || matches!(a, Value::Pair(n, _) if n == "by")
+        });
+        if Self::value_is_rangey(&target) && !has_by {
+            let (adverb, _) = Self::extract_extrema_adverbs(&args);
+            // The extremum value reuses the (correct, Inf-aware) 0-arg path.
+            let want_max = method == "max";
+            let value = self.call_method_with_values(target.clone(), method, vec![])?;
+            let Some(adverb) = adverb else {
+                return Ok(value);
+            };
+            let key = if want_max {
+                // Last element's index = elems - 1 (Inf stays Inf).
+                let elems = self.call_method_with_values(target.clone(), "elems", vec![])?;
+                match elems {
+                    Value::Int(n) => Value::Int(n - 1),
+                    other if matches!(&other, Value::Num(f) if f.is_infinite()) => other,
+                    _ => Value::Num(f64::INFINITY),
+                }
+            } else {
+                Value::Int(0)
+            };
+            return Ok(match adverb.as_str() {
+                "k" => key,
+                "v" => value,
+                "kv" => Value::array(vec![key, value]),
+                "p" => Value::ValuePair(Box::new(key), Box::new(value)),
+                _ => value,
+            });
+        }
         let mut call_args = vec![target.clone()];
         if let Some(first) = args.first() {
             if matches!(
