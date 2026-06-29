@@ -210,7 +210,7 @@ pub(super) fn primary_memo_stats() -> (usize, usize, usize) {
 }
 
 // Re-exports used by other modules
-pub(in crate::parser) use misc::{colonpair_expr, parse_block_body};
+pub(in crate::parser) use misc::{colonpair_expr, parse_block_body, wrap_colonpair_sink_source};
 pub(in crate::parser) use number::wrap_divergent_literal;
 pub(in crate::parser) use regex::parse_call_arg_list;
 

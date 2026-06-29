@@ -101,7 +101,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         let consumed = &input[..input.len() - rest.len()];
         crate::parser::primary::wrap_divergent_literal(expr, consumed)
     } else {
-        expr
+        // A bare colonpair statement (`:foo(42)`) parses to the same
+        // `Binary { FatArrow }` as a fatarrow; record its source so a
+        // sink-context warning echoes the colonpair form, not `foo => 42`.
+        let consumed = &input[..input.len() - rest.len()];
+        crate::parser::primary::wrap_colonpair_sink_source(expr, consumed)
     };
 
     if let Expr::BareWord(name) = &expr

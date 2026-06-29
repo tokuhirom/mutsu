@@ -596,6 +596,43 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
+/// Wrap a bare colonpair statement expression in `Expr::LiteralSrc` so a
+/// sink-context "Useless use of ..." warning echoes the colonpair form
+/// (`:foo(42)`) the user wrote rather than the canonical `foo => 42` fatarrow
+/// rendering that the parsed `Binary { FatArrow }` would otherwise produce.
+///
+/// A colonpair `:name(value)` parses to the same `Binary { Str => value }` AST as
+/// the fatarrow `name => value`, so the only way to recover the original syntax
+/// for the warning is the consumed `source`. Mirroring
+/// [`super::wrap_divergent_literal`], this is applied ONLY at the bare
+/// expression-statement level (the sink-warn position) and only to a
+/// fully-constant colonpair, so the `LiteralSrc` never leaks into named-argument
+/// binding, hashes, or signatures, where downstream passes pattern-match the
+/// plain `Binary { FatArrow }`.
+pub(crate) fn wrap_colonpair_sink_source(expr: Expr, source: &str) -> Expr {
+    let trimmed = source.trim();
+    // Only a single leading `:` marks a colonpair; `::Foo => 1` (package lookup)
+    // and `foo => 42` (fatarrow) must pass through untouched.
+    if !trimmed.starts_with(':') || trimmed.starts_with("::") {
+        return expr;
+    }
+    if let Expr::Binary { left, op, right } = &expr
+        && *op == crate::token_kind::TokenKind::FatArrow
+        && let Expr::Literal(Value::Str(key)) = left.as_ref()
+    {
+        // Only a constant-valued colonpair carries a fully-known value; a
+        // non-literal value (`:foo($x)`) stays a `Binary` and renders via the
+        // generic operator path.
+        let val = match right.as_ref() {
+            Expr::Literal(v) | Expr::LiteralSrc(v, _) => v.clone(),
+            _ => return expr,
+        };
+        let pair = Value::Pair((**key).clone(), Box::new(val));
+        return Expr::LiteralSrc(pair, trimmed.into());
+    }
+    expr
+}
+
 fn render_signature_item(expr: &Expr) -> String {
     match expr {
         Expr::BareWord(name) => name.clone(),

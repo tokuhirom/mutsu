@@ -15,7 +15,7 @@ pub(super) use anon_decl::{anon_class_expr, anon_grammar_expr, anon_role_expr};
 pub(super) use lambda::{arrow_lambda, capture_literal};
 pub(super) use reduction::reduction_op;
 
-pub(in crate::parser) use colonpair::colonpair_expr;
+pub(in crate::parser) use colonpair::{colonpair_expr, wrap_colonpair_sink_source};
 pub(in crate::parser) use lambda::{block_or_hash_expr, parse_block_body};
 pub(in crate::parser) use reduction::reduction_call_style_expr;
 
