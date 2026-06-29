@@ -20,6 +20,7 @@ roast/6.d/S32-str/sprintf-s.t
 roast/6.d/S32-str/sprintf-u.t
 roast/6.d/S32-str/sprintf-x.t
 roast/6.d/S32-str/sprintf.t
+roast/APPENDICES/A02-some-day-maybe/concreteness.t
 roast/MISC/bug-coverage-stress.t
 roast/S01-perl-5-integration/array.t
 roast/S01-perl-5-integration/basic.t
