@@ -34,6 +34,13 @@ impl Interpreter {
         let reversed: Vec<_> = stack.iter().rev().collect();
         let mut lines = Vec::new();
         for (i, frame) in reversed.iter().enumerate() {
+            // A genuine bare-block callframe (empty-named `is_block`) is omitted
+            // from this concise rendering — the enclosing `<unit>` line covers it
+            // (matching Raku's `.nice`). It still appears in the structured
+            // `.list` built by `build_backtrace_value`.
+            if frame.is_block && frame.name.is_empty() {
+                continue;
+            }
             let (line, file) = if i == 0 {
                 // Innermost frame: use current ?LINE/?FILE
                 (current_line, current_file.clone())
@@ -54,10 +61,11 @@ impl Interpreter {
         if stack.is_empty() {
             let location = Self::format_location(current_file.as_deref(), current_line);
             lines.push(format!("  in block <unit>{}", location));
-        } else if !stack
-            .first()
-            .is_some_and(|f| f.name.is_empty() || f.name == "<unit>")
-        {
+        } else if !stack.first().is_some_and(|f| {
+            // A genuine bare-block frame is empty-named but `is_block`; the
+            // mainline `<unit>` still sits below it (see `build_backtrace_value`).
+            f.name == "<unit>" || (f.name.is_empty() && !f.is_block)
+        }) {
             // The outermost routine frame's stored call-site is where
             // <unit> called it.
             let outermost = &stack[0];
@@ -72,6 +80,19 @@ impl Interpreter {
     /// `Backtrace::Frame` instances (each with `.subname`, `.file`, `.line`)
     /// and whose `text` attribute is the formatted backtrace string.
     pub(super) fn build_backtrace_value(&self) -> Value {
+        self.build_backtrace_value_with_leading(None)
+    }
+
+    /// Build a `Backtrace` value from the current routine stack, optionally
+    /// prepending a synthetic leading routine frame (e.g. `throw`).
+    ///
+    /// An explicit `ExceptionObject.throw` is dispatched natively, so the
+    /// `throw` invocation never appears as its own callframe on the routine
+    /// stack. Raku, by contrast, includes the `Exception.throw` setting frame at
+    /// the top of `.backtrace.list` (it is hidden from the rendered gist as a
+    /// setting frame, but still counts toward `.list.elems`). Passing the method
+    /// name here reproduces that extra structured-only frame.
+    pub(super) fn build_backtrace_value_with_leading(&self, leading: Option<&str>) -> Value {
         use crate::symbol::Symbol;
         use std::collections::HashMap;
 
@@ -83,6 +104,30 @@ impl Interpreter {
         let mut frames = Vec::new();
         let mut text_lines = Vec::new();
 
+        // Synthetic leading frame (setting `throw`/`rethrow`): structured-only,
+        // omitted from the rendered text just like Raku hides setting frames.
+        if let Some(name) = leading {
+            let mut frame_attrs = HashMap::new();
+            frame_attrs.insert("subname".to_string(), Value::str(name.to_string()));
+            frame_attrs.insert(
+                "file".to_string(),
+                current_file
+                    .clone()
+                    .map(Value::str)
+                    .unwrap_or(Value::str(String::new())),
+            );
+            frame_attrs.insert(
+                "line".to_string(),
+                current_line
+                    .map(|l| Value::Int(l as i64))
+                    .unwrap_or(Value::Int(0)),
+            );
+            frames.push(Value::make_instance(
+                Symbol::intern("Backtrace::Frame"),
+                frame_attrs,
+            ));
+        }
+
         for (i, frame) in reversed.iter().enumerate() {
             let (line, file) = if i == 0 {
                 (current_line, current_file.clone())
@@ -90,7 +135,14 @@ impl Interpreter {
                 let inner_frame = reversed[i - 1];
                 (inner_frame.line, inner_frame.file.clone())
             };
-            let subname = if frame.name.is_empty()
+            // A genuine bare-block callframe (is_block + empty name) is an
+            // anonymous block in Raku: its `.subname` is the empty string (so
+            // `.is-routine` is False and `.code.name` is empty), distinct from
+            // the synthetic `<unit>` bottom frame.
+            let is_anon_block = frame.is_block && frame.name.is_empty();
+            let subname = if is_anon_block {
+                String::new()
+            } else if frame.name.is_empty()
                 || frame.name == "<unit>"
                 || frame.name == "<pointy-block>"
             {
@@ -100,10 +152,16 @@ impl Interpreter {
             };
 
             let location = Self::format_location(file.as_deref(), line);
-            if subname == "<unit>" {
-                text_lines.push(format!("  in block <unit>{}", location));
-            } else {
-                text_lines.push(format!("  in sub {}{}", subname, location));
+            // The rendered text (`.Str`/gist) is a concise view: like Raku's
+            // `.nice`, it omits the anonymous bare-block line (the enclosing
+            // `<unit>` line already covers it). The block still appears in the
+            // structured `frames` below (so `.list`/`.elems` count it).
+            if !is_anon_block {
+                if subname == "<unit>" {
+                    text_lines.push(format!("  in block <unit>{}", location));
+                } else {
+                    text_lines.push(format!("  in sub {}{}", subname, location));
+                }
             }
 
             let mut frame_attrs = HashMap::new();
@@ -146,10 +204,14 @@ impl Interpreter {
                 Symbol::intern("Backtrace::Frame"),
                 frame_attrs,
             ));
-        } else if !stack
-            .first()
-            .is_some_and(|f| f.name.is_empty() || f.name == "<unit>")
-        {
+        } else if !stack.first().is_some_and(|f| {
+            // The outermost frame already *is* the mainline boundary (so no extra
+            // `<unit>` is appended) only when it is the synthetic `<unit>`/pointy
+            // frame, or an empty-named *non-block* frame. A genuine bare-block
+            // callframe is empty-named but `is_block`, and the mainline `<unit>`
+            // still sits below it.
+            f.name == "<unit>" || (f.name.is_empty() && !f.is_block)
+        }) {
             let outermost = &stack[0];
             let location = Self::format_location(outermost.file.as_deref(), outermost.line);
             text_lines.push(format!("  in block <unit>{}", location));

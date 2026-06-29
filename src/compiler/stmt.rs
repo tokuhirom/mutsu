@@ -479,8 +479,15 @@ impl Compiler {
                     return;
                 }
                 let saved_dynamic_scope = self.push_dynamic_scope_lexical();
+                // A genuine source `{ ... }` is a Raku callframe (it contributes
+                // an anonymous frame to a backtrace captured inside it); a
+                // synthesized if/while/loop body is not. `synthetic_block_body`
+                // is set by those compile sites; consume it here.
+                let is_bare = !std::mem::take(&mut self.synthetic_block_body);
                 if Self::has_catch_or_control(stmts) {
+                    self.next_try_is_bare_block = is_bare;
                     self.compile_try(stmts, &None);
+                    self.next_try_is_bare_block = false;
                     self.code.emit(OpCode::Pop);
                 } else if Self::has_block_enter_leave_phasers(stmts) {
                     self.compile_phaser_block_scope(stmts, false);
@@ -517,6 +524,7 @@ impl Compiler {
                         undo_start: 0,
                         post_start: 0,
                         end: 0,
+                        is_bare_block: is_bare,
                     });
                     self.code.patch_block_pre_end(idx);
                     self.code.patch_block_enter_end(idx);
@@ -1370,6 +1378,7 @@ impl Compiler {
                     self.emit_set_named_var("@_");
                 }
                 if Self::body_mutates_topic(then_branch) {
+                    self.synthetic_block_body = true;
                     self.compile_stmt(&Stmt::Block(then_branch.clone()));
                 } else if Self::branch_declares_block_local(then_branch) {
                     self.compile_block_local_branch(then_branch);
@@ -1392,6 +1401,7 @@ impl Compiler {
                     if else_branch.len() == 1 && matches!(else_branch[0], Stmt::If { .. }) {
                         self.compile_stmt(&else_branch[0]);
                     } else if Self::body_mutates_topic(else_branch) {
+                        self.synthetic_block_body = true;
                         self.compile_stmt(&Stmt::Block(else_branch.clone()));
                     } else if Self::branch_declares_block_local(else_branch) {
                         self.compile_block_local_branch(else_branch);
@@ -1423,6 +1433,7 @@ impl Compiler {
                 self.compile_condition_expr(cond);
                 self.code.patch_while_cond_end(loop_idx);
                 if body_rebinds_topic {
+                    self.synthetic_block_body = true;
                     self.compile_stmt(&Stmt::Block(loop_body.clone()));
                 } else {
                     self.compile_body_with_implicit_try(&loop_body);

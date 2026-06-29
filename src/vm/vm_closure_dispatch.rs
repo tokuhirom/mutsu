@@ -313,6 +313,13 @@ impl Interpreter {
         // Push routine info for leave/return/when targeting.
         // For pointy blocks, we push a special marker name so that
         // &?ROUTINE can skip it and see the enclosing routine.
+        // Record the routine-stack depth *before* this frame is pushed: every
+        // exit path below restores to it (truncate, not single pop) so that an
+        // anonymous bare-block callframe leaked by a body that threw past its
+        // own `PopBlockFrame` is reclaimed here — otherwise a single `pop_routine`
+        // would remove the leaked block frame and leave *this* routine frame
+        // behind, corrupting later backtraces.
+        let routine_base = self.routine_stack_len();
         let call_line = self.current_source_line();
         let call_file = self.current_source_file();
         if cc.is_pointy_block || data.is_bare_block {
@@ -339,7 +346,7 @@ impl Interpreter {
         );
 
         if data.empty_sig && !args.is_empty() {
-            self.pop_routine();
+            self.truncate_routine_stack(routine_base);
             self.pop_block();
             self.pop_caller_env();
             self.stack.truncate(saved_stack_depth);
@@ -355,7 +362,7 @@ impl Interpreter {
         ) {
             Ok(bindings) => bindings,
             Err(e) => {
-                self.pop_routine();
+                self.truncate_routine_stack(routine_base);
                 self.pop_block();
                 self.pop_caller_env();
                 self.stack.truncate(saved_stack_depth);
@@ -633,7 +640,7 @@ impl Interpreter {
         // Restore the previous state scope
         self.state_scope_id = saved_state_scope;
 
-        self.pop_routine();
+        self.truncate_routine_stack(routine_base);
         self.pop_block();
 
         // Sync locals back to env so captured variable changes are visible.

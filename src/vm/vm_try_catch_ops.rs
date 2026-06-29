@@ -11,12 +11,29 @@ impl Interpreter {
         body_end: u32,
         explicit_catch: bool,
         resume_safe: bool,
+        is_bare_block: bool,
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         // Reset any leftover resume_ip from previous exception handling so a
         // later .resume cannot accidentally jump into a sibling scope.
         let saved_resume_ip = self.resume_ip.take();
+        // A genuine bare block `{ ...; CATCH { } }` is a Raku callframe: push an
+        // anonymous frame so a backtrace captured while running the protected
+        // body (and visible inside the CATCH handler) includes this block. The
+        // restore truncates on every exit path — Ok or Err — so it is
+        // exception-safe and also reclaims frames a nested bare block leaked.
+        let routine_base = self.routine_stack_len();
+        if is_bare_block {
+            let call_line = self.current_source_line();
+            let call_file = self.current_source_file();
+            self.push_block_routine_with_location(
+                self.current_package(),
+                String::new(),
+                call_line,
+                call_file,
+            );
+        }
         let result = self.exec_try_catch_op_inner(
             code,
             catch_start,
@@ -27,6 +44,9 @@ impl Interpreter {
             ip,
             compiled_fns,
         );
+        if is_bare_block {
+            self.truncate_routine_stack(routine_base);
+        }
         // Restore the outer resume_ip so an outer .resume sees the right
         // point. When the inner block escaped with an error (e.g. rethrow
         // of CX::Warn), keep the inner resume_ip so an outer handler can

@@ -566,6 +566,12 @@ pub(crate) enum OpCode {
         undo_start: u32,
         post_start: u32,
         end: u32,
+        /// True when this scope is a genuine bare block statement (`{ ... }`)
+        /// from source, as opposed to a synthesized control-flow body (if/while/
+        /// loop branch) or a routine/do-block body. A genuine bare block is a
+        /// callframe in Raku, so it must contribute an anonymous frame to a
+        /// backtrace captured while executing inside it.
+        is_bare_block: bool,
     },
     /// Lightweight block scope for an `if`/`unless`/`else` branch body that
     /// declares a block-local `my`. Unlike `BlockScope` (which does a full
@@ -1114,7 +1120,24 @@ pub(crate) enum OpCode {
         /// what enables cross-frame resumable warns. Computed at compile time
         /// from the CONTROL block AST (the runtime cannot see the AST).
         resume_safe: bool,
+        /// True when this try/catch frame is a genuine bare block statement
+        /// (`{ ...; CATCH { } }`) from source. Like `BlockScope::is_bare_block`,
+        /// such a block is a callframe and contributes an anonymous backtrace
+        /// frame while executing inside it.
+        is_bare_block: bool,
     },
+
+    /// Push an anonymous block callframe onto the routine stack. Emitted around a
+    /// genuine bare block `{ ... }` that the compiler *inlines* (tail-position
+    /// blocks have no `BlockScope`/`TryCatch` boundary to carry the
+    /// `is_bare_block` flag), so a backtrace captured while executing inside the
+    /// inlined block still shows the block as a frame (Raku callframe semantics).
+    /// Paired with `PopBlockFrame` on the normal exit; leaked frames (when the
+    /// body throws past the pop) are reclaimed by the enclosing sub/try/block
+    /// boundary, which truncates the routine stack to its entry depth.
+    PushBlockFrame,
+    /// Pop the anonymous block callframe pushed by `PushBlockFrame`.
+    PopBlockFrame,
 
     // -- Error handling --
     Die,

@@ -199,6 +199,7 @@ impl Compiler {
                 undo_start: 0,
                 post_start: 0,
                 end: 0,
+                is_bare_block: false,
             });
             // PRE phasers (forward order, before ENTER)
             Self::compile_pre_phasers(&mut sub_compiler, body);
@@ -592,6 +593,7 @@ impl Compiler {
                 undo_start: 0,
                 post_start: 0,
                 end: 0,
+                is_bare_block: false,
             });
             Self::compile_pre_phasers(&mut sub_compiler, body);
             sub_compiler.code.patch_block_pre_end(idx);
