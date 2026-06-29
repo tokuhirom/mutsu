@@ -20,7 +20,7 @@ use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb, Stmt};
 use crate::parser::expr::operators::{
     PrefixUnaryOp, parse_postfix_update_op, parse_prefix_unary_op,
 };
-use crate::parser::expr::{expression, expression_no_sequence};
+use crate::parser::expr::{expression, expression_no_sequence, listop_arg_expr};
 use crate::parser::helpers::{consume_unspace, is_ident_char, split_angle_words, ws};
 use crate::parser::parse_result::{PError, PResult, parse_char, take_while1};
 use crate::parser::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
@@ -854,7 +854,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     } else {
                         let r3 = &r2[1..];
                         let (r3, _) = ws(r3)?;
-                        expression(r3)?
+                        // A colon-method arg list (`.m: a, b`) is a comma-list at
+                        // listop precedence, so each element stops before the loose
+                        // word-logical ops (`andthen`/`and`/`or`): `.m: $x andthen $y`
+                        // is `(.m: $x) andthen $y`, not `.m($x andthen $y)`.
+                        listop_arg_expr(r3)?
                     };
                     let mut args = vec![first_arg];
                     let mut r_inner = r3;
@@ -878,7 +882,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             r_inner = r4;
                             break;
                         }
-                        let (r4, next) = expression(r4)?;
+                        let (r4, next) = listop_arg_expr(r4)?;
                         args.push(next);
                         r_inner = r4;
                     }
@@ -1047,7 +1051,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 if r2.starts_with(':') && !r2.starts_with("::") {
                     let r3 = &r2[1..];
                     let (r3, _) = ws(r3)?;
-                    let (r3, first_arg) = expression(r3)?;
+                    let (r3, first_arg) = listop_arg_expr(r3)?;
                     let mut args = vec![first_arg];
                     let mut r_inner = r3;
                     loop {
@@ -1062,7 +1066,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             r_inner = r4;
                             break;
                         }
-                        let (r4, next) = expression(r4)?;
+                        let (r4, next) = listop_arg_expr(r4)?;
                         args.push(next);
                         r_inner = r4;
                     }

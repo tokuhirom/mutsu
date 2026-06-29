@@ -635,6 +635,11 @@ pub(in crate::parser) enum ExprMode {
     NoSequence,
     /// For listop arguments: excludes both sequence (...) and feed (==>) operators.
     NoSequenceNoFeed,
+    /// For listop / colon-method argument elements: like `NoSequenceNoFeed`, but
+    /// also stops before the loose word-logical operators (`and`/`or`/`andthen`/
+    /// `orelse`/`notandthen`/`xor`), which are looser than the comma-list of a
+    /// listop call. `f $x andthen $y` is `(f $x) andthen $y`, not `f($x andthen $y)`.
+    ListopArg,
 }
 
 pub(super) fn enrich_expected_error(

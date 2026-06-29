@@ -4,6 +4,9 @@ pub(crate) fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (mut rest, mut left) = assign_or_and_expr(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
+        if mode == ExprMode::ListopArg {
+            break;
+        }
         if let Some((op @ (LogicalOp::Or | LogicalOp::XorXor | LogicalOp::OrElse), len)) =
             parse_word_logical_op(r)
         {
@@ -40,6 +43,9 @@ pub(crate) fn or_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_,
     let (mut rest, mut left) = and_expr_no_assign_mode(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
+        if mode == ExprMode::ListopArg {
+            break;
+        }
         if let Some((op @ (LogicalOp::Or | LogicalOp::XorXor | LogicalOp::OrElse), len)) =
             parse_word_logical_op(r)
         {
@@ -70,6 +76,9 @@ pub(crate) fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (mut rest, mut left) = assign_not_expr_mode(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
+        if mode == ExprMode::ListopArg {
+            break;
+        }
         if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
             parse_word_logical_op(r)
         {
@@ -103,6 +112,9 @@ pub(crate) fn and_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_
     let (mut rest, mut left) = not_expr_mode(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
+        if mode == ExprMode::ListopArg {
+            break;
+        }
         if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
             parse_word_logical_op(r)
         {

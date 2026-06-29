@@ -1,6 +1,6 @@
 use super::call_method::{QuotedMethodName, parse_quoted_method_name};
 use crate::ast::{Expr, Stmt};
-use crate::parser::expr::expression;
+use crate::parser::expr::listop_arg_expr;
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PResult, parse_char};
 use crate::parser::primary::{colonpair_expr, parse_call_arg_list, primary};
@@ -32,10 +32,21 @@ fn lvalue_assign_name(e: &Expr) -> Option<String> {
 /// For index expressions, generates an `IndexAssign` wrapped in a `DoBlock`.
 /// For non-lvalue targets, returns the method call as-is.
 pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> Expr {
-    // Unwrap Grouped to get at the inner expression
-    let target = match target {
-        Expr::Grouped(inner) => *inner,
-        other => other,
+    // Unwrap Grouped and identity `.self` calls to get at the lvalue. `.self`
+    // returns its invocant unchanged, so `(X.self).=meth` is exactly `X.=meth`
+    // (the assignment writes back through `X`).
+    let mut target = target;
+    let target = loop {
+        let is_self_call = matches!(
+            &target,
+            Expr::MethodCall { name, args, modifier: None, .. }
+                if name.resolve() == "self" && args.is_empty()
+        );
+        target = match target {
+            Expr::Grouped(inner) => *inner,
+            Expr::MethodCall { target: inner, .. } if is_self_call => *inner,
+            other => break other,
+        };
     };
     match &target {
         Expr::Var(name) => Expr::AssignExpr {
@@ -273,10 +284,13 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         let (r2, _) = parse_char(r2, ')')?;
         (r2, a)
     } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
-        // Colon-arg syntax: .=method: arg (no space before colon)
+        // Colon-arg syntax: .=method: arg (no space before colon). The arg list
+        // is a comma-list at listop precedence, so each element stops before the
+        // loose word-logical ops (`andthen`/`and`/`or`): `$x .=new: 1 andthen $y`
+        // is `($x .=new: 1) andthen $y`, not `$x .=new(1 andthen $y)`.
         let r2 = &r[1..];
         let (r2, _) = ws(r2)?;
-        let (r2, first_arg) = expression(r2)?;
+        let (r2, first_arg) = listop_arg_expr(r2)?;
         let mut args = vec![first_arg];
         let mut r_inner = r2;
         loop {
@@ -299,7 +313,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
                 r_inner = r3;
                 break;
             }
-            let (r3, next) = expression(r3)?;
+            let (r3, next) = listop_arg_expr(r3)?;
             args.push(next);
             r_inner = r3;
         }

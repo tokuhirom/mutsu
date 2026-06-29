@@ -230,7 +230,7 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
 /// `@a ==> grep {...} ==> @b` keeps the feed operators outside of grep's arguments.
 #[allow(dead_code)]
 pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
-    let (rest, mut expr) = precedence::ternary_mode(input, operators::ExprMode::NoSequenceNoFeed)?;
+    let (rest, mut expr) = precedence::ternary_mode(input, operators::ExprMode::ListopArg)?;
     let (r, _) = ws(rest)?;
     if r.starts_with("=>") && !r.starts_with("==>") {
         let r = &r[2..];
