@@ -386,15 +386,28 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                         // Scientific notation: format mantissa with p decimal places
                         let mantissa = abs / 10f64.powi(exp);
                         let formatted_mantissa = format!("{:.*}", p, mantissa);
-                        let e_char = if spec == 'G' { 'E' } else { 'e' };
                         let exp_sign = if exp >= 0 { '+' } else { '-' };
+                        let exp_digits = format!("{:02}", exp.unsigned_abs());
+                        // zprintf's round-trippable form uses the format letter
+                        // (`g`/`G`) as the exponent separator. But once the field
+                        // is wider than the natural output (so width padding
+                        // applies), raku falls back to the standard `e`/`E`
+                        // separator. Decide by comparing the natural length.
+                        let natural_len = prefix.len()
+                            + formatted_mantissa.len()
+                            + 1 // exponent char
+                            + 1 // exponent sign
+                            + exp_digits.len();
+                        let e_char = if width_num > natural_len {
+                            if spec == 'G' { 'E' } else { 'e' }
+                        } else if spec == 'G' {
+                            'G'
+                        } else {
+                            'g'
+                        };
                         format!(
-                            "{}{}{}{}{:02}",
-                            prefix,
-                            formatted_mantissa,
-                            e_char,
-                            exp_sign,
-                            exp.unsigned_abs()
+                            "{}{}{}{}{}",
+                            prefix, formatted_mantissa, e_char, exp_sign, exp_digits
                         )
                     } else {
                         // Fixed notation: same as %f with p decimal places
