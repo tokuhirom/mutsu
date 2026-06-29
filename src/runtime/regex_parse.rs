@@ -8,6 +8,17 @@ thread_local! {
     /// from inside `parse_regex` (which takes `&self`) to callers that can throw.
     pub(crate) static PENDING_REGEX_ERROR: RefCell<Option<RuntimeError>> = const { RefCell::new(None) };
 
+    /// Compile-sorrow accumulator for regex parsing. Some malformed patterns
+    /// produce several diagnostics before the parser gives up — e.g.
+    /// `/m ** 1..-1/` raises a `MalformedRange` *sorrow* and an
+    /// `UnrecognizedMetachar` *sorrow* on the way to the fatal "couldn't find
+    /// final '/'" *panic*. Raku bundles all of these into a single
+    /// `X::Comp::Group` rather than throwing the first one in isolation. Parser
+    /// checks push non-fatal sorrows here; `validate_regex_structurally` drains
+    /// the accumulator and, if any sorrow was recorded, wraps the pending panic
+    /// and the sorrows into an `X::Comp::Group`.
+    pub(crate) static REGEX_SORROWS: RefCell<Vec<Value>> = const { RefCell::new(Vec::new()) };
+
     /// Memoization cache for parsing *static* regex patterns (patterns whose
     /// parse result does not depend on runtime state). Parsing a pattern is a
     /// recursive-descent operation that is pure for patterns containing no
@@ -225,6 +236,7 @@ pub(crate) fn validate_regex_structurally(pattern: &str) -> Result<(), RuntimeEr
     check_bare_sym_usage(pattern)?;
     check_spaces_in_bare_range(pattern)?;
     PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = None);
+    let _ = take_regex_sorrows();
     let _ = VALIDATE_INTERP
         .with(|interp| interp.parse_regex_with_mode(pattern, RegexParseMode::Validate));
     // Surface any error the structural parse recorded. The parser sometimes
@@ -234,7 +246,26 @@ pub(crate) fn validate_regex_structurally(pattern: &str) -> Result<(), RuntimeEr
     // of whether a pattern was returned. A parse that simply returned `None`
     // with no pending error means "not a recognized construct" — NOT a syntax
     // error (the legacy validator accepted those), so that maps to `Ok(())`.
-    match PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take()) {
+    let pending = PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take());
+    let sorrows = take_regex_sorrows();
+    // A pattern that accumulated one or more sorrows produced several
+    // compile-time diagnostics; bundle them with the fatal panic into a single
+    // `X::Comp::Group` (mirroring rakudo's compile-sorrow accumulator).
+    if !sorrows.is_empty() {
+        let panic = pending
+            .and_then(|err| err.exception.map(|b| *b))
+            .unwrap_or_else(regex_unparseable_panic_value);
+        let group = Value::make_comp_group(
+            "Regex compilation failed".to_string(),
+            Some(panic),
+            sorrows,
+            vec![],
+        );
+        let mut err = RuntimeError::new("X::Comp::Group");
+        err.exception = Some(Box::new(group));
+        return Err(err);
+    }
+    match pending {
         Some(err) => Err(err),
         None => Ok(()),
     }
@@ -409,6 +440,52 @@ pub(super) fn make_unrecognized_metachar_error(metachar: char) -> RuntimeError {
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
+}
+
+/// Push a non-fatal compile-time sorrow onto the regex accumulator.
+pub(super) fn push_regex_sorrow(ex: Value) {
+    REGEX_SORROWS.with(|s| s.borrow_mut().push(ex));
+}
+
+/// Drain and return the accumulated regex sorrows.
+pub(super) fn take_regex_sorrows() -> Vec<Value> {
+    REGEX_SORROWS.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
+
+/// The `X::Syntax::Regex::UnrecognizedMetachar` exception *value* (not wrapped
+/// in a `RuntimeError`), for use as an accumulated sorrow.
+pub(super) fn unrecognized_metachar_exception(metachar: char) -> Value {
+    let msg =
+        format!("Unrecognized regex metacharacter {metachar} (must be quoted to match literally)");
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg));
+    attrs.insert("metachar".to_string(), Value::str(metachar.to_string()));
+    Value::make_instance(
+        Symbol::intern("X::Syntax::Regex::UnrecognizedMetachar"),
+        attrs,
+    )
+}
+
+/// The `X::Syntax::Regex::MalformedRange` exception value, recorded as a sorrow
+/// when a `** N..M` quantifier range has a malformed (e.g. negative) endpoint.
+pub(super) fn malformed_range_exception() -> Value {
+    let msg = "Malformed Range. If attempting to use variables for end points, \
+               wrap the entire range in curly braces."
+        .to_string();
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg));
+    Value::make_instance(Symbol::intern("X::Syntax::Regex::MalformedRange"), attrs)
+}
+
+/// The fatal "couldn't find final '/'" panic value. Once a sorrow has been
+/// accumulated, the parser bails out here rather than surfacing a later
+/// sub-diagnostic as the top-level error.
+pub(super) fn regex_unparseable_panic_value() -> Value {
+    let msg = "Unable to parse regex; couldn't find final '/'".to_string();
+    let mut attrs = HashMap::new();
+    attrs.insert("payload".to_string(), Value::str(msg.clone()));
+    attrs.insert("message".to_string(), Value::str(msg));
+    Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
 }
 
 pub(super) fn make_unrecognized_modifier_error(modifier: &str) -> RuntimeError {
