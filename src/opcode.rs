@@ -750,6 +750,12 @@ pub(crate) enum OpCode {
 
     // -- Assignment as expression --
     AssignExpr(u32),
+    /// `.=` metaop on the topic `$_` (`$_ = $_.meth`). Like `AssignExpr` of `_`,
+    /// but bypasses the read-only mark a whole-container topic (`given @a`) puts
+    /// on `$_` and, for such a topic, writes the reassigned value straight through
+    /// to the `@`/`%` source container. The operand (the method result) is on the
+    /// stack; the constant index names `_`.
+    TopicDotAssign(u32),
     /// Assignment as expression for local variable (indexed slot)
     AssignExprLocal(u32),
     /// Fused compound assignment to a NAMED (env) scalar: `$x OP= rhs`.
@@ -1501,7 +1507,7 @@ impl CompiledCode {
                 | OpCode::PreDecrement(idx)
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx) => Some(*idx),
-                OpCode::AssignExpr(idx) => Some(*idx),
+                OpCode::AssignExpr(idx) | OpCode::TopicDotAssign(idx) => Some(*idx),
                 _ => None,
             };
             if let Some(idx) = name_idx
@@ -1600,7 +1606,8 @@ impl CompiledCode {
                 | OpCode::PreDecrement(idx)
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx)
-                | OpCode::AssignExpr(idx) => Some(*idx),
+                | OpCode::AssignExpr(idx)
+                | OpCode::TopicDotAssign(idx) => Some(*idx),
                 _ => None,
             };
             if let Some(idx) = name_idx
@@ -1659,6 +1666,7 @@ impl CompiledCode {
             | OpCode::GetArrayVar(idx)
             | OpCode::GetHashVar(idx)
             | OpCode::AssignExpr(idx)
+            | OpCode::TopicDotAssign(idx)
             | OpCode::AtomicCompoundVar { name_idx: idx, .. } => Some(*idx),
             _ => None,
         }
@@ -1725,6 +1733,7 @@ impl CompiledCode {
             | OpCode::PreIncrement(idx)
             | OpCode::PreDecrement(idx)
             | OpCode::AssignExpr(idx)
+            | OpCode::TopicDotAssign(idx)
             | OpCode::AtomicCompoundVar { name_idx: idx, .. } => Some(*idx),
             _ => None,
         }
@@ -2089,6 +2098,7 @@ impl CompiledCode {
                 OpCode::SetGlobal(_)
                     | OpCode::SetGlobalRaw(_)
                     | OpCode::AssignExpr(_)
+                    | OpCode::TopicDotAssign(_)
                     | OpCode::AssignExprLocal(_)
                     | OpCode::AtomicCompoundVar { .. }
                     | OpCode::IndexAssignExprNamed { .. }

@@ -50,6 +50,11 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
         };
     };
     match &target {
+        // NOTE: an *expression*-position `$_ .= meth` keeps the plain `AssignExpr`
+        // form (so a chain-retarget can redirect the implied `$_`). The whole-
+        // container topic write-through (`given @a { $_ .= uc }`) is a *statement*
+        // and is handled via the `__mutsu_topic_dotassign` marker in the statement
+        // assign parser instead.
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),
             expr: Box::new(method_call_fn(target)),

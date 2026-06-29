@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 16;
 
 # `X.=meth` is `X = X.meth`. When the (evaluated-once) target X provides a
 # `STORE` method it is a custom container, so the `.=` becomes `X.STORE(X.meth)`
@@ -62,4 +62,43 @@ plan 9;
     my @a = <c a b>;
     @a .= sort;
     is-deeply @a, ['a', 'b', 'c'], '.= on an array lvalue assigns the sorted list';
+}
+
+# The `.=` metaop on a whole-container topic (`given @a` / `with @a`) writes
+# through to the source container immediately. `$_` aliases the container, so a
+# *plain* `$_ = ...` still throws (read-only), but the `.=` metaop is allowed.
+{
+    my @a = 'foo';
+    with @a { .=uc; is-deeply @a, ['FOO'], '.=uc on container topic writes through immediately' }
+}
+{
+    my @a = 'foo';
+    given @a { $_ .= uc }
+    is-deeply @a, ['FOO'], '$_ .= uc (spaced) on container topic writes back';
+}
+{
+    my @a = 'foo';
+    given @a { $_.=uc }
+    is-deeply @a, ['FOO'], '$_.=uc (no space) on container topic writes back';
+}
+{
+    my $a = 'foo';
+    with $a { .=uc }
+    is $a, 'FOO', '.=uc on a scalar topic writes back';
+}
+{
+    my @a = 1, 2;
+    throws-like { given @a { $_ = 5 } }, X::Assignment::RO,
+        'plain $_ = ... on a read-only container topic still throws';
+}
+{
+    # for-loop element topic is unaffected (per-element, not whole-container).
+    my @a = <x y>;
+    for @a { .=uc }
+    is-deeply @a, ['X', 'Y'], 'for @a { .=uc } mutates each element';
+}
+{
+    $_ = -42;
+    .=abs;
+    is $_, 42, '.=abs on a plain top-level $_ topic works';
 }

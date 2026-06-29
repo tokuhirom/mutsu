@@ -48,17 +48,20 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         } else {
             (rest, Vec::new())
         };
-        let stmt = Stmt::Assign {
-            name: "_".to_string(),
-            expr: Expr::MethodCall {
+        // The `.=` metaop on the topic. Route through the `__mutsu_topic_dotassign`
+        // marker (compiled to `TopicDotAssign`) so it can reassign a read-only
+        // whole-container topic (`given @a { .=uc }`, writing through to `@a`)
+        // while a plain `$_ = ...` keeps throwing X::Assignment::RO.
+        let stmt = Stmt::Expr(Expr::Call {
+            name: Symbol::intern("__mutsu_topic_dotassign"),
+            args: vec![Expr::MethodCall {
                 target: Box::new(Expr::Var("_".to_string())),
                 name: Symbol::intern(&method_name),
                 args,
                 modifier: None,
                 quoted: false,
-            },
-            op: AssignOp::Assign,
-        };
+            }],
+        });
         return parse_statement_modifier(rest, stmt);
     }
 
@@ -355,6 +358,15 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             quoted: false,
         };
         match expr {
+            // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
+            // (see the leading-dot case above).
+            Expr::Var(name) if name == "_" => {
+                let stmt = Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("__mutsu_topic_dotassign"),
+                    args: vec![make_rhs(Expr::Var("_".to_string()))],
+                });
+                return parse_statement_modifier(r, stmt);
+            }
             Expr::Var(name) => {
                 let stmt = Stmt::Assign {
                     name: name.clone(),

@@ -281,6 +281,7 @@ impl Interpreter {
             container_ref_var: None,
             container_ref_reversed: false,
             topic_source_var: None,
+            topic_container_source: None,
             element_source: None,
             quanthash_bind_params: Vec::new(),
             for_param_restore_stack: Vec::new(),

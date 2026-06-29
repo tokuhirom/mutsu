@@ -212,6 +212,60 @@ impl Interpreter {
         r
     }
 
+    /// `.=` metaop on the topic `$_` (`$_ = $_.meth`). Identical to `AssignExpr`
+    /// of `_` except that it (1) bypasses the read-only mark a whole-container
+    /// topic (`given @a`) places on `$_` — the `.=` metaop is always allowed even
+    /// where a plain `$_ = ...` throws X::Assignment::RO — and (2) for such a
+    /// whole-container topic, writes the reassigned value straight through to the
+    /// `@`/`%` source with container-assignment coercion (`@a = "FOO"` => `["FOO"]`),
+    /// so the mutation is visible immediately inside the block.
+    pub(super) fn exec_topic_dot_assign_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let was_ro = self.is_readonly("_");
+        if was_ro {
+            self.unmark_readonly("_");
+        }
+        let r = self.exec_assign_expr_op(code, name_idx);
+        if was_ro {
+            self.mark_readonly("_");
+        }
+        r?;
+        // Whole-container topic (`given @a`/`with %h`): `$_` aliases the container,
+        // so the reassigned value is list-/hash-assigned back to the source. The
+        // assignment result (the method value, e.g. `"FOO"`) is on the stack top.
+        if let Some(src) = self.topic_container_source.clone() {
+            let val = self.stack.last().cloned().unwrap_or(Value::Nil);
+            let written = if src.starts_with('@') {
+                if matches!(val, Value::Array(..)) {
+                    val
+                } else {
+                    crate::runtime::utils::coerce_to_array(val)
+                }
+            } else if src.starts_with('%') {
+                if matches!(val, Value::Hash(_)) {
+                    val
+                } else {
+                    crate::runtime::utils::coerce_to_hash(val)
+                }
+            } else {
+                val
+            };
+            self.set_env_with_main_alias(&src, written.clone());
+            self.update_local_if_exists(code, &src, &written);
+            // Keep `$_` (which aliases the container) and the expression value in
+            // sync with the coerced container value.
+            self.set_env_with_main_alias("_", written.clone());
+            self.update_local_if_exists(code, "_", &written);
+            if let Some(top) = self.stack.last_mut() {
+                *top = written;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn exec_get_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
         let key = Self::const_str(code, key_idx);
         let val = if let Some(Value::Hash(env_hash)) = self.env().get("%*ENV") {

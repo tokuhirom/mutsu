@@ -27,6 +27,7 @@ impl Interpreter {
         let saved_topic = self.env().get("_").cloned();
         let saved_when = self.when_matched();
         let saved_topic_source = self.topic_source_var.take();
+        let saved_container_source = self.topic_container_source.take();
         let saved_element_source = self.element_source.take();
         let container_binding = self.container_ref_var.take();
         // An element-source topic (`given %h<k>` / `given @a[i]`) aliases an
@@ -36,6 +37,16 @@ impl Interpreter {
         let element_source = saved_element_source.clone();
         if element_source.is_none() {
             self.topic_source_var = container_binding.clone();
+        }
+        // A whole-container topic (`given @a` / `with %h`): `$_` aliases the whole
+        // container, so a `.=` metaop on the topic (TopicDotAssign) writes the
+        // reassigned value straight through to the `@`/`%` source. Record it so the
+        // `.=`-on-`$_` opcode can do that (an element loop never sets this).
+        if element_source.is_none()
+            && let Some(src) = &container_binding
+            && (src.starts_with('@') || src.starts_with('%'))
+        {
+            self.topic_container_source = Some(src.clone());
         }
         self.env_mut().insert("_".to_string(), topic);
         loan_env!(self, set_when_matched(false));
@@ -89,6 +100,7 @@ impl Interpreter {
                 this.unmark_readonly(p);
             }
             this.topic_source_var = saved_topic_source.clone();
+            this.topic_container_source = saved_container_source.clone();
             // `element_source` is a one-shot signal set by `TagElementSource`
             // immediately before this `Given`, so consuming it must clear it (not
             // restore the just-set value). Re-setting `saved_element_source` here
