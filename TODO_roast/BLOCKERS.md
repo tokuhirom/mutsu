@@ -500,29 +500,31 @@ closure-based infinite sequence はかなり進んだが、
   `src/runtime/methods_call_dispatch.rs`,
   `src/runtime/methods_type_coerce.rs`
 
-### 3.3 object-hash / junction key
+### 3.3 object-hash / junction key — **DONE (classify.t whitelisted, 2026-06-29)**
 
-- `S32-list/classify.t`
+- ~~`S32-list/classify.t`~~ **PASS / whitelisted**
 
-`objecthash.t` 自体はもう whitelisted なので、
-旧版の「%{Mu} 全体が未着手」という書き方は粗すぎた。
-今残っているのは、**junction を key にした classify 結果の取り出し**という、
-より狭い意味論の問題。
+`classify`/`categorize` keyed by a non-`Str` classifier result (e.g. a Junction
+from `*.contains: any ...`) now builds an OBJECT hash. Implemented in:
+- `builtins_collection_classify.rs`: `classify_finish_hash` marks the result an
+  object hash (`key_type=Some("Any")` + `original_keys`) when any first-level key
+  is non-Str.
+- `builtins/methods_0arg/collection.rs` `.keys`: honor `has_typed_keys()` (was
+  Set/Bag/Mix `__setty_origin`-only) so object-hash keys come back as real objects.
+- `vm/vm_var_index_ops.rs`: BOTH junction-subscript autothreading sites now skip
+  threading on an object hash (`has_typed_keys()`, peeking through Scalar/
+  ContainerRef) → falls to the `.WHICH`/encoding key lookup; and the object-hash
+  key type-check is skipped for `Any`/`Mu` key types (which accept a Junction key
+  that `type_matches_value` would otherwise autothread+reject).
+- `parser/primary/ident/predicates.rs`: added `classify`/`categorize` to
+  `is_listop` so the bare-sub list-op form `classify *.meth, @list` parses (was
+  read as `classify * (.meth ...)` infix-multiply → "Cannot convert string to
+  number 'classify'").
 
-- **変更レイヤ**:
-  classify 実装、Hash key storage、subscript lookup の junction 分岐
-- **最初の 1 PR**:
-  classify が `Str` key ではなく object-preserving hash を作れるようにする
-- **完了条件**:
-  Junction key が stringify されず object として保存され、`$h{any(...)}` が
-  auto-thread ではなく key lookup になること
-- **Next slice**:
-  classify の result hash を object-preserving key storage に切り替える
-- **Canary tests**:
-  `roast/S32-list/classify.t`
-- **Primary files**:
-  `src/runtime/builtins_collection_classify.rs`,
-  `src/runtime/supply_classify.rs`, `src/value/mod.rs`, hash subscript lookup path
+Pin: `t/classify-object-hash.t`. NOTE: a *declared* object hash `my %h{Any}` with
+an Array/object KEY in a STORE (`%h{[1,2]} = ...`) is still treated as a slice on
+the write path — broader object-hash subscript STORE remains future work (the
+classify result is read-only, so this PR's read path suffices).
 
 ### 3.4 dispatch-sensitive cluster
 

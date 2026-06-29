@@ -85,9 +85,12 @@ impl Interpreter {
         };
 
         // Junction autothreading: when indexing a hash with a junction key,
-        // expand the junction and create a slot ref for each element.
+        // expand the junction and create a slot ref for each element. EXCEPT on an
+        // *object hash* (typed keys, §3.3): there a Junction is a genuine key
+        // object (e.g. a `classify` result keyed by Junctions), so it is looked up
+        // by its `.WHICH`/encoding via the normal path below, not autothreaded.
         if let Value::Junction { kind, values } = &index
-            && matches!(&resolved, Value::Hash(_))
+            && matches!(&resolved, Value::Hash(arc) if !arc.has_typed_keys())
         {
             let kind = kind.clone();
             let junction_values = values.clone();
@@ -287,7 +290,23 @@ impl Interpreter {
             self.stack.push(Value::junction(kind.clone(), results));
             return Ok(());
         }
-        if let Value::Junction { kind, values } = &index {
+        // A Junction *key* autothreads over the subscript — EXCEPT on an object
+        // hash (typed keys, §3.3), where the Junction is a genuine key object
+        // (e.g. a `classify` result keyed by Junctions) looked up by encoding via
+        // the normal path below. Peek through a `Scalar`/`ContainerRef` wrapper
+        // (a `:=`-bound result) to find the underlying hash.
+        let target_is_object_hash = {
+            let mut probe = &target;
+            let inner;
+            if let Value::ContainerRef(cell) = probe {
+                inner = cell.lock().unwrap().clone();
+                probe = &inner;
+            }
+            matches!(probe.descalarize(), Value::Hash(arc) if arc.has_typed_keys())
+        };
+        if let Value::Junction { kind, values } = &index
+            && !target_is_object_hash
+        {
             let mut results = Vec::with_capacity(values.len());
             for value in values.iter() {
                 self.stack.push(target.clone());
@@ -502,9 +521,13 @@ impl Interpreter {
             if let Some(key_type) = self.hash_key_type(&hash_val)
                 && !matches!(index, Value::Whatever | Value::Nil | Value::Sub(..))
             {
+                // `Any`/`Mu` key types accept every object (including a Junction
+                // key, which `type_matches_value` would otherwise autothread and
+                // reject). Skip the per-key check for them.
+                let key_unconstrained = matches!(key_type.as_str(), "Any" | "Mu");
                 if let Value::Array(ref keys, ..) = index {
                     for k in keys.iter() {
-                        if !self.type_matches_value(&key_type, k) {
+                        if !key_unconstrained && !self.type_matches_value(&key_type, k) {
                             return Err(RuntimeError::new(format!(
                                 "Type check failed for object hash key; expected {} but got {} ({})",
                                 key_type,
@@ -536,7 +559,7 @@ impl Interpreter {
                     self.stack.push(result);
                     return Ok(());
                 }
-                if !self.type_matches_value(&key_type, &index) {
+                if !key_unconstrained && !self.type_matches_value(&key_type, &index) {
                     return Err(RuntimeError::new(format!(
                         "Type check failed for object hash key; expected {} but got {} ({})",
                         key_type,
