@@ -329,6 +329,7 @@ impl Interpreter {
             func_def_fp_cache: rustc_hash::FxHashMap::default(),
             func_multi_resolve_cache: rustc_hash::FxHashMap::default(),
             func_multi_type_cacheable: rustc_hash::FxHashMap::default(),
+            user_declared_classes: self.user_declared_classes.clone(),
             block_declared_vars: Vec::new(),
             loop_local_vars: Vec::new(),
             loop_local_saved_env: Vec::new(),

@@ -1553,6 +1553,16 @@ pub struct Interpreter {
     /// deterministic` (i.e. cacheable in `func_multi_resolve_cache`). The
     /// function analogue of `multi_type_cacheable`.
     pub(crate) func_multi_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Names of classes the user declared with a `class`/`role`/`grammar`/`enum`
+    /// statement (`register_class_decl`). For such a class the collected public-
+    /// attribute list is authoritative: a `.name` accessor resolves ONLY for a
+    /// declared public `has $.name`; an undeclared name (e.g. an unknown named arg
+    /// `.new` accepted and stored) falls through to X::Method::NotFound (Rakudo:
+    /// `class C {}; C.new(x=>3).x` dies). Native/built-in objects (Parameter,
+    /// Signature, exception types, ...) are NOT here — their attributes live only
+    /// in the stored map and are not collected — so the accessor fallback still
+    /// reads them.
+    pub(crate) user_declared_classes: std::collections::HashSet<String>,
     pub(crate) block_declared_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_vars: Vec<HashSet<String>>,
     pub(crate) loop_local_saved_env: Vec<HashMap<String, Value>>,

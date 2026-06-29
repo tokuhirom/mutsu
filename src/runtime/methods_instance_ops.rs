@@ -924,12 +924,21 @@ impl Interpreter {
                 }
                 return Ok(result);
             }
-            // Fallback: auto-generated accessor for public attributes
+            // Fallback: auto-generated accessor for public attributes.
             if args.is_empty() {
                 let cn = class_name.resolve();
                 let class_attrs = self.collect_class_attributes(&cn);
+                // For a *user-declared* class the collected public-attribute list is
+                // authoritative: a `.name` accessor resolves ONLY for a declared
+                // public `has $.name`. An undeclared name (e.g. an unknown named arg
+                // `.new` accepted and stored) is NOT an accessor and falls through to
+                // X::Method::NotFound (Rakudo: `class C {}; C.new(x=>3).x` dies). A
+                // *built-in* class (exception types, ...) keeps its attributes only
+                // in the stored map (not collected), so still read them.
                 if class_attrs.is_empty() {
-                    if let Some(val) = attributes.as_map().get(method) {
+                    if !self.user_declared_classes.contains(&cn)
+                        && let Some(val) = attributes.as_map().get(method)
+                    {
                         // Check for deprecated attribute accessor
                         if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                             self.check_deprecation_for_method(method, &cn, &msg);
