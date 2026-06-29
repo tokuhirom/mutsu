@@ -78,6 +78,26 @@ impl Compiler {
                     Stmt::Given { .. } => {
                         self.compile_stmt(stmt);
                     }
+                    // A bare assignment (`$s += $_`, desugared to `Stmt::Assign`)
+                    // in value-final position must yield the assigned container,
+                    // not Nil. Raku assignment is an expression returning the
+                    // lvalue container, so a value-collecting `for` body whose
+                    // last statement is `$s += $_` collects the `$s` container
+                    // each iteration (`(for 1..3 { $s += $_ })` is `(6, 6, 6)`,
+                    // not `(1, 3, 6)`). Route it through `AssignExpr` so it
+                    // leaves the same container the parenthesized form
+                    // `($s += $_)` would.
+                    Stmt::Assign {
+                        name,
+                        expr,
+                        op: op @ (crate::ast::AssignOp::Assign | crate::ast::AssignOp::Bind),
+                    } => {
+                        self.compile_expr(&Expr::AssignExpr {
+                            name: name.clone(),
+                            expr: Box::new(expr.clone()),
+                            is_bind: matches!(op, crate::ast::AssignOp::Bind),
+                        });
+                    }
                     _ => {
                         self.compile_stmt(stmt);
                         self.emit_nil_value();
