@@ -11,6 +11,11 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::HyperWhatever);
                 self.code.emit(OpCode::LoadConst(idx));
             }
+            // A source-preserving literal compiles exactly like its inner value;
+            // the recorded source text only matters to the sink-warning pass.
+            Expr::LiteralSrc(v, _) => {
+                self.compile_expr(&Expr::Literal(v.clone()));
+            }
             Expr::Literal(v) => match v {
                 Value::Nil => {
                     self.code.emit(OpCode::LoadNil);

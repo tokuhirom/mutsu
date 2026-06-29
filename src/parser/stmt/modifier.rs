@@ -249,6 +249,16 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 "message".to_string(),
                 crate::value::Value::str("Missing semicolon".to_string()),
             );
+            attrs.insert(
+                "reason".to_string(),
+                crate::value::Value::str("Missing semicolon".to_string()),
+            );
+            // Reconstruct the source spans around the eject point (`rest` sits at
+            // the offending second modifier) so the error carries `pre`/`post`.
+            if let Some((pre, post)) = crate::parser::primary::source_span_at(rest) {
+                attrs.insert("pre".to_string(), crate::value::Value::str(pre));
+                attrs.insert("post".to_string(), crate::value::Value::str(post));
+            }
             let ex = crate::value::Value::make_instance(
                 crate::symbol::Symbol::intern("X::Syntax::Confused"),
                 attrs,

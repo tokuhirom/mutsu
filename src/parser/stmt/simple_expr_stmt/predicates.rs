@@ -82,7 +82,7 @@ pub(super) fn starts_with_unambiguous_term(input: &str) -> bool {
 /// Returns `true` if the expression is a literal value (number, string, etc.)
 /// that cannot appear as the left-hand side of a bind operator (`:=`).
 pub(super) fn is_literal_expr(expr: &Expr) -> bool {
-    matches!(expr, Expr::Literal(_))
+    matches!(expr, Expr::Literal(_) | Expr::LiteralSrc(..))
 }
 
 /// True when the LHS of an indexed `:=` bind targets an immutable container:
@@ -126,6 +126,7 @@ pub(super) fn is_pure_value_expr(expr: &Expr) -> bool {
     matches!(
         expr,
         Expr::Literal(_)
+            | Expr::LiteralSrc(..)
             | Expr::Var(_)
             | Expr::ArrayVar(_)
             | Expr::HashVar(_)

@@ -2,7 +2,7 @@ use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test;
 use Test::Util;
 
-plan 25;
+plan 30;
 
 # A pure value evaluated in sink (void) context warns.
 is_run 'say "hi"; 42', { :0status, :out("hi\n"), :err(/"Useless use" .* 42/) },
@@ -73,3 +73,20 @@ is_run 'my $x = 1; -$x', { :0status, :err(/"Useless use" .* '"-"' .* '-$x'/) },
 # A prefix operator on a side-effecting operand never warns.
 is_run 'sub f { 5 }; -f()', { :0status, :err('') },
     'prefix minus on sub call does not warn';
+
+# A sink warning preserves the source format the user wrote (radix prefix,
+# scientific notation, Unicode infinity), not the canonical stringification.
+is_run '0xFF', { :0status, :err(/"Useless use" .* 'integer' .* '0xFF'/) },
+    'sink warning keeps hex literal format';
+is_run '0b1010', { :0status, :err(/"Useless use" .* 'integer' .* '0b1010'/) },
+    'sink warning keeps binary literal format';
+is_run '6.02e23', { :0status, :err(/"Useless use" .* 'number' .* '6.02e23'/) },
+    'sink warning keeps scientific notation';
+is_run '∞', { :0status, :err(/"Useless use" .* '∞'/) },
+    'sink warning keeps Unicode infinity glyph';
+
+# Double statement modifier ejects with X::Syntax::Confused carrying pre/post.
+throws-like 'say 1 if 2 if 3 { say 3 }', X::Syntax::Confused,
+    reason => { m/'Missing semicolon'/ },
+    pre    => { m/'1 if 2'/ },
+    post   => { m/'3 { say 3 }'/ };

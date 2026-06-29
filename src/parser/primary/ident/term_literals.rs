@@ -282,7 +282,7 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("Inf", Value::Num(f64::INFINITY)) {
         return Ok(r);
     }
-    // ∞ (U+221E INFINITY)
+    // ∞ (U+221E INFINITY).
     if input.starts_with('\u{221E}') {
         return Ok((
             &input['\u{221E}'.len_utf8()..],

@@ -301,6 +301,10 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         Expr::Grouped(inner) => describe_useless(inner),
         Expr::PositionalPair(inner) => describe_useless(inner),
         Expr::Literal(v) => describe_literal(v),
+        // A source-preserving numeric literal: describe by the inner value's
+        // category but render the number using the original source text so the
+        // warning keeps the radix / scientific / Unicode form the user wrote.
+        Expr::LiteralSrc(v, src) => describe_literal_with_src(v, src),
         // A `Var` node whose name already carries a sigil (`@a`, `%h`) is a
         // synthetic artifact of `:=` bind desugaring — the trailing result
         // expression a container bind leaves in its SyntheticBlock — not a
@@ -361,6 +365,17 @@ fn describe_literal(v: &Value) -> Option<String> {
     }
 }
 
+/// Like [`describe_literal`], but substitutes the literal's original source text
+/// for the canonical number rendering, keeping the user's radix / scientific /
+/// Unicode format in the warning.
+fn describe_literal_with_src(v: &Value, src: &str) -> Option<String> {
+    match v {
+        Value::Int(_) | Value::BigInt(_) => Some(format!("constant integer {}", src)),
+        Value::Num(_) => Some(format!("constant floating-point number {}", src)),
+        _ => describe_literal(v),
+    }
+}
+
 /// Approximate the source text of a useless expression for the "in expression"
 /// part of an operator warning.
 fn render_source(expr: &Expr) -> Option<String> {
@@ -368,6 +383,7 @@ fn render_source(expr: &Expr) -> Option<String> {
         Expr::Grouped(inner) | Expr::PositionalPair(inner) => render_source(inner),
         Expr::Literal(Value::Str(s)) => Some((**s).clone()),
         Expr::Literal(v) => Some(v.to_string_value()),
+        Expr::LiteralSrc(_, src) => Some(src.to_string()),
         Expr::Var(n) => Some(format!("${}", n)),
         Expr::ArrayVar(n) => Some(format!("@{}", n)),
         Expr::HashVar(n) => Some(format!("%{}", n)),

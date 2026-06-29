@@ -180,6 +180,42 @@ fn parse_prefixed_radix<'a>(
     Some(Ok((remaining, parse_int_radix(&clean, radix))))
 }
 
+/// Wrap a bare numeric-literal statement expression in `Expr::LiteralSrc` when
+/// the `source` the user wrote differs from the canonical stringification of the
+/// parsed value — e.g. `0xFF`/`0b1010` (radix), `6.02e23` (scientific), or `∞`
+/// (Unicode infinity). The sink-context "Useless use of ..." warning then echoes
+/// the original format instead of the rounded/decimal value.
+///
+/// This is applied ONLY at the bare-expression-statement level (the sink-warn
+/// position), never inside the primary parser — so a `LiteralSrc` never leaks
+/// into signatures, type-checked assignments, ranges, etc., where downstream
+/// passes pattern-match a plain `Expr::Literal`. Only `Int`/`BigInt`/`Num`
+/// literals are wrapped; everything else passes through untouched.
+pub(crate) fn wrap_divergent_literal(expr: Expr, source: &str) -> Expr {
+    if let Expr::Literal(v) = &expr
+        && matches!(v, Value::Int(_) | Value::BigInt(_) | Value::Num(_))
+    {
+        let trimmed = source.trim();
+        // Only preserve the format of a *bare* literal token. A parenthesized
+        // or otherwise composite source (`(1)`, `(0xFF)`) must NOT be wrapped:
+        // its consumed span includes grouping syntax that is not part of the
+        // literal, and wrapping it would (a) echo the parens in the sink
+        // warning and (b) hide the plain `Expr::Literal` from the "two terms in
+        // a row" / "block in infix position" parse-error checks that follow.
+        // A numeric literal token never contains parentheses or inner
+        // whitespace, so reject any source that does.
+        let is_clean_token = !trimmed.is_empty()
+            && !trimmed
+                .chars()
+                .any(|c| c == '(' || c == ')' || c.is_whitespace());
+        if is_clean_token && trimmed != v.to_string_value() {
+            let value = v.clone();
+            return Expr::LiteralSrc(value, trimmed.into());
+        }
+    }
+    expr
+}
+
 /// Parse an integer string with given radix, using BigInt for overflow.
 pub(super) fn parse_int_radix(clean: &str, radix: u32) -> Expr {
     if let Ok(n) = i64::from_str_radix(clean, radix) {

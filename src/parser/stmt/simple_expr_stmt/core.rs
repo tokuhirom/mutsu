@@ -89,6 +89,18 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     };
 
+    // When the whole statement expression is a bare numeric literal whose source
+    // format diverges from its canonical value (`0xFF`, `6.02e23`, `∞`), record
+    // the original text so a sink-context "Useless use" warning preserves it.
+    // Confined to this statement position so the wrapper never leaks into
+    // signatures / type checks / ranges (see `number::wrap_divergent_literal`).
+    let expr = if matches!(expr, Expr::Literal(_)) {
+        let consumed = &input[..input.len() - rest.len()];
+        crate::parser::primary::wrap_divergent_literal(expr, consumed)
+    } else {
+        expr
+    };
+
     if let Expr::BareWord(name) = &expr
         && matches!(name.as_str(), "qx" | "qqx")
         && rest.starts_with('=')
@@ -778,19 +790,27 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             return parse_statement_modifier(r, stmt);
         }
         let stmt = match expr {
-            // Assigning to an immutable literal (`120 = 3`, `"a" = 3`, `1.0 = 3`)
-            // is illegal: Raku throws X::Assignment::RO. Pass the literal to
-            // `__mutsu_assignment_ro` so it can report the value's type and repr.
-            Expr::Literal(_) => Stmt::Expr(Expr::DoBlock {
-                body: vec![
-                    Stmt::Expr(rhs),
-                    Stmt::Expr(Expr::Call {
-                        name: Symbol::intern("__mutsu_assignment_ro"),
-                        args: vec![expr],
-                    }),
-                ],
-                label: None,
-            }),
+            // Assigning to an immutable literal (`120 = 3`, `"a" = 3`, `1.0 = 3`,
+            // `1e0 = 3`) is illegal: Raku throws X::Assignment::RO. Pass the
+            // literal to `__mutsu_assignment_ro` so it can report the value's type
+            // and repr. A source-preserving `LiteralSrc` is unwrapped to its plain
+            // literal first (the sink-warn source text is irrelevant here).
+            Expr::Literal(_) | Expr::LiteralSrc(..) => {
+                let lit = match expr {
+                    Expr::LiteralSrc(v, _) => Expr::Literal(v),
+                    other => other,
+                };
+                Stmt::Expr(Expr::DoBlock {
+                    body: vec![
+                        Stmt::Expr(rhs),
+                        Stmt::Expr(Expr::Call {
+                            name: Symbol::intern("__mutsu_assignment_ro"),
+                            args: vec![lit],
+                        }),
+                    ],
+                    label: None,
+                })
+            }
             Expr::BareWord(_) => Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]),
             Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
                 sigil,
