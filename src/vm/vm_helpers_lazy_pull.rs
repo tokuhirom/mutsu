@@ -16,6 +16,12 @@ impl Interpreter {
             }
         }
 
+        // Lazy `WALK(method)()`: invoke the next MRO-level candidate(s) on demand,
+        // one method call per pulled element (Rakudo's lazy WALK semantics).
+        if list.walk_pending.is_some() {
+            return self.force_walk_pending(list, needed);
+        }
+
         // For sequence-spec lazy lists, generate more elements on demand
         if let Some(ref spec) = list.sequence_spec {
             return Self::extend_sequence_cache(list, spec, needed);

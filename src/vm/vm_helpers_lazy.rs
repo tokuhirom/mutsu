@@ -167,6 +167,12 @@ impl Interpreter {
     }
 
     fn force_lazy_list_vm_inner(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
+        // A lazy `WALK(method)()` list is finite (one element per MRO-level
+        // candidate): force them all by invoking every remaining candidate.
+        if let Some(ref wp) = list.walk_pending {
+            let total = wp.lock().unwrap().targets.len();
+            return self.force_walk_pending(list, total);
+        }
         // Handle scan-based lazy lists: compute elements on demand
         if list.scan_spec.is_some() {
             return self.force_scan_lazy_list(list, 200_000);

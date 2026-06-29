@@ -37,6 +37,10 @@ impl Clone for LazyList {
                 .closure_seq
                 .as_ref()
                 .map(|c| Mutex::new(c.lock().unwrap().clone())),
+            walk_pending: self
+                .walk_pending
+                .as_ref()
+                .map(|w| Mutex::new(w.lock().unwrap().clone())),
         }
     }
 }
@@ -96,9 +100,10 @@ impl LazyList {
     }
 
     /// Gate for the VM force/incremental-pull dispatch block: a gather-sourced
-    /// list (eager or `lazy`) or an infinite sequence/closure spec.
+    /// list (eager or `lazy`), an infinite sequence/closure spec, or a lazy
+    /// `WALK(method)()` candidate-invocation list.
     pub(crate) fn needs_vm_lazy_dispatch(&self) -> bool {
-        self.is_from_gather() || self.is_infinite_spec()
+        self.is_from_gather() || self.is_infinite_spec() || self.walk_pending.is_some()
     }
 
     /// Whether this list carries the `lazy` prefix marker (set by the `lazy`
@@ -154,6 +159,7 @@ impl LazyList {
             coroutine: None,
             lazy_pipe: None,
             closure_seq: None,
+            walk_pending: None,
         }
     }
 
@@ -171,6 +177,7 @@ impl LazyList {
             coroutine: None,
             lazy_pipe: None,
             closure_seq: None,
+            walk_pending: None,
         }
     }
 
@@ -188,6 +195,7 @@ impl LazyList {
             coroutine: None,
             lazy_pipe: None,
             closure_seq: None,
+            walk_pending: None,
         }
     }
 
@@ -222,6 +230,7 @@ impl LazyList {
                 index_transform: None,
             })),
             closure_seq: None,
+            walk_pending: None,
         }
     }
 
@@ -260,6 +269,7 @@ impl LazyList {
                 index_transform: Some(transform),
             })),
             closure_seq: None,
+            walk_pending: None,
         }
     }
 
@@ -281,6 +291,7 @@ impl LazyList {
             coroutine: None,
             lazy_pipe: None,
             closure_seq: Some(Mutex::new(state)),
+            walk_pending: None,
         }
     }
 
