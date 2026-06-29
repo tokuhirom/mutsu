@@ -86,6 +86,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         bounds: [u32; 7],
+        is_bare_block: bool,
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
@@ -122,6 +123,23 @@ impl Interpreter {
 
         // Run PRE phasers first (before ENTER)
         self.run_range(code, pre_start, enter_start, compiled_fns)?;
+
+        // A genuine bare block `{ ... }` is a Raku callframe: a backtrace captured
+        // while executing inside it (e.g. a `fail`/`die` in a sub called here)
+        // must include an anonymous frame for this block. Record the routine-stack
+        // depth so the cleanup below can drop this frame and any frames leaked by
+        // a nested bare block whose body threw past its own cleanup.
+        let routine_base = self.routine_stack_len();
+        if is_bare_block {
+            let call_line = self.current_source_line();
+            let call_file = self.current_source_file();
+            self.push_block_routine_with_location(
+                self.current_package(),
+                String::new(),
+                call_line,
+                call_file,
+            );
+        }
 
         let enter_result = self.run_range(code, enter_start, body_start, compiled_fns);
         self.push_once_scope(once_scope);
@@ -350,6 +368,11 @@ impl Interpreter {
         self.pop_block_scope_depth();
         self.pop_once_scope();
         self.enter_result_stack.truncate(enter_result_base);
+        // Drop this block's callframe (and any leaked nested bare-block frames)
+        // on every exit path. Runs regardless of body success/failure because the
+        // body result is carried as a value (`body_result`) and only `?`-ed at the
+        // very end, so this restore is exception-safe.
+        self.truncate_routine_stack(routine_base);
 
         if let Err(e) = post_res {
             // POST failure overrides successful body and return-value body exits

@@ -116,6 +116,16 @@ pub(crate) struct Compiler {
     /// or as a sigilless parameter).  BareWord resolution only uses GetLocal
     /// for names in this set; `$`-sigiled variables must not shadow type names.
     sigilless_locals: std::collections::HashSet<String>,
+    /// Set true immediately before compiling a *synthesized* `Stmt::Block`
+    /// (an if/while/loop/control branch body the compiler wraps at compile time,
+    /// not a genuine source `{ ... }`). The `Stmt::Block` arm consumes it to
+    /// decide whether the resulting scope is a backtrace-visible callframe.
+    synthetic_block_body: bool,
+    /// Set by the `Stmt::Block` arm just before calling `compile_try` for a
+    /// genuine bare block that carries a `CATCH`/`CONTROL`. `compile_try`
+    /// consumes it so the emitted `TryCatch` is marked as a bare-block
+    /// callframe. Other `compile_try` callers (e.g. `try { }`) leave it false.
+    next_try_is_bare_block: bool,
     /// Last source line emitted via SetSourceLine (for tracking block definition lines).
     last_source_line: Option<i64>,
     /// Pending writebacks for Index expressions passed to function calls.
@@ -181,6 +191,8 @@ impl Compiler {
             escaping_position: false,
             is_mainline: false,
             suppress_pair_capture: false,
+            synthetic_block_body: false,
+            next_try_is_bare_block: false,
         }
     }
 
@@ -894,7 +906,13 @@ impl Compiler {
                                 self.compile_phaser_block_scope(body, false);
                                 continue;
                             }
-                            self.compile_block_inline(body);
+                            // A genuine source `{ ... }` is a Raku callframe; a
+                            // compiler-synthesized block is not.
+                            if matches!(stmt, Stmt::Block(_)) {
+                                self.compile_bare_block_inline(body);
+                            } else {
+                                self.compile_block_inline(body);
+                            }
                             self.code.emit(OpCode::SetTopic);
                             continue;
                         }
@@ -948,6 +966,7 @@ impl Compiler {
             undo_start: 0,
             post_start: 0,
             end: 0,
+            is_bare_block: false,
         });
         Self::compile_pre_phasers(self, stmts);
         self.code.patch_block_pre_end(idx);

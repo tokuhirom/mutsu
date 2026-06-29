@@ -2141,6 +2141,21 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            OpCode::PushBlockFrame => {
+                let call_line = self.current_source_line();
+                let call_file = self.current_source_file();
+                self.push_block_routine_with_location(
+                    self.current_package(),
+                    String::new(),
+                    call_line,
+                    call_file,
+                );
+                *ip += 1;
+            }
+            OpCode::PopBlockFrame => {
+                self.pop_routine();
+                *ip += 1;
+            }
             OpCode::ThrowIfFailure => {
                 // Peek (do not pop): a trailing unhandled Failure must be thrown
                 // so the enclosing CATCH handler (or `try`) sees it, while a
@@ -3053,6 +3068,7 @@ impl Interpreter {
                 body_end,
                 explicit_catch,
                 resume_safe,
+                is_bare_block,
             } => {
                 self.exec_try_catch_op(
                     code,
@@ -3061,6 +3077,7 @@ impl Interpreter {
                     *body_end,
                     *explicit_catch,
                     *resume_safe,
+                    *is_bare_block,
                     ip,
                     compiled_fns,
                 )?;
@@ -3544,6 +3561,7 @@ impl Interpreter {
                 undo_start,
                 post_start,
                 end,
+                is_bare_block,
             } => {
                 self.exec_block_scope_op(
                     code,
@@ -3556,6 +3574,7 @@ impl Interpreter {
                         *post_start,
                         *end,
                     ],
+                    *is_bare_block,
                     ip,
                     compiled_fns,
                 )?;

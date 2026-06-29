@@ -315,17 +315,21 @@ impl Compiler {
             .as_deref()
             .map(Self::control_block_is_resume_safe)
             .unwrap_or(false);
-        // Emit TryCatch placeholder.
+        // Emit TryCatch placeholder. Mark it a bare-block callframe only when the
+        // `Stmt::Block` arm requested it for a genuine source `{ ...; CATCH { } }`.
+        let is_bare_block = std::mem::take(&mut self.next_try_is_bare_block);
         let try_idx = self.code.emit(OpCode::TryCatch {
             catch_start: 0,
             control_start: 0,
             body_end: 0,
             explicit_catch: has_explicit_catch,
             resume_safe,
+            is_bare_block,
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
         if Self::has_block_enter_leave_phasers(&main_stmts) {
+            self.synthetic_block_body = true;
             self.compile_stmt(&Stmt::Block(main_stmts.clone()));
             self.compile_expr(&Expr::Var("_".to_string()));
             main_leaves_value = true;

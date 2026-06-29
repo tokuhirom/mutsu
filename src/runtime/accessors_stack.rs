@@ -68,6 +68,20 @@ impl Interpreter {
         self.routine_stack.pop();
     }
 
+    /// Current routine-stack depth. Paired with [`truncate_routine_stack`] so a
+    /// structured execution boundary (block scope, try/catch) can record its
+    /// entry depth and restore it on exit, exception-safely.
+    pub(crate) fn routine_stack_len(&self) -> usize {
+        self.routine_stack.len()
+    }
+
+    /// Drop routine frames down to `len`. Used by block/try executors to remove
+    /// the bare-block callframe they pushed (and reclaim any frames a nested
+    /// bare block leaked when its body threw past its own cleanup).
+    pub(crate) fn truncate_routine_stack(&mut self, len: usize) {
+        self.routine_stack.truncate(len);
+    }
+
     pub(crate) fn block_stack_top(&self) -> Option<&Value> {
         self.block_stack.last()
     }

@@ -48,6 +48,19 @@ impl Compiler {
         }
     }
 
+    /// Compile a genuine source bare block `{ ... }` inline, bracketed by
+    /// `PushBlockFrame`/`PopBlockFrame` so it appears as an anonymous callframe
+    /// in a backtrace captured inside it (Raku semantics). Used for tail-position
+    /// bare blocks, which are inlined and so have no `BlockScope`/`TryCatch`
+    /// boundary to carry the `is_bare_block` flag. Synthesized blocks
+    /// (`Stmt::SyntheticBlock`) and non-block inline bodies (do/sub/if-branch)
+    /// must keep using [`compile_block_inline`] directly — they are not frames.
+    pub(super) fn compile_bare_block_inline(&mut self, stmts: &[Stmt]) {
+        self.code.emit(OpCode::PushBlockFrame);
+        self.compile_block_inline(stmts);
+        self.code.emit(OpCode::PopBlockFrame);
+    }
+
     /// Compile a block inline (for blocks without placeholders).
     pub(super) fn compile_block_inline(&mut self, stmts: &[Stmt]) {
         let saved = self.push_dynamic_scope_lexical();
@@ -112,6 +125,9 @@ impl Compiler {
                         // the inline path.
                         if Self::has_block_enter_leave_phasers(inner) {
                             self.compile_phaser_block_scope(inner, true);
+                        } else if matches!(stmt, Stmt::Block(_)) {
+                            // Genuine source `{ ... }` is a callframe.
+                            self.compile_bare_block_inline(inner);
                         } else {
                             self.compile_block_inline(inner);
                         }
