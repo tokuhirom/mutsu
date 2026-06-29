@@ -1,5 +1,114 @@
 # Changelog
 
+## [v0.1.2](https://github.com/tokuhirom/mutsu/compare/v0.1.1...v0.1.2) - 2026-06-29
+
+- refactor(introspection): consolidate built-in type method/MRO tables into one canonical registry by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3835
+- fix(arrays): persist mutating .map over shaped arrays by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3828
+- refactor(vm): split vm_var_ops.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3837
+- refactor(vm): split vm_data_ops.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3838
+- fix(arrays): preserve element-type & shape of shaped arrays through mutation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3839
+- fix(thread): large user-code stack for Thread.start / scheduler / hyper-race workers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3840
+- feat(introspection): derive built-in .^methods from real dispatch via sample-value probing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3841
+- refactor(vm): split vm_react_loop.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3842
+- feat(nativecall): &trait_mod:<>, Rakudo::Internals.IS-WIN, is encoded(...) param trait by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3843
+- fix(parser): bare Perl 5 unary functions (ord/chr/lc/uc/abs) are X::Obsolete by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3844
+- refactor(vm): split vm_set_ops.rs into cohesive submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3846
+- fix(unicode): uniname() of a too-high codepoint returns "<unassigned>" by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3847
+- fix(parser): expression-level assignment & bind precedence (lvalue ternary, `:=`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3848
+- fix(parser): accept type-object/identifier ternary then-branch when `!!` follows by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3845
+- fix(parser): a Bool default conforms to an Int/Numeric/Real parameter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3849
+- feat(runtime): register the built-in `Distribution` interface role by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3850
+- fix(seq): geometric Int sequence promotes to BigInt instead of overflow panic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3852
+- fix(compiler): hoist `my sub` in a non-unit package/module block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3851
+- perf(dispatch): skip per-call body-fingerprint work on the method hot path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3853
+- fix(runtime): resolve Rakudo::Internals(::JSON) via indirect ::() symbol lookup by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3854
+- docs(perf): correct the stale env-deep-clone bottleneck model by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3855
+- fix(types): a core type name is never shadowed by an env alias in type matching by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3856
+- perf(dispatch): cache non-multi method resolution on the compiled-mut path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3857
+- fix(compiler): do not package-qualify a twigil variable inside a package block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3858
+- perf(dispatch): serve mro_readonly from the cached C3 MRO instead of re-walking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3859
+- feat(runtime): dispatch an exported MAIN from a used module (run zef's CLI) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3860
+- docs(perf): record method-call hot-path campaign progress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3861
+- fix(interp): a string-interpolation block's outer-variable side effects persist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3862
+- docs(plan): mzef north-star (real Zef) + non-blocking module-regression CI by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3863
+- fix(interp): array/hash slice with commas interpolates all elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3864
+- chore(roast): whitelist integration/advent2012-day10.t by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3865
+- perf(dispatch): FxHashMap for the lexical env + method-dispatch caches by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3867
+- fix(signature): check a named param's `where` constraint against its default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3866
+- docs(perf): record FxHashMap dispatch/env win (#3867) and refine §G levers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3868
+- fix(main): match literal positional constraints in MAIN dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3869
+- perf(dispatch): cache single-candidate methods to skip per-call MRO walk by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3870
+- docs(perf): record single-candidate dispatch cache win (#3870) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3872
+- fix(interp): native shaped typed arrays (whitelist +3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3871
+- fix(types): out-of-scope `my` class/role no longer resolves as a type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3873
+- docs(roast): record qualified parameterized-role dispatch root-cause by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3874
+- docs(roast): sharpen qualified parameterized-role root-cause by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3875
+- fix(parser): emit X::Syntax::Malformed::Elsif for `else if` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3876
+- fix(class): flatten a slip/Seq bound to an `@`-attribute into an Array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3877
+- fix(roles): qualified call resolves to consumed parameterized concretization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3878
+- fix(interp): a my-package declaration shadows an out-of-scope same-named class by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3880
+- feat(roles): role-to-role ::T forwarding + per-concretization qualified dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3879
+- fix(package): named subs in a package block capture the block's `my` lexicals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3881
+- docs(roast): qualified.t subtest-6 blocked on lexical role/class identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3882
+- perf(dispatch): OTF-compile candidates with a `&cb:(...)` code-signature param by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3883
+- feat(roles): variant-aware + owner-relative qualified role-concretization resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3886
+- fix(interp): preserve element type when reassigning a bound typed array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3885
+- feat(roles): whitelist S12-methods/qualified.t (parameterized-role campaign complete) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3887
+- docs(roast): record S32-array/splice.t int8+ for-loop binding contamination by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3888
+- docs(roast): mark qualified.t done by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3889
+- docs(roast): refine io-handle nested-with topic-clobber analysis by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3890
+- fix(interp): type-preserving de-itemization for for-loop @-array binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3891
+- fix(topic): isolate nested with/given topic-source from outer scope by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3892
+- fix(io): IO::Handle.open mutates the receiver in place by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3893
+- fix(interp): .= on nested/declaration targets, string-block method names, scalar parameterized types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3894
+- fix(for): iterate the live array so in-loop pushes are picked up by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3895
+- fix(interp): chained .= writes back through the andthen/orelse/notandthen topic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3896
+- fix(parser): conditional my/our declaration keeps declaration unconditional by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3897
+- fix(interp): .self ignores args; andthen/orelse only call a Callable instance RHS by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3898
+- fix(package): named subs see/mutate package vars on every call by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3899
+- docs(roast): record generics.t and constant.t deep-feature investigations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3900
+- docs(roast): record near-pass sweep conclusion — shallow targets exhausted by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3901
+- fix(package): exported MAIN in a package block sees the mainline my lexical by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3902
+- feat(io): user-subclassable IO::Handle with WRITE/READ/EOF dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3903
+- fix(multidim): bounds-check the :delete local writeback (panic) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3905
+- docs: flesh out level1 GC design by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3904
+- docs(roast): update HISTORY.tsv — GC-phase milestone snapshot (1219 pass) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3907
+- docs: deepen roast blocker analysis by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3906
+- feat(otf): OTF-compile module subs with non-coercion return types; fix chmod IntStr allomorph by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3908
+- feat(otf): OTF-compile multi-dispatch calls with slipped args (CallFuncSlip) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3909
+- feat(otf): OTF-compile proto-dispatch calls with slipped args (CallFuncSlip) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3910
+- perf(dispatch): memoize method-body fingerprint by body-Arc pointer by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3911
+- perf(dispatch): memoize multi-function fingerprint by FunctionDef-Arc pointer by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3913
+- perf(dispatch): sound multi-function resolution cache by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3914
+- feat(exceptions): X::Comp::Group for a block gobbled by a for-loop iterable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3915
+- docs(roast): full re-triage of S32-exceptions/misc.t remaining fails by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3916
+- feat(classify): object-hash result for non-Str classifier keys (§3.3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3917
+- feat(slurpy): +a/+@a Seq type preservation + Seq single-pass consumption by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3918
+- feat(io): implement IO::CatHandle + fix map block named-tail-call value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3919
+- feat(class): strict accessors for user classes — undeclared .name throws X::Method::NotFound by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3920
+- feat(scheduler): $*SCHEDULER.loads, cue arg-validation, uncaught_handler routing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3921
+- feat(range): min/max with :k/:v/:kv/:p adverbs (index reporting) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3922
+- feat(walk): lazy WALK(method)() — one candidate invoked per pulled element by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3923
+- fix(sprintf): zprintf %g/%G use format letter as exponent separator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3924
+- feat(exceptions): X::Redeclaration for duplicate sub/token in a type body by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3925
+- feat(capture): Channel/Supply/non-Str-key List .Capture + .&-call Pair invocant positional by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3926
+- fix(supply): Supply.skip on a type object throws X::Parameter::InvalidConcreteness by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3928
+- feat(array): BIND-POS installs a shared container cell aliasing the source variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3927
+- fix(exceptions): bundle regex/null-operator compile diagnostics into X::Comp::Group by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3929
+- fix(hash): preserve value-type metadata for typed hashes declared in expression position by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3930
+- feat(exceptions): preserve source format in sink warnings and Confused pre/post by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3931
+- feat(exceptions): X::Comp::FailGoal for unterminated smart single quotes + stop line by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3932
+- fix(parser): listop/colon-method args stop before loose word-logical ops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3933
+- docs: use gh directly instead of wrapping it in dotenvx by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3934
+- fix(exceptions): sub-signature destructure enforces Positional/Associative (misc.t #155) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3935
+- feat(operators): .= on a STORE-container non-lvalue invokes STORE by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3936
+- fix(exceptions): but on a role type object throws X::Method::NotFound (misc.t #166) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3937
+- feat(parser): detect VCS conflict markers as X::Comp compile error (misc.t #179) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3938
+- feat(operators): .= metaop writes through a read-only container topic (closes inplace.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3939
+- feat(parser): bodyless sub parameterizing non-parametric type throws X::NotParametric (misc.t #84) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3940
+- fix(multidim): read/mutate through ContainerRef cells in multi-dim subscript ops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3941
+- fix(for): value-collecting for loop keeps assigned container (for.t #100) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3942
+
 ## [v0.1.1](https://github.com/tokuhirom/mutsu/compare/v0.1.0...v0.1.1) - 2026-06-27
 
 - refactor(vm): slim vm.rs by extracting exec_one and helpers into submodules (§7-8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3819
