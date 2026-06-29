@@ -53,6 +53,7 @@ impl Interpreter {
                 })),
                 lazy_pipe: None,
                 closure_seq: None,
+                walk_pending: None,
             };
             let val = Value::LazyList(std::sync::Arc::new(list));
             self.stack.push(val);

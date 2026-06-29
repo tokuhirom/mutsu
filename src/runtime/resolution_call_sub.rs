@@ -639,6 +639,10 @@ impl Interpreter {
                             .closure_seq
                             .as_ref()
                             .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                        walk_pending: list
+                            .walk_pending
+                            .as_ref()
+                            .map(|w| std::sync::Mutex::new(w.lock().unwrap().clone())),
                     }))
                 } else {
                     v

@@ -1098,6 +1098,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     coroutine: None,
                     lazy_pipe: None,
                     closure_seq: None,
+                    walk_pending: None,
                 };
                 return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
             }

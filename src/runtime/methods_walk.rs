@@ -299,8 +299,53 @@ impl Interpreter {
         if reversed {
             order.reverse();
         }
-        let mut results: Vec<Value> = Vec::with_capacity(order.len());
-        for tag in &order {
+        // Rakudo invokes WALK candidates LAZILY: return a lazy list whose Nth pull
+        // invokes the Nth MRO-level candidate (so `for WALK("foo")() { ... }` calls
+        // exactly one method per iteration). `force_walk_pending` does the per-pull
+        // call — nothing is invoked here.
+        let mut ll = crate::value::LazyList::new_cached(Vec::new());
+        ll.walk_pending = Some(std::sync::Mutex::new(crate::value::WalkPendingState {
+            receiver_class,
+            method_name,
+            targets: order,
+            args,
+            invocant,
+            attributes: attributes_map,
+            quiet,
+            idx: 0,
+        }));
+        Ok(Value::LazyList(std::sync::Arc::new(ll)))
+    }
+
+    /// Pull up to `needed` elements of a lazy `WALK(method)()` list by invoking
+    /// the next MRO-level candidate(s) on demand (one method call per element).
+    pub(crate) fn force_walk_pending(
+        &mut self,
+        list: &crate::value::LazyList,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        // Snapshot the immutable state + current index, releasing the lock before
+        // any re-entrant method call (`run_resolved_method` needs `&mut self`).
+        let (receiver_class, method_name, targets, args, invocant, attributes, quiet, mut idx) = {
+            let st = list.walk_pending.as_ref().unwrap().lock().unwrap();
+            (
+                st.receiver_class.clone(),
+                st.method_name.clone(),
+                st.targets.clone(),
+                st.args.clone(),
+                st.invocant.clone(),
+                st.attributes.clone(),
+                st.quiet,
+                st.idx,
+            )
+        };
+        let mut produced: Vec<Value> = {
+            let cache = list.cache.lock().unwrap();
+            cache.as_ref().cloned().unwrap_or_default()
+        };
+        while produced.len() < needed && idx < targets.len() {
+            let tag = targets[idx].clone();
+            idx += 1;
             let (kind, owner) = match tag.split_once('|') {
                 Some(("C", o)) => (WalkKind::Class, o.to_string()),
                 Some(("R", o)) => (WalkKind::Role, o.to_string()),
@@ -311,22 +356,27 @@ impl Interpreter {
             else {
                 continue;
             };
-            let call = self.run_resolved_method_compiled_or_treewalk(
+            match self.run_resolved_method_compiled_or_treewalk(
                 &receiver_class,
                 &owner,
                 &method_name,
                 method_def,
-                attributes_map.clone(),
+                attributes.clone(),
                 args.clone(),
                 Some(invocant.clone()),
-            );
-            match call {
-                Ok((v, _)) => results.push(v),
-                Err(e) if quiet => results.push(self.fail_error_to_failure_value(&e)),
+            ) {
+                Ok((v, _)) => produced.push(v),
+                Err(e) if quiet => produced.push(self.fail_error_to_failure_value(&e)),
                 Err(e) => return Err(e),
             }
         }
-        Ok(Value::real_array(results))
+        list.walk_pending.as_ref().unwrap().lock().unwrap().idx = idx;
+        *list.cache.lock().unwrap() = Some(produced.clone());
+        Ok(if produced.len() >= needed {
+            produced[..needed].to_vec()
+        } else {
+            produced
+        })
     }
 
     /// Dispatch a method call on a `WalkList` instance. Returns `Ok(None)` for

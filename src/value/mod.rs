@@ -1245,6 +1245,23 @@ pub(crate) struct GatherCoroutineState {
     pub(crate) for_loop_resume: Option<ForLoopResumeState>,
 }
 
+/// Lazy `WALK(method)` invocation state. `$obj.WALK("foo")()` walks the MRO
+/// calling each level's own `foo` ONE AT A TIME as the result list is pulled
+/// (Rakudo: the calls are lazy — `for WALK("foo")() { ... }` invokes the Nth
+/// candidate on the Nth iteration). `targets` holds the resolved per-level
+/// candidates (`"C|Owner"` / `"R|Owner"` tags); `idx` is the next to invoke.
+#[derive(Debug, Clone)]
+pub(crate) struct WalkPendingState {
+    pub(crate) receiver_class: String,
+    pub(crate) method_name: String,
+    pub(crate) targets: Vec<String>,
+    pub(crate) args: Vec<Value>,
+    pub(crate) invocant: Value,
+    pub(crate) attributes: std::collections::HashMap<String, Value>,
+    pub(crate) quiet: bool,
+    pub(crate) idx: usize,
+}
+
 pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
     pub(crate) env: Env,
@@ -1273,6 +1290,9 @@ pub(crate) struct LazyList {
     /// When present, more elements are produced on demand by re-invoking the
     /// generator closure over the growing element history.
     pub(crate) closure_seq: Option<Mutex<ClosureSeqState>>,
+    /// Lazy `WALK(method)()` candidate-invocation state (see `WalkPendingState`):
+    /// each pull invokes the next MRO-level candidate.
+    pub(crate) walk_pending: Option<Mutex<WalkPendingState>>,
 }
 
 /// Placeholder string rendered for a genuinely-lazy list under
