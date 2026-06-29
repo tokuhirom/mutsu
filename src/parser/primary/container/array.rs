@@ -34,7 +34,7 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
             // After a separator we need another element or a closing `]`.
             // Hitting unparseable/end-of-input here means the array composer
             // was never closed (e.g. `[1,`): X::Comp::FailGoal.
-            let (r, next) = expression(r).map_err(|_| array_fail_goal())?;
+            let (r, next) = expression(r).map_err(|_| array_fail_goal(r))?;
             items.push(next);
             rest = r;
         } else if r.starts_with(';') && !r.starts_with(";;") {
@@ -49,7 +49,7 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
                     finalize_array_sections(sections, items, saw_semicolon, false),
                 ));
             }
-            let (r, next) = expression(r).map_err(|_| array_fail_goal())?;
+            let (r, next) = expression(r).map_err(|_| array_fail_goal(r))?;
             items.push(next);
             rest = r;
         } else {
@@ -68,7 +68,7 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
             }
             // We have parsed a valid array composer but cannot find the
             // closing `]` (e.g. `[1,2` at end of input): X::Comp::FailGoal.
-            let (r, _) = parse_char(r, ']').map_err(|_| array_fail_goal())?;
+            let (r, _) = parse_char(r, ']').map_err(|_| array_fail_goal(r))?;
             return Ok((
                 r,
                 finalize_array_sections(sections, items, saw_semicolon, false),
@@ -113,13 +113,17 @@ fn build_array_section(items: Vec<Expr>) -> Expr {
 
 /// Build a fatal `X::Comp::FailGoal` parse error for an unterminated array
 /// composer (`[1,2` with no closing `]`).
-fn array_fail_goal() -> PError {
-    fail_goal_error("array composer", "']'")
+fn array_fail_goal(pos: &str) -> PError {
+    fail_goal_error_at("array composer", "']'", Some(pos))
 }
 
 /// Build a fatal `X::Comp::FailGoal` parse error: an opening bracket/quote
 /// construct (`dba`) was started but its terminator (`goal`) was never found.
-pub(crate) fn fail_goal_error(dba: &str, goal: &str) -> PError {
+/// `pos` (the parser slice where the terminator search gave up) sets the
+/// exception's `.line` to the 1-based line of that position within the original
+/// source — matching Rakudo, whose FailGoal `.line` points at where parsing
+/// stopped (the EOF line), not the starter. Pass `None` to leave `.line` unset.
+pub(crate) fn fail_goal_error_at(dba: &str, goal: &str, pos: Option<&str>) -> PError {
     let message = format!(
         "Unable to parse expression in {}; couldn't find final {} (corresponding starter was at line 1)",
         dba, goal
@@ -128,6 +132,10 @@ pub(crate) fn fail_goal_error(dba: &str, goal: &str) -> PError {
     attrs.insert("message".to_string(), Value::str(message.clone()));
     attrs.insert("dba".to_string(), Value::str(dba.to_string()));
     attrs.insert("goal".to_string(), Value::str(goal.to_string()));
+    if let Some(pos) = pos {
+        let line = crate::parser::primary::current_line_number(pos);
+        attrs.insert("line".to_string(), Value::Int(line));
+    }
     let exception = Value::make_instance(Symbol::intern("X::Comp::FailGoal"), attrs);
     PError::fatal_with_exception(message, Box::new(exception))
 }
