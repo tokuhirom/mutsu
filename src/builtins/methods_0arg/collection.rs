@@ -391,17 +391,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(map) => {
-                    // Use original typed keys for object hashes that were
-                    // created from Set/Bag/Mix .hash coercion and tagged
-                    // with a __setty_origin marker in original_keys.
-                    let has_setty_origin = if let Some(orig) =
-                        crate::runtime::utils::hash_original_keys_snapshot(target)
-                    {
-                        orig.contains_key("__mutsu_setty_origin")
-                    } else {
-                        false
-                    };
-                    let keys: Vec<Value> = if has_setty_origin {
+                    // Object hashes (`.WHICH`-keyed: `my %h{Any}`, a Set/Bag/Mix
+                    // `.hash`, or a `classify` keyed by non-Str values) yield their
+                    // real key objects; a plain hash yields decoded Str keys.
+                    let keys: Vec<Value> = if map.has_typed_keys() {
                         map.keys()
                             .map(|k| crate::runtime::utils::hash_typed_key(target, k))
                             .collect()

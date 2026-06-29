@@ -111,6 +111,8 @@ pub(crate) fn is_listop(name: &str) -> bool {
             | "grep"
             | "map"
             | "sort"
+            | "classify"
+            | "categorize"
             | "any"
             | "all"
             | "none"

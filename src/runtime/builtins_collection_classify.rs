@@ -205,6 +205,14 @@ impl Interpreter {
         let mut expected_level: Option<usize> = None;
         let mut expected_multi_level: Option<bool> = None;
 
+        // Object-hash key preservation (§3.3): when the classifier returns a
+        // non-`Str` key (e.g. a Junction from `*.contains: any 'a','f'`), the
+        // bucket key is stored under its stringification but the result must be an
+        // *object hash* so `$result{ any(...) }` is a by-key lookup (not junction
+        // autothreading) and `.keys` yields the real key objects. Records each
+        // first-level non-Str key object under its encoded string.
+        let mut object_keys: HashMap<String, Value> = HashMap::new();
+
         for item in &items {
             let mapped = match &mapper {
                 Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
@@ -298,6 +306,13 @@ impl Interpreter {
                 } else {
                     expected_level = Some(path.len());
                 }
+                if let Some(first) = path.first()
+                    && !matches!(first, Value::Str(_))
+                {
+                    object_keys
+                        .entry(first.to_string_value())
+                        .or_insert_with(|| first.clone());
+                }
                 insert_nested_bucket(&mut buckets, path, mapped_item.clone(), name)?;
             }
         }
@@ -315,7 +330,10 @@ impl Interpreter {
                 } else if let Some(counts) = mix_counts.clone() {
                     updated = Some(Value::mix(counts));
                 } else if into_target.is_some() {
-                    updated = Some(Value::hash(buckets.clone()));
+                    updated = Some(Self::classify_finish_hash(
+                        buckets.clone(),
+                        object_keys.clone(),
+                    ));
                 }
                 if let Some(new_value) = updated {
                     if has_proxy {
@@ -334,6 +352,27 @@ impl Interpreter {
             return Ok(Value::mix(counts));
         }
 
-        Ok(Value::hash(buckets))
+        Ok(Self::classify_finish_hash(buckets, object_keys))
+    }
+
+    /// Wrap classify's bucket map in a `Value::Hash`, marking it an *object hash*
+    /// (typed keys) when any classifier key was non-`Str` (e.g. a Junction). An
+    /// object hash makes `$result{ $key }` a by-key lookup rather than junction
+    /// autothreading, and `.keys` yield the real key objects.
+    fn classify_finish_hash(
+        buckets: HashMap<String, Value>,
+        object_keys: HashMap<String, Value>,
+    ) -> Value {
+        let hash = Value::hash(buckets);
+        if object_keys.is_empty() {
+            return hash;
+        }
+        if let Value::Hash(mut arc) = hash {
+            let data = std::sync::Arc::make_mut(&mut arc);
+            data.key_type = Some("Any".to_string());
+            data.original_keys = Some(object_keys);
+            return Value::Hash(arc);
+        }
+        hash
     }
 }
