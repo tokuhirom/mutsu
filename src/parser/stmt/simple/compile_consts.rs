@@ -60,6 +60,27 @@ pub(crate) fn pop_scope() {
     });
 }
 
+/// Enable the `no worries` lexical pragma in the current scope, suppressing
+/// compiler "Potential difficulties" warnings for the rest of this scope and
+/// any nested scopes.
+pub(crate) fn suppress_worries() {
+    SCOPES.with(|s| {
+        if let Some(current) = s.borrow_mut().last_mut() {
+            current.worries_suppressed = true;
+        }
+    });
+}
+
+/// Returns true when `no worries` is in effect in the current (innermost) scope.
+pub(crate) fn worries_suppressed() -> bool {
+    SCOPES.with(|s| {
+        s.borrow()
+            .last()
+            .map(|scope| scope.worries_suppressed)
+            .unwrap_or(false)
+    })
+}
+
 /// Check if a function name was registered via `use` module import.
 /// Searches all scopes from innermost to outermost.
 pub(crate) fn is_imported_function(name: &str) -> bool {

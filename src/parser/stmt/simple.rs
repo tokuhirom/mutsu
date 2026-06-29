@@ -50,7 +50,7 @@ pub(super) use io_stmts::{note_stmt, print_stmt, put_stmt, say_stmt};
 // `pub(in crate::parser)` re-exports.
 pub(in crate::parser) use compile_consts::{
     is_test_assertion_callable, lookup_compile_time_constant, pop_scope, push_scope,
-    register_compile_time_constant,
+    register_compile_time_constant, suppress_worries, worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use lib_paths::try_add_parse_time_lib_path;
@@ -97,6 +97,10 @@ struct LexicalScope {
     /// User-declared class/role/grammar/enum names. Used to disambiguate
     /// identifiers like `S` from the `S///` substitution operator.
     user_types: HashSet<String>,
+    /// `no worries` lexical pragma: when true, compiler "Potential difficulties"
+    /// warnings (e.g. the empty-`<>` colonpair warning) are suppressed in this
+    /// scope and any nested scopes (inherited via `push_scope`).
+    worries_suppressed: bool,
 }
 
 #[derive(Clone)]
