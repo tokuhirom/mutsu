@@ -218,11 +218,14 @@ impl Interpreter {
                     by_found = true;
                     positional.push(arg.clone());
                 }
-                Value::Pair(name, value)
-                    if matches!(name.as_str(), "k" | "v" | "kv" | "p")
-                        && matches!(value.as_ref(), Value::Bool(true)) =>
-                {
-                    adverb = Some(name.clone());
+                // `:k`/`:v`/`:kv`/`:p` select what the extremum reports. A negated
+                // form (`:!k`, Bool false) means "the value" (the default), but in
+                // either case the adverb pair must be stripped from the positional
+                // candidates so it never participates in the min/max comparison.
+                Value::Pair(name, value) if matches!(name.as_str(), "k" | "v" | "kv" | "p") => {
+                    if matches!(value.as_ref(), Value::Bool(true)) {
+                        adverb = Some(name.clone());
+                    }
                 }
                 _ => positional.push(arg.clone()),
             }
@@ -233,8 +236,38 @@ impl Interpreter {
 
     pub(super) fn builtin_min(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let (adverb, filtered_args) = Self::extract_extrema_adverbs(args);
+        if let Some(r) = self.range_extrema_sub_form(&filtered_args, "min", adverb.as_deref()) {
+            return r;
+        }
         let result = self.builtin_min_inner(&filtered_args)?;
         self.apply_extrema_adverb(&filtered_args, result, false, adverb.as_deref())
+    }
+
+    /// The sub forms `min($range, :k)` / `max($range, :kv)` must use the same
+    /// Range-aware index logic as the method forms. When the only candidate is a
+    /// Range (no `:by`), delegate to the method dispatch.
+    fn range_extrema_sub_form(
+        &mut self,
+        filtered_args: &[Value],
+        method: &str,
+        adverb: Option<&str>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let [only] = filtered_args else { return None };
+        if !Self::value_is_rangey(only) {
+            return None;
+        }
+        let has_by = filtered_args.iter().any(|a| {
+            matches!(a, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+                || matches!(a, Value::Pair(n, _) if n == "by")
+        });
+        if has_by {
+            return None;
+        }
+        let method_args = match adverb {
+            Some(a) => vec![Value::Pair(a.to_string(), Box::new(Value::Bool(true)))],
+            None => vec![],
+        };
+        Some(self.call_method_with_values(only.clone(), method, method_args))
     }
 
     fn builtin_min_inner(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -273,6 +306,9 @@ impl Interpreter {
 
     pub(super) fn builtin_max(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let (adverb, filtered_args) = Self::extract_extrema_adverbs(args);
+        if let Some(r) = self.range_extrema_sub_form(&filtered_args, "max", adverb.as_deref()) {
+            return r;
+        }
         let result = self.builtin_max_inner(&filtered_args)?;
         self.apply_extrema_adverb(&filtered_args, result, true, adverb.as_deref())
     }
