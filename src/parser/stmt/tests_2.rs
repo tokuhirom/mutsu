@@ -116,8 +116,11 @@ fn parse_paren_expr_mutating_method_stmt() {
     let (rest, stmts) = program("(class { method foo() { self } }.new).=foo;").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
-    // .= on non-lvalue expression is parsed as a method call in expression context
-    assert!(matches!(&stmts[0], Stmt::Expr(Expr::MethodCall { .. })));
+    // `.=` on a non-lvalue expression desugars to a `do { my $t = EXPR; ... }`
+    // block that, at runtime, invokes `$t.STORE($t.foo)` when the (evaluated-once)
+    // target provides a `STORE` method (custom container) and otherwise yields the
+    // plain `$t.foo` method result.
+    assert!(matches!(&stmts[0], Stmt::Expr(Expr::DoBlock { .. })));
 }
 
 #[test]
