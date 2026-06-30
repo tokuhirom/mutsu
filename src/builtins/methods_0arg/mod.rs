@@ -719,9 +719,18 @@ fn is_infinite_endpoint(v: &Value) -> bool {
     }
 }
 
-/// f64 value of a Range endpoint for emptiness checks. Whatever endpoints map
-/// to +Inf (an open-ended upper bound).
-fn range_endpoint_f64(v: &Value) -> f64 {
+/// f64 value of a Range *start* endpoint for emptiness checks. A `Whatever`
+/// start is an open lower bound (`*..1` is `-Inf..1`), so it maps to -Inf.
+fn range_start_f64(v: &Value) -> f64 {
+    match v {
+        Value::Whatever | Value::HyperWhatever => f64::NEG_INFINITY,
+        _ => v.to_f64(),
+    }
+}
+
+/// f64 value of a Range *end* endpoint for emptiness checks. A `Whatever` end
+/// is an open upper bound (`1..*` is `1..Inf`), so it maps to +Inf.
+fn range_end_f64(v: &Value) -> f64 {
     match v {
         Value::Whatever | Value::HyperWhatever => f64::INFINITY,
         _ => v.to_f64(),
@@ -742,8 +751,8 @@ fn is_infinite_range(value: &Value) -> bool {
             // `Inf..0`, `1..-Inf`), not infinite. NaN endpoints make this
             // comparison false, so NaN ranges stay "infinite" (they iterate
             // their NaN/-Inf start ad infinitum).
-            let s = range_endpoint_f64(start);
-            let e = range_endpoint_f64(end);
+            let s = range_start_f64(start);
+            let e = range_end_f64(end);
             // Empty (not infinite) only when start strictly exceeds end. A NaN
             // endpoint is unordered, so `partial_cmp` is `None` -> not empty ->
             // infinite (NaN ranges iterate their NaN start forever).

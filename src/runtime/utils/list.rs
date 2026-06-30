@@ -327,28 +327,26 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 };
                 let s_f = start_num.to_f64();
                 let e_f = end_num.to_f64();
-                if !s_f.is_finite() || !e_f.is_finite() {
-                    // Degenerate/infinite numeric range — cannot be eagerly
-                    // materialized as a finite list.
+                if s_f.is_infinite() || s_f.is_nan() || e_f.is_nan() {
+                    // Degenerate numeric range whose *start* is non-finite (or
+                    // end is NaN) — the normal `.succ` expansion below cannot
+                    // run. (A right-infinite range with a *finite* start, e.g.
+                    // `-17..^Inf`, falls through to the normal branch, which
+                    // expands up to the cap.)
                     //   * Empty when the start strictly exceeds the end
                     //     (`Inf..0`); NaN comparisons are false, so NaN ranges
                     //     are not empty. `(Inf..0).elems == 0`.
-                    //   * A `+Inf` start yields no usable values either (Rakudo:
+                    //   * A `+Inf` start yields no usable values (Rakudo:
                     //     `(Inf..Inf)[^5]` / `(Inf..NaN)[^5]` are all Nil), so it
                     //     is empty too.
-                    //   * Otherwise (`-Inf`/`NaN` start, or a right-infinite
-                    //     `…..Inf`) return the range itself as a single lazy
-                    //     sentinel element. Eager callers that must reject lazy
-                    //     lists detect it via `is_value_lazy` (e.g. native
-                    //     typed-array init throws `X::Cannot::Lazy`); lazy
-                    //     consumers (`.map`) iterate via the pull path instead of
-                    //     this eager list.
-                    if matches!(s_f.partial_cmp(&e_f), Some(std::cmp::Ordering::Greater))
-                        || s_f == f64::INFINITY
-                    {
+                    //   * A `-Inf`/`NaN` start never advances under `.succ`
+                    //     (`-Inf+1 == -Inf`, `NaN+1 == NaN`), so the range yields
+                    //     its start ad infinitum — materialize up to the cap.
+                    if s_f > e_f || s_f == f64::INFINITY {
                         Vec::new()
                     } else {
-                        vec![val.clone()]
+                        let limit = MAX_RANGE_EXPAND as usize;
+                        vec![start_num.clone(); limit]
                     }
                 } else {
                     let mut result = Vec::new();
