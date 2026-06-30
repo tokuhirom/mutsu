@@ -1,5 +1,85 @@
 use super::*;
 
+/// Bare-callable routines that the VM dispatches directly but that are *not*
+/// listed in `BUILTIN_FUNCTION_NAMES` (the latter feeds VM dispatch decisions,
+/// so it is kept deliberately narrow). Used only by the EVAL undeclared-routine
+/// pre-pass to avoid false-flagging a legitimate builtin / statement keyword as
+/// an undeclared user routine. Mirrors the bare-function `match name` dispatch
+/// in `builtins.rs` plus the module/import statement keywords that parse as
+/// calls (`require`, `use`, `need`, `import`).
+const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
+    "atomic-fetch",
+    "await",
+    "bag",
+    "cache",
+    "caller",
+    "callframe",
+    "callsame",
+    "callwith",
+    "categorize",
+    "chroot",
+    "classify",
+    "cr",
+    "crlf",
+    "cross",
+    "dd",
+    "deepmap",
+    "duckmap",
+    "emit",
+    "fail",
+    "first",
+    "full-barrier",
+    "getc",
+    "gethost",
+    "getlogin",
+    "hash",
+    "head",
+    "homedir",
+    "import",
+    "index",
+    "indices",
+    "item",
+    "kill",
+    "kv",
+    "lastcall",
+    "leave",
+    "lf",
+    "list",
+    "local",
+    "lol",
+    "made",
+    "make",
+    "mix",
+    "need",
+    "nextcallee",
+    "nextsame",
+    "nextwith",
+    "pair",
+    "produce",
+    "reduce",
+    "require",
+    "return",
+    "return-rw",
+    "rindex",
+    "samewith",
+    "set",
+    "shell",
+    "signal",
+    "skip",
+    "sleep",
+    "sleep-till",
+    "sleep-timer",
+    "slip",
+    "snip",
+    "split",
+    "start",
+    "syscall",
+    "tail",
+    "take",
+    "tmpdir",
+    "use",
+];
+
 impl Interpreter {
     /// Check for undeclared type names in EVAL'd code.
     /// Walks the AST looking for BareWord expressions that start with uppercase
@@ -331,6 +411,7 @@ impl Interpreter {
                 || self.has_multi_function(&name)
                 || self.has_proto(&name)
                 || Self::is_builtin_function(&name)
+                || EVAL_KNOWN_ROUTINE_NAMES.contains(&name.as_str())
                 || self.env().contains_key(&format!("&{}", name))
                 || self.env().contains_key(name.as_str())
                 || self.get_our_var(&name).is_some()
