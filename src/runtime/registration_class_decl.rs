@@ -480,6 +480,22 @@ impl Interpreter {
                         class_def.attributes.push(attr.clone());
                     }
                 }
+                // Carry each composed-role attribute's deferred `is default(...)`
+                // expression onto the consuming class so it can be evaluated at
+                // construction with this class's type-param bindings in scope.
+                let role_default_exprs: Vec<(String, crate::ast::Expr)> = self
+                    .registry()
+                    .role_attribute_default_exprs
+                    .iter()
+                    .filter(|((r, _), _)| r == base_role_name)
+                    .map(|((_, attr), expr)| (attr.clone(), expr.clone()))
+                    .collect();
+                for (attr, expr) in role_default_exprs {
+                    self.registry_mut()
+                        .class_attribute_default_exprs
+                        .entry((name.to_string(), attr))
+                        .or_insert(expr);
+                }
                 for (mname, overloads) in &role.methods {
                     // Skip methods declared with `my` scope -- they are role-private
                     // and should not be composed into consuming classes.
@@ -1076,8 +1092,16 @@ impl Interpreter {
                         if let Ok(val) =
                             self.eval_block_value(&[Stmt::Expr(is_default_expr.clone())])
                         {
-                            // Type-check the default value against the attribute's type constraint
+                            // Type-check the default value against the attribute's type
+                            // constraint. For an object hash (`%.a{KeyType}`) the
+                            // constraint is `ValueType{KeyType}`; the `is default`
+                            // value is an *element* default, so check it against the
+                            // value type only.
                             if let Some(tc) = type_constraint {
+                                let tc = tc
+                                    .split_once('{')
+                                    .map(|(value_tc, _)| value_tc)
+                                    .unwrap_or(tc.as_str());
                                 let type_ok = if matches!(val, Value::Nil) {
                                     // Nil is only valid for untyped or Nil-accepting attributes
                                     tc == "Any" || tc == "Mu" || tc.contains("Nil")

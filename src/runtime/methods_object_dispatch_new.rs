@@ -1755,6 +1755,10 @@ impl Interpreter {
                     };
                     attrs.insert(attr_name, val);
                 }
+                // Embed `is default(...)` element defaults into `@`/`%` containers
+                // (evaluating any role-deferred expression while type params are
+                // still bound in `self.env`).
+                self.apply_container_attribute_defaults(class_key, &mut attrs);
                 // Add alias metadata for `has $x` (no twigil) attributes
                 self.add_alias_attribute_metadata(class_key, &mut attrs);
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;

@@ -395,7 +395,7 @@ impl Interpreter {
                     is_alias: _,
                     is_our: _,
                     is_my: _,
-                    is_default: _,
+                    is_default,
                     is_type: _,
                     deprecated_message: _,
                     is_built: _,
@@ -403,6 +403,16 @@ impl Interpreter {
                 } => {
                     let attr_name_str = attr_name.resolve();
                     role_def.own_attribute_names.insert(attr_name_str.clone());
+                    // `is default(...)` on a role attribute can reference the role's
+                    // type parameters (`is default(T)`), so it cannot be evaluated
+                    // until composition. Stash the expression keyed by (role, attr);
+                    // it is copied to the consuming class and evaluated at instance
+                    // construction (with type params bound).
+                    if let Some(def_expr) = is_default {
+                        self.registry_mut()
+                            .role_attribute_default_exprs
+                            .insert((name.to_string(), attr_name_str.clone()), def_expr.clone());
+                    }
                     // Check if this attribute already exists from a composed role
                     if let Some(existing) = role_def
                         .attributes

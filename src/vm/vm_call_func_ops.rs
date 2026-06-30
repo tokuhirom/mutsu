@@ -496,6 +496,7 @@ impl Interpreter {
                 | "leave"
                 | "__mutsu_assign_method_lvalue"
                 | "__mutsu_index_assign_method_lvalue"
+                | "__mutsu_index_delete_method_lvalue"
         ) || self.in_lvalue_assignment;
         let args = if skip_proxy_fetch {
             args
@@ -578,6 +579,10 @@ impl Interpreter {
         let lvalue_writeback_target = match name.as_str() {
             "__mutsu_assign_method_lvalue" | "__mutsu_index_assign_method_lvalue" => args
                 .get(4)
+                .map(|v| v.to_string_value())
+                .filter(|s| !s.is_empty()),
+            "__mutsu_index_delete_method_lvalue" => args
+                .get(3)
                 .map(|v| v.to_string_value())
                 .filter(|s| !s.is_empty()),
             _ => None,

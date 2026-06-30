@@ -121,7 +121,18 @@ impl Interpreter {
         let current = current.map(Value::into_descalarized);
         match current {
             Some(Value::Hash(existing_hash)) => {
-                Self::normalize_hash_like_assignment(existing_hash.map.clone(), value)
+                // Carry the existing container's `is default(...)` onto the result
+                // so a whole-hash rw-accessor writeback (`$o.h<k> = v`, which
+                // round-trips the whole hash) does not strip the element default.
+                let existing_default = existing_hash.default.clone();
+                let mut result =
+                    Self::normalize_hash_like_assignment(existing_hash.map.clone(), value);
+                if let (Value::Hash(arc), Some(def)) = (&mut result, existing_default)
+                    && arc.default.is_none()
+                {
+                    std::sync::Arc::make_mut(arc).default = Some(def);
+                }
+                result
             }
             Some(Value::Array(..)) => super::coerce_to_array(value),
             _ => value,

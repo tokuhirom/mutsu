@@ -268,6 +268,26 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         (rest, None)
     };
 
+    // Optional object-hash key-type suffix: has %.a{Str:D}. The key type folds
+    // into the attribute's type constraint as `ValueType{KeyType}`, exactly as a
+    // lexical `my %h{Str:D}` does (see my_decl.rs).
+    let rest = if sigil == b'%'
+        && rest.starts_with('{')
+        && !rest.starts_with("{{")
+        && let Some(end) = rest.find('}')
+    {
+        let key_type = rest[1..end].trim().to_string();
+        let value_tc = type_constraint.take();
+        let combined = match value_tc {
+            Some(v) => format!("{}{{{}}}", v, key_type),
+            None => format!("Any{{{}}}", key_type),
+        };
+        type_constraint = Some(combined);
+        &rest[end + 1..]
+    } else {
+        rest
+    };
+
     let (mut rest, _) = ws(rest)?;
 
     // `of` type constraint can appear before `is` traits: `has $.a of Int is rw`
@@ -671,8 +691,17 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             (rest, Some(expr))
         }
     } else if let Some(default_expr) = is_default_trait.clone() {
-        // `is default(expr)` was used — apply it as the default value
-        (rest, Some(default_expr))
+        // `is default(expr)` was used (no `=` initializer). For a `$`/`&` scalar
+        // attribute the value doubles as the initializer (an unassigned scalar
+        // reads back as its default). For an `@`/`%` container the value is the
+        // *element* default, NOT the container itself — leave the initializer
+        // empty so the container is built empty and gets its `.default` tagged
+        // from the `is_default` trait at construction time.
+        if sigil == b'@' || sigil == b'%' {
+            (rest, None)
+        } else {
+            (rest, Some(default_expr))
+        }
     } else {
         (rest, None)
     };

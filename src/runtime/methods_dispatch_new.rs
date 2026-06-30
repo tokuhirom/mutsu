@@ -274,6 +274,8 @@ impl Interpreter {
                 attributes.insert(key.clone(), *value.clone());
             }
         }
+        // Embed `is default(...)` element defaults into `@`/`%` containers.
+        self.apply_container_attribute_defaults(&class_name.resolve(), &mut attributes);
         // Run BUILD/TWEAK submethods in MRO order (base-first)
         let mro = self.class_mro(&class_name.resolve());
         // Determine the class's language revision for submethod dispatch rules.

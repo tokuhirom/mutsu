@@ -332,6 +332,7 @@ impl Interpreter {
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
             "__mutsu_push_through_accessor" => self.builtin_push_through_accessor(&args),
             "__mutsu_index_assign_method_lvalue" => self.builtin_index_assign_method_lvalue(&args),
+            "__mutsu_index_delete_method_lvalue" => self.builtin_index_delete_method_lvalue(&args),
             "__mutsu_index_assign_method_lvalue_nested" => {
                 self.builtin_index_assign_method_lvalue_nested(&args)
             }

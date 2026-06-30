@@ -353,6 +353,10 @@ impl Interpreter {
         elem_type: &str,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // An object-hash attribute (`%.a{Str:D}`) carries its declared type as
+        // `ValueType{KeyType}`; the element type is the value part, and the key
+        // part is tagged onto the container as the key constraint.
+        let (elem_type, key_type) = crate::runtime::types::split_object_hash_constraint(elem_type);
         if elem_type != "Mu" && elem_type != "Any" {
             let display = format!("{}!{}", sigil, attr_name);
             // Collect the values to type-check. A shaped array (`has Int @.g[2;2]`)
@@ -390,7 +394,7 @@ impl Interpreter {
         }
         let info = ContainerTypeInfo {
             value_type: elem_type.to_string(),
-            key_type: None,
+            key_type: key_type.map(|k| k.to_string()),
             declared_type: None,
         };
         Ok(self.tag_container_metadata(value, info))
