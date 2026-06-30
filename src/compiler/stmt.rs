@@ -804,6 +804,43 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
+                // Raku: redeclaring an existing same-scope `my` variable WITHOUT
+                // an explicit initializer (`my $f` / `my Int $f`) is a no-op — the
+                // variable keeps its current value (only a "Redeclaration of symbol"
+                // warning would be emitted). A redeclaration WITH an initializer
+                // (`my $f = 10`) still runs the assignment. `state`/`our`/`constant`
+                // and `:=` binds have their own semantics and are excluded; a
+                // `where`-constrained decl is desugared into a subset above and must
+                // run. Tracking per-scope `my` names lets the bare-redeclaration
+                // case suppress the reset that would otherwise clobber the value.
+                let is_plain_my = !*is_state
+                    && !*is_our
+                    && !is_constant_decl
+                    && !self.bind_vardecl
+                    && where_constraint.is_none();
+                if is_plain_my {
+                    let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                    // Only the default-init form (a bare `my $f;` / `my Int $f;` /
+                    // `my @a;` / `my %h;`, whose RHS is the synthesized empty type
+                    // default) is a value-preserving no-op. A decl with a real RHS
+                    // expression — including internal desugared temps like
+                    // `@__destructure_tmp__` (an `Expr::ArrayLiteral`) that
+                    // legitimately re-run on each `my (...)` destructure — must always
+                    // execute. The synthesized defaults are, by sigil: `Literal(Nil)`
+                    // ($ / &), an empty `Literal(Array)` (@), and an empty
+                    // `Expr::Hash` (%).
+                    let is_default_init = !has_init
+                        && match expr {
+                            Expr::Literal(Value::Nil) => true,
+                            Expr::Literal(Value::Array(ad, _)) => ad.items.is_empty(),
+                            Expr::Hash(pairs) => pairs.is_empty(),
+                            _ => false,
+                        };
+                    let already_declared = !self.my_vars_current_scope.insert(name.clone());
+                    if already_declared && is_default_init {
+                        return;
+                    }
+                }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::SetVarDynamic {

@@ -103,6 +103,14 @@ pub(crate) struct Compiler {
     /// entry). Declaring the same constant twice in one block is an
     /// X::Redeclaration; a shadowing declaration in an inner block is allowed.
     constant_vars_current_scope: std::collections::HashSet<String>,
+    /// Plain `my` variable names declared in the *current* lexical block only
+    /// (reset on block entry). Redeclaring an existing same-scope `my` variable
+    /// *without* an explicit initializer (`my $f` / `my Int $f`) is a no-op in
+    /// Raku — the variable keeps its current value (only a "Redeclaration of
+    /// symbol" warning is emitted). A redeclaration *with* an initializer
+    /// (`my $f = 10`) does run the assignment. Tracked here so the VarDecl
+    /// compiler can suppress the reset for the bare-redeclaration case.
+    my_vars_current_scope: std::collections::HashSet<String>,
     /// Names of constants declared in an *enclosing* compiler (i.e. visible at a
     /// nested closure's definition point). Propagated into child closure
     /// compilers (which otherwise start with empty constant state). Used ONLY to
@@ -183,6 +191,7 @@ impl Compiler {
             constant_vars: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
+            my_vars_current_scope: std::collections::HashSet::new(),
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             last_source_line: None,
