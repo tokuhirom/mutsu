@@ -1764,11 +1764,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // and `(1..Inf).int-bounds` fail with "Cannot determine integer bounds".
     // GenericRange handles true Inf/NaN endpoints below.
     if method == "int-bounds" {
+        // The i64::MIN/MAX sentinel marks an OPEN end (`1..Inf`, `1..*`) only
+        // when it appears alone: an open-above range has `end == i64::MAX` with
+        // a finite start, an open-below range `start == i64::MIN` with a finite
+        // end. When BOTH extremes are present the range is the genuine full-i64
+        // bound (`int64.Range` is `-9223372036854775808..9223372036854775807`),
+        // so it has concrete bounds and must NOT throw. Hence the XOR.
         if let Value::Range(s, e)
         | Value::RangeExcl(s, e)
         | Value::RangeExclStart(s, e)
         | Value::RangeExclBoth(s, e) = target
-            && (*s == i64::MIN || *e == i64::MAX)
+            && ((*s == i64::MIN) ^ (*e == i64::MAX))
         {
             let range_repr = crate::runtime::utils::gist_value(target);
             return Some(Err(crate::value::RuntimeError::new(format!(

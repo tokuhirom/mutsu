@@ -1,6 +1,6 @@
 use Test;
 
-plan 21;
+plan 22;
 
 # Scalar-container Range assigned to an array stays a single item (itemized),
 # matching raku's `[1..5,]` rather than flattening.
@@ -24,6 +24,11 @@ for (NaN..NaN, NaN..1, 1..NaN, -Inf..1, 1..Inf, Inf..1, 1..*, Inf..Inf) -> $r {
 
 # A finite non-int range still has integer bounds.
 is-deeply (0..5.5).int-bounds, (0, 5), 'int-bounds of 0..5.5 is (0, 5)';
+
+# The genuine full-i64 range (both extremes present) has concrete bounds — the
+# i64::MIN/MAX sentinel only means "open end" when it appears alone.
+is-deeply int64.Range.int-bounds, (-9223372036854775808, 9223372036854775807),
+    'int64.Range.int-bounds returns the real i64 bounds (not a lazy throw)';
 
 # Inf/NaN range indexing yields Nil; degenerate counts.
 is-deeply (Inf .. Inf)[^5], (Nil, Nil, Nil, Nil, Nil), 'Inf..Inf indexes to Nil';
