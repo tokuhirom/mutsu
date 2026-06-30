@@ -2,6 +2,20 @@ use super::super::*;
 use super::regex_helpers::{map_pos, strip_marks_pattern, strip_marks_text};
 
 impl Interpreter {
+    /// Ranking key for selecting the best full (anchored) match: prefer the
+    /// longest end, then more captures. Equal keys are left to the caller's
+    /// STABLE sort, which preserves DFS priority order (highest priority first).
+    fn full_match_rank(m: &(usize, RegexCaptures)) -> (usize, usize, usize, usize) {
+        let (end, caps) = m;
+        let total_named: usize = caps.named.values().map(|v| v.len()).sum();
+        (
+            *end,
+            caps.positional.len(),
+            total_named,
+            caps.code_blocks.len(),
+        )
+    }
+
     pub(in crate::runtime) fn regex_match_with_captures_full_from_start(
         &self,
         pattern: &str,
@@ -20,18 +34,15 @@ impl Interpreter {
             if matches.is_empty() {
                 return None;
             }
-            matches.sort_by_key(|(end, caps)| {
-                let total_named: usize = caps.named.values().map(|v| v.len()).sum();
-                (
-                    *end,
-                    caps.positional.len(),
-                    total_named,
-                    caps.code_blocks.len(),
-                )
-            });
+            // Sort DESCENDING by (end, captures…) with a STABLE sort so that
+            // equal-key matches keep their incoming priority order (the DFS
+            // returns highest-priority first). Then take the FIRST full match.
+            // Using ascending `sort_by_key` + `.rev().find(...)` was wrong: `.rev()`
+            // inverts the priority order of equal-key matches, so the LOWEST-priority
+            // alternative of a `||`/`|` tie won (`^ [ <a> || <b> ] $` picked `<b>`).
+            matches.sort_by(|a, b| Self::full_match_rank(b).cmp(&Self::full_match_rank(a)));
             let (end, mut caps) = matches
                 .into_iter()
-                .rev()
                 .find(|(end, _)| *end == stripped_chars.len())?;
             let from = map_pos(caps.capture_start.unwrap_or(0), &pos_map, orig_len);
             let to = map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len);
@@ -45,18 +56,12 @@ impl Interpreter {
         if matches.is_empty() {
             return None;
         }
-        matches.sort_by_key(|(end, caps)| {
-            let total_named: usize = caps.named.values().map(|v| v.len()).sum();
-            (
-                *end,
-                caps.positional.len(),
-                total_named,
-                caps.code_blocks.len(),
-            )
-        });
+        // See the comment in the ignore_mark branch above: DESCENDING stable sort
+        // then take the first full match, so equal-key `||`/`|` ties keep the
+        // highest-priority alternative instead of inverting it via `.rev()`.
+        matches.sort_by(|a, b| Self::full_match_rank(b).cmp(&Self::full_match_rank(a)));
         let (end, mut caps) = matches
             .into_iter()
-            .rev()
             .find(|(end, _)| *end == orig_chars.len())?;
         caps.from = caps.capture_start.unwrap_or(0);
         caps.to = caps.capture_end.unwrap_or(end);
