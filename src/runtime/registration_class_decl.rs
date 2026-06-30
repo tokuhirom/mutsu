@@ -7,6 +7,133 @@ use crate::ast::{HandleSpec, ParamDef, PhaserKind};
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// True for a categorical operator name such as `prefix:<~>`, `infix:<as>`,
+    /// `postfix:<!>`, `circumfix:<[ ]>`, etc.
+    fn is_operator_categorical_name(name: &str) -> bool {
+        const CATEGORIES: &[&str] = &[
+            "prefix:",
+            "postfix:",
+            "infix:",
+            "circumfix:",
+            "postcircumfix:",
+        ];
+        CATEGORIES.iter().any(|c| name.starts_with(c)) && name.ends_with('>')
+    }
+
+    /// Register an importable *sub form* for an `is export` operator method.
+    ///
+    /// Raku exposes `method prefix:<~> is export` (etc.) as a sub whose invocant
+    /// becomes the first positional argument and whose body re-dispatches to the
+    /// method. `import ClassName` copies it into the importing package so that
+    /// `~$obj` / `$obj as $x` resolve to the class's operator overload.
+    fn register_exported_operator_method_sub(
+        &mut self,
+        class_name: &str,
+        op_name: &str,
+        method_param_defs: &[ParamDef],
+        tags: Vec<String>,
+    ) {
+        let mut sub_param_defs: Vec<ParamDef> = Vec::new();
+        let mut forward_args: Vec<crate::ast::Expr> = Vec::new();
+        // The invocant (`$self:`) turns into the first positional argument, typed
+        // to the declaring class so dispatch only fires for that class's values.
+        let rest: &[ParamDef] = if method_param_defs.first().is_some_and(|p| p.is_invocant) {
+            let mut inv = method_param_defs[0].clone();
+            inv.is_invocant = false;
+            inv.traits.retain(|t| t != "invocant");
+            if inv.type_constraint.is_none() {
+                inv.type_constraint = Some(class_name.to_string());
+            }
+            sub_param_defs.push(inv);
+            &method_param_defs[1..]
+        } else {
+            sub_param_defs.push(ParamDef {
+                name: "self".to_string(),
+                default: None,
+                multi_invocant: true,
+                required: true,
+                named: false,
+                slurpy: false,
+                double_slurpy: false,
+                onearg: false,
+                sigilless: false,
+                type_constraint: Some(class_name.to_string()),
+                literal_value: None,
+                sub_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                optional_marker: false,
+                outer_sub_signature: None,
+                code_signature: None,
+                is_invocant: false,
+                shape_constraints: None,
+            });
+            method_param_defs
+        };
+        let invocant_name = sub_param_defs[0].name.clone();
+        for p in rest {
+            sub_param_defs.push(p.clone());
+            if !p.named && !p.slurpy && !p.is_capture_subsignature() {
+                forward_args.push(crate::ast::Expr::Var(p.name.clone()));
+            }
+        }
+        let body = vec![Stmt::Expr(crate::ast::Expr::MethodCall {
+            target: Box::new(crate::ast::Expr::Var(invocant_name)),
+            name: Symbol::intern(op_name),
+            args: forward_args,
+            modifier: None,
+            quoted: true,
+        })];
+        let params: Vec<String> = sub_param_defs.iter().map(|p| p.name.clone()).collect();
+        let def = FunctionDef {
+            package: Symbol::intern(class_name),
+            name: Symbol::intern(op_name),
+            params,
+            param_defs: sub_param_defs.clone(),
+            body,
+            is_test_assertion: false,
+            is_rw: false,
+            is_raw: false,
+            is_method: false,
+            empty_sig: false,
+            return_type: None,
+            is_default: false,
+            deprecated_message: None,
+        };
+        // Register as a typed multi candidate under the class package, mirroring
+        // the `multi sub` registration keys so `import` copies it and operator
+        // dispatch type-checks the invocant.
+        let is_positional = |p: &ParamDef| {
+            !p.named && (!p.slurpy || p.name == "_capture") && !p.is_capture_subsignature()
+        };
+        let arity = sub_param_defs.iter().filter(|p| is_positional(p)).count();
+        let type_sig: Vec<&str> = sub_param_defs
+            .iter()
+            .filter(|p| is_positional(p))
+            .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
+            .collect();
+        let arc = std::sync::Arc::new(def);
+        if type_sig.iter().any(|t| *t != "Any") {
+            let typed_fq = format!(
+                "{}::{}/{}:{}",
+                class_name,
+                op_name,
+                arity,
+                type_sig.join(",")
+            );
+            self.registry_mut()
+                .functions
+                .entry(Symbol::intern(&typed_fq))
+                .or_insert_with(|| arc.clone());
+        }
+        let fq = format!("{}::{}/{}", class_name, op_name, arity);
+        self.registry_mut()
+            .functions
+            .entry(Symbol::intern(&fq))
+            .or_insert(arc);
+        self.register_exported_sub(class_name.to_string(), op_name.to_string(), tags);
+    }
+
     /// Recursively surface `has`-attribute declarations nested inside a sub/block
     /// within a class body (`class C { sub f { has $.x } }`). Descends into
     /// `sub`/block bodies but NOT into a nested `class`/`role` (which owns its own
@@ -1370,11 +1497,26 @@ impl Interpreter {
                         } else {
                             method_export_tags.clone()
                         };
-                        self.register_exported_var(
-                            name.to_string(),
-                            format!("&{}", resolved_method_name),
-                            tags,
-                        );
+                        if Self::is_operator_categorical_name(&resolved_method_name) {
+                            // An operator method (`method prefix:<~> is export`,
+                            // `method infix:<as> is export`, ...) is importable as
+                            // a *sub* whose invocant becomes the first (typed)
+                            // positional and whose body dispatches back to the
+                            // method. `import ClassName` then makes `~$obj` /
+                            // `$obj as $x` resolve to it.
+                            self.register_exported_operator_method_sub(
+                                name,
+                                &resolved_method_name,
+                                &effective_param_defs,
+                                tags,
+                            );
+                        } else {
+                            self.register_exported_var(
+                                name.to_string(),
+                                format!("&{}", resolved_method_name),
+                                tags,
+                            );
+                        }
                     }
                     // Apply custom trait_mod:<is> for each non-builtin trait on methods
                     if !method_custom_traits.is_empty() {
