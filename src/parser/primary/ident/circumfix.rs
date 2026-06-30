@@ -9,6 +9,7 @@ pub(crate) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
     if let Some((name, open_len, close_delim)) =
         crate::parser::stmt::simple::match_user_declared_circumfix_op(input)
     {
+        let open = &input[..open_len];
         let rest = &input[open_len..];
         let (rest, _) = ws(rest)?;
         // Check for empty circumfix: `open close` with nothing inside
@@ -28,7 +29,7 @@ pub(crate) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
         // Check if more args follow (comma-separated)
         if let Some(after_comma) = r.strip_prefix(',') {
             let (r, _) = ws(after_comma)?;
-            return parse_circumfix_rest(r, &close_delim, name, args);
+            return parse_circumfix_rest(r, open, &close_delim, name, args);
         }
         // Check for closing delimiter
         if let Some(after) = r.strip_prefix(close_delim.as_str()) {
@@ -40,13 +41,14 @@ pub(crate) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        return Err(PError::expected("closing circumfix delimiter"));
+        return Err(circumfix_fail_goal(open, &close_delim, r));
     }
     Err(PError::expected("declared circumfix operator"))
 }
 
 fn parse_circumfix_rest<'a>(
     mut rest: &'a str,
+    open: &str,
     close_delim: &str,
     name: String,
     mut args: Vec<Expr>,
@@ -79,8 +81,18 @@ fn parse_circumfix_rest<'a>(
                 },
             ));
         }
-        return Err(PError::expected("closing circumfix delimiter or ','"));
+        return Err(circumfix_fail_goal(open, close_delim, r));
     }
+}
+
+/// An in-scope custom `circumfix:<open close>` operator's opener matched and its
+/// argument(s) parsed, but the closing delimiter is missing (e.g. `⟨5;`). The
+/// bracket is committed, so this is a hard parse failure — X::Comp::FailGoal
+/// carrying the operator's `dba` (`circumfix:sym<open close>`) and its `goal`.
+fn circumfix_fail_goal(open: &str, close_delim: &str, pos: &str) -> PError {
+    let dba = format!("circumfix:sym<{} {}>", open, close_delim);
+    let goal = format!("'{}'", close_delim);
+    crate::parser::primary::fail_goal_error_at(&dba, &goal, Some(pos))
 }
 
 pub(crate) fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
