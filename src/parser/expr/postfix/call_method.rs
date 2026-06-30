@@ -7,6 +7,13 @@ pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
     let Expr::BareWord(name) = expr else {
         return expr;
     };
+    // When a name is declared as a type (class/role/grammar/enum) in scope, a
+    // bareword-dot like `foo.new` is a method call on the type object, NOT a
+    // call to a same-named sub. The type shadows the sub for this syntax — e.g.
+    // a file-scope `sub foo` plus an inner `my class foo` (S06-advanced/wrap.t).
+    if crate::parser::stmt::simple::is_user_declared_type(&name) {
+        return Expr::BareWord(name);
+    }
     if crate::parser::stmt::simple::is_user_declared_sub(&name)
         || crate::parser::stmt::simple::is_imported_function(&name)
     {

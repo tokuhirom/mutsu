@@ -167,6 +167,71 @@ impl Interpreter {
         if !self.method_dispatch_stack.is_empty() {
             let frame_idx = self.method_dispatch_stack.len() - 1;
             let is_override = override_args.is_some();
+            // If the next MRO candidate carries a method-level wrap chain, route the
+            // call through its wrappers so a `nextsame` reaching a wrapped parent
+            // method runs ...->wrapper->original->... in order (S06-advanced/wrap.t
+            // GH#2178). The initial dispatch (class_dispatch.rs) applies wraps only
+            // to the first method called; without this, a wrapper added to a parent
+            // method via `^find_method(...).wrap(...)` is skipped on `nextsame`.
+            //
+            // The candidate is NOT removed here: only the wrappers are pushed onto
+            // the wrap-dispatch stack. When the wrappers' `nextsame` chain is
+            // exhausted (sub_id == 0) it falls through to this same method frame,
+            // and the `!is_inside_wrap_dispatch()` guard is then true — so the
+            // original candidate body runs once via the normal path below and its
+            // own `nextsame` continues the rest of the MRO.
+            if !is_override && !self.is_inside_wrap_dispatch() {
+                let peeked = self.method_dispatch_stack[frame_idx]
+                    .remaining
+                    .first()
+                    .cloned();
+                if let Some((owner_class, method_def)) = peeked {
+                    let method_name_now = self
+                        .samewith_context_stack
+                        .last()
+                        .map(|(n, _)| n.clone())
+                        .unwrap_or_default();
+                    if !method_name_now.is_empty()
+                        && let Some(cand_idx) = self.find_method_candidate_index(
+                            &owner_class,
+                            &method_name_now,
+                            &method_def,
+                        )
+                        && let Some(chain) = self
+                            .get_method_wrap_chain(&owner_class, &method_name_now, cand_idx)
+                            .cloned()
+                    {
+                        let invocant = self.env.get("self").cloned().unwrap_or_else(|| {
+                            self.method_dispatch_stack[frame_idx].invocant.clone()
+                        });
+                        // The wrap dispatch expects the invocant at position 0; the
+                        // method frame's stored args do not include it.
+                        let mut wrap_call_args = vec![invocant];
+                        wrap_call_args.extend(self.method_dispatch_stack[frame_idx].args.clone());
+                        let outermost = chain.last().unwrap().1.clone();
+                        let mut wrap_remaining: Vec<Value> = Vec::new();
+                        for i in (0..chain.len() - 1).rev() {
+                            wrap_remaining.push(chain[i].1.clone());
+                        }
+                        let frame = WrapDispatchFrame {
+                            sub_id: 0,
+                            remaining: wrap_remaining,
+                            args: wrap_call_args.clone(),
+                        };
+                        self.wrap_dispatch_stack.push(frame);
+                        let result = self.call_sub_value(outermost, wrap_call_args, false);
+                        self.wrap_dispatch_stack.pop();
+                        let result = result?;
+                        if tail_call {
+                            return Err(RuntimeError {
+                                return_value: Some(result),
+                                ..RuntimeError::new("")
+                            });
+                        }
+                        return Ok(result);
+                    }
+                }
+            }
             let (receiver_class, invocant, mut call_args, owner_class, mut method_def, rw_params) = {
                 let frame = &mut self.method_dispatch_stack[frame_idx];
                 let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {

@@ -42,15 +42,20 @@ impl Interpreter {
             if let Some(rt) = &def.return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }
-            if has_multi {
-                env.insert(
-                    "__mutsu_lookup_class".to_string(),
-                    Value::str(class_name_str.clone()),
-                );
-                env.insert(
-                    "__mutsu_lookup_method".to_string(),
-                    Value::str(method_name.to_string()),
-                );
+            env.insert(
+                "__mutsu_lookup_class".to_string(),
+                Value::str(class_name_str.clone()),
+            );
+            env.insert(
+                "__mutsu_lookup_method".to_string(),
+                Value::str(method_name.to_string()),
+            );
+            // A single (non-multi) method is candidate 0; recording it lets
+            // `.wrap()` register a method-level wrap chain that participates in
+            // MRO `nextsame` dispatch (S06-advanced/wrap.t GH#2178). Multi methods
+            // are wrapped via the `.candidates[N]` path, which carries its own idx.
+            if !has_multi {
+                env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::Int(0));
             }
             return Some(Value::make_sub(
                 class_name,

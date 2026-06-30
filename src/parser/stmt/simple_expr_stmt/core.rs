@@ -29,6 +29,48 @@ use super::predicates::{
 };
 use super::sig_info::{SigParamInfo, extract_signature_param_infos, extract_static_named_map};
 
+/// Desugar `LVALUE = RHS` for a method-call / sub-call / callable lvalue into the
+/// corresponding `__mutsu_assign_*` call expression. Mirrors the inline handling
+/// of the main `=` assignment path; factored out so a statement-prefix-wrapped
+/// lvalue (`try $obj.x = v`) can push the assignment *inside* the prefix.
+fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
+    match lvalue {
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            quoted: _,
+        } => {
+            if name == "AT-POS" && args.len() == 1 {
+                Expr::IndexAssign {
+                    target: target.clone(),
+                    index: Box::new(args[0].clone()),
+                    value: Box::new(rhs),
+                    is_positional: true,
+                }
+            } else {
+                let target_var_name = match target.as_ref() {
+                    Expr::Var(v) => Some(v.clone()),
+                    Expr::ArrayVar(v) => Some(format!("@{}", v)),
+                    Expr::HashVar(v) => Some(format!("%{}", v)),
+                    Expr::DoStmt(s) => decl_target_var_name(s),
+                    _ => None,
+                };
+                let method_name = if modifier == Some('!') {
+                    format!("!{}", name.resolve())
+                } else {
+                    name.resolve()
+                };
+                method_lvalue_assign_expr(*target, target_var_name, method_name, args, rhs)
+            }
+        }
+        Expr::Call { name, args } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
+        Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
+        other => callable_lvalue_assign_expr(other, Vec::new(), rhs),
+    }
+}
+
 /// Parse an expression statement (fallback).
 pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Topic mutating method call: .=method(args)
@@ -837,6 +879,20 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 expr: inner,
                 value: Box::new(rhs),
             }),
+            // `(try LVALUE) = RHS` / `(do LVALUE) = RHS`: a statement prefix binds
+            // looser than `=`, so the assignment belongs *inside* the prefix:
+            // `try (LVALUE = RHS)`. Without this the Try node itself becomes the
+            // lvalue ("cannot assign through non-callable value").
+            Expr::Try { body, catch } if matches!(body.as_slice(), [Stmt::Expr(_)]) => {
+                let inner = match body.into_iter().next() {
+                    Some(Stmt::Expr(e)) => e,
+                    _ => unreachable!(),
+                };
+                Stmt::Expr(Expr::Try {
+                    body: vec![Stmt::Expr(lvalue_assign_to_expr(inner, rhs))],
+                    catch,
+                })
+            }
             target => {
                 if let Some(stmt) = grouped_assign_lvalue_stmt(&target, rhs.clone()) {
                     stmt

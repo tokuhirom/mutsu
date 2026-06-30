@@ -788,6 +788,11 @@ impl Interpreter {
                 .entry(sub_id)
                 .or_default()
                 .push((handle_id, wrapper));
+            // A previously-resolved call to this sub may be cached in the
+            // name-keyed light-call caches, which bypass `wrap_chains`. Bump the
+            // resolution generation so the next call re-resolves and dispatches
+            // through the new wrapper.
+            self.fn_resolve_gen += 1;
             // Store mapping from sub_id to function name for named call dispatch
             if !func_name.is_empty() {
                 self.wrap_sub_names.insert(sub_id, func_name.clone());
@@ -830,6 +835,8 @@ impl Interpreter {
                         self.cleanup_wrap_name_entries(sub_id);
                     }
                 }
+                // Invalidate light-call caches so the sub re-resolves (see wrap).
+                self.fn_resolve_gen += 1;
                 return Some(Ok(Value::Bool(true)));
             }
             // Extract handle-id from the WrapHandle argument
@@ -852,6 +859,8 @@ impl Interpreter {
                 if chain.is_empty() {
                     self.cleanup_wrap_name_entries(sub_id);
                 }
+                // Invalidate light-call caches so the sub re-resolves (see wrap).
+                self.fn_resolve_gen += 1;
                 return Some(Ok(Value::Bool(true)));
             }
             return Some(Err(RuntimeError::new(
