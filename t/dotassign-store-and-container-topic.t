@@ -42,12 +42,14 @@ plan 16;
     is $news, 1, 'target expression evaluated exactly once';
 }
 
-# An object WITHOUT a STORE method keeps the plain method-call value (mutsu's
-# historical lax behavior for `.=` on a non-lvalue).
+# An object WITHOUT a STORE method is not a container, so it is not an lvalue.
+# `X.=meth` is `X = X.meth`, which cannot assign through an immutable non-lvalue:
+# it throws X::Assignment::RO (#3968 made `.=` on a read-only target throw rather
+# than silently yielding the method result).
 {
     my class NoStore { method foo { 99 } }
-    my $r = (NoStore.new).=foo;
-    is $r, 99, 'no STORE method => plain method result';
+    throws-like { (NoStore.new).=foo }, X::Assignment::RO,
+        'no STORE method on a non-lvalue target => X::Assignment::RO';
 }
 {
     is (3.7).Int, 3, 'sanity: non-lvalue method call still works';
