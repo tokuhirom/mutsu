@@ -1,5 +1,49 @@
 # Changelog
 
+## [v0.2.0](https://github.com/tokuhirom/mutsu/compare/v0.1.2...v0.2.0) - 2026-06-30
+
+- fix(scope): block-local my in if/while branch no longer leaks (my-6e.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3943
+- feat(backtrace): genuine bare block is a callframe in .backtrace.list (misc.t #157) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3945
+- feat(parser): empty-angle colonpair warns; lexical `no worries` suppresses it (misc.t #168) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3946
+- docs(blockers): mark misc.t test 84 as already done (PR #3940) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3947
+- fix(map): preserve named/slip-arg tail call value in @-array rw map by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3948
+- feat(sink-warn): colonpair :foo(42) keeps its syntax in sink warning (misc.t #121) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3949
+- feat(exceptions): proper compile errors for 5 S32 misc.t cases (#21,22,3,27,179) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3950
+- docs(blockers): mark slurpy-params.t Seq single-pass consumption as done (#3918) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3951
+- feat(io): IO::Handle.lock/.unlock via fcntl record locks (lock.t passes) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3952
+- fix(class): same-named lexical classes in escaping scopes keep distinct identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3953
+- fix(constant): enum-alias qualified names + operator-synonym multi sharing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3955
+- fix(operators): .= metaop on an is-rw accessor writes through the attribute slot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3956
+- fix(attributes): is default(...) on @/% attrs, object-hash attrs, accessor delete by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3957
+- feat(temp): complete temp semantics — sub-exit restore, ++temp, TEMP{}, nested lvalues (temp.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3958
+- fix(lang): chained .=, slurpy string-range, with/orwith topic in for-loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3954
+- docs(blockers): mark S03-operators/inplace.t as DONE by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3959
+- fix(hash): typed object-hash value-type default in expr-position decl + Pair.Str type-object value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3960
+- fix(decl): hoist nested `our sub`, conflicting-types/missing-init/::-capture (my-6e.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3961
+- fix(splice): item/uc nested-listop parse + typed-array element typecheck (S32 splice.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3962
+- fix(capture): freeze Whatever-currying at extra parens + generic Mu.Capture by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3964
+- fix(subset): where-block placeholders, expr-position constraint persistence, capture where (subtypes.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3965
+- fix(multidim): Range/Seq dims, nested-* assign, index coercion, :delete decont by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3966
+- fix(whatever): rw params, bare-Whatever invocation, +@ slurpy, regex capture (S02-types/whatever.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3967
+- fix(vm): hoisted sub keeps first write to a later-declared captured `my` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3963
+- fix(vm): `.=` on a read-only topic must throw, not silently bypass by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3968
+- fix(when): undeclared X::/CX:: bareword gobbles block → X::Comp::Group (S32-exceptions/misc.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3969
+- fix(decl): same-scope `my` redeclaration without initializer is a value-preserving noop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3970
+- fix(io): IO::CatHandle comb/split/.IO dispatch + hyper colon-args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3971
+- fix(wrap): resolve seven S06-advanced/wrap.t blockers (88/90 pass) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3973
+- fix(test): `.=` on non-STORE non-lvalue expects X::Assignment::RO by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3974
+- docs(roast): mark S06-advanced/caller.t unpassable (stale test) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3975
+- fix(for): `for @a[*]` whole-array slice aliases elements like `for @a` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3976
+- fix(range): Inf/NaN endpoint semantics + scalar-container Range itemization (S02-types/range.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3972
+- fix(io): IO::CatHandle next-handle/on-switch/open/new/Supply/binary-mode (io-cathandle.t 16→5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3977
+- fix(for): is-rw slurpy write-through + lazy for-loop (S04 for.t → whitelist) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3978
+- fix(capture): Promise.Capture status + imported-sub `.method` parse (S02 capture.t 45→46, whitelist) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3980
+- fix(my): 7 S04-declarations/my-6e.t fixes (99→106/109) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3979
+- fix(wrap): full-MRO multi-method candidate list so candidates[N].wrap targets the right candidate (S06 wrap.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3981
+- feat(operator): export operator methods via `import ClassName` (S06 infix.t 14→42) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3982
+- fix(io): lazy IO::CatHandle.lines/.handles + CR-LF/utf8-c8 reads (io-cathandle.t 5→2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3983
+- fix(our-sub): block-lexical capture for `our sub` in a bare block (S04 my-6e.t 80,81) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3984
+
 ## [v0.1.2](https://github.com/tokuhirom/mutsu/compare/v0.1.1...v0.1.2) - 2026-06-29
 
 - refactor(introspection): consolidate built-in type method/MRO tables into one canonical registry by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3835
