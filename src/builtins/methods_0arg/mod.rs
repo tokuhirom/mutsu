@@ -719,6 +719,15 @@ fn is_infinite_endpoint(v: &Value) -> bool {
     }
 }
 
+/// f64 value of a Range endpoint for emptiness checks. Whatever endpoints map
+/// to +Inf (an open-ended upper bound).
+fn range_endpoint_f64(v: &Value) -> f64 {
+    match v {
+        Value::Whatever | Value::HyperWhatever => f64::INFINITY,
+        _ => v.to_f64(),
+    }
+}
+
 fn is_infinite_range(value: &Value) -> bool {
     match value {
         Value::Range(start, end)
@@ -726,7 +735,19 @@ fn is_infinite_range(value: &Value) -> bool {
         | Value::RangeExclStart(start, end)
         | Value::RangeExclBoth(start, end) => *end == i64::MAX || *start == i64::MIN,
         Value::GenericRange { start, end, .. } => {
-            is_infinite_endpoint(start) || is_infinite_endpoint(end)
+            if !(is_infinite_endpoint(start) || is_infinite_endpoint(end)) {
+                return false;
+            }
+            // A range whose start strictly exceeds its end is empty (e.g.
+            // `Inf..0`, `1..-Inf`), not infinite. NaN endpoints make this
+            // comparison false, so NaN ranges stay "infinite" (they iterate
+            // their NaN/-Inf start ad infinitum).
+            let s = range_endpoint_f64(start);
+            let e = range_endpoint_f64(end);
+            // Empty (not infinite) only when start strictly exceeds end. A NaN
+            // endpoint is unordered, so `partial_cmp` is `None` -> not empty ->
+            // infinite (NaN ranges iterate their NaN start forever).
+            !matches!(s.partial_cmp(&e), Some(std::cmp::Ordering::Greater))
         }
         _ => false,
     }
@@ -1728,10 +1749,23 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
     // .int-bounds on Range values
-    // Note: i64 Range variants always have concrete integer bounds (even when
-    // i64::MIN/MAX are used as sentinel for -Inf/Inf), so we always return them.
-    // Only GenericRange can have true Inf/NaN endpoints that need to throw.
+    // Note: i64 Range variants use i64::MIN/MAX as a sentinel for -Inf/Inf
+    // (e.g. `1..Inf`, `1..*`, `-Inf..1`). An Inf endpoint has no integer bound,
+    // so `.int-bounds` must throw — matching raku, where both `(1..*).int-bounds`
+    // and `(1..Inf).int-bounds` fail with "Cannot determine integer bounds".
+    // GenericRange handles true Inf/NaN endpoints below.
     if method == "int-bounds" {
+        if let Value::Range(s, e)
+        | Value::RangeExcl(s, e)
+        | Value::RangeExclStart(s, e)
+        | Value::RangeExclBoth(s, e) = target
+            && (*s == i64::MIN || *e == i64::MAX)
+        {
+            let range_repr = crate::runtime::utils::gist_value(target);
+            return Some(Err(crate::value::RuntimeError::new(format!(
+                "Cannot determine integer bounds of {range_repr}"
+            ))));
+        }
         match target {
             Value::Range(start, end) => {
                 return Some(Ok(Value::array(vec![Value::Int(*start), Value::Int(*end)])));

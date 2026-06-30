@@ -156,6 +156,7 @@ roast/S02-types/num.t
 roast/S02-types/pair.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
+roast/S02-types/range.t
 roast/S02-types/resolved-in-setting.t
 roast/S02-types/set-iterator.t
 roast/S02-types/set.t

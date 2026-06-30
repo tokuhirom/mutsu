@@ -195,6 +195,7 @@ fn element_needs_trailing_comma(v: &Value) -> bool {
             let inner = cell.lock().unwrap().clone();
             element_needs_trailing_comma(&inner)
         }
+        Value::Scalar(inner) => element_needs_trailing_comma(inner),
         Value::Range(..)
         | Value::RangeExcl(..)
         | Value::RangeExclStart(..)
