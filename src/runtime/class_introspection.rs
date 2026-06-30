@@ -129,6 +129,8 @@ impl Interpreter {
                     | "say"
                     | "put"
                     | "flush"
+                    | "lock"
+                    | "unlock"
                     | "out-buffer"
                     | "seek"
                     | "tell"

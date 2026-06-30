@@ -571,6 +571,16 @@ impl Interpreter {
                 let position = self.tell_handle_value(&target_val)?;
                 Ok(Value::Int(position))
             }
+            "lock" => {
+                let shared = args
+                    .iter()
+                    .any(|a| matches!(a, Value::Pair(k, v) if k == "shared" && v.truthy()));
+                let non_blocking = args
+                    .iter()
+                    .any(|a| matches!(a, Value::Pair(k, v) if k == "non-blocking" && v.truthy()));
+                self.lock_handle_value(&target_val, shared, non_blocking)
+            }
+            "unlock" => self.unlock_handle_value(&target_val),
             "eof" => {
                 let at_end = self.handle_eof_value(&target_val)?;
                 Ok(Value::Bool(at_end))

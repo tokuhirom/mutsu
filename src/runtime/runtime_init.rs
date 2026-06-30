@@ -730,6 +730,8 @@ impl Interpreter {
                     "seek",
                     "tell",
                     "t",
+                    "lock",
+                    "unlock",
                 ]
                 .iter()
                 .map(|s| s.to_string())
