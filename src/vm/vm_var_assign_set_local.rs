@@ -447,6 +447,35 @@ impl Interpreter {
                         .collect(),
                     ));
                 }
+                // An infinite Range (`-Inf..0e0`, `0e0..Inf`) cannot initialize a
+                // native typed array. Detect it on the raw value *before*
+                // materialization — `value_to_list` would otherwise expand a
+                // left-infinite range to a capped finite list, hiding the
+                // laziness. Mirrors `coerce_typed_array_elements`' per-item
+                // check (action `initialize`, `array[$t]`).
+                if raw_popped.is_range()
+                    && crate::builtins::methods_0arg::is_value_lazy(&raw_popped)
+                {
+                    return Err(RuntimeError::typed(
+                        "X::Cannot::Lazy",
+                        [
+                            (
+                                "message".to_string(),
+                                Value::str(format!(
+                                    "Cannot initialize an array of {} with a lazy list",
+                                    constraint
+                                )),
+                            ),
+                            ("action".to_string(), Value::str_from("initialize")),
+                            (
+                                "what".to_string(),
+                                Value::str(format!("array[{constraint}]")),
+                            ),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ));
+                }
             }
             let mut assigned = if is_constant {
                 // `constant @x` stores a List, not an Array.

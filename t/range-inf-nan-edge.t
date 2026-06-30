@@ -1,6 +1,6 @@
 use Test;
 
-plan 17;
+plan 21;
 
 # Scalar-container Range assigned to an array stays a single item (itemized),
 # matching raku's `[1..5,]` rather than flattening.
@@ -33,3 +33,26 @@ is-deeply (Inf .. 0).elems, 0, 'Inf..0 is empty';
 # Numeric coercion of degenerate infinite ranges is Inf.
 is-deeply +(-∞ .. -∞), Inf, '+(-Inf..-Inf) is Inf';
 is-deeply +(∞ .. ∞), Inf, '+(Inf..Inf) is Inf';
+
+# A non-finite-start range never advances under .succ, so .map yields its
+# start ad infinitum (lazily — bounded here with `last`).
+{
+    my $got;
+    (-Inf..0).map: { next unless $++ > 1050; $got = $_; last }
+    is-deeply $got, -Inf, '-Inf..0 .map keeps producing -Inf';
+}
+{
+    my $got;
+    (NaN..NaN).map: { next unless $++ > 1050; $got = $_; last }
+    is-deeply $got, NaN, 'NaN..NaN .map keeps producing NaN';
+}
+
+# An infinite Range cannot initialize a native typed array (X::Cannot::Lazy),
+# regardless of which end is unbounded.
+{
+    my num @arr;
+    throws-like { @arr = 0e0..Inf }, X::Cannot::Lazy,
+        action => 'initialize', what => 'array[num]', 'right-infinite init throws';
+    throws-like { @arr = -Inf..0e0 }, X::Cannot::Lazy,
+        action => 'initialize', what => 'array[num]', 'left-infinite init throws';
+}

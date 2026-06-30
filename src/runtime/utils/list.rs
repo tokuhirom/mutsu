@@ -327,20 +327,28 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 };
                 let s_f = start_num.to_f64();
                 let e_f = end_num.to_f64();
-                if s_f.is_infinite() || s_f.is_nan() || e_f.is_nan() {
-                    // Degenerate numeric range with a non-finite endpoint.
-                    // Empty when the start strictly exceeds the end (`Inf..0`,
-                    // `1..-Inf`); NaN comparisons are false, so NaN ranges are
-                    // not empty. A `+Inf` start yields no usable values either
-                    // (Rakudo: `(Inf..Inf)[^5]` is all Nil), so treat it as
-                    // empty too. A `-Inf`/`NaN` start never advances under
-                    // `.succ` (`-Inf+1 == -Inf`, `NaN+1 == NaN`), so the range
-                    // yields its start ad infinitum — materialize up to the cap.
-                    if s_f > e_f || s_f == f64::INFINITY {
+                if !s_f.is_finite() || !e_f.is_finite() {
+                    // Degenerate/infinite numeric range — cannot be eagerly
+                    // materialized as a finite list.
+                    //   * Empty when the start strictly exceeds the end
+                    //     (`Inf..0`); NaN comparisons are false, so NaN ranges
+                    //     are not empty. `(Inf..0).elems == 0`.
+                    //   * A `+Inf` start yields no usable values either (Rakudo:
+                    //     `(Inf..Inf)[^5]` / `(Inf..NaN)[^5]` are all Nil), so it
+                    //     is empty too.
+                    //   * Otherwise (`-Inf`/`NaN` start, or a right-infinite
+                    //     `…..Inf`) return the range itself as a single lazy
+                    //     sentinel element. Eager callers that must reject lazy
+                    //     lists detect it via `is_value_lazy` (e.g. native
+                    //     typed-array init throws `X::Cannot::Lazy`); lazy
+                    //     consumers (`.map`) iterate via the pull path instead of
+                    //     this eager list.
+                    if matches!(s_f.partial_cmp(&e_f), Some(std::cmp::Ordering::Greater))
+                        || s_f == f64::INFINITY
+                    {
                         Vec::new()
                     } else {
-                        let limit = MAX_RANGE_EXPAND as usize;
-                        vec![start_num.clone(); limit]
+                        vec![val.clone()]
                     }
                 } else {
                     let mut result = Vec::new();

@@ -58,9 +58,12 @@ impl Interpreter {
             | Value::RangeExclBoth(_, end) => *end == i64::MAX,
             // An exclusive/whatever infinite range (`^Inf`, `0..^Inf`) is stored
             // as a GenericRange with an infinite end — also a lazy pipe source.
-            Value::GenericRange { end, .. } => {
+            // A non-finite *start* (`-Inf..0`, `NaN..NaN`, `Inf..Inf`) is too:
+            // it cannot be eagerly materialized and `.map`/`.grep` must pull it
+            // (`-Inf`/`NaN` yield their start ad infinitum; `+Inf` yields none).
+            Value::GenericRange { start, end, .. } => {
                 let end_f = end.to_f64();
-                end_f.is_infinite() && end_f.is_sign_positive()
+                (end_f.is_infinite() && end_f.is_sign_positive()) || !start.to_f64().is_finite()
             }
             // A lazy pipe, or an infinite arithmetic/geometric/closure sequence
             // (`1..*`, `1,2,3...*`, `1,1,*+*...*`): `.map`/`.grep` append another
