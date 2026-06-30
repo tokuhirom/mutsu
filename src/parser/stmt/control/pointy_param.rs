@@ -93,6 +93,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     // Slurpy marker for pointy params: *@a, *%h, *$x, *&cb, and double-slurpy variants.
     let mut slurpy = false;
     let mut double_slurpy = false;
+    let mut onearg = false;
     if rest.starts_with("**")
         && rest.len() > 2
         && matches!(rest.as_bytes()[2], b'@' | b'%' | b'$' | b'&')
@@ -105,6 +106,14 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         && matches!(rest.as_bytes()[1], b'@' | b'%' | b'$' | b'&')
     {
         slurpy = true;
+        rest = &rest[1..];
+    } else if rest.starts_with('+')
+        && rest.len() > 1
+        && matches!(rest.as_bytes()[1], b'@' | b'%' | b'$' | b'&')
+    {
+        // Single-argument-rule slurpy: `-> +@foo { ... }`.
+        slurpy = true;
+        onearg = true;
         rest = &rest[1..];
     }
 
@@ -419,7 +428,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             named,
             slurpy,
             double_slurpy,
-            onearg: false,
+            onearg,
             sigilless: false,
             type_constraint,
             literal_value: None,

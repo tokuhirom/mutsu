@@ -85,7 +85,7 @@ class Loops {
     method collect() {
         my @c;
         for 1..3 -> $i { @c.push({ $i }) }
-        @c.map(*.()).join(',');
+        @c.map({.()}).join(',');
     }
 }
 is Loops.new.collect(), '1,2,3', 'per-iteration capture inside a method';
