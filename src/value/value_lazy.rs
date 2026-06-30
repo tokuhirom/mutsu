@@ -41,6 +41,10 @@ impl Clone for LazyList {
                 .walk_pending
                 .as_ref()
                 .map(|w| Mutex::new(w.lock().unwrap().clone())),
+            cat_pull: self
+                .cat_pull
+                .as_ref()
+                .map(|c| Mutex::new(c.lock().unwrap().clone())),
         }
     }
 }
@@ -74,11 +78,21 @@ impl LazyList {
             || self.lazy_pipe.is_some()
             || self.closure_seq.is_some()
             || self.scan_spec.is_some()
+            || self.cat_pull.is_some()
         {
             return true;
         }
         (self.coroutine.is_some() || !self.body.is_empty() || self.compiled_code.is_some())
             && self.is_lazy_marked()
+    }
+
+    /// Whether gist/Str/raku should render a `...` placeholder rather than
+    /// materializing this list. True for genuinely-lazy lists EXCEPT a
+    /// `cat_pull` (`IO::CatHandle.lines`/`.handles`), which is finite — it reads
+    /// to the end of the cat's handles — so it must materialize and render its
+    /// elements (and compare structurally under `is-deeply`).
+    pub(crate) fn renders_lazy_placeholder(&self) -> bool {
+        self.is_genuinely_lazy() && self.cat_pull.is_none()
     }
 
     /// Whether this list was produced from a `gather` block (carries the
@@ -103,7 +117,10 @@ impl LazyList {
     /// list (eager or `lazy`), an infinite sequence/closure spec, or a lazy
     /// `WALK(method)()` candidate-invocation list.
     pub(crate) fn needs_vm_lazy_dispatch(&self) -> bool {
-        self.is_from_gather() || self.is_infinite_spec() || self.walk_pending.is_some()
+        self.is_from_gather()
+            || self.is_infinite_spec()
+            || self.walk_pending.is_some()
+            || self.cat_pull.is_some()
     }
 
     /// Whether this list carries the `lazy` prefix marker (set by the `lazy`
@@ -145,6 +162,29 @@ impl LazyList {
         cloned
     }
 
+    /// Marker set by `.cache` on a genuinely-lazy list: the result is a cached,
+    /// re-iterable view, so sinking it is a no-op (it must NOT drain the
+    /// underlying source). A bare lazy Seq sunk still drains; only the
+    /// `.cache`-returned view carries this marker.
+    pub(crate) const CACHED_NO_SINK_MARKER: &'static str = "__mutsu_lazylist_cached_no_sink";
+
+    /// Whether this list is a `.cache`-returned view whose sink is a no-op.
+    pub(crate) fn is_cached_no_sink(&self) -> bool {
+        matches!(
+            self.env.get(Self::CACHED_NO_SINK_MARKER),
+            Some(Value::Bool(true))
+        )
+    }
+
+    /// Return a clone tagged as a `.cache`-returned view (no-op on sink).
+    pub(crate) fn with_cached_no_sink(&self) -> Self {
+        let mut cloned = self.clone();
+        cloned
+            .env
+            .insert(Self::CACHED_NO_SINK_MARKER.to_string(), Value::Bool(true));
+        cloned
+    }
+
     /// Create a pre-cached lazy list (no body to evaluate).
     pub(crate) fn new_cached(items: Vec<Value>) -> Self {
         Self {
@@ -160,6 +200,7 @@ impl LazyList {
             lazy_pipe: None,
             closure_seq: None,
             walk_pending: None,
+            cat_pull: None,
         }
     }
 
@@ -178,6 +219,7 @@ impl LazyList {
             lazy_pipe: None,
             closure_seq: None,
             walk_pending: None,
+            cat_pull: None,
         }
     }
 
@@ -196,6 +238,7 @@ impl LazyList {
             lazy_pipe: None,
             closure_seq: None,
             walk_pending: None,
+            cat_pull: None,
         }
     }
 
@@ -231,6 +274,7 @@ impl LazyList {
             })),
             closure_seq: None,
             walk_pending: None,
+            cat_pull: None,
         }
     }
 
@@ -270,6 +314,7 @@ impl LazyList {
             })),
             closure_seq: None,
             walk_pending: None,
+            cat_pull: None,
         }
     }
 
@@ -292,6 +337,34 @@ impl LazyList {
             lazy_pipe: None,
             closure_seq: Some(Mutex::new(state)),
             walk_pending: None,
+            cat_pull: None,
+        }
+    }
+
+    /// Create a lazy `IO::CatHandle.lines` / `.handles` list backed by a live
+    /// cat instance (sharing its attribute cell). Each element is pulled on
+    /// demand by reading from / advancing the cat, so mid-iteration changes to
+    /// the cat's attributes take effect.
+    pub(crate) fn new_cat_pull(cat: Value, mode: crate::value::CatPullMode) -> Self {
+        Self {
+            body: Vec::new(),
+            env: crate::env::Env::new(),
+            cache: Mutex::new(Some(Vec::new())),
+            compiled_code: None,
+            compiled_fns: None,
+            elems_count: None,
+            scan_spec: None,
+            sequence_spec: None,
+            coroutine: None,
+            lazy_pipe: None,
+            closure_seq: None,
+            walk_pending: None,
+            cat_pull: Some(Mutex::new(crate::value::CatPullSpec {
+                cat,
+                mode,
+                started: false,
+                done: false,
+            })),
         }
     }
 

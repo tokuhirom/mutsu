@@ -22,6 +22,12 @@ impl Interpreter {
                 "Cannot coerce an infinite lazy list to a strict list",
             ));
         }
+        // A lazy `IO::CatHandle.lines`/`.handles` list is finite: pull from the
+        // live cat until exhausted (cache always starts non-empty, so this must
+        // run before the cache short-circuit below).
+        if list.cat_pull.is_some() {
+            return self.force_cat_pull(list, usize::MAX);
+        }
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
         }

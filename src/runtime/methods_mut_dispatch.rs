@@ -2229,6 +2229,16 @@ impl Interpreter {
             }
 
             if self.is_native_method(&class_name.resolve(), method) {
+                // Lazy `IO::CatHandle.lines` (no `$limit`/`:close`) / `.handles`
+                // return a lazy list backed by the live cat (sharing its cell),
+                // so mid-iteration `.chomp`/`.nl-in`/`.encoding` changes apply and
+                // `.path`/on-switch track the current handle (Rakudo semantics).
+                if class_name == "IO::CatHandle" {
+                    let cat = Value::instance_sharing_cell(&attributes, class_name, target_id);
+                    if let Some(lazy) = Self::cathandle_lazy_method(&cat, method, &args) {
+                        return Ok(lazy);
+                    }
+                }
                 // Try mutable dispatch first; if no mutable handler, fall back to immutable
                 match self.call_native_instance_method_mut(
                     &class_name.resolve(),

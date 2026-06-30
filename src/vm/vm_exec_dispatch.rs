@@ -2272,6 +2272,11 @@ impl Interpreter {
                         return Ok(());
                     }
                     match &val {
+                        // A `.cache`-returned view is a cached, re-iterable list;
+                        // sinking it is a no-op and must NOT drain the underlying
+                        // source (e.g. `(my $l = $cat.lines).cache;` keeps the cat
+                        // unread). A bare lazy Seq still drains below.
+                        Value::LazyList(list) if list.is_cached_no_sink() => {}
                         Value::LazyList(list) => {
                             self.force_lazy_list_vm(list)?;
                         }

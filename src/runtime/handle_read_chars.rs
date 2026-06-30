@@ -38,6 +38,53 @@ impl Interpreter {
         Ok(Some(String::from_utf8_lossy(&bytes).to_string()))
     }
 
+    /// Read one character from a `utf8-c8` (UTF-8 Clean-8) stream. Valid UTF-8
+    /// decodes normally; a byte that cannot start/complete a valid sequence
+    /// becomes one synthetic grapheme (`decode_utf8_c8`). Continuation bytes of a
+    /// rejected sequence are rewound (Seek) so the next read re-examines them.
+    fn read_utf8_c8_char<R: Read + std::io::Seek>(
+        reader: &mut R,
+    ) -> Result<Option<String>, RuntimeError> {
+        let io_err = |err| RuntimeError::new(format!("Failed to read: {}", err));
+        let mut first = [0u8; 1];
+        let n = reader.read(&mut first).map_err(io_err)?;
+        if n == 0 {
+            return Ok(None);
+        }
+        let lead = first[0];
+        let expected_len = match lead {
+            0x00..=0x7F => return Ok(Some((lead as char).to_string())),
+            0xC2..=0xDF => 2usize,
+            0xE0..=0xEF => 3usize,
+            0xF0..=0xF4 => 4usize,
+            // Invalid lead byte (lone continuation, 0xC0/0xC1, 0xF5+): one
+            // synthetic grapheme for this single byte.
+            _ => return Ok(Some(crate::runtime::utf8_c8::decode_utf8_c8(&[lead]))),
+        };
+        let mut rest = vec![0u8; expected_len - 1];
+        let mut total = 0usize;
+        while total < rest.len() {
+            let r = reader.read(&mut rest[total..]).map_err(io_err)?;
+            if r == 0 {
+                break;
+            }
+            total += r;
+        }
+        let mut bytes = vec![lead];
+        bytes.extend_from_slice(&rest[..total]);
+        match std::str::from_utf8(&bytes) {
+            Ok(s) => Ok(Some(s.to_string())),
+            Err(_) => {
+                // Invalid sequence: emit a synthetic grapheme for the lead byte
+                // and rewind the continuation bytes for the next read.
+                reader
+                    .seek(std::io::SeekFrom::Current(-(total as i64)))
+                    .map_err(io_err)?;
+                Ok(Some(crate::runtime::utf8_c8::decode_utf8_c8(&[lead])))
+            }
+        }
+    }
+
     /// Read one character from a UTF-16 stream.
     /// `big_endian` controls byte order. Handles surrogate pairs.
     fn read_utf16_char<R: Read>(
@@ -204,14 +251,25 @@ impl Interpreter {
                         if limit == 0 {
                             return Ok(String::new());
                         }
+                        let is_c8 = encoding == "utf8-c8";
                         let mut out = String::new();
                         for _ in 0..limit {
-                            let Some(ch) = Self::read_utf8_char(file)? else {
+                            let ch = if is_c8 {
+                                Self::read_utf8_c8_char(file)?
+                            } else {
+                                Self::read_utf8_char(file)?
+                            };
+                            let Some(ch) = ch else {
                                 break;
                             };
                             out.push_str(&ch);
                         }
                         Ok(out)
+                    } else if encoding == "utf8-c8" {
+                        let mut bytes = Vec::new();
+                        file.read_to_end(&mut bytes)
+                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                        Ok(crate::runtime::utf8_c8::decode_utf8_c8(&bytes))
                     } else {
                         let mut bytes = Vec::new();
                         file.read_to_end(&mut bytes)

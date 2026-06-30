@@ -158,6 +158,10 @@ pub(super) fn dispatch(
                                 .walk_pending
                                 .as_ref()
                                 .map(|w| std::sync::Mutex::new(w.lock().unwrap().clone())),
+                            cat_pull: list
+                                .cat_pull
+                                .as_ref()
+                                .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
                         },
                     )))));
                 }
@@ -204,6 +208,7 @@ pub(super) fn dispatch(
                     lazy_pipe: None,
                     closure_seq: None,
                     walk_pending: None,
+                    cat_pull: None,
                 },
             )))))
         }

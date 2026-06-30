@@ -1099,6 +1099,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     lazy_pipe: None,
                     closure_seq: None,
                     walk_pending: None,
+                    cat_pull: None,
                 };
                 return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
             }
@@ -1116,6 +1117,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Some(Ok(Value::Seq(combinations_all(&items).into())))
         }
         "cache" => {
+            // A genuinely-lazy list (infinite sequence, lazy pipe, cat-handle
+            // pull, …) must stay lazy under `.cache`: Rakudo's `.cache` reifies
+            // and caches elements on demand, it does not force the whole list.
+            // Forcing here would defeat e.g. `(my $l = $cat.lines).cache` whose
+            // later `$l[2,3]` must reflect mid-iteration attribute changes.
+            if let Value::LazyList(ll) = target
+                && ll.is_genuinely_lazy()
+            {
+                return Some(Ok(Value::LazyList(std::sync::Arc::new(
+                    ll.with_cached_no_sink(),
+                ))));
+            }
             let items = target
                 .as_list_items()
                 .map(|items| items.to_vec())

@@ -22,6 +22,12 @@ impl Interpreter {
             return self.force_walk_pending(list, needed);
         }
 
+        // Lazy `IO::CatHandle.lines` / `.handles`: pull the next line / handle
+        // from the live cat instance on demand.
+        if list.cat_pull.is_some() {
+            return self.force_cat_pull(list, needed);
+        }
+
         // For sequence-spec lazy lists, generate more elements on demand
         if let Some(ref spec) = list.sequence_spec {
             return Self::extend_sequence_cache(list, spec, needed);
@@ -374,6 +380,86 @@ impl Interpreter {
                     cache.get_or_insert_with(Vec::new).extend(produced);
                 }
             }
+        }
+    }
+
+    /// Produce at least `needed` elements of a lazy `IO::CatHandle.lines` /
+    /// `.handles` list (a `LazyList` carrying a [`crate::value::CatPullSpec`]).
+    ///
+    /// Each element is pulled from the *live* cat instance: `.lines` calls
+    /// `.get`, `.handles` yields the current active handle then `.next-handle`
+    /// for each subsequent one. Because the cat shares its attribute cell with
+    /// the user's `$cat`, mid-iteration mutations (`.chomp = …`, `.nl-in = …`,
+    /// `.encoding: …`) take effect on later pulls and `.path`/`on-switch` track
+    /// the current handle, matching Rakudo's lazy iterators.
+    pub(crate) fn force_cat_pull(
+        &mut self,
+        list: &LazyList,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        use crate::value::CatPullMode;
+        loop {
+            // Fast path: enough cached, or the cat is exhausted.
+            {
+                let cache = list.cache.lock().unwrap();
+                let done = list
+                    .cat_pull
+                    .as_ref()
+                    .map(|p| p.lock().unwrap().done)
+                    .unwrap_or(true);
+                if let Some(c) = cache.as_ref()
+                    && (c.len() >= needed || done)
+                {
+                    let n = needed.min(c.len());
+                    return Ok(c[..n].to_vec());
+                }
+            }
+
+            // Snapshot the spec without holding its lock across the (re-entrant)
+            // method call into the cat.
+            let (cat, mode, started) = {
+                let spec = list.cat_pull.as_ref().unwrap().lock().unwrap();
+                (spec.cat.clone(), spec.mode, spec.started)
+            };
+
+            let pulled: Value = match mode {
+                CatPullMode::Lines => self.call_method_with_values(cat.clone(), "get", vec![])?,
+                CatPullMode::Handles if !started => {
+                    // First pull: the currently-active handle, opened on demand
+                    // but without advancing past it.
+                    {
+                        let mut spec = list.cat_pull.as_ref().unwrap().lock().unwrap();
+                        spec.started = true;
+                    }
+                    // `.path` ensures the first source is opened if nothing has
+                    // been read yet, then we read the live active handle.
+                    let _ = self.call_method_with_values(cat.clone(), "path", vec![]);
+                    match &cat {
+                        Value::Instance { attributes, .. } => attributes
+                            .as_map()
+                            .get("active")
+                            .cloned()
+                            .unwrap_or(Value::Nil),
+                        _ => Value::Nil,
+                    }
+                }
+                CatPullMode::Handles => {
+                    self.call_method_with_values(cat.clone(), "next-handle", vec![])?
+                }
+            };
+
+            if matches!(pulled, Value::Nil) {
+                let mut spec = list.cat_pull.as_ref().unwrap().lock().unwrap();
+                spec.done = true;
+                drop(spec);
+                let cache = list.cache.lock().unwrap();
+                let c = cache.as_ref().cloned().unwrap_or_default();
+                let n = needed.min(c.len());
+                return Ok(c[..n].to_vec());
+            }
+
+            let mut cache = list.cache.lock().unwrap();
+            cache.get_or_insert_with(Vec::new).push(pulled);
         }
     }
 }
