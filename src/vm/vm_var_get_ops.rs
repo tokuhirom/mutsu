@@ -141,6 +141,12 @@ impl Interpreter {
             } else {
                 Value::str(name.to_string())
             }
+        } else if let Some(enum_val) = self.resolve_qualified_enum_alias(name) {
+            // A qualified name `Alias::variant` where `Alias` is a constant (or
+            // `my`/`our` symbol) bound to an enum type object. Raku resolves the
+            // prefix through the alias and then looks up the enum variant, e.g.
+            // `my constant G = F::B; G::c === F::B::c`.
+            enum_val
         } else if name.contains("::")
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
         {
@@ -300,6 +306,35 @@ impl Interpreter {
         };
         self.stack.push(val);
         Ok(())
+    }
+
+    /// Resolve a qualified name `Prefix::variant` where `Prefix` is a symbol
+    /// (typically a `constant`/`my`/`our` declaration) bound to an enum type
+    /// object, returning the corresponding enum variant value.
+    ///
+    /// For example, after `enum F::B <c d e>; my constant G = F::B;`, the name
+    /// `G::c` resolves by mapping the prefix `G` to its package `F::B` and then
+    /// looking up the already-registered variant under `F::B::c`.
+    pub(super) fn resolve_qualified_enum_alias(&self, name: &str) -> Option<Value> {
+        if name.starts_with(['$', '@', '%', '&']) {
+            return None;
+        }
+        let (prefix, variant) = name.rsplit_once("::")?;
+        // The prefix must resolve through the lexical env to an enum type object.
+        let Some(Value::Package(pkg)) = self.env().get(prefix) else {
+            return None;
+        };
+        let pkg = pkg.resolve();
+        // Avoid infinite identity: the prefix must alias a *different* package
+        // (otherwise `F::B::c` would already have been found by direct lookup).
+        if pkg == prefix {
+            return None;
+        }
+        if !self.has_enum_variant(&pkg, variant) {
+            return None;
+        }
+        // The enum registration stores variants under `{enum_type}::{variant}`.
+        self.env().get(&format!("{pkg}::{variant}")).cloned()
     }
 
     /// Get a variable from an outer lexical scope.

@@ -381,14 +381,15 @@ materialize せず Seq のまま保持し（`.WHAT === Seq`）、`+@foo` は Lis
 - **完了条件**:
   `assignable-ok(\target, ...)` の内部からの read/write が、呼び出し中に元配列/元ハッシュへ見える
 
-### 2.8 `S04-declarations/constant.t`
+### 2.8 `S04-declarations/constant.t` — RESOLVED (2026-06-30, whitelisted)
 
-- **再評価**:
-  旧版では lazy 側に寄せていたが、`TODO_roast/S04` と `PLAN.md` の文脈では
-  主要 lazy ケースはかなり前進済み。
-  いま残る大きい論点は `G::c` qualified name など dispatch 側。
-- **評価**:
-  現時点では lazy 主因としては扱わない。
+72/72 passing. 最後の二点を実装:
+- `G::c`（`my constant G = F::B` の定数型エイリアス経由の enum variant 参照）:
+  パーサが宣言済み term を末尾 `::` で打ち切らないよう修正し、VM 側で
+  `resolve_qualified_enum_alias` がプレフィックスを enum 型に解決して variant を引く。
+- 演算子シノニムの multi 共有: `constant &infix:<comet> := &infix:<snowman>` の後の
+  `multi sub infix:<comet>(Str,Int)` 候補を、register 時に `operator_alias_target`
+  でエイリアス先（snowman）にも登録。両名から候補が見えるようになった。
 
 ---
 
