@@ -382,12 +382,31 @@ impl Interpreter {
         // index in any dimension is an error (raku throws X::AdHoc), not a
         // silent no-op that yields Any.
         Self::check_shaped_index_bounds(&target_val, &indices)?;
+        // Multi-result mode for Whatever/list indices: collect each leaf, then
+        // delete, returning the deleted values (each decontainerized).
+        if has_multi_indices(&indices) {
+            let mut leaves = Vec::new();
+            multidim_collect_leaves(&target_val, &indices, &[], &mut leaves);
+            if let Some(t) = self.env.get_mut(&var_name) {
+                multidim_delete(t, &indices);
+                self.writeback_multidim_var_to_local(&var_name);
+            }
+            let values: Vec<Value> = leaves.into_iter().map(|(_, v)| array_to_list(v)).collect();
+            return Ok(Value::array(values));
+        }
+        // A non-existent (out-of-range) element deletes to `Nil`, not the `Any`
+        // hole-value that `multidim_delete` returns for a missing slot.
+        if matches!(multidim_index(&target_val, &indices), Value::Nil) {
+            return Ok(Value::Nil);
+        }
         let Some(target) = self.env.get_mut(&var_name) else {
             return Ok(Value::Nil);
         };
         let result = multidim_delete(target, &indices);
         self.writeback_multidim_var_to_local(&var_name);
-        Ok(result)
+        // Decontainerize the deleted element (Array leaf → List), matching
+        // raku's multi-dim `:delete` return value.
+        Ok(array_to_list(result))
     }
 
     /// Validate multidim indices against a shaped array's fixed dimensions.
@@ -496,8 +515,34 @@ impl Interpreter {
                     resolved.push(result);
                 }
                 _ => {
-                    current = multidim_index(&current, std::slice::from_ref(idx));
-                    resolved.push(idx.clone());
+                    // Coerce a non-Int scalar array index (`"0"`, `0e0`, `0/1`)
+                    // to its Int so the key tuple (`:k`/`:p`) and the element
+                    // lookup use `(0,0,0)`, not the raw `("0",0e0,0.0)`. Only do
+                    // this when the current level is an array — a Str into a hash
+                    // is a genuine key and must stay a string.
+                    let coerced = if matches!(&current, Value::Array(..))
+                        && matches!(
+                            idx,
+                            Value::Str(_)
+                                | Value::Num(_)
+                                | Value::Rat(..)
+                                | Value::FatRat(..)
+                                | Value::BigRat(..)
+                        ) {
+                        match idx {
+                            Value::Num(f) if *f >= 0.0 => Value::Int(*f as i64),
+                            Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
+                            Value::Str(s) => s
+                                .parse::<i64>()
+                                .map(Value::Int)
+                                .unwrap_or_else(|_| idx.clone()),
+                            _ => idx.clone(),
+                        }
+                    } else {
+                        idx.clone()
+                    };
+                    current = multidim_index(&current, std::slice::from_ref(&coerced));
+                    resolved.push(coerced);
                 }
             }
         }
@@ -531,15 +576,24 @@ impl Interpreter {
                     multidim_delete(t, &indices);
                     self.writeback_multidim_var_to_local(&var_name);
                 }
-                let values: Vec<Value> = leaves.into_iter().map(|(_, v)| v).collect();
+                let values: Vec<Value> =
+                    leaves.into_iter().map(|(_, v)| array_to_list(v)).collect();
                 return Ok(Value::array(values));
+            }
+            // A non-existent (out-of-range) element deletes to `Nil`, not the
+            // `Any` hole-value that `multidim_delete` returns for a missing slot.
+            if matches!(multidim_index(&target, &indices), Value::Nil) {
+                return Ok(Value::Nil);
             }
             let Some(target) = self.env.get_mut(&var_name) else {
                 return Ok(Value::Nil);
             };
             let result = multidim_delete(target, &indices);
             self.writeback_multidim_var_to_local(&var_name);
-            Ok(result)
+            // The deleted element is returned decontainerized — an Array leaf
+            // (`[314]`) comes back as a List (`(314,)`), matching raku's
+            // multi-dim `:delete` (the test's `$resnona` is `$result.List`).
+            Ok(array_to_list(result))
         } else {
             Ok(multidim_index(&target, &indices))
         }
@@ -615,20 +669,24 @@ impl Interpreter {
             return Ok(Value::array(out));
         }
 
+        // Determine existence from a pre-delete read: a non-existent element
+        // reads as `Nil`, whereas `multidim_delete` returns the `Any` hole-value
+        // for an out-of-range slot, which would wrongly look "present".
+        let read_value = multidim_index(&target, &indices);
+        let exists = !matches!(&read_value, Value::Nil);
         let value = if do_delete {
-            if let Some(target) = self.env.get_mut(&var_name) {
+            if exists && let Some(target) = self.env.get_mut(&var_name) {
                 let r = multidim_delete(target, &indices);
                 self.writeback_multidim_var_to_local(&var_name);
                 r
             } else {
-                Value::Nil
+                read_value
             }
         } else {
-            multidim_index(&target, &indices)
+            read_value
         };
 
         let key = make_key_tuple(&indices);
-        let exists = !matches!(&value, Value::Nil);
 
         match adverb.as_str() {
             "k" => Ok(if exists { key } else { Value::Nil }),
