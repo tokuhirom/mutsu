@@ -110,11 +110,19 @@ impl Compiler {
                     //     limitation where a parameterized Array[T]/Hash[T] is rejected
                     //     by the role).
                     //   - object hashes (`my Int %j{Cool}`, encoded as the
-                    //     `"Int{Cool}"` constraint) are excluded: re-tagging the
-                    //     key type in expression position breaks the string-key
-                    //     subscript (`%j<b>:k` returns `()`), the concrete
-                    //     `Associative[T]` perturbation the array-only guard
-                    //     originally avoided.
+                    //     `"Int{Cool}"` constraint): the FULL constraint is NOT
+                    //     re-tagged in expression position, because re-applying the
+                    //     key-type half (`{Cool}`) marks the value `.WHICH`-keyed
+                    //     while a subsequent raw-binding mutation (`gen my Int
+                    //     %j{Cool}` → `sub gen(\h){ h{$_}=... }`) still stores plain
+                    //     string keys (the callee's `h` carries no var-level key
+                    //     constraint), so adverbs (`%j<b>:k`) would `.WHICH`-look-up
+                    //     keys that were stored plain and miss. Instead we tag only
+                    //     the VALUE-type half (`Int`), which is all the missing-key
+                    //     default needs (`%j<B>:!p` → `B => (Int)`); the hash stays
+                    //     plain-string-keyed so every Str-key adverb keeps working.
+                    //     (Fully unifying object-hash keying through raw-binding
+                    //     mutation is the larger change deferred here.)
                     let is_native_value_type = type_constraint.as_ref().is_some_and(|tc| {
                         if name.starts_with('@') {
                             crate::runtime::native_types::is_native_array_element_type(tc)
@@ -128,10 +136,21 @@ impl Compiler {
                         && !name.contains("__ANON_HASH__")
                         && let Some(tc) = type_constraint
                         && !is_native_value_type
-                        && !(name.starts_with('%') && tc.contains('{'))
                     {
-                        let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                        self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                        // For an object hash (`%h{KeyType}`), strip the `{...}` key
+                        // part and tag only the value type, so the value stays
+                        // plain-string-keyed (see the note above).
+                        let value_tc = if name.starts_with('%') {
+                            tc.split('{').next().unwrap_or(tc)
+                        } else {
+                            tc
+                        };
+                        if value_tc.is_empty() {
+                            // Bare `my %h{KeyType}` (no value type): nothing to tag.
+                        } else {
+                            let tc_idx = self.code.add_constant(Value::str(value_tc.to_string()));
+                            self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                        }
                     }
                     // Read back the coerced value (SetGlobal coerces list->hash for %)
                     let name_idx2 = self.code.add_constant(Value::str(name.clone()));

@@ -411,7 +411,11 @@ materialize せず Seq のまま保持し（`.WHAT === Seq`）、`+@foo` は Lis
 - `S14-traits/attributes.t`
 - `S12-subset/subtypes.t` の一部
 - `S02-types/whatever.t` のうち container preservation 系
-- `S32-hash/adverbs.t` の typed-hash default survival
+- ~~`S32-hash/adverbs.t` の typed-hash default survival~~ — DONE (whitelisted):
+  expression-position object-hash declarations (`gen my Int %j{Cool}`) now tag
+  the value-type half of the constraint so missing-key adverb defaults resolve
+  to the element type, and `Pair.Str` stringifies a type-object value as `""`
+  (raku `eq`-compares `(k => Any)` and `(k => Mu)` equal in `is`).
 - `S32-array/splice.t`
 - `S02-names/is_default.t`
 
@@ -454,7 +458,7 @@ materialize せず Seq のまま保持し（`.WHAT === Seq`）、`+@foo` は Lis
        属性 slot の cell 化が必要（配列/ハッシュ要素 `$r := @a[0]` は既に動く）。
 3. **typed-hash default / Capture 書き戻し / wrapper capture**
    - 変更レイヤ: hash missing-key default、Capture bind/writeback、wrap closure env
-   - 対象: `S32-hash/adverbs.t`, `S02-types/capture.t`, `S02-types/whatever.t`
+   - 対象: ~~`S32-hash/adverbs.t`~~ (DONE), `S02-types/capture.t`, `S02-types/whatever.t`
 4. **BEGIN/EVAL/lexical 配列変更の永続化**
    - 変更レイヤ: env/local coherence、block escape、BEGIN 実行時 lexical carrier
    - 対象: `S26-documentation/12-non-breaking-space.t`, `temp.t`, package/var tests
