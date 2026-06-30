@@ -200,7 +200,14 @@ impl Interpreter {
                     // after the block exits (`sync_env_from_locals`). Gated on a real
                     // `current_package`, so a bare reference after the block (under
                     // GLOBAL) does not resolve here.
-                    .package_scope_lexical(name)
+                    // An `our sub` declared in a bare block reads a block `my`
+                    // lexical that is out of scope by the time the registry routine
+                    // runs (no per-sub closure env), and the shared `env` may hold an
+                    // unrelated leaked value from a sibling block. Resolve such a
+                    // capture through its persisted shared cell ONLY — see
+                    // `escaping_our_read` — short-circuiting the env lookup.
+                    .escaping_our_read(name)
+                    .or_else(|| self.package_scope_lexical(name))
                     .or_else(|| self.get_env_with_main_alias(name))
                     .or_else(|| {
                         // Fall back to the persistent our_vars store for `our`-scoped

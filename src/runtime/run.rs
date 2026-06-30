@@ -125,6 +125,11 @@ impl Interpreter {
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
         let (code, compiled_fns) = compiler.compile(&body_main);
+        // Seed the escaping-our-sub lexical names from the compiled top-level code
+        // (and its nested closures), so a free-variable read inside such an `our`
+        // sub resolves through the persisted shared cell — known BEFORE the
+        // declaring block runs. See `escaping_our_lexical_names`.
+        self.collect_escaping_our_lexical_names(&code);
         // CP-3 collapse: the Interpreter *is* the bytecode VM now, so run the
         // compiled mainline directly (outermost run → fresh registers) instead of
         // the `mem::take(self)` + `VM::new` + `*self = interp` ping-pong.

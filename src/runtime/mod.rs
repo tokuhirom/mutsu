@@ -1181,6 +1181,29 @@ pub struct Interpreter {
     /// subs (where `current_package == Foo`), so it does not leak the lexical to
     /// bare references after the block (which run under `GLOBAL`).
     pub(crate) package_lexicals: HashMap<String, HashMap<String, Value>>,
+    /// Shared cells for block lexicals captured by an `our`-scoped named sub
+    /// declared inside a *bare* block (not a package block). Unlike a `my sub`, an
+    /// `our sub` is installed into the package registry and stays callable after
+    /// the block exits, but a registry routine carries no per-sub closure env. When
+    /// the captured local (`my $a`) is declared, the VM boxes it into a shared
+    /// `ContainerRef` cell and records it here keyed by the variable name; a
+    /// free-var read inside the escaped sub resolves through this cell
+    /// (`escaping_our_read`), so `our sub f { $a }` called after the block sees the
+    /// live value (Raku semantics). Populated by the sub's source-order
+    /// `RegisterSub` (`exec_register_sub_op`) once the captured local has been boxed
+    /// — keyed to the sub's declaration, not the box site, so a same-named sibling-
+    /// block `my` cannot pollute it. A read BEFORE the block runs misses (the cell is
+    /// not yet recorded), correctly yielding the undefined value.
+    pub(crate) escaped_our_lexical_cells: HashMap<String, Value>,
+    /// Names of block lexicals that are captured by an `our`-scoped named sub
+    /// (the union of every code's `needs_cell_escaping_our_sub`). Seeded once at the
+    /// start of `run()` from the top-level code, so it is known BEFORE the declaring
+    /// block executes. A free-variable read of such a name from inside a routine
+    /// resolves through `escaped_our_lexical_cells` ONLY — never the shared env —
+    /// so an unrelated leaked `env` value from a sibling block cannot shadow it, and
+    /// a read before the block correctly yields the undefined value (the cell is not
+    /// recorded yet). Empty for ordinary programs: zero cost.
+    pub(crate) escaping_our_lexical_names: std::collections::HashSet<String>,
     state_vars: HashMap<String, Value>,
     /// Per-closure-instance captured-variable state, keyed by
     /// (closure instance id, captured variable Symbol). This is the hot

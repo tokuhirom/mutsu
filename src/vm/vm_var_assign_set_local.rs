@@ -37,6 +37,10 @@ impl Interpreter {
         // here would over-box unrelated same-named locals (same-named `my` locals
         // share one slot) and break e.g. `let`-restore in a sibling block.
         let box_decl = self.vardecl_context && !code.needs_cell_named_sub.is_empty();
+        // An `our sub` declared in a bare block captures this local but outlives the
+        // block (it lives in the package registry, with no closure env). Box the
+        // local AND persist the cell so a call after the block reads the live value.
+        let box_decl_our = self.vardecl_context && !code.needs_cell_escaping_our_sub.is_empty();
         let r = self.exec_set_local_op_inner(code, idx);
         // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
         if r.is_ok() {
@@ -45,6 +49,19 @@ impl Interpreter {
                 && let Some(sym) = code.locals_sym.get(idx as usize)
                 && code.needs_cell_named_sub.contains(sym)
             {
+                self.box_decl_local_cell(code, idx as usize);
+            }
+            if box_decl_our
+                && let Some(sym) = code.locals_sym.get(idx as usize)
+                && code.needs_cell_escaping_our_sub.contains(sym)
+            {
+                // Box the captured local into a shared cell so the escaped `our` sub
+                // and the owner alias one cell. The PERSIST into
+                // `escaped_our_lexical_cells` is deferred to the sub's source-order
+                // `RegisterSub` (see `exec_register_sub_op`), NOT done here — same-
+                // named `my` locals share one slot, so an unrelated sibling-block
+                // `my $a` reaches this same site and must not pollute the persisted
+                // map with its value.
                 self.box_decl_local_cell(code, idx as usize);
             }
         }

@@ -406,6 +406,35 @@ impl Compiler {
         self.code
             .named_sub_captures
             .push((nf_writes, cf.code.needs_cell_named_sub_free.clone()));
+        // An `our sub` is installed into the package registry and outlives its
+        // declaring block, but a registry routine has no per-sub closure env. So
+        // every lexical it READS or WRITES must be boxed into a shared cell at its
+        // declaration site AND persisted into `escaped_our_lexical_cells`, so a call
+        // made after the block reads the live cell instead of `Nil`. Contribute the
+        // sub's full free-var set (reads ∪ writes ∪ bubbled ancestor needs) so
+        // `compute_free_vars` can mark our own locals for decl-site boxing.
+        if self.compiling_our_sub {
+            let mut esc = cf.code.free_var_syms.clone();
+            esc.extend(cf.code.free_var_writes.iter().copied());
+            esc.extend(cf.code.free_var_container_writes.iter().copied());
+            esc.extend(cf.code.needs_cell_named_sub_free.iter().copied());
+            esc.extend(cf.code.needs_cell_escaping_our_sub_free.iter().copied());
+            // Only genuine `my` lexicals are captured this way. Exclude dynamic
+            // (`$*X`), attribute (`$!x`/`$.x`), special (`$/`, `$0`, `$_`, `$!`) and
+            // other twigled names: those resolve through their own stores (dynamic
+            // scope, the self-attribute cell, the match var, ...), and boxing them
+            // would break e.g. a dynamic-var write reaching the caller. A plain
+            // lexical's bare name starts with an ASCII letter.
+            esc.retain(|sym| {
+                sym.with_str(|s| {
+                    s.trim_start_matches(['$', '@', '%', '&'])
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_alphabetic())
+                })
+            });
+            self.code.escaping_our_sub_captures.push(esc);
+        }
         self.compiled_functions.insert(key, cf);
     }
 

@@ -1998,6 +1998,8 @@ impl Interpreter {
             fatal_mode: false,
             our_vars: HashMap::new(),
             package_lexicals: HashMap::new(),
+            escaped_our_lexical_cells: HashMap::new(),
+            escaping_our_lexical_names: std::collections::HashSet::new(),
             state_vars: HashMap::new(),
             closure_captured_state: HashMap::new(),
             once_values: HashMap::new(),
