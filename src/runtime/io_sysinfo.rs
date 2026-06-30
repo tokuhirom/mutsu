@@ -55,6 +55,17 @@ impl Interpreter {
             // Store handle state attributes so IO::Handle.open can inherit them
             attrs.insert("chomp".to_string(), Value::Bool(state.line_chomp));
             attrs.insert("nl-out".to_string(), Value::str(state.nl_out.clone()));
+            // A text handle exposes its decoder name via `.encoding`; a binary
+            // handle reports no encoding (handled by the `bin` branch below).
+            // Raku reports the canonical name (`utf8`), not the dashed form.
+            if !bin {
+                let enc = match state.encoding.as_str() {
+                    "utf-8" => "utf8",
+                    "utf-16" => "utf16",
+                    other => other,
+                };
+                attrs.insert("encoding".to_string(), Value::str(enc.to_string()));
+            }
             // Store nl-in
             if state.line_separators.len() == 1 {
                 attrs.insert(

@@ -70,6 +70,7 @@ impl Interpreter {
         attrs.insert("closed".to_string(), Value::Bool(false));
         attrs.insert("on-switch".to_string(), on_switch);
         attrs.insert("path".to_string(), Value::Nil);
+        attrs.insert("nl-out".to_string(), Value::str("\n".to_string()));
         Value::make_instance(Symbol::intern("IO::CatHandle"), attrs)
     }
 

@@ -10,6 +10,47 @@ use super::meta_ops::{
     try_parse_sequence_in_paren,
 };
 
+/// True when `expr` is an already-built WhateverCode closure (e.g. from `*.so`
+/// or `* + 1`), which is the value an extra paren layer should freeze.
+fn is_whatevercode_closure(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Lambda {
+            is_whatever_code: true,
+            ..
+        } | Expr::AnonSubParams {
+            is_whatever_code: true,
+            ..
+        }
+    )
+}
+
+/// True when `s` is exactly one balanced parenthesis group spanning the whole
+/// (trimmed) string — i.e. the opening `(` matches the final `)`. Used to tell
+/// `((*))` (content `(*)` is a whole group → freeze) from `((*) + 1)` (content
+/// `(*) + 1` is not → stays a WhateverCode).
+fn is_single_paren_group(s: &str) -> bool {
+    let s = s.trim();
+    if !s.starts_with('(') || !s.ends_with(')') {
+        return false;
+    }
+    let mut depth = 0usize;
+    let bytes = s.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return i == bytes.len() - 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Parse a parenthesized expression or list.
 pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     // Try the comprehensive parenthesized assignment parser first.
@@ -178,6 +219,7 @@ pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = parse_char(rest, ')')?;
         return Ok((rest, finalize_paren_list(items)));
     }
+    let before_close = input;
     if let Ok((input, _)) = parse_char(input, ')') {
         // Parenthesized pair: (:a(3)) — mark as positional so it's not treated
         // as a named argument in function calls.
@@ -219,6 +261,24 @@ pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
             // feed: `my @g = (@a ==> grep)` assigns the feed result, whereas
             // `my @g = @a ==> grep` binds `=` tighter and feeds `(my @g = @a)`).
             || matches!(&result, Expr::Feed { .. })
+        {
+            Expr::Grouped(Box::new(result))
+        } else {
+            result
+        };
+        // Whatever-currying freeze: a `*` (or a `*`-curried WhateverCode) wrapped
+        // in an *extra* layer of parens becomes a frozen value, not a curry point.
+        // Raku: `(*).Capture` curries to a WhateverCode, but `((*)).Capture` calls
+        // `.Capture` on the literal Whatever (and throws). One level of parens is
+        // transparent to currying; a second freezes. We detect the second level by
+        // checking that the parenthesized content is itself a single, whole paren
+        // group (`(*)`, `(*.so)`, `((*))`) rather than a larger expression that
+        // merely begins with a paren (`(*) + 1`, which stays a WhateverCode).
+        let consumed = &content_start[..content_start.len() - before_close.len()];
+        let result = if is_single_paren_group(consumed)
+            && (crate::parser::expr::is_whatever(&result)
+                || is_whatevercode_closure(&result)
+                || matches!(&result, Expr::Grouped(_)))
         {
             Expr::Grouped(Box::new(result))
         } else {
