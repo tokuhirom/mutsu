@@ -381,6 +381,14 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     // from regex/substitution operators (e.g. `S` vs `S///`).
     super::super::simple::register_user_type(&name);
 
+    // Record `is export` operator methods so `import ClassName` teaches the
+    // parser the new operator symbols (`method infix:<as> is export` makes `as`
+    // a usable infix in code parsed after the `import`).
+    let exported_ops = super::package_decl::extract_exported_operator_methods(&body);
+    if !exported_ops.is_empty() {
+        super::super::simple::register_inline_module_exports(&name, exported_ops);
+    }
+
     // Validate declarator traits: only 'ver', 'auth', and 'api' are allowed on class names
     for (trait_name, _) in &traits {
         if trait_name != "ver" && trait_name != "auth" && trait_name != "api" {

@@ -191,6 +191,15 @@ impl Interpreter {
             if !import_all && !is_mandatory && symbol_tags.is_disjoint(&requested) {
                 continue;
             }
+            // An imported operator sub (e.g. `method infix:<as> is export`'s
+            // sub form) must be visible to the EVAL parser so code parsed at
+            // runtime recognizes the new operator symbol.
+            if matches!(
+                name.split_once(":<").map(|(c, _)| c),
+                Some("prefix" | "postfix" | "infix" | "circumfix" | "postcircumfix")
+            ) {
+                self.imported_operator_names.insert(name.clone());
+            }
             let source_single = format!("{module}::{name}");
             let source_prefix = format!("{module}::{name}/");
             let target_single = format!("{target_pkg}::{name}");

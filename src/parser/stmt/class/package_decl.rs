@@ -39,6 +39,47 @@ pub(crate) fn extract_exported_subs(
     names
 }
 
+/// Extract names of `is export` *operator methods* (`method prefix:<~> is
+/// export`, `method infix:<as> is export`, ...) from a class/role body. These
+/// are exposed by `import ClassName` as importable operator *subs*, so the
+/// parser must learn the new operator symbols (e.g. `as` becomes a known infix)
+/// when the `import` statement is parsed.
+pub(crate) fn extract_exported_operator_methods(
+    stmts: &[Stmt],
+) -> Vec<super::super::simple::InlineModuleExportSpec> {
+    let mut names = Vec::new();
+    for stmt in stmts {
+        match stmt {
+            Stmt::MethodDecl {
+                name, is_export, ..
+            } if *is_export => {
+                let resolved = name.resolve();
+                if is_operator_categorical_name(&resolved) {
+                    names.push((resolved.to_string(), None, None));
+                }
+            }
+            Stmt::SyntheticBlock(inner) => {
+                names.extend(extract_exported_operator_methods(inner));
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
+/// True for a categorical operator declaration name (`prefix:<...>`,
+/// `infix:<...>`, `postfix:<...>`, `circumfix:<...>`, `postcircumfix:<...>`).
+fn is_operator_categorical_name(name: &str) -> bool {
+    const CATEGORIES: &[&str] = &[
+        "prefix:",
+        "postfix:",
+        "infix:",
+        "circumfix:",
+        "postcircumfix:",
+    ];
+    CATEGORIES.iter().any(|c| name.starts_with(c)) && name.ends_with('>')
+}
+
 /// Recursively collect exported sub names (descending into nested blocks),
 /// returning the first symbol that is exported more than once. In Raku two
 /// `is export` declarations of the same symbol within one package raise
