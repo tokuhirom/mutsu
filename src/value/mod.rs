@@ -320,6 +320,7 @@ pub(crate) fn current_time_secs_f64() -> f64 {
 }
 
 pub(crate) use display::is_internal_anon_type_name;
+pub(crate) use display::user_facing_type_name;
 pub use display::{format_complex, tclc_str, wordcase_str};
 pub(crate) use error::expected_type_object;
 pub use error::{Control, RuntimeError, RuntimeErrorCode};

@@ -163,6 +163,7 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
             language_version: super::super::simple::current_language_version(),
             custom_traits: Vec::new(),
             is_unit: false,
+            decl_id: crate::ast::next_class_decl_id(),
         },
     ))
 }

@@ -2039,6 +2039,8 @@ impl Interpreter {
             enum_scope_names: vec![Vec::new()],
             my_scoped_package_items: HashSet::new(),
             lexical_class_scopes: Vec::new(),
+            lexical_class_sites: HashMap::new(),
+            lexical_class_owner_scopes: Vec::new(),
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),

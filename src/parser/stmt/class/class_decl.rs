@@ -191,6 +191,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         language_version: super::super::simple::current_language_version(),
         custom_traits: Vec::new(),
         is_unit: false,
+        decl_id: crate::ast::next_class_decl_id(),
     };
     // Emit the class registration followed by unregistering the name from the scope
     let unregister = Stmt::Expr(Expr::Call {
@@ -407,6 +408,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         language_version: super::super::simple::current_language_version(),
         custom_traits,
         is_unit: false,
+        decl_id: crate::ast::next_class_decl_id(),
     };
     let mut stmts = Vec::new();
     for (trait_name, trait_value) in traits {

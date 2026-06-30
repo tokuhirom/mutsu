@@ -6,6 +6,20 @@ pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
     name.starts_with("__ANON_") && name.ends_with("__")
 }
 
+/// A lexically-scoped `my class`/`my role` whose bare name collides with an
+/// earlier same-named lexical declaration is stored in the registry under a
+/// mangled internal name `Foo\u{0}<site-id>` so its instances keep their own
+/// identity (see `exec_register_class_op`). The `\u{0}` separator can never
+/// appear in a source identifier, so the user-facing name is just everything
+/// before it. This is a pure function so `display.rs` (which has no interpreter
+/// context) can strip the suffix for `.gist`/`.raku`/`say`.
+pub(crate) fn user_facing_type_name(name: &str) -> &str {
+    match name.split_once('\u{0}') {
+        Some((short, _)) => short,
+        None => name,
+    }
+}
+
 /// Format a value for display inside a Capture gist.
 fn capture_value_gist(v: &Value) -> String {
     match v {
@@ -612,10 +626,11 @@ impl Value {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }
             Value::Package(s) => {
-                if is_internal_anon_type_name(&s.resolve()) {
+                let resolved = s.resolve();
+                if is_internal_anon_type_name(&resolved) {
                     "()".to_string()
                 } else {
-                    format!("({})", s)
+                    format!("({})", user_facing_type_name(&resolved))
                 }
             }
             Value::ParametricRole {

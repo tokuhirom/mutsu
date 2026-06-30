@@ -177,6 +177,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 language_version: super::super::simple::current_language_version(),
                 custom_traits: Vec::new(),
                 is_unit: true,
+                decl_id: crate::ast::next_class_decl_id(),
             },
         ));
     }
@@ -264,6 +265,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 language_version: super::super::simple::current_language_version(),
                 custom_traits: Vec::new(),
                 is_unit: true,
+                decl_id: crate::ast::next_class_decl_id(),
             },
         ));
     }

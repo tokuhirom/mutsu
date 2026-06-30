@@ -387,13 +387,14 @@ pub(super) fn dispatch(
             }
         }
         Value::Package(name) => {
+            let resolved = name.resolve();
+            let full = crate::value::user_facing_type_name(&resolved);
             if method == "gist" {
-                let full = name.resolve();
-                let short = full.rsplit("::").next().unwrap_or(&full);
+                let short = full.rsplit("::").next().unwrap_or(full);
                 Some(Ok(Value::str(format!("({})", short))))
             } else {
                 // .raku returns the full type name
-                Some(Ok(Value::str(name.resolve())))
+                Some(Ok(Value::str(full.to_string())))
             }
         }
         Value::Instance {

@@ -19,8 +19,6 @@
   （ローカル raku v2022.12=6.d でも実行不可で全体検証もできない）。
 - `S04-declarations/constant.t` → 演算子 `constant &op := &other` の
   **共有 alias**（現状コピー実装）。68/72、唯一の file-stopper。
-- `S02-literals/allomorphic.t`（§2.6） → **lexical class identity**
-  （同名 `my class` が global registry で後勝ち）。
 
 → **curated §2 Medium 群について「1 失敗の浅いターゲットは枯渇」が結論。** 残りは
 container identity / lazy-iterator / lexical-scope (dual-store) / 並行実行 という
@@ -346,31 +344,24 @@ materialize せず Seq のまま保持し（`.WHAT === Seq`）、`+@foo` は Lis
 - **評価**:
   parameterized role/MOP ほど深くはないが、型オブジェクト側の整理が必要。
 
-### 2.6 `S02-literals/allomorphic.t`
+### 2.6 `S02-literals/allomorphic.t` — ✅ DONE (2026-06-30)
 
-- **難度**: Medium-Hard
-- **論点**:
-  gather ブロックごとに同名 lexical class が別 identity を持つべきなのに、
-  いまは global map で潰れている。
-- **評価**:
-  「parser の小ネタ」ではなく **型宣言 identity** の問題。
-  ただし container identity ほど基盤工事ではない。
-
-- **2026-06-28 確認**: 残り失敗は 16/32/48（IntStr/RatStr/NumStr の `.ACCEPTS`）。
-  同名 `my class IntFoo` が @true gather（`method Numeric { 3 }`）と @false gather
-  （`method Numeric { 42 }`）で二重宣言され、@true の IntFoo.new は Numeric=3 を
-  保つべきだが mutsu は最後の定義（42）で潰す。最小再現:
-  ```raku
-  my @a = gather { my class Foo { method val { 1  } }; take Foo.new };
-  my @b = gather { my class Foo { method val { 99 } }; take Foo.new };
-  say @a[0].val, @b[0].val;   # mutsu: 99 99 / raku: 1 99
-  ```
-  gather 内で作った instance は値としてキャプチャされるが、メソッド dispatch 時に
-  クラス名 "Foo" を global registry で引くため、後勝ちの定義に解決される。
-  **verdict: deep（lexical class identity / dual-store debt）。** `my class` を
-  宣言ごとに別 identity として lexical scope に閉じ込め、instance がその identity を
-  保持する必要がある。同じ家系の課題: [[my-6e EVAL block-local scope leak]] と
-  同じ「block-local 宣言が global store に漏れる」debt。
+- **修正**: 同名 `my class` が宣言サイトごとに固有の identity を持つようにした。
+  - parser が各 `ClassDecl` に安定した `decl_id`（parse 時に採番、ループ本体は
+    同一ノード=同一 id）を付与。
+  - `exec_register_class_op` は、別サイトの同名 lexical class が既に「完全定義
+    （非 stub）」として registry に存在する場合、新しいクラスを mangled な内部名
+    `Foo\u{0}<decl_id>` で登録する。bare 名は lexical env 経由で mangled 名に
+    解決されるので、そのスコープ内の `Foo.new` は自分の identity を持つ instance を
+    生成し、別 gather の同名クラスを潰さない。
+  - stub upgrade（`my class C { ... }` → `my class C { ... }`）は registry 上の
+    既存エントリが stub のため mangle されず、同じエントリに着地する。
+  - `is Parent` の親参照は lexical env を通して解決し、mangled な親にも正しく
+    リンクする（roles-6e.t の同名 `my class C0` 二重宣言を守る）。
+  - 表示（`.^name` / `.gist` / `.raku` / `.WHAT`）は `user_facing_type_name` で
+    `\u{0}` 以降を落とし、ユーザからは常に bare 名に見える。
+- **確認**: allomorphic.t 119/119、roles-6e.t、class-too-late-for-repr.t、
+  `t/lexical-class-identity.t`、make test すべて green。
 
 ### 2.7 multislice lvalue
 
