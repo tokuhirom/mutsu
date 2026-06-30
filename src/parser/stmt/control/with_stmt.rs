@@ -90,22 +90,17 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // `with $x { with foo() { } }` clobbered `$x` with `foo()`'s value.
     let is_literal_topic = matches!(&cond_expr, Expr::Literal(_));
     let route_through_given_tmp = !cond_is_lvalue && !is_literal_topic && param_name.is_none();
-    // Topicalize `$_` for the body. For a literal, wrap it in a Mixin marked
-    // read-only so in-place mutation of `$_` throws X::Assignment::RO. Otherwise
-    // reuse the `$tmp` holding the (once-evaluated) condition value.
-    let topic_assign = if let Expr::Literal(lit) = &cond_expr {
-        let mut overrides = std::collections::HashMap::new();
-        overrides.insert("__mutsu_topic_ro__".to_string(), Value::Bool(true));
-        let wrapped = Value::mixin(lit.clone(), overrides);
-        Stmt::Assign {
-            name: "_".to_string(),
-            op: AssignOp::Assign,
-            expr: Expr::Literal(wrapped),
-        }
-    } else {
-        topicalize(&tmp_var)
-    };
-    let mut with_body = if use_given_alias {
+    // A literal topic (`with 5 { }`) runs under `given <literal>`: that yields a
+    // fresh read-only `$_` topic scope (matching `given`'s immutable-literal
+    // semantics) and, crucially, establishes the topic via the `given` opcode
+    // rather than a plain `$_ = <literal>` assignment — so it nests correctly
+    // inside a `for ^N { }`, whose `$_` readonly mark would otherwise make that
+    // assignment throw X::Assignment::RO.
+    let route_literal_through_given = is_literal_topic && param_name.is_none();
+    // Topicalize `$_` for the body. For a non-literal, non-`given` topic reuse the
+    // `$tmp` holding the (once-evaluated) condition value.
+    let topic_assign = topicalize(&tmp_var);
+    let mut with_body = if use_given_alias || route_literal_through_given {
         Vec::new()
     } else {
         vec![topic_assign]
@@ -245,6 +240,11 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             topic: tmp_var.clone(),
             body,
         }];
+    } else if route_literal_through_given {
+        with_body = vec![Stmt::Given {
+            topic: cond_expr.clone(),
+            body,
+        }];
     } else {
         with_body.extend(body);
     }
@@ -331,10 +331,13 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
 
         let (r, orwith_body) = block(r)?;
 
-        // Prepend $_ = <orwith_cond_expr> to the body
-        let mut orwith_with_body = vec![topicalize(&orwith_cond_expr)];
+        // Run the body under `given <orwith_cond>` so `$_` is topicalized via the
+        // `given` opcode (which establishes a fresh topic scope) rather than a plain
+        // `$_ = <orwith_cond>` assignment. The latter would throw X::Assignment::RO
+        // when the `orwith` is nested in a `for ^N { }` whose `$_` is read-only.
+        let mut orwith_given_body = Vec::new();
         if let Some(ref pname) = orwith_param_name {
-            orwith_with_body.push(Stmt::VarDecl {
+            orwith_given_body.push(Stmt::VarDecl {
                 name: pname.clone(),
                 expr: orwith_cond_expr.clone(),
                 type_constraint: None,
@@ -347,7 +350,11 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 where_constraint: None,
             });
         }
-        orwith_with_body.extend(orwith_body);
+        orwith_given_body.extend(orwith_body);
+        let orwith_with_body = vec![Stmt::Given {
+            topic: orwith_cond_expr.clone(),
+            body: orwith_given_body,
+        }];
 
         let orwith_cond_expr_clone = orwith_cond_expr.clone();
         let orwith_cond = Expr::MethodCall {
@@ -380,10 +387,12 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 (r2, None)
             };
             let (r2, else_body) = block(r2)?;
-            // Topicalize $_ in else branch to the orwith condition
-            let mut else_with_topic = vec![topicalize(&orwith_cond_expr_clone)];
+            // Topicalize $_ in else branch to the orwith condition, via `given` so
+            // the fresh topic scope is not blocked by an enclosing `for`'s read-only
+            // `$_` (see the orwith branch above).
+            let mut else_given_body = Vec::new();
             if let Some(ref pname) = else_param {
-                else_with_topic.push(Stmt::VarDecl {
+                else_given_body.push(Stmt::VarDecl {
                     name: pname.clone(),
                     expr: orwith_cond_expr_clone.clone(),
                     type_constraint: None,
@@ -396,7 +405,11 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                     where_constraint: None,
                 });
             }
-            else_with_topic.extend(else_body);
+            else_given_body.extend(else_body);
+            let else_with_topic = vec![Stmt::Given {
+                topic: orwith_cond_expr_clone.clone(),
+                body: else_given_body,
+            }];
             (r2, else_with_topic)
         } else {
             (r_before_else_ws, Vec::new())
@@ -436,10 +449,12 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             (r, None)
         };
         let (r, else_body) = block(r)?;
-        // Topicalize $_ in else branch to the with/without condition
-        let mut else_with_topic = vec![topicalize(&tmp_var)];
+        // Topicalize $_ in else branch to the with/without condition, via `given`
+        // (a fresh topic scope) so it is not blocked by an enclosing `for`'s
+        // read-only `$_` (see the orwith branch above).
+        let mut else_given_body = Vec::new();
         if let Some(ref pname) = else_param {
-            else_with_topic.push(Stmt::VarDecl {
+            else_given_body.push(Stmt::VarDecl {
                 name: pname.clone(),
                 expr: tmp_var.clone(),
                 type_constraint: None,
@@ -452,7 +467,11 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 where_constraint: None,
             });
         }
-        else_with_topic.extend(else_body);
+        else_given_body.extend(else_body);
+        let else_with_topic = vec![Stmt::Given {
+            topic: tmp_var.clone(),
+            body: else_given_body,
+        }];
         (r, else_with_topic)
     } else {
         // No orwith/else found — don't consume whitespace/newlines past the

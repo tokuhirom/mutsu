@@ -353,6 +353,18 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         } else {
             (r, Vec::new())
         };
+        // A chained `.=` (`$s .= uc .= flip`) must be handled by the expression
+        // postfix loop, which threads each step's lvalue back through the next
+        // `.=` (`do { $s = $s.uc; $s = $s.flip }`). The statement shortcut here
+        // only lowers a single `.= method`, so bail to the expression-statement
+        // fallback when another `.=` follows rather than mis-parsing the tail as a
+        // bare topic `$_ .= ...`.
+        {
+            let (r_peek, _) = ws(r)?;
+            if r_peek.starts_with(".=") {
+                return Err(PError::expected("chained .= (handled as expression)"));
+            }
+        }
         let expr = Expr::MethodCall {
             target: Box::new(var_expr),
             name: Symbol::intern(&method_name),
