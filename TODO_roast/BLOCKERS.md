@@ -21,8 +21,6 @@
   **共有 alias**（現状コピー実装）。68/72、唯一の file-stopper。
 - `S02-literals/allomorphic.t`（§2.6） → **lexical class identity**
   （同名 `my class` が global registry で後勝ち）。
-- `S06-signature/slurpy-params.t`（§2.1） → **Seq single-pass consumption**
-  （Seq を materialize し `X::Seq::Consumed` を投げない）。
 
 → **curated §2 Medium 群について「1 失敗の浅いターゲットは枯渇」が結論。** 残りは
 container identity / lazy-iterator / lexical-scope (dual-store) / 並行実行 という
@@ -299,58 +297,12 @@ S15 全 81 ファイル、および tractable な S32-str Unicode 機能
 
 ## 2. 優先度B — 局所修正で前進するが、複数論点を含む
 
-### 2.1 `S06-signature/slurpy-params.t`
+### 2.1 `S06-signature/slurpy-params.t` — DONE (PR #3918)
 
-- **難度**: Medium ではなく、実質 Medium-Hard
-- **再評価ポイント**:
-  旧版は「残り 6 件」と書けていたが、根は 2 本ある。
-
-残件は分離して考えるべき:
-
-1. **真の lazy slurpy**
-   `oneargraw(1..*)` 系。
-   これは lazy 配列キャンペーンに接続する。
-2. **Seq の single-pass consumption**
-   `+foo` / `+@foo` の identity と、2 回目反復時の `X::Seq::Consumed`。
-   これは lazy 配列とは別軸で、Seq の消費モデルの問題。
-
-つまり、このファイルは「slurpy だけの局所修正」では終わらない。
-一部は §3 に送るべき。
-
-- **2026-06-28 確認**: 残り失敗は 70/71/74/75/76 で、すべて #2 (Seq single-pass) 軸。
-  最小再現:
-  ```raku
-  sub f(+a) { a };
-  say f((1,2,3).grep({$_})).WHAT.^name;   # mutsu: Array / raku: Seq
-  my \seq = f((1,2,3).grep({$_}));
-  my @r; push @r, $_ for seq;             # 1回目: [1 2 3]（両者OK）
-  push @r, $_ for seq;                    # 2回目: mutsu 黙って再反復 / raku throws X::Seq::Consumed
-  ```
-  mutsu は slurpy 受け取り時に Seq を Array へ materialize するため、(a) `.WHAT === Seq`
-  が崩れ、(b) single-pass 消費状態を持たないので `X::Seq::Consumed` を投げられない。
-  対して `+@a`（配列 slurpy）は List 化が正しい。
-  **verdict: deep（lazy iterator / Seq 消費モデル）。** Seq に消費フラグを持たせ、
-  sigilless slurpy が Seq identity を保持する必要があり、ADR-0001 の lazy/iterator track
-  と地続き。局所修正では落ちない → §3.2 寄り。
-
-追加で固定しておく:
-
-- **lazy slurpy 側の変更レイヤ**:
-  `docs/lazy-arrays.md` の L2/L3、`binding_signature.rs`、`@`-assign preserve、`LazyList` の array-context
-- **Seq single-pass 側の変更レイヤ**:
-  `Value::Seq` / `LazyList` の consumed state、`+foo` と `+@foo` の文脈差、再反復時の失敗
-- **最初の 1 PR**:
-  `X::Seq::Consumed` を発火させる最小 pin test を作り、2 回目反復だけをまず正しく落とす
-- **完了条件**:
-  `+foo` は Seq のまま、`+@foo` は List 化、再反復は `X::Seq::Consumed`
-- **Next slice**:
-  `pd.onearg && pd.sigilless` で single `Value::Seq` を preserve する最小分岐
-- **Canary tests**:
-  `roast/S06-signature/slurpy-params.t`
-- **Primary files**:
-  `src/runtime/types/binding_signature.rs`,
-  `src/parser/stmt/sub_param/param_inner.rs`,
-  `src/runtime/methods_call_dispatch.rs`
+`+a`/`+@a` の single-argument-rule Seq type preservation と Seq single-pass
+consumption を実装し、ファイルは 86/86 で whitelist 済み。`+foo` は単一 Seq を
+materialize せず Seq のまま保持し（`.WHAT === Seq`）、`+@foo` は List 化、再反復は
+`X::Seq::Consumed` を投げる。lazy infinite slurpy（`oneargraw(1..*)[^5]`）も通る。
 
 ### 2.2 `S04-statements/for.t`
 
@@ -525,7 +477,7 @@ S15 全 81 ファイル、および tractable な S32-str Unicode 機能
 
 - `S09-subscript/slice.t`
 - `S03-operators/eqv.t` の lazy case
-- `S06-signature/slurpy-params.t` の lazy slurpy half
+- （`S06-signature/slurpy-params.t` の lazy slurpy half は §2.1 で DONE / PR #3918）
 
 ここは `docs/lazy-arrays.md` の L2b-L4 と同じ話。
 closure-based infinite sequence はかなり進んだが、
@@ -539,7 +491,8 @@ closure-based infinite sequence はかなり進んだが、
    - 対象: `S09-subscript/slice.t`, lazy slurpy half
 2. **Seq single-pass consumption**
    - 変更レイヤ: `Value::Seq` / `LazyList` の consumed state と iterator API
-   - 対象: `S06-signature/slurpy-params.t`, lazy `eqv`, 一部 list ops
+   - 対象: lazy `eqv`, 一部 list ops
+     （`S06-signature/slurpy-params.t` は §2.1 で DONE / PR #3918）
 
 `docs/lazy-arrays.md` は前者の設計文書としては十分細かい。
 後者には [docs/seq-single-pass-consumption.md](../docs/seq-single-pass-consumption.md) を新設した。
@@ -562,8 +515,7 @@ closure-based infinite sequence はかなり進んだが、
 - **Next slice**:
   `(1...*)` / closure-seq の `@`-assign preserve と mutation-side reify の差分整理
 - **Canary tests**:
-  `roast/S09-subscript/slice.t`, `roast/S03-operators/eqv.t`,
-  `roast/S06-signature/slurpy-params.t`
+  `roast/S09-subscript/slice.t`, `roast/S03-operators/eqv.t`
 - **Primary files**:
   `src/runtime/resolution_lazy.rs`,
   `src/runtime/methods_call_dispatch.rs`,
