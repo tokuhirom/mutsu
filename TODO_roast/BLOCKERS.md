@@ -327,14 +327,13 @@ materialize せず Seq のまま保持し（`.WHAT === Seq`）、`+@foo` は Lis
 - **評価**:
   broad な main track ではなく、EVAL と lexical visibility の局所課題として扱える。
 
-### 2.4 `S03-operators/inplace.t`
+### 2.4 `S03-operators/inplace.t` — ✅ DONE (2026-06-30)
 
-- **難度**: Medium
-- **論点**:
-  readonly constant や class instantiation に対する `.=`
-- **評価**:
-  小さく見えて operator surface と readonly 判定が絡むが、
-  main track 待ちではない。
+- **修正**: `.=` メタ演算子が read-only container topic を通して書き戻せる
+  ようにした（#3939）。readonly constant や class instantiation に対する
+  `$x .= method` が、トピック container が read-only でも attribute slot 経由で
+  書き戻る。
+- **確認**: inplace.t 38/38 PASS、whitelist 済み、make test green。
 
 ### 2.5 `S02-types/generics.t`
 
