@@ -163,13 +163,40 @@ impl Interpreter {
                     Self::collect_declared_vars(s, out);
                 }
             }
+            // A `loop (my $x = 1; ...; ...)` initializer declares `$x` in the
+            // enclosing scope (visible after the loop). Likewise `if/while my $x
+            // = ...` bring the condition's declaration into scope.
+            Stmt::Loop { init, cond, .. } => {
+                if let Some(init) = init {
+                    Self::collect_declared_vars(init, out);
+                }
+                if let Some(cond) = cond {
+                    Self::collect_declared_vars_in_expr(cond, out);
+                }
+            }
+            Stmt::While { cond, .. } => {
+                Self::collect_declared_vars_in_expr(cond, out);
+            }
+            Stmt::If { cond, .. } => {
+                Self::collect_declared_vars_in_expr(cond, out);
+            }
             _ => {}
         }
     }
 
     fn collect_declared_vars_in_expr(expr: &Expr, out: &mut HashSet<String>) {
-        if let Expr::DoStmt(stmt) = expr {
-            Self::collect_declared_vars(stmt, out);
+        match expr {
+            Expr::DoStmt(stmt) => Self::collect_declared_vars(stmt, out),
+            // Recurse through operators/grouping so a declaration embedded in a
+            // larger expression (`my $x = 1, my $y = 2`, `not my $x = 1`) is found.
+            Expr::Binary { left, right, .. } | Expr::MetaOp { left, right, .. } => {
+                Self::collect_declared_vars_in_expr(left, out);
+                Self::collect_declared_vars_in_expr(right, out);
+            }
+            Expr::Unary { expr, .. } | Expr::Grouped(expr) | Expr::Itemize(expr) => {
+                Self::collect_declared_vars_in_expr(expr, out);
+            }
+            _ => {}
         }
     }
 
@@ -198,6 +225,16 @@ impl Interpreter {
                 None
             }
             Stmt::Expr(expr) => self.find_undeclared_var_in_expr(expr, declared),
+            // `$ret = <rhs>` — the RHS may reference a variable before its own
+            // embedded `my` declaration (`$ret = $foo ~ my $foo` is X::Undeclared,
+            // but `$ret = (my $foo) ~ $foo` is fine). Walk the RHS left-to-right so
+            // an embedded `my $x` only brings `x` into scope for references that
+            // follow it.
+            Stmt::Assign { name, expr, .. } => {
+                let mut local = declared.clone();
+                local.insert(name.clone());
+                self.find_undeclared_var_ordered(expr, &mut local)
+            }
             // Descend into `sub`/`method` bodies so undeclared variables used
             // inside them (e.g. `sub greet($name) { say "$nam" }`) are caught at
             // EVAL/compile time. The body's lexical scope adds the routine's
@@ -310,6 +347,47 @@ impl Interpreter {
             }
         }
         None
+    }
+
+    /// Walk an expression left-to-right looking for an undeclared variable,
+    /// threading the in-scope `declared` set so an embedded `my $x` declaration
+    /// only shadows references that appear *after* it in source order. This is
+    /// what distinguishes `$foo ~ my $foo` (X::Undeclared — `$foo` used before
+    /// its declaration) from `(my $foo) ~ $foo` (legal).
+    fn find_undeclared_var_ordered(
+        &self,
+        expr: &Expr,
+        declared: &mut HashSet<String>,
+    ) -> Option<(&'static str, String, Vec<String>)> {
+        match expr {
+            // An embedded declaration: check its initializer against the current
+            // scope, then bring the new name in for subsequent references.
+            Expr::DoStmt(stmt) => {
+                if let Stmt::VarDecl {
+                    name, expr: init, ..
+                } = stmt.as_ref()
+                {
+                    if let Some(r) = self.find_undeclared_var_ordered(init, declared) {
+                        return Some(r);
+                    }
+                    declared.insert(name.clone());
+                    declared.insert(name.trim_start_matches(['$', '@', '%', '&']).to_string());
+                    None
+                } else {
+                    None
+                }
+            }
+            Expr::Binary { left, right, .. } | Expr::MetaOp { left, right, .. } => self
+                .find_undeclared_var_ordered(left, declared)
+                .or_else(|| self.find_undeclared_var_ordered(right, declared)),
+            Expr::Grouped(inner)
+            | Expr::Unary { expr: inner, .. }
+            | Expr::PostfixOp { expr: inner, .. }
+            | Expr::Itemize(inner) => self.find_undeclared_var_ordered(inner, declared),
+            // Leaves (and anything not containing an embedded declaration): defer
+            // to the plain checker against the accumulated scope.
+            _ => self.find_undeclared_var_in_expr(expr, &*declared),
+        }
     }
 
     /// Find an undeclared Var reference in an expression.

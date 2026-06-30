@@ -1,5 +1,266 @@
 use super::*;
 
+/// Bare-callable routines / statement keywords that may legitimately appear as
+/// a call inside EVAL'd code. Used only by the EVAL undeclared-routine pre-pass
+/// (which must flag a genuinely undeclared *user* routine at CHECK time, before
+/// any earlier statement runs) to avoid false-flagging a builtin (or a keyword
+/// that parses as a call) as undeclared. mutsu dispatches builtins through
+/// several paths, so this unions the bare-function `match name` in `builtins.rs`,
+/// the arity dispatchers in `builtins/functions/dispatch_*.rs`, the coercion
+/// names (`Str`/`Int`/`Numeric`/...), the term builtins (`now`/`time`/`rand`/
+/// `pi`/`tau`/`e`/`i`) and the module/import statement keywords (`use`/`need`/
+/// `import`) that parse as calls. Being permissive here only suppresses false
+/// positives; a genuinely undeclared user routine is still flagged.
+const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
+    "BEGIN",
+    "Bag",
+    "BagHash",
+    "Bool",
+    "CREATE",
+    "Complex",
+    "Cool",
+    "EVAL",
+    "EVALFILE",
+    "FatRat",
+    "HOW",
+    "Int",
+    "Mix",
+    "MixHash",
+    "Num",
+    "Numeric",
+    "QX",
+    "RADIX_LIST",
+    "Rat",
+    "Real",
+    "Set",
+    "SetHash",
+    "Str",
+    "Stringy",
+    "Sub",
+    "UNBASE",
+    "Uni",
+    "VAR",
+    "WHAT",
+    "abs",
+    "acos",
+    "acosec",
+    "acosech",
+    "acosh",
+    "acotan",
+    "acotanh",
+    "any",
+    "asec",
+    "asech",
+    "asin",
+    "asinh",
+    "atan",
+    "atan2",
+    "atanh",
+    "atomic-fetch",
+    "await",
+    "bag",
+    "cache",
+    "caller",
+    "callframe",
+    "callsame",
+    "callwith",
+    "categorize",
+    "ceiling",
+    "chars",
+    "chdir",
+    "chmod",
+    "chomp",
+    "chop",
+    "chr",
+    "chroot",
+    "chrs",
+    "cis",
+    "classify",
+    "close",
+    "codes",
+    "combinations",
+    "copy",
+    "cos",
+    "cosec",
+    "cosech",
+    "cosh",
+    "cotan",
+    "cotanh",
+    "cr",
+    "crlf",
+    "cross",
+    "dd",
+    "deepmap",
+    "defined",
+    "die",
+    "dir",
+    "duckmap",
+    "e",
+    "elems",
+    "emit",
+    "end",
+    "exit",
+    "exp",
+    "expmod",
+    "fail",
+    "fc",
+    "first",
+    "flat",
+    "flip",
+    "floor",
+    "full-barrier",
+    "get",
+    "getc",
+    "gethost",
+    "getlogin",
+    "gist",
+    "grep",
+    "hash",
+    "head",
+    "homedir",
+    "i",
+    "import",
+    "index",
+    "indices",
+    "indir",
+    "is-prime",
+    "item",
+    "join",
+    "keys",
+    "kill",
+    "kv",
+    "lastcall",
+    "lc",
+    "leave",
+    "lf",
+    "lines",
+    "link",
+    "list",
+    "local",
+    "log",
+    "log10",
+    "log2",
+    "lol",
+    "lsb",
+    "made",
+    "make",
+    "map",
+    "max",
+    "min",
+    "minmax",
+    "mix",
+    "mkdir",
+    "msb",
+    "need",
+    "nextcallee",
+    "nextsame",
+    "nextwith",
+    "not",
+    "now",
+    "open",
+    "ord",
+    "ords",
+    "pack",
+    "pair",
+    "pairs",
+    "parse-base",
+    "perl",
+    "permutations",
+    "pi",
+    "pick",
+    "pop",
+    "print",
+    "printf",
+    "produce",
+    "prompt",
+    "push",
+    "quietly",
+    "raku",
+    "rand",
+    "reduce",
+    "rename",
+    "repeated",
+    "require",
+    "return",
+    "return-rw",
+    "reverse",
+    "rindex",
+    "rmdir",
+    "roll",
+    "roots",
+    "rotate",
+    "round",
+    "roundrobin",
+    "run",
+    "samecase",
+    "samemark",
+    "samewith",
+    "sec",
+    "sech",
+    "set",
+    "shell",
+    "shift",
+    "sign",
+    "signal",
+    "sin",
+    "sinh",
+    "sink",
+    "skip",
+    "sleep",
+    "sleep-till",
+    "sleep-timer",
+    "slip",
+    "slurp",
+    "snip",
+    "so",
+    "sort",
+    "split",
+    "sprintf",
+    "spurt",
+    "sqrt",
+    "squish",
+    "srand",
+    "start",
+    "substr",
+    "succeed",
+    "sum",
+    "symlink",
+    "syscall",
+    "tail",
+    "take",
+    "tan",
+    "tanh",
+    "tau",
+    "tc",
+    "tclc",
+    "time",
+    "times",
+    "tmpdir",
+    "trim",
+    "trim-leading",
+    "trim-trailing",
+    "truncate",
+    "uc",
+    "undefine",
+    "unimatch",
+    "uniname",
+    "uninames",
+    "uniparse",
+    "uniprop",
+    "unique",
+    "unival",
+    "univals",
+    "unlink",
+    "unpack",
+    "use",
+    "val",
+    "values",
+    "warn",
+    "wordcase",
+    "words",
+    "zip",
+];
+
 impl Interpreter {
     /// Check for undeclared type names in EVAL'd code.
     /// Walks the AST looking for BareWord expressions that start with uppercase
@@ -296,6 +557,56 @@ impl Interpreter {
             }
             _ => {}
         }
+    }
+
+    /// Detect a call to an undeclared *routine* in EVAL'd code. Raku resolves
+    /// routine names at compile time, so `EVAL '$x = 1; no_such_routine()'`
+    /// throws X::Undeclared::Symbols *before* `$x = 1` runs. Only plain bareword
+    /// calls (`foo(...)`) are checked — method calls and operator desugarings are
+    /// excluded. A name that resolves to a declared sub (here or in the enclosing
+    /// pad), a builtin, a proto, or an `&name` callable in scope is fine.
+    pub(crate) fn check_eval_undeclared_routines(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let mut declared: HashSet<String> = HashSet::new();
+        for s in stmts {
+            Self::collect_declared_routine_names(s, &mut declared);
+            Self::collect_declared_vars(s, &mut declared);
+        }
+        let extra: Vec<String> = declared
+            .iter()
+            .filter_map(|n| n.strip_prefix(['$', '@', '%', '&']).map(str::to_string))
+            .collect();
+        declared.extend(extra);
+        let mut calls: HashSet<String> = HashSet::new();
+        Self::collect_call_names_in_stmts(stmts, &mut calls);
+        for name in calls {
+            // Skip operator desugarings / package-qualified names, and internal
+            // synthetic calls the compiler emits (`__MUTSU_SET_META__`, etc.).
+            if name.contains(':') || name.starts_with("__") {
+                continue;
+            }
+            if declared.contains(&name)
+                || self.has_function(&name)
+                || self.has_multi_function(&name)
+                || self.has_proto(&name)
+                || Self::is_builtin_function(&name)
+                || EVAL_KNOWN_ROUTINE_NAMES.contains(&name.as_str())
+                || self.env().contains_key(&format!("&{}", name))
+                || self.env().contains_key(name.as_str())
+                || self.get_our_var(&name).is_some()
+            {
+                continue;
+            }
+            let suggestions = self.suggest_routine_names(&name);
+            return Err(RuntimeError::undeclared_routine_symbols(
+                &name,
+                format!("Undeclared routine:\n    {} used at line 1", name),
+                suggestions,
+            ));
+        }
+        Ok(())
     }
 
     pub(crate) fn check_eval_undeclared_names(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {

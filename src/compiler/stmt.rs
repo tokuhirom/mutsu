@@ -956,12 +956,25 @@ impl Compiler {
                     self.scalar_bind_autovivify = false;
                     self.bind_terminal = false;
                 } else {
+                    // An uninitialized `&`-sigil variable (`my &foo;` / `my &;`)
+                    // defaults to the `Callable` type object, not Any/Nil.
+                    let callable_default = Expr::BareWord("Callable".to_string());
                     let rhs_expr = if has_default_trait
                         && !name.starts_with('@')
                         && !name.starts_with('%')
                         && matches!(expr, Expr::Literal(Value::Nil))
                     {
                         default_trait_expr.unwrap_or(expr)
+                    } else if name.starts_with('&')
+                        && !has_explicit_initializer
+                        && type_constraint.is_none()
+                        && matches!(expr, Expr::Literal(Value::Nil))
+                    {
+                        // `my Int &a` carries `Int` as a *return*-type constraint,
+                        // not a value type; substituting a Callable default there
+                        // would trip the value type-check. Only default to Callable
+                        // for the unconstrained `my &a` / `my &`.
+                        &callable_default
                     } else {
                         expr
                     };

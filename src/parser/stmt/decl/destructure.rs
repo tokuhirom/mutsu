@@ -34,6 +34,77 @@ struct DestructureVar {
     literal_value: Option<Expr>,
 }
 
+/// Recursively collect the (flattened) sigilless/sigilled targets of a nested
+/// destructure group `(\e, (\f, \g), $h)`, appending one `DestructureVar` per
+/// leaf to `vars`. Returns the remaining input past the closing `)`.
+fn collect_nested_group_vars<'a>(
+    input: &'a str,
+    vars: &mut Vec<DestructureVar>,
+) -> Result<&'a str, PError> {
+    let (mut r, _) = parse_char(input, '(')?;
+    let (r2, _) = ws(r)?;
+    r = r2;
+    loop {
+        if r.starts_with(')') {
+            break;
+        }
+        if r.starts_with('(') {
+            r = collect_nested_group_vars(r, vars)?;
+        } else if let Some(after_backslash) = r.strip_prefix('\\') {
+            let (r2, name) = ident(after_backslash)?;
+            register_term_symbol_from_decl_name(&name);
+            vars.push(DestructureVar {
+                name,
+                is_slurpy: false,
+                is_optional: false,
+                is_named: false,
+                default: None,
+                per_var_type_constraint: None,
+                where_constraint: None,
+                sigilless: true,
+                literal_value: None,
+            });
+            r = r2;
+        } else {
+            let sigil = r.as_bytes().first().copied().unwrap_or(0);
+            if sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&' {
+                let prefix = match sigil {
+                    b'@' => "@",
+                    b'%' => "%",
+                    b'&' => "&",
+                    _ => "",
+                };
+                let (r2, n) = var_name(r)?;
+                vars.push(DestructureVar {
+                    name: format!("{}{}", prefix, n),
+                    is_slurpy: false,
+                    is_optional: false,
+                    is_named: false,
+                    default: None,
+                    per_var_type_constraint: None,
+                    where_constraint: None,
+                    sigilless: false,
+                    literal_value: None,
+                });
+                r = r2;
+            } else {
+                return Err(PError::expected(
+                    "variable sigil ($, @, %, &) or sigilless (\\name) in nested destructure group",
+                ));
+            }
+        }
+        let (r2, _) = ws(r)?;
+        r = r2;
+        if r.starts_with(',') {
+            let (r2, _) = parse_char(r, ',')?;
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
+    }
+    let (r, _) = parse_char(r, ')')?;
+    Ok(r)
+}
+
 pub(in crate::parser::stmt) fn parse_destructuring_decl(
     input: &str,
     is_state: bool,
@@ -47,6 +118,24 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
     loop {
         if r.starts_with(')') {
             break;
+        }
+
+        // Nested group: `my (\d, (\e, \f)) = ...`. Raku binds the corresponding
+        // RHS element by recursively destructuring it; we flatten the inner
+        // sigilless/sigilled targets so they are all declared and assigned
+        // positionally. (The precise nested *value* binding is `#?rakudo skip`-ped
+        // even on rakudo, so only flattening-without-error is required here.)
+        if r.starts_with('(') {
+            let r2 = collect_nested_group_vars(r, &mut vars)?;
+            let (r2, _) = ws(r2)?;
+            if r2.starts_with(',') {
+                let (r2, _) = parse_char(r2, ',')?;
+                let (r2, _) = ws(r2)?;
+                r = r2;
+            } else {
+                r = r2;
+            }
+            continue;
         }
 
         let mut is_slurpy = false;
