@@ -839,16 +839,20 @@ impl Interpreter {
                         self.get_attr_type_constraint(&class_name.resolve(), method)
                     && !matches!(type_constraint.as_str(), "Mu" | "Any")
                 {
+                    // An object hash (`%.h{Str:D}`) declares `ValueType{KeyType}`;
+                    // its elements are checked against the value type only.
+                    let (value_type, _) =
+                        crate::runtime::types::split_object_hash_constraint(&type_constraint);
                     let hash_vals: Vec<Value> = match &value {
                         Value::Hash(h) => h.values().cloned().collect(),
                         _ => Vec::new(),
                     };
                     for v in &hash_vals {
-                        if !self.type_matches_value(&type_constraint, v) {
+                        if !matches!(v, Value::Nil) && !self.type_matches_value(value_type, v) {
                             return Err(RuntimeError::new(format!(
                                 "Type check failed for an element of %{}; expected {} but got {}",
                                 method,
-                                type_constraint,
+                                value_type,
                                 super::utils::value_type_name(v),
                             )));
                         }
@@ -895,9 +899,13 @@ impl Interpreter {
                     && let Some(tc) = self.get_attr_type_constraint(&class_name.resolve(), method)
                     && !matches!(tc.as_str(), "Mu" | "Any")
                 {
+                    // Split an object-hash `ValueType{KeyType}` so the container
+                    // records the value and key constraints separately.
+                    let (value_type, key_type) =
+                        crate::runtime::types::split_object_hash_constraint(&tc);
                     let info = ContainerTypeInfo {
-                        value_type: tc,
-                        key_type: None,
+                        value_type: value_type.to_string(),
+                        key_type: key_type.map(|k| k.to_string()),
                         declared_type: None,
                     };
                     assigned_value = self.tag_container_metadata(assigned_value, info);

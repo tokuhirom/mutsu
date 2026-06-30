@@ -89,6 +89,15 @@ pub(crate) struct Registry {
     pub(crate) attribute_build_overrides: HashMap<(String, String), Value>,
     /// Per-attribute default value: (class, attr) -> default value.
     pub(crate) class_attribute_defaults: HashMap<(String, String), Value>,
+    /// Per-attribute `is default(...)` expression for a parametric role, where the
+    /// value cannot be evaluated until the role is composed and its type params
+    /// are bound: (role-base, attr) -> expr. Evaluated at instance construction
+    /// (with role param bindings in scope) to tag `@`/`%` containers.
+    pub(crate) role_attribute_default_exprs: HashMap<(String, String), crate::ast::Expr>,
+    /// Per-attribute deferred `is default(...)` expression carried from a composed
+    /// parametric role onto a consuming class: (class, attr) -> expr. Evaluated at
+    /// construction with the class's role type-param bindings in scope.
+    pub(crate) class_attribute_default_exprs: HashMap<(String, String), crate::ast::Expr>,
     /// Per-attribute declared type: (class, attr) -> type name.
     pub(crate) class_attribute_is_types: HashMap<(String, String), String>,
     /// Per-attribute `does Role` traits: (class, attr) -> role names mixed into

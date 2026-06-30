@@ -332,6 +332,8 @@ impl Interpreter {
                 }
             }
         }
+        // Embed `is default(...)` element defaults into `@`/`%` containers.
+        self.apply_container_attribute_defaults(cn_resolved, &mut attrs);
         // Add alias metadata for `has $x` (no twigil) attributes
         self.add_alias_attribute_metadata(cn_resolved, &mut attrs);
         // The gate (`is_native_default_constructible`) allows BUILD/TWEAK-only

@@ -233,6 +233,46 @@ impl Interpreter {
         }
     }
 
+    /// Embed each `@`/`%` attribute's `is default(...)` element default (from
+    /// `class_attribute_defaults`) into the freshly-constructed instance's
+    /// containers, so a missing-element read returns the declared default and
+    /// the value survives copy-on-write. Scalar attributes are skipped (their
+    /// default is carried via `var_defaults` and the unassigned-scalar read).
+    pub(crate) fn apply_container_attribute_defaults(
+        &mut self,
+        class_name: &str,
+        attributes: &mut std::collections::HashMap<String, Value>,
+    ) {
+        let names: Vec<String> = attributes.keys().cloned().collect();
+        for attr_name in names {
+            if !matches!(
+                attributes.get(&attr_name),
+                Some(Value::Array(..)) | Some(Value::Hash(_))
+            ) {
+                continue;
+            }
+            // Prefer the already-evaluated default (non-generic classes); fall back
+            // to a deferred expression carried from a parametric role, evaluated now
+            // (the caller has bound the role's type params in `self.env`).
+            let def = self
+                .class_attribute_default(class_name, &attr_name)
+                .or_else(|| {
+                    let expr = self
+                        .registry()
+                        .class_attribute_default_exprs
+                        .get(&(class_name.to_string(), attr_name.clone()))
+                        .cloned()?;
+                    self.eval_block_value(&[crate::ast::Stmt::Expr(expr)]).ok()
+                });
+            if let Some(def) = def
+                && let Some(val) = attributes.remove(&attr_name)
+            {
+                let tagged = self.tag_container_default(val, def);
+                attributes.insert(attr_name, tagged);
+            }
+        }
+    }
+
     /// Get the element default for a container (Array/Hash).
     pub(crate) fn container_default<'v>(&'v self, value: &'v Value) -> Option<&'v Value> {
         match value {

@@ -78,6 +78,22 @@ pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// Split an object-hash constraint of the form `ValueType{KeyType}` into its
+/// value-type and optional key-type parts. A plain constraint (no `{...}`)
+/// returns `(constraint, None)`. The value type governs element type checks; the
+/// key type governs key constraints.
+pub(crate) fn split_object_hash_constraint(constraint: &str) -> (&str, Option<&str>) {
+    if let Some(open) = constraint.find('{')
+        && constraint.ends_with('}')
+    {
+        let value_type = constraint[..open].trim();
+        let key_type = constraint[open + 1..constraint.len() - 1].trim();
+        (value_type, Some(key_type))
+    } else {
+        (constraint, None)
+    }
+}
+
 /// Check if a value is "defined" in the Raku sense.
 /// Type objects (Package) are undefined; concrete values and instances are defined.
 pub(crate) fn value_is_defined(value: &Value) -> bool {

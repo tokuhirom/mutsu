@@ -282,6 +282,27 @@ impl Compiler {
                 self.compile_expr(delete_index);
                 let name_idx = self.code.add_constant(Value::str(var_name));
                 self.code.emit(OpCode::DeleteIndexNamed(name_idx));
+            } else if let Expr::MethodCall {
+                target: method_target,
+                name: method_name,
+                args: method_args,
+                ..
+            } = &**delete_target
+                && method_args.is_empty()
+                && let Some(var_name) = Self::method_call_target_var_name(method_target)
+            {
+                // `$obj.attr<key>:delete` — delete through an accessor and write
+                // the modified container back to the attribute (mirrors the
+                // `$obj.attr<key> = v` lvalue path).
+                self.compile_expr(&Expr::Call {
+                    name: Symbol::intern("__mutsu_index_delete_method_lvalue"),
+                    args: vec![
+                        (**method_target).clone(),
+                        Expr::Literal(Value::str(method_name.resolve().to_string())),
+                        (**delete_index).clone(),
+                        Expr::Literal(Value::str(var_name)),
+                    ],
+                });
             } else {
                 self.compile_expr(delete_target);
                 self.compile_expr(delete_index);

@@ -75,9 +75,16 @@ impl Interpreter {
             let tc = self.get_attr_type_constraint(&class_name.resolve(), &method);
             let is_hash_attr = matches!(&current, Value::Hash(_));
             let is_array_attr = matches!(&current, Value::Array(..));
+            // An object hash (`%.h{Str:D}`) checks elements against the value type.
+            let elem_tc = tc.as_deref().map(|t| {
+                crate::runtime::types::split_object_hash_constraint(t)
+                    .0
+                    .to_string()
+            });
             if (is_hash_attr || is_array_attr)
-                && let Some(ref type_constraint) = tc
+                && let Some(ref type_constraint) = elem_tc
                 && !matches!(type_constraint.as_str(), "Mu" | "Any")
+                && !matches!(effective_value, Value::Nil)
                 && !self.type_matches_value(type_constraint, &effective_value)
             {
                 let sigil = if is_hash_attr { "%" } else { "@" };
@@ -198,6 +205,103 @@ impl Interpreter {
             updated,
         )?;
         Ok(effective_value)
+    }
+
+    /// Handle `$obj.method<key>:delete` — element delete through a method accessor.
+    /// Gets the current container (hash/array) via the accessor, removes the
+    /// element, writes the modified container back through the setter, and returns
+    /// the removed value (or the container's `is default(...)` for an absent key).
+    pub(super) fn builtin_index_delete_method_lvalue(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 4 {
+            return Err(RuntimeError::new(
+                "__mutsu_index_delete_method_lvalue expects target, method, index, var_name",
+            ));
+        }
+        let target = args[0].clone();
+        let method = args[1].to_string_value();
+        let index = args[2].clone();
+        let var_name = args[3].to_string_value();
+
+        let current = self.call_method_with_values(target.clone(), &method, Vec::new())?;
+        let current = match &current {
+            Value::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            _ => current,
+        };
+        // The default returned for an absent key: the container's own
+        // `is default(...)`, else the attribute's declared default, else Nil.
+        let absent_default = self.container_default(&current).cloned().or_else(|| {
+            if let Value::Instance { class_name, .. } = &target {
+                self.class_attribute_default(&class_name.resolve(), &method)
+            } else {
+                None
+            }
+        });
+
+        // Save the pre-delete Arc identity so the modified container can be
+        // propagated to every instance/binding sharing it (mirrors the assign path).
+        let old_array_arc = match &current {
+            Value::Array(arc, ..) => Some(arc.clone()),
+            _ => None,
+        };
+        let old_hash_arc = match &current {
+            Value::Hash(arc) => Some(arc.clone()),
+            _ => None,
+        };
+
+        let (removed, updated) = match &current {
+            Value::Hash(h) => {
+                let key = index.to_string_value();
+                let mut new_hash = (**h).clone();
+                let removed = new_hash
+                    .remove(&key)
+                    .unwrap_or_else(|| absent_default.clone().unwrap_or(Value::Nil));
+                (removed, Value::Hash(std::sync::Arc::new(new_hash)))
+            }
+            Value::Array(items, kind) => {
+                let idx = crate::runtime::to_int(&index);
+                let mut new_items = (**items).clone();
+                let removed = if idx >= 0 && (idx as usize) < new_items.len() {
+                    let i = idx as usize;
+                    let r = new_items[i].clone();
+                    // Trailing element shrinks; an interior delete leaves a hole.
+                    if i + 1 == new_items.len() {
+                        new_items.truncate(i);
+                    } else {
+                        new_items[i] = Value::Nil;
+                    }
+                    r
+                } else {
+                    absent_default.clone().unwrap_or(Value::Nil)
+                };
+                (removed, Value::Array(std::sync::Arc::new(new_items), *kind))
+            }
+            _ => return Ok(absent_default.unwrap_or(Value::Nil)),
+        };
+
+        if let Some(old_arc) = &old_array_arc {
+            self.propagate_shared_array_in_instances(old_arc, &updated);
+            self.overwrite_array_bindings_by_identity(old_arc, updated.clone());
+        }
+        if let Some(old_arc) = &old_hash_arc {
+            self.propagate_shared_hash_in_instances(old_arc, &updated);
+            self.overwrite_hash_bindings_by_identity(old_arc, updated.clone());
+        }
+
+        self.assign_method_lvalue_with_values(
+            if var_name.is_empty() {
+                None
+            } else {
+                Some(var_name.as_str())
+            },
+            target,
+            &method,
+            Vec::new(),
+            updated,
+        )?;
+        Ok(removed)
     }
 
     /// Handle nested subscript assignment on a typed attribute accessor.
