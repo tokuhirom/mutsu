@@ -603,6 +603,33 @@ fn parse_variable_traits<'a>(
         let (r, _) = ws1(after_of)?;
         let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
         let (r, _) = ws(r)?;
+        // A postfix `of Type` that follows an explicit prefix type
+        // (`my Int $a of Str`) declares the type twice, which is
+        // X::Syntax::Variable::ConflictingTypes.
+        if let Some(outer) = type_constraint.as_ref() {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "outer".to_string(),
+                crate::value::Value::Package(crate::symbol::Symbol::intern(outer)),
+            );
+            attrs.insert(
+                "inner".to_string(),
+                crate::value::Value::Package(crate::symbol::Symbol::intern(&tc)),
+            );
+            let msg = format!(
+                "{} not allowed here; variable list already declared with type {}",
+                tc, outer
+            );
+            attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Syntax::Variable::ConflictingTypes"),
+                attrs,
+            );
+            return Err(PError::fatal_with_exception(
+                format!("X::Syntax::Variable::ConflictingTypes: {}", msg),
+                Box::new(ex),
+            ));
+        }
         *type_constraint = Some(tc);
         rest = r;
     }

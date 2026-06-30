@@ -275,6 +275,25 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
             type_constraint,
         );
     }
+    // A sigilless term in a grouped declaration (`my (\a)`, `my (\a, \b)`)
+    // has no implicit default and so requires an initializer, exactly like a
+    // bare `my \a`. Without one, rakudo rejects it at compile time with
+    // X::Syntax::Term::MissingInitializer.
+    if vars.iter().any(|v| v.sigilless) {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            crate::value::Value::str("Term definition requires an initializer".to_string()),
+        );
+        let ex = crate::value::Value::make_instance(
+            crate::symbol::Symbol::intern("X::Syntax::Term::MissingInitializer"),
+            attrs,
+        );
+        return Err(PError::fatal_with_exception(
+            "Term definition requires an initializer".to_string(),
+            Box::new(ex),
+        ));
+    }
     // No assignment
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');

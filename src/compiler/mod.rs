@@ -848,6 +848,10 @@ impl Compiler {
             return (self.code, self.compiled_functions);
         }
         self.hoist_sub_decls(stmts, false);
+        // Register `our` subs declared inside nested blocks early so they are
+        // reachable via `OUR::` before their declaring block runs (Raku
+        // installs `our sub`s into the package at compile time).
+        self.hoist_nested_our_subs(stmts);
         // If the top-level body contains a CATCH or CONTROL block, wrap in
         // an implicit try so the phaser can observe exceptions / control
         // signals from the surrounding statements.

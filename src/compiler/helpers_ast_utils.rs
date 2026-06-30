@@ -250,6 +250,46 @@ impl Compiler {
         Some((name, chain))
     }
 
+    /// Register `our`-scoped subs declared inside *nested* blocks early, so
+    /// they are reachable via the `OUR::` pseudo-package before (or regardless
+    /// of whether) the declaring block has executed. Raku installs `our sub`s
+    /// into the package at compile time, so `&OUR::foo()` resolves even when
+    /// called from an enclosing or sibling scope before the block that
+    /// textually contains the declaration has run.
+    ///
+    /// Only plain `Block`/`SyntheticBlock` nesting is traversed: an `our sub`
+    /// inside a routine/class body closes over that body's frame, so hoisting
+    /// it to the unit level would be wrong. Direct (depth-0) children are left
+    /// to `hoist_sub_decls`, which already registers them.
+    pub(super) fn hoist_nested_our_subs(&mut self, stmts: &[Stmt]) {
+        fn collect(stmts: &[Stmt], depth: usize, out: &mut Vec<Stmt>) {
+            for stmt in stmts {
+                match stmt {
+                    Stmt::SubDecl { custom_traits, .. }
+                        if depth > 0 && custom_traits.iter().any(|(t, _)| t == "__our_scoped") =>
+                    {
+                        out.push(stmt.clone());
+                    }
+                    Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                        collect(body, depth + 1, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut nested = Vec::new();
+        collect(stmts, 0, &mut nested);
+        for mut hoisted in nested {
+            if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
+                custom_traits.retain(|(t, _)| {
+                    t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
+                });
+            }
+            let idx = self.code.add_stmt(hoisted);
+            self.code.emit(OpCode::RegisterSub(idx));
+        }
+    }
+
     /// Hoist sub declarations: emit RegisterSub for all SubDecl statements
     /// before executing the rest of the block, so that `&name` references
     /// are available before the sub declaration appears in source order.
