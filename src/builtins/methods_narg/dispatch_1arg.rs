@@ -818,7 +818,12 @@ pub(crate) fn native_method_1arg(
                 return Some(Err(err));
             }
             let n = n as usize;
-            let items = runtime::value_to_list(target);
+            // A Blob/Buf batches its byte *values* (it is iterated as a list of
+            // its bytes), not as a single opaque element.
+            let items = match crate::builtins::methods_narg::buf::buf_get_bytes(target) {
+                Some(bytes) => bytes.into_iter().map(|b| Value::Int(b as i64)).collect(),
+                None => runtime::value_to_list(target),
+            };
             let batches: Vec<Value> = items
                 .chunks(n)
                 .map(|chunk| Value::array(chunk.to_vec()))

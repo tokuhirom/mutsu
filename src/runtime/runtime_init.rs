@@ -712,6 +712,7 @@ impl Interpreter {
                     "readchars",
                     "read",
                     "next-handle",
+                    "open",
                     "close",
                     "DESTROY",
                     "eof",

@@ -400,6 +400,22 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, Stmt::ReactDone);
     }
 
+    // A parenthesised call (`foo(...)`) whose result is immediately followed by a
+    // postfix method chain or subscript (`foo(...).bar`, `foo(...)[0]`) is an
+    // *expression*, not a statement-level call: parsing it here would drop the
+    // postfix (e.g. `make-temp-file(:content($_)).open` losing `.open`). Bail so
+    // the expression-statement parser handles the whole postfix chain.
+    let is_paren_call = !had_ws && rest.starts_with('(');
+    if is_paren_call {
+        let after_call = skip_balanced_parens(rest);
+        let after_call = after_call.trim_start();
+        if (after_call.starts_with('.') && !after_call.starts_with(".."))
+            || after_call.starts_with('[')
+        {
+            return Err(PError::expected("known function call"));
+        }
+    }
+
     // In Raku, `foo(args)` (no space) = paren call, but `foo (expr)` (space) = listop call.
     // When there was whitespace before `(`, treat `(` as expression grouping, not call parens.
     let (rest, args) = if had_ws {

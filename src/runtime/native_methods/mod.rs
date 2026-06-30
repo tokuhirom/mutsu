@@ -290,7 +290,9 @@ impl Interpreter {
         };
         match dispatch_class.as_deref().unwrap_or(class_name) {
             "IO::Handle" => self.native_io_handle_mut(attributes, method, args),
-            "IO::CatHandle" => self.native_io_cathandle_mut(attributes, method, args),
+            "IO::CatHandle" => {
+                self.native_io_cathandle_mut(Symbol::intern(class_name), attributes, method, args)
+            }
             "Proc" => self.native_proc_mut(attributes, method, args),
             "Promise" => self.native_promise_mut(attributes, method, args),
             "Channel" => self.native_channel_mut(attributes, method, args),
@@ -400,8 +402,12 @@ impl Interpreter {
                 // is only reached for introspection paths, so run the mutable impl
                 // and drop the writeback (callers needing persistence route through
                 // the mutable path in methods_instance_ops).
-                let (result, _updated) =
-                    self.native_io_cathandle_mut(attributes.clone(), method, args)?;
+                let (result, _updated) = self.native_io_cathandle_mut(
+                    Symbol::intern(class_name),
+                    attributes.clone(),
+                    method,
+                    args,
+                )?;
                 Ok(result)
             }
             "IO::Special" => self.native_io_special(attributes, method, args),
