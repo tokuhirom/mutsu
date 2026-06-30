@@ -405,7 +405,10 @@ materialize せず Seq のまま保持し（`.WHAT === Seq`）、`+@foo` は Lis
 
 - `S02-types/capture.t`
 - `S02-names-vars/variables-and-packages.t`
-- `S04-blocks-and-statements/temp.t`
+- ~~`S04-blocks-and-statements/temp.t`~~ — DONE (whitelisted): `temp`
+  restoration on sub/recursive exit, `++temp`, the NYI `TEMP {}` phaser,
+  multi-level indexed lvalues (`temp $s[1]<k>[1] = v`, via whole-base-container
+  save), and `temp $*undeclared` -> `X::Dynamic::NotFound`.
 - `S14-traits/attributes.t`
 - `S12-subset/subtypes.t` の一部
 - `S02-types/whatever.t` のうち container preservation 系

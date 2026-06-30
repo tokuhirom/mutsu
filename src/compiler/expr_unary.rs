@@ -33,7 +33,15 @@ impl Compiler {
                 self.code.emit(OpCode::BoolCoerce);
             }
             TokenKind::PlusPlus => {
-                if let Expr::Var(name) = expr {
+                if let Some(var) = Self::temp_call_var(expr) {
+                    // `++temp $c`: `temp $c` temporizes `$c` (saved for restoration
+                    // at scope exit) and yields it as an lvalue, so the `++`
+                    // increments the live variable. Emit the temp save, then the
+                    // pre-increment on the underlying variable.
+                    self.emit_temp_save(&var);
+                    let name_idx = self.code.add_constant(Value::str(var));
+                    self.code.emit(OpCode::PreIncrement(name_idx));
+                } else if let Expr::Var(name) = expr {
                     if name.starts_with('!') && name.len() > 1 {
                         self.alloc_local(name);
                     }
@@ -71,7 +79,13 @@ impl Compiler {
                 }
             }
             TokenKind::MinusMinus => {
-                if let Expr::Var(name) = expr {
+                if let Some(var) = Self::temp_call_var(expr) {
+                    // `--temp $c`: temporize `$c` then pre-decrement it (see the
+                    // `++temp` case above).
+                    self.emit_temp_save(&var);
+                    let name_idx = self.code.add_constant(Value::str(var));
+                    self.code.emit(OpCode::PreDecrement(name_idx));
+                } else if let Expr::Var(name) = expr {
                     if name.starts_with('!') && name.len() > 1 {
                         self.alloc_local(name);
                     }
@@ -135,5 +149,30 @@ impl Compiler {
                 });
             }
         }
+    }
+
+    /// If `expr` is `temp $var` parsed as a `Call("temp", [Var])` (i.e. `temp`
+    /// used as an lvalue expression rather than a statement, such as the operand
+    /// of `++`/`--`), return the underlying simple variable name.
+    fn temp_call_var(expr: &Expr) -> Option<String> {
+        if let Expr::Call { name, args } = expr
+            && name.resolve() == "temp"
+            && args.len() == 1
+            && let Expr::Var(var) = &args[0]
+        {
+            return Some(var.clone());
+        }
+        None
+    }
+
+    /// Emit a `temp` save for the named scalar variable: its current value is
+    /// pushed onto the let-saves stack and restored at the enclosing scope's exit.
+    fn emit_temp_save(&mut self, var: &str) {
+        let name_idx = self.code.add_constant(Value::str(var.to_string()));
+        self.code.emit(OpCode::LetSave {
+            name_idx,
+            index_mode: false,
+            is_temp: true,
+        });
     }
 }

@@ -177,6 +177,21 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
         (r, PhaserKind::Quit)
     } else if let Some(r) = keyword("CLOSE", input) {
         (r, PhaserKind::Close)
+    } else if let Some(r) = keyword("TEMP", input) {
+        // `TEMP { ... }` is the temporization phaser. It is NYI in Rakudo: the
+        // block is parsed but its body is never executed (and no restoration is
+        // performed), so `TEMP {{ $x = $y }}` is effectively a no-op. Match that
+        // behavior — consume the block and emit nothing — rather than running the
+        // block inline (which `BareWord("TEMP")` + a bare `{ ... }` block would
+        // do, wrongly executing the body).
+        let (r, _) = ws(r)?;
+        let (r, _body) = if r.starts_with('{') {
+            block(r)?
+        } else {
+            let (r, s) = statement(r)?;
+            (r, vec![s])
+        };
+        return parse_statement_modifier(r, Stmt::Block(Vec::new()));
     } else {
         return Err(PError::expected("phaser keyword"));
     };

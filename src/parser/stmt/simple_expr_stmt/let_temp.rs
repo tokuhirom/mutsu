@@ -128,6 +128,20 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     )
 }
 
+/// Walk an indexed lvalue chain down to its base variable and return the env
+/// key used by `LetSave` for that variable (scalars drop their `$` sigil;
+/// arrays/hashes keep their `@`/`%`). Returns `None` for non-variable bases
+/// (e.g. a method call), which the multi-level `temp` lowering cannot save.
+fn lvalue_base_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Var(n) => Some(n.clone()),
+        Expr::ArrayVar(n) => Some(format!("@{}", n)),
+        Expr::HashVar(n) => Some(format!("%{}", n)),
+        Expr::Index { target, .. } => lvalue_base_name(target),
+        _ => None,
+    }
+}
+
 /// Parse a variable from `undefine(...)` or `undefine $var` inside a `temp` context.
 fn parse_temp_undefine_var(input: &str) -> Result<(&str, String), PError> {
     if let Some(inner) = input.strip_prefix('(') {
@@ -162,8 +176,32 @@ fn parse_temp_undefine_var(input: &str) -> Result<(&str, String), PError> {
 pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("temp", input).ok_or_else(|| PError::expected("temp statement"))?;
     let (rest, _) = ws1(rest)?;
-    // temp on lvalue method call: `temp $obj.method = value`
     if let Ok((expr_rest, expr)) = expression(rest) {
+        // temp on a *multi-level* indexed lvalue: `temp $s[1]<k>[1] = 23`.
+        // `expression` parses the whole `lvalue = value` into a nested
+        // `IndexAssign` (its `target` is itself an `Index`). The single-level
+        // `temp @a[i] = v` / `temp %h<k> = v` forms below cannot represent this
+        // chain, so handle it here: temporize the *whole* base container (saved
+        // and restored at scope exit, mirroring the single-level whole-container
+        // save) and then run the full nested assignment. The two run inline in
+        // the current scope via a `SyntheticBlock` (no fresh let-saves mark).
+        if let Expr::IndexAssign { target, .. } = &expr
+            && matches!(target.as_ref(), Expr::Index { .. })
+            && let Some(save_name) = lvalue_base_name(target)
+        {
+            let save_stmt = Stmt::Let {
+                name: save_name,
+                index: None,
+                value: None,
+                is_temp: true,
+                undefine_first: false,
+            };
+            return parse_statement_modifier(
+                expr_rest,
+                Stmt::SyntheticBlock(vec![save_stmt, Stmt::Expr(expr)]),
+            );
+        }
+        // temp on lvalue method call: `temp $obj.method = value`
         let (expr_rest_ws, _) = ws(expr_rest)?;
         if expr_rest_ws.starts_with('=')
             && !expr_rest_ws.starts_with("==")
