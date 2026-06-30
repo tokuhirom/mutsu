@@ -486,7 +486,8 @@ pub(crate) fn native_method_1arg(
             if let Value::Instance { class_name, .. } = target
                 && (class_name == "Supply"
                     || class_name == "IO::Handle"
-                    || class_name == "IO::Pipe")
+                    || class_name == "IO::Pipe"
+                    || class_name == "IO::CatHandle")
             {
                 return None;
             }
@@ -504,7 +505,8 @@ pub(crate) fn native_method_1arg(
                 && (class_name == "Supply"
                     || class_name == "IO::Handle"
                     || class_name == "IO::Path"
-                    || class_name == "IO::Pipe")
+                    || class_name == "IO::Pipe"
+                    || class_name == "IO::CatHandle")
             {
                 return None;
             }

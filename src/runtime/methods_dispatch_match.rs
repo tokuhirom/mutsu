@@ -179,7 +179,7 @@ impl Interpreter {
                     Some(self.dispatch_supply_transform(target, "comb", &args))
                 } else if matches!(&target, Value::Instance { class_name, .. }
                     if matches!(class_name.resolve().as_str(),
-                        "IO::Handle" | "IO::Path" | "IO::Pipe"))
+                        "IO::Handle" | "IO::Path" | "IO::Pipe" | "IO::CatHandle"))
                 {
                     // Defer to native IO dispatch so file content is read first.
                     None
@@ -198,6 +198,14 @@ impl Interpreter {
                                 if k.to_string_value() == "CWD" || k.to_string_value() == "SPEC")
                 }) =>
             {
+                // IO handle objects have their own `.IO` (returning the path of
+                // the open file); never coerce them via stringification.
+                if matches!(&target, Value::Instance { class_name, .. }
+                    if matches!(class_name.resolve().as_str(),
+                        "IO::Handle" | "IO::Pipe" | "IO::CatHandle"))
+                {
+                    return None;
+                }
                 // `.IO` on an IO::Path (sub)class type object returns the type
                 // object itself, so `IO::Path::Unix === IO::Path::Unix.IO`.
                 if let Value::Package(name) = &target {
