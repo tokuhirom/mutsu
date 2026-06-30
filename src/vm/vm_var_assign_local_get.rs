@@ -25,13 +25,25 @@ impl Interpreter {
         name_idx: u32,
         ip: &mut usize,
     ) -> Result<(), RuntimeError> {
-        let val = match self.upvalues.get(index as usize) {
-            Some(Some(v)) => v.clone(),
-            // `None` entry (non-cell capture) or out-of-range (non-standard path):
-            // read the captured scalar live from env by name.
-            _ => {
-                let name = Self::const_str(code, name_idx);
-                self.get_env_with_main_alias(name).unwrap_or(Value::Nil)
+        // An `our sub` declared in a bare block reads its captured block lexical
+        // by-name with no upvalue array of its own; `self.upvalues` may still hold a
+        // STALE entry from an unrelated prior closure call, so resolve such a capture
+        // through its persisted shared cell FIRST (see `escaping_our_read`), ignoring
+        // the upvalue slot entirely. Gated on a non-empty name set so ordinary
+        // closures pay only an `is_empty` check on this hot path.
+        let val = if !self.escaping_our_lexical_names.is_empty()
+            && let Some(v) = self.escaping_our_read(Self::const_str(code, name_idx))
+        {
+            v
+        } else {
+            match self.upvalues.get(index as usize) {
+                Some(Some(v)) => v.clone(),
+                // `None` entry (non-cell capture) or out-of-range (non-standard
+                // path): read the captured scalar live from env by name.
+                _ => {
+                    let name = Self::const_str(code, name_idx);
+                    self.get_env_with_main_alias(name).unwrap_or(Value::Nil)
+                }
             }
         };
         let val = if let Value::LazyThunk(ref thunk_data) = val {

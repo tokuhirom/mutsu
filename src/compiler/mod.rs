@@ -152,6 +152,13 @@ pub(crate) struct Compiler {
     /// non-escaping (immediately-invoked) classification, so call arguments and
     /// control-construct blocks never over-box (the #2746 perf guard).
     escaping_position: bool,
+    /// True while compiling the body of an `our`-scoped named sub. An `our sub` is
+    /// installed into the package registry and stays callable after its declaring
+    /// block exits, so the lexicals it reads/writes must be boxed into shared cells
+    /// and persisted (see `CompiledCode::escaping_our_sub_captures`). Read in
+    /// `compile_sub_body_with_deprecation` when contributing the sub's captures to
+    /// the enclosing scope.
+    pub(crate) compiling_our_sub: bool,
     /// True only for the outermost compilation unit (the mainline / a top-level
     /// EVAL). Used to detect placeholder variables (`$^x`, `@_`, ...) that appear
     /// outside any sub or block -> X::Placeholder::Mainline.
@@ -198,6 +205,7 @@ impl Compiler {
             pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
             escaping_position: false,
+            compiling_our_sub: false,
             is_mainline: false,
             suppress_pair_capture: false,
             synthetic_block_body: false,

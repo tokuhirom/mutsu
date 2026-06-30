@@ -2572,6 +2572,11 @@ impl Compiler {
                         })
                     }
                 });
+                // An `our sub` outlives its declaring block via the package
+                // registry; flag the body compile so its read/write lexical
+                // captures are boxed + persisted (escaping_our_sub_captures).
+                let prev_our = self.compiling_our_sub;
+                self.compiling_our_sub = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
                 self.compile_sub_body_with_deprecation(
                     &name_str,
                     params,
@@ -2584,6 +2589,7 @@ impl Compiler {
                     *is_raw,
                     deprecated_info.clone(),
                 );
+                self.compiling_our_sub = prev_our;
                 for (alt_params, alt_param_defs) in signature_alternates {
                     self.compile_sub_body_with_deprecation(
                         &name_str,

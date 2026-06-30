@@ -127,6 +127,48 @@ impl Interpreter {
         &mut self.env
     }
 
+    /// Recursively collect every `needs_cell_escaping_our_sub` name from `code` and
+    /// its nested closure codes into `escaping_our_lexical_names`. Called once at
+    /// program start so the set is populated before any block runs.
+    pub(crate) fn collect_escaping_our_lexical_names(
+        &mut self,
+        code: &crate::opcode::CompiledCode,
+    ) {
+        for sym in &code.needs_cell_escaping_our_sub {
+            self.escaping_our_lexical_names.insert(sym.resolve());
+        }
+        for nested in &code.closure_compiled_codes {
+            self.collect_escaping_our_lexical_names(nested);
+        }
+    }
+
+    /// Resolve a free-variable read of a block lexical captured by an `our`-scoped
+    /// named sub (`escaping_our_lexical_names`). Returns:
+    ///   * `Some(cell)` — the persisted shared cell, once the declaring block has
+    ///     run and recorded it (`escaped_our_lexical_cells`).
+    ///   * `Some(Nil)`  — when the name IS such a capture but no cell is recorded
+    ///     yet (a call BEFORE the block runs). This deliberately SHORT-CIRCUITS the
+    ///     normal env lookup so an unrelated leaked `env` value from a sibling block
+    ///     cannot shadow the (still-undefined) captured lexical.
+    ///   * `None`       — not an escaping-our capture, or read outside any routine
+    ///     (a bare top-level reference must not see the closure's private lexical):
+    ///     the caller resolves normally.
+    pub(crate) fn escaping_our_read(&self, name: &str) -> Option<Value> {
+        if self.escaping_our_lexical_names.is_empty()
+            || self.routine_stack.is_empty()
+            || name.contains("::")
+            || !self.escaping_our_lexical_names.contains(name)
+        {
+            return None;
+        }
+        Some(
+            self.escaped_our_lexical_cells
+                .get(name)
+                .cloned()
+                .unwrap_or(Value::Nil),
+        )
+    }
+
     /// Get a cloned copy of the persisted closure env for a given closure id.
     pub(crate) fn get_closure_env_override(&self, id: u64) -> Option<crate::env::Env> {
         self.closure_env_overrides.get(&id).cloned()

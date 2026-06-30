@@ -243,6 +243,27 @@ impl Interpreter {
                     })?;
                 }
             }
+            // An `our sub` declared in a bare block closes over the block's `my`
+            // lexicals, but a registry routine has no per-sub closure env and the
+            // block scope is dropped on exit. When this `RegisterSub` runs in SOURCE
+            // ORDER (after the `my $a = ...` that the sub captures — `RegisterSub` is
+            // emitted both hoisted at block top AND in place), the captured local is
+            // already a boxed shared cell in `env`. Persist those cells into
+            // `escaped_our_lexical_cells` so a call made AFTER the block reads the
+            // live value. Keyed to the sub's own declaration (not the box site), so
+            // an unrelated sibling-block `my $a` cannot pollute the map; the hoisted
+            // top-of-block registration runs before the box and finds no cell, so it
+            // correctly persists nothing (a call before the block reads undefined).
+            if custom_traits.iter().any(|(t, _)| t == "__our_scoped")
+                && !self.escaping_our_lexical_names.is_empty()
+            {
+                let names: Vec<String> = self.escaping_our_lexical_names.iter().cloned().collect();
+                for name in names {
+                    if let Some(cell @ Value::ContainerRef(_)) = self.env().get(&name).cloned() {
+                        self.escaped_our_lexical_cells.insert(name, cell);
+                    }
+                }
+            }
             // Note: we intentionally do NOT push the Sub onto the stack or
             // store it in env here. The interpreter's trailing_sub_value
             // mechanism handles returning the Sub when it's the last statement

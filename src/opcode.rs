@@ -1408,6 +1408,24 @@ pub(crate) struct CompiledCode {
     /// that declares the local folds it into its own `needs_cell_named_sub`
     /// (mirrors `needs_cell_free_vars` for closures).
     pub(crate) needs_cell_named_sub_free: Vec<Symbol>,
+    /// Free-variable captures of directly-nested *`our`-scoped* named subs. Unlike
+    /// a plain `my sub`, an `our sub` is installed into the package registry and
+    /// stays callable *after* its declaring block exits, but a registry routine has
+    /// no per-sub closure env. So the lexicals it READS (not just writes) must be
+    /// boxed into a shared `ContainerRef` cell at their declaration site AND
+    /// persisted into `Interpreter::escaped_our_lexical_cells`, so a call made after
+    /// the block reads the live cell instead of `Nil`. Each entry is one our-sub's
+    /// full free-var set (reads ∪ writes ∪ bubbled ancestor cell-needs). Computed
+    /// into `needs_cell_escaping_our_sub` / `_free` by `compute_free_vars`.
+    pub(crate) escaping_our_sub_captures: Vec<Vec<Symbol>>,
+    /// Own locals captured (read or written) by a directly-nested `our`-scoped named
+    /// sub. The VM boxes these at their declaration site and persists the cell so the
+    /// escaped sub resolves them after the block exits. See `escaping_our_sub_captures`.
+    pub(crate) needs_cell_escaping_our_sub: Vec<Symbol>,
+    /// Escaping-our-sub captures of a NON-own (ancestor) lexical, bubbled up so the
+    /// ancestor that declares the local folds it into its own
+    /// `needs_cell_escaping_our_sub` (mirrors `needs_cell_named_sub_free`).
+    pub(crate) needs_cell_escaping_our_sub_free: Vec<Symbol>,
     /// Own locals that are BOTH captured by a nested closure AND mutated after
     /// their declaration (reassigned/inc-dec in this scope, or written from
     /// inside a nested closure). Such a local must be a shared container so the
@@ -1504,6 +1522,9 @@ impl CompiledCode {
             named_sub_captures: Vec::new(),
             needs_cell_named_sub: Vec::new(),
             needs_cell_named_sub_free: Vec::new(),
+            escaping_our_sub_captures: Vec::new(),
+            needs_cell_escaping_our_sub: Vec::new(),
+            needs_cell_escaping_our_sub_free: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
             needs_cell_free_vars: Vec::new(),
@@ -2005,6 +2026,19 @@ impl CompiledCode {
                 }
             }
         }
+        // Escaping-our-sub cell requirements bubbled up from nested scopes (an
+        // `our sub` declared inside a nested block whose captured lexical we own).
+        let mut nceos: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        let mut nceos_free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        for nested in &self.closure_compiled_codes {
+            for sym in &nested.needs_cell_escaping_our_sub_free {
+                if sym.with_str(|s| own.contains(s)) {
+                    nceos.insert(*sym);
+                } else {
+                    nceos_free.insert(*sym);
+                }
+            }
+        }
         // Named-sub decl-site boxing (kept entirely separate from the closure
         // analysis above): a local that a directly-nested named sub WRITES must be
         // a shared cell so the sub's by-name env write and the owner's slot read
@@ -2034,6 +2068,38 @@ impl CompiledCode {
         }
         self.needs_cell_named_sub = ncns.into_iter().collect();
         self.needs_cell_named_sub_free = ncns_free.into_iter().collect();
+        // Escaping-our-sub decl-site boxing: a local that a directly-nested
+        // `our sub` READS or WRITES must be boxed into a shared cell AND persisted
+        // (the registry routine outlives the block, with no closure env), so a call
+        // after the block reads the live cell. Both reads and writes count here —
+        // unlike `needs_cell_named_sub` (writes only), because a read-only capture
+        // would otherwise resolve to `Nil` once the block scope is gone.
+        // EXCLUDE `our`-declared vars: an `our sub` that reads an `our $msg` in the
+        // same package block resolves it through the package/our store (handled by
+        // the existing `GetGlobal` fallbacks), NOT the escaping-my-lexical cell. The
+        // captured name maps to a local slot that is also recorded in `our_locals`.
+        let our_slots: std::collections::HashSet<usize> =
+            self.our_locals.iter().map(|(slot, _)| *slot).collect();
+        for syms in &self.escaping_our_sub_captures {
+            for sym in syms {
+                let is_our_local = sym.with_str(|s| {
+                    self.locals
+                        .iter()
+                        .position(|l| l == s)
+                        .is_some_and(|slot| our_slots.contains(&slot))
+                });
+                if is_our_local {
+                    continue;
+                }
+                if sym.with_str(|s| own.contains(s)) {
+                    nceos.insert(*sym);
+                } else {
+                    nceos_free.insert(*sym);
+                }
+            }
+        }
+        self.needs_cell_escaping_our_sub = nceos.into_iter().collect();
+        self.needs_cell_escaping_our_sub_free = nceos_free.into_iter().collect();
         self.free_var_syms = free.into_iter().collect();
         self.free_var_writes = free_writes.into_iter().collect();
         self.free_var_container_writes = free_container_writes.into_iter().collect();
