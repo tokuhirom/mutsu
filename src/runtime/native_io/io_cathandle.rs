@@ -27,7 +27,7 @@ fn val_int(v: &Value) -> Option<i64> {
 impl Interpreter {
     /// Build a fresh `IO::CatHandle` instance from positional source values and
     /// `:chomp` / `:nl-in` / `:encoding` named args (the `.new` constructor).
-    pub(crate) fn build_io_cathandle(&mut self, args: &[Value]) -> Value {
+    pub(crate) fn build_io_cathandle(&mut self, class_name: Symbol, args: &[Value]) -> Value {
         let mut sources: Vec<Value> = Vec::new();
         let mut chomp = Value::Bool(true);
         let mut nl_in = Value::array(vec![
@@ -36,6 +36,7 @@ impl Interpreter {
         ]);
         let mut encoding = Value::str("utf8".to_string());
         let mut on_switch = Value::Nil;
+        let mut bin = false;
         for arg in args {
             match arg {
                 Value::Pair(k, v) => match k.as_str() {
@@ -43,6 +44,7 @@ impl Interpreter {
                     "nl-in" => nl_in = (**v).clone(),
                     "encoding" | "enc" => encoding = (**v).clone(),
                     "on-switch" => on_switch = (**v).clone(),
+                    "bin" => bin = v.truthy(),
                     _ => {}
                 },
                 // A list/array/Seq argument is flattened into the source
@@ -68,10 +70,44 @@ impl Interpreter {
         attrs.insert("nl-in".to_string(), nl_in);
         attrs.insert("encoding".to_string(), encoding);
         attrs.insert("closed".to_string(), Value::Bool(false));
+        attrs.insert("bin".to_string(), Value::Bool(bin));
         attrs.insert("on-switch".to_string(), on_switch);
         attrs.insert("path".to_string(), Value::Nil);
         attrs.insert("nl-out".to_string(), Value::str("\n".to_string()));
-        Value::make_instance(Symbol::intern("IO::CatHandle"), attrs)
+        // Raku's `IO::CatHandle.new` immediately opens the first source handle
+        // (via `.open` -> `.next-handle`), firing the `on-switch` callback once
+        // for that initial handle. Reproduce that eager open so `.next-handle`,
+        // `.on-switch` counting and `.opened` match rakudo.
+        let _ = self.cat_next_handle(&mut attrs);
+        Value::make_instance(class_name, attrs)
+    }
+
+    /// Invoke the `on-switch` callback for a handle transition, passing the new
+    /// and old handles. The number of arguments forwarded follows the callable's
+    /// `.count` (rakudo: `>=2` -> `($new, $old)`, `1` -> `($new)`, else `()`).
+    fn cat_fire_on_switch(&mut self, on_switch: &Value, new: Value, old: Value) {
+        if !matches!(
+            on_switch,
+            Value::Sub(_) | Value::Routine { .. } | Value::WeakSub(_)
+        ) {
+            return;
+        }
+        let count = self
+            .call_method_with_values(on_switch.clone(), "count", vec![])
+            .ok();
+        let n = match count {
+            Some(Value::Int(i)) => i,
+            Some(Value::Num(f)) if f.is_infinite() => i64::MAX,
+            _ => 2,
+        };
+        let call_args = if n >= 2 {
+            vec![new, old]
+        } else if n == 1 {
+            vec![new]
+        } else {
+            vec![]
+        };
+        let _ = self.eval_call_on_value(on_switch.clone(), call_args);
     }
 
     /// Open one source value into a read handle, applying the cat's `chomp` /
@@ -165,12 +201,16 @@ impl Interpreter {
     /// Close the active handle (if any) and open the next source. Returns the new
     /// active handle, or `Nil` when the sources are exhausted.
     fn cat_next_handle(&mut self, attrs: &mut HashMap<String, Value>) -> Value {
-        if let Some(active @ Value::Instance { class_name, .. }) =
-            attrs.get("active").cloned().as_ref()
-            && class_name == "IO::Handle"
-        {
-            let _ = self.close_handle_value(active);
-        }
+        // Remember the previously-active handle: it becomes the `$old` argument
+        // to `on-switch` and must be closed before we open the next source.
+        let old = match attrs.get("active").cloned() {
+            Some(active) if matches!(&active, Value::Instance { class_name, .. } if class_name == "IO::Handle") =>
+            {
+                let _ = self.close_handle_value(&active);
+                active
+            }
+            _ => Value::Nil,
+        };
         let on_switch = attrs.get("on-switch").cloned().unwrap_or(Value::Nil);
         loop {
             let pos = attrs.get("pos").and_then(val_int).unwrap_or(0) as usize;
@@ -181,6 +221,9 @@ impl Interpreter {
             if pos >= sources.len() {
                 attrs.insert("active".to_string(), Value::Nil);
                 attrs.insert("path".to_string(), Value::Nil);
+                // Exhaustion still fires on-switch with a Nil active handle,
+                // matching rakudo (so the count is `handles + 1`).
+                self.cat_fire_on_switch(&on_switch, Value::Nil, old);
                 return Value::Nil;
             }
             attrs.insert("pos".to_string(), Value::Int((pos + 1) as i64));
@@ -189,19 +232,24 @@ impl Interpreter {
                 // not the opened handle's absolutized path: raku's
                 // `is-deeply $cat.path, @files.map(*.IO)[$n]` compares against
                 // the source's own IO::Path (which preserves the relative path
-                // string as written), so derive it from the source value.
-                let path_val = self
-                    .call_method_with_values(sources[pos].clone(), "IO", vec![])
-                    .unwrap_or(Value::Nil);
+                // string *and* its `CWD`), so derive it from the source value.
+                // An IO::Path's `.IO` is itself, so clone it directly to keep
+                // the original `CWD` (routing through method dispatch rebuilds
+                // the path against the process cwd and loses it).
+                let path_val = match &sources[pos] {
+                    p @ Value::Instance { class_name, .. }
+                        if class_name == "IO::Path"
+                            || class_name.resolve().starts_with("IO::Path::") =>
+                    {
+                        p.clone()
+                    }
+                    _ => self
+                        .call_method_with_values(sources[pos].clone(), "IO", vec![])
+                        .unwrap_or(Value::Nil),
+                };
                 attrs.insert("active".to_string(), handle.clone());
                 attrs.insert("path".to_string(), path_val);
-                if matches!(
-                    on_switch,
-                    Value::Sub(_) | Value::Routine { .. } | Value::WeakSub(_)
-                ) {
-                    let _ = self
-                        .eval_call_on_value(on_switch.clone(), vec![handle.clone(), Value::Nil]);
-                }
+                self.cat_fire_on_switch(&on_switch, handle.clone(), old);
                 return handle;
             }
         }
@@ -266,6 +314,26 @@ impl Interpreter {
     fn cat_slurp(&mut self, attrs: &mut HashMap<String, Value>) -> Result<Value, RuntimeError> {
         if attrs.get("closed").is_some_and(|v| v.truthy()) {
             return Ok(Value::Nil);
+        }
+        // A binary-mode cat slurps raw bytes into a `Buf[uint8]`.
+        if attrs.get("bin").is_some_and(|v| v.truthy()) {
+            let mut bytes: Vec<u8> = Vec::new();
+            loop {
+                let active = self.cat_ensure_active(attrs);
+                if matches!(active, Value::Nil) {
+                    break;
+                }
+                let chunk = self.native_io_handle_method(&active, "slurp", vec![])?;
+                if let Some(items) = Self::buf_as_byte_items(&chunk) {
+                    bytes.extend(items.iter().filter_map(val_int).map(|b| b as u8));
+                } else {
+                    bytes.extend(chunk.to_string_value().into_bytes());
+                }
+                if matches!(self.cat_next_handle(attrs), Value::Nil) {
+                    break;
+                }
+            }
+            return Ok(Self::make_buf(bytes));
         }
         let mut out = String::new();
         loop {
@@ -354,12 +422,36 @@ impl Interpreter {
     /// attributes back into the receiver's shared cell.
     pub(crate) fn native_io_cathandle_mut(
         &mut self,
+        class_name: Symbol,
         attributes: HashMap<String, Value>,
         method: &str,
         args: Vec<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         let mut attrs = attributes;
+        // Character-oriented reads are illegal on a binary-mode cat handle.
+        if attrs.get("bin").is_some_and(|v| v.truthy())
+            && matches!(
+                method,
+                "get" | "getc" | "lines" | "words" | "comb" | "split" | "readchars"
+            )
+        {
+            let mut ex_attrs = HashMap::new();
+            let msg = format!("Cannot do '.{method}' on a handle in binary mode");
+            ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+            ex_attrs.insert("trying".to_string(), Value::str(method.to_string()));
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(Value::make_instance(
+                Symbol::intern("X::IO::BinaryMode"),
+                ex_attrs,
+            )));
+            return Err(err);
+        }
         let result = match method {
+            "open" => {
+                // `.open` is a no-op that returns the invocant: `new` already
+                // opened the first source handle, so just hand back `self`.
+                Value::make_instance(class_name, attrs.clone())
+            }
             "get" => self.cat_get(&mut attrs)?,
             "getc" => self.cat_getc(&mut attrs)?,
             "lines" => self.cat_lines(&mut attrs, &args)?,
@@ -636,10 +728,57 @@ impl Interpreter {
                 }
             }
             "Supply" => {
-                return Err(RuntimeError::new(format!(
-                    "No native mutable method '{}' on 'IO::CatHandle'",
-                    method
-                )));
+                // Emit the remaining content of the cat as a (non-live) Supply.
+                // `:size` chunks the *concatenated* content across all handles
+                // (default: one chunk). Binary cats emit `buf8` chunks; text
+                // cats emit `Str` chunks of `:size` characters.
+                let size = args
+                    .iter()
+                    .find_map(|a| match a {
+                        Value::Pair(name, val) if name == "size" => {
+                            val_int(val).map(|i| i as usize)
+                        }
+                        _ => None,
+                    })
+                    .filter(|&s| s > 0);
+                let is_bin = attrs.get("bin").is_some_and(|v| v.truthy());
+                let mut values: Vec<Value> = Vec::new();
+                if is_bin {
+                    let mut bytes: Vec<u8> = Vec::new();
+                    loop {
+                        let active = self.cat_ensure_active(&mut attrs);
+                        if matches!(active, Value::Nil) {
+                            break;
+                        }
+                        let chunk = self.native_io_handle_method(&active, "slurp", vec![])?;
+                        if let Some(items) = Self::buf_as_byte_items(&chunk) {
+                            bytes.extend(items.iter().filter_map(val_int).map(|b| b as u8));
+                        } else {
+                            bytes.extend(chunk.to_string_value().into_bytes());
+                        }
+                        if matches!(self.cat_next_handle(&mut attrs), Value::Nil) {
+                            break;
+                        }
+                    }
+                    let step = size.unwrap_or(bytes.len().max(1));
+                    for chunk in bytes.chunks(step) {
+                        values.push(Self::make_buf(chunk.to_vec()));
+                    }
+                } else {
+                    let text = match self.cat_slurp(&mut attrs)? {
+                        Value::Nil => String::new(),
+                        v => v.to_string_value(),
+                    };
+                    let chars: Vec<char> = text.chars().collect();
+                    let step = size.unwrap_or(chars.len().max(1));
+                    for chunk in chars.chunks(step) {
+                        values.push(Value::str(chunk.iter().collect::<String>()));
+                    }
+                }
+                let mut supply_attrs = HashMap::new();
+                supply_attrs.insert("live".to_string(), Value::Bool(false));
+                supply_attrs.insert("values".to_string(), Value::array(values));
+                Value::make_instance(Symbol::intern("Supply"), supply_attrs)
             }
             _ => {
                 return Err(RuntimeError::new(format!(

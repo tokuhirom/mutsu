@@ -514,9 +514,19 @@ impl Interpreter {
                 // VM's `try_native_io_path_construct`.
                 return self.build_io_path_instance(*class_name, &cn_resolved, &args);
             }
+            // A user subclass of IO::CatHandle (e.g. `class Foo is IO::CatHandle {}`)
+            // inherits the native `.new`, returning an instance of the subclass.
+            let is_cathandle_like = base_class_name == "IO::CatHandle"
+                || self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|name| name == "IO::CatHandle");
+            if is_cathandle_like && !self.has_user_method(class_key, "new") {
+                return Ok(self.build_io_cathandle(*class_name, &args));
+            }
             match base_class_name {
                 "IO::CatHandle" if !self.has_user_method(class_key, "new") => {
-                    return Ok(self.build_io_cathandle(&args));
+                    return Ok(self.build_io_cathandle(*class_name, &args));
                 }
                 "IterationBuffer" => {
                     // Shared with the VM's native fast path.
