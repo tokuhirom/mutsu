@@ -1784,6 +1784,30 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                     Box::new(Value::Bool(true)),
                                 )));
                                 expr = Expr::Call { name, args };
+                            } else if name == "__mutsu_multidim_subscript_adverb" {
+                                // `@a[i;j;k]:k:delete` (static delete combined with a
+                                // :k/:kv/:p/:v adverb). Convert the static multidim
+                                // adverb call into its `_dyn` form with a constant-true
+                                // delete flag so the element is both read and removed
+                                // (the static form would otherwise be wrapped in a
+                                // `DELETE-KEY` method call on the already-computed key
+                                // tuple — a List — and fail). Args go from
+                                // [target, adverb, dims...] to
+                                // [var_name, adverb, true, dims...].
+                                let target = args.remove(0);
+                                let var_name_str = multidim_target_var_name(&target);
+                                let adverb_name = args.remove(0);
+                                let dims = args;
+                                let mut new_args = vec![
+                                    Expr::Literal(Value::str(var_name_str)),
+                                    adverb_name,
+                                    Expr::Literal(Value::Bool(true)),
+                                ];
+                                new_args.extend(dims);
+                                expr = Expr::Call {
+                                    name: Symbol::intern("__mutsu_multidim_subscript_adverb_dyn"),
+                                    args: new_args,
+                                };
                             } else {
                                 expr = Expr::MethodCall {
                                     target: Box::new(Expr::Call { name, args }),
@@ -1831,6 +1855,35 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                     Box::new(Value::Bool(true)),
                                 )));
                                 let delete_expr = Expr::Call { name, args };
+                                expr = Expr::Ternary {
+                                    cond: Box::new(cond),
+                                    then_expr: Box::new(delete_expr),
+                                    else_expr: Box::new(original_expr),
+                                };
+                            }
+                        } else if matches!(&original_expr, Expr::Call { name, .. } if name == "__mutsu_multidim_subscript_adverb")
+                        {
+                            // `@a[i;j;k]:k:delete($cond)` — conditional delete with a
+                            // :k/:kv/:p/:v adverb. The no-delete branch keeps the
+                            // original static adverb call; the delete branch lowers to
+                            // the by-name `_dyn` builtin (it must mutate the variable).
+                            // Without this it would wrap the computed key tuple (a
+                            // List) in `DELETE-KEY` and fail.
+                            if let Expr::Call { mut args, .. } = original_expr.clone() {
+                                let target = args.remove(0);
+                                let var_name_str = multidim_target_var_name(&target);
+                                let adverb_name = args.remove(0);
+                                let dims = args;
+                                let mut new_args = vec![
+                                    Expr::Literal(Value::str(var_name_str)),
+                                    adverb_name,
+                                    Expr::Literal(Value::Bool(true)),
+                                ];
+                                new_args.extend(dims);
+                                let delete_expr = Expr::Call {
+                                    name: Symbol::intern("__mutsu_multidim_subscript_adverb_dyn"),
+                                    args: new_args,
+                                };
                                 expr = Expr::Ternary {
                                     cond: Box::new(cond),
                                     then_expr: Box::new(delete_expr),
