@@ -224,12 +224,21 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
+        // Only a whole-container topic (`given @a` / `with %h`) legitimately
+        // bypasses the read-only mark: `$_` aliases a mutable `@`/`%` source and
+        // the reassigned value is written straight through to it below. When the
+        // topic is a genuinely immutable value (`for ^3`, `given 42`, `for 1,2,3`),
+        // it is read-only with no write-through target, so `.=` must fail with the
+        // usual "Cannot modify an immutable value" error rather than silently
+        // bypassing the mark.
+        let has_container_source = self.topic_container_source.is_some();
         let was_ro = self.is_readonly("_");
-        if was_ro {
+        let bypass = was_ro && has_container_source;
+        if bypass {
             self.unmark_readonly("_");
         }
         let r = self.exec_assign_expr_op(code, name_idx);
-        if was_ro {
+        if bypass {
             self.mark_readonly("_");
         }
         r?;
