@@ -243,6 +243,12 @@ pub(crate) fn match_user_declared_term_symbol(input: &str) -> Option<(String, us
                     continue;
                 }
                 let consumed = symbol.len();
+                // A trailing `::` makes this a package-qualified name (e.g. the
+                // constant alias `G` in `G::c`), not a bare reference to the
+                // declared term. Let the qualified-name path handle it.
+                if input[consumed..].starts_with("::") {
+                    continue;
+                }
                 // For word-like symbols, require identifier boundary.
                 if symbol
                     .as_bytes()

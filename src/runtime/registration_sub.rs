@@ -104,6 +104,34 @@ impl Interpreter {
         }
     }
 
+    /// If `name` is an operator (`infix:<…>`/`prefix:<…>`/`postfix:<…>`) that was
+    /// bound as a synonym of another operator via `constant &name := &other`, the
+    /// lexical env holds `&name` as a `Routine` carrying the *target* operator's
+    /// name. Return that canonical target so multi candidates declared on the
+    /// synonym extend the shared routine. Returns `None` for ordinary operators.
+    fn operator_alias_target(&self, name: &str) -> Option<String> {
+        let is_operator = |n: &str| {
+            (n.starts_with("infix:<")
+                || n.starts_with("prefix:<")
+                || n.starts_with("postfix:<"))
+                && n.ends_with('>')
+        };
+        if !is_operator(name) {
+            return None;
+        }
+        match self.env.get(&format!("&{name}")) {
+            Some(Value::Routine { name: target, .. }) => {
+                let target = target.resolve();
+                if target != name && is_operator(&target) {
+                    Some(target.to_string())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn default_check_constraint_base(constraint: &str) -> &str {
         let mut end = constraint.len();
         for (idx, ch) in constraint.char_indices() {
@@ -771,24 +799,34 @@ impl Interpreter {
                 .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
                 .collect();
             let has_types = type_sig.iter().any(|t| *t != "Any");
-            if has_types {
-                let typed_fq = format!(
-                    "{}::{}/{}:{}",
-                    self.current_package(),
-                    name,
-                    arity,
-                    type_sig.join(",")
-                );
-                self.insert_multi_overload(&typed_fq, def.clone());
+            // When `name` is an operator synonym created via `constant &op := &other`,
+            // a later `multi sub op(...)` candidate must extend the *shared* routine
+            // so that both names dispatch it (raku: `&op === &other`). Register the
+            // candidate under both the declared name and the alias target.
+            let mut targets = vec![name.to_string()];
+            if let Some(canonical) = self.operator_alias_target(name) {
+                targets.push(canonical);
             }
-            let fq = format!("{}::{}/{}", self.current_package(), name, arity);
-            if !has_types || name == "trait_mod:<is>" {
-                self.insert_multi_overload(&fq, def);
-            } else {
-                self.registry_mut()
-                    .functions
-                    .entry(Symbol::intern(&fq))
-                    .or_insert(std::sync::Arc::new(def));
+            for reg_name in targets {
+                if has_types {
+                    let typed_fq = format!(
+                        "{}::{}/{}:{}",
+                        self.current_package(),
+                        reg_name,
+                        arity,
+                        type_sig.join(",")
+                    );
+                    self.insert_multi_overload(&typed_fq, def.clone());
+                }
+                let fq = format!("{}::{}/{}", self.current_package(), reg_name, arity);
+                if !has_types || reg_name == "trait_mod:<is>" {
+                    self.insert_multi_overload(&fq, def.clone());
+                } else {
+                    self.registry_mut()
+                        .functions
+                        .entry(Symbol::intern(&fq))
+                        .or_insert(std::sync::Arc::new(def.clone()));
+                }
             }
         } else {
             let pkg = self.current_package().to_string();
