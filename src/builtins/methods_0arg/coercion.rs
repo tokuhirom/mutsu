@@ -970,6 +970,21 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             }
             Ok(Value::capture(vec![], named))
         }
+        // Promise follows Mu.Capture: its public `.status` accessor becomes a
+        // named argument. The value is the `PromiseStatus` enum constant (a
+        // package-qualified term, e.g. `PromiseStatus::Planned`) so it `eqv`s
+        // the literal `PromiseStatus::<status>`.
+        Value::Promise(shared) => {
+            let mut named = HashMap::new();
+            named.insert(
+                "status".to_string(),
+                Value::Package(crate::symbol::Symbol::intern(&format!(
+                    "PromiseStatus::{}",
+                    shared.status()
+                ))),
+            );
+            Ok(Value::capture(vec![], named))
+        }
         // Nil.Capture → empty capture
         Value::Nil => Ok(Value::capture(vec![], HashMap::new())),
         // Types whose .Capture throws X::Cannot::Capture

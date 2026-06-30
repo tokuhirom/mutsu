@@ -416,6 +416,18 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
+    // A bare zero-arg call immediately followed (no whitespace) by a postfix
+    // method chain or subscript (`make-temp-file.open(:w)`, `make-temp-file[0]`)
+    // is `make-temp-file().open(:w)` — an *expression*, not a topic-method-call
+    // listop argument. Without this bail, `parse_stmt_call_args` below greedily
+    // parses the leading `.open(...)` as `$_.open(...)` and feeds it as an
+    // argument (`make-temp-file($_.open(:w))`). Raku requires whitespace between a
+    // listop name and a `.method` topic argument, so only bail when the dot
+    // abuts the name. Let the expression-statement parser own the postfix chain.
+    if !had_ws && ((rest.starts_with('.') && !rest.starts_with("..")) || rest.starts_with('[')) {
+        return Err(PError::expected("known function call"));
+    }
+
     // In Raku, `foo(args)` (no space) = paren call, but `foo (expr)` (space) = listop call.
     // When there was whitespace before `(`, treat `(` as expression grouping, not call parens.
     let (rest, args) = if had_ws {
