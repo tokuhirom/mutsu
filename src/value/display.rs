@@ -617,9 +617,15 @@ impl Value {
                     .collect::<Vec<_>>()
                     .join(" ")
             }
-            Value::Pair(k, v) => format!("{}\t{}", k, v.to_string_value()),
+            // Pair `.Str` is `key.Str ~ "\t" ~ value.Str`; an undefined type-object
+            // value stringifies to "" in Str context (raku warns + empty), NOT to
+            // its `.gist` `(Any)`. Using `to_str_context` here is what makes
+            // `(B => Any).Str eq (B => Mu).Str` (both "B\t"), so `is %h<k>:!p,
+            // (k => SomeType)` compares equal for any type-object default
+            // (S32-hash/adverbs object-hash missing-key defaults).
+            Value::Pair(k, v) => format!("{}\t{}", k, v.to_str_context()),
             Value::ValuePair(k, v) => {
-                format!("{}\t{}", k.to_string_value(), v.to_string_value())
+                format!("{}\t{}", k.to_str_context(), v.to_str_context())
             }
             Value::Enum { key, .. } => key.resolve(),
             Value::CompUnitDepSpec { short_name } => {
