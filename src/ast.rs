@@ -1029,6 +1029,78 @@ pub(crate) fn collect_unattached_placeholders(stmts: &[Stmt]) -> Vec<String> {
     names
 }
 
+/// Collect placeholder names (`^name`, sigil-stripped) that appear as the
+/// *target* of an assignment inside a `where`-block body — e.g. the `^epic` in
+/// `where { $^epic = "fail" }`. The ordinary `collect_placeholders` walks only
+/// expression positions, so an assign-only placeholder is otherwise invisible.
+/// A `where`-block parameter is read-only, so the caller binds these and marks
+/// them read-only to make `where { $^x = ... }` die.
+pub(crate) fn collect_where_assign_placeholders(stmts: &[Stmt]) -> Vec<String> {
+    let mut names = Vec::new();
+    for stmt in stmts {
+        collect_assign_ph_stmt(stmt, &mut names);
+    }
+    names.dedup();
+    names
+}
+
+fn push_if_placeholder(name: &str, out: &mut Vec<String>) {
+    let bare = name.trim_start_matches(|c: char| "$@%&".contains(c));
+    if let Some(rest) = bare.strip_prefix('^') {
+        let key = format!("^{rest}");
+        if !out.contains(&key) {
+            out.push(key);
+        }
+    }
+}
+
+fn collect_assign_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
+    match stmt {
+        Stmt::Assign { name, expr, .. } | Stmt::VarDecl { name, expr, .. } => {
+            push_if_placeholder(name, out);
+            collect_assign_ph_expr(expr, out);
+        }
+        Stmt::Expr(e)
+        | Stmt::Return(e)
+        | Stmt::Die(e)
+        | Stmt::Fail(e)
+        | Stmt::Take(e, _)
+        | Stmt::Goto(e) => collect_assign_ph_expr(e, out),
+        Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            collect_assign_ph_expr(cond, out);
+            for s in then_branch.iter().chain(else_branch.iter()) {
+                collect_assign_ph_stmt(s, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_assign_ph_expr(expr: &Expr, out: &mut Vec<String>) {
+    match expr {
+        Expr::AssignExpr { name, expr, .. } => {
+            push_if_placeholder(name, out);
+            collect_assign_ph_expr(expr, out);
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_assign_ph_expr(left, out);
+            collect_assign_ph_expr(right, out);
+        }
+        Expr::Unary { expr, .. } => collect_assign_ph_expr(expr, out),
+        Expr::Block(body) | Expr::AnonSub { body, .. } => {
+            for s in body {
+                collect_assign_ph_stmt(s, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn collect_unattached_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
     match stmt {
         Stmt::Expr(e)

@@ -52,10 +52,18 @@ impl Interpreter {
             .map(|(k, v)| (*k, v.clone()))
             .collect();
         let ok = match where_expr.as_ref() {
-            Expr::AnonSub { body, .. } => self
-                .eval_block_value(body)
-                .map(|v| v.truthy())
-                .unwrap_or(false),
+            Expr::AnonSub { body, .. } => {
+                let ph_keys = self.bind_where_placeholders(body, &bound_val);
+                let r = self
+                    .eval_block_value(body)
+                    .map(|v| v.truthy())
+                    .unwrap_or(false);
+                for k in ph_keys {
+                    self.unmark_readonly(&k);
+                    self.env.remove(&k);
+                }
+                r
+            }
             Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
                 self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
                     .map(|v| v.truthy())
@@ -91,6 +99,31 @@ impl Interpreter {
             )));
         }
         Ok(())
+    }
+
+    /// Bind placeholder parameters (e.g. `$^n`) referenced inside a
+    /// `where { ... }` block to the single value under test. Returns the env
+    /// keys inserted so the caller can remove them after the check. In a where
+    /// clause there is exactly one value being tested, so every placeholder is
+    /// bound to that candidate.
+    fn bind_where_placeholders(&mut self, body: &[Stmt], candidate: &Value) -> Vec<String> {
+        let mut keys = Vec::new();
+        let read_phs = crate::ast::collect_placeholders(body);
+        let write_phs = crate::ast::collect_where_assign_placeholders(body);
+        for ph in read_phs.iter().chain(write_phs.iter()) {
+            let key = ph
+                .trim_start_matches(|c: char| "$@%&".contains(c))
+                .to_string();
+            if keys.contains(&key) {
+                continue;
+            }
+            self.env.insert(key.clone(), candidate.clone());
+            // A `where`-block parameter is read-only, so `where { $^x = ... }`
+            // must die rather than silently accept the value.
+            self.mark_readonly(&key);
+            keys.push(key);
+        }
+        keys
     }
 
     fn parameter_binding_error(message: String) -> RuntimeError {
@@ -519,6 +552,43 @@ impl Interpreter {
                     if let Some(sub_params) = &pd.sub_signature {
                         bind_sub_signature_from_value(self, sub_params, &capture_value)?;
                     }
+                    // Enforce a `where` constraint on the capture parameter
+                    // (`sub f(|c where { c.elems == 1 })`). The capture is bound
+                    // under `pd.name`; evaluate the predicate with that name (and
+                    // `$_`) set to the capture value.
+                    if let Some(where_expr) = &pd.where_constraint {
+                        let saved_topic = self.env.get("_").cloned();
+                        self.env.insert("_".to_string(), capture_value.clone());
+                        let ok = match where_expr.as_ref() {
+                            Expr::AnonSub { body, .. } => {
+                                let ph_keys = self.bind_where_placeholders(body, &capture_value);
+                                let r = self
+                                    .eval_block_value(body)
+                                    .map(|v| v.truthy())
+                                    .unwrap_or(false);
+                                for k in ph_keys {
+                                    self.unmark_readonly(&k);
+                                    self.env.remove(&k);
+                                }
+                                r
+                            }
+                            expr => self
+                                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                                .map(|v| self.smart_match(&capture_value, &v))
+                                .unwrap_or(false),
+                        };
+                        if let Some(previous) = saved_topic {
+                            self.env.insert("_".to_string(), previous);
+                        } else {
+                            self.env.remove("_");
+                        }
+                        if !ok {
+                            return Err(Self::parameter_binding_error(format!(
+                                "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
+                                pd.name
+                            )));
+                        }
+                    }
                 } else if is_hash_slurpy {
                     // *%hash -- collect Pair arguments into a hash,
                     // excluding args already bound to explicit named parameters.
@@ -655,10 +725,18 @@ impl Interpreter {
                         let saved_topic = self.env.get("_").cloned();
                         self.env.insert("_".to_string(), slurpy_value.clone());
                         let ok = match where_expr.as_ref() {
-                            Expr::AnonSub { body, .. } => self
-                                .eval_block_value(body)
-                                .map(|v| v.truthy())
-                                .unwrap_or(false),
+                            Expr::AnonSub { body, .. } => {
+                                let ph_keys = self.bind_where_placeholders(body, &slurpy_value);
+                                let r = self
+                                    .eval_block_value(body)
+                                    .map(|v| v.truthy())
+                                    .unwrap_or(false);
+                                for k in ph_keys {
+                                    self.unmark_readonly(&k);
+                                    self.env.remove(&k);
+                                }
+                                r
+                            }
                             expr => self
                                 .eval_block_value(&[Stmt::Expr(expr.clone())])
                                 .map(|v| self.smart_match(&slurpy_value, &v))
@@ -1383,10 +1461,18 @@ impl Interpreter {
                         let saved_topic = self.env.get("_").cloned();
                         self.env.insert("_".to_string(), value.clone());
                         let ok = match where_expr.as_ref() {
-                            Expr::AnonSub { body, .. } => self
-                                .eval_block_value(body)
-                                .map(|v| v.truthy())
-                                .unwrap_or(false),
+                            Expr::AnonSub { body, .. } => {
+                                let ph_keys = self.bind_where_placeholders(body, &value);
+                                let r = self
+                                    .eval_block_value(body)
+                                    .map(|v| v.truthy())
+                                    .unwrap_or(false);
+                                for k in ph_keys {
+                                    self.unmark_readonly(&k);
+                                    self.env.remove(&k);
+                                }
+                                r
+                            }
                             // Method calls on $_ (topic) in where constraints:
                             // evaluate and check truthiness of the result, not smart-match.
                             // `where .method: args` is equivalent to `where { .method: args }`.

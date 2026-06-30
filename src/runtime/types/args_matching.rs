@@ -400,10 +400,36 @@ impl Interpreter {
                     // reference it during dispatch matching.
                     self.env.insert(pd.name.clone(), arg.clone());
                     let ok = match where_expr.as_ref() {
-                        Expr::AnonSub { body, .. } => self
-                            .eval_block_value(body)
-                            .map(|v| v.truthy())
-                            .unwrap_or(false),
+                        Expr::AnonSub { body, .. } => {
+                            // Bind placeholder params (e.g. `$^n`) to the single
+                            // value under test so `where { $^n < 0 }` works. The
+                            // placeholder is read-only (a `where`-block parameter),
+                            // so `where { $^x = ... }` dies.
+                            let mut ph_keys: Vec<String> = Vec::new();
+                            for ph in crate::ast::collect_placeholders(body)
+                                .iter()
+                                .chain(crate::ast::collect_where_assign_placeholders(body).iter())
+                            {
+                                let key = ph
+                                    .trim_start_matches(|c: char| "$@%&".contains(c))
+                                    .to_string();
+                                if !ph_keys.contains(&key) {
+                                    ph_keys.push(key);
+                                }
+                            }
+                            for key in &ph_keys {
+                                self.env.insert(key.clone(), arg.clone());
+                                self.mark_readonly(key);
+                            }
+                            let r = self
+                                .eval_block_value(body)
+                                .map(|v| v.truthy())
+                                .unwrap_or(false);
+                            for key in &ph_keys {
+                                self.unmark_readonly(key);
+                            }
+                            r
+                        }
                         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
                             self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
                                 .map(|v| v.truthy())
