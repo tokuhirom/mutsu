@@ -14,12 +14,12 @@ mod type_registry;
 // Re-export public items from submodules
 pub(crate) use coercion::{coerce_impossible_error, is_coercion_constraint, parse_coercion_type};
 pub(in crate::runtime) use signature::{
-    bind_named_rename_sub_signature, bind_sub_signature_from_value, flatten_into_slurpy,
-    indexed_varref_from_value, sigilless_alias_key, sigilless_readonly_key,
+    bind_named_rename_sub_signature, bind_sub_signature_from_value, encode_slurpy_rw_param,
+    flatten_into_slurpy, indexed_varref_from_value, sigilless_alias_key, sigilless_readonly_key,
     sub_signature_matches_value, sub_signature_target_from_remaining_args, varref_from_value,
     wrap_native_int_for_binding,
 };
-pub(crate) use signature::{make_varref_value, unwrap_varref_value};
+pub(crate) use signature::{decode_slurpy_rw_param, make_varref_value, unwrap_varref_value};
 // Internal re-exports used by submodules via `use super::*`
 use signature::code_signature_matches_value;
 
@@ -194,6 +194,47 @@ impl Interpreter {
         target_env: &mut crate::env::Env,
     ) {
         for (param_name, source_name) in rw_bindings {
+            // A `*@v is raw`/`is rw` slurpy element writeback: read the (possibly
+            // body-mutated) element from the callee's slurpy array and write it
+            // back to its caller source — a scalar (`$a`) or an array element
+            // (`@arr[idx]`).
+            if let Some((slurpy_key, elem_idx, src_idx)) = decode_slurpy_rw_param(param_name) {
+                let Some(elem) = self.env.get(slurpy_key).and_then(|v| match v {
+                    Value::Array(arr, _) => arr.items.get(elem_idx).cloned(),
+                    _ => None,
+                }) else {
+                    continue;
+                };
+                match src_idx {
+                    Some(i) => {
+                        // Array source: replace element `i` in the caller's array,
+                        // preserving the rest of the container's metadata.
+                        if let Some(Value::Array(arr, kind)) = target_env.get(source_name).cloned()
+                        {
+                            let mut data = (*arr).clone();
+                            if i < data.items.len() {
+                                data.items[i] = elem;
+                                target_env.insert(
+                                    source_name.clone(),
+                                    Value::Array(std::sync::Arc::new(data), kind),
+                                );
+                            }
+                        }
+                    }
+                    None => {
+                        // Scalar source: write through a shared cell if one exists
+                        // (preserving aliases), else replace the value.
+                        if let Some(Value::ContainerRef(arc)) = target_env.get(source_name)
+                            && !elem.is_container_ref()
+                        {
+                            *arc.lock().unwrap() = elem;
+                        } else {
+                            target_env.insert(source_name.clone(), elem);
+                        }
+                    }
+                }
+                continue;
+            }
             if let Some(updated) = self.env.get(param_name).cloned() {
                 // When the caller's variable already holds a shared `ContainerRef`
                 // cell (e.g. an inner `$a := $arg` re-bound the rw param into the
