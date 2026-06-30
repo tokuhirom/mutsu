@@ -62,6 +62,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                             lazy_pipe: None,
                             closure_seq: None,
                             walk_pending: None,
+                            cat_pull: None,
                         };
                         return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
                     }
@@ -88,6 +89,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     lazy_pipe: None,
                     closure_seq: None,
                     walk_pending: None,
+                    cat_pull: None,
                 };
                 return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
             }

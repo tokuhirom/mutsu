@@ -214,6 +214,13 @@ impl Interpreter {
             return Self::extend_sequence_cache(list, spec, MAX_ARRAY_EXPAND);
         }
 
+        // A lazy `IO::CatHandle.lines` / `.handles` list is finite (it reads to
+        // the end of the cat's handles): force it fully by pulling until the cat
+        // is exhausted.
+        if list.cat_pull.is_some() {
+            return self.force_cat_pull(list, usize::MAX);
+        }
+
         // Check cache first
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);

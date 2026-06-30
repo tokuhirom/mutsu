@@ -436,6 +436,7 @@ impl Interpreter {
                 || ll.lazy_pipe.is_some()
                 || ll.sequence_spec.is_some()
                 || ll.closure_seq.is_some()
+                || ll.cat_pull.is_some()
             {
                 // Gather-based lazy list / lazy map-grep pipeline / infinite
                 // arithmetic-or-closure sequence: force only as many elements as
@@ -449,6 +450,27 @@ impl Interpreter {
                     }
                     Value::RangeExcl(_, end) if *end > 0 => {
                         self.force_lazy_list_vm_n(ll, *end as usize)?
+                    }
+                    // A list of non-negative integer indices (`$s[2, 3]`): force
+                    // only up to the largest index + 1, keeping the tail lazy so
+                    // later pulls still see mid-iteration changes (e.g. a cat
+                    // handle whose `.nl-in` is reset between slice reads).
+                    _ if index.as_list_items().is_some_and(|items| {
+                        !items.is_empty()
+                            && items.iter().all(|v| matches!(v, Value::Int(i) if *i >= 0))
+                    }) =>
+                    {
+                        let max = index
+                            .as_list_items()
+                            .unwrap()
+                            .iter()
+                            .filter_map(|v| match v {
+                                Value::Int(i) => Some(*i as usize),
+                                _ => None,
+                            })
+                            .max()
+                            .unwrap_or(0);
+                        self.force_lazy_list_vm_n(ll, max.saturating_add(1))?
                     }
                     _ => self.force_lazy_list_vm(ll)?,
                 }

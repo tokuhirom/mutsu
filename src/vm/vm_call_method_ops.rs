@@ -682,7 +682,7 @@ impl Interpreter {
         // `lazy_pipe` and is forced & rendered normally below.
         if let Value::LazyList(ref ll) = target
             && matches!(method, "gist" | "Str" | "raku" | "perl")
-            && ll.is_genuinely_lazy()
+            && ll.renders_lazy_placeholder()
         {
             self.stack
                 .push(Value::str(crate::value::lazy_list_placeholder(
@@ -727,6 +727,20 @@ impl Interpreter {
             self.stack.push(pipe);
             return Ok(());
         }
+        // `.cache` on a genuinely-lazy list must stay lazy: Rakudo's `.cache`
+        // reifies on demand, it does not force. A `LazyList` already caches
+        // pulled elements internally, so return it unchanged — this keeps
+        // `(my $l = $cat.lines).cache` lazy so later slice reads still reflect
+        // mid-iteration changes to the cat's `.nl-in`/`.chomp`.
+        if let Value::LazyList(ref ll) = target
+            && method == "cache"
+            && ll.is_genuinely_lazy()
+        {
+            self.stack.push(Value::LazyList(std::sync::Arc::new(
+                ll.with_cached_no_sink(),
+            )));
+            return Ok(());
+        }
         let target = if let Value::LazyList(ref ll) = target
             && ll.needs_vm_lazy_dispatch()
             && Self::lazy_list_needs_forcing(method)
@@ -739,7 +753,7 @@ impl Interpreter {
             // Laziness-preserving coercions return the list unchanged (native
             // dispatch) — neither forces.
             && !(matches!(method, "map" | "grep")
-                && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather()))
+                && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather() || ll.cat_pull.is_some()))
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && Self::lazy_pipe_preserving_coercion(method))
             // On an infinite sequence/closure spec the count/numeric coercions

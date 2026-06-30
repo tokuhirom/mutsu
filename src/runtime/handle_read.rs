@@ -19,9 +19,14 @@ impl Interpreter {
             }
             read_any = true;
             buffer.push(byte[0]);
+            // Prefer the LONGEST matching separator so `"\r\n"` is treated as one
+            // line ending rather than splitting at the trailing `"\n"` and leaving
+            // a stray `"\r"` (when `nl-in` carries both `"\n"` and `"\r\n"`).
             if let Some(matched_len) = separators
                 .iter()
-                .find_map(|sep| buffer.ends_with(sep).then_some(sep.len()))
+                .filter(|sep| buffer.ends_with(sep.as_slice()))
+                .map(|sep| sep.len())
+                .max()
             {
                 if chomp {
                     buffer.truncate(buffer.len().saturating_sub(matched_len));
@@ -41,7 +46,18 @@ impl Interpreter {
         chomp: bool,
     ) -> Result<Option<String>, RuntimeError> {
         match Self::read_record_bytes(reader, separators, chomp)? {
-            Some(buffer) => Ok(Some(String::from_utf8_lossy(&buffer).to_string())),
+            Some(buffer) => {
+                let s = String::from_utf8_lossy(&buffer).to_string();
+                // Raku text-mode reads normalize the CR-LF grapheme to a single
+                // "\n" (universal newline / NFG), even when CR-LF is not itself
+                // the line separator (e.g. reading "6\r\n" with `nl-in => "♥"`
+                // yields "6\n").
+                Ok(Some(if s.contains("\r\n") {
+                    s.replace("\r\n", "\n")
+                } else {
+                    s
+                }))
+            }
             None => Ok(None),
         }
     }

@@ -1184,6 +1184,33 @@ pub(crate) enum IndexTransform {
     Kv,
 }
 
+/// What a [`CatPullSpec`] lazy list pulls from its backing `IO::CatHandle`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CatPullMode {
+    /// `.lines`: each pull reads the next line across all handles (`.get`).
+    Lines,
+    /// `.handles`: the first pull yields the currently-active handle, then each
+    /// subsequent pull advances to the next handle (`.next-handle`).
+    Handles,
+}
+
+/// Lazy `IO::CatHandle.lines` / `.handles` generator. Holds the live cat
+/// instance (sharing its attribute cell with the user's `$cat`), so each pull
+/// reads/advances the *same* cat — letting mid-iteration changes to
+/// `.chomp`/`.nl-in`/`.encoding` take effect and `.path`/`on-switch` track the
+/// current handle, exactly as Rakudo's lazy iterators do.
+#[derive(Debug, Clone)]
+pub(crate) struct CatPullSpec {
+    /// The backing `IO::CatHandle` instance (shares its `AttrCell`).
+    pub(crate) cat: Value,
+    /// Whether to pull lines or handles.
+    pub(crate) mode: CatPullMode,
+    /// `Handles` only: whether the current-active handle was already yielded.
+    pub(crate) started: bool,
+    /// Set once the cat is exhausted so further pulls stop.
+    pub(crate) done: bool,
+}
+
 /// Saved for-loop state for resuming a gather coroutine mid-iteration.
 #[derive(Debug, Clone)]
 pub(crate) enum ForLoopResumeState {
@@ -1294,6 +1321,9 @@ pub(crate) struct LazyList {
     /// Lazy `WALK(method)()` candidate-invocation state (see `WalkPendingState`):
     /// each pull invokes the next MRO-level candidate.
     pub(crate) walk_pending: Option<Mutex<WalkPendingState>>,
+    /// Lazy `IO::CatHandle.lines` / `.handles` generator (see `CatPullSpec`):
+    /// each pull reads the next line / handle from the live cat instance.
+    pub(crate) cat_pull: Option<Mutex<CatPullSpec>>,
 }
 
 /// Placeholder string rendered for a genuinely-lazy list under

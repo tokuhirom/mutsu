@@ -110,6 +110,37 @@ impl Interpreter {
         let _ = self.eval_call_on_value(on_switch.clone(), call_args);
     }
 
+    /// The currently-open active `IO::Handle` value, if any.
+    fn cat_active_handle(attrs: &HashMap<String, Value>) -> Option<Value> {
+        match attrs.get("active") {
+            Some(active @ Value::Instance { class_name, .. }) if class_name == "IO::Handle" => {
+                Some(active.clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// Push the cat's current `chomp` / `nl-in` / `encoding` onto the active
+    /// handle so the *next* read reflects them. The cat's settings are
+    /// authoritative; Rakudo's rw `.chomp`/`.nl-in`/`.encoding` setters update
+    /// the live handle, but mutsu's accessor-assignment path writes the attribute
+    /// without notifying the handle, so we re-sync before every read instead.
+    /// Re-pushing an unchanged value is a harmless idempotent field set.
+    fn cat_sync_active_settings(&mut self, attrs: &HashMap<String, Value>) {
+        let Some(active) = Self::cat_active_handle(attrs) else {
+            return;
+        };
+        if let Some(chomp) = attrs.get("chomp").cloned() {
+            let _ = self.native_io_handle_method(&active, "chomp", vec![chomp]);
+        }
+        if let Some(nl_in) = attrs.get("nl-in").cloned() {
+            let _ = self.native_io_handle_method(&active, "nl-in", vec![nl_in]);
+        }
+        if let Some(enc) = attrs.get("encoding").cloned() {
+            let _ = self.native_io_handle_method(&active, "encoding", vec![enc]);
+        }
+    }
+
     /// Open one source value into a read handle, applying the cat's `chomp` /
     /// `nl-in` / `encoding`. Returns `None` when the source cannot be opened.
     fn cat_open_source(&mut self, src: &Value, attrs: &HashMap<String, Value>) -> Option<Value> {
@@ -279,6 +310,7 @@ impl Interpreter {
             if matches!(active, Value::Nil) {
                 return Ok(Value::Nil);
             }
+            self.cat_sync_active_settings(attrs);
             let line = self.native_io_handle_method(&active, "get", vec![])?;
             if matches!(line, Value::Nil) {
                 let next = self.cat_next_handle(attrs);
@@ -298,6 +330,7 @@ impl Interpreter {
             if matches!(active, Value::Nil) {
                 return Ok(Value::Nil);
             }
+            self.cat_sync_active_settings(attrs);
             let c = self.native_io_handle_method(&active, "getc", vec![])?;
             if matches!(c, Value::Nil) {
                 let next = self.cat_next_handle(attrs);
@@ -417,6 +450,37 @@ impl Interpreter {
         attrs.insert("pos".to_string(), Value::Int(pos));
     }
 
+    /// For `.lines` (no positional `$limit` / `:close`) and `.handles`, build a
+    /// lazy list backed by the *live* cat instance `cat` (sharing its attribute
+    /// cell). Each element is pulled on demand by reading from / advancing the
+    /// cat, so mid-iteration attribute changes take effect and `.path`/on-switch
+    /// track the current handle — matching Rakudo's lazy iterators. Returns
+    /// `None` (use the eager path) for `.lines($limit)` / `.lines(:close)`.
+    pub(crate) fn cathandle_lazy_method(
+        cat: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Value> {
+        let mode = match method {
+            "lines" => {
+                // A positional `$limit` or a `:close` adverb keeps the eager path,
+                // which already returns the bounded/closing result directly.
+                let has_limit_or_close = args.iter().any(|a| {
+                    matches!(a, Value::Int(_)) || matches!(a, Value::Pair(k, _) if k == "close")
+                });
+                if has_limit_or_close {
+                    return None;
+                }
+                crate::value::CatPullMode::Lines
+            }
+            "handles" => crate::value::CatPullMode::Handles,
+            _ => return None,
+        };
+        Some(Value::LazyList(std::sync::Arc::new(
+            crate::value::LazyList::new_cat_pull(cat.clone(), mode),
+        )))
+    }
+
     /// Mutable dispatch for `IO::CatHandle` methods. All reads advance internal
     /// state, so every method goes through here and the caller writes the updated
     /// attributes back into the receiver's shared cell.
@@ -496,6 +560,7 @@ impl Interpreter {
                     if want == Some(0) {
                         break;
                     }
+                    self.cat_sync_active_settings(&attrs);
                     let chunk_args = match want {
                         Some(n) => vec![Value::Int(n as i64)],
                         None => vec![],
@@ -592,6 +657,7 @@ impl Interpreter {
             "chomp" => {
                 if let Some(arg) = args.into_iter().next() {
                     attrs.insert("chomp".to_string(), arg.clone());
+                    self.cat_sync_active_settings(&attrs);
                     arg
                 } else {
                     attrs.get("chomp").cloned().unwrap_or(Value::Bool(true))
@@ -600,6 +666,7 @@ impl Interpreter {
             "nl-in" => {
                 if let Some(arg) = args.into_iter().next() {
                     attrs.insert("nl-in".to_string(), arg.clone());
+                    self.cat_sync_active_settings(&attrs);
                     arg
                 } else {
                     attrs
@@ -612,6 +679,7 @@ impl Interpreter {
                 if let Some(arg) = args.into_iter().next() {
                     let s = arg.to_string_value();
                     attrs.insert("encoding".to_string(), Value::str(s.clone()));
+                    self.cat_sync_active_settings(&attrs);
                     Value::str(s)
                 } else {
                     attrs

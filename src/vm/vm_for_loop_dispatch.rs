@@ -133,7 +133,11 @@ impl Interpreter {
             && (ll.coroutine.is_some()
                 || ll.sequence_spec.is_some()
                 || ll.lazy_pipe.is_some()
-                || ll.walk_pending.is_some())
+                || ll.walk_pending.is_some()
+                // `for $cat.lines` / `for $cat.handles`: pull one element per
+                // iteration so `on-switch` fires and `.path` tracks the current
+                // handle inside the loop body (Rakudo's lazy semantics).
+                || ll.cat_pull.is_some())
         {
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;

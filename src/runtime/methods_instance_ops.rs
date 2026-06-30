@@ -686,6 +686,13 @@ impl Interpreter {
             }
             if class_name == "IO::CatHandle" && self.is_native_method(&class_name.resolve(), method)
             {
+                // Lazy `.lines` (no `$limit`/`:close`) and `.handles` return a
+                // lazy list backed by the live cat (sharing its attribute cell),
+                // so mid-iteration `.chomp`/`.nl-in`/`.encoding` changes apply and
+                // `.path`/on-switch track the current handle (Rakudo semantics).
+                if let Some(lazy) = Self::cathandle_lazy_method(&target, method, &args) {
+                    return Ok(lazy);
+                }
                 // Every IO::CatHandle method advances internal read state, so route
                 // through the mutable path and commit the updated attributes back to
                 // the receiver's shared cell.

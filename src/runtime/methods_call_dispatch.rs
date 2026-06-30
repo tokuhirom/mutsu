@@ -2992,7 +2992,7 @@ impl Interpreter {
         // which materializes its elements.)
         if let Value::LazyList(ll) = &target
             && matches!(method, "gist" | "Str" | "raku" | "perl")
-            && ll.is_genuinely_lazy()
+            && ll.renders_lazy_placeholder()
         {
             return Ok(Value::str(crate::value::lazy_list_placeholder(
                 method,
@@ -3017,6 +3017,21 @@ impl Interpreter {
             )));
         }
 
+        // `.cache` on a genuinely-lazy list must stay lazy: Rakudo's `.cache`
+        // reifies and caches elements on demand, it does not force the list. A
+        // `LazyList` already caches pulled elements internally, so `.cache` is a
+        // no-op that returns it unchanged. Forcing here would defeat e.g.
+        // `(my $l = $cat.lines).cache` whose later `$l[2,3]` must reflect
+        // mid-iteration changes to the cat's `.nl-in`/`.chomp`.
+        if let Value::LazyList(ll) = &target
+            && method == "cache"
+            && ll.is_genuinely_lazy()
+        {
+            return Ok(Value::LazyList(std::sync::Arc::new(
+                ll.with_cached_no_sink(),
+            )));
+        }
+
         // Force LazyList and re-dispatch as Seq
         if let Value::LazyList(ll) = &target
             && Self::should_force_lazy_list(method)
@@ -3026,7 +3041,7 @@ impl Interpreter {
             // `is_lazy_pipe_source`); a laziness-preserving coercion returns the
             // list unchanged. Neither forces the (possibly infinite) sequence (L2b).
             && !(matches!(method, "map" | "grep")
-                && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather()))
+                && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather() || ll.cat_pull.is_some()))
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && crate::runtime::Interpreter::lazy_pipe_preserving_coercion(method))
         {
