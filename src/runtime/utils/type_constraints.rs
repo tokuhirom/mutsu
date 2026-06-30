@@ -183,6 +183,17 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
     matches!(
         name,
         "Backtrace::Frame"
+            // Control exceptions (always available core types)
+            | "CX::Done"
+            | "CX::Emit"
+            | "CX::Last"
+            | "CX::Next"
+            | "CX::Proceed"
+            | "CX::Redo"
+            | "CX::Return"
+            | "CX::Succeed"
+            | "CX::Take"
+            | "CX::Warn"
             | "CompUnit::DependencySpecification"
             | "CompUnit::RepositoryRegistry"
             | "CompUnit::Repository::FileSystem"
