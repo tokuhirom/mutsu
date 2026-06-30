@@ -197,6 +197,52 @@ pub(crate) fn make_varref_value(name: String, value: Value, source_index: Option
     Value::capture(Vec::new(), named)
 }
 
+/// Sentinel prefix marking a `*@v is rw`/`is raw` slurpy element writeback entry
+/// inside the `rw_bindings` list. A slurpy `is raw`/`is rw` param aliases each
+/// caller argument: when the body mutates `@v[i]` (or `for @v { $_++ }`), the
+/// new value must flow back to the i-th caller source. A plain `(param, source)`
+/// rw-binding can't express this (the whole slurpy array maps to many distinct
+/// sources, possibly at distinct indices), so each element gets its own entry
+/// whose `param_name` encodes the slurpy env key, the element index in the
+/// slurpy array, and the index within the source (for an array source). The
+/// `source_name` stays clean (`"a"`, `"@arr"`) so the call-site
+/// `pending_rw_writeback_sources` collection refreshes the right caller slot.
+const SLURPY_RW_MARKER: &str = "\u{1}S\u{1}";
+
+/// Encode a slurpy element writeback into an `rw_bindings` param-name slot.
+/// `slurpy_key` is the callee env key (`"@v"`), `elem_idx` the element's position
+/// in the slurpy array, `src_idx` the index within an array source (`None` for a
+/// scalar source).
+pub(in crate::runtime) fn encode_slurpy_rw_param(
+    slurpy_key: &str,
+    elem_idx: usize,
+    src_idx: Option<usize>,
+) -> String {
+    let src = match src_idx {
+        Some(i) => i as i64,
+        None => -1,
+    };
+    format!("{SLURPY_RW_MARKER}{slurpy_key}\u{1}{elem_idx}\u{1}{src}")
+}
+
+/// Decode a slurpy element writeback param-name. Returns
+/// `(slurpy_key, elem_idx, src_idx)` or `None` if `param` is an ordinary
+/// rw-binding param name.
+pub(crate) fn decode_slurpy_rw_param(param: &str) -> Option<(&str, usize, Option<usize>)> {
+    let rest = param.strip_prefix(SLURPY_RW_MARKER)?;
+    // From the right: src, elem, key. The key (`"@v"`) never contains \u{1}.
+    let mut parts = rest.rsplitn(3, '\u{1}');
+    let src = parts.next()?;
+    let elem = parts.next()?;
+    let key = parts.next()?;
+    let elem_idx: usize = elem.parse().ok()?;
+    let src_idx = match src.parse::<i64>().ok()? {
+        i if i >= 0 => Some(i as usize),
+        _ => None,
+    };
+    Some((key, elem_idx, src_idx))
+}
+
 pub(in crate::runtime) fn sigilless_alias_key(name: &str) -> String {
     format!("__mutsu_sigilless_alias::{}", name)
 }

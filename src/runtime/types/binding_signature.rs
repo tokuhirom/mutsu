@@ -238,7 +238,6 @@ impl Interpreter {
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();
         let mut raw_nonlvalue_params: Vec<String> = Vec::new();
-        let mut raw_slurpy_sources = std::collections::HashSet::new();
         if let Some(invocant_value) = self
             .env
             .get("self")
@@ -649,34 +648,63 @@ impl Interpreter {
                     }
                 } else {
                     let mut items = Vec::new();
-                    let is_raw_slurpy = pd.traits.iter().any(|t| t == "raw");
+                    // `*@v is raw` / `*@v is rw`: each caller argument is aliased,
+                    // so a body mutation of `@v[i]` (or `for @v { $_++ }`) flows
+                    // back to the i-th caller source. Build the slurpy with the
+                    // plain (deref'd) element values — wrapping them in varref
+                    // captures would break plain reads of `@v[i]` — and record a
+                    // per-element writeback in `rw_bindings` (keyed by the slurpy
+                    // env name + element index) that `apply_rw_bindings_to_env`
+                    // distributes back to each source at return.
+                    let is_alias_slurpy =
+                        pd.traits.iter().any(|t| t == "raw" || t == "rw") && !pd.name.is_empty();
+                    let slurpy_key = if pd.name.starts_with('@') {
+                        pd.name.clone()
+                    } else {
+                        format!("@{}", pd.name)
+                    };
                     while positional_idx < args.len() {
                         let raw_arg = args[positional_idx].clone();
-                        if is_raw_slurpy
-                            && let Some((source_name, source_value, source_index)) =
-                                indexed_varref_from_value(&raw_arg)
+                        // The source name comes from the varref capture the caller
+                        // wraps lvalue arguments in (`WrapVarRef`); fall back to the
+                        // `arg_sources` table for paths that pass plain values.
+                        let varref = indexed_varref_from_value(&raw_arg);
+                        let arg_source = arg_sources
+                            .as_ref()
+                            .and_then(|names| names.get(positional_idx))
+                            .and_then(|n| n.as_ref())
+                            .cloned();
+                        if is_alias_slurpy
+                            && let Some(source_name) =
+                                varref.as_ref().map(|(n, _, _)| n.clone()).or(arg_source)
+                            && !matches!(unwrap_varref_value(raw_arg.clone()), Value::Pair(..))
                         {
-                            if raw_slurpy_sources.insert(source_name.clone()) {
-                                rw_bindings.push((source_name.clone(), source_name.clone()));
-                            }
-                            self.env.insert(source_name.clone(), source_value.clone());
+                            let source_value = match &varref {
+                                Some((_, v, _)) => v.clone(),
+                                None => raw_arg.clone(),
+                            };
+                            let source_index = varref.as_ref().and_then(|(_, _, i)| *i);
                             if !pd.double_slurpy
                                 && let Value::Array(arr, kind) = &source_value
                                 && !kind.is_itemized()
                             {
+                                // An array source (`incr(@arr)`): each element of
+                                // `@arr` becomes a slurpy element aliasing `@arr[idx]`.
                                 for (idx, item) in arr.iter().cloned().enumerate() {
-                                    items.push(make_varref_value(
+                                    rw_bindings.push((
+                                        encode_slurpy_rw_param(&slurpy_key, items.len(), Some(idx)),
                                         source_name.clone(),
-                                        item,
-                                        Some(idx),
                                     ));
+                                    items.push(item);
                                 }
                             } else {
-                                items.push(make_varref_value(
+                                // A scalar source (`incr($a, $b)`) or an indexed
+                                // element passed by reference (`incr(@a[0])`).
+                                rw_bindings.push((
+                                    encode_slurpy_rw_param(&slurpy_key, items.len(), source_index),
                                     source_name,
-                                    source_value,
-                                    source_index,
                                 ));
+                                items.push(source_value);
                             }
                             positional_idx += 1;
                             continue;

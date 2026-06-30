@@ -302,10 +302,19 @@ impl Compiler {
             rw_block: false,
             explicit_zero_params: false,
         };
-        // Build gather block wrapping the for loop
+        // Build gather block wrapping the for loop, then mark it `.lazy` so the
+        // body does not run until the resulting Seq is consumed (`lazy for`
+        // semantics — S04 for.t "Lazy for loop does not execute until asked").
         let gather_body = vec![inner_for];
         let gather_expr = AExpr::Gather(gather_body);
-        self.compile_expr(&gather_expr);
+        let lazy_expr = AExpr::MethodCall {
+            target: Box::new(gather_expr),
+            name: crate::symbol::Symbol::intern("lazy"),
+            args: Vec::new(),
+            modifier: None,
+            quoted: false,
+        };
+        self.compile_expr(&lazy_expr);
     }
 
     /// Compile `do while` / `do until` expression: collect each iteration value.
