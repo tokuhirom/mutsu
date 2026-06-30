@@ -255,6 +255,8 @@ impl Interpreter {
             enum_scope_names: self.enum_scope_names.clone(),
             my_scoped_package_items: self.my_scoped_package_items.clone(),
             lexical_class_scopes: self.lexical_class_scopes.clone(),
+            lexical_class_sites: self.lexical_class_sites.clone(),
+            lexical_class_owner_scopes: self.lexical_class_owner_scopes.clone(),
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),

@@ -277,6 +277,7 @@ impl Interpreter {
                 body: _,
                 language_version,
                 custom_traits,
+                decl_id,
                 ..
             } = &stmts[idx]
             {
@@ -295,6 +296,7 @@ impl Interpreter {
                     language_version: language_version.clone(),
                     custom_traits: custom_traits.clone(),
                     is_unit: true,
+                    decl_id: *decl_id,
                 });
             }
             result

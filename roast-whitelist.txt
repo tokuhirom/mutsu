@@ -49,6 +49,7 @@ roast/S02-lexical-conventions/unspace.t
 roast/S02-lists/indexing.t
 roast/S02-lists/tree.t
 roast/S02-literals/adverbs.t
+roast/S02-literals/allomorphic.t
 roast/S02-literals/array-interpolation.t
 roast/S02-literals/autoref.t
 roast/S02-literals/char-by-name.t

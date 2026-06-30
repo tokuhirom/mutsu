@@ -541,10 +541,16 @@ impl Interpreter {
     /// Dispatch .^name method
     pub(super) fn dispatch_caret_name(&self, target: &Value) -> Result<Value, RuntimeError> {
         Ok(Value::str(match target {
-            Value::Package(name) => name.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
+            Value::Package(name) => {
+                crate::value::user_facing_type_name(&name.resolve()).to_string()
+            }
+            Value::Instance { class_name, .. } => {
+                crate::value::user_facing_type_name(&class_name.resolve()).to_string()
+            }
             Value::Mixin(inner, _) => match inner.as_ref() {
-                Value::Instance { class_name, .. } => class_name.resolve(),
+                Value::Instance { class_name, .. } => {
+                    crate::value::user_facing_type_name(&class_name.resolve()).to_string()
+                }
                 _ => value_type_name(target).to_string(),
             },
             Value::Promise(p) => p.class_name().resolve(),

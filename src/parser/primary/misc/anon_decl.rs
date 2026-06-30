@@ -128,6 +128,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             language_version: crate::parser::current_language_version(),
             custom_traits: Vec::new(),
             is_unit: false,
+            decl_id: crate::ast::next_class_decl_id(),
         })),
     ))
 }

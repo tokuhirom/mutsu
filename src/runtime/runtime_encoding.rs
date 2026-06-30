@@ -122,13 +122,24 @@ impl Interpreter {
     /// Push a new lexical class scope frame.
     pub(crate) fn push_lexical_class_scope(&mut self) {
         self.lexical_class_scopes.push(Vec::new());
+        self.lexical_class_owner_scopes.push(Vec::new());
     }
 
-    /// Pop a lexical class scope frame, suppressing all class names registered in it.
+    /// Pop a lexical class scope frame, suppressing all class names registered in
+    /// it and releasing ownership of any lexical class names it claimed, so a
+    /// later same-named lexical class in a sequential scope reuses the bare name
+    /// (see `lexical_class_owner_scopes`).
     pub(crate) fn pop_lexical_class_scope(&mut self) {
         if let Some(names) = self.lexical_class_scopes.pop() {
             for name in names {
                 self.suppressed_names.insert(name);
+            }
+        }
+        if let Some(owned) = self.lexical_class_owner_scopes.pop() {
+            for (qualified, decl_id) in owned {
+                if self.lexical_class_sites.get(&qualified) == Some(&decl_id) {
+                    self.lexical_class_sites.remove(&qualified);
+                }
             }
         }
     }
@@ -137,6 +148,76 @@ impl Interpreter {
     pub(crate) fn register_lexical_class(&mut self, name: String) {
         if let Some(scope) = self.lexical_class_scopes.last_mut() {
             scope.push(name);
+        }
+    }
+
+    /// The declaration site that currently owns the given bare/qualified lexical
+    /// class name in the registry, if any. See `lexical_class_sites`.
+    pub(crate) fn lexical_class_site_owner(&self, name: &str) -> Option<u64> {
+        self.lexical_class_sites.get(name).copied()
+    }
+
+    /// Record `site_id` as the owner of the bare/qualified lexical class name,
+    /// and remember it in the current block scope so ownership is released when
+    /// that scope exits (see `pop_lexical_class_scope`).
+    pub(crate) fn set_lexical_class_site_owner(&mut self, name: String, site_id: u64) {
+        self.lexical_class_sites.insert(name.clone(), site_id);
+        if let Some(frame) = self.lexical_class_owner_scopes.last_mut() {
+            frame.push((name, site_id));
+        }
+    }
+
+    /// Resolve a parent type reference (`is Foo`) through the current lexical env.
+    /// A lexical parent may live in the registry under a mangled storage name; the
+    /// env binds the bare name to that storage name, so `is Foo` links to the Foo
+    /// visible in *this* scope rather than a same-named class from another scope.
+    pub(crate) fn lexical_env_remap_name(&self, name: &str) -> String {
+        if let Some(Value::Package(p)) = self.env().get(name) {
+            let resolved = p.resolve();
+            if resolved != name {
+                return resolved;
+            }
+        }
+        name.to_string()
+    }
+
+    /// Remap a freshly-registered role's recorded class parents through the
+    /// lexical env (see `lexical_env_remap_name`). Mirrors the class-parent
+    /// remapping in `exec_register_class_op` so a role's `is C0` links to the same
+    /// (possibly mangled) lexical class that a class's `is C0` would.
+    pub(crate) fn remap_role_parents_via_env(&mut self, name: &str) {
+        let parents = self.registry().role_parents.get(name).cloned();
+        if let Some(parents) = parents {
+            let remapped: Vec<String> = parents
+                .iter()
+                .map(|p| self.lexical_env_remap_name(p))
+                .collect();
+            if remapped != parents {
+                let mut reg = self.registry_mut();
+                if let Some(v) = reg.role_parents.get_mut(name) {
+                    *v = remapped;
+                }
+            }
+        }
+        // The most recently pushed candidate carries this declaration's own
+        // parents (used for MRO construction); remap those too.
+        let cand_parents = self
+            .registry()
+            .role_candidates
+            .get(name)
+            .and_then(|c| c.last())
+            .map(|c| c.parents.clone());
+        if let Some(cand_parents) = cand_parents {
+            let remapped: Vec<String> = cand_parents
+                .iter()
+                .map(|p| self.lexical_env_remap_name(p))
+                .collect();
+            if remapped != cand_parents {
+                let mut reg = self.registry_mut();
+                if let Some(last) = reg.role_candidates.get_mut(name).and_then(|c| c.last_mut()) {
+                    last.parents = remapped;
+                }
+            }
         }
     }
 

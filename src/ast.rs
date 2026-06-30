@@ -11,6 +11,20 @@ fn default_is_positional() -> bool {
     true
 }
 
+/// A process-global counter assigning each `my class`/lexical `ClassDecl`
+/// declaration site a stable id at parse time. Two distinct source
+/// declarations get distinct ids; a single declaration inside a loop keeps one
+/// id across re-executions (the AST node, and thus its `decl_id` value, is
+/// shared). Used to give same-named lexical classes in different scopes their
+/// own type identity. See `Interpreter::exec_register_class_op`.
+static CLASS_DECL_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// Allocate the next class-declaration site id (always non-zero; 0 means
+/// "no stable site", e.g. a runtime-synthesized or deserialized node).
+pub(crate) fn next_class_decl_id() -> u64 {
+    CLASS_DECL_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Specifies how delegation (`handles`) should forward methods.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HandleSpec {
@@ -795,6 +809,11 @@ pub(crate) enum Stmt {
         custom_traits: Vec<(String, Option<Expr>)>,
         /// Whether this class was declared with `unit class` (file-scoped body)
         is_unit: bool,
+        /// Stable per-declaration-site id (parse-time assigned, non-zero) used to
+        /// distinguish same-named lexical (`my`) classes in different scopes.
+        /// 0 means "no stable site" (runtime-synthesized or deserialized node).
+        #[serde(skip)]
+        decl_id: u64,
     },
     HasDecl {
         name: Symbol,

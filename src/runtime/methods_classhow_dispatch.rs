@@ -9,8 +9,12 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "name" if args.len() == 1 => Ok(Value::str(match &args[0] {
-                Value::Package(name) => name.resolve(),
-                Value::Instance { class_name, .. } => class_name.resolve(),
+                Value::Package(name) => {
+                    crate::value::user_facing_type_name(&name.resolve()).to_string()
+                }
+                Value::Instance { class_name, .. } => {
+                    crate::value::user_facing_type_name(&class_name.resolve()).to_string()
+                }
                 Value::ParametricRole {
                     base_name,
                     type_args,

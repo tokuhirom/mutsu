@@ -819,14 +819,15 @@ impl Interpreter {
                 }
                 // Collect public attributes for .raku representation
                 let class_key = class_name.resolve();
+                let display_name = crate::value::user_facing_type_name(&class_key);
                 let public_attrs =
                     self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
                 if public_attrs.is_empty() {
-                    return Ok(Value::str(format!("{}.new", class_name)));
+                    return Ok(Value::str(format!("{}.new", display_name)));
                 }
                 return Ok(Value::str(format!(
                     "{}.new({})",
-                    class_name,
+                    display_name,
                     public_attrs.join(", ")
                 )));
             }

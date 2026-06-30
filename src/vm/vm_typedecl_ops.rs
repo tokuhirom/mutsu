@@ -68,6 +68,7 @@ impl Interpreter {
             body,
             language_version,
             custom_traits,
+            decl_id,
             ..
         } = stmt
         {
@@ -89,10 +90,57 @@ impl Interpreter {
             } else {
                 format!("{current_package}::{resolved_name}")
             };
+            // A lexical (`my`) class is stored in the registry under a *storage
+            // name* that is normally the same as `qualified_name`. But when a
+            // *different* source declaration site reuses the same name *after the
+            // earlier one's scope has exited* (e.g. two `my class Foo` in
+            // separate `gather` blocks), it must not clobber the first one —
+            // instances of the first class still reference it by name. Such a
+            // later, out-of-scope collision is stored under a mangled internal
+            // name `Foo\u{0}<site-id>`. The site id is the parse-time-assigned
+            // `decl_id`, stable across re-executions of the same site (a loop
+            // body keeps one identity) but distinct between sites. `decl_id == 0`
+            // (deserialized/synthesized node) opts out.
+            //
+            // A same-name declaration that is *upgrading a stub* of the same name
+            // (`my class C { ... }` then `my class C { ... }`) is NOT a collision:
+            // it must keep the bare name so the definition lands on the same
+            // registry entry. So only mangle when the existing same-named class
+            // is already a fully-defined (non-stub) class from a different site.
+            let storage_name = if *is_lexical && *decl_id != 0 {
+                match self.lexical_class_site_owner(&qualified_name) {
+                    Some(owner)
+                        if owner != *decl_id
+                            && self.has_class(&qualified_name)
+                            && !self.registry().class_stubs.contains(&qualified_name) =>
+                    {
+                        format!("{qualified_name}\u{0}{decl_id}")
+                    }
+                    _ => {
+                        self.set_lexical_class_site_owner(qualified_name.clone(), *decl_id);
+                        qualified_name.clone()
+                    }
+                }
+            } else {
+                qualified_name.clone()
+            };
             // If the name was previously suppressed (e.g. by a `my class` in an
             // earlier block), clear the suppression before running the class body
             // so that references to the class name inside the body can resolve.
             self.unsuppress_name(&resolved_name);
+            // Parent class references (`is Foo`) are stored by bare name, but a
+            // lexical parent may live in the registry under a mangled storage
+            // name (see `storage_name` above). Resolve each parent through the
+            // current lexical env so `is C0` binds to the C0 visible in *this*
+            // scope, not a same-named class from an unrelated earlier scope.
+            let mapped_parents: Vec<String> = parents
+                .iter()
+                .map(|p| self.lexical_env_remap_name(p))
+                .collect();
+            let mapped_hidden_parents: Vec<String> = hidden_parents
+                .iter()
+                .map(|p| self.lexical_env_remap_name(p))
+                .collect();
             // TODO: Detect redeclaration of package-scoped classes across
             // EVAL boundaries (X::Redeclaration). Currently deferred because
             // distinguishing EVAL re-definitions from normal re-execution
@@ -101,13 +149,13 @@ impl Interpreter {
             let deferred_traits = loan_env!(
                 self,
                 register_class_decl(
-                    &qualified_name,
-                    parents,
+                    &storage_name,
+                    &mapped_parents,
                     crate::runtime::ClassDeclModifiers {
                         class_is_rw: *class_is_rw,
                         is_hidden: *is_hidden,
                         is_lexical: *is_lexical,
-                        hidden_parents,
+                        hidden_parents: &mapped_hidden_parents,
                         does_parents,
                         language_version,
                     },
@@ -116,30 +164,33 @@ impl Interpreter {
             )?;
             // Check for assignment to native read-only params before
             // compiling (X::Assignment::RO::Comp).
-            if let Some(err) = self.check_class_native_readonly_param_errors(&qualified_name) {
+            if let Some(err) = self.check_class_native_readonly_param_errors(&storage_name) {
                 return Err(err);
             }
             // Compile method bodies to bytecode for the fast path
-            self.compile_class_methods(&qualified_name);
+            self.compile_class_methods(&storage_name);
             // Register CUnion repr if present
             if let Some(repr_name) = repr
                 && repr_name == "CUnion"
             {
-                self.register_cunion_class(&qualified_name);
+                self.register_cunion_class(&storage_name);
             }
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.
+            // The bare name resolves to the (possibly mangled) storage name so
+            // that `Foo.new` inside this scope produces instances tagged with
+            // this declaration's identity, not an earlier same-named class's.
             let env = self.env_mut();
             env.insert(
                 "_".to_string(),
-                Value::Package(Symbol::intern(&qualified_name)),
+                Value::Package(Symbol::intern(&storage_name)),
             );
             // Always insert the class type object so that class names take
             // precedence over same-named `$`-sigiled variables (whose stripped
             // name may already be in the env).
             env.insert(
                 qualified_name.clone(),
-                Value::Package(Symbol::intern(&qualified_name)),
+                Value::Package(Symbol::intern(&storage_name)),
             );
             // When a nested class is registered inside another class (e.g. class B inside class A
             // becomes A::B), suppress the short name (B) so it cannot be used outside.
@@ -157,7 +208,7 @@ impl Interpreter {
                 let env = self.env_mut();
                 env.insert(
                     resolved_name.clone(),
-                    Value::Package(Symbol::intern(&qualified_name)),
+                    Value::Package(Symbol::intern(&storage_name)),
                 );
             }
             // When a class is declared with an already-qualified name
@@ -175,7 +226,7 @@ impl Interpreter {
                 // must not make the bare name `Channel` resolve to the user class).
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
                     self.env_mut().entry_or_insert_with(short, || {
-                        Value::Package(Symbol::intern(&qualified_name))
+                        Value::Package(Symbol::intern(&storage_name))
                     });
                 }
             }
@@ -184,10 +235,10 @@ impl Interpreter {
             if *is_lexical {
                 self.register_lexical_class(resolved_name.clone());
                 // Also mark as my-scoped so it's excluded from the parent package stash
-                self.mark_my_scoped_package_item(qualified_name.clone());
+                self.mark_my_scoped_package_item(storage_name.clone());
             }
             // Store language revision metadata from the version captured at parse time
-            self.store_language_revision_from_version(&qualified_name, language_version);
+            self.store_language_revision_from_version(&storage_name, language_version);
 
             // Dispatch custom `is` traits via trait_mod:<is> if defined.
             // Merge explicitly parsed custom_traits with deferred_traits
@@ -195,7 +246,7 @@ impl Interpreter {
             let has_trait_mod =
                 self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
             if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
-                let type_obj = Value::Package(Symbol::intern(&qualified_name));
+                let type_obj = Value::Package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
                 for (trait_name, trait_arg) in custom_traits {
                     let trait_value = if let Some(arg_expr) = trait_arg {
@@ -297,6 +348,10 @@ impl Interpreter {
                 self,
                 register_role_decl(&qualified_name, type_params, type_param_defs, body, *is_rw,)
             )?;
+            // Link `is Parent` references on this role to the lexical class visible
+            // in this scope (which may be stored under a mangled name), matching
+            // the class-parent remapping in `exec_register_class_op`.
+            self.remap_role_parents_via_env(&qualified_name);
             if *is_export && !self.suppress_exports {
                 // The compiler may have pre-qualified the role name
                 // (e.g. `R1` → `GH2613::R1`) when compiling under a
