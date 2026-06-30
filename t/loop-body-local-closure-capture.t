@@ -32,14 +32,14 @@ plan 15;
 {
     my @c;
     for <a b c> { my $s = $_; @c.push({ $s }) }
-    is @c.map(*.()).join(','), 'a,b,c', 'for-list body-local closures';
+    is @c.map({.()}).join(','), 'a,b,c', 'for-list body-local closures';
 }
 
 # for with a named param, body-local derived value
 {
     my @c;
     for 1..3 -> $v { my $y = $v * 2; @c.push({ $y }) }
-    is @c.map(*.()).join(','), '2,4,6', 'for -> body-local derived closures';
+    is @c.map({.()}).join(','), '2,4,6', 'for -> body-local derived closures';
 }
 
 # while loop
@@ -47,14 +47,14 @@ plan 15;
     my @c;
     my $k = 0;
     while $k < 3 { my $z = $k; @c.push({ $z }); $k++ }
-    is @c.map(*.()).join(','), '0,1,2', 'while body-local closures';
+    is @c.map({.()}).join(','), '0,1,2', 'while body-local closures';
 }
 
 # C-style loop
 {
     my @c;
     loop (my $i = 0; $i < 3; $i++) { my $w = $i; @c.push({ $w }) }
-    is @c.map(*.()).join(','), '0,1,2', 'C-style body-local closures';
+    is @c.map({.()}).join(','), '0,1,2', 'C-style body-local closures';
 }
 
 # repeat loop
@@ -62,7 +62,7 @@ plan 15;
     my @c;
     my $m = 0;
     repeat { my $p = $m; @c.push({ $p }); $m++ } while $m < 3;
-    is @c.map(*.()).join(','), '0,1,2', 'repeat body-local closures';
+    is @c.map({.()}).join(','), '0,1,2', 'repeat body-local closures';
 }
 
 # an intervening call between loop and closure invocation must not corrupt it

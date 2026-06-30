@@ -18,6 +18,16 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
     // Phase 2 element container: a `:=`-bound element cell may reach an arith op
     // directly (e.g. `@a.reduce(&[+])` folds raw items); read through the cell.
     let (left, right) = (left.into_deref(), right.into_deref());
+    // A bare Whatever value reaching `+` is NOT a curry point (those are wrapped
+    // into a WhateverCode at parse time). Numifying it dies in Raku, e.g.
+    // `&infix:<+>(*, 42)` invokes `+` with a Whatever argument.
+    if matches!(left, Value::Whatever | Value::HyperWhatever)
+        || matches!(right, Value::Whatever | Value::HyperWhatever)
+    {
+        return Err(RuntimeError::new(
+            "Cannot resolve caller Numeric(Whatever:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)".to_string(),
+        ));
+    }
     // Mixin-wrapped Range + Real (or Real + Mixin Range): perform Range arithmetic and re-wrap
     if let Some(result) = mixin_range_arith(left.clone(), right.clone(), arith_add)
         .or_else(|| mixin_range_arith(right.clone(), left.clone(), arith_add))

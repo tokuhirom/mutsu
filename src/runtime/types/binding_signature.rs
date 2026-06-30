@@ -922,6 +922,13 @@ impl Interpreter {
                             // caller's variable.
                             let alias_key = format!("__mutsu_sigilless_alias::{}", pd.name);
                             self.env.insert(alias_key, Value::str(source_name));
+                        } else if matches!(&args[positional_idx], Value::ContainerRef(_)) {
+                            // A bare `ContainerRef` cell (e.g. the leaf container
+                            // `deepmap`/hyper passes by reference) IS a writable
+                            // lvalue even without a source variable name: the raw
+                            // param binds the shared cell and mutations through it
+                            // (`*++`, `*--`) write to the source slot. Keep it
+                            // mutable (do NOT mark readonly).
                         } else if is_rw {
                             return Err(RuntimeError::new(format!(
                                 "X::Parameter::RW: '{}' expects a writable variable argument",

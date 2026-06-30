@@ -35,6 +35,12 @@ pub(crate) fn should_wrap_whatevercode(expr: &Expr) -> bool {
             op: TokenKind::Ident(name),
             ..
         } if name == "o" => false,
+        // `*(args)` invokes a *bare* Whatever value — it does not curry. Whatever
+        // has no `CALL-ME`, so this dies at runtime (X::Method::NotFound). Only a
+        // CallOn on a *compound* curry target (`*[0](...)`, `*.foo(...)`) wraps the
+        // target into a WhateverCode and invokes it (handled by the target-wrap arm
+        // in `expression`). Keep the bare-target CallOn unwrapped here.
+        Expr::CallOn { target, .. } if is_whatever(target) => false,
         // List replication `xx` does not Whatever-curry a *bare* `*` operand: a
         // standalone `*` is the Whatever value, repeated literally. `* xx 2` is
         // `(*, *)`; `1 xx *`/`1 x *` is the infinite-repeat form. None wrap into a
@@ -197,24 +203,14 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
         Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. } => {
             contains_whatever(target) || is_wrapped_whatevercode(target)
         }
-        Expr::CallOn { target, args } => {
-            // Already-wrapped WhateverCode args (Lambda/AnonSubParams with
-            // is_whatever_code: true) are opaque values, not raw Whatever
-            // placeholders.  Only bare * or compound-Whatever args should
-            // trigger auto-currying of the whole CallOn.
+        Expr::CallOn { target, .. } => {
+            // Only the *target* of an invocation can curry: `(*.foo).(x)` invokes
+            // the curried `*.foo`, and `*[0]([1,2,3])` invokes the curried `*[0]`.
+            // A bare `*` (or compound Whatever) passed as a call *argument* is NOT
+            // a curry point — it is a Whatever value handed to the callee. So
+            // `&infix:<+>(*, 42)` invokes `&infix:<+>` with a Whatever argument
+            // (which dies in `+`), it does NOT make a closure.
             contains_whatever(target)
-                || args.iter().any(|a| {
-                    !matches!(
-                        a,
-                        Expr::Lambda {
-                            is_whatever_code: true,
-                            ..
-                        } | Expr::AnonSubParams {
-                            is_whatever_code: true,
-                            ..
-                        }
-                    ) && contains_whatever(a)
-                })
         }
         // Only check target, not index: @a[*-1] should NOT make the whole expr a WhateverCode.
         // The [*-1] subscript handles its own WhateverCode wrapping.

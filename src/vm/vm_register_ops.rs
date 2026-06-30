@@ -256,16 +256,45 @@ impl Interpreter {
             return self.clone_env();
         };
         if cc.captures_env_by_name || crate::opcode::reflective_name_access_possible() {
-            return self.clone_env();
+            let mut flat = self.clone_env();
+            // Even when capturing the whole env by name, a slot-only local (a
+            // pointy-block/sub parameter that this frame never mirrors into `env`,
+            // e.g. `-> $r { * ~~ /<$r>/ }` where `$r` is read only inside a stored
+            // regex) can be missing from the cloned env. Pull this frame's
+            // free-var slots from the live local store so such captures survive.
+            for sym in &cc.free_var_syms {
+                if let Some(slot) = sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
+                    && let Some(val) = self.locals.get(slot)
+                {
+                    flat.insert_sym(*sym, val.clone());
+                }
+            }
+            // Drop the closure's own params/locals (e.g. a WhateverCode's `_`
+            // topic param) so a stale enclosing `for`/map topic is not inherited
+            // and later leaked back to the caller.
+            for name in &cc.locals {
+                if !cc.free_var_syms.iter().any(|s| s.with_str(|x| x == name)) {
+                    flat.remove_sym(Symbol::intern(name));
+                }
+            }
+            return flat;
         }
         let free: std::collections::HashSet<Symbol> = cc.free_var_syms.iter().copied().collect();
+        // The closure's own parameters/locals (e.g. a WhateverCode's `_` param)
+        // shadow any same-named enclosing binding, so they must NOT be inherited
+        // from the creating frame's env. Capturing the enclosing `_` (a `for`/map
+        // topic) into a `_`-param WhateverCode would leak that stale topic back to
+        // the caller on return (`* ~~ /<$r>/` invoked inside a grep-in-`for`).
+        let own_locals: std::collections::HashSet<&str> =
+            cc.locals.iter().map(|s| s.as_str()).collect();
         // Flatten once (same as `clone_env`), then keep only the upvalue set,
         // shadow-meta, and system names. The base tier (GLOBAL_BASE) is never in
         // the overlay and stays reachable through the flat env's tail lookup.
         let flat = self.clone_env();
         let mut map: std::collections::HashMap<Symbol, Value> = std::collections::HashMap::new();
         for (k, v) in flat.iter() {
-            let keep = free.contains(k) || k.with_str(|s| !crate::env::is_plain_user_lexical(s));
+            let keep = free.contains(k)
+                || k.with_str(|s| !crate::env::is_plain_user_lexical(s) && !own_locals.contains(s));
             if keep {
                 map.insert(*k, v.clone());
             }

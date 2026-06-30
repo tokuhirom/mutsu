@@ -128,7 +128,7 @@ plan 24;
     my $x = 99;
     my @c;
     for 1..3 -> $i { my $x = $i; @c.push({ $x }) }
-    is @c.map(*.()).join(','), '1,2,3', 'per-iteration my captured correctly';
+    is @c.map({.()}).join(','), '1,2,3', 'per-iteration my captured correctly';
     is $x, 99, 'closure-capturing loop does not clobber outer $x';
 }
 

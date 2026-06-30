@@ -1809,6 +1809,44 @@ impl CompiledCode {
     /// resolved by this code's locals. Nested closures have already had their
     /// own `free_var_syms` computed (they are finalized before being embedded),
     /// so they are folded in directly without re-walking their ops.
+    /// Extract sigil'd variable references (`$r`, `@a`, `%h`, `&rule`) from a
+    /// regex pattern string, for closure free-variable analysis. Conservative: it
+    /// over-approximates (an extra captured var is harmless), and skips capture
+    /// references like `$0`/`$<name>` (sigil not followed by an identifier start).
+    fn regex_interpolated_var_names(pattern: &str) -> Vec<String> {
+        let bytes = pattern.as_bytes();
+        let mut names = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            let c = bytes[i];
+            if matches!(c, b'$' | b'@' | b'%' | b'&') {
+                let start_ident = i + 1;
+                if start_ident < bytes.len()
+                    && (bytes[start_ident].is_ascii_alphabetic() || bytes[start_ident] == b'_')
+                {
+                    let mut j = start_ident;
+                    while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_')
+                    {
+                        j += 1;
+                    }
+                    // Scalars ($x) are stored sigil-less in `locals`/`env` ("x"),
+                    // while @/%/& lexicals keep their sigil. Match that convention
+                    // so the free-var name lines up with the local slot / env key.
+                    let name = if c == b'$' {
+                        pattern[start_ident..j].to_string()
+                    } else {
+                        pattern[i..j].to_string()
+                    };
+                    names.push(name);
+                    i = j;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        names
+    }
+
     pub(crate) fn compute_free_vars(&mut self) {
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let mut free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
@@ -1877,6 +1915,26 @@ impl CompiledCode {
                     pending_decl = false;
                 }
                 _ => {}
+            }
+        }
+        // Regex literals interpolate lexical variables at match time (`/<$r>/`,
+        // `/$x/`, `/<&rule>/`). Those reads happen inside the regex engine, not via
+        // a name-const op, so the op scan above misses them. A closure that stores
+        // such a regex (e.g. `-> $r { * ~~ /<$r>/ }`) must still capture `$r`, so
+        // scan every regex constant for sigil'd variable references and treat them
+        // as free vars (unless this body declares them).
+        for c in &self.constants {
+            let pattern = match c {
+                Value::Regex(s) => Some(s.as_str()),
+                Value::RegexWithAdverbs(a) => Some(a.pattern.as_str()),
+                _ => None,
+            };
+            if let Some(pattern) = pattern {
+                for name in Self::regex_interpolated_var_names(pattern) {
+                    if !own.contains(name.as_str()) {
+                        free.insert(Symbol::intern(&name));
+                    }
+                }
             }
         }
         // Fold nested closures: their free vars are ours unless we declare them;

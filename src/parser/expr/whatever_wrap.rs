@@ -211,7 +211,10 @@ pub(crate) fn wrap_whatevercode(expr: &Expr) -> Expr {
     let wc_count = count_whatever(expr);
 
     if wc_count <= 1 && !expr_contains_topic(expr) {
-        // Single-arg: use Lambda with param "_" for backward compat
+        // Single-arg: use Lambda with param "_" for backward compat (this keeps the
+        // `deepmap`/hyper container-passing path working, which binds each leaf to
+        // the topic `_`). `compile_expr_lambda` marks `_` `is raw` when the body
+        // mutates the placeholder (`*++`, `* =:= $x`), so mutation/identity work.
         // Use a special single-arg replacer that maps * and nested single-arg WC to $_
         let body_expr = replace_whatever_single(expr);
         Expr::Lambda {
@@ -239,7 +242,9 @@ pub(crate) fn wrap_whatevercode(expr: &Expr) -> Expr {
                 literal_value: None,
                 sub_signature: None,
                 where_constraint: None,
-                traits: Vec::new(),
+                // WhateverCode parameters are `is raw`, so `*++`/`*.=foo` can
+                // mutate the argument's container and write back to the caller.
+                traits: vec!["raw".to_string()],
                 double_slurpy: false,
                 onearg: false,
                 optional_marker: false,
@@ -274,7 +279,8 @@ pub(crate) fn wrap_whatevercode(expr: &Expr) -> Expr {
                     literal_value: None,
                     sub_signature: None,
                     where_constraint: None,
-                    traits: Vec::new(),
+                    // WhateverCode parameters are `is raw` (mutable, write back).
+                    traits: vec!["raw".to_string()],
                     double_slurpy: false,
                     onearg: false,
                     optional_marker: false,

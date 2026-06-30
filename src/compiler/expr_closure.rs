@@ -232,7 +232,38 @@ impl Compiler {
         } else {
             vec![param.to_string()]
         };
-        let mut compiled = self.compile_closure_body(&params, &[], body);
+        // A single-`*` WhateverCode whose body *mutates* the `_` placeholder
+        // (`*++`, `*--`, `++*`, `* =:= $x`, `*.=foo`) binds `_` `is raw`, so the
+        // mutation/identity reaches the caller's container (S02 "WhateverCode
+        // parameters are rw"). Read-only bodies keep `_` by value (no param_defs),
+        // which avoids a topic-`_` writeback leak in `for`/grep frames.
+        let wc_raw = is_whatever_code && param == "_" && whatever_lambda_body_mutates_topic(body);
+        let wc_param_defs: Vec<crate::ast::ParamDef> = if wc_raw {
+            vec![crate::ast::ParamDef {
+                name: "_".to_string(),
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy: false,
+                sigilless: false,
+                type_constraint: None,
+                literal_value: None,
+                sub_signature: None,
+                where_constraint: None,
+                traits: vec!["raw".to_string()],
+                double_slurpy: false,
+                onearg: false,
+                optional_marker: false,
+                outer_sub_signature: None,
+                code_signature: None,
+                is_invocant: false,
+                shape_constraints: None,
+            }]
+        } else {
+            Vec::new()
+        };
+        let mut compiled = self.compile_closure_body(&params, &wc_param_defs, body);
         // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub`. A WhateverCode
         // (`*+1`, also an `Expr::Lambda`) is tagged separately via callable_type.
         if !is_whatever_code {
@@ -244,7 +275,7 @@ impl Compiler {
             name: Symbol::intern(""),
             name_expr: None,
             params: params.clone(),
-            param_defs: Vec::new(),
+            param_defs: wc_param_defs,
             return_type: None,
             associativity: None,
             precedence_trait: None,
@@ -252,7 +283,7 @@ impl Compiler {
             body: body.to_vec(),
             multi: false,
             is_rw: false,
-            is_raw: false,
+            is_raw: wc_raw,
             is_export: false,
             export_tags: Vec::new(),
             is_test_assertion: false,
@@ -659,5 +690,70 @@ impl Compiler {
             };
             self.compile_expr(&ro_call);
         }
+    }
+}
+
+/// Whether a single-`*` WhateverCode body (the `*` already lowered to `Var("_")`)
+/// *mutates* its placeholder or depends on its container identity, requiring the
+/// `_` parameter to bind `is raw`: `*++`/`*--`/`++*`/`--*`, `* =:= $x`, `*.=foo`.
+fn whatever_lambda_body_mutates_topic(body: &[Stmt]) -> bool {
+    body.iter().any(|stmt| match stmt {
+        Stmt::Expr(e) => expr_mutates_topic(e),
+        _ => false,
+    })
+}
+
+fn is_topic_var(e: &Expr) -> bool {
+    matches!(e, Expr::Var(name) if name == "_")
+}
+
+fn expr_refs_topic(e: &Expr) -> bool {
+    if is_topic_var(e) {
+        return true;
+    }
+    match e {
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_refs_topic(expr),
+        Expr::Binary { left, right, .. } => expr_refs_topic(left) || expr_refs_topic(right),
+        Expr::MethodCall { target, .. } => expr_refs_topic(target),
+        _ => false,
+    }
+}
+
+fn expr_mutates_topic(e: &Expr) -> bool {
+    match e {
+        // `*++` / `*--`
+        Expr::PostfixOp {
+            op: TokenKind::PlusPlus | TokenKind::MinusMinus,
+            expr,
+        } => expr_refs_topic(expr) || expr_mutates_topic(expr),
+        // `++*` / `--*`
+        Expr::Unary {
+            op: TokenKind::PlusPlus | TokenKind::MinusMinus,
+            expr,
+        } => expr_refs_topic(expr) || expr_mutates_topic(expr),
+        Expr::Unary { expr, .. } => expr_mutates_topic(expr),
+        Expr::PostfixOp { expr, .. } => expr_mutates_topic(expr),
+        // `* =:= $x` — container identity needs the same container.
+        Expr::Binary {
+            op: TokenKind::Ident(name),
+            left,
+            right,
+        } if name == "=:=" => {
+            expr_refs_topic(left)
+                || expr_refs_topic(right)
+                || expr_mutates_topic(left)
+                || expr_mutates_topic(right)
+        }
+        Expr::Binary { left, right, .. } => expr_mutates_topic(left) || expr_mutates_topic(right),
+        // `*.=foo` — mutating method-assign on the placeholder.
+        Expr::MethodCall {
+            target,
+            modifier: Some('='),
+            ..
+        } if expr_refs_topic(target) => true,
+        Expr::MethodCall { target, args, .. } => {
+            expr_mutates_topic(target) || args.iter().any(expr_mutates_topic)
+        }
+        _ => false,
     }
 }
