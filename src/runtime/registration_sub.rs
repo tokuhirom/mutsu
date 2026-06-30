@@ -111,9 +111,7 @@ impl Interpreter {
     /// synonym extend the shared routine. Returns `None` for ordinary operators.
     fn operator_alias_target(&self, name: &str) -> Option<String> {
         let is_operator = |n: &str| {
-            (n.starts_with("infix:<")
-                || n.starts_with("prefix:<")
-                || n.starts_with("postfix:<"))
+            (n.starts_with("infix:<") || n.starts_with("prefix:<") || n.starts_with("postfix:<"))
                 && n.ends_with('>')
         };
         if !is_operator(name) {
