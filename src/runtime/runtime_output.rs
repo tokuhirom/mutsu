@@ -50,6 +50,28 @@ impl Interpreter {
         self.output_sink_mut().immediate_stdout = val;
     }
 
+    /// Drain the shared stdout/stderr buffers that thread clones (`start`
+    /// blocks, Promise callbacks) write into, emitting any pending text to this
+    /// interpreter's own sinks. Called on `await` (join) and at program exit so
+    /// fire-and-forget thread output is not lost. The Arc is cloned out so the
+    /// `output_sink` guard is dropped before `emit_output` re-borrows `self`.
+    pub(crate) fn drain_shared_thread_output(&mut self) {
+        let shared_out = self.output_sink().shared_thread_output.clone();
+        if let Some(shared) = shared_out {
+            let drained = std::mem::take(&mut *shared.lock().unwrap());
+            if !drained.is_empty() {
+                self.emit_output(&drained);
+            }
+        }
+        let shared_err = self.output_sink().shared_thread_stderr.clone();
+        if let Some(shared) = shared_err {
+            let drained = std::mem::take(&mut *shared.lock().unwrap());
+            if !drained.is_empty() {
+                self.output_sink_mut().stderr_output.push_str(&drained);
+            }
+        }
+    }
+
     pub fn flush_stderr_buffer(&mut self) {
         let stderr = std::mem::take(&mut self.output_sink_mut().stderr_output);
         if !stderr.is_empty() {

@@ -1,12 +1,16 @@
 //! Call argument list parsing and related helpers.
 
 use crate::ast::Expr;
-use crate::parser::expr::expression;
+use crate::parser::expr::{expression, listop_arg_expr};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PResult, parse_char};
 
 /// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
-/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
+/// Tries colonpair first (:name, :$var, :!flag, :0port), then a list-prefix
+/// expression. The list-prefix parse (not a full expression) is what stops the
+/// argument before the loose word-logical operators `and`/`or`/`andthen`/… which
+/// are looser than the colon-method comma list, so `.contains: 'a' and .contains:
+/// 'b'` is `(.contains: 'a') and (.contains: 'b')`, not `.contains('a' and …)`.
 pub(super) fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
     if input.starts_with(':')
         && !input.starts_with("::")
@@ -14,7 +18,7 @@ pub(super) fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
     {
         return Ok(result);
     }
-    expression(input)
+    listop_arg_expr(input)
 }
 
 pub(super) fn has_unescaped_statement_boundary(input: &str) -> bool {

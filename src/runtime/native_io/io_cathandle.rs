@@ -556,6 +556,18 @@ impl Interpreter {
                     _ => Value::str("IO::CatHandle".to_string()),
                 }
             }
+            "lock" | "unlock" => {
+                // Delegate to the currently-active source handle, matching
+                // rakudo's `$!active-handle andthen .lock(|c)`. With no active
+                // handle (a zero-source or exhausted cat) the result is `Nil` —
+                // we never open a fresh handle just to lock it.
+                match attrs.get("active").cloned() {
+                    Some(active) if matches!(&active, Value::Instance { class_name, .. } if class_name == "IO::Handle") => {
+                        self.native_io_handle_method(&active, method, args)?
+                    }
+                    _ => Value::Nil,
+                }
+            }
             "Supply" | "native-descriptor" | "seek" | "tell" | "t" => {
                 return Err(RuntimeError::new(format!(
                     "No native mutable method '{}' on 'IO::CatHandle'",

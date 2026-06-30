@@ -88,7 +88,13 @@ impl Interpreter {
         let code_needs_subprocess = program.contains("Supply.interval")
             || program.contains("Supply.interval:")
             || (expected_err.is_some() && Self::program_mentions_qx(&program))
-            || (program.contains("start") && program.contains("exit"));
+            || (program.contains("start") && program.contains("exit"))
+            // File-locking tests observe cross-process advisory locks (fcntl
+            // record locks are owned per *process*). Running the child code
+            // in-process via a nested Interpreter shares this process's PID, so
+            // its lock never conflicts with a lock the parent test already holds.
+            // A real subprocess is required for the locking semantics to show.
+            || program.contains(".lock");
         let needs_subprocess = !compiler_args.is_empty()
             || has_unsupported_compiler_args
             || (program.is_empty() && run_args.is_some())

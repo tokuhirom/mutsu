@@ -212,6 +212,14 @@ impl IoHandleState {
             }
         }
     }
+
+    /// The raw OS file descriptor backing this handle, if any. Used by `.lock` /
+    /// `.unlock` to place fcntl advisory record locks directly on the fd.
+    #[cfg(unix)]
+    pub(crate) fn raw_fd(&self) -> Option<i32> {
+        use std::os::unix::io::AsRawFd;
+        self.file.as_ref().map(|f| f.as_raw_fd())
+    }
 }
 
 impl Interpreter {
@@ -226,6 +234,96 @@ impl Interpreter {
 
     pub(super) fn tell_handle_value(&mut self, handle_value: &Value) -> Result<i64, RuntimeError> {
         self.with_handle_mut(handle_value, |state| state.tell())
+    }
+
+    /// `.lock(:$shared, :$non-blocking)` — place an advisory fcntl record lock
+    /// on the underlying fd. A shared (`F_RDLCK`) lock requires the fd to be open
+    /// for reading; an exclusive (`F_WRLCK`) lock requires it open for writing,
+    /// so locking in the wrong mode yields `EBADF` (the kernel enforces it). On
+    /// success returns `True`; on failure (would-block in non-blocking mode, or a
+    /// mode mismatch) returns a `Failure` carrying `X::IO::Lock`, matching Raku.
+    pub(super) fn lock_handle_value(
+        &mut self,
+        handle_value: &Value,
+        shared: bool,
+        non_blocking: bool,
+    ) -> Result<Value, RuntimeError> {
+        // Pull the raw fd out under a confined borrow, then do the (possibly
+        // blocking) fcntl outside the handle table guard.
+        #[cfg(unix)]
+        {
+            let fd = self.with_handle_mut(handle_value, |state| Ok(state.raw_fd()))?;
+            let Some(fd) = fd else {
+                return Ok(Self::io_lock_failure(
+                    "Cannot lock a handle with no file descriptor",
+                ));
+            };
+            let mut fl: libc::flock = unsafe { std::mem::zeroed() };
+            fl.l_type = if shared { libc::F_RDLCK } else { libc::F_WRLCK } as libc::c_short;
+            fl.l_whence = libc::SEEK_SET as libc::c_short;
+            fl.l_start = 0;
+            fl.l_len = 0;
+            let cmd = if non_blocking {
+                libc::F_SETLK
+            } else {
+                libc::F_SETLKW
+            };
+            loop {
+                let ret = unsafe { libc::fcntl(fd, cmd, &fl) };
+                if ret != -1 {
+                    return Ok(Value::Bool(true));
+                }
+                let err = std::io::Error::last_os_error();
+                // A blocking lock interrupted by a signal must be retried.
+                if err.raw_os_error() == Some(libc::EINTR) {
+                    continue;
+                }
+                return Ok(Self::io_lock_failure(&format!(
+                    "Could not obtain a lock on the file: {err}"
+                )));
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (handle_value, shared, non_blocking);
+            Err(RuntimeError::new("lock: not supported on this platform"))
+        }
+    }
+
+    /// `.unlock` — release any advisory record lock held on the handle. Always
+    /// returns `True`; releasing an absent lock is a no-op.
+    pub(super) fn unlock_handle_value(
+        &mut self,
+        handle_value: &Value,
+    ) -> Result<Value, RuntimeError> {
+        #[cfg(unix)]
+        {
+            let fd = self
+                .with_handle_mut_opt(handle_value, |state| Ok(state.raw_fd()))?
+                .flatten();
+            if let Some(fd) = fd {
+                let mut fl: libc::flock = unsafe { std::mem::zeroed() };
+                fl.l_type = libc::F_UNLCK as libc::c_short;
+                fl.l_whence = libc::SEEK_SET as libc::c_short;
+                fl.l_start = 0;
+                fl.l_len = 0;
+                unsafe { libc::fcntl(fd, libc::F_SETLK, &fl) };
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = handle_value;
+        Ok(Value::Bool(true))
+    }
+
+    /// Build a `Failure` carrying an `X::IO::Lock` exception (returned, not
+    /// thrown — `.lock` soft-fails so callers can `~~ Failure` test it).
+    fn io_lock_failure(message: &str) -> Value {
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert("message".to_string(), Value::str_from(message));
+        let ex = Value::make_instance(Symbol::intern("X::IO::Lock"), ex_attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
     pub(super) fn handle_eof_value(&mut self, handle_value: &Value) -> Result<bool, RuntimeError> {

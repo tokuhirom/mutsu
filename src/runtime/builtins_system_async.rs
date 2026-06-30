@@ -376,21 +376,7 @@ impl Interpreter {
         self.run_pending_instance_destroys()?;
 
         // Drain shared thread output buffers (concurrent output interleaved in real order).
-        // Clone the Arc out so the output_sink guard is dropped before emit_output re-borrows self.
-        let shared_out = self.output_sink().shared_thread_output.clone();
-        if let Some(shared) = shared_out {
-            let drained = std::mem::take(&mut *shared.lock().unwrap());
-            if !drained.is_empty() {
-                self.emit_output(&drained);
-            }
-        }
-        let shared_err = self.output_sink().shared_thread_stderr.clone();
-        if let Some(shared) = shared_err {
-            let drained = std::mem::take(&mut *shared.lock().unwrap());
-            if !drained.is_empty() {
-                self.output_sink_mut().stderr_output.push_str(&drained);
-            }
-        }
+        self.drain_shared_thread_output();
 
         // Slip results flatten into the surrounding await result list (slip
         // semantics): `await start { (2, 3).Slip }, start { 4 }` yields

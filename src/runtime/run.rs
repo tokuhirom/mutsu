@@ -321,6 +321,12 @@ impl Interpreter {
     }
 
     pub(super) fn finish(&mut self) -> Result<(), RuntimeError> {
+        // Drain any output produced by fire-and-forget `start` threads that was
+        // never collected by an `await` (those drain on join). A `start` block
+        // that ran to a `say` and then blocked/exited still left its text in the
+        // shared buffer; at program exit it must reach real stdout, matching Raku
+        // where completed thread output is not lost.
+        self.drain_shared_thread_output();
         if !self.end_phasers.is_empty() {
             // Clear halted flag so END phasers can execute even after exit()
             self.halted = false;
