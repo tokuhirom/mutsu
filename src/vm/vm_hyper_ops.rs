@@ -16,24 +16,38 @@ impl Interpreter {
         let from = Self::const_str(code, from_idx);
         let to = Self::const_str(code, to_idx);
         let target = self.env().get("_").cloned().unwrap_or(Value::Nil);
-        // If $_ is bound to a read-only topic (e.g. `with 'literal' { ... }`),
-        // tr/// must throw X::Assignment::RO. The `with` desugaring marks the
-        // topic value with a Mixin override `__mutsu_topic_ro__` when the
-        // condition expression is a literal.
-        if !non_destructive
-            && let Value::Mixin(_, overrides) = &target
-            && overrides.contains_key("__mutsu_topic_ro__")
-        {
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert(
-                "message".to_string(),
-                Value::str(format!(
-                    "Cannot modify an immutable Str ({})",
-                    target.to_string_value()
-                )),
+        // If $_ is bound to a read-only topic, a destructive tr/// must throw
+        // X::Assignment::RO. Two cases:
+        //  1. A literal `with`/`given`/`for` topic routed through the `given`
+        //     opcode (or a `for` loop) marks `$_` read-only by name in
+        //     `readonly_vars()`.
+        //  2. The legacy `__mutsu_topic_ro__` Mixin override carried on the
+        //     topic value itself.
+        // A smartmatch RHS (`$x ~~ tr///`) writes through to the matched
+        // variable, so it is never blocked here.
+        if !non_destructive && !self.in_smartmatch_rhs {
+            let mixin_ro = matches!(
+                &target,
+                Value::Mixin(_, overrides) if overrides.contains_key("__mutsu_topic_ro__")
             );
-            attrs.insert("value".to_string(), target);
-            return Err(RuntimeError::typed("X::Assignment::RO", attrs));
+            if mixin_ro || self.readonly_vars().contains("_") {
+                let type_name = match &target {
+                    Value::Int(_) => "Int",
+                    Value::Num(_) => "Num",
+                    _ => "Str",
+                };
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Cannot modify an immutable {} ({})",
+                        type_name,
+                        target.to_string_value()
+                    )),
+                );
+                attrs.insert("value".to_string(), target);
+                return Err(RuntimeError::typed("X::Assignment::RO", attrs));
+            }
         }
         let text = target.to_string_value();
 
