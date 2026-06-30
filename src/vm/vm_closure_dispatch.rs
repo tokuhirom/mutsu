@@ -500,6 +500,11 @@ impl Interpreter {
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
         let mut fail_bypass = false;
+        // Track whether a break arm already resolved this frame's `let`/`temp`
+        // saves, so the natural fall-through completion below can restore any
+        // `temp` bindings the body introduced (e.g. `sub f { temp $x = ... }`
+        // with no explicit return) instead of leaking them into the caller.
+        let mut handled_let_saves = false;
         while ip < cc.ops.len() {
             match self.exec_one(cc, &mut ip, compiled_fns) {
                 Ok(()) => {}
@@ -519,11 +524,13 @@ impl Interpreter {
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
                         self.stack.push(ret_val);
-                        self.discard_let_saves(let_mark);
+                        self.resolve_let_saves_on_success(let_mark, true);
+                        handled_let_saves = true;
                         result = Ok(());
                         break;
                     }
                     loan_env!(self, restore_let_saves(let_mark));
+                    handled_let_saves = true;
                     result = Err(e);
                     break;
                 }
@@ -534,7 +541,8 @@ impl Interpreter {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.discard_let_saves(let_mark);
+                    self.resolve_let_saves_on_success(let_mark, true);
+                    handled_let_saves = true;
                     result = Ok(());
                     break;
                 }
@@ -555,6 +563,7 @@ impl Interpreter {
                                 e.return_target_callable_id = Some(*id as u64);
                             }
                             loan_env!(self, restore_let_saves(let_mark));
+                            handled_let_saves = true;
                             result = Err(e);
                             break;
                         }
@@ -566,6 +575,7 @@ impl Interpreter {
                         && target_id != data.id
                     {
                         loan_env!(self, restore_let_saves(let_mark));
+                        handled_let_saves = true;
                         result = Err(e);
                         break;
                     }
@@ -573,7 +583,8 @@ impl Interpreter {
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
-                    self.discard_let_saves(let_mark);
+                    self.resolve_let_saves_on_success(let_mark, true);
+                    handled_let_saves = true;
                     result = Ok(());
                     break;
                 }
@@ -581,6 +592,7 @@ impl Interpreter {
                     fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));
+                    handled_let_saves = true;
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(failure);
                     result = Ok(());
@@ -588,6 +600,7 @@ impl Interpreter {
                 }
                 Err(e) => {
                     loan_env!(self, restore_let_saves(let_mark));
+                    handled_let_saves = true;
                     result = Err(e);
                     break;
                 }
@@ -595,6 +608,13 @@ impl Interpreter {
             if self.is_halted() {
                 break;
             }
+        }
+
+        // Natural fall-through completion (no explicit return / break arm): a
+        // routine body that ends with `temp $x = ...` must restore the `temp`
+        // binding here, otherwise it leaks into the caller's scope.
+        if !handled_let_saves {
+            self.resolve_let_saves_on_success(let_mark, true);
         }
 
         let ret_val = if result.is_ok() {

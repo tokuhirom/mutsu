@@ -2781,6 +2781,15 @@ impl Compiler {
                 is_temp,
                 undefine_first,
             } => {
+                // Temporizing a never-declared dynamic variable (`temp $*foo`)
+                // throws X::Dynamic::NotFound — you can only `temp`/`let` a variable
+                // that is already in scope. Emit the guard before the save (a no-op
+                // for non-dynamic names and for an already-declared dynamic). Skip
+                // it for the element form (`temp $*arr[0]`), which temporizes a
+                // container element rather than the dynamic itself.
+                if index.is_none() {
+                    self.maybe_emit_dynamic_var_check(name);
+                }
                 // If undefine_first is set, assign Nil to the variable before saving.
                 // This makes LetSave capture the undefined state, so on scope exit
                 // the variable is restored to undefined (and its default value applies).

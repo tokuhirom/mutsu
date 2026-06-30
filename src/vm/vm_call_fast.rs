@@ -131,6 +131,14 @@ impl Interpreter {
             }
         }
 
+        // Natural fall-through completion (no explicit return / fail / error
+        // break arm): restore any `temp` bindings the body introduced so a
+        // `sub f { temp $x = ... }` with no explicit return does not leak the
+        // temporized value into the caller's scope.
+        if result.is_ok() && explicit_return.is_none() && !fail_bypass {
+            self.resolve_let_saves_on_success(let_mark, true);
+        }
+
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
                 self.stack.pop().unwrap_or(Value::Nil)
