@@ -163,6 +163,42 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 label: None,
             }
         }
+        // A chained `.=` on an index lvalue (`@a[i] .= m1 .= m2`). The first `.=`
+        // already lowered `@a[i] .= m1` to `do { my idx = i; @a[idx] = @a[idx].m1 }`
+        // (an `IndexAssign` tail), which `lvalue_assign_name` does not recognize.
+        // Re-read `@a[idx]` (now holding m1's result, via the already-declared `idx`
+        // temp), apply this method, and write it back to the same element so the
+        // chain keeps mutating `@a[i]` rather than a detached copy.
+        Expr::DoBlock { body, .. }
+            if matches!(body.last(), Some(Stmt::Expr(Expr::IndexAssign { .. }))) =>
+        {
+            let (idx_target, index, is_positional) = match body.last() {
+                Some(Stmt::Expr(Expr::IndexAssign {
+                    target,
+                    index,
+                    is_positional,
+                    ..
+                })) => (target.clone(), index.clone(), *is_positional),
+                _ => unreachable!(),
+            };
+            let read_expr = Expr::Index {
+                target: idx_target.clone(),
+                index: index.clone(),
+                is_positional,
+            };
+            let new_value = method_call_fn(read_expr);
+            let mut new_body = body.clone();
+            new_body.push(Stmt::Expr(Expr::IndexAssign {
+                target: idx_target,
+                index,
+                value: Box::new(new_value),
+                is_positional,
+            }));
+            Expr::DoBlock {
+                body: new_body,
+                label: None,
+            }
+        }
         // A `do { … }` block whose value is an lvalue (`do { …; ($x .= new) }.= new`)
         // writes the outer `.=` result back to that lvalue. Run the block once (its
         // side effects included), then assign `$x = $x.method`.

@@ -160,13 +160,24 @@ pub(in crate::runtime) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Va
                 excl_start,
                 excl_end,
             } => {
-                let a = crate::runtime::to_int(start);
-                let b = crate::runtime::to_int(end);
-                let s = if *excl_start { a + 1 } else { a };
-                let raw_e = if *excl_end { b } else { b + 1 };
-                let e = raw_e.min(s.saturating_add(MAX_SLURPY_RANGE_EXPAND));
-                for i in s..e {
-                    out.push(Value::Int(i));
+                // Only integer-endpoint ranges expand via the fast Int path. A
+                // string range (`"a".."z"`) must expand as its character/string
+                // sequence, so delegate to `value_to_list` which knows how (a
+                // plain `to_int` would collapse both endpoints to 0).
+                if matches!(
+                    (start.as_ref(), end.as_ref()),
+                    (Value::Int(_), Value::Int(_))
+                ) {
+                    let a = crate::runtime::to_int(start);
+                    let b = crate::runtime::to_int(end);
+                    let s = if *excl_start { a + 1 } else { a };
+                    let raw_e = if *excl_end { b } else { b + 1 };
+                    let e = raw_e.min(s.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                    for i in s..e {
+                        out.push(Value::Int(i));
+                    }
+                } else {
+                    out.extend(crate::runtime::utils::value_to_list(val));
                 }
             }
             other => {

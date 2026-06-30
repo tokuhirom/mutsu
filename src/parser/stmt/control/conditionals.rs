@@ -263,10 +263,13 @@ pub(crate) fn parse_elsif_chain(
                 (r, None)
             };
             let (r, orwith_body) = block(r)?;
-            // Topicalize $_ and optional param in the orwith body
-            let mut orwith_then = vec![topicalize(&orwith_cond_expr)];
+            // Topicalize $_ and optional param in the orwith body, via `given` so
+            // the fresh topic scope is established by the `given` opcode rather than
+            // a plain `$_ = <cond>` assignment — the latter throws X::Assignment::RO
+            // when the `orwith` is nested in a `for ^N { }` whose `$_` is read-only.
+            let mut orwith_given_body = Vec::new();
             if let Some(ref pname) = orwith_param_name {
-                orwith_then.push(Stmt::VarDecl {
+                orwith_given_body.push(Stmt::VarDecl {
                     name: pname.clone(),
                     expr: orwith_cond_expr.clone(),
                     type_constraint: None,
@@ -279,7 +282,11 @@ pub(crate) fn parse_elsif_chain(
                     where_constraint: None,
                 });
             }
-            orwith_then.extend(orwith_body);
+            orwith_given_body.extend(orwith_body);
+            let orwith_then = vec![Stmt::Given {
+                topic: orwith_cond_expr.clone(),
+                body: orwith_given_body,
+            }];
             // orwith uses .defined as the condition
             last_orwith_cond = Some(orwith_cond_expr.clone());
             let orwith_cond = Expr::MethodCall {
@@ -312,11 +319,14 @@ pub(crate) fn parse_elsif_chain(
         let (r, binding_params) = parse_if_binding_params(r)?;
         let (r, _) = ws(r)?;
         let (r, mut body) = block(r)?;
-        // If the last clause was `orwith`, topicalize $_ in the else body
+        // If the last clause was `orwith`, topicalize $_ in the else body via
+        // `given` (a fresh topic scope) so it is not blocked by an enclosing `for`'s
+        // read-only `$_` (see the orwith branch above).
         if let Some(ref orwith_expr) = last_orwith_cond {
-            let mut topicalized = vec![topicalize(orwith_expr)];
-            topicalized.append(&mut body);
-            body = topicalized;
+            body = vec![Stmt::Given {
+                topic: orwith_expr.clone(),
+                body,
+            }];
         }
         return Ok((
             r,
