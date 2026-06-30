@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 7;
 
 # A hoisted sub that closes over a `my $x` declared *after* it must keep every
 # write, even when it is called before the declaration statement runs at
@@ -26,4 +26,19 @@ plan 6;
 
     my $a = 3;
     sub bar { $a++ }
+}
+
+# The free-var-write propagation must not leak compiler-internal bookkeeping
+# symbols into the caller env. A sub whose body uses a sigilless `my \p`
+# capture records an internal `__mutsu_sigilless_readonly::p` marker as a free
+# var write; if that marker leaked into the caller, a later `(my $p = ...)` in
+# the caller scope was wrongly treated as a write to a readonly sigilless `p`
+# and threw X::Assignment::RO. Regression for roast S29-os/system.t 34-35.
+{
+    sub gen() { my \p = 42; p }
+    my $ok = do {
+        my $x = gen();
+        (my $p = $x + 1) ?? $p !! -1;
+    };
+    is $ok, 43, "sigilless-capture internal marker does not leak to caller scope";
 }

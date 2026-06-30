@@ -476,6 +476,12 @@ impl Interpreter {
                         || s == "%_"
                         || local_names.contains(s)
                         || rw_sources.contains(s)
+                        // Compiler-internal bookkeeping symbols (e.g. the
+                        // `__mutsu_sigilless_readonly::p` marker emitted for a
+                        // `my \p = ...` capture) are not user lexicals and must
+                        // never leak into the caller env — doing so corrupts the
+                        // caller's own later declarations of the bare name.
+                        || s.starts_with("__mutsu")
                         // Dynamic vars (`$*x`) are reconciled by
                         // pop_caller_env_with_writeback, not the lexical merge.
                         || s.as_bytes().get(1) == Some(&b'*')
