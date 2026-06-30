@@ -287,10 +287,37 @@ fn where_constraint_matches(
         interpreter.env.insert(pd.name.clone(), candidate.clone());
     }
     let ok = match where_expr {
-        Expr::AnonSub { body, .. } => interpreter
-            .eval_block_value(body)
-            .map(|v| v.truthy())
-            .unwrap_or(false),
+        Expr::AnonSub { body, .. } => {
+            // A `where { ... }` block may reference placeholder parameters
+            // (e.g. `$^n`).  In a where clause there is a single value under
+            // test, so bind every placeholder referenced in the block to the
+            // candidate value (sigil-stripped to the raw `^name` env key). The
+            // placeholder is read-only, so `where { $^x = ... }` dies.
+            let mut ph_keys: Vec<String> = Vec::new();
+            for ph in crate::ast::collect_placeholders(body)
+                .iter()
+                .chain(crate::ast::collect_where_assign_placeholders(body).iter())
+            {
+                let key = ph
+                    .trim_start_matches(|c: char| "$@%&".contains(c))
+                    .to_string();
+                if !ph_keys.contains(&key) {
+                    ph_keys.push(key);
+                }
+            }
+            for key in &ph_keys {
+                interpreter.env.insert(key.clone(), candidate.clone());
+                interpreter.mark_readonly(key);
+            }
+            let r = interpreter
+                .eval_block_value(body)
+                .map(|v| v.truthy())
+                .unwrap_or(false);
+            for key in &ph_keys {
+                interpreter.unmark_readonly(key);
+            }
+            r
+        }
         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
             interpreter
                 .eval_block_value(&[Stmt::Expr(where_expr.clone())])

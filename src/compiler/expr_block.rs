@@ -272,6 +272,28 @@ impl Compiler {
                     name_idx,
                     dynamic: is_dynamic,
                 });
+                // Register a scalar type constraint AFTER `SetVarDynamic` (which
+                // clears any stale same-named constraint) so it persists and is
+                // enforced on *later* assignments — `(my Subset $c = 6); $c = 7`
+                // and `ok my Subset $c = 6; $c = 7`. An expression-position
+                // declaration is compiled here (as `DoStmt(VarDecl)`); the
+                // statement-position VarDecl already emits this `SetVarType`, so
+                // without it the constraint was lost whenever the declaration's
+                // value was consumed (function argument / RHS of `=`). Container
+                // sigils and anonymous scalars are handled by their own branches
+                // above.
+                if !name.starts_with('@')
+                    && !name.starts_with('%')
+                    && name != "__ANON_STATE__"
+                    && let Some(tc) = type_constraint
+                {
+                    let svt_name_idx = self.code.add_constant(Value::str(name.clone()));
+                    let svt_tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                    self.code.emit(OpCode::SetVarType {
+                        name_idx: svt_name_idx,
+                        tc_idx: svt_tc_idx,
+                    });
+                }
                 // `my $ = expr` (anonymous scalar without type constraint) returns
                 // a Scalar container so the caller can store it in an immutable
                 // List and later mutate the element via index assignment.
