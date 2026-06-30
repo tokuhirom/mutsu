@@ -107,6 +107,197 @@ impl Interpreter {
         }
     }
 
+    /// Detect an *illegally post-declared* type: a type name used (as a term or
+    /// method invocant) before its textual declaration in the same EVAL'd unit.
+    /// Raku resolves type names lexically; using `Foo.bar` and only declaring
+    /// `class Foo {}` (or grammar/role/enum/subset) *afterwards* is
+    /// X::Undeclared::Symbols with a `post_types` entry, distinct from a
+    /// never-declared name (`unk_types`). Mirrors rakudo's CHECK-time check.
+    pub(crate) fn check_eval_post_declared_types(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        // Map each top-level type declaration name -> the index of the statement
+        // that declares it (first declaration wins).
+        let mut decl_index: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for (i, stmt) in stmts.iter().enumerate() {
+            match stmt {
+                Stmt::ClassDecl { name, .. }
+                | Stmt::RoleDecl { name, .. }
+                | Stmt::SubsetDecl { name, .. }
+                | Stmt::EnumDecl { name, .. } => {
+                    decl_index.entry(name.resolve()).or_insert(i);
+                }
+                _ => {}
+            }
+        }
+        if decl_index.is_empty() {
+            return Ok(());
+        }
+        // For each statement, collect the type names it references and flag any
+        // whose declaration only appears at a *later* top-level statement.
+        for (i, stmt) in stmts.iter().enumerate() {
+            let mut refs: Vec<String> = Vec::new();
+            Self::collect_type_refs_in_stmt(stmt, &mut refs);
+            for name in refs {
+                if let Some(&j) = decl_index.get(&name)
+                    && j > i
+                {
+                    let msg = format!("Illegally post-declared type:\n    {} used at line 1", name);
+                    return Err(RuntimeError::post_declared_type_symbols(&name, msg));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Collect uppercase bareword type references (terms and method invocants)
+    /// appearing anywhere in `stmt`, recursing into nested bodies.
+    fn collect_type_refs_in_stmt(stmt: &Stmt, out: &mut Vec<String>) {
+        match stmt {
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Goto(e) => {
+                Self::collect_type_refs_in_expr(e, out)
+            }
+            Stmt::Take(e, _) => Self::collect_type_refs_in_expr(e, out),
+            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+                Self::collect_type_refs_in_expr(expr, out)
+            }
+            Stmt::Say(es) | Stmt::Print(es) | Stmt::Put(es) | Stmt::Note(es) => {
+                for e in es {
+                    Self::collect_type_refs_in_expr(e, out);
+                }
+            }
+            Stmt::Call { args, .. } => {
+                for a in args {
+                    match a {
+                        crate::ast::CallArg::Positional(e)
+                        | crate::ast::CallArg::Slip(e)
+                        | crate::ast::CallArg::Invocant(e) => {
+                            Self::collect_type_refs_in_expr(e, out)
+                        }
+                        crate::ast::CallArg::Named { value: Some(e), .. } => {
+                            Self::collect_type_refs_in_expr(e, out)
+                        }
+                        crate::ast::CallArg::Named { value: None, .. } => {}
+                    }
+                }
+            }
+            Stmt::ClassDecl { body, .. }
+            | Stmt::RoleDecl { body, .. }
+            | Stmt::SubDecl { body, .. }
+            | Stmt::MethodDecl { body, .. }
+            | Stmt::Block(body)
+            | Stmt::SyntheticBlock(body)
+            | Stmt::Default(body)
+            | Stmt::Catch(body)
+            | Stmt::Control(body) => {
+                for s in body {
+                    Self::collect_type_refs_in_stmt(s, out);
+                }
+            }
+            Stmt::Phaser { body, .. } | Stmt::Subtest { body, .. } => {
+                for s in body {
+                    Self::collect_type_refs_in_stmt(s, out);
+                }
+            }
+            Stmt::For { iterable, body, .. } => {
+                Self::collect_type_refs_in_expr(iterable, out);
+                for s in body {
+                    Self::collect_type_refs_in_stmt(s, out);
+                }
+            }
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                Self::collect_type_refs_in_expr(cond, out);
+                for s in then_branch {
+                    Self::collect_type_refs_in_stmt(s, out);
+                }
+                for s in else_branch {
+                    Self::collect_type_refs_in_stmt(s, out);
+                }
+            }
+            Stmt::While { cond, body, .. } => {
+                Self::collect_type_refs_in_expr(cond, out);
+                for s in body {
+                    Self::collect_type_refs_in_stmt(s, out);
+                }
+            }
+            Stmt::Given { topic, body } => {
+                Self::collect_type_refs_in_expr(topic, out);
+                for s in body {
+                    Self::collect_type_refs_in_stmt(s, out);
+                }
+            }
+            Stmt::When { cond, body } => {
+                Self::collect_type_refs_in_expr(cond, out);
+                for s in body {
+                    Self::collect_type_refs_in_stmt(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Collect uppercase bareword type references from an expression: standalone
+    /// terms (`Foo`) and method invocants (`Foo.bar`), recursing into operands.
+    fn collect_type_refs_in_expr(expr: &Expr, out: &mut Vec<String>) {
+        match expr {
+            Expr::BareWord(name) => {
+                if name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                    out.push(name.clone());
+                }
+            }
+            Expr::MethodCall { target, args, .. } => {
+                Self::collect_type_refs_in_expr(target, out);
+                for a in args {
+                    Self::collect_type_refs_in_expr(a, out);
+                }
+            }
+            Expr::Call { args, .. } => {
+                for a in args {
+                    Self::collect_type_refs_in_expr(a, out);
+                }
+            }
+            Expr::Binary { left, right, .. } => {
+                Self::collect_type_refs_in_expr(left, out);
+                Self::collect_type_refs_in_expr(right, out);
+            }
+            Expr::Unary { expr, .. }
+            | Expr::PostfixOp { expr, .. }
+            | Expr::Grouped(expr)
+            | Expr::Itemize(expr)
+            | Expr::Eager(expr) => Self::collect_type_refs_in_expr(expr, out),
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::collect_type_refs_in_expr(cond, out);
+                Self::collect_type_refs_in_expr(then_expr, out);
+                Self::collect_type_refs_in_expr(else_expr, out);
+            }
+            Expr::AssignExpr { expr, .. } => Self::collect_type_refs_in_expr(expr, out),
+            Expr::StringInterpolation(parts)
+            | Expr::ArrayLiteral(parts)
+            | Expr::CaptureLiteral(parts) => {
+                for p in parts {
+                    Self::collect_type_refs_in_expr(p, out);
+                }
+            }
+            Expr::Block(body) | Expr::Gather(body) => {
+                for s in body {
+                    Self::collect_type_refs_in_stmt(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn check_eval_undeclared_names(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         // Collect class/role names and locally-declared variables/subs from
         // this EVAL code. Both are valid references so they should not be

@@ -59,6 +59,19 @@ impl RuntimeError {
         Self::typed("X::Undeclared::Symbols", attrs)
     }
 
+    /// X::Undeclared::Symbols for an illegally post-declared type: a type used
+    /// before its textual declaration in the same compilation unit. Carries a
+    /// `post_types` hash `{ name => [line] }` (mirrors rakudo's `.post_types`).
+    pub(crate) fn post_declared_type_symbols(name: &str, message: impl Into<String>) -> Self {
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.into()));
+        attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+        let mut map = HashMap::new();
+        map.insert(name.to_string(), Value::array(vec![Value::Int(1)]));
+        attrs.insert("post_types".to_string(), Value::hash(map));
+        Self::typed("X::Undeclared::Symbols", attrs)
+    }
+
     /// X::CompUnit::UnsatisfiedDependency - a required module could not be found.
     pub(crate) fn unsatisfied_dependency(module: &str) -> Self {
         let msg = format!("Could not find {} in:\n    (module repositories)", module);

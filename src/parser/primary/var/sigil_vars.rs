@@ -278,6 +278,26 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
     {
         let op_name = &after_bracket[..end_pos];
         let rest = &after_bracket[end_pos + 1..];
+        // A bare lowercase *word* inside `&[...]` must name a real word infix
+        // (`&[cmp]`, `&[min]`, ...) or a user-declared `infix:<word>`. An unknown
+        // word (`&[doesntexist]`) is a compile error: "Missing infix inside []".
+        // Restricted to all-lowercase-letter names so symbolic ops (`&[+]`) and
+        // uppercase meta-ops (`&[Z]`, `&[Xcmp]`) are never affected.
+        if !op_name.is_empty()
+            && op_name.bytes().all(|b| b.is_ascii_lowercase())
+            && !is_known_word_infix(op_name)
+            && !crate::parser::stmt::simple::is_user_defined_infix(op_name)
+        {
+            let message = "Missing infix inside []".to_string();
+            let exception = crate::value::Value::make_exception(
+                "X::Syntax::Missing",
+                &[
+                    ("what", crate::value::Value::str("infix".to_string())),
+                    ("message", crate::value::Value::str(message.clone())),
+                ],
+            );
+            return Err(PError::fatal_with_exception(message, Box::new(exception)));
+        }
         let full_name = format!("infix:<{}>", op_name);
         return Ok((rest, Expr::CodeVar(full_name)));
     }
@@ -486,4 +506,45 @@ fn parse_operator_code_ref_suffix<'a>(category: &str, rest: &'a str) -> Option<(
     }
 
     None
+}
+
+/// The complete set of all-lowercase-letter word infix operators, used to
+/// validate the `&[word]` operator-reference form. Symbolic infixes (`&[+]`)
+/// and uppercase meta-ops (`&[Z]`, `&[Xcmp]`) are handled separately and are
+/// never checked against this list.
+fn is_known_word_infix(name: &str) -> bool {
+    matches!(
+        name,
+        "div"
+            | "mod"
+            | "gcd"
+            | "lcm"
+            | "min"
+            | "max"
+            | "minmax"
+            | "cmp"
+            | "leg"
+            | "coll"
+            | "unicmp"
+            | "eqv"
+            | "before"
+            | "after"
+            | "and"
+            | "or"
+            | "xor"
+            | "andthen"
+            | "orelse"
+            | "notandthen"
+            | "x"
+            | "xx"
+            | "but"
+            | "does"
+            | "o"
+            | "eq"
+            | "ne"
+            | "lt"
+            | "gt"
+            | "le"
+            | "ge"
+    )
 }

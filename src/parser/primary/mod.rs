@@ -1,4 +1,7 @@
 mod container;
+// Re-exported so other parser subtrees (e.g. crate::parser::expr postfix
+// parsing) can build the same X::Comp::FailGoal for unterminated brackets.
+pub(crate) use container::fail_goal_error_at;
 pub(in crate::parser) mod ident;
 pub(in crate::parser) mod misc;
 mod number;

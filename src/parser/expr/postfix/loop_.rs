@@ -2450,6 +2450,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         if let Some((name, open_len, close_delim)) =
             crate::parser::stmt::simple::match_user_declared_postcircumfix_op(rest)
         {
+            let open = &rest[..open_len];
             let r = &rest[open_len..];
             let (r, _) = ws(r)?;
             let (r, arg) = expression(r)?;
@@ -2463,6 +2464,17 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
+            // Opener matched and an argument parsed, but the closing delimiter is
+            // missing (e.g. `$a⟨5;`): the custom postcircumfix bracket is committed,
+            // so this is a hard parse failure — X::Comp::FailGoal carrying the
+            // operator's `dba` (`postcircumfix:sym<open close>`) and its `goal`.
+            let dba = format!("postcircumfix:sym<{} {}>", open, close_delim);
+            let goal = format!("'{}'", close_delim);
+            return Err(crate::parser::primary::fail_goal_error_at(
+                &dba,
+                &goal,
+                Some(r),
+            ));
         }
 
         // Atomic postfix updates: $x⚛++ / $x⚛--

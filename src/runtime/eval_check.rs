@@ -289,6 +289,7 @@ impl Interpreter {
                 self.check_eval_undeclared_type_args(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
                 self.check_eval_undeclared_names(&stmts)?;
+                self.check_eval_post_declared_types(&stmts)?;
                 let mut stmts = self.inject_eval_methods_into_class(stmts);
                 crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
                 let phaser_stmts: Vec<Stmt> = stmts

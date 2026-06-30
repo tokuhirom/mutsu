@@ -100,6 +100,7 @@ impl Interpreter {
                                 .and_then(|()| nested.check_eval_undeclared_type_args(&stmts))
                                 .and_then(|()| nested.check_eval_undeclared_vars(&stmts))
                                 .and_then(|()| nested.check_eval_undeclared_names(&stmts))
+                                .and_then(|()| nested.check_eval_post_declared_types(&stmts))
                                 .and_then(|()| nested.check_eval_begin_forward_calls(&stmts))
                         }
                         Err(mut e) => {
@@ -485,6 +486,7 @@ impl Interpreter {
                             .and_then(|()| nested.check_eval_undeclared_type_args(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_vars(&stmts))
                             .and_then(|()| nested.check_eval_undeclared_names(&stmts))
+                            .and_then(|()| nested.check_eval_post_declared_types(&stmts))
                             .and_then(|()| nested.check_eval_begin_forward_calls(&stmts)),
                         Err(mut e) => {
                             // A compile-time exception raised while parsing the

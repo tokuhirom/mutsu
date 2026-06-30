@@ -268,6 +268,15 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 rest = &rest[end + 1..];
                 continue;
             }
+            // A `{` with no matching `}` anywhere in the remaining source is an
+            // unterminated closure interpolation: the closing `"` is swallowed by
+            // the never-closed block, so the string is itself unterminated.
+            // Matches rakudo's X::Comp::FailGoal ("couldn't find final '\"'").
+            return Err(crate::parser::primary::container::fail_goal_error_at(
+                "double quotes",
+                "'\"'",
+                Some(&rest[rest.len()..]),
+            ));
         }
         // A `$` that reached here did not introduce a variable or `${...}`/
         // `{...}` interpolation, so it is a non-variable dollar and must be
