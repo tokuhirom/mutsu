@@ -1506,6 +1506,26 @@ impl Compiler {
                 rw_block,
                 explicit_zero_params,
             } => {
+                // `for @a[*] { ... }` — a whole-array Whatever slice iterates the
+                // same elements as `for @a`, including aliasing for write-back
+                // (`$_ = 9 for @a[*]` mutates @a). Normalize it to the plain array
+                // source so it reuses the per-element write-back path. Restricted to
+                // a var-rooted array target with the exact `[*]` index.
+                if let Expr::Index {
+                    target,
+                    index,
+                    is_positional: true,
+                } = iterable
+                    && matches!(index.as_ref(), Expr::Whatever)
+                    && Self::for_single_array_source(target).is_some()
+                {
+                    let mut rewritten = stmt.clone();
+                    if let Stmt::For { iterable: it, .. } = &mut rewritten {
+                        *it = (**target).clone();
+                    }
+                    self.compile_stmt(&rewritten);
+                    return;
+                }
                 // Element-source writeback: `for %h<k>.values { $_ *= 2 }` /
                 // `for @a[i].values { ... }`. The plain @/%-source writeback only
                 // handles named container variables, so an element source (an
