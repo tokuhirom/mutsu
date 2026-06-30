@@ -347,9 +347,32 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         } if matches!(start.as_ref(), Value::Str(_)) && matches!(end.as_ref(), Value::Str(_)) => {
             Value::real_array(value_to_list(&value))
         }
-        Value::GenericRange { ref end, .. } => {
-            let end_f = end.to_f64();
-            if end_f.is_infinite() && end_f.is_sign_positive() {
+        Value::GenericRange {
+            ref start, ref end, ..
+        } => {
+            // An infinite numeric range is a lazy list (it cannot be fully
+            // materialized): mark the resulting array `Lazy` so native typed
+            // arrays reject it (`X::Cannot::Lazy`) and `.elems` stays lazy. This
+            // covers a right-infinite end (`0e0..Inf`), a `-Inf`/`NaN` start
+            // (`-Inf..0e0`, `NaN..NaN`), and a `Whatever` start (`*..1`). An
+            // empty range (start strictly past end, e.g. `Inf..0`) is finite.
+            let start_f = match start.as_ref() {
+                Value::Whatever | Value::HyperWhatever => f64::NEG_INFINITY,
+                _ => start.to_f64(),
+            };
+            let end_f = match end.as_ref() {
+                Value::Whatever | Value::HyperWhatever => f64::INFINITY,
+                _ => end.to_f64(),
+            };
+            // Not infinite when the start strictly exceeds the end (empty
+            // range). A NaN endpoint is unordered (`partial_cmp` is `None`), so
+            // a NaN range counts as infinite.
+            let empty = matches!(
+                start_f.partial_cmp(&end_f),
+                Some(std::cmp::Ordering::Greater)
+            );
+            let infinite = (!start_f.is_finite() || !end_f.is_finite()) && !empty;
+            if infinite {
                 Value::Array(
                     Arc::new(crate::value::ArrayData::new(value_to_list(&value))),
                     ArrayKind::Lazy,

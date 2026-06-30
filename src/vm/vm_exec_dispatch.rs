@@ -1386,6 +1386,16 @@ impl Interpreter {
                         v @ (Value::Set(..) | Value::Bag(..) | Value::Mix(..)) => {
                             Value::Scalar(Box::new(v))
                         }
+                        // A scalar holding a Range assigned to an `@` variable
+                        // stays a single item (`my $r = 1..5; my @a = $r` ->
+                        // `@a.raku eq "[1..5,]"`). Like Set/Bag/Mix, a Range has
+                        // no itemized container kind, so wrap it in a Scalar on
+                        // this `@`-assignment path so it does not flatten.
+                        v @ (Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. }) => Value::Scalar(Box::new(v)),
                         other => Self::itemize_value(other),
                     }
                 };

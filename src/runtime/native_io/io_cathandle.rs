@@ -185,8 +185,13 @@ impl Interpreter {
             }
             attrs.insert("pos".to_string(), Value::Int((pos + 1) as i64));
             if let Some(handle) = self.cat_open_source(&sources[pos], attrs) {
+                // `.path`/`.IO` reflect the *original source* (`$source.IO`),
+                // not the opened handle's absolutized path: raku's
+                // `is-deeply $cat.path, @files.map(*.IO)[$n]` compares against
+                // the source's own IO::Path (which preserves the relative path
+                // string as written), so derive it from the source value.
                 let path_val = self
-                    .native_io_handle_method(&handle, "path", vec![])
+                    .call_method_with_values(sources[pos].clone(), "IO", vec![])
                     .unwrap_or(Value::Nil);
                 attrs.insert("active".to_string(), handle.clone());
                 attrs.insert("path".to_string(), path_val);
@@ -606,7 +611,31 @@ impl Interpreter {
                     _ => Value::Nil,
                 }
             }
-            "Supply" | "native-descriptor" | "seek" | "tell" | "t" => {
+            "native-descriptor" | "seek" | "tell" => {
+                // Delegate to the active source handle (opening the first source
+                // on demand). `.seek` operates on the active handle only and
+                // never switches handles. On an exhausted/zero-source cat the
+                // result is Nil.
+                let active = self.cat_ensure_active(&mut attrs);
+                if matches!(&active, Value::Instance { class_name, .. } if class_name == "IO::Handle")
+                {
+                    self.native_io_handle_method(&active, method, args)?
+                } else {
+                    Value::Nil
+                }
+            }
+            "t" => {
+                // `.t` (is-this-a-TTY) of the active handle; a cat with no active
+                // handle (exhausted/zero-source) is not a TTY, so `False`.
+                let active = self.cat_ensure_active(&mut attrs);
+                if matches!(&active, Value::Instance { class_name, .. } if class_name == "IO::Handle")
+                {
+                    self.native_io_handle_method(&active, "t", vec![])?
+                } else {
+                    Value::Bool(false)
+                }
+            }
+            "Supply" => {
                 return Err(RuntimeError::new(format!(
                     "No native mutable method '{}' on 'IO::CatHandle'",
                     method

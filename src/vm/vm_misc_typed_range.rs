@@ -212,8 +212,18 @@ impl Interpreter {
             }
             (Value::Int(a), Value::Whatever) => Value::Range(*a, i64::MAX),
             (Value::Int(a), Value::HyperWhatever) => Value::Range(*a, i64::MAX),
-            (Value::Num(a), Value::Int(b)) if a.is_infinite() && a.is_sign_negative() => {
-                Value::Range(i64::MIN, *b)
+            // A `-Inf` start is NOT collapsed to the i64::MIN sentinel: such a
+            // range iterates its `-Inf` start ad infinitum (`-Inf+1 == -Inf`),
+            // so it must stay a GenericRange preserving the `Num` endpoint. The
+            // i64 sentinel would instead count up from i64::MIN, yielding bogus
+            // integers (`(-Inf..0).map` would give i64::MIN+n, not -Inf).
+            (Value::Num(a), Value::Int(_)) if a.is_infinite() && a.is_sign_negative() => {
+                Value::GenericRange {
+                    start: Arc::new(left.clone()),
+                    end: Arc::new(right.clone()),
+                    excl_start: false,
+                    excl_end: false,
+                }
             }
             (Value::Str(a), Value::Whatever) => Value::GenericRange {
                 start: Arc::new(Value::Str(a.clone())),

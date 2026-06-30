@@ -325,11 +325,29 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                         return vec![val.clone()];
                     }
                 };
-                if start_num.to_f64().is_infinite()
-                    || start_num.to_f64().is_nan()
-                    || end_num.to_f64().is_nan()
-                {
-                    vec![val.clone()]
+                let s_f = start_num.to_f64();
+                let e_f = end_num.to_f64();
+                if s_f.is_infinite() || s_f.is_nan() || e_f.is_nan() {
+                    // Degenerate numeric range whose *start* is non-finite (or
+                    // end is NaN) — the normal `.succ` expansion below cannot
+                    // run. (A right-infinite range with a *finite* start, e.g.
+                    // `-17..^Inf`, falls through to the normal branch, which
+                    // expands up to the cap.)
+                    //   * Empty when the start strictly exceeds the end
+                    //     (`Inf..0`); NaN comparisons are false, so NaN ranges
+                    //     are not empty. `(Inf..0).elems == 0`.
+                    //   * A `+Inf` start yields no usable values (Rakudo:
+                    //     `(Inf..Inf)[^5]` / `(Inf..NaN)[^5]` are all Nil), so it
+                    //     is empty too.
+                    //   * A `-Inf`/`NaN` start never advances under `.succ`
+                    //     (`-Inf+1 == -Inf`, `NaN+1 == NaN`), so the range yields
+                    //     its start ad infinitum — materialize up to the cap.
+                    if s_f > e_f || s_f == f64::INFINITY {
+                        Vec::new()
+                    } else {
+                        let limit = MAX_RANGE_EXPAND as usize;
+                        vec![start_num.clone(); limit]
+                    }
                 } else {
                     let mut result = Vec::new();
                     let mut current = if *excl_start {

@@ -1350,19 +1350,20 @@ impl Interpreter {
                     }
                     Value::array(result)
                 } else {
+                    // value_to_list fallback (string/degenerate ranges). An
+                    // out-of-bounds index yields Nil, matching raku:
+                    // `("a".."c")[1..^6]` is `("b", "c", Nil, Nil, Nil)` and
+                    // `(Inf..Inf)[^5]` (empty backing list) is all Nil.
                     let items = crate::runtime::utils::value_to_list(range);
-                    let start = a.max(0) as usize;
-                    let end_excl = b.max(0) as usize;
-                    if start >= items.len() {
-                        Value::array(Vec::new())
-                    } else {
-                        let end_excl = end_excl.min(items.len());
-                        if start >= end_excl {
-                            Value::array(Vec::new())
+                    let mut result = Vec::new();
+                    for i in a..b {
+                        if i < 0 {
+                            result.push(Value::Nil);
                         } else {
-                            Value::array(items[start..end_excl].to_vec())
+                            result.push(items.get(i as usize).cloned().unwrap_or(Value::Nil));
                         }
                     }
+                    Value::array(result)
                 }
             }
             (ref range, Value::Range(a, b)) if range.is_range() => {
@@ -1916,7 +1917,11 @@ fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
             }
             let s = start.to_f64() as i64;
             let e = end.to_f64() as i64;
-            if start.to_f64().is_nan() || end.to_f64().is_nan() {
+            // A non-finite endpoint has no i64 representation (Inf saturates to
+            // i64::MAX). Bail to the value_to_list path, which yields the
+            // correct degenerate-range elements (e.g. `(Inf..Inf)[^5]` is all
+            // Nil), instead of materializing a bogus i64::MAX element.
+            if !start.to_f64().is_finite() || !end.to_f64().is_finite() {
                 return None;
             }
             let s = if *excl_start { s + 1 } else { s };

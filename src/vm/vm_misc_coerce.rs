@@ -25,6 +25,15 @@ impl Interpreter {
                 .push(crate::runtime::utils::cannot_lazy_failure("elems"));
             return Ok(());
         }
+        // A Range numerifies to its element count via `.Numeric` semantics: an
+        // infinite range (e.g. `Inf..Inf`, `-Inf..-Inf`, `1..Inf`) yields `Inf`,
+        // not its capped backing length. Route to the same coercion `.Numeric`
+        // uses so `+(Inf..Inf)` is `Inf` rather than `1`.
+        if val.is_range() {
+            let result = self.call_method_with_values(val, "Numeric", vec![])?;
+            self.stack.push(result);
+            return Ok(());
+        }
         // Type objects (Mu, Any, etc.) cannot be numerically coerced
         if let Value::Package(name) = &val
             && matches!(name.resolve().as_str(), "Mu" | "Any")

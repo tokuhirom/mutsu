@@ -62,6 +62,56 @@ impl Interpreter {
                 };
                 Ok(in_bounds.then_some(Value::Int(cur)))
             }
+            // Finite non-integer numeric start with infinite end (`1.5..Inf`):
+            // yield `start + idx` (step 1), preserving the Rat/Num type. (Int
+            // starts are handled by the case above; finite-end ranges never
+            // reach the pull path — they are not lazy-pipe sources — but the
+            // bounds check stays correct if one does.)
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } if start.is_numeric() && start.to_f64().is_finite() => {
+                let i = idx as i64 + if *excl_start { 1 } else { 0 };
+                let cur = match start.as_ref() {
+                    Value::Rat(n, d) => crate::value::make_rat(n + i * *d, *d),
+                    Value::Num(f) => Value::Num(f + i as f64),
+                    other => Value::Num(other.to_f64() + i as f64),
+                };
+                let end_f = end.to_f64();
+                let cur_f = cur.to_f64();
+                let in_bounds = if end_f.is_infinite() && end_f.is_sign_positive() {
+                    true
+                } else if *excl_end {
+                    cur_f < end_f
+                } else {
+                    cur_f <= end_f
+                };
+                Ok(in_bounds.then_some(cur))
+            }
+            // Non-finite-start numeric GenericRange (`-Inf..0`, `NaN..NaN`):
+            // the `.succ` of `-Inf`/`NaN` is itself (`-Inf+1 == -Inf`,
+            // `NaN+1 == NaN`), so the range yields its start ad infinitum. A
+            // `+Inf` start yields nothing (Rakudo: `(Inf..Inf)` produces Nils).
+            Value::GenericRange { start, end, .. } if matches!(start.as_ref(), Value::Num(f) if !f.is_finite()) =>
+            {
+                let s = match start.as_ref() {
+                    Value::Num(f) => *f,
+                    _ => unreachable!(),
+                };
+                if s == f64::INFINITY {
+                    return Ok(None);
+                }
+                // Empty if the start strictly exceeds the end (NaN: never).
+                if matches!(
+                    s.partial_cmp(&end.to_f64()),
+                    Some(std::cmp::Ordering::Greater)
+                ) {
+                    return Ok(None);
+                }
+                Ok(Some(Value::Num(s)))
+            }
             Value::Seq(items) | Value::Slip(items) => Ok(items.get(idx).cloned()),
             Value::Array(items, _) => Ok(items.get(idx).cloned()),
             Value::LazyList(ll) => {
