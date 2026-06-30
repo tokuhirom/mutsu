@@ -190,15 +190,21 @@ impl Interpreter {
 
     /// Return all multi method candidates for a class method as Sub values.
     ///
-    /// A multi method dispatched from `class_name` combines candidates across
-    /// its whole inheritance chain: the candidate list reported by
-    /// `^find_method(name).candidates` includes every multi candidate defined
-    /// in `class_name` and its ancestors, ordered base-class-first (e.g. for
-    /// `class C2 is C1`, C1's candidates precede C2's). Each candidate carries
-    /// the *owner* class and the index within that class's own candidate list
-    /// so that `.wrap()` keys into the same `(class, method, idx)` slot that
-    /// the dispatcher consults when it reaches that candidate (S06-advanced/
-    /// wrap.t GH#2178).
+    /// A *multi* method dispatched from `class_name` combines candidates across
+    /// its inheritance chain: the list reported by `^find_method(name).candidates`
+    /// includes every multi candidate defined in `class_name` and its ancestors,
+    /// ordered base-class-first (e.g. for `class C2 is C1`, C1's candidates
+    /// precede C2's). Each candidate carries its *owner* class and the index
+    /// within that owner's own candidate list, so `.wrap()` keys into the same
+    /// `(class, method, idx)` slot the dispatcher consults when it reaches that
+    /// candidate during the `callsame`/`nextsame` MRO walk (S06-advanced/wrap.t
+    /// GH#2178).
+    ///
+    /// A class only contributes when *its own* `method_name` is `multi`: a
+    /// non-multi (single) method in a parent shadows the family rather than
+    /// joining it, so it is not a candidate (S06-advanced/dispatching.t). When
+    /// the resolved method is itself non-multi, only that single method is
+    /// returned without any MRO combination.
     pub(super) fn classhow_lookup_all_candidates(
         &self,
         class_name: &str,
@@ -208,15 +214,34 @@ impl Interpreter {
         // No user-code re-entry below (pure Value construction), so a let-bound
         // guard is safe.
         let registry = self.registry();
-        // Walk the MRO base-class-first so the reported candidate order matches
-        // Rakudo's (ancestors before the class itself).
-        let mut stack = Vec::new();
-        let mut mro = registry
-            .compute_class_mro(class_name, &mut stack)
-            .unwrap_or_else(|_| vec![class_name.to_string()]);
-        mro.reverse();
+
+        let class_method_is_multi = |cls: &str| -> bool {
+            registry
+                .classes
+                .get(cls)
+                .and_then(|cd| cd.methods.get(method_name))
+                .map(|defs| defs.iter().any(|d| d.is_multi))
+                .unwrap_or(false)
+        };
+
+        // Build the owner list base-class-first. A non-multi resolved method
+        // does not combine across the MRO — it is its own sole candidate.
+        let owners: Vec<String> = if class_method_is_multi(class_name) {
+            let mut stack = Vec::new();
+            let mut mro = registry
+                .compute_class_mro(class_name, &mut stack)
+                .unwrap_or_else(|_| vec![class_name.to_string()]);
+            mro.reverse();
+            // Only classes whose own `method_name` is multi join the family.
+            mro.into_iter()
+                .filter(|owner| class_method_is_multi(owner))
+                .collect()
+        } else {
+            vec![class_name.to_string()]
+        };
+
         let mut out = Vec::new();
-        for owner in &mro {
+        for owner in &owners {
             let Some(class_def) = registry.classes.get(owner) else {
                 continue;
             };
