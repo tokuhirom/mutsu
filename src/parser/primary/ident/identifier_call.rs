@@ -1428,7 +1428,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || hyphen_forward_call
             || is_user_sub
             || is_imported_sub
-            || crate::parser::stmt::simple::is_known_call(&name))
+            || crate::parser::stmt::simple::is_known_call(&name)
+            || crate::parser::primary::ident::predicates::next_word_is_builtin_term_op(r))
             && let Ok((r2, arg)) = parse_listop_arg(r)
         {
             let (r2, invocant_colon_call) =

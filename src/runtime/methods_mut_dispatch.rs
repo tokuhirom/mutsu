@@ -806,6 +806,54 @@ impl Interpreter {
                             }
                         }
                     }
+                    // Type-check splice replacement values against the array's
+                    // declared element type (`my Int @a` splice must reject a Str),
+                    // mirroring the element check applied to typed-array assignment.
+                    if let Some(constraint) = self.var_type_constraint(&key)
+                        && !matches!(constraint.as_str(), "" | "Any" | "Mu")
+                    {
+                        for arg in args.iter().skip(2) {
+                            let candidates: Vec<&Value> = match arg {
+                                Value::Array(items, _) => items.iter().collect(),
+                                other => vec![other],
+                            };
+                            for v in candidates {
+                                if !matches!(v, Value::Nil)
+                                    && !self.type_matches_value(&constraint, v)
+                                {
+                                    return Err(RuntimeError::typed(
+                                        "X::TypeCheck::Splice",
+                                        [
+                                            (
+                                                "message".to_string(),
+                                                Value::str(format!(
+                                                    "Type check failed for an element of @{}; expected {} but got {}",
+                                                    key.trim_start_matches('@'),
+                                                    constraint,
+                                                    crate::runtime::utils::value_type_name(v)
+                                                )),
+                                            ),
+                                            ("action".to_string(), Value::str_from("splice")),
+                                            (
+                                                "got".to_string(),
+                                                Value::Package(crate::symbol::Symbol::intern(
+                                                    crate::runtime::utils::value_type_name(v),
+                                                )),
+                                            ),
+                                            (
+                                                "expected".to_string(),
+                                                Value::Package(crate::symbol::Symbol::intern(
+                                                    &constraint,
+                                                )),
+                                            ),
+                                        ]
+                                        .into_iter()
+                                        .collect(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
                     let mut resolved_args = args.clone();
                     // Resolve callable for offset (arg 0) with array length
                     if let Some(arg @ (Value::Sub(..) | Value::WeakSub(..))) = args.first()
