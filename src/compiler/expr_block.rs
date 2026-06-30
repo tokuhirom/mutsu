@@ -502,6 +502,24 @@ impl Compiler {
                     self.compile_expr(&Expr::Var(name.clone()));
                 }
             }
+            Stmt::SubDecl {
+                name,
+                name_expr: None,
+                ..
+            }
+            | Stmt::MethodDecl {
+                name,
+                name_expr: None,
+                ..
+            } if !name.resolve().is_empty() => {
+                // A named sub/method declaration in expression position
+                // (`my sub foo {...}`, `my method foo {...}`) registers the routine
+                // and evaluates to the routine object itself (raku: a Sub / Method
+                // value), so it can be stored or passed (e.g. to `.wrap`).
+                self.compile_stmt(stmt);
+                let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                self.code.emit(OpCode::GetCodeVar(name_idx));
+            }
             _ => {
                 self.compile_stmt(stmt);
                 self.code.emit(OpCode::LoadNil);

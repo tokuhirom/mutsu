@@ -88,6 +88,16 @@ impl Interpreter {
             // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to
             // Package values so that .WHO/.WHAT etc. work correctly.
             Value::Package(Symbol::intern(name))
+        } else if (self.has_type(name) || Self::is_builtin_type(name))
+            && matches!(self.env().get(name), Some(Value::Nil))
+        {
+            // A bareword that names a type resolves to the type object. A same-named
+            // `$`-sigiled scalar (`my $foo` where a class `foo` exists) is stored
+            // sigil-stripped under the same env key; while it is still unassigned
+            // (Nil) it must NOT shadow the type — `$foo` and `foo` are distinct
+            // symbols in Raku. This notably affects `my $foo = foo.new`, whose RHS
+            // resolves `foo` before the `$foo` slot is assigned.
+            Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
         } else if let Some(v) = self.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil)
                 || matches!(v, Value::Package(pkg) if pkg.resolve() != name)
@@ -163,6 +173,15 @@ impl Interpreter {
             || Self::is_type_with_smiley(name, self)
         {
             Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
+        } else if let Some(sub_id) = self.wrap_sub_id_for_name(name)
+            && !self.is_wrap_dispatching(sub_id)
+            && let Some(sub_val) = self.get_wrapped_sub(name)
+        {
+            // A wrapped sub used as a bareword term must dispatch through its
+            // wrap chain. The `&name` env entry is a fresh Sub whose id differs
+            // from the wrap-chain key, so it would bypass the wrappers — check
+            // the wrap chain BEFORE the plain `&name` callable below.
+            self.vm_call_on_value(sub_val, Vec::new(), Some(compiled_fns))?
         } else if let Some(callable) = self.env().get(&format!("&{name}")).cloned()
             && matches!(
                 callable,
@@ -170,11 +189,6 @@ impl Interpreter {
             )
         {
             self.vm_call_on_value(callable, Vec::new(), Some(compiled_fns))?
-        } else if let Some(sub_id) = self.wrap_sub_id_for_name(name)
-            && !self.is_wrap_dispatching(sub_id)
-            && let Some(sub_val) = self.get_wrapped_sub(name)
-        {
-            self.vm_call_on_value(sub_val, Vec::new(), Some(compiled_fns))?
         } else if Interpreter::is_test_function_name(name)
             && self.test_mode_active()
             // Only try test function dispatch for hyphenated names (e.g.

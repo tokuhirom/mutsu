@@ -1980,6 +1980,8 @@ impl Interpreter {
                         self.cleanup_wrap_name_entries(sub_id);
                     }
                 }
+                // Invalidate light-call caches so the sub re-resolves (see wrap).
+                self.fn_resolve_gen += 1;
                 return Ok(Value::Bool(true));
             }
             return Err(RuntimeError::new(

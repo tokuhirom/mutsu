@@ -266,6 +266,14 @@ impl Interpreter {
                             .cloned()
                             .unwrap_or(Value::Bool(false)));
                     }
+                    "set_rw" => {
+                        // Mark the attribute as read-write. The generated accessor
+                        // for a `has $.x is rw` is already rw; for an attribute that
+                        // a custom `trait_mod:<is>` makes rw, record it on the meta
+                        // so `.rw`/`.readonly` introspection reflects the change.
+                        attributes.insert("is_rw".to_string(), Value::Bool(true));
+                        return Ok(target.clone());
+                    }
                     "rw" => {
                         return Ok(attributes
                             .as_map()

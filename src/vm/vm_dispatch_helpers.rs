@@ -368,6 +368,18 @@ impl Interpreter {
             return self.walk_list_invoke_direct(&target, args);
         }
 
+        // Wrap-aware dispatch: a Sub that has an active wrap chain must be
+        // invoked through its wrappers. The compiled fast path below bypasses
+        // the wrap chain, so route such a Sub through `call_sub_value` (which
+        // checks `wrap_chains`). Skip when already dispatching this sub's chain
+        // to avoid re-entering the wrappers from the original-sub leg.
+        if let Value::Sub(ref data) = target
+            && self.has_wrap_chain(data.id)
+            && !self.is_wrap_dispatching(data.id)
+        {
+            return self.call_sub_value(target, args, false);
+        }
+
         // Fast path: Sub with compiled_code
         if let Value::Sub(ref data) = target
             && let Some(ref cc) = data.compiled_code
