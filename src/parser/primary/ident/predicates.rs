@@ -226,6 +226,54 @@ pub(crate) fn is_expr_listop(name: &str) -> bool {
     ) || crate::parser::stmt::simple::is_imported_function(name)
 }
 
+/// True when `input` begins with a builtin function word that produces a value
+/// usable as a term argument — a list-prefix op (`reverse`/`join`/`map`/…, via
+/// [`is_listop`]) or a value-producing named unary (`uc`/`lc`/`item`/`splice`/…).
+///
+/// Used so a builtin/named-unary bareword immediately followed by another builtin
+/// call nests as a call argument (`item reverse 1,2,3` => `item(reverse(1,2,3))`,
+/// `uc reverse "ab","cd"`) instead of misparsing the inner word as a user-defined
+/// infix operator in the precedence loop.
+pub(crate) fn next_word_is_builtin_term_op(input: &str) -> bool {
+    let first = match input.chars().next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if !(first.is_alphabetic() || first == '_') {
+        return false;
+    }
+    let mut end = first.len_utf8();
+    for ch in input[end..].chars() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+            end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    let word = &input[..end];
+    is_listop(word)
+        || matches!(
+            word,
+            "splice"
+                | "item"
+                | "uc"
+                | "lc"
+                | "tc"
+                | "tclc"
+                | "fc"
+                | "wordcase"
+                | "flip"
+                | "chop"
+                | "chomp"
+                | "ord"
+                | "ords"
+                | "chr"
+                | "chrs"
+                | "chars"
+                | "defined"
+        )
+}
+
 /// Check if a name is an infix word operator (should not be treated as a listop call).
 pub(crate) fn is_infix_word_op(name: &str) -> bool {
     matches!(
