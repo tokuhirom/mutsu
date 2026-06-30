@@ -179,6 +179,10 @@ impl Compiler {
                         let qualified = self.qualify_variable_name(name);
                         let idx = self.code.add_constant(Value::str(qualified));
                         self.code.emit(OpCode::GetOurVar(idx));
+                    } else if name.starts_with('&') && matches!(expr, Expr::Literal(Value::Nil)) {
+                        // An uninitialized `&`-sigil var (`(my &)` / `(my &foo)`)
+                        // defaults to the Callable type object, not Any/Nil.
+                        self.compile_expr(&Expr::BareWord("Callable".to_string()));
                     } else {
                         self.compile_expr(expr);
                     }

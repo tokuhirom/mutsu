@@ -153,9 +153,17 @@ pub(super) fn try_keyword_dispatch(
         return Ok(Some((r, stmt)));
     }
 
-    // my sub name(...) { ... }
-    if let Some(r) = keyword("sub", rest) {
-        let (r, _) = ws1(r)?;
+    // my sub name(...) { ... }   or anonymous   my sub { ... } / my sub (...) { ... }
+    if let Some(after_sub) = keyword("sub", rest) {
+        let (after_ws, _) = ws(after_sub)?;
+        // No name (next token is the signature or block) -> anonymous sub. `my`
+        // scopes nothing nameable here, so parse `sub {...}` and any trailing
+        // postfix (e.g. `my sub {42}()`) as an ordinary expression.
+        if after_ws.starts_with('{') || after_ws.starts_with('(') {
+            let (r, expr) = expression(rest)?;
+            return Ok(Some((r, Stmt::Expr(expr))));
+        }
+        let (r, _) = ws1(after_sub)?;
         let (r, mut stmt) = sub_decl_body(r, false, false, false)?;
         if is_our && let Stmt::SubDecl { custom_traits, .. } = &mut stmt {
             custom_traits.push(("__our_scoped".to_string(), None));

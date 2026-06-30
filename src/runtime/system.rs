@@ -97,6 +97,7 @@ impl Interpreter {
                 self.check_eval_undeclared_type_args(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
                 self.check_eval_undeclared_names(&stmts)?;
+                self.check_eval_undeclared_routines(&stmts)?;
                 self.check_eval_post_declared_types(&stmts)?;
                 self.check_eval_begin_forward_calls(&stmts)?;
                 self.check_eval_param_type_constraints(&stmts)?;
@@ -108,6 +109,23 @@ impl Interpreter {
                 // Use the EVAL-specific variant that also lifts BEGIN from
                 // closure bodies in the EVAL'd code.
                 crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
+                // A `my` declared inside EVAL is lexically scoped to that EVAL and
+                // must NOT leak into the caller's pad (raku: `EVAL 'my $y'; $y` is
+                // X::Undeclared). Snapshot the set of *plain user lexical* keys
+                // present before running, so any new ones the EVAL introduces (no
+                // matter where: a bare `my`, a loop/if/while-condition declaration,
+                // a comma expression, …) can be removed afterwards. Pre-existing
+                // keys are untouched, so assignments to outer variables persist,
+                // matching raku. `&`-sub keys are handled by the callable-key
+                // restore in `eval_eval_string`, so they are excluded here.
+                let eval_pre_lexicals: HashSet<crate::symbol::Symbol> = self
+                    .env
+                    .keys()
+                    .filter(|k| {
+                        k.with_str(|s| crate::env::is_plain_user_lexical(s) && !s.starts_with('&'))
+                    })
+                    .copied()
+                    .collect();
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::undeclared_symbols("Undeclared name"));
@@ -128,6 +146,22 @@ impl Interpreter {
                 } else {
                     value
                 };
+                // Drop the EVAL's own `my` lexicals (plain user lexical keys that
+                // did not exist before) so they don't leak into the caller's pad.
+                let leaked: Vec<crate::symbol::Symbol> = self
+                    .env
+                    .keys()
+                    .filter(|k| {
+                        !eval_pre_lexicals.contains(k)
+                            && k.with_str(|s| {
+                                crate::env::is_plain_user_lexical(s) && !s.starts_with('&')
+                            })
+                    })
+                    .copied()
+                    .collect();
+                for key in leaked {
+                    self.env.remove_sym(key);
+                }
                 Ok(value)
             }
             Err(parse_err) => {

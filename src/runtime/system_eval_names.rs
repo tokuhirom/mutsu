@@ -298,6 +298,55 @@ impl Interpreter {
         }
     }
 
+    /// Detect a call to an undeclared *routine* in EVAL'd code. Raku resolves
+    /// routine names at compile time, so `EVAL '$x = 1; no_such_routine()'`
+    /// throws X::Undeclared::Symbols *before* `$x = 1` runs. Only plain bareword
+    /// calls (`foo(...)`) are checked — method calls and operator desugarings are
+    /// excluded. A name that resolves to a declared sub (here or in the enclosing
+    /// pad), a builtin, a proto, or an `&name` callable in scope is fine.
+    pub(crate) fn check_eval_undeclared_routines(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let mut declared: HashSet<String> = HashSet::new();
+        for s in stmts {
+            Self::collect_declared_routine_names(s, &mut declared);
+            Self::collect_declared_vars(s, &mut declared);
+        }
+        let extra: Vec<String> = declared
+            .iter()
+            .filter_map(|n| n.strip_prefix(['$', '@', '%', '&']).map(str::to_string))
+            .collect();
+        declared.extend(extra);
+        let mut calls: HashSet<String> = HashSet::new();
+        Self::collect_call_names_in_stmts(stmts, &mut calls);
+        for name in calls {
+            // Skip operator desugarings / package-qualified names, and internal
+            // synthetic calls the compiler emits (`__MUTSU_SET_META__`, etc.).
+            if name.contains(':') || name.starts_with("__") {
+                continue;
+            }
+            if declared.contains(&name)
+                || self.has_function(&name)
+                || self.has_multi_function(&name)
+                || self.has_proto(&name)
+                || Self::is_builtin_function(&name)
+                || self.env().contains_key(&format!("&{}", name))
+                || self.env().contains_key(name.as_str())
+                || self.get_our_var(&name).is_some()
+            {
+                continue;
+            }
+            let suggestions = self.suggest_type_names(&name);
+            return Err(RuntimeError::undeclared_routine_symbols(
+                &name,
+                format!("Undeclared routine:\n    {} used at line 1", name),
+                suggestions,
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn check_eval_undeclared_names(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         // Collect class/role names and locally-declared variables/subs from
         // this EVAL code. Both are valid references so they should not be

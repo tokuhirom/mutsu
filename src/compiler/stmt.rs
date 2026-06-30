@@ -956,12 +956,20 @@ impl Compiler {
                     self.scalar_bind_autovivify = false;
                     self.bind_terminal = false;
                 } else {
+                    // An uninitialized `&`-sigil variable (`my &foo;` / `my &;`)
+                    // defaults to the `Callable` type object, not Any/Nil.
+                    let callable_default = Expr::BareWord("Callable".to_string());
                     let rhs_expr = if has_default_trait
                         && !name.starts_with('@')
                         && !name.starts_with('%')
                         && matches!(expr, Expr::Literal(Value::Nil))
                     {
                         default_trait_expr.unwrap_or(expr)
+                    } else if name.starts_with('&')
+                        && !has_explicit_initializer
+                        && matches!(expr, Expr::Literal(Value::Nil))
+                    {
+                        &callable_default
                     } else {
                         expr
                     };
