@@ -2390,6 +2390,54 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     rest = r;
                     continue;
                 }
+                // Colon-arg syntax: »name: arg, arg2 (no space before the colon).
+                // A space before ':' means an adverb (colon-pair) argument instead.
+                let has_space_before_colon =
+                    r.starts_with(' ') || r.starts_with('\t') || r.starts_with('\n');
+                let (r_cln, _) = ws(r)?;
+                if r_cln.starts_with(':') && !r_cln.starts_with("::") {
+                    let (r3, first_arg) = if has_space_before_colon {
+                        colonpair_expr(r_cln)?
+                    } else {
+                        let r3 = &r_cln[1..];
+                        let (r3, _) = ws(r3)?;
+                        listop_arg_expr(r3)?
+                    };
+                    let mut args = vec![first_arg];
+                    let mut r_inner = r3;
+                    loop {
+                        let (r4, _) = ws(r_inner)?;
+                        if r4.starts_with(':')
+                            && !r4.starts_with("::")
+                            && let Ok((r5, next)) = colonpair_expr(r4)
+                        {
+                            args.push(next);
+                            r_inner = r5;
+                            continue;
+                        }
+                        if !r4.starts_with(',') {
+                            break;
+                        }
+                        let r4 = &r4[1..];
+                        let (r4, _) = ws(r4)?;
+                        if r4.starts_with(';') || r4.starts_with('}') || r4.is_empty() {
+                            r_inner = r4;
+                            break;
+                        }
+                        let (r4, next) = listop_arg_expr(r4)?;
+                        args.push(next);
+                        r_inner = r4;
+                    }
+                    expr = Expr::HyperMethodCall {
+                        target: Box::new(expr),
+                        name,
+                        args,
+                        modifier,
+                        quoted: false,
+                    };
+                    rest = r_inner;
+                    continue;
+                }
                 expr = Expr::HyperMethodCall {
                     target: Box::new(expr),
                     name,

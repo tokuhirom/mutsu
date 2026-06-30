@@ -277,17 +277,71 @@ impl Interpreter {
         Ok(Value::str(out))
     }
 
-    /// Collect all remaining lines into a Seq.
-    fn cat_lines(&mut self, attrs: &mut HashMap<String, Value>) -> Result<Value, RuntimeError> {
-        let mut lines = Vec::new();
-        loop {
-            let line = self.cat_get(attrs)?;
-            if matches!(line, Value::Nil) {
-                break;
+    /// Collect remaining lines into a Seq, honouring an optional positional
+    /// `$limit` (max number of lines) and a `:close` named arg.
+    fn cat_lines(
+        &mut self,
+        attrs: &mut HashMap<String, Value>,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut limit: Option<i64> = None;
+        let mut close = false;
+        for arg in args {
+            match arg {
+                Value::Pair(k, v) if k == "close" => close = v.truthy(),
+                Value::Int(n) => limit = Some(*n),
+                _ => {}
             }
-            lines.push(line);
+        }
+        let mut lines = Vec::new();
+        if limit != Some(0) {
+            loop {
+                if let Some(n) = limit
+                    && lines.len() as i64 >= n
+                {
+                    break;
+                }
+                let line = self.cat_get(attrs)?;
+                if matches!(line, Value::Nil) {
+                    break;
+                }
+                lines.push(line);
+            }
+        }
+        if close {
+            self.cat_close(attrs);
         }
         Ok(Value::Seq(std::sync::Arc::new(lines)))
+    }
+
+    /// Close the active handle and all `IO::Handle` sources, marking the cat
+    /// closed. Shared by `.close`/`.DESTROY` and `:close` read adverbs.
+    fn cat_close(&mut self, attrs: &mut HashMap<String, Value>) {
+        if let Some(active @ Value::Instance { class_name, .. }) =
+            attrs.get("active").cloned().as_ref()
+            && class_name == "IO::Handle"
+        {
+            let _ = self.close_handle_value(active);
+        }
+        let handle_sources: Vec<Value> = match attrs.get("sources") {
+            Some(Value::Array(items, ..)) => items
+                .iter()
+                .filter(|v| matches!(v, Value::Instance { class_name, .. } if class_name == "IO::Handle"))
+                .cloned()
+                .collect(),
+            _ => Vec::new(),
+        };
+        for src in &handle_sources {
+            let _ = self.close_handle_value(src);
+        }
+        attrs.insert("active".to_string(), Value::Nil);
+        attrs.insert("path".to_string(), Value::Nil);
+        attrs.insert("closed".to_string(), Value::Bool(true));
+        let pos = match attrs.get("sources") {
+            Some(Value::Array(items, ..)) => items.len() as i64,
+            _ => 0,
+        };
+        attrs.insert("pos".to_string(), Value::Int(pos));
     }
 
     /// Mutable dispatch for `IO::CatHandle` methods. All reads advance internal
@@ -303,7 +357,7 @@ impl Interpreter {
         let result = match method {
             "get" => self.cat_get(&mut attrs)?,
             "getc" => self.cat_getc(&mut attrs)?,
-            "lines" => self.cat_lines(&mut attrs)?,
+            "lines" => self.cat_lines(&mut attrs, &args)?,
             "slurp" => self.cat_slurp(&mut attrs)?,
             "words" => {
                 let text = match self.cat_slurp(&mut attrs)? {
@@ -370,7 +424,9 @@ impl Interpreter {
             "read" => {
                 // Read up to N bytes across handles, switching when one is
                 // exhausted but only while more bytes are still wanted.
-                let want = args.first().and_then(val_int).unwrap_or(0).max(0) as usize;
+                // `.read` with no explicit count uses IO::Handle's default chunk
+                // size (65536 bytes), matching rakudo.
+                let want = args.first().and_then(val_int).unwrap_or(65536).max(0) as usize;
                 let mut bytes: Vec<u8> = Vec::new();
                 while bytes.len() < want {
                     let active = self.cat_ensure_active(&mut attrs);
@@ -397,41 +453,12 @@ impl Interpreter {
                     }
                     bytes.extend_from_slice(&chunk_bytes);
                 }
-                let mut battrs: HashMap<String, Value> = HashMap::new();
-                battrs.insert(
-                    "bytes".to_string(),
-                    Value::array(bytes.iter().map(|b| Value::Int(*b as i64)).collect()),
-                );
-                Value::make_instance(Symbol::intern("Buf"), battrs)
+                // `.read` always returns a `Buf[uint8]` (buf8) in Raku.
+                Self::make_buf(bytes)
             }
             "next-handle" => self.cat_next_handle(&mut attrs),
             "close" | "DESTROY" => {
-                if let Some(active @ Value::Instance { class_name, .. }) =
-                    attrs.get("active").cloned().as_ref()
-                    && class_name == "IO::Handle"
-                {
-                    let _ = self.close_handle_value(active);
-                }
-                // Close any remaining un-opened IO::Handle sources too.
-                let handle_sources: Vec<Value> = match attrs.get("sources") {
-                    Some(Value::Array(items, ..)) => items
-                        .iter()
-                        .filter(|v| matches!(v, Value::Instance { class_name, .. } if class_name == "IO::Handle"))
-                        .cloned()
-                        .collect(),
-                    _ => Vec::new(),
-                };
-                for src in &handle_sources {
-                    let _ = self.close_handle_value(src);
-                }
-                attrs.insert("active".to_string(), Value::Nil);
-                attrs.insert("path".to_string(), Value::Nil);
-                attrs.insert("closed".to_string(), Value::Bool(true));
-                let pos = match attrs.get("sources") {
-                    Some(Value::Array(items, ..)) => items.len() as i64,
-                    _ => 0,
-                };
-                attrs.insert("pos".to_string(), Value::Int(pos));
+                self.cat_close(&mut attrs);
                 Value::Bool(true)
             }
             "eof" => {
@@ -454,7 +481,17 @@ impl Interpreter {
                     }
                 }
             }
-            "opened" => Value::Bool(!attrs.get("closed").is_some_and(|v| v.truthy())),
+            "opened" => {
+                // `.opened` reflects whether there is currently an active source
+                // handle: a closed/exhausted cat (or one with no sources) is not
+                // open. Opening the first source on demand matches rakudo.
+                if attrs.get("closed").is_some_and(|v| v.truthy()) {
+                    Value::Bool(false)
+                } else {
+                    let active = self.cat_ensure_active(&mut attrs);
+                    Value::Bool(matches!(active, Value::Instance { .. }))
+                }
+            }
             "chomp" => {
                 if let Some(arg) = args.into_iter().next() {
                     attrs.insert("chomp".to_string(), arg.clone());
