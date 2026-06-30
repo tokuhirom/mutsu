@@ -210,6 +210,109 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 args: vec![lhs, Expr::ArrayLiteral(Vec::new()), value],
             }
         }
+        // A method-call lvalue (`$obj.attr .= meth`). In Raku `$obj.attr .= meth`
+        // is `$obj.attr = $obj.attr.meth`, so when `.attr` is an `is rw` accessor
+        // the result is written back through the accessor (the attribute slot), not
+        // snapshotted. We restrict this to a no-modifier, no-argument method call —
+        // the common accessor shape — and keep the runtime `STORE` check so a Proxy
+        // accessor (`$obj.proxy-attr`) still routes through `.STORE`. Evaluate the
+        // invocant once, read the current value once, then branch at runtime:
+        //   do { my $inv = INVOCANT;
+        //        my $cur = $inv.attr;
+        //        $cur.^can("STORE")
+        //            ?? do { $cur.STORE($cur.meth); $cur }
+        //            !! ($inv.attr = $cur.meth) }
+        // For a non-lvalue invocant (`Foo.new.=meth`) the writeback path raises
+        // X::Assignment::RO at runtime, matching Raku's "Cannot modify an immutable
+        // value".
+        Expr::MethodCall {
+            target: inv,
+            name: acc_name,
+            args: acc_args,
+            modifier: None,
+            quoted,
+        } if acc_args.is_empty() => {
+            use std::sync::atomic::Ordering;
+            let n = crate::parser::stmt::simple::TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let inv_tmp = format!("__mutsu_dotassign_inv_{}", n);
+            let cur_tmp = format!("__mutsu_dotassign_cur_{}", n);
+            let inv_var = Expr::Var(inv_tmp.clone());
+            let cur_var = Expr::Var(cur_tmp.clone());
+            let acc_name = *acc_name;
+            let quoted = *quoted;
+            // Read the current accessor value (evaluated once into `$cur`).
+            let read_expr = Expr::MethodCall {
+                target: Box::new(inv_var.clone()),
+                name: acc_name,
+                args: Vec::new(),
+                modifier: None,
+                quoted,
+            };
+            // `$cur.meth(margs)` — the mutating method applied to the current value.
+            let meth_result = method_call_fn(cur_var.clone());
+            // STORE branch: container accessor (Proxy) updates in place.
+            let store_call = Expr::MethodCall {
+                target: Box::new(cur_var.clone()),
+                name: Symbol::intern("STORE"),
+                args: vec![meth_result.clone()],
+                modifier: None,
+                quoted: false,
+            };
+            let then_expr = Expr::DoBlock {
+                body: vec![Stmt::Expr(store_call), Stmt::Expr(cur_var.clone())],
+                label: None,
+            };
+            // Writeback branch: `$inv.attr = $cur.meth` through the accessor slot.
+            let writeback = crate::parser::stmt::assign::method_lvalue_assign_expr(
+                inv_var,
+                Some(inv_tmp.clone()),
+                acc_name.resolve().to_string(),
+                Vec::new(),
+                meth_result,
+            );
+            let can_store = Expr::MethodCall {
+                target: Box::new(cur_var),
+                name: Symbol::intern("can"),
+                args: vec![Expr::Literal(Value::str("STORE".to_string()))],
+                modifier: Some('^'),
+                quoted: false,
+            };
+            let ternary = Expr::Ternary {
+                cond: Box::new(can_store),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(writeback),
+            };
+            Expr::DoBlock {
+                body: vec![
+                    Stmt::VarDecl {
+                        name: inv_tmp,
+                        expr: *inv.clone(),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    },
+                    Stmt::VarDecl {
+                        name: cur_tmp,
+                        expr: read_expr,
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    },
+                    Stmt::Expr(ternary),
+                ],
+                label: None,
+            }
+        }
         // A non-lvalue target (`(Foo.new).=meth`, `Foo.new.=meth`, ...). In Raku
         // `X.=meth` is `X = X.meth`; when X (evaluated once) provides a `STORE`
         // method it is a custom container, so this becomes `X.STORE(X.meth)` and

@@ -437,7 +437,19 @@ materialize せず Seq のまま保持し（`.WHAT === Seq`）、`+@foo` は Lis
    - 完了条件: element bind / take-rw / deep nested write が post-call writeback なしで成立
 2. **属性 accessor を value copy ではなく slot 経由にする**
    - 変更レイヤ: attribute read/write path、instance attr storage、methods instance ops
-   - 対象: `S12-attributes/clone.t`, `S14-traits/attributes.t`, `S12-introspection/walk.t`
+   - 対象: `S14-traits/attributes.t`
+   - 状況:
+     - `S12-attributes/clone.t`（whitelist 済み, PR #2253）と
+       `S12-introspection/walk.t`（whitelist 済み）は既に通過済み。
+     - `$obj.attr .= meth`（`is rw` accessor への `.=` メタop）は属性 slot へ
+       書き戻すよう修正済み（`wrap_dot_assign` に method-call lvalue アームを追加）。
+     - 残るのは `S14-traits/attributes.t` の 5–8（`Attribute.container.VAR does Role`）。
+       これは「scalar 属性が Scalar コンテナを VAR として持ち、合成時に role を
+       mixin し、それがインスタンスの per-attribute コンテナに伝播する」という
+       深いコンテナ表現が必要。mutsu の scalar 属性は値を直接保持し VAR は Any を
+       返すため、ここは main track（slot identity 再設計）待ち。
+     - 残課題: `$my_ref := $obj.attr`（scalar accessor への `:=` 束縛）も同じく
+       属性 slot の cell 化が必要（配列/ハッシュ要素 `$r := @a[0]` は既に動く）。
 3. **typed-hash default / Capture 書き戻し / wrapper capture**
    - 変更レイヤ: hash missing-key default、Capture bind/writeback、wrap closure env
    - 対象: `S32-hash/adverbs.t`, `S02-types/capture.t`, `S02-types/whatever.t`
