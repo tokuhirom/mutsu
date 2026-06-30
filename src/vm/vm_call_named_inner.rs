@@ -456,6 +456,44 @@ impl Interpreter {
                     restored_env.insert_sym(*k, v.clone());
                 }
             }
+            // A captured-outer write to an enclosing lexical that is not yet
+            // present in the caller env is dropped by the `contains_key`-gated
+            // merge above. This happens when a hoisted sub is *called before* the
+            // `my $x` declaration it closes over has run (the declaration is
+            // compile-time, so the lexical genuinely exists, but the runtime env
+            // entry is created only when the `my` statement executes). Such a name
+            // is recorded in `free_var_writes` (the body writes a free var), so
+            // propagate the callee's new value into the restored caller env
+            // unconditionally — otherwise the first call's write is lost and the
+            // accumulation starts one call late (`0,0,1,2` instead of `0,1,2,3`).
+            for sym in &cf.code.free_var_writes {
+                if restored_env.contains_key_sym(*sym) {
+                    continue;
+                }
+                let skip = sym.with_str(|s| {
+                    s == "_"
+                        || s == "@_"
+                        || s == "%_"
+                        || local_names.contains(s)
+                        || rw_sources.contains(s)
+                        // Compiler-internal bookkeeping symbols (e.g. the
+                        // `__mutsu_sigilless_readonly::p` marker emitted for a
+                        // `my \p = ...` capture) are not user lexicals and must
+                        // never leak into the caller env — doing so corrupts the
+                        // caller's own later declarations of the bare name.
+                        || s.starts_with("__mutsu")
+                        // Dynamic vars (`$*x`) are reconciled by
+                        // pop_caller_env_with_writeback, not the lexical merge.
+                        || s.as_bytes().get(1) == Some(&b'*')
+                });
+                if skip {
+                    continue;
+                }
+                if let Some(v) = self.env().get_sym(*sym) {
+                    let v = v.clone();
+                    restored_env.insert_sym(*sym, v);
+                }
+            }
             *self.env_mut() = restored_env;
         }
 
