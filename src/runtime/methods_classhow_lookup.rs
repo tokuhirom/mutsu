@@ -189,25 +189,42 @@ impl Interpreter {
     }
 
     /// Return all multi method candidates for a class method as Sub values.
+    ///
+    /// A multi method dispatched from `class_name` combines candidates across
+    /// its whole inheritance chain: the candidate list reported by
+    /// `^find_method(name).candidates` includes every multi candidate defined
+    /// in `class_name` and its ancestors, ordered base-class-first (e.g. for
+    /// `class C2 is C1`, C1's candidates precede C2's). Each candidate carries
+    /// the *owner* class and the index within that class's own candidate list
+    /// so that `.wrap()` keys into the same `(class, method, idx)` slot that
+    /// the dispatcher consults when it reaches that candidate (S06-advanced/
+    /// wrap.t GH#2178).
     pub(super) fn classhow_lookup_all_candidates(
         &self,
         class_name: &str,
         method_name: &str,
-        package: crate::symbol::Symbol,
+        _package: crate::symbol::Symbol,
     ) -> Vec<Value> {
         // No user-code re-entry below (pure Value construction), so a let-bound
         // guard is safe.
         let registry = self.registry();
-        let Some(class_def) = registry.classes.get(class_name) else {
-            return Vec::new();
-        };
-        let Some(defs) = class_def.methods.get(method_name) else {
-            return Vec::new();
-        };
-        defs.iter()
-            .enumerate()
-            .map(|(idx, def)| {
-                let mut full_param_defs = vec![Self::make_invocant_param(class_name)];
+        // Walk the MRO base-class-first so the reported candidate order matches
+        // Rakudo's (ancestors before the class itself).
+        let mut stack = Vec::new();
+        let mut mro = registry
+            .compute_class_mro(class_name, &mut stack)
+            .unwrap_or_else(|_| vec![class_name.to_string()]);
+        mro.reverse();
+        let mut out = Vec::new();
+        for owner in &mro {
+            let Some(class_def) = registry.classes.get(owner) else {
+                continue;
+            };
+            let Some(defs) = class_def.methods.get(method_name) else {
+                continue;
+            };
+            for (idx, def) in defs.iter().enumerate() {
+                let mut full_param_defs = vec![Self::make_invocant_param(owner)];
                 full_param_defs.extend(def.param_defs.iter().cloned());
                 let mut env = crate::env::Env::new();
                 // Set callable type for .^name to return Method/Submethod
@@ -222,7 +239,7 @@ impl Interpreter {
                 );
                 env.insert(
                     "__mutsu_lookup_class".to_string(),
-                    Value::str(class_name.to_string()),
+                    Value::str(owner.to_string()),
                 );
                 env.insert(
                     "__mutsu_lookup_method".to_string(),
@@ -232,17 +249,18 @@ impl Interpreter {
                     "__mutsu_lookup_candidate_idx".to_string(),
                     Value::Int(idx as i64),
                 );
-                Value::make_sub(
-                    package,
+                out.push(Value::make_sub(
+                    crate::symbol::Symbol::intern(owner),
                     crate::symbol::Symbol::intern(method_name),
                     def.params.clone(),
                     full_param_defs,
                     (*def.body).clone(),
                     def.is_rw,
                     env,
-                )
-            })
-            .collect()
+                ));
+            }
+        }
+        out
     }
 
     /// Check if a method name belongs to a built-in type (Str, Int, etc.)
