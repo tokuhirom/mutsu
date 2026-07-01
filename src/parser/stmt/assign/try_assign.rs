@@ -283,15 +283,19 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             }
         };
         let name = format!("{}{}", prefix, var);
+        // Read the current value through the sigil-appropriate lvalue so `%h ,= %g`
+        // / `@a ,= 3` treat the LHS as a Hash/Array container (not a scalar
+        // `Var("h")`), letting the comma operator merge/append the two containers.
+        let lhs_expr = match sigil {
+            b'@' => Expr::ArrayVar(var.to_string()),
+            b'%' => Expr::HashVar(var.to_string()),
+            _ => Expr::Var(var.to_string()),
+        };
         return Ok((
             rest,
             Expr::AssignExpr {
                 name,
-                expr: Box::new(compound_assigned_value_expr(
-                    Expr::Var(var.to_string()),
-                    op,
-                    rhs,
-                )),
+                expr: Box::new(compound_assigned_value_expr(lhs_expr, op, rhs)),
                 is_bind: false,
             },
         ));
