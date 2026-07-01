@@ -198,7 +198,10 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
-        let expr = compound_assigned_value_expr(Expr::Var(name.clone()), op, rhs);
+        // Use the sigil-appropriate lvalue expression so `%h ,= %g` / `@a ,= 3`
+        // read the current container as a Hash/Array (not a scalar `Var("%h")`),
+        // giving the comma operator the two containers to merge/append.
+        let expr = compound_assigned_value_expr(var_expr, op, rhs);
         let stmt = Stmt::Assign {
             name,
             expr,
