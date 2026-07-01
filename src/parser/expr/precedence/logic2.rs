@@ -234,7 +234,15 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
     let next_fn: fn(&str) -> PResult<'_, Expr> = match mode {
         ExprMode::Full => sequence_expr,
         ExprMode::NoSequence => list_infix_expr,
-        ExprMode::NoSequenceNoFeed | ExprMode::ListopArg => range_expr,
+        // An (unparenthesized) call / list-prefix argument binds the sequence
+        // operator TIGHTER than the comma that separates arguments, so
+        // `none 2 ... 5` is `none(2 ... 5)`, NOT `(none 2) ... 5`. Route the
+        // call-arg mode through `sequence_only_expr` so `...`/`...^` are consumed
+        // inside the argument; comma and the feed operators stay outside. It
+        // deliberately skips the list-infix loop (which would misparse a trailing
+        // `==> @b` feed as part of the argument).
+        ExprMode::NoSequenceNoFeed => sequence_only_expr,
+        ExprMode::ListopArg => range_expr,
     };
     let (mut rest, mut left) = next_fn(input)?;
     let mut last_junction: Option<JunctionInfixOp> = None;
