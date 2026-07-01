@@ -286,6 +286,16 @@ impl Interpreter {
                 let val = Self::wrap_native_int_by_constraint(&constraint, val)?;
                 self.locals[idx] = val;
             } else {
+                // Untyped scalar: *reassigning* Nil resets it to the default type
+                // object Any (`$x = 5; $x = Nil` -> Any). Declarations (`my $x`,
+                // `my $x = <Nil-valued expr>`) keep their existing Nil path — a
+                // narrower scope that fixes the reassignment case without touching
+                // the declaration-time Nil handling.
+                let val = if is_vardecl {
+                    val
+                } else {
+                    self.reset_nil_untyped_scalar(name, val)
+                };
                 self.locals[idx] = val;
             }
             // Track lazy-thunk readonly: mark when storing a LazyThunk,
@@ -873,6 +883,12 @@ impl Interpreter {
             }
             // Wrap native integer values on assignment (overflow wrapping)
             val = Self::wrap_native_int_by_constraint(&constraint, val)?;
+        } else if !is_bind && !is_vardecl {
+            // Untyped scalar: *reassigning* Nil resets it to the default type
+            // object Any (`$x = Nil` leaves `$x =:= Any`). Declarations keep their
+            // existing Nil path. The reset guard is a no-op for `@`/`%` containers
+            // and internal temps.
+            val = self.reset_nil_untyped_scalar(name, val);
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
