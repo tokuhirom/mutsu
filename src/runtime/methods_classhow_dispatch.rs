@@ -435,6 +435,29 @@ impl Interpreter {
                     class_name
                 )))
             }
+            "add_fallback" if args.len() >= 3 => {
+                // ^add_fallback($type, &condition, &calculator): register a
+                // dynamic method fallback. When a method is not found on a value
+                // of this class, `&condition($obj, $name)` is checked; the first
+                // that returns True has `&calculator($obj, $name)` produce the
+                // method body, which is then invoked with the invocant.
+                let class_name = match &args[0] {
+                    Value::Package(name) => name.resolve(),
+                    Value::Str(name) => name.to_string(),
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "add_fallback target must be a type object",
+                        ));
+                    }
+                };
+                let condition = args[1].clone();
+                let calculator = args[2].clone();
+                self.method_fallbacks
+                    .entry(class_name)
+                    .or_default()
+                    .push((condition, calculator));
+                Ok(Value::Nil)
+            }
             "compose" if !args.is_empty() => {
                 // ^compose recomposes the class (e.g. after add_method)
                 // Rebuild the MRO for the class

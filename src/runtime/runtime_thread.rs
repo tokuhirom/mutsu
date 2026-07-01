@@ -273,6 +273,7 @@ impl Interpreter {
             wrap_handle_counter: self.wrap_handle_counter,
             wrap_dispatch_stack: Vec::new(),
             method_wrap_chains: self.method_wrap_chains.clone(),
+            method_fallbacks: self.method_fallbacks.clone(),
             suppressed_names: self.suppressed_names.clone(),
             poisoned_enum_aliases: self.poisoned_enum_aliases.clone(),
             enum_scope_names: self.enum_scope_names.clone(),
