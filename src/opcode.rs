@@ -1907,6 +1907,15 @@ impl CompiledCode {
                 && !own.contains(name.as_str())
             {
                 free_container_writes.insert(Symbol::intern(name));
+                // A container mutated ONLY via element-assign (`%h{$k} = v`,
+                // `@a[$i] = v`) must ALSO be captured as a free variable, exactly
+                // like one mutated via a method (`%h.push`, already a name-read op).
+                // Otherwise the closure never carries the container, so a wrapper's
+                // hash element-assign is lost on return (its copy-on-write result is
+                // neither shared with the caller nor persisted for writeback). An
+                // array happened to survive via shared in-place mutation, but a hash
+                // element-assign copy-on-writes and needs the capture + writeback.
+                free.insert(Symbol::intern(name));
             }
             // Name-based writes: either a free-var write or an own-local mutation.
             if let Some(idx) = Self::op_name_write_const_idx(op)
