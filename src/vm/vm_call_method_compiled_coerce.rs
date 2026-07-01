@@ -187,7 +187,11 @@ impl Interpreter {
             return Some(target.clone());
         }
         // Seq: consumed-state + `squish` env mutation are interpreter-owned.
-        if matches!(target, Value::Seq(_)) {
+        // HyperSeq/RaceSeq: single-iterator consumed-state is interpreter-owned too.
+        if matches!(
+            target,
+            Value::Seq(_) | Value::HyperSeq(_) | Value::RaceSeq(_)
+        ) {
             return None;
         }
         Some(crate::builtins::iterator_construct::build_iterator_instance(target))

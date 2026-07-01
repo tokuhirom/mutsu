@@ -7,8 +7,13 @@ use crate::value::Value;
 /// before a statement terminator. Used to decide whether `try STMT` should
 /// attempt parsing as an assignment/binding statement.
 pub(crate) fn looks_like_binding(input: &str) -> bool {
-    // Scan for `:=` before `;`, `}`, or end of input
-    let search_len = input.len().min(200);
+    // Scan for `:=` before `;`, `}`, or end of input. Snap the 200-byte window
+    // down to the nearest char boundary so a multi-byte char (e.g. `⚛`) straddling
+    // byte 200 doesn't panic the slice.
+    let mut search_len = input.len().min(200);
+    while search_len > 0 && !input.is_char_boundary(search_len) {
+        search_len -= 1;
+    }
     let search = &input[..search_len];
     for (i, c) in search.char_indices() {
         if c == ';' || c == '}' {

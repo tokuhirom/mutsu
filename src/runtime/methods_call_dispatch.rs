@@ -2961,6 +2961,23 @@ impl Interpreter {
                 "hyper" => return Ok(Value::HyperSeq(items)),
                 "race" => return Ok(Value::RaceSeq(items)),
                 "is-lazy" => return Ok(Value::Bool(false)),
+                "iterator" if args.is_empty() => {
+                    // A HyperSeq/RaceSeq allows only a single iterator (rakudo #4413):
+                    // a second `.iterator` throws X::Seq::Consumed. The consumed-state
+                    // is tracked on the inner Arc via the shared Seq registry.
+                    let type_name = if is_hyper { "HyperSeq" } else { "RaceSeq" };
+                    // `seq_consume` atomically checks-and-marks under one lock, so
+                    // concurrent workers racing for the single iterator resolve to
+                    // exactly one winner (rakudo #4413 concurrency contract).
+                    if crate::value::seq_consume(&items).is_err() {
+                        return Err(crate::value::seq_consumed_error_for(type_name));
+                    }
+                    let array_target = Value::Array(
+                        crate::value::Value::array_arc(items.to_vec()),
+                        crate::value::ArrayKind::List,
+                    );
+                    return self.call_method_with_values(array_target, method, args);
+                }
                 "map" | "grep" => {
                     let array_target = Value::Array(
                         crate::value::Value::array_arc(items.to_vec()),
