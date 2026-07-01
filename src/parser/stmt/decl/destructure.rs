@@ -478,21 +478,46 @@ fn parse_destructuring_with_rhs(
         custom_traits: Vec::new(),
         where_constraint: None,
     }];
+    // List ASSIGNMENT (`=`) and signature BINDING (`:=`) differ here:
+    //  - assignment: the FIRST `@`/`%` target is greedy — it slurps all
+    //    remaining RHS values, and every target after it receives an empty
+    //    container / Nil (`my ($a, @b, $c) = 1..4` → `@b` = `[2,3,4]`, `$c` = Any).
+    //  - binding: a plain `@`/`%` binds ONE positional argument; only an
+    //    explicit `*@rest` is slurpy (`my ($x, @y, *@r) := (42,[13,17],5,6,7)`
+    //    → `@y` = `[13,17]`, `@r` = `[5,6,7]`).
+    // So the greedy behaviour applies only in assignment mode; binding keeps the
+    // historical "trailing array with nothing non-slurpy after it" heuristic.
     let has_explicit_slurpy = vars.iter().any(|v| v.is_slurpy);
+    let mut seen_slurpy = false;
     for (i, dvar) in vars.iter().enumerate() {
         if dvar.literal_value.is_some() {
             continue;
         }
 
-        let is_implicit_slurpy = !has_explicit_slurpy
-            && dvar.name.starts_with('@')
-            && !vars[i + 1..].iter().any(|v| !v.is_slurpy);
+        let is_array = dvar.name.starts_with('@');
+        let is_hash = dvar.name.starts_with('%');
+        let is_implicit_slurpy = if is_binding {
+            !has_explicit_slurpy && is_array && !vars[i + 1..].iter().any(|v| !v.is_slurpy)
+        } else {
+            !seen_slurpy && (is_array || is_hash)
+        };
 
         let effective_tc = dvar
             .per_var_type_constraint
             .clone()
             .or_else(|| type_constraint.clone());
-        let expr = if dvar.is_slurpy || is_implicit_slurpy {
+        let expr = if !is_binding && seen_slurpy {
+            // A target after a greedy slurp (assignment mode) gets an empty
+            // container / Nil.
+            if is_array {
+                Expr::ArrayLiteral(Vec::new())
+            } else if is_hash {
+                Expr::Hash(Vec::new())
+            } else {
+                Expr::Literal(Value::Nil)
+            }
+        } else if dvar.is_slurpy || is_implicit_slurpy {
+            seen_slurpy = true;
             Expr::Index {
                 target: Box::new(Expr::ArrayVar(array_bare.clone())),
                 index: Box::new(Expr::Binary {
