@@ -349,7 +349,11 @@ impl Interpreter {
                         self.env_mut().insert("*HOME".to_string(), home_val);
                     }
                 }
-                self.stack.push(val);
+                // A single hash-key assignment names one scalar slot, so the
+                // rvalue is itemized (`@z = (%h<x> = 1, 2)` => `@z.elems == 1`).
+                // The fast path only handles a single scalar key (complex indices
+                // are rejected above), so this is always a single-element result.
+                self.stack.push(Self::itemize_value(val));
                 Some(Ok(()))
             }
             None => {
@@ -381,7 +385,7 @@ impl Interpreter {
                         self.env_mut().insert("*HOME".to_string(), home_val);
                     }
                 }
-                self.stack.push(val);
+                self.stack.push(Self::itemize_value(val));
                 Some(Ok(()))
             }
             _ => None, // Not a Hash — fall through to slow path
