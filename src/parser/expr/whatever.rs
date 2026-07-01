@@ -331,8 +331,13 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. } => {
             count_whatever(target)
         }
-        Expr::CallOn { target, args } => {
-            count_whatever(target) + args.iter().map(count_whatever).sum::<usize>()
+        Expr::CallOn { target, .. } => {
+            // Only the *target* of an invocation curries. A Whatever passed as a
+            // call *argument* (`$sub(*)`, `&infix:<+>(*, 42)`) is a Whatever value
+            // handed to the callee, NOT a placeholder of the enclosing
+            // WhateverCode — so it must not add to the arity. This mirrors
+            // `contains_whatever`, which already only inspects the target.
+            count_whatever(target)
         }
         // Only check target, not index (subscript handles its own WhateverCode)
         Expr::Index { target, .. } => count_whatever(target),
