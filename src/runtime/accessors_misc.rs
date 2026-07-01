@@ -153,12 +153,40 @@ impl Interpreter {
                 }
             }
         }
+        // In EVAL context, a `grammar`/`token`/`rule` declared inside the EVAL'd
+        // code registers its class (which IS merged back into `registry.classes`
+        // by the caller) plus its tokens here. Restoring `token_defs`/`proto_tokens`
+        // to the snapshot would drop those tokens, so a later `.parse` on the
+        // returned grammar type object fails with "Unknown method parse". Preserve
+        // newly-registered tokens (keys absent from the snapshot) so the EVAL'd
+        // grammar stays usable, mirroring how EVAL'd classes/roles persist.
+        let mut new_tokens: Vec<(Symbol, Vec<std::sync::Arc<FunctionDef>>)> = Vec::new();
+        let mut new_proto_tokens: Vec<String> = Vec::new();
+        if is_eval {
+            let registry = self.registry();
+            for (key, defs) in &registry.token_defs {
+                if !token_defs.contains_key(key) {
+                    new_tokens.push((*key, defs.clone()));
+                }
+            }
+            for pt in &registry.proto_tokens {
+                if !proto_tokens.contains(pt) {
+                    new_proto_tokens.push(pt.clone());
+                }
+            }
+        }
         let mut registry = self.registry_mut();
         registry.functions = functions;
         registry.proto_functions = proto_functions;
         registry.token_defs = token_defs;
         registry.proto_subs = proto_subs;
         registry.proto_tokens = proto_tokens;
+        for (key, defs) in new_tokens {
+            registry.token_defs.insert(key, defs);
+        }
+        for pt in new_proto_tokens {
+            registry.proto_tokens.insert(pt);
+        }
         // Re-apply only newly added our-scoped functions so they survive block scope exit.
         // In EVAL context, our-scoped functions should NOT leak into the outer lexical
         // scope — they remain accessible only via OUR:: pseudo-package resolution.
