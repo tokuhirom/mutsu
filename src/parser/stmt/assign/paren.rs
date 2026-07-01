@@ -224,6 +224,42 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         &rest[1..]
     };
     let (rest, _) = ws(rest)?;
+    // `$(EXPR) = a, b` forces ITEM assignment: `$(...)` names the same container
+    // as EXPR but in item context, so the comma is NOT part of the RHS
+    // (`(($(EXPR) = a), b)`) -- unlike a bare `(@a[0] = a, b)` which is list
+    // assignment and slurps the comma. Parse the RHS comma-blind and fold any
+    // trailing comma list into the parenthesized value.
+    if let Expr::MethodCall {
+        target, name, args, ..
+    } = &lhs
+        && name == "item"
+        && args.is_empty()
+        && !is_atomic
+    {
+        let inner_target = (**target).clone();
+        let (r, value) = expression_no_sequence(rest)?;
+        let assign = crate::parser::expr::precedence::assign_to_target_expr(inner_target, value);
+        let (mut r, _) = ws(r)?;
+        if r.starts_with(',') && !r.starts_with(",,") {
+            let mut items = vec![assign];
+            while r.starts_with(',') && !r.starts_with(",,") {
+                let (c, _) = parse_char(r, ',')?;
+                let (c, _) = ws(c)?;
+                if c.starts_with(')') {
+                    r = c;
+                    break;
+                }
+                let (c, item) = expression_no_sequence(c)?;
+                items.push(item);
+                let (c, _) = ws(c)?;
+                r = c;
+            }
+            let (r, _) = parse_char(r, ')')?;
+            return Ok((r, Expr::ArrayLiteral(items)));
+        }
+        let (r, _) = parse_char(r, ')')?;
+        return Ok((r, assign));
+    }
     // Parse RHS: try chained assignment first, then comma-separated list for multi-value
     // assignment (e.g. `(%h{|| @a} = 42,666)`).
     let (rest, rhs) = match try_parse_assign_expr(rest) {
