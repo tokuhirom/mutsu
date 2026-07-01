@@ -754,6 +754,13 @@ impl Compiler {
     }
 
     fn for_iterable_var_names(iterable: &Expr) -> Vec<String> {
+        // A single parenthesized scalar (`for ($x) -> $v is rw`) reaches here as
+        // `Grouped(Var)`; unwrap it so the per-element rw writeback targets `$x`.
+        if let Expr::Grouped(inner) = iterable
+            && let Expr::Var(name) = inner.as_ref()
+        {
+            return vec![name.clone()];
+        }
         if let Expr::ArrayLiteral(items) = iterable {
             let names: Vec<String> = items
                 .iter()
@@ -821,6 +828,11 @@ impl Compiler {
             // should iterate the elements (like sigilless variables).
             Expr::Var(name) if !self.constant_vars.contains(name) => {
                 Expr::ArrayLiteral(vec![iterable.clone()])
+            }
+            // A parenthesized single scalar (`for ($x)`) reaches here as
+            // `Grouped(Var)`; iterate it once, exactly like the bare `for $x`.
+            Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::Var(name) if !self.constant_vars.contains(name)) => {
+                Expr::ArrayLiteral(vec![(**inner).clone()])
             }
             _ => iterable.clone(),
         }
