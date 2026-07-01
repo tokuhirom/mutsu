@@ -108,13 +108,13 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
 
 pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
     let mut saw_whatever = false;
-    let mut lvalues: Vec<Expr> = Vec::new();
-    for item in items {
+    let mut lvalues: Vec<(usize, Expr)> = Vec::new();
+    for (i, item) in items.into_iter().enumerate() {
         if matches!(item, Expr::Whatever) {
             saw_whatever = true;
             continue;
         }
-        lvalues.push(item);
+        lvalues.push((i, item));
     }
 
     if lvalues.len() != 1 {
@@ -124,20 +124,43 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
         return None;
     }
 
-    match lvalues.into_iter().next()? {
+    let (pos, target) = lvalues.into_iter().next()?;
+    // A single scalar target in a `*`-slurpy list assignment takes exactly ONE
+    // item, the one at its position (`($a, *) = 1, 2, 3` gives `$a == 1`), not
+    // the whole list. Mirrors the statement-level `single_target_list_lvalue_stmt`.
+    let extracted_rhs = Expr::Index {
+        target: Box::new(rhs.clone()),
+        index: Box::new(Expr::Literal(Value::Int(pos as i64))),
+        is_positional: true,
+    };
+    match target {
         Expr::Var(name) => Some(Expr::AssignExpr {
             name,
-            expr: Box::new(rhs),
+            expr: Box::new(extracted_rhs),
             is_bind: false,
         }),
-        Expr::ArrayVar(name) => Some(Expr::AssignExpr {
-            name: format!("@{}", name),
-            expr: Box::new(rhs),
-            is_bind: false,
-        }),
+        Expr::ArrayVar(name) => {
+            // An array target slurps the tail: skip the leading `pos` items.
+            let array_rhs = if pos > 0 {
+                Expr::MethodCall {
+                    target: Box::new(rhs),
+                    name: Symbol::intern("skip"),
+                    args: vec![Expr::Literal(Value::Int(pos as i64))],
+                    modifier: None,
+                    quoted: false,
+                }
+            } else {
+                rhs
+            };
+            Some(Expr::AssignExpr {
+                name: format!("@{}", name),
+                expr: Box::new(array_rhs),
+                is_bind: false,
+            })
+        }
         Expr::HashVar(name) => Some(Expr::AssignExpr {
             name: format!("%{}", name),
-            expr: Box::new(rhs),
+            expr: Box::new(extracted_rhs),
             is_bind: false,
         }),
         Expr::Index {
@@ -147,7 +170,7 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
         } => Some(Expr::IndexAssign {
             target,
             index,
-            value: Box::new(rhs),
+            value: Box::new(extracted_rhs),
             is_positional,
         }),
         _ => None,
