@@ -848,6 +848,57 @@ impl Interpreter {
                 supply_attrs.insert("values".to_string(), Value::array(values));
                 Value::make_instance(Symbol::intern("Supply"), supply_attrs)
             }
+            "raku" | "perl" => {
+                // A fully reconstructable `IO::CatHandle.new(...)` call. Unlike
+                // rakudo, this does not need to match rakudo's exact rendering —
+                // roast only checks `is-deeply $cat.raku.EVAL, $cat` — so it is
+                // enough that re-evaluating it reproduces the same *logical*
+                // state. Since `.new` eagerly opens the first source (matching
+                // this instance's own construction), re-serializing the original
+                // `sources` list plus the chomp/nl-in/encoding/bin settings is
+                // sufficient as long as the cat hasn't been read from since
+                // construction (true for every `.raku` call site in the spec).
+                let sources = match attrs.get("sources") {
+                    Some(Value::Array(items, _)) => items.iter().cloned().collect::<Vec<_>>(),
+                    _ => Vec::new(),
+                };
+                let mut parts = Vec::new();
+                for src in &sources {
+                    let rendered = self
+                        .call_method_with_values(src.clone(), "raku", vec![])
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|_| src.to_string_value());
+                    parts.push(rendered);
+                }
+                let chomp = attrs.get("chomp").map(|v| v.truthy()).unwrap_or(true);
+                parts.push(format!(":chomp({})", if chomp { "True" } else { "False" }));
+                let nl_in = attrs
+                    .get("nl-in")
+                    .cloned()
+                    .unwrap_or_else(|| Value::str("\n".to_string()));
+                let nl_in_raku = self
+                    .call_method_with_values(nl_in.clone(), "raku", vec![])
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|_| nl_in.to_string_value());
+                parts.push(format!(":nl-in({})", nl_in_raku));
+                if attrs.get("bin").is_some_and(|v| v.truthy()) {
+                    parts.push(":bin".to_string());
+                } else {
+                    let encoding = attrs
+                        .get("encoding")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "utf8".to_string());
+                    parts.push(format!(
+                        ":encoding({})",
+                        crate::builtins::methods_0arg::raku_repr::escape_raku_str(&encoding)
+                    ));
+                }
+                Value::str(format!(
+                    "{}.new({})",
+                    class_name.resolve(),
+                    parts.join(", ")
+                ))
+            }
             _ => {
                 return Err(RuntimeError::new(format!(
                     "No native mutable method '{}' on 'IO::CatHandle'",

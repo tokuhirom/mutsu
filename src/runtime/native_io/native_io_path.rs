@@ -104,20 +104,14 @@ impl Interpreter {
                         .replace('\0', "\\0")
                 };
                 let cwd = instance_cwd.unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                // Derive class name from SPEC attribute
-                let class_name = attributes
-                    .get("SPEC")
-                    .and_then(|s| {
-                        let name = match s {
-                            Value::Package(n) => n.resolve().to_string(),
-                            Value::Instance { class_name, .. } => class_name.resolve().to_string(),
-                            _ => return None,
-                        };
-                        // IO::Spec::Win32 -> IO::Path::Win32
-                        name.strip_prefix("IO::Spec::")
-                            .map(|rest| format!("IO::Path::{}", rest))
-                    })
-                    .unwrap_or_else(|| "IO::Path".to_string());
+                // Use the instance's actual class (not a name derived from the
+                // `SPEC` attribute): a plain `IO::Path` whose `$*SPEC` happens to
+                // be `IO::Spec::Unix` is still class `IO::Path`, and rendering it
+                // as `IO::Path::Unix.new(...)` would EVAL into a *different*
+                // class than the original, breaking `is-deeply $p.raku.EVAL, $p`
+                // (class_name is part of Instance equality). An explicitly
+                // subclassed instance (`IO::Path::Win32.new(...)`) already has
+                // that name as its `class_name`, so this is a no-op for it.
                 Ok(Value::str(format!(
                     "{}.new(\"{}\", :CWD(\"{}\"))",
                     class_name,

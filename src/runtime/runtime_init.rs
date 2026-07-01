@@ -734,6 +734,8 @@ impl Interpreter {
                     "t",
                     "lock",
                     "unlock",
+                    "raku",
+                    "perl",
                 ]
                 .iter()
                 .map(|s| s.to_string())

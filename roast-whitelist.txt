@@ -1069,6 +1069,7 @@ roast/S32-io/child-secure.t
 roast/S32-io/copy.t
 roast/S32-io/dir.t
 roast/S32-io/indir.t
+roast/S32-io/io-cathandle.t
 roast/S32-io/io-handle.t
 roast/S32-io/io-path-cygwin.t
 roast/S32-io/io-path-extension.t

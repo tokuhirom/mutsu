@@ -506,17 +506,17 @@ impl Interpreter {
                         && k != "@_"
                         && (merged.contains_key_sym(*k) || k.starts_with("__mutsu_var_meta::"))
                     {
-                        if merged.contains_key_sym(*k)
-                            && matches!(
-                                v,
-                                Value::Bool(_)
-                                    | Value::Int(_)
-                                    | Value::Num(_)
-                                    | Value::Str(_)
-                                    | Value::Rat(_, _)
-                            )
-                            && body_entry_env.get_sym(*k) != Some(v)
-                        {
+                        // Unlike the non-merge_all branch below, this path is used
+                        // by native-invoked callbacks (Promise/Supply/reduce/lvalue
+                        // Proxy/on-switch, ...) where nothing else drains
+                        // `pending_rw_writeback_sources` right after the call. Any
+                        // value type the body actually changed (not just scalars)
+                        // must be tracked here, or the caller's cached local slot
+                        // stays stale until an unrelated later call happens to drain
+                        // it (io-cathandle.t on-switch: `$args = (a, b)` assigns a
+                        // List, which the old Bool/Int/Num/Str/Rat-only whitelist
+                        // silently dropped).
+                        if merged.contains_key_sym(*k) && body_entry_env.get_sym(*k) != Some(v) {
                             captured_outer_writes.push(k.resolve().to_string());
                         }
                         merged.insert_sym(*k, v.clone());
