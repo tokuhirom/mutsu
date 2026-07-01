@@ -54,7 +54,7 @@ jobs:
         run: cargo build
 
       - name: TAP tests (prove t/)
-        run: prove -e 'timeout 30 target/debug/mutsu' t/ || echo "TAP tests had failures (non-fatal; roast is authoritative)"
+        run: prove -e 'timeout 30 target/debug/mutsu' t/
 
       - name: Build (release, for roast)
         # The repo sets `[profile.release] debug = true` for local perf
