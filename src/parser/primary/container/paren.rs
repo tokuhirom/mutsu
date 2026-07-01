@@ -292,10 +292,7 @@ pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         // comma-absorbing list-assignment RHS instead of the item-assignment one.
         let result = if matches!(&result, Expr::Var(_)) {
             let after = input.trim_start();
-            if after.starts_with('=')
-                && !after.starts_with("==")
-                && !after.starts_with("=>")
-            {
+            if after.starts_with('=') && !after.starts_with("==") && !after.starts_with("=>") {
                 Expr::Grouped(Box::new(result))
             } else {
                 result
