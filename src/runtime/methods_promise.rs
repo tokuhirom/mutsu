@@ -124,6 +124,12 @@ impl Interpreter {
                 // Wait for the promise to resolve (blocks if Planned)
                 let (result, _, _) = shared.wait();
                 self.sync_shared_vars_to_env();
+                // Blocking on a promise is a synchronization point: any output a
+                // `.then`/`.andthen`/`.orelse` callback produced on its worker
+                // thread must be flushed to real stdout before we return, so it
+                // interleaves in the same order Rakudo produces (callback output
+                // appears while the main thread is blocked in `.result`).
+                self.drain_shared_thread_output();
                 let status = shared.status();
                 if status == "Broken" {
                     // .result on a Broken promise throws the cause as X::AdHoc

@@ -881,6 +881,7 @@ roast/S17-promise/lock-async.t
 roast/S17-promise/nonblocking-await.t
 roast/S17-promise/single-assignment.t
 roast/S17-promise/stress.t
+roast/S17-promise/then.t
 roast/S17-scheduler/at.t
 roast/S17-scheduler/basic.t
 roast/S17-scheduler/every.t
