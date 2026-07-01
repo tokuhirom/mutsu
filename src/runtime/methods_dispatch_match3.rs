@@ -252,7 +252,24 @@ impl Interpreter {
             "grab" => self.dispatch_grab_method(target, args),
             "grabpairs" => self.dispatch_grabpairs_method(target, args),
             "skip" => Some(self.dispatch_skip_method(target, args)),
-            "join" if args.len() <= 1 => self.dispatch_join_method(target, args),
+            "join" if args.len() <= 1 => {
+                // `.join` on a Thread blocks until the thread completes and syncs
+                // its shared captured variables back to the parent (Raku
+                // `Thread.join`). Route it to the real thread join before the
+                // generic list-`join` stringifies the Thread instance to
+                // "Thread(...)" without waiting.
+                if let Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = &target
+                    && class_name == "Thread"
+                {
+                    let attrs = attributes.as_map().clone();
+                    return Some(self.dispatch_thread_finish(&attrs));
+                }
+                self.dispatch_join_method(target, args)
+            }
             "grep" => {
                 // In Raku, .grep returns a Seq. However, when called on an Array,
                 // the result carries rw view bindings that must be preserved (Array kind).
