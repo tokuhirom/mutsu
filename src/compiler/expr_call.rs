@@ -88,12 +88,16 @@ impl Compiler {
             self.code.emit(OpCode::Dup);
             self.code.emit(OpCode::SetGlobal(tmp_idx));
             // For each target variable, index into the RHS and assign.
-            // The FIRST `@`/`%` target is greedy: it slurps all remaining RHS
-            // values via `.skip(i)`, and every target after it receives an empty
-            // container / Nil (`(*, @b, $c) = 1..4` → `@b` is `[2,3,4]`, `$c` is
-            // undefined). `seen_slurpy` tracks that tail consumption.
+            // `offset` is the running count of RHS items already consumed. Each
+            // scalar target consumes one item; a positional *slice* target
+            // (`@a[1,2]`) consumes as many items as its width, assigned as a
+            // slice. The FIRST `@`/`%` target is greedy: it slurps all remaining
+            // RHS values via `.skip(offset)`, and every target after it receives
+            // an empty container / Nil (`(*, @b, $c) = 1..4` → `@b` is `[2,3,4]`,
+            // `$c` is undefined). `seen_slurpy` tracks that tail consumption.
             let mut seen_slurpy = false;
-            for (i, target) in targets.iter().enumerate() {
+            let mut offset: usize = 0;
+            for target in targets.iter() {
                 match target {
                     Expr::Var(var_name) => {
                         if seen_slurpy {
@@ -101,7 +105,7 @@ impl Compiler {
                             self.code.emit(OpCode::LoadConst(nil_idx));
                         } else {
                             self.code.emit(OpCode::GetGlobal(tmp_idx));
-                            let idx = self.code.add_constant(Value::Int(i as i64));
+                            let idx = self.code.add_constant(Value::Int(offset as i64));
                             self.code.emit(OpCode::LoadConst(idx));
                             self.code.emit(OpCode::Index {
                                 is_positional: true,
@@ -109,15 +113,16 @@ impl Compiler {
                         }
                         let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                         self.code.emit(OpCode::AssignExpr(name_idx));
+                        offset += 1;
                     }
                     Expr::ArrayVar(var_name) => {
                         let rhs_expr = if seen_slurpy {
                             Expr::ArrayLiteral(Vec::new())
-                        } else if i > 0 {
+                        } else if offset > 0 {
                             Expr::MethodCall {
                                 target: Box::new(Expr::Var(tmp_name.clone())),
                                 name: crate::symbol::Symbol::intern("skip"),
-                                args: vec![Expr::Literal(Value::Int(i as i64))],
+                                args: vec![Expr::Literal(Value::Int(offset as i64))],
                                 modifier: None,
                                 quoted: false,
                             }
@@ -133,11 +138,11 @@ impl Compiler {
                         // A hash target is greedy too: slurp the remaining pairs.
                         let rhs_expr = if seen_slurpy {
                             Expr::Hash(Vec::new())
-                        } else if i > 0 {
+                        } else if offset > 0 {
                             Expr::MethodCall {
                                 target: Box::new(Expr::Var(tmp_name.clone())),
                                 name: crate::symbol::Symbol::intern("skip"),
-                                args: vec![Expr::Literal(Value::Int(i as i64))],
+                                args: vec![Expr::Literal(Value::Int(offset as i64))],
                                 modifier: None,
                                 quoted: false,
                             }
@@ -154,10 +159,33 @@ impl Compiler {
                         index,
                         is_positional,
                     } => {
-                        let rhs_item = Expr::Index {
-                            target: Box::new(Expr::Var(tmp_name.clone())),
-                            index: Box::new(Expr::Literal(Value::Int(i as i64))),
-                            is_positional: true,
+                        // A positional slice (`@a[1,2]`) is a multi-item target:
+                        // it consumes `width` RHS items and receives them as a
+                        // slice. A single-index target consumes one item.
+                        let width = if *is_positional {
+                            match index.as_ref() {
+                                Expr::ArrayLiteral(items) => items.len().max(1),
+                                _ => 1,
+                            }
+                        } else {
+                            1
+                        };
+                        let rhs_item = if width > 1 {
+                            Expr::Index {
+                                target: Box::new(Expr::Var(tmp_name.clone())),
+                                index: Box::new(Expr::ArrayLiteral(
+                                    (offset..offset + width)
+                                        .map(|k| Expr::Literal(Value::Int(k as i64)))
+                                        .collect(),
+                                )),
+                                is_positional: true,
+                            }
+                        } else {
+                            Expr::Index {
+                                target: Box::new(Expr::Var(tmp_name.clone())),
+                                index: Box::new(Expr::Literal(Value::Int(offset as i64))),
+                                is_positional: true,
+                            }
                         };
                         self.compile_expr(&Expr::IndexAssign {
                             target: target.clone(),
@@ -166,8 +194,12 @@ impl Compiler {
                             is_positional: *is_positional,
                         });
                         self.code.emit(OpCode::Pop);
+                        offset += width;
                     }
-                    _ => {}
+                    _ => {
+                        // Whatever (`*`) discard slot consumes one item.
+                        offset += 1;
+                    }
                 }
             }
             // The rvalue of a list assignment is the LHS list (the targets that

@@ -284,6 +284,25 @@ pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         } else {
             result
         };
+        // `($a) = ...` — a parenthesized single scalar directly followed by an
+        // item-assignment `=` is a LIST assignment: the lone target slurps the
+        // whole RHS as an itemized list (`($a) = 1, 2, 3` → `$a` is `$(1, 2, 3)`,
+        // `.elems` 3), unlike a bare `$a = 1, 2, 3` (item assignment, `$a` is 1).
+        // Wrap in `Grouped` so the `=` handler (logic.rs) keeps the
+        // comma-absorbing list-assignment RHS instead of the item-assignment one.
+        let result = if matches!(&result, Expr::Var(_)) {
+            let after = input.trim_start();
+            if after.starts_with('=')
+                && !after.starts_with("==")
+                && !after.starts_with("=>")
+            {
+                Expr::Grouped(Box::new(result))
+            } else {
+                result
+            }
+        } else {
+            result
+        };
         return Ok((input, result));
     }
     // Comma-separated list with sequence operator detection
