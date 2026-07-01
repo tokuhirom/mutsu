@@ -314,7 +314,7 @@ Also: before a local `make roast`, `rm -f temp-file-RT-126006-test` — a stale 
 3. **debug vs release.** A debug-only timeout on a heavy test can be load; a failure that reproduces in *release* is real (CI uses release).
 4. Only label flaky if it actually **passes on retry**; note the pass/fail ratio when you do.
 
-Caveat: the `t/` TAP suite is **non-fatal** in CI (`prove ... t/ || echo "non-fatal; roast is authoritative"`), so a deterministic `t/` failure stays green in CI and can hide indefinitely. Don't rely on CI to surface `t/` regressions — check `tmp/make-test.log` locally.
+The `t/` TAP suite is **fatal** in CI (`prove ... t/`, no `|| echo` fallback) — a deterministic `t/` failure fails the CI job, same as roast.
 
 ## Delegate the full roast run to CI
 
