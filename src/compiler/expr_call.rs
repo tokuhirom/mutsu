@@ -170,8 +170,18 @@ impl Compiler {
                     _ => {}
                 }
             }
-            // Leave the RHS list on the stack as the result
-            self.code.emit(OpCode::GetGlobal(tmp_idx));
+            // The rvalue of a list assignment is the LHS list (the targets that
+            // were assigned), read back after the assignment -- NOT the whole RHS.
+            // `(($a, $b) = 1, 2, 3)` in list context is `($a, $b)` = `(1, 2)`, so
+            // its `.elems` is the number of targets. A `*` (Whatever) target is a
+            // discard slot and contributes nothing; `@`/`%` slurpy targets
+            // contribute their (flattened) contents.
+            let result_targets: Vec<Expr> = targets
+                .iter()
+                .filter(|t| !matches!(t, Expr::Whatever))
+                .cloned()
+                .collect();
+            self.compile_expr(&Expr::ArrayLiteral(result_targets));
             return;
         } else if name == "__mutsu_assign_method_lvalue"
             && args.len() >= 4
