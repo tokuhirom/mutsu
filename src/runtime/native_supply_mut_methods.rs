@@ -371,6 +371,41 @@ impl Interpreter {
                             register_supplier_done_callback(emitter_supplier_id, complete_marker);
                         }
                     }
+                    // The tapped on-demand supply's own `closing => { ... }`
+                    // callbacks (stored on the Supply as `on_close_callbacks`) fire
+                    // when it closes. A synchronous body that already ran `done`
+                    // fires them now; an async body (e.g. `start { emit; done }`)
+                    // registers them to fire when the emitter later signals `done`,
+                    // and — since a plain async body registers no inner whenever —
+                    // the outer tap must also be registered on the emitter so the
+                    // thread's `emit`s reach the tap subscriber.
+                    let own_close_cbs: Vec<Value> = match attrs.get("on_close_callbacks") {
+                        Some(Value::Array(cbs, ..)) => cbs.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    if !own_close_cbs.is_empty() {
+                        let (_, emitter_done, _) = supplier_snapshot(emitter_supplier_id);
+                        if body_done || emitter_done {
+                            for cb in &own_close_cbs {
+                                self.call_sub_value(cb.clone(), vec![], true)?;
+                            }
+                        } else {
+                            for cb in &own_close_cbs {
+                                register_supplier_close_callback(emitter_supplier_id, cb.clone());
+                            }
+                            register_supplier_done_callback(
+                                emitter_supplier_id,
+                                Self::make_supply_close_marker(emitter_supplier_id),
+                            );
+                            if !outer_tap_registered && Self::supply_has_active_callback(&tap_cb) {
+                                register_supplier_tap(
+                                    emitter_supplier_id,
+                                    tap_cb.clone(),
+                                    delay_seconds,
+                                );
+                            }
+                        }
+                    }
                     plain_values
                 } else if has_unique {
                     if Self::supply_has_active_callback(&tap_cb) {
