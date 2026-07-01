@@ -1,6 +1,50 @@
 use super::*;
 
 impl Compiler {
+    /// Lower a call to the assignment/bind operator used as a function
+    /// (`infix:<=>(lvalue, val)` / `infix:<:=>(lvalue, val)`) into an ordinary
+    /// assignment expression targeting `lvalue`.
+    fn lower_infix_assign_call(opname: &str, target: Expr, value: Expr) -> Expr {
+        let is_bind = opname == "infix:<:=>";
+        let target = match target {
+            Expr::Grouped(inner) => *inner,
+            other => other,
+        };
+        match target {
+            Expr::Var(name) => Expr::AssignExpr {
+                name,
+                expr: Box::new(value),
+                is_bind,
+            },
+            Expr::ArrayVar(name) => Expr::AssignExpr {
+                name: format!("@{}", name),
+                expr: Box::new(value),
+                is_bind,
+            },
+            Expr::HashVar(name) => Expr::AssignExpr {
+                name: format!("%{}", name),
+                expr: Box::new(value),
+                is_bind,
+            },
+            Expr::Index {
+                target,
+                index,
+                is_positional,
+            } => Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(value),
+                is_positional,
+            },
+            // Any other lvalue shape: fall back to the generic named-sub lvalue
+            // assignment helper (mirrors the parser's `assign_to_target_expr`).
+            other => Expr::Call {
+                name: crate::symbol::Symbol::intern("__mutsu_assign_callable_lvalue"),
+                args: vec![other, Expr::ArrayLiteral(Vec::new()), value],
+            },
+        }
+    }
+
     pub(super) fn compile_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Whatever => {
@@ -223,6 +267,37 @@ impl Compiler {
                 self.compile_expr(&args[0]);
                 let name_idx = self.code.add_constant(Value::str("_".to_string()));
                 self.code.emit(OpCode::TopicDotAssign(name_idx));
+            }
+            // The assignment operator called as a function: `infix:<=>($x, 0)`
+            // and `&infix:<=>.($x, 0)` (CallOn) mean `$x = 0`. `infix:<=>` is a
+            // reserved special form handled by the compiler, so lower the call to
+            // an ordinary assignment (which binds arg0 as an lvalue and applies
+            // type checks). Same for the bind form `infix:<:=>`.
+            Expr::Call { name, args }
+                if args.len() == 2
+                    && matches!(name.resolve().as_str(), "infix:<=>" | "infix:<:=>") =>
+            {
+                let lowered = Self::lower_infix_assign_call(
+                    &name.resolve(),
+                    args[0].clone(),
+                    args[1].clone(),
+                );
+                self.compile_expr(&lowered);
+            }
+            Expr::CallOn { target, args }
+                if args.len() == 2
+                    && matches!(
+                        target.as_ref(),
+                        Expr::CodeVar(n) if n == "infix:<=>" || n == "infix:<:=>"
+                    ) =>
+            {
+                let opname = match target.as_ref() {
+                    Expr::CodeVar(n) => n.clone(),
+                    _ => unreachable!(),
+                };
+                let lowered =
+                    Self::lower_infix_assign_call(&opname, args[0].clone(), args[1].clone());
+                self.compile_expr(&lowered);
             }
             Expr::Call { name, args } => {
                 self.compile_expr_call(name, args);
