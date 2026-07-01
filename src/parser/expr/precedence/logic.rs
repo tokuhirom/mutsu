@@ -191,7 +191,13 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     // `($x) = 1, 2` — keeps the comma-absorbing RHS. We test the pre-unwrap
     // expression so a grouped `($x)` stays on the list-assignment path. (The
     // statement-level counterpart lives in `stmt/assign.rs::assign_stmt`.)
-    let scalar_item_assign = matches!(&expr, Expr::Var(_));
+    // A symbolic scalar deref (`$::('name') = ...`) is an item assignment too, so
+    // it binds tighter than the comma (`flat $::('b') = l(), l()` is
+    // `flat (($::('b') = l()), l())`). An `@`/`%` symbolic deref keeps the
+    // comma-absorbing list-assignment RHS.
+    let scalar_item_assign = matches!(&expr, Expr::Var(_))
+        || matches!(&expr, Expr::SymbolicDeref { sigil, .. } if sigil == "$")
+        || matches!(&expr, Expr::IndirectTypeLookup(_));
     let (r, rhs) = if scalar_item_assign {
         ternary_mode(r, mode)?
     } else {
@@ -271,6 +277,26 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             Expr::MultiDimIndexAssign {
                 target,
                 dimensions,
+                value: Box::new(rhs),
+            },
+        )),
+        // `$::('name') = expr` in expression context (e.g. as a listop argument
+        // `flat $::('b') = l()`). Without this arm the assignment falls through to
+        // `_ => (rest, expr)` below, leaving the `=` unconsumed so the surrounding
+        // listop swallows the bare deref and the outer parser mis-reads the whole
+        // `flat $::('b')` as an assignable call. Mirrors `assign_to_target_expr`.
+        Expr::SymbolicDeref { sigil, expr } => Ok((
+            r,
+            Expr::SymbolicDerefAssign {
+                sigil,
+                expr,
+                value: Box::new(rhs),
+            },
+        )),
+        Expr::IndirectTypeLookup(inner) => Ok((
+            r,
+            Expr::IndirectTypeLookupAssign {
+                expr: inner,
                 value: Box::new(rhs),
             },
         )),
