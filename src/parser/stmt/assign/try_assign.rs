@@ -270,10 +270,17 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     }
     if let Some((stripped, op)) = parse_compound_assign_op(r2) {
         let (rest, _) = ws(stripped)?;
-        // RHS: try chained assign, else single expression (no sequence)
-        let (rest, rhs) = match try_parse_assign_expr(rest) {
-            Ok(r) => r,
-            Err(_) => expression_no_sequence(rest)?,
+        // RHS precedence: the word-form loose logicals (`or=`, `and=`, `xor=`,
+        // `orelse=`, `andthen=`, `notandthen=`) are LIST-assignment operators, so
+        // their RHS absorbs the whole comma list (`$a or= 3, 4` => `$a or= (3,4)`).
+        // All other compound ops are item-assignment: comma-blind RHS.
+        let (rest, rhs) = if op.is_list_precedence() {
+            parse_comma_or_expr(rest)?
+        } else {
+            match try_parse_assign_expr(rest) {
+                Ok(r) => r,
+                Err(_) => expression_no_sequence(rest)?,
+            }
         };
         let name = format!("{}{}", prefix, var);
         return Ok((

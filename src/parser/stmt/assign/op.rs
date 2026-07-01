@@ -1,6 +1,23 @@
 use super::*;
 
 impl CompoundAssignOp {
+    /// The word-form loose logical/flow operators (`or`, `and`, `xor`, `orelse`,
+    /// `andthen`, `notandthen`) are LOOSER than the comma when combined with `=`,
+    /// so their `op=` variants are LIST-assignment operators: the RHS absorbs the
+    /// whole comma list. `$a or= 3, 4` parses as `$a or= (3, 4)`, whereas the
+    /// symbol-form `$a ||= 3, 4` is item-assignment: `($a ||= 3), 4`.
+    pub(crate) fn is_list_precedence(self) -> bool {
+        matches!(
+            self,
+            CompoundAssignOp::KeywordOr
+                | CompoundAssignOp::KeywordAnd
+                | CompoundAssignOp::KeywordXor
+                | CompoundAssignOp::Orelse
+                | CompoundAssignOp::Andthen
+                | CompoundAssignOp::Notandthen
+        )
+    }
+
     pub(super) fn symbol(self) -> &'static str {
         match self {
             CompoundAssignOp::Comma => ",=",
@@ -25,8 +42,10 @@ impl CompoundAssignOp {
             CompoundAssignOp::Max => "max=",
             CompoundAssignOp::KeywordOr => "or=",
             CompoundAssignOp::KeywordAnd => "and=",
+            CompoundAssignOp::KeywordXor => "xor=",
             CompoundAssignOp::Orelse => "orelse=",
             CompoundAssignOp::Andthen => "andthen=",
+            CompoundAssignOp::Notandthen => "notandthen=",
             CompoundAssignOp::IntDiv => "div=",
             CompoundAssignOp::Lcm => "lcm=",
             CompoundAssignOp::Gcd => "gcd=",
@@ -70,8 +89,10 @@ impl CompoundAssignOp {
             "max" => Some(CompoundAssignOp::Max),
             "or" => Some(CompoundAssignOp::KeywordOr),
             "and" => Some(CompoundAssignOp::KeywordAnd),
+            "xor" => Some(CompoundAssignOp::KeywordXor),
             "orelse" => Some(CompoundAssignOp::Orelse),
             "andthen" => Some(CompoundAssignOp::Andthen),
+            "notandthen" => Some(CompoundAssignOp::Notandthen),
             "div" => Some(CompoundAssignOp::IntDiv),
             "lcm" => Some(CompoundAssignOp::Lcm),
             "gcd" => Some(CompoundAssignOp::Gcd),
@@ -112,8 +133,10 @@ impl CompoundAssignOp {
             CompoundAssignOp::Max => TokenKind::Ident("max".to_string()),
             CompoundAssignOp::KeywordOr => TokenKind::OrWord,
             CompoundAssignOp::KeywordAnd => TokenKind::AndAnd,
+            CompoundAssignOp::KeywordXor => TokenKind::XorXor,
             CompoundAssignOp::Orelse => TokenKind::OrElse,
             CompoundAssignOp::Andthen => TokenKind::AndThen,
+            CompoundAssignOp::Notandthen => TokenKind::NotAndThen,
             CompoundAssignOp::IntDiv => TokenKind::Ident("div".to_string()),
             CompoundAssignOp::Lcm => TokenKind::Ident("lcm".to_string()),
             CompoundAssignOp::Gcd => TokenKind::Ident("gcd".to_string()),
@@ -180,13 +203,19 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
             then_expr: Box::new(tmp_var),
             else_expr: Box::new(rhs),
         }
-    } else if matches!(op, CompoundAssignOp::Andthen) {
-        // andthen=: assign RHS only when LHS is defined, else keep LHS
+    } else if matches!(op, CompoundAssignOp::Andthen | CompoundAssignOp::Notandthen) {
+        // andthen=: assign RHS only when LHS is defined, else keep LHS.
+        // notandthen=: the inverse -- assign RHS only when LHS is UNdefined.
         let tmp_name = format!(
             "__mutsu_compound_lhs_{}",
             TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
         );
         let tmp_var = Expr::Var(tmp_name.clone());
+        let (then_branch, else_branch) = if matches!(op, CompoundAssignOp::Andthen) {
+            (rhs, tmp_var.clone())
+        } else {
+            (tmp_var.clone(), rhs)
+        };
         Expr::Ternary {
             cond: Box::new(Expr::DoBlock {
                 body: vec![
@@ -209,8 +238,8 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
                 ],
                 label: None,
             }),
-            then_expr: Box::new(rhs),
-            else_expr: Box::new(tmp_var),
+            then_expr: Box::new(then_branch),
+            else_expr: Box::new(else_branch),
         }
     } else {
         Expr::Binary {
@@ -259,8 +288,10 @@ const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::Max,        // max=
     CompoundAssignOp::Orelse,     // orelse= before or= to match longest first
     CompoundAssignOp::KeywordOr,  // or=
+    CompoundAssignOp::Notandthen, // notandthen= before andthen=/and= to match longest first
     CompoundAssignOp::Andthen,    // andthen= before and= to match longest first
     CompoundAssignOp::KeywordAnd, // and=
+    CompoundAssignOp::KeywordXor, // xor=
     CompoundAssignOp::IntDiv,     // div=
     CompoundAssignOp::Lcm,        // lcm=
     CompoundAssignOp::Gcd,        // gcd=
