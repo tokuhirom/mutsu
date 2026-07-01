@@ -221,6 +221,10 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     if let Some((op, len)) = parse_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
+        // Start of the (whitespace-trimmed) RHS input — used below to tell a bare
+        // `*` operand (`X ~~ *`, which autoprimes to a WhateverCode) apart from a
+        // parenthesized `(*)` (a Whatever *value*, which smartmatches to True).
+        let rhs_start = r;
         // Track whether the smartmatch RHS is a regex literal.  When it is,
         // chaining with subsequent comparison operators (eq, ==, …) must be
         // suppressed because the regex literal terminates the smartmatch RHS
@@ -311,6 +315,31 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                         left: Box::new(Expr::Var("_".to_string())),
                         op: op.token_kind(),
                         right: Box::new(right),
+                    };
+                    return Ok((
+                        r,
+                        Expr::Lambda {
+                            param: "_".to_string(),
+                            body: vec![crate::ast::Stmt::Expr(sm_expr)],
+                            is_whatever_code: true,
+                        },
+                    ));
+                }
+            }
+            // Bare `X ~~ *` autoprimes to a WhateverCode `-> $a { X ~~ $a }`.
+            // A parenthesized `X ~~ (*)` (or a variable holding a Whatever) is a
+            // Whatever *value* and must smartmatch to True instead — those keep
+            // `Expr::Whatever` as the RHS and reach the runtime smartmatch, which
+            // returns True for a Whatever RHS. We distinguish the two the same way
+            // as the LHS: a true bare `*` operand's consumed text does not start
+            // with `(`.
+            if matches!(&right, Expr::Whatever) {
+                let rhs_text = rhs_start[..rhs_start.len() - r.len()].trim_start();
+                if !rhs_text.starts_with('(') {
+                    let sm_expr = Expr::Binary {
+                        left: Box::new(left),
+                        op: op.token_kind(),
+                        right: Box::new(Expr::Var("_".to_string())),
                     };
                     return Ok((
                         r,
