@@ -120,6 +120,7 @@ impl Interpreter {
                 self.stack
                     .push(Self::itemize_scalar_assign_result(name, val));
             } else {
+                let val = self.reset_nil_untyped_scalar(name, val);
                 self.locals[idx] = val.clone();
                 self.stack
                     .push(Self::itemize_scalar_assign_result(name, val));
@@ -255,6 +256,10 @@ impl Interpreter {
             if !matches!(val, Value::Nil | Value::Package(_)) {
                 val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
             }
+        } else {
+            // Untyped scalar: assigning Nil resets it to the default type
+            // object Any (the reset guard is a no-op for `@`/`%` containers).
+            val = self.reset_nil_untyped_scalar(name, val);
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);

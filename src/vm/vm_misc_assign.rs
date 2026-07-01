@@ -220,7 +220,8 @@ impl Interpreter {
         // type object; a non-Nil value that violates the constraint throws
         // X::TypeCheck::Assignment (e.g. `infix:<=>($int, "foo")`), matching the
         // SetLocal path -- expression-context assignment to a captured typed
-        // scalar must type-check just like a statement-level one.
+        // scalar must type-check just like a statement-level one. An untyped
+        // scalar resets Nil to the default type object Any.
         let mut val = if !name.starts_with('@')
             && !name.starts_with('%')
             && let Some(constraint) = loan_env!(self, var_type_constraint(&name))
@@ -245,7 +246,9 @@ impl Interpreter {
                 val
             }
         } else {
-            val
+            // Untyped scalar: Nil resets to the default type object Any (a no-op
+            // for `@`/`%` containers).
+            self.reset_nil_untyped_scalar(&name, val)
         };
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);

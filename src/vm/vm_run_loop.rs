@@ -623,6 +623,30 @@ impl Interpreter {
         }
     }
 
+    /// Assigning `Nil` to an *untyped* scalar container resets it to the
+    /// container's default type object, `Any` (`my $x = 5; $x = Nil` leaves
+    /// `$x =:= Any`). Typed scalars reset to their own type object, handled
+    /// separately. Only applies to genuine user scalar names — not `@`/`%`/`&`
+    /// containers (which hold Nil as an element) nor internal `__mutsu_` temps.
+    ///
+    /// A scalar with an explicit `is default(X)` trait keeps its own default (the
+    /// caller has already applied it), even when that default is `Nil` — e.g.
+    /// `my $foo is default(Nil) = 42; $foo = Nil` leaves `$foo` as `Nil`, not
+    /// `Any` — so such vars are excluded here.
+    pub(crate) fn reset_nil_untyped_scalar(&self, name: &str, val: Value) -> Value {
+        if matches!(val, Value::Nil)
+            && !name.starts_with('@')
+            && !name.starts_with('%')
+            && !name.starts_with('&')
+            && !name.contains("__mutsu")
+            && self.var_default(name).is_none()
+        {
+            Value::Package(crate::symbol::Symbol::intern("Any"))
+        } else {
+            val
+        }
+    }
+
     /// De-itemize a `for … -> @a` chunk element while preserving its element
     /// type. An element-typed array (`array[int]`) keeps its type — only the
     /// itemization/scalar wrap is stripped, which is exactly the de-itemization
