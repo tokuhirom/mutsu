@@ -161,13 +161,22 @@ pub(crate) fn seq_is_cached(arc_ptr: &Arc<Vec<Value>>) -> bool {
 /// Build a structured X::Seq::Consumed error.
 #[allow(clippy::result_large_err)]
 pub(crate) fn seq_consumed_error() -> RuntimeError {
-    let msg = "The iterator of this Seq is already in use/consumed by another Seq \
-               (you might solve this by adding .cache on usages of the Seq, or by \
-               assigning the Seq into an array)";
+    seq_consumed_error_for("Seq")
+}
+
+/// Build a structured X::Seq::Consumed error naming the consumed type
+/// (e.g. "Seq", "HyperSeq", "RaceSeq").
+#[allow(clippy::result_large_err)]
+pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
+    let msg = format!(
+        "The iterator of this {type_name} is already in use/consumed by another {type_name} \
+         (you might solve this by adding .cache on usages of the {type_name}, or by \
+         assigning the {type_name} into an array)"
+    );
     let mut attrs = HashMap::new();
-    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Seq::Consumed"), attrs);
-    let mut err = RuntimeError::new(msg);
+    let mut err = RuntimeError::new(&msg);
     err.exception = Some(Box::new(ex));
     err
 }

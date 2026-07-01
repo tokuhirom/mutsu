@@ -942,6 +942,33 @@ impl Interpreter {
                     // Large list: fall through to array-based dispatch
                     Some(matches!(&target, Value::HyperSeq(_)))
                 }
+                "iterator" if args.is_empty() => {
+                    // A HyperSeq/RaceSeq allows only a single iterator (rakudo #4413):
+                    // a second `.iterator` throws X::Seq::Consumed. The consumed-state
+                    // is tracked on the inner Arc via the shared Seq registry.
+                    let items_arc = match &target {
+                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                        _ => unreachable!(),
+                    };
+                    let type_name = if matches!(&target, Value::HyperSeq(_)) {
+                        "HyperSeq"
+                    } else {
+                        "RaceSeq"
+                    };
+                    // `seq_consume` atomically checks-and-marks under one lock, so
+                    // concurrent workers racing for the single iterator resolve to
+                    // exactly one winner (rakudo #4413 concurrency contract).
+                    if crate::value::seq_consume(&items_arc).is_err() {
+                        return Err(crate::value::seq_consumed_error_for(type_name));
+                    }
+                    let list = Value::Array(
+                        crate::value::Value::array_arc(items_arc.to_vec()),
+                        crate::value::ArrayKind::List,
+                    );
+                    let iter = crate::builtins::iterator_construct::build_iterator_instance(&list);
+                    self.stack.push(iter);
+                    return Ok(());
+                }
                 _ => None,
             }
         } else {
