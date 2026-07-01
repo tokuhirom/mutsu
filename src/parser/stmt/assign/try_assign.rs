@@ -332,6 +332,20 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             b'%' => Expr::HashVar(var.to_string()),
             _ => Expr::Var(name.clone()),
         };
+        // The reverse meta-op assignment `$x R op= $y` assigns to its RIGHT
+        // operand (`$y = $y op $x`), so retarget the assignment to `rhs`.
+        if meta == "R" {
+            let value = Expr::MetaOp {
+                meta,
+                op,
+                left: Box::new(var_expr),
+                right: Box::new(rhs.clone()),
+            };
+            return Ok((
+                rest,
+                crate::parser::expr::precedence::assign_to_target_expr(rhs, value),
+            ));
+        }
         return Ok((
             rest,
             Expr::AssignExpr {
