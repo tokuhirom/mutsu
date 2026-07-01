@@ -166,6 +166,23 @@ fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
             then_expr: Box::new(lhs),
             else_expr: Box::new(Expr::Literal(Value::Int(1))),
         }
+    } else if matches!(op, CompoundAssignOp::Mod) {
+        // `$x op= $y` on an undefined `$x` seeds the container with the
+        // operator's zero-arg identity value. `infix:<%>` has no zero-arg
+        // meaning, so `$x %= $y` on an undefined `$x` throws.
+        Expr::Ternary {
+            cond: Box::new(Expr::Call {
+                name: Symbol::intern("defined"),
+                args: vec![lhs.clone()],
+            }),
+            then_expr: Box::new(lhs),
+            else_expr: Box::new(Expr::Call {
+                name: Symbol::intern("die"),
+                args: vec![Expr::Literal(Value::str(
+                    "No zero-arg meaning for infix:<%>".to_string(),
+                ))],
+            }),
+        }
     } else {
         lhs
     }
@@ -241,6 +258,13 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
             then_expr: Box::new(then_branch),
             else_expr: Box::new(else_branch),
         }
+    } else if matches!(op, CompoundAssignOp::Comma) {
+        // `@a ,= X` has list precedence and desugars to `@a = @a, X`. The whole
+        // RHS becomes a SINGLE element, so `@a` becomes `[@a_old, X]` — a
+        // self-reference in `[0]`, NOT a flattening append. An `ArrayLiteral`
+        // (rather than a `,`-`Binary`, which flattens both operands into a flat
+        // list) matches the direct `@a = @a, (...)` structure.
+        Expr::ArrayLiteral(vec![lhs, rhs])
     } else {
         Expr::Binary {
             left: Box::new(autoviv_compound_lhs(lhs, op)),

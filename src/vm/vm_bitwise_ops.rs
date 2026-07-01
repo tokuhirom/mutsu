@@ -235,19 +235,85 @@ impl Interpreter {
             .push(Value::str(String::from_utf8_lossy(&result).into_owned()));
     }
 
-    /// String bitwise shift left (~<): not yet implemented in Raku either.
-    /// TODO: Implement when Raku spec is finalized for this operator.
+    /// String bitwise shift left (~<): treat the left string's bytes as a
+    /// big-endian bit string and shift it left by N bits (`"a" ~< 8` → `"a\0"`,
+    /// i.e. the value times 2**N, appending low-order zero bits).
     pub(super) fn exec_str_shift_left_op(&mut self) {
-        let _right = self.stack.pop().unwrap();
-        let _left = self.stack.pop().unwrap();
-        self.stack.push(Value::Nil);
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let n = shift_count(&right);
+        let l = left.to_string_value();
+        let out = str_shift_left_bytes(l.as_bytes(), n);
+        self.stack
+            .push(Value::str(String::from_utf8_lossy(&out).into_owned()));
     }
 
-    /// String bitwise shift right (~>): not yet implemented in Raku either.
-    /// TODO: Implement when Raku spec is finalized for this operator.
+    /// String bitwise shift right (~>): treat the left string's bytes as a
+    /// big-endian bit string and shift it right by N bits (`"aa" ~> 8` → `"a"`,
+    /// dropping the low-order N bits).
     pub(super) fn exec_str_shift_right_op(&mut self) {
-        let _right = self.stack.pop().unwrap();
-        let _left = self.stack.pop().unwrap();
-        self.stack.push(Value::Nil);
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let n = shift_count(&right);
+        let l = left.to_string_value();
+        let out = str_shift_right_bytes(l.as_bytes(), n);
+        self.stack
+            .push(Value::str(String::from_utf8_lossy(&out).into_owned()));
     }
+}
+
+/// Coerce a shift-count operand to a non-negative bit count.
+fn shift_count(v: &Value) -> usize {
+    match v {
+        Value::Int(i) => (*i).max(0) as usize,
+        Value::Num(f) => (*f as i64).max(0) as usize,
+        other => other.to_string_value().parse::<i64>().unwrap_or(0).max(0) as usize,
+    }
+}
+
+/// Read bit `k` (counted from the least-significant bit) of a big-endian byte
+/// string, where `bytes[bytes.len()-1]` is the least-significant byte.
+fn get_bit_be(bytes: &[u8], k: usize) -> bool {
+    let byte_from_end = k / 8;
+    if byte_from_end >= bytes.len() {
+        return false;
+    }
+    let idx = bytes.len() - 1 - byte_from_end;
+    (bytes[idx] >> (k % 8)) & 1 == 1
+}
+
+fn set_bit_be(bytes: &mut [u8], k: usize) {
+    let byte_from_end = k / 8;
+    let idx = bytes.len() - 1 - byte_from_end;
+    bytes[idx] |= 1 << (k % 8);
+}
+
+fn str_shift_left_bytes(input: &[u8], n: usize) -> Vec<u8> {
+    let in_bits = input.len() * 8;
+    if in_bits == 0 {
+        return Vec::new();
+    }
+    let out_len = (in_bits + n).div_ceil(8).max(1);
+    let mut out = vec![0u8; out_len];
+    for k in 0..in_bits {
+        if get_bit_be(input, k) {
+            set_bit_be(&mut out, k + n);
+        }
+    }
+    out
+}
+
+fn str_shift_right_bytes(input: &[u8], n: usize) -> Vec<u8> {
+    let in_bits = input.len() * 8;
+    if n >= in_bits {
+        return Vec::new();
+    }
+    let out_len = (in_bits - n).div_ceil(8).max(1);
+    let mut out = vec![0u8; out_len];
+    for k in n..in_bits {
+        if get_bit_be(input, k) {
+            set_bit_be(&mut out, k - n);
+        }
+    }
+    out
 }
