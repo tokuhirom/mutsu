@@ -107,6 +107,16 @@ impl Interpreter {
                     }
                 }
 
+                // For a `migrate` Supply, also subscribe the outer migrate tap
+                // on the master supply-of-supplies so that emitted inner supplies
+                // switch the forwarded source (the user tap above was registered
+                // on the migrate output supplier `supplier_id`).
+                if let (Some(Value::Int(master_sid)), Some(Value::Int(ds_sid))) =
+                    (attrs.get("migrate_source"), attrs.get("supplier_id"))
+                {
+                    register_supplier_migrate_tap(*master_sid as u64, *ds_sid as u64);
+                }
+
                 // Build a Tap handle referencing the registered subscription so
                 // `.close` can stop it later.
                 let mut tap_handle_attrs =
