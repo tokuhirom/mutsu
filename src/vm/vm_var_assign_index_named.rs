@@ -159,6 +159,16 @@ impl Interpreter {
                     crate::value::ArrayKind::List,
                 )
             }
+            // Non-integer (e.g. string) ranges: `%h{'x'..'z'} = ...` is a hash
+            // slice over the enumerated keys `x`, `y`, `z`, not a single
+            // stringified `"x y z"` key. Expand via the range's own list.
+            gr @ Value::GenericRange { .. } if expand_range => {
+                let items = crate::runtime::utils::value_to_list(&gr);
+                Value::Array(
+                    Arc::new(crate::value::ArrayData::new(items)),
+                    crate::value::ArrayKind::List,
+                )
+            }
             other => other,
         };
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
