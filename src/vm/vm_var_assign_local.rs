@@ -117,10 +117,12 @@ impl Interpreter {
                     val
                 };
                 self.locals[idx] = val.clone();
-                self.stack.push(val);
+                self.stack
+                    .push(Self::itemize_scalar_assign_result(name, val));
             } else {
                 self.locals[idx] = val.clone();
-                self.stack.push(val);
+                self.stack
+                    .push(Self::itemize_scalar_assign_result(name, val));
             }
             if self.fatal_mode
                 && !name.contains("__mutsu_")
@@ -333,7 +335,8 @@ impl Interpreter {
         } else if let Some(attr) = name.strip_prefix('!') {
             self.env_mut().insert(format!(".{}", attr), val.clone());
         }
-        self.stack.push(val);
+        self.stack
+            .push(Self::itemize_scalar_assign_result(name, val));
         Ok(())
     }
 

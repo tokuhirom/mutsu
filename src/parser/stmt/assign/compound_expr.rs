@@ -169,6 +169,7 @@ pub(crate) fn build_compound_assign_expr(
                     | CompoundAssignOp::DefinedOr
                     | CompoundAssignOp::Orelse
                     | CompoundAssignOp::Andthen
+                    | CompoundAssignOp::Notandthen
             ) {
                 Expr::Binary {
                     left: Box::new(other),

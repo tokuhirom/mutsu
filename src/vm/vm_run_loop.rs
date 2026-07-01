@@ -612,6 +612,17 @@ impl Interpreter {
         }
     }
 
+    /// The rvalue produced by a *scalar* assignment expression is the itemized
+    /// container value, so a following list context sees it as one element:
+    /// `@p = ($x = 3, 4)` gives `((3,4),)`. `@`/`%`/`&` names keep their value.
+    pub(crate) fn itemize_scalar_assign_result(name: &str, val: Value) -> Value {
+        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+            val
+        } else {
+            Self::itemize_value(val)
+        }
+    }
+
     /// De-itemize a `for … -> @a` chunk element while preserving its element
     /// type. An element-typed array (`array[int]`) keeps its type — only the
     /// itemization/scalar wrap is stripped, which is exactly the de-itemization

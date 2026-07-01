@@ -43,8 +43,28 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                         is_positional,
                     },
                 ));
-            } else if let Expr::AssignExpr { name, expr, .. } = inner_assign {
-                let mut items = vec![*expr];
+            } else if let Expr::AssignExpr {
+                name,
+                expr,
+                is_bind,
+            } = inner_assign
+            {
+                // Item assignment (`=`) to a SCALAR is tighter than the comma, so
+                // `($x = l(), 3, 4)` parses as `(($x = l()), 3, 4)` -- a list whose
+                // first element is the assignment. Only an `@`/`%` (list) LHS
+                // absorbs the trailing comma items into its RHS
+                // (`(@a = 1, 2)` -> `@a = (1, 2)`). A `:=` bind also absorbs.
+                let scalar_item_assign =
+                    !is_bind && !name.starts_with('@') && !name.starts_with('%');
+                let mut items = if scalar_item_assign {
+                    vec![Expr::AssignExpr {
+                        name: name.clone(),
+                        expr,
+                        is_bind,
+                    }]
+                } else {
+                    vec![*expr]
+                };
                 let mut r = rest_inner;
                 while r.starts_with(',') && !r.starts_with(",,") {
                     let (r2, _) = parse_char(r, ',')?;
@@ -59,6 +79,9 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     r = r2;
                 }
                 let (r, _) = parse_char(r, ')')?;
+                if scalar_item_assign {
+                    return Ok((r, Expr::ArrayLiteral(items)));
+                }
                 // Wrap in Grouped so that expand_call_arg does not split the
                 // parenthesized assignment's RHS back into separate call args.
                 return Ok((
