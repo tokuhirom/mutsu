@@ -334,6 +334,12 @@ pub(super) fn dispatch(
                     .collect::<Vec<_>>()
                     .join("");
                 Some(Some(Ok(Value::str(joined))))
+            } else if matches!(target, Value::Instance { class_name, .. } if class_name == "Thread")
+            {
+                // `.join` on a Thread is the thread-join primitive (block until the
+                // thread finishes), NOT list-join stringification. Fall through to
+                // the runtime so native_thread routes it to dispatch_thread_finish.
+                Some(None)
             } else {
                 Some(Some(Ok(Value::str(target.to_string_value()))))
             }
