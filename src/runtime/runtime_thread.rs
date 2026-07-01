@@ -103,6 +103,16 @@ impl Interpreter {
         // so concurrent output interleaves in real chronological order.
         let thread_output_sink = {
             let mut parent_sink = self.output_sink_mut();
+            // When the parent flushes stdout immediately (CLI / REPL mode), the
+            // thread clone must do the same so its `say`/`pass` output lands in
+            // real chronological order relative to the main thread's direct
+            // writes. Otherwise the clone buffers into `shared_thread_output` and
+            // is only drained at the next sync point (`await` / `.result`), which
+            // lands a worker-thread test line *after* an intervening main-thread
+            // one — producing TAP "tests out of sequence". In buffered/capture
+            // mode (parent `immediate_stdout == false`) the shared buffer is still
+            // used, so output capture via `run()` is unaffected.
+            let parent_immediate = parent_sink.immediate_stdout;
             let shared_out = Arc::clone(
                 parent_sink
                     .shared_thread_output
@@ -117,7 +127,7 @@ impl Interpreter {
                 output: String::new(),
                 stderr_output: String::new(),
                 output_emitted: false,
-                immediate_stdout: false,
+                immediate_stdout: parent_immediate,
                 is_thread_clone: true,
                 shared_thread_output: Some(shared_out),
                 shared_thread_stderr: Some(shared_err),
