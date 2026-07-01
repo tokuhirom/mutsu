@@ -250,6 +250,16 @@ impl Interpreter {
         self.closure_captured_state.insert((id, name), value);
     }
 
+    /// Drop all per-closure-instance captured-variable state for a closure id.
+    /// Used by the react drive loop so a `whenever`/`LAST`/`QUIT` callback re-reads
+    /// its captured-outer lexicals from the live caller env (which every sibling
+    /// callback in the same react block writes back to) instead of restoring a
+    /// stale per-instance snapshot that would clobber a sibling's update.
+    pub(crate) fn clear_closure_captured_state_for(&mut self, id: u64) {
+        self.closure_captured_state
+            .retain(|(entry_id, _), _| *entry_id != id);
+    }
+
     pub(crate) fn current_once_scope(&self) -> Option<u64> {
         // When inside a closure call, __mutsu_callable_id identifies the
         // specific closure clone.  This must take priority over the
