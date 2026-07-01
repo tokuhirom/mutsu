@@ -15,6 +15,10 @@ impl Interpreter {
         } else {
             None
         };
+        if args.len() == 2 && Self::is_lazy_pipe_source(&args[1]) {
+            let method_args: Vec<Value> = func.into_iter().collect();
+            return self.call_method_with_values(args[1].clone(), "map", method_args);
+        }
         let mut list_items = Vec::new();
         for (idx, arg) in args.iter().skip(1).enumerate() {
             // Check if this argument came from a $ variable (itemized container).
@@ -101,21 +105,16 @@ impl Interpreter {
                 "Cannot use Bool as Matcher with '.match'. Did you mean to use $_ ~~ ... instead?",
             ));
         }
-        if args.len() == 2
-            && let Value::GenericRange { end, .. } = &args[1]
-        {
-            let end_f = end.to_f64();
-            if end_f.is_infinite() && end_f.is_sign_positive() {
-                let mut method_args: Vec<Value> = func.into_iter().collect();
-                if has_k {
-                    method_args.push(Value::Pair("k".to_string(), Box::new(Value::Bool(true))));
-                } else if has_kv {
-                    method_args.push(Value::Pair("kv".to_string(), Box::new(Value::Bool(true))));
-                } else if has_p {
-                    method_args.push(Value::Pair("p".to_string(), Box::new(Value::Bool(true))));
-                }
-                return self.call_method_with_values(args[1].clone(), "grep", method_args);
+        if args.len() == 2 && Self::is_lazy_pipe_source(&args[1]) {
+            let mut method_args: Vec<Value> = func.into_iter().collect();
+            if has_k {
+                method_args.push(Value::Pair("k".to_string(), Box::new(Value::Bool(true))));
+            } else if has_kv {
+                method_args.push(Value::Pair("kv".to_string(), Box::new(Value::Bool(true))));
+            } else if has_p {
+                method_args.push(Value::Pair("p".to_string(), Box::new(Value::Bool(true))));
             }
+            return self.call_method_with_values(args[1].clone(), "grep", method_args);
         }
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
