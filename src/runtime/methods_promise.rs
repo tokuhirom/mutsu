@@ -88,11 +88,20 @@ impl Interpreter {
             }
         } else {
             let mut thread_interp = self.clone_for_thread();
-            crate::runtime::builtins_system::spawn_user_thread(move || {
-                let (result, output, stderr) = orig.wait();
-                let status = orig.status();
+            let orig_for_waiter = orig.clone();
+            // Queue this callback on `orig` rather than spawning our own
+            // thread that blocks on `orig.wait()`: whichever `keep`/
+            // `break_with` call resolves `orig` runs every queued waiter in
+            // registration order on one dedicated thread. That ordering
+            // guarantee is what fixes S17-promise/then.t's intermittent CI
+            // failure — a `.then` registered on `orig` alongside an
+            // `.andthen`/`.orelse` chain (also rooted at `orig`) used to each
+            // spawn an independent OS thread racing the same
+            // `Condvar::notify_all` wake-up, so which one actually ran first
+            // depended on OS scheduling and could reorder under load.
+            orig.on_resolve(Box::new(move |status, result, output, stderr| {
                 if should_run(&status) {
-                    let promise_val = Value::Promise(orig.clone());
+                    let promise_val = Value::Promise(orig_for_waiter);
                     let cb_result = thread_interp.call_sub_value(block, vec![promise_val], true);
                     let out = std::mem::take(&mut thread_interp.output_sink_mut().output);
                     let err = std::mem::take(&mut thread_interp.output_sink_mut().stderr_output);
@@ -107,7 +116,7 @@ impl Interpreter {
                 } else {
                     new_promise.break_with(result, output, stderr);
                 }
-            });
+            }));
         }
         ret
     }
