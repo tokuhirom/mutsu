@@ -150,6 +150,20 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             };
             return parse_statement_modifier(rest, stmt);
         }
+        // The reverse meta-operator assignment `$x R op= $y` assigns to its
+        // RIGHT operand: `$y = $y op $x` (= `$x R op $y`). So `$x R~= $y` leaves
+        // `$x` unchanged and sets `$y` to `$y ~ $x`, and `$x R op= <literal>`
+        // dies with X::Assignment::RO because the literal is not a container.
+        if meta == "R" {
+            let value = Expr::MetaOp {
+                meta,
+                op,
+                left: Box::new(var_expr),
+                right: Box::new(rhs.clone()),
+            };
+            let assign = crate::parser::expr::precedence::assign_to_target_expr(rhs, value);
+            return parse_statement_modifier(rest, Stmt::Expr(assign));
+        }
         let expr = Expr::MetaOp {
             meta,
             op,
