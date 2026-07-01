@@ -9,6 +9,51 @@ pub(crate) fn list_infix_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
+/// Sequence (`...`, `...^`) ONLY — no list-infix (Z/X/meta/infix-func) loop.
+/// Used for an unparenthesized call / list-prefix argument, where a single
+/// argument may be a sequence (`none 2 ... 5` = `none(2 ... 5)`) but must NOT
+/// run the list-infix loop, which would misparse a trailing feed operator
+/// (`grep {...} ==> @b`) as part of the argument.
+pub(crate) fn sequence_only_expr(input: &str) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = range_expr(input)?;
+    let mut current_assoc_key: Option<String> = None;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((r2, op, op_str)) = strip_sequence_op(r) {
+            if let Some(prev) = current_assoc_key.as_deref()
+                && prev != op_str
+            {
+                return Err(non_list_associative_error(prev, op_str));
+            }
+            let (r2, _) = ws(r2)?;
+            let (r2, mut right) =
+                comparison_expr_mode(r2, ExprMode::NoSequence).map_err(|err| {
+                    enrich_expected_error(
+                        err,
+                        format!("expected expression after '{op_str}'").as_str(),
+                        r2.len(),
+                    )
+                })?;
+            if contains_whatever(&right) && !matches!(right, Expr::Whatever) {
+                right = wrap_whatevercode(&right);
+            }
+            if contains_whatever(&left) && !matches!(left, Expr::Whatever) {
+                left = wrap_whatevercode(&left);
+            }
+            left = Expr::Binary {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
+            current_assoc_key = Some(op_str.to_string());
+            rest = r2;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
 /// Sequence (..., ...^) and list-infix (Z, X, meta-ops, infix funcs).
 /// All have Raku precedence level f= (list associative).
 pub(crate) fn sequence_expr(input: &str) -> PResult<'_, Expr> {
