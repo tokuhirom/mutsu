@@ -396,6 +396,28 @@ impl Interpreter {
                     continue;
                 }
             }
+            // Handle $var.method() interpolation (Raku: `$x.meth()` interpolates
+            // the method call; a bare `$x.meth` leaves `.meth` literal). This also
+            // covers `$/.chars()` and capture-var method calls. Evaluate the whole
+            // term as an expression, like a `{...}` code block, so `$/`, `$0`, ...
+            // (bound per match by the dynamic path) resolve correctly.
+            if (bytes[i] == b'$' || bytes[i] == b'@')
+                && i + 1 < bytes.len()
+                && let Some(term_len) = subst_method_call_term(&template[i + 1..])
+            {
+                let expr_src = &template[i..i + 1 + term_len];
+                let parsed = crate::parse_dispatch::parse_source(expr_src);
+                if let Ok((stmts, _)) = parsed {
+                    let saved_topic = self.env().get("_").cloned();
+                    let val = loan_env!(self, eval_block_value(&stmts)).unwrap_or(Value::Nil);
+                    if let Some(topic) = saved_topic {
+                        self.env_mut().insert("_".to_string(), topic);
+                    }
+                    out.push_str(&val.to_string_value());
+                    i += 1 + term_len;
+                    continue;
+                }
+            }
             // Handle $var and $var[idx]
             if bytes[i] == b'$' && i + 1 < bytes.len() {
                 let after = &template[i + 1..];
