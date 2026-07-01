@@ -316,6 +316,138 @@ pub(super) fn take_var_name(input: &str) -> Option<usize> {
     Some(end)
 }
 
+/// Variable-name matcher for `s///` replacement interpolation. Like
+/// [`take_var_name`] but also recognizes the special match variables that can
+/// legitimately start an interpolated term: `$/` (the whole Match) and the
+/// numbered captures `$0`, `$1`, ... . Returns the byte length of the name
+/// (excluding the leading sigil, which the caller has already consumed).
+fn subst_take_var_name(input: &str) -> Option<usize> {
+    match input.chars().next()? {
+        // `$/` — the Match object for the current substitution.
+        '/' => Some(1),
+        // `$0`, `$12`, ... — numbered positional captures.
+        c if c.is_ascii_digit() => {
+            let mut end = 0usize;
+            for (idx, ch) in input.char_indices() {
+                if ch.is_ascii_digit() {
+                    end = idx + ch.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            Some(end)
+        }
+        _ => take_var_name(input),
+    }
+}
+
+/// Consume a method-name identifier (`.name` postfix, sigil-less) and return its
+/// byte length, or `None` if `input` does not start with an identifier.
+fn subst_take_method_ident(input: &str) -> Option<usize> {
+    let first = input.chars().next()?;
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return None;
+    }
+    let mut end = first.len_utf8();
+    for (idx, ch) in input.char_indices().skip(1) {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+            end = idx + ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    Some(end)
+}
+
+/// Length (including both delimiters) of a balanced bracket run that `input`
+/// starts with (`open` .. matching `close`), respecting nesting. `None` if
+/// `input` does not start with `open` or the brackets are unbalanced.
+fn subst_balanced_len(input: &str, open: u8, close: u8) -> Option<usize> {
+    let bytes = input.as_bytes();
+    if bytes.first() != Some(&open) {
+        return None;
+    }
+    let mut depth = 0i32;
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == open {
+            depth += 1;
+        } else if b == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i + 1);
+            }
+        }
+    }
+    None
+}
+
+/// Scan a `$`-interpolation term for a method-call postfix chain. `after` is the
+/// text right after the `$` sigil. Returns the byte length of
+/// `<varname><postfix-chain>` (NOT counting `$`) when the chain contains at least
+/// one `.method(...)` call — Raku interpolates `$x.meth()` but leaves a bare
+/// `$x.meth` (no parens) literal. Returns `None` otherwise, so the caller keeps
+/// the plain `$var` / `$var[idx]` behavior. Bracket postfixes (`[..]`, `{..}`,
+/// `<..>`) chain through, but on their own (no method call) do not trigger the
+/// expression-eval path.
+pub(super) fn subst_method_call_term(after: &str) -> Option<usize> {
+    let vlen = subst_take_var_name(after)?;
+    let bytes = after.as_bytes();
+    let mut i = vlen;
+    let mut saw_call = false;
+    loop {
+        if bytes.get(i) == Some(&b'.') {
+            let Some(id_len) = subst_take_method_ident(&after[i + 1..]) else {
+                break;
+            };
+            let after_id = i + 1 + id_len;
+            if bytes.get(after_id) == Some(&b'(') {
+                let close = subst_balanced_len(&after[after_id..], b'(', b')')?;
+                i = after_id + close;
+                saw_call = true;
+                continue;
+            }
+            // A bare `.method` without parens is literal text: stop here.
+            break;
+        }
+        let bracket = match bytes.get(i) {
+            Some(b'[') => Some((b'[', b']')),
+            Some(b'{') => Some((b'{', b'}')),
+            Some(b'<') => Some((b'<', b'>')),
+            _ => None,
+        };
+        if let Some((open, close)) = bracket {
+            let clen = subst_balanced_len(&after[i..], open, close)?;
+            i += clen;
+            continue;
+        }
+        break;
+    }
+    saw_call.then_some(i)
+}
+
+/// True if `template` contains at least one `$var.method(...)` interpolation term
+/// (or `$/.method(...)`). Such a replacement must be interpolated *per match*
+/// (like a `{...}` code block) so `$/` and the captures are bound to the current
+/// match when the method call runs.
+pub(super) fn subst_has_method_call_interp(template: &str) -> bool {
+    let bytes = template.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if (bytes[i] == b'$' || bytes[i] == b'@')
+            && i + 1 < bytes.len()
+            && subst_method_call_term(&template[i + 1..]).is_some()
+        {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
 pub(super) fn normalize_subst_replacement(template: &str) -> String {
     let mut out = String::new();
     let mut chars = template.chars().peekable();

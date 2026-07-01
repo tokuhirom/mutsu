@@ -21,9 +21,11 @@ impl Interpreter {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let raw_replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
         // A replacement containing a `{...}` code block (e.g. from `s[...] = $0 x 2`)
-        // must be evaluated *per match*, with `$/`, `$0`, ... bound to that match.
-        // For replacements without code blocks, interpolate once up front.
-        let has_code_block = raw_replacement.contains('{');
+        // or a `$x.method()` interpolation must be evaluated *per match*, with `$/`,
+        // `$0`, ... bound to that match. For plain replacements, interpolate once up
+        // front.
+        let has_code_block =
+            raw_replacement.contains('{') || subst_has_method_call_interp(&raw_replacement);
         let replacement = if has_code_block {
             raw_replacement.clone()
         } else {
@@ -297,9 +299,11 @@ impl Interpreter {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let raw_replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
         // A replacement containing a `{...}` code block (e.g. from `s[...] = $0 x 2`)
-        // must be evaluated *per match*, with `$/`, `$0`, ... bound to that match.
-        // For replacements without code blocks, interpolate once up front.
-        let has_code_block = raw_replacement.contains('{');
+        // or a `$x.method()` interpolation must be evaluated *per match*, with `$/`,
+        // `$0`, ... bound to that match. For plain replacements, interpolate once up
+        // front.
+        let has_code_block =
+            raw_replacement.contains('{') || subst_has_method_call_interp(&raw_replacement);
         let replacement = if has_code_block {
             raw_replacement.clone()
         } else {
