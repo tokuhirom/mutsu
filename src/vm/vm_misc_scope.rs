@@ -1,6 +1,29 @@
 use super::*;
 
 impl Interpreter {
+    /// Eagerly refresh any `our`-linked local slot when its package-qualified
+    /// name is written (`$Foo::b = v` / `$::('Foo::b') = v`). An `our $b`
+    /// declaration keeps a local slot (`b`) and a package var (`Foo::b`) linked
+    /// via `our_locals`, but they are otherwise only reconciled at block exit;
+    /// this makes the lexical alias `$b` see a package-qualified write inside the
+    /// same block. No-op when the written name is not `our`-linked to a slot.
+    pub(crate) fn sync_our_local_from_qualified(
+        &mut self,
+        code: &CompiledCode,
+        qualified_name: &str,
+        val: &Value,
+    ) {
+        for (slot, our_name) in &code.our_locals {
+            if our_name == qualified_name && *slot < self.locals.len() {
+                self.locals[*slot] = val.clone();
+                if let Some(local_name) = code.locals.get(*slot) {
+                    let ln = local_name.clone();
+                    self.env_mut().insert(ln, val.clone());
+                }
+            }
+        }
+    }
+
     pub(super) fn exec_state_var_init_op(&mut self, code: &CompiledCode, slot: u32, key_idx: u32) {
         let init_val = self.stack.pop().unwrap_or(Value::Nil);
         let base_key = Self::const_str(code, key_idx);
