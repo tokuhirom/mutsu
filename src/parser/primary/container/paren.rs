@@ -261,6 +261,13 @@ pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
             // feed: `my @g = (@a ==> grep)` assigns the feed result, whereas
             // `my @g = @a ==> grep` binds `=` tighter and feeds `(my @g = @a)`).
             || matches!(&result, Expr::Feed { .. })
+            // A parenthesized single SCALAR stays wrapped so a following `=` treats
+            // it as a LIST-assignment target (`($a) = 1, 2, 3` makes `$a` slurp the
+            // whole list), distinct from a bare `$a = 1, 2, 3` item assignment.
+            // `assign_not_expr_mode` keys off the `Grouped` wrapper for this; the
+            // wrapper is transparent everywhere else (consumers unwrap it, incl.
+            // the for-loop rw-source detection). `@`/`%` vars are NOT wrapped.
+            || matches!(&result, Expr::Var(_))
         {
             Expr::Grouped(Box::new(result))
         } else {
