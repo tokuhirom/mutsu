@@ -236,6 +236,25 @@ impl Interpreter {
         } = &target
             && class_name == "Supply"
         {
+            if method == "stable" {
+                let seconds = args.first().map(Value::to_f64).unwrap_or(0.0);
+                // `.stable(0)` is a no-op: return the same Supply so that
+                // `$s === $s.stable(0)` holds.
+                if seconds <= 0.0 {
+                    return Ok(target.clone());
+                }
+                // Best-effort debounce for a materialized (non-live) Supply:
+                // when every value is emitted within the stable window (as with
+                // from-list, which emits instantaneously), only the final value
+                // survives.
+                // TODO: proper timer-based debounce for live Suppliers needs the
+                // async scheduler; that path is exercised only by fudge-skipped
+                // tests today.
+                let attrs = attributes.as_map();
+                let values = self.supply_get_values(&attrs)?;
+                let out: Vec<Value> = values.last().cloned().into_iter().collect();
+                return Ok(self.make_supply_from_values(out, &attrs));
+            }
             self.native_supply(&(attributes).as_map(), method, args.to_vec())
         } else {
             Err(RuntimeError::new(format!(

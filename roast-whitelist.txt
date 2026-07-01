@@ -929,6 +929,7 @@ roast/S17-supply/snip.t
 roast/S17-supply/sort.t
 roast/S17-supply/split.t
 roast/S17-supply/squish.t
+roast/S17-supply/stable.t
 roast/S17-supply/start.t
 roast/S17-supply/supplier-preserving.t
 roast/S17-supply/syntax-nonblocking-await.t
