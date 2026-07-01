@@ -7,6 +7,14 @@ pub(crate) fn method_lvalue_assign_expr(
     method_args: Vec<Expr>,
     value: Expr,
 ) -> Expr {
+    // `$(EXPR) = value` lowers `$(EXPR)` to `EXPR.item`, but the item
+    // contextualizer is transparent as an lvalue: it names the same container as
+    // `EXPR`. Assign straight through to `EXPR` (`$(@a[0]) = ...` writes `@a[0]`)
+    // instead of dispatching a `.item` method-lvalue, which has no writable slot
+    // and threw X::Assignment::RO.
+    if method_name == "item" && method_args.is_empty() {
+        return crate::parser::expr::precedence::assign_to_target_expr(target, value);
+    }
     let mut args = vec![
         target,
         Expr::Literal(Value::str(method_name)),
