@@ -689,6 +689,18 @@ pub(super) fn dispatch(
                 raku_value(target)
             })))
         }
+        // A genuinely-lazy (infinite) list renders a `(...)`/`[...]`/`...`
+        // placeholder rather than materializing — e.g. `[2,3].roll(*).gist`
+        // (raku: `(...)`). Finite/`cat_pull` lazy lists fall through to force.
+        Value::LazyList(ll)
+            if (method == "gist" || method == "raku" || method == "perl")
+                && ll.renders_lazy_placeholder() =>
+        {
+            Some(Ok(Value::str(crate::value::lazy_list_placeholder(
+                method,
+                ll.in_array_context(),
+            ))))
+        }
         Value::LazyList(_) => None, // fall through to runtime to force
         _ => Some(Ok(Value::str(target.to_string_value()))),
     })
