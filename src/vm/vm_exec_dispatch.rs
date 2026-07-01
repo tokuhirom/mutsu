@@ -1133,6 +1133,11 @@ impl Interpreter {
                 // restoration (which only preserves env keys that existed
                 // before the block).  `::('name')` falls back to this store.
                 self.set_our_var(name.clone(), val.clone());
+                // Eager `our`-alias sync: a package-qualified store (`$Foo::b = v`)
+                // must be visible immediately through the lexical alias (`$b`)
+                // inside the package, not only after block exit. If a local slot
+                // is `our`-linked to this qualified name, refresh it now.
+                self.sync_our_local_from_qualified(code, &name, &val);
                 // A plain assignment to a package-scope free variable (`our $X`
                 // or a `package { my $X }` lexical) reached by bare name from
                 // inside a named sub must reach the canonical package store too,

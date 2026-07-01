@@ -146,17 +146,23 @@ impl Interpreter {
             "&" => format!("&{}", name),
             _ => name.to_string(),
         };
-        // For $ sigil (item context), take only first element if value is a list.
+        // A `$` symbolic-deref store is a scalar assignment: it stores the whole
+        // value (a list is held itemized), NOT just its first element.
+        // `$::('x') = 1, 2` is already parsed item-assignment (RHS is `1`), so a
+        // list value here is a genuine `$::('x') = (1, 2)` and must be kept whole.
         let value = if sigil == "$" {
-            match &raw_value {
-                Value::Array(items, ..) => items.first().cloned().unwrap_or(Value::Nil),
-                _ => raw_value,
-            }
+            Self::normalize_scalar_assignment_value(raw_value)
         } else {
             raw_value
         };
         self.env_mut().insert(store_name.clone(), value.clone());
         self.update_local_if_exists(code, &store_name, &value);
+        // A package-qualified symbolic store (`$::('Foo::b') = v`) must reach the
+        // `our`-linked lexical alias (`$b`) immediately, like a direct
+        // `$Foo::b = v`; also persist it in the package store so a later
+        // bare/qualified read resolves it.
+        self.set_our_var(store_name.clone(), value.clone());
+        self.sync_our_local_from_qualified(code, &store_name, &value);
         // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a
         // symbolic-deref store (`$::($name) = v`) writes the target lexical by name
         // straight into env. `update_local_if_exists` refreshes the slot only when
@@ -166,7 +172,15 @@ impl Interpreter {
         // set env_dirty) — without this the write is lost once the blanket
         // reconcile is removed (mirrors the regex `:let` path).
         self.note_caller_env_write(&store_name);
-        self.stack.push(value);
+        // A `$` symbolic-deref store is a scalar assignment, so its rvalue is the
+        // *itemized* container value: `flat ($::('x') = 1, 2), ...` keeps the
+        // `(1,2)` as one element (matches a plain scalar assignment result).
+        let result = if sigil == "$" {
+            Self::itemize_value(value)
+        } else {
+            value
+        };
+        self.stack.push(result);
     }
 
     pub(super) fn exec_indirect_type_lookup_store_op(&mut self, code: &CompiledCode) {
