@@ -7,10 +7,13 @@ impl Interpreter {
             Ok(v) => v,
             Err(_) => return false,
         };
-        match self.call_sub_value(pred_val, vec![value.clone()], false) {
-            Ok(result) => result.truthy(),
-            Err(_) => false,
-        }
+        // `has $.x is default(V) where PRED` passes iff `value ~~ PRED`.
+        // Smartmatch handles every predicate shape uniformly: a
+        // Callable/WhateverCode (`* == 42`) is invoked with the value, a Junction
+        // (`42|3`) is threaded, and a plain value/type is compared. Calling the
+        // predicate directly only worked for Callables and mis-handled a Junction
+        // predicate (S02-types/whatever.t "compile time Junction in `where`").
+        self.smart_match_values(value, &pred_val)
     }
 
     /// For a given class, return the ordered list of (role_name, MethodDef) pairs

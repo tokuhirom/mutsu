@@ -175,10 +175,44 @@ impl Compiler {
     /// Check if a default value expression statically mismatches a type constraint.
     /// Returns `Some(value_repr)` if a mismatch is detected, `None` otherwise.
     fn check_default_type_mismatch(type_constraint: &str, expr: &Expr) -> Option<String> {
-        let effective_constraint = type_constraint
-            .strip_suffix(":D")
-            .or_else(|| type_constraint.strip_suffix(":_"))
-            .unwrap_or(type_constraint);
+        // Split off an optional type smiley (`:D` / `:U` / `:_`).
+        let (effective_constraint, smiley) = if let Some(b) = type_constraint.strip_suffix(":D") {
+            (b, Some('D'))
+        } else if let Some(b) = type_constraint.strip_suffix(":U") {
+            (b, Some('U'))
+        } else if let Some(b) = type_constraint.strip_suffix(":_") {
+            (b, Some('_'))
+        } else {
+            (type_constraint, None)
+        };
+        // Only a recognized concrete built-in type can be rejected at compile
+        // time. A subset / `where`-constrained type (`my $x is default(42) where
+        // * == 42`, compiled to an anonymous `__mutsu_anon_subset_N`) or any
+        // user-defined type narrows membership by a runtime predicate the compiler
+        // cannot evaluate, so it must NOT be statically flagged as a mismatch —
+        // the default may well satisfy it. S02-types/whatever.t "compile time
+        // WhateverCode / Junction evaluation" exercises exactly this.
+        const CHECKABLE_BUILTINS: &[&str] = &[
+            "Int", "Num", "Rat", "Bool", "Str", "Numeric", "Real", "Cool", "Any", "Mu", "Stringy",
+            "Complex", "Rational",
+        ];
+        if !CHECKABLE_BUILTINS.contains(&effective_constraint) {
+            return None;
+        }
+        // A concrete (defined) literal default can never bind to a `:U`
+        // (type-object-only) constraint, e.g. `my Int:U $y is default(0)`.
+        let is_concrete_literal = matches!(
+            expr,
+            Expr::Literal(
+                Value::Int(_) | Value::Num(_) | Value::Str(_) | Value::Bool(_) | Value::Rat(..)
+            )
+        );
+        if smiley == Some('U') && is_concrete_literal {
+            return Some(match expr {
+                Expr::Literal(v) => v.to_string_value(),
+                _ => "?".to_string(),
+            });
+        }
         let value_type = match expr {
             Expr::Literal(Value::Str(s)) => {
                 if effective_constraint != "Str"
