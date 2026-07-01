@@ -122,6 +122,42 @@ pub(crate) fn additive_expr(input: &str) -> PResult<'_, Expr> {
         if block_newline_terminates(input, rest, r) {
             break;
         }
+        // Longest-token rule (Raku LTM): a user-declared *symbol* infix that is
+        // LONGER than the built-in additive operator starting at this position
+        // wins — e.g. `sub infix:<+-*/>` makes `5 +-*/ 2` one operator, not
+        // `5 + (-*/2)`. Only applies when the custom operator sits at additive
+        // precedence (its declared level, or the default for a trait-less infix),
+        // so a `is tighter`/`is looser` custom op is still handled at its own level.
+        if let Some((uname, ulen)) =
+            crate::parser::stmt::simple::match_user_declared_infix_symbol_op(r)
+        {
+            let builtin_len = parse_additive_op(r).map(|(_, l)| l).unwrap_or(0);
+            let is_additive_level =
+                match crate::parser::stmt::simple::lookup_custom_infix_precedence(&uname) {
+                    Some(level) => level == crate::parser::stmt::simple::PREC_ADDITIVE,
+                    None => true, // trait-less infix defaults to additive precedence
+                };
+            // Only override when a built-in operator would otherwise grab a
+            // PREFIX of the custom symbol (`+` inside `+-*/`). When no built-in
+            // matches here (`builtin_len == 0`, e.g. a word operator `rr`), leave
+            // it to the normal custom-infix machinery, which honors the operator's
+            // associativity/precedence traits.
+            if builtin_len > 0 && ulen > builtin_len && is_additive_level {
+                let r2 = &r[ulen..];
+                let (r2, _) = ws(r2)?;
+                let (r2, right) = multiplicative_expr(r2).map_err(|err| {
+                    enrich_expected_error(err, "expected expression after infix operator", r2.len())
+                })?;
+                left = Expr::InfixFunc {
+                    name: uname,
+                    left: Box::new(left),
+                    right: vec![right],
+                    modifier: None,
+                };
+                rest = r2;
+                continue;
+            }
+        }
         if let Some((op, len)) = parse_additive_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
