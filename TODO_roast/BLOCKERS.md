@@ -5,773 +5,247 @@
 個々の失敗を片端から潰すためではなく、
 **今どこを直せば何がまとめて動くか**を判断するために使う。
 
-**最終更新 2026-06-28**
-
-## 2026-06-28 near-pass sweep の結論
-
-`tmp/near-pass.tsv`（残 1 失敗のファイル群）を起点に「浅いターゲット」を探したが、
-1 失敗で残っている §2 の Medium 級は**いずれも深いアーキテクチャ機能がブロッカー**だと
-確認した。今セッションで isolation 再現まで取って verdict を確定したもの:
-
-- `S04-declarations/my-6e.t` → dual-store の **block-local scope 漏れ**
-  （`if (1) { my $b = 1 }` 後に `$b` が見える；EVAL 固有ではない）。
-- `S02-types/generics.t` → 6.e **coercion type 項 + `Array[T]` サブクラス化**
-  （ローカル raku v2022.12=6.d でも実行不可で全体検証もできない）。
-- `S04-declarations/constant.t` → 演算子 `constant &op := &other` の
-  **共有 alias**（現状コピー実装）。68/72、唯一の file-stopper。
-
-→ **curated §2 Medium 群について「1 失敗の浅いターゲットは枯渇」が結論。** 残りは
-container identity / lazy-iterator / lexical-scope (dual-store) / 並行実行 という
-§3〜§4 の基盤工事に帰着する。次の前進はこれら基盤のいずれかに腰を据えて着手すること。
-各ファイルの最小再現と詳細は §2 / `TODO_roast/S02.md` / `S04.md` に記録済み。
-
-未 probe バケット（保留）: `tmp/near-pass.tsv` の `integration/advent*` 系（1 失敗が
-~10 ファイル）は「実プログラムが特定 1 機能で落ちる」別カテゴリで、今回は未調査。
-個別に浅い可能性はあるが、まとまった共通根があるとは限らないため、基盤工事より
-優先度は低い。掘るなら 1 ファイルずつ failure を特定してから判断する。
-
-## この版での再評価結果
-
-今回の見直しで、旧版には次の問題があることを確認した。
-
-- すでに whitelist 済みのファイルが未解決項目として残っていた。
-  例: `S05-capture/array-alias.t`、`S05-match/capturing-contexts.t`、
-  `S03-binding/attributes.t`、`S03-binding/nested.t`、
-  `S12-methods/accessors.t`、`S32-io/io-path.t`、`S32-list/skip.t`、
-  `S09-hashes/objecthash.t`。
-- 「main track」はもう `Interpreter-removal` ではない。
-  そこはほぼ終わっており、今の主戦場は
-  **第一級コンテナ / 真の lazy 配列 / dispatch / 並行実行基盤**。
-- 一見すると孤立した不具合に見えるものでも、
-  実際には main track にぶら下がっている項目がある。
-  例: `S26-documentation/12-non-breaking-space.t`、
-  `S12-introspection/walk.t`。
-
-このため、旧版の「ファイル別の細かい失敗数」よりも、
-**依存関係と投資対効果**を優先して整理し直した。
+**最終更新 2026-07-01**（2026-06-29〜07-01 の大量の完了項目を `news/2026-06.md` /
+`news/2026-07.md` に移し、残件のみを再集計した版）
 
 ## この文書の読み方
 
-- **§1 優先度A**:
-  main track と衝突しにくく、直せば横展開しやすいもの。
-- **§2 優先度B**:
-  局所修正で進むが、複数の小さな論点を含むもの。
-- **§3 main track 待ち**:
-  第一級コンテナ、lazy 配列、dispatch 基盤などの着地待ち。
-- **§4 並行・非同期**:
-  S17 を中心とした別軸の重い課題。
-- **§5 whitelist を目標にしない項目**:
-  rakudo 側も失敗する、または roast 側の問題が強いもの。
-
-個別の詳細ログは `TODO_roast/S*.md` を参照。
-このファイルは、そちらの要約と進め方の整理に徹する。
+- ファイル名の羅列ではなく、**根本原因単位**でブロッカーを追う。
+- 各ブロッカーは次の粒度で書く:
+  - **根本原因**: 何の抽象が欠けているか
+  - **変更レイヤ**: parser / compiler / VM / runtime / value 表現 / scheduler のどこを触るか
+  - **Next slice**: 次に何を切り出して着手するか
+  - **完了条件**: どこまで行けば、その類の roast がまとめて動くか
+- **whitelist 済みになった項目はこの文書から削除し、詳細は `news/` に移す。**
+  このファイルは常に「現在まだ開いている残件」だけを持つ。
+- 個別の per-file 詳細ログは `TODO_roast/S*.md` を参照。このファイルはそちらの要約と
+  優先順位づけに徹する。
+- **このファイルは頻繁に複数セッションから並行更新される。** 着手前に必ず
+  `MUTSU_FUDGE=1 prove -e target/debug/mutsu roast/<path>.t` で実際の pass/fail 数を
+  取り直すこと。ここに書かれた数字は執筆時点のスナップショットであり、数時間で
+  古くなることがある。
 
 ## 現在の前提
 
-- whitelist は **1285**。
-- 安い 1 ファイル勝ちはかなり減っている。
-- 残件の大半は、少数の大きな根本原因に集約される。
-- 今後は「テスト名の羅列」ではなく、**どのレイヤをどう崩すか**まで書く。
-
-## この版で固定する分析粒度
-
-各 blocker は、今後この粒度で扱う。
-
-- **根本原因**: 何の抽象が欠けているか
-- **変更レイヤ**: parser / compiler / VM / runtime / value 表現 / scheduler のどこを触るか
-- **最初の 1 PR**: まず何を切り出して landed させるか
-- **完了条件**: どこまで行けば、その類の roast がまとめて動くか
-
-特に混ぜないこと:
-
-- **lazy 配列**と**Seq single-pass consumption**は別問題
-- **第一級コンテナ**と**attribute/container capture**は同じレバー
-- **S17** は 1 本ではなく、shared scalar coherence / scheduler / supply timer / async IO の 4 軸
-- すでに whitelist 済みの項目は、進行中 blocker の主列には置かない
-
-今いちばん効く大分類は次の 4 つ。
-
-1. **第一級コンテナ / container identity**
-   `:=`、`is rw`、`.VAR`、属性・要素の共有、Capture の書き戻し、
-   typed-hash default、wrapper/closure の container capture など。
-2. **真の lazy 配列 / 無限列**
-   `@a[0..*]`、lazy slurpy、same-type lazy iterable の
-   `X::Cannot::Lazy`、配列操作の reify-on-demand。
-3. **dispatch / MOP / call surface**
-   wrapper/closure lexical visibility、call cache、lexical `&` shadowing、
-   qualified dispatch、compound assign / method-call desugar など。
-4. **並行実行基盤**
-   Semaphore、lock contention、nonblocking await、Supply combinator、
-   detached `start/react` の駆動保証など。
+- whitelist は **1338**（2026-07-01 時点、`4c311c71`、`wc -l roast-whitelist.txt`）。
+- 安い 1 ファイル勝ちはほぼ枯渇している。残件の大半は少数の根本原因に集約される:
+  1. **第一級コンテナ / container identity** — 配列・ハッシュ要素・属性 slot の書き戻し、
+     BEGIN/EVAL 時の lexical 永続化。
+  2. **真の lazy 配列 / 無限列** — 残りは `S09-subscript/slice.t` のみ。
+  3. **dispatch / 演算子 sugar の desugar surface** — 残りは `hyper.t` のみ
+     （`assign.t` は完了、詳細は `news/2026-07.md`）。
+  4. **並行実行基盤（S17）** — 大半は片づいたが、`Lock.protect` に本物の
+     race condition が残っている。
 
 ---
 
-## 1. 優先度A — main track と衝突しにくく、効果が大きい
+## 1. Hard — 単体では動かせない、大きな下位基盤待ち
 
-### 1.1 `S32-exceptions/misc.t`
+### 1.1 Unicode / RakuAST / Collation（低 ROI・据え置き）
 
-- **優先度**: 完了
-- **難度**: Hard
-- **現状**: **DONE 2026-06-30 — 182/182 pass、whitelist 追加。**
-- **理由**:
-  1 ファイルだけを見ると重いが、ここで実装する型付き例外は他ファイルへ再利用できる。
-  例外の数は多いが、main track のコア構造を大きく壊さず進められる。
-- **評価**:
-  内容は「丸ごと未着手」ではなく **終盤の one-off 群** に入っている。
-  旧版が挙げていた `X::Comp::BeginTime`（tests 46/47/61）と
-  `gather { return }` / 各種 `X::ControlFlow::Return`（tests 70-73）は
-  **既に pass している**（旧ガイダンスは stale だったので削除）。
-- **完了済みスライス**:
-  slice 1 (compile-sorrow accumulator, tests 20+26) / slice 2 (source-format
-  preserving sink warning — `Expr::LiteralSrc(Value, source)` で数値リテラルの
-  元書式を保持。tests 139-142 と `X::Syntax::Confused` の pre/post=test 17。
-  PR #3931 で確定、`(1) { }` 等の括弧付きリテラルを誤ラップしない回帰修正含む) /
-  slice 3 (PR #3932: 未終端スマート単一引用符 `‘…`/`‚…` → `X::Comp::FailGoal`、
-  および FailGoal の `.line` を停止位置=EOF 行に設定。test 178) /
-  slice 4 (test 155: parameter sub-signature 内の非 slurpy `@`/`%` param が
-  Positional/Associative を要求。`bind_sub_signature_from_value` に sigil 型検査を
-  追加し `X::TypeCheck::Binding::Parameter`（`.got` に実値を載せる新
-  `typecheck_binding_parameter_value`）を投げる。併せて EVAL の undeclared 前検査が
-  sub-signature 内名 (`$first`/`@rest`) を宣言済みとして扱うよう
-  `add_sub_signature_locals` を追加) /
-  slice 5 (test 166: role 型オブジェクト（built-in role `Callable`/`Iterable`/…
-  または user role）への `but` を `X::Method::NotFound`（`method => 'mixin'`,
-  typename `Perl6::Metamodel::ParametricRoleGroupHOW`、非空 message）にする。
-  新 `Interpreter::but_on_type_object_error`（`is_role_type_name` で built-in
-  role を認識）。`does` は全型オブジェクトで `X::Does::TypeObject` 維持、`but` on
-  class 型オブジェクト（`Int but role`）も `X::Does::TypeObject` 維持 = 匿名
-  サブタイプ生成機能は別途未実装) /
-  slice 6 (test 157: genuine bare block `{ ... }` を Raku callframe として
-  扱い、その中で捕捉された backtrace の `.list` に匿名フレーム（`.subname` 空 /
-  `.is-routine` False）を含める。`BlockScope`/`TryCatch` opcode に
-  `is_bare_block` フラグを追加（非 tail block 経路、自己クリーンアップ）、
-  inline 経路（tail block は inline されて opcode 境界を持たない）には
-  `PushBlockFrame`/`PopBlockFrame` marker opcode を導入。if/while 等の合成
-  ブロックは frame にしない（`synthetic_block_body` で gate）。leak は
-  sub/block/try 境界が routine_stack を entry 深度に truncate して回収。
-  concise text（`.Str`/gist）には匿名 block 行を出さず raku の `.nice` に
-  一致させた）。 /
-  slice 7 (test 84: body 無し `sub foo(C of Int)` が非 parametric な user 型を
-  `of`/`[...]` でパラメータ化したとき `X::NotParametric` を投げる。parser は
-  型情報を持たないため、base が user 宣言型のときだけ bodyless stub を発行し
-  compile-time pre-pass（`validate_param_type_constraints`）に X::NotParametric を
-  上げさせる。PR #3940 で確定。body あり 79-83 も含め test 79-84 全 pass)。
-- **残件インベントリ（2026-06-30 実測、TAP 番号）**:
-  - test 16: `X::Comp::Group` — `CATCH { when X::Y {} }` で undeclared bareword
-    `X::Y` が後続 `{}` を gobble する検出（panic=X::Syntax::Missing block +
-    sorrow=X::Syntax::BlockGobbled）— **DONE 2026-06-30**。`when_stmt` で
-    condition が bareword かつ直後が `{` のとき、名前が予約済み `X::`/`CX::`
-    例外名前空間に属し、既知 builtin 例外（`is_known_type_constraint` /
-    `is_known_compound_type`、`CX::*` 制御例外を新規追加）でも user 宣言型でも
-    ない場合に gobble エラーを投げる。mutsu は user/imported 型を parse 時でなく
-    runtime に登録するため、`Day::Mon`（enum 値）や import 型のような他の compound
-    名は曖昧として除外し、`when DeclaredType {}` の誤検出を回避。
-  - test 3: `X::Undeclared::Symbols` の `post_types`（型を宣言前に使用）— DONE
-    （EVAL の CHECK 相当として `check_eval_post_declared_types` を追加。top-level
-    型宣言の index を記録し、各文中の型参照（method invocant / bareword term）が
-    後方宣言なら `post_types` 付き X::Undeclared::Symbols を投げる。
-    `post_declared_type_symbols`）。
-  - test 21, 22: `X::Comp::FailGoal` — カスタム `postcircumfix/circumfix:«⟨ ⟩»`
-    演算子の閉じ括弧欠落（`$a⟨5;` / `⟨5;`）— DONE（mutsu は既にカスタム括弧を
-    パース・登録済みだった。opener 一致 + arg パース後に close delim が無ければ
-    `fail_goal_error_at` で `dba=postcircumfix:sym<⟨ ⟩>` / `goal='⟩'` を投げる。
-    loop_.rs と circumfix.rs）。
-  - test 27: `&[doesntexist]` は未知 infix → X::Comp — DONE（`&[word]` の word が
-    全小文字英字かつ既知 word-infix 許可リスト外かつ user 定義 infix でもない場合に
-    X::Syntax::Missing「Missing infix inside []」を投げる。記号 op `&[+]` / 大文字
-    メタ op `&[Z]` は対象外なので誤検出しない。`is_known_word_infix`）。
-  - test 179: 二重引用符内 unbalanced `{`（`"#={"`）— DONE（`{` の後にソース全体で
-    `}` が一つも無い場合のみ X::Comp::FailGoal「couldn't find final '\"'」を投げる。
-    トリガーを「残ソースに `}` ゼロ」に限定したので literal-brace の広範囲回帰を回避。
-    quoted.rs）。
-  - test 121: sink warns on colonpair `:foo(42)` — DONE（定数 colonpair を
-    statement 位置で `LiteralSrc(Value::Pair, ":foo(42)")` に包む。`Binary FatArrow`
-    の AST は保持したまま source 文字列だけを sink-warn pass に渡すので、named-arg
-    binding 等 ~29 の pair 検出箇所には一切影響しない。`wrap_colonpair_sink_source`、
-    `wrap_divergent_literal` と同じ statement-confined 方式）。
-  - test 161: backtrace 4 frames — DONE（`X::AdHoc.new.throw` の setting
-    `throw` frame を `.backtrace.list` 先頭に積む。structured-only でレンダリング
-    テキストからは隠す。`build_backtrace_value_with_leading`）。
-  - test 177: 二重引用符内 `{` を必ず closure 補間として扱う（balanced だが
-    完結しない `{` を含む一般ケース）。`{` 補間厳格化は broad-blast-radius
-    で高リスク（`"literal { brace }"` を現状 mutsu は許容、raku は Two terms）。
-    test 179 は「残ソースに `}` ゼロ」の限定ケースのみ DONE。
-- **Next slice 候補**:
-  なし — 全 182 subtest pass。
-- **Canary tests**:
-  `roast/S32-exceptions/misc.t`
-- **Primary files**:
-  `src/runtime/regex_parse_core.rs`, `src/compiler/helpers_phasers.rs`,
-  `src/runtime/builtins_control_flow.rs`, `src/ast.rs`
-
-### 1.2 IO の残三兄弟 — **完了 2026-07-01（3件とも whitelist 済み）**
-
-- **対象**:
-  `S32-io/io-handle.t`、`S32-io/io-cathandle.t`、`S32-io/lock.t`
-- **難度**: Hard
-- **根本原因**:
-  「少し足りない IO」ではなく、mutable handle object / handle 合成 /
-  OS lock primitive が未完成だった。
-- **変更レイヤ**:
-  `runtime/native_methods/*`、`native_io/io_cathandle.rs`、`native_io/io_handle.rs`、
-  `native_io/native_io_path.rs`、`value/value_eq.rs`、`runtime/resolution_call_sub.rs`。
-
-内訳:
-
-- `io-handle.t`: **DONE（30/30, whitelist 済み）**。
-  user-subclassable `IO::Handle` と `READ` / `WRITE` / `EOF` の多相 dispatch を実装。
-- `io-cathandle.t`: **DONE（31/31, whitelist 済み, 2026-07-01）**。
-  `IO::CatHandle` 自体の実装は完了済みだったが、残り 2 subtest
-  （`on-switch`、`perl`）で 3 つの一般バグを発見・修正:
-  1. `call_sub_value(..., merge_all: true)`（native Rust から Raku callable を
-     呼ぶ経路 — on-switch callback だけでなく Promise/Supply tap、`reduce`、
-     lvalue Proxy FETCH/STORE も含む）が、キャプチャした外側変数への書き込みを
-     呼び出し元ローカルスロットへ反映すべき対象として記録する際、値の型を
-     `Bool`/`Int`/`Num`/`Str`/`Rat` のみに限定しており、List や Nil への
-     代入が見えなくなっていた（`resolution_call_sub.rs`）。回帰テスト:
-     `t/native-callback-captured-write-nonscalar.t`。
-  2. `IO::Path.raku` が実際の `class_name` ではなく `$!SPEC` 属性から
-     class 名を導出していたため（`IO::Spec::Unix` → `IO::Path::Unix`）、
-     素の `IO::Path` インスタンスの `.raku.EVAL` が別クラスのインスタンスを
-     生成し `eqv` が成立しなかった（`native_io_path.rs`）。回帰テスト:
-     `t/io-path-raku-class-roundtrip.t`。
-  3. `IO::Handle` の `is-deeply`/`eqv` が `handle`（`.open()` ごとに異なる
-     内部 fd レジストリ id）や `mode` まで比較していたため、同じファイルへの
-     独立した 2 つの open が等しいと判定されなかった。実 Rakudo 2022.12 で
-     同じシナリオが `True` になることを確認した上で、`path`/`chomp`/`nl-in`/
-     `nl-out`/`encoding`/`bin` のみを比較する専用 `PartialEq` 分岐を追加
-     （`value_eq.rs`）。回帰テスト: `t/io-handle-eqv-ignores-open-state.t`。
-  併せて `IO::CatHandle`/`IO::Handle` の `raku`/`perl` が native method
-  whitelist に登録されておらず空の `.new` にフォールバックしていた問題も修正。
-- `lock.t`: **DONE（whitelist 済み）**。
-  `fcntl` record lock（`F_SETLK`/`F_SETLKW` × `F_RDLCK`/`F_WRLCK`）で
-  `IO::Handle.lock`/`.unlock` を実装。モード不一致（read handle に排他 /
-  write handle に共有）は kernel が `EBADF` を返すので `X::IO::Lock` Failure に整形。
-  cross-process 観測は `is_run` が lock コードを in-process（同 PID で fcntl が
-  競合しない）で走らせていたのを subprocess 強制に変更して解決。
-  併せて 3 つの一般バグも修正:
-  (1) `.method: 'a' and .method: 'b'` の colon-arg が loose `and`/`or` を取り込む
-  parser バグ（listop 引数として parse し直し）、
-  (2) fire-and-forget `start` スレッド出力が program exit で drain されず消える、
-  (3) `IO::CatHandle.lock`/`.unlock` を active handle へ委譲（無ければ Nil）。
-
-実装順は次で見るのがよい。
-
-1. `IO::Handle` object が「native fd を持つ可変レシーバ」であることを固定する
-2. `READ` / `WRITE` / `EOF` を method dispatch に通す
-3. `IO::CatHandle` を「複数 handle の逐次読み source」として実装する
-4. file lock は最後に OS primitive を足す
-
-### 1.3 Unicode / RakuAST / Collation
-
-**前提（2026-06-27 調査）**: mutsu の Unicode 対応は実質完成。
-S15 全 81 ファイル、および tractable な S32-str Unicode 機能
-（fc/flip/comb/tc/tclc/uc/capitalize/samecase/samemark/uniparse/utf8-c8 …）は
-すべて whitelist 済み。未 whitelist の Unicode テストは下記 2 件のみで、
-どちらも大規模サブシステム待ち。新規に着手して通せる tractable な Unicode
-テストは残っていない。
-
-- `S32-str/CollationTest_NON_IGNORABLE-3.t`
-  - **難度**: Hard
-  - **根本原因**:
-    1369 中 2 失敗（test 1161, 1171）。ICU4X が BMP センチネル noncharacter を
-    特別扱いする（U+FFFE = primary-ignorable、U+FFFF = max-sentinel）一方、
-    UCA-17/MoarVM は全 noncharacter に codepoint 由来 implicit weight
-    （AAAA=0xFBC0+(cp>>15)）を付与するため。mutsu は符号位置を正しく保持して
-    おり、差異は ICU4X collator 内部のみ。
-  - **依存方針の調査結果**:
-    - `icu_collator`（icu4x）は **完全 pure Rust・C 依存なし**。ICU4C（C ライブラリ）
-      とは別物で、データも Rust crate に同梱（`cargo tree` で確認）。
-      よって「外部 C 依存を減らす」観点では現状すでに問題なし。
-    - 代替（すべて pure Rust）: **feruca**（from-scratch UCA、Unicode16/CLDR46、
-      icu4x より小依存・2-4倍速、spec 準拠なので noncharacter バグは直る見込み／
-      要実測）、collate（成熟度低）、rust_icu（ICU4C bindings = **C 依存が増える**、却下）。
-    - 自前実装の規模 ≒ feruca を作り直す（DUCET データ + contraction/expansion +
-      implicit weight 派生 + sort key 構築、数千行 + 生成データ）。pure Rust の
-      feruca が既にある以上、自前実装の妥当性は低い。
-    - feruca 採用時の **要検証リスク**: 現状の `coll` は icu4x で 3 強度比較して
-      `$*COLLATION` の 4 レベル個別 reverse/disable を合成している。feruca の公開
-      API は `collate()` 一本で per-strength / sort key を露出しないため、
-      `coll` + 非デフォルト `$*COLLATION` の再現が難しい可能性がある。
-  - **評価**:
-    実バグだが正しい修正には DUCET ベースの collation 入れ替え（feruca 移行 or
-    自前実装）が必要で、2 ケースのために大仕事。noncharacter は交換用途では
-    非妥当文字で実害も薄い。低 ROI のため defer。着手するなら feruca を throwaway
-    で実測（noncharacter 修正可否 + coll/$*COLLATION 維持可否）してから判断する。
-- `S32-str/format.t`
-  - **難度**: Hard
-  - **現状**: 49 中 26 到達・全 pass。`Format`/`.fmt` は完全実装済みで、
-    test 30-49 相当（List/Seq/Set/Bag/Mix/Map への `.fmt`）も単体では動く。
-  - **評価**:
-    test 27-29 が `Formatter::Syntax.parse`→Match、`Formatter.CODE`→Callable、
-    `Formatter.AST`→`RakuAST::Node` を要求し、ここで runtime error 中断するため
-    以降が到達不能。本質は **RakuAST サブシステム不在**。参照 raku 本体すら
-    `Format`（6.e）未対応。RakuAST::Node を偽装するのは stub（禁止）なので、
-    RakuAST 本実装なしには whitelist 不可。
+- `S32-str/CollationTest_NON_IGNORABLE-3.t`（1367/1369、test 1161, 1171 が失敗）
+  - **根本原因**: ICU4X が BMP センチネル noncharacter（U+FFFE/U+FFFF）を特別扱いする一方、
+    UCA-17/MoarVM は全 noncharacter に符号位置由来の implicit weight を付与するため。
+    mutsu は符号位置を正しく保持しており、差異は ICU4X collator 内部のみ。
+  - **評価**: 正しい修正には DUCET ベースの collation 実装差し替え（pure Rust の `feruca` 移行
+    または自前実装）が必要。2 ケースのために大仕事かつ per-strength API の互換性リスクもあり、
+    低 ROI のため据え置き。着手するなら `feruca` を throwaway で実測してから判断する。
+- `S32-str/format.t`（reachable 26/49 は全 pass、test 27-29 で中断）
+  - **根本原因**: `Formatter::Syntax.parse`→Match、`Formatter.CODE`→Callable、
+    `Formatter.AST`→`RakuAST::Node` を要求し、ここで runtime error 中断するため以降が到達不能。
+    本質は **RakuAST サブシステム不在**（参照 raku 本体すら `Format` 6.e 未対応）。
+  - **評価**: RakuAST 本実装なしには whitelist 不可。stub 化は禁止のため据え置き。
 
 ---
 
-## 2. 優先度B — 局所修正で前進するが、複数論点を含む
+## 2. 局所修正で進む残り
 
-### 2.1 `S06-signature/slurpy-params.t` — DONE (PR #3918)
+### 2.1 `S04-declarations/my-6e.t`
 
-`+a`/`+@a` の single-argument-rule Seq type preservation と Seq single-pass
-consumption を実装し、ファイルは 86/86 で whitelist 済み。`+foo` は単一 Seq を
-materialize せず Seq のまま保持し（`.WHAT === Seq`）、`+@foo` は List 化、再反復は
-`X::Seq::Consumed` を投げる。lazy infinite slurpy（`oneargraw(1..*)[^5]`）も通る。
+- **現状**: 108/109（test 61 のみ失敗）。
+- **論点**: 直近の一斉修正（block-local scope leak 修正、our-sub block-lexical capture 等）で
+  99→106→108 まで前進。残る test 61 は個別に最小再現を取って調査する。
+- **Canary**: `roast/S04-declarations/my-6e.t`
 
-### 2.2 `S04-statements/for.t`
+### 2.2 `S02-types/generics.t`
 
-- **難度**: Medium
-- **主な論点**:
-  bad loop-var binding と topic aliasing edge case
-- **評価**:
-  旧版どおり局所修正で進む。
-  parser / control-flow 周辺に閉じていて扱いやすい。
+- **現状**: 0/1（変化なし）。
+- **論点**: 6.e の coercion type 項 + `Array[T]` サブクラス化が必要。ローカル raku
+  (v2022.12=6.d) でもこのテスト自体がコンパイルに失敗するため、参照実装での検証すらできない。
+- **評価**: 深い機能待ちで、局所修正では進まない。優先度は低い。
 
-### 2.3 `S04-declarations/my-6e.t`
+### 2.3 multislice lvalue（array/hash）
 
-- **難度**: Medium
-- **論点**:
-  EVAL が外側 lexical scope を見られるか
-- **評価**:
-  broad な main track ではなく、EVAL と lexical visibility の局所課題として扱える。
+- **対象**: `S32-array/multislice-6e.t`（784/812、28 失敗）、
+  `S32-hash/multislice-6e.t`（318 実行時点で plan mismatch、90 失敗——ファイルが途中で中断）。
+- **論点**: `@a[0;0;0] = 999`、`%h<a;b;c> = 999` の lvalue 書き戻し経路。
+- **根本原因**: single subscript と multislice が同じ「書き戻し可能 target 集合」抽象を
+  返していない。array 側はかなり前進した（605→157→28 まで縮小）が、hash 側はまだ
+  Track B（要素 cell 化・ADR-0001 層3a・GC と統合キャンペーン）待ちで大きく残っている。
+- **変更レイヤ**: `vm_var_index_ops` / `vm_var_assign_ops` / lvalue binding surface
+- **Next slice**: array 側の残り 28 件から着手し、hash 側の plan mismatch（中断の原因）を
+  先に切り分ける。
+- **Primary files**: `src/vm/vm_var_index_ops.rs`, `src/vm/vm_var_assign_ops.rs`
 
-### 2.4 `S03-operators/inplace.t` — ✅ DONE (2026-06-30)
+### 2.4 `S06-operator-overloading/infix.t`
 
-- **修正**: `.=` メタ演算子が read-only container topic を通して書き戻せる
-  ようにした（#3939）。readonly constant や class instantiation に対する
-  `$x .= method` が、トピック container が read-only でも attribute slot 経由で
-  書き戻る。
-- **確認**: inplace.t 38/38 PASS、whitelist 済み、make test green。
-
-### 2.5 `S02-types/generics.t`
-
-- **難度**: Medium
-- **論点**:
-  nominalizable generic type
-- **評価**:
-  parameterized role/MOP ほど深くはないが、型オブジェクト側の整理が必要。
-
-### 2.6 `S02-literals/allomorphic.t` — ✅ DONE (2026-06-30)
-
-- **修正**: 同名 `my class` が宣言サイトごとに固有の identity を持つようにした。
-  - parser が各 `ClassDecl` に安定した `decl_id`（parse 時に採番、ループ本体は
-    同一ノード=同一 id）を付与。
-  - `exec_register_class_op` は、別サイトの同名 lexical class が既に「完全定義
-    （非 stub）」として registry に存在する場合、新しいクラスを mangled な内部名
-    `Foo\u{0}<decl_id>` で登録する。bare 名は lexical env 経由で mangled 名に
-    解決されるので、そのスコープ内の `Foo.new` は自分の identity を持つ instance を
-    生成し、別 gather の同名クラスを潰さない。
-  - stub upgrade（`my class C { ... }` → `my class C { ... }`）は registry 上の
-    既存エントリが stub のため mangle されず、同じエントリに着地する。
-  - `is Parent` の親参照は lexical env を通して解決し、mangled な親にも正しく
-    リンクする（roles-6e.t の同名 `my class C0` 二重宣言を守る）。
-  - 表示（`.^name` / `.gist` / `.raku` / `.WHAT`）は `user_facing_type_name` で
-    `\u{0}` 以降を落とし、ユーザからは常に bare 名に見える。
-- **確認**: allomorphic.t 119/119、roles-6e.t、class-too-late-for-repr.t、
-  `t/lexical-class-identity.t`、make test すべて green。
-
-### 2.7 multislice lvalue
-
-- **対象**:
-  `S32-array/multislice-6e.t`、`S32-hash/multislice-6e.t`
-- **難度**: Medium
-- **論点**:
-  `@a[0;0;0] = 999`、`%h<a;b;c> = 999` の lvalue 書き戻し経路
-- **評価**:
-  旧版の「main track blocked」よりは軽い。
-  subscript-as-lvalue 経路の未実装として独立管理でよい。
-
-- **変更レイヤ**:
-  parser ではなく `vm_var_index_ops` / `vm_var_assign_ops` / lvalue binding surface
-- **最初の 1 PR**:
-  単一 subscript と multislice が同じ「書き戻し可能 target 集合」抽象を返すようにする
-- **完了条件**:
-  `assignable-ok(\target, ...)` の内部からの read/write が、呼び出し中に元配列/元ハッシュへ見える
-
-### 2.8 `S04-declarations/constant.t` — RESOLVED (2026-06-30, whitelisted)
-
-72/72 passing. 最後の二点を実装:
-- `G::c`（`my constant G = F::B` の定数型エイリアス経由の enum variant 参照）:
-  パーサが宣言済み term を末尾 `::` で打ち切らないよう修正し、VM 側で
-  `resolve_qualified_enum_alias` がプレフィックスを enum 型に解決して variant を引く。
-- 演算子シノニムの multi 共有: `constant &infix:<comet> := &infix:<snowman>` の後の
-  `multi sub infix:<comet>(Str,Int)` 候補を、register 時に `operator_alias_target`
-  でエイリアス先（snowman）にも登録。両名から候補が見えるようになった。
+- **現状**: 35/42（7 失敗: test 22-23, 28, 31-32, 35, 40）。
+- **経緯**: `import ClassName` 経由の演算子メソッド export（#3982）で 14→35 まで前進したが、
+  直近のコミットメッセージが示唆する「ほぼ完了」には未達。test 11 は rakudo 自身が
+  `#?rakudo todo` で divergent としている既知の1件で、それとは別に 7 件が未解決。
+- **評価**: whitelist する前にこの 7 件を個別に潰す必要がある。安易に whitelist しないこと。
+- **Canary**: `roast/S06-operator-overloading/infix.t`
 
 ---
 
-## 3. main track 待ち — いま個別に触っても前進しにくい
+## 3. 第一級コンテナ / container identity
 
-この節は「直せない」ではなく、
-**先に container identity / lazy array / dispatch 基盤が進んだ方が速い**
-という意味。
+`S32-array/splice.t` の self-splice、`S02-types/whatever.t` の container preservation、
+`S14-traits/attributes.t` の per-attribute Scalar container など、
+element/attribute slot の書き戻しが未整備な項目が集まっている。
+すでに whitelist 済みの項目（`temp.t`、`adverbs.t` の typed-hash default、`capture.t`、
+`is_default.t`、`walk.t` など）は `news/2026-06.md` を参照。
 
-### 3.1 第一級コンテナ / container identity
+### 3.1 残っている対象
 
-この群は今も最大のレバー。
+- `S02-names-vars/variables-and-packages.t`（30/39、9 失敗: test 29-34, 37-39）
+  — BEGIN-time compile execution、forward-reference detection が根本原因。
+- `S14-traits/attributes.t`（4/8、bad plan：8 planned に対し 4 で中断）
+  — `Attribute.container.VAR does Role` に必要な「scalar 属性が Scalar コンテナを VAR として
+  持ち、合成時に role を mixin し、それがインスタンスの per-attribute コンテナに伝播する」
+  という深いコンテナ表現。mutsu の scalar 属性は値を直接保持し VAR は Any を返すため、
+  属性 slot の cell 化（本項の Primary files 参照）待ち。`$my_ref := $obj.attr`
+  （scalar accessor への `:=` 束縛）も同根の残課題。
+- `S12-subset/subtypes.t`（83/90、7 失敗: test 25, 68, 77, 83, 87-89）
+  — where-block placeholder、expr-position constraint persistence、capture where の一部。
+- `S02-types/whatever.t`（122/130、8 失敗: test 111, 119-124, 126）
+  — WhateverCode の over-currying（CallOn-arg branch で握りすぎる）。他ケースを壊さない
+  narrow fix が必要。
+- `S32-array/splice.t`（357/392、35 失敗）
+  — self-splice / push-replace-self が true first-class element container を要求する
+  container identity の canary。
+- `S26-documentation/12-non-breaking-space.t`（1/2、test 2 が失敗）
+  — Pod テーブル中の non-breaking space 文字を網羅列挙してテストする subtest。
+  過去の分析では「BEGIN 中の配列 lexical 変更が外へ永続化しない」ことが疑われていたが、
+  専用の再調査はまだ未実施。個別の最小再現から始める必要がある。
 
-- `S02-types/capture.t`
-- `S02-names-vars/variables-and-packages.t`
-- ~~`S04-blocks-and-statements/temp.t`~~ — DONE (whitelisted): `temp`
-  restoration on sub/recursive exit, `++temp`, the NYI `TEMP {}` phaser,
-  multi-level indexed lvalues (`temp $s[1]<k>[1] = v`, via whole-base-container
-  save), and `temp $*undeclared` -> `X::Dynamic::NotFound`.
-- `S14-traits/attributes.t`
-- `S12-subset/subtypes.t` の一部
-- `S02-types/whatever.t` のうち container preservation 系
-- ~~`S32-hash/adverbs.t` の typed-hash default survival~~ — DONE (whitelisted):
-  expression-position object-hash declarations (`gen my Int %j{Cool}`) now tag
-  the value-type half of the constraint so missing-key adverb defaults resolve
-  to the element type, and `Pair.Str` stringifies a type-object value as `""`
-  (raku `eq`-compares `(k => Any)` and `(k => Mu)` equal in `is`).
-- `S32-array/splice.t`
-- `S02-names/is_default.t`
-
-**再評価で移動した項目**:
-
-- `S26-documentation/12-non-breaking-space.t`
-  - 旧版は Pod / BEGIN hoisting 側に寄せていたが、
-    `TODO_roast/S26.md` の分析では
-    **BEGIN 中の配列 lexical 変更が外へ永続化しない**ことが主因。
-  - つまり isolated Pod 問題ではなく、container identity 側の課題。
-- `S12-introspection/walk.t`
-  - 旧版は self-contained MOP としていたが、
-    実際の残りは
-    **public rw accessor mutation の永続化**と
-    **lazy one-at-a-time invocation**。
-  - したがって、これも main track 待ちに移すのが正しい。
-
-ここは「container identity が必要」というだけでは粗い。実際には
-次の 4 サブキャンペーンに分けて追うべき。
+### 3.2 サブキャンペーンと choke point
 
 1. **配列/ハッシュ要素 cell 化**
    - 依存文書: `docs/container-identity.md`
    - 変更レイヤ: `value/mod.rs`、`vm_var_assign_ops.rs`、`vm_var_index_ops.rs`
-   - 最初の 1 PR: 既存 helper への write-through 集約を増やす
+   - 対象: `splice.t`, multislice（§2.3）
    - 完了条件: element bind / take-rw / deep nested write が post-call writeback なしで成立
 2. **属性 accessor を value copy ではなく slot 経由にする**
-   - 変更レイヤ: attribute read/write path、instance attr storage、methods instance ops
-   - 対象: `S14-traits/attributes.t`
-   - 状況:
-     - `S12-attributes/clone.t`（whitelist 済み, PR #2253）と
-       `S12-introspection/walk.t`（whitelist 済み）は既に通過済み。
-     - `$obj.attr .= meth`（`is rw` accessor への `.=` メタop）は属性 slot へ
-       書き戻すよう修正済み（`wrap_dot_assign` に method-call lvalue アームを追加）。
-     - 残るのは `S14-traits/attributes.t` の 5–8（`Attribute.container.VAR does Role`）。
-       これは「scalar 属性が Scalar コンテナを VAR として持ち、合成時に role を
-       mixin し、それがインスタンスの per-attribute コンテナに伝播する」という
-       深いコンテナ表現が必要。mutsu の scalar 属性は値を直接保持し VAR は Any を
-       返すため、ここは main track（slot identity 再設計）待ち。
-     - 残課題: `$my_ref := $obj.attr`（scalar accessor への `:=` 束縛）も同じく
-       属性 slot の cell 化が必要（配列/ハッシュ要素 `$r := @a[0]` は既に動く）。
-3. **typed-hash default / Capture 書き戻し / wrapper capture**
-   - 変更レイヤ: hash missing-key default、Capture bind/writeback、wrap closure env
-   - 対象: ~~`S32-hash/adverbs.t`~~ (DONE), `S02-types/capture.t`, `S02-types/whatever.t`
-4. **BEGIN/EVAL/lexical 配列変更の永続化**
+   - 変更レイヤ: attribute read/write path、instance attr storage
+   - 対象: `S14-traits/attributes.t` の残り（`Attribute.container.VAR does Role`）
+3. **BEGIN/EVAL/lexical 配列変更の永続化**
    - 変更レイヤ: env/local coherence、block escape、BEGIN 実行時 lexical carrier
-   - 対象: `S26-documentation/12-non-breaking-space.t`, `temp.t`, package/var tests
-
-言い換えると、「第一級コンテナ」は単独 blocker 名ではなく、
-**slot identity をどこまで VM の正規表現にするか**という設計課題である。
-
-コード choke point は既にかなり見えている。
-
-- 要素 write 集約:
-  - `src/value/mod.rs::assign_element_slot`
-  - `src/value/mod.rs::hash_insert_through`
-- 要素 read decont:
-  - `resolve_array_entry`
-  - `resolve_hash_entry`
-- whole-container / env-local coherence:
-  - `docs/env-locals-coherence.md`
-  - `src/vm/vm_env_helpers.rs`
-  - `SetLocal` / `flush_local_to_env` / bound-container metadata
-
-したがって、container 系で先にやるべきなのは新しい workaround を足すことではなく、
-**read/write surface をこの choke point 群へさらに寄せること**である。
-
-- **Next slice**:
-  配列/ハッシュ write を helper 経由へさらに寄せ、post-call writeback 依存を 1 段減らす
-- **Canary tests**:
-  `roast/S32-array/splice.t`, `roast/S32-hash/adverbs.t`,
-  `roast/S02-types/capture.t`, `roast/S02-names-vars/variables-and-packages.t`
-- **Primary files**:
-  `src/value/mod.rs`, `src/vm/vm_var_assign_ops.rs`,
-  `src/vm/vm_var_index_ops.rs`, `src/vm/vm_env_helpers.rs`
-
-### 3.2 真の lazy 配列 / 無限列
-
-- `S09-subscript/slice.t`
-- `S03-operators/eqv.t` の lazy case
-- （`S06-signature/slurpy-params.t` の lazy slurpy half は §2.1 で DONE / PR #3918）
-
-ここは `docs/lazy-arrays.md` の L2b-L4 と同じ話。
-closure-based infinite sequence はかなり進んだが、
-**Array が lazy を保ったまま mutation / slice / slurpy に耐えられない**。
-
-ただし、ここにも 2 本ある。
-
-1. **Array-held lazy source**
-   - 依存文書: `docs/lazy-arrays.md`
-   - 変更レイヤ: `LazyList` 表現、`@`-assign preserve、mutation 時 reify、slice/index
-   - 対象: `S09-subscript/slice.t`, lazy slurpy half
-2. **Seq single-pass consumption**
-   - 変更レイヤ: `Value::Seq` / `LazyList` の consumed state と iterator API
-   - 対象: lazy `eqv`, 一部 list ops
-     （`S06-signature/slurpy-params.t` は §2.1 で DONE / PR #3918）
-
-`docs/lazy-arrays.md` は前者の設計文書としては十分細かい。
-後者には [docs/seq-single-pass-consumption.md](../docs/seq-single-pass-consumption.md) を新設した。
+   - 対象: `S26-documentation/12-non-breaking-space.t`、
+     `S02-names-vars/variables-and-packages.t`
 
 コード choke point:
 
-- Array-held lazy source:
-  - `src/runtime/resolution_lazy.rs`
-  - `src/runtime/methods_call_dispatch.rs`
-  - `src/runtime/methods_type_coerce.rs`
-  - `src/runtime/builtins_operators_infix.rs`
-- Seq consumed guard:
-  - `src/runtime/methods_call_dispatch.rs`
-  - `src/runtime/methods_dispatch_match2.rs`
-  - `src/runtime/test_functions/comparison.rs`
+- 要素 write 集約: `src/value/mod.rs::assign_element_slot`, `src/value/mod.rs::hash_insert_through`
+- 要素 read decont: `resolve_array_entry`, `resolve_hash_entry`
+- whole-container / env-local coherence: `docs/env-locals-coherence.md`,
+  `src/vm/vm_env_helpers.rs`, `SetLocal` / `flush_local_to_env` / bound-container metadata
 
-つまり、lazy array campaign は既存文書どおり `LazyList` の reify/mutation を進めればよいが、
-`X::Seq::Consumed` は **別に guard 点の棚卸し**が必要。
+- **Next slice**: `splice.t` の self-splice ケースから、配列 write を helper 経由へさらに
+  寄せて post-call writeback 依存を 1 段減らす。
+- **Canary tests**: `roast/S32-array/splice.t`, `roast/S14-traits/attributes.t`,
+  `roast/S02-names-vars/variables-and-packages.t`
 
-- **Next slice**:
-  `(1...*)` / closure-seq の `@`-assign preserve と mutation-side reify の差分整理
-- **Canary tests**:
-  `roast/S09-subscript/slice.t`, `roast/S03-operators/eqv.t`
-- **Primary files**:
-  `src/runtime/resolution_lazy.rs`,
-  `src/runtime/methods_call_dispatch.rs`,
+---
+
+## 4. 真の lazy 配列 / 無限列
+
+`eqv` の both-lazy ガードと `+a`/`+@a` の Seq single-pass consumption は完了済み
+（詳細は `news/2026-06.md`）。残るのは 1 ファイルのみ。
+
+### 4.1 `S09-subscript/slice.t`
+
+- **現状**: 32/56（24 失敗）。以前は途中で中断していたが、周辺の一般修正で最後まで
+  実行が通るようになった。
+- **論点**: sequence-literal-in-index、slice adverbs、lazy semantics が絡む。
+  `docs/lazy-arrays.md` の L2b-L4 と同じ話 — Array が lazy を保ったまま
+  mutation / slice / slurpy に耐えられない。
+- **変更レイヤ**: `LazyList` 表現、`@`-assign preserve、mutation 時 reify、slice/index
+- **Primary files**: `src/runtime/resolution_lazy.rs`, `src/runtime/methods_call_dispatch.rs`,
   `src/runtime/methods_type_coerce.rs`
-
-### 3.3 object-hash / junction key — **DONE (classify.t whitelisted, 2026-06-29)**
-
-- ~~`S32-list/classify.t`~~ **PASS / whitelisted**
-
-`classify`/`categorize` keyed by a non-`Str` classifier result (e.g. a Junction
-from `*.contains: any ...`) now builds an OBJECT hash. Implemented in:
-- `builtins_collection_classify.rs`: `classify_finish_hash` marks the result an
-  object hash (`key_type=Some("Any")` + `original_keys`) when any first-level key
-  is non-Str.
-- `builtins/methods_0arg/collection.rs` `.keys`: honor `has_typed_keys()` (was
-  Set/Bag/Mix `__setty_origin`-only) so object-hash keys come back as real objects.
-- `vm/vm_var_index_ops.rs`: BOTH junction-subscript autothreading sites now skip
-  threading on an object hash (`has_typed_keys()`, peeking through Scalar/
-  ContainerRef) → falls to the `.WHICH`/encoding key lookup; and the object-hash
-  key type-check is skipped for `Any`/`Mu` key types (which accept a Junction key
-  that `type_matches_value` would otherwise autothread+reject).
-- `parser/primary/ident/predicates.rs`: added `classify`/`categorize` to
-  `is_listop` so the bare-sub list-op form `classify *.meth, @list` parses (was
-  read as `classify * (.meth ...)` infix-multiply → "Cannot convert string to
-  number 'classify'").
-
-Pin: `t/classify-object-hash.t`. NOTE: a *declared* object hash `my %h{Any}` with
-an Array/object KEY in a STORE (`%h{[1,2]} = ...`) is still treated as a slice on
-the write path — broader object-hash subscript STORE remains future work (the
-classify result is read-only, so this PR's read path suffices).
-
-### 3.4 dispatch-sensitive cluster
-
-main track ほどではないが、局所修正を積み上げるより
-dispatch 基盤を意識してまとめて触った方がよい群。
-
-- `S06-advanced/wrap.t`
-- `S06-advanced/dispatching.t`
-- `S03-operators/assign.t`
-- `S03-metaops/hyper.t`
-
-これらは parser、multi dispatch、call cache、wrapper lexical visibility が絡む。
-
-ここも少なくとも 3 本に分ける。
-
-1. **wrapper / closure lexical visibility**
-   - 対象: `wrap.t`, 一部 `assign.t`
-   - 変更レイヤ: wrap 時の env capture、callsite lexical overlay
-2. **multi dispatch / cache / candidate ordering**
-   - 対象: `dispatching.t`, `hyper.t` の callable side
-   - 変更レイヤ: candidate selection、cache key、wrapper 後 invalidation
-3. **operator sugar が dispatch へ落ちるまでの surface**
-   - 対象: `assign.t`
-   - 変更レイヤ: parser lowering、compound assign / method-call desugar
-
-`S12-methods/qualified.t` はここから外す。parameterized role の残件は完了済み。
-
-コード choke point:
-
-- wrapper / lexical overlay:
-  - `src/runtime/resolution_call_sub.rs`
-- candidate selection / cache:
-  - `src/runtime/methods_dispatch_match2.rs`
-- assign / operator desugar:
-  - parser lowering と `vm_var_assign_ops`
-
-この cluster は「まず parser か runtime か」が案件ごとに違うので、
-ファイル名を見ずに generic に片付けようとすると迷子になる。
-
-- **Next slice**:
-  `wrap.t` を入口に closure lexical overlay の authoritative path を 1 本決める
-- **Canary tests**:
-  `roast/S06-advanced/wrap.t`, `roast/S06-advanced/dispatching.t`,
-  `roast/S03-operators/assign.t`
-- **Primary files**:
-  `src/runtime/resolution_call_sub.rs`,
-  `src/runtime/methods_dispatch_match2.rs`,
-  `src/vm/vm_var_assign_ops.rs`
+- **Next slice**: 24 件の失敗を種類ごとに分類し、`docs/lazy-arrays.md` に沿って
+  reify/mutation を進める。
 
 ---
 
-## 4. 並行・非同期 — S17 を中心とした別軸の重課題
+## 5. dispatch cluster
 
-この軸は roast 全体の中でも性質が違う。
-container identity や lazy 配列とは別に、
-**スケジューラと同期原語の正しさ**が問われる。
+`wrap.t` / `dispatching.t` / `qualified.t` / `assign.t` は完了済み（詳細は
+`news/2026-06.md` / `news/2026-07.md`）。残るのは演算子 sugar が dispatch へ落ちるまでの
+surface のうち 1 ファイル。
 
-主な未解決:
+### 5.1 `S03-metaops/hyper.t`
 
-- `S17-lowlevel/semaphore.t`
-- `S17-lowlevel/lock.t`
-- `S17-promise/start.t`
-- `S17-promise/then.t`
-- `S17-scheduler/basic.t`
-- `S17-supply/migrate.t`
-- `S17-supply/stable.t`
-- `S17-supply/syntax.t`
-- `S07-hyperrace/basics.t`
-
-補足:
-
-- `S17-promise/nonblocking-await.t` はもう whitelisted。
-- `S17-supply/categorize.t` も whitelisted。
-- したがって旧版の「S17 全体が広く停滞」は、今は言い過ぎ。
-  残っているのは **本当に重い並行 primitives** に寄っている。
-
-この節は今後、次の 4 軸で見る。
-
-### 4.1 shared scalar coherence
-
-- **対象**:
-  `S17-lowlevel/semaphore.t`、一部 `Promise.start` / `lock-async`
-- **根本原因**:
-  thread clone された lexical `$x` が bare read では stale のまま。
-  `Lock.protect` には専用 resync があるが、Semaphore には無い。
-- **変更レイヤ**:
-  `shared_vars` / `shared_vars_dirty`、thread env clone、critical section entry/exit
-- **最初の 1 PR**:
-  `Semaphore.acquire/release` を `call_protect_block` と同型の resync/writeback chokepoint に寄せる
-- **完了条件**:
-  bare semaphore critical section でも captured scalar の read-modify-write が安定する
-
-- **コード choke point**:
-  - `src/runtime/native_methods/concurrency.rs`
-  - `src/runtime/resolution_eval.rs::call_protect_block`
-  - `src/runtime/runtime_shared_vars.rs::sync_shared_vars_to_env`
-  - `src/runtime/native_methods/state_lock.rs`
-- **Next slice**:
-  semaphore 保護ブロックを `call_protect_block` 型の reconcile/writeback helper に寄せる
-- **Canary tests**:
-  `roast/S17-lowlevel/semaphore.t`, `roast/S17-promise/lock-async.t`
-- **Primary files**:
-  `src/runtime/native_methods/concurrency.rs`,
-  `src/runtime/runtime_shared_vars.rs`,
-  `src/runtime/native_methods/state_lock.rs`
-
-### 4.2 scheduler / detached task lifecycle
-
-- **対象**:
-  `S17-promise/start.t`、`then.t`、`S17-scheduler/basic.t`
-- **根本原因**:
-  detached `start` / cue / uncaught handler / TAP sync が別々に欠けている
-- **変更レイヤ**:
-  scheduler queue、thread spawn/join、uncaught exception reporting、test runtime bridge
-- **最初の 1 PR**:
-  `$*SCHEDULER.uncaught_handler` と start-thread exception propagation を先に固定する
-- **完了条件**:
-  task 起動、失敗、完了、reporting の lifecycle が 1 本の実装で閉じる
-
-- **コード choke point**:
-  - `src/runtime/native_methods/scheduler.rs`
-  - `src/runtime/native_methods/state_scheduler.rs`
-  - `src/runtime/methods_promise.rs`
-  - `src/runtime/builtins_system_async.rs`
-- **Next slice**:
-  detached `start` failure を `$*SCHEDULER.uncaught_handler` へ通す経路を 1 本化する
-- **Canary tests**:
-  `roast/S17-promise/start.t`, `roast/S17-promise/then.t`,
-  `roast/S17-scheduler/basic.t`
-- **Primary files**:
-  `src/runtime/native_methods/scheduler.rs`,
-  `src/runtime/native_methods/state_scheduler.rs`,
-  `src/runtime/methods_promise.rs`
-
-### 4.3 Supply combinator / timer-driven flush
-
-- **対象**:
-  `S17-supply/stable.t`、`migrate.t`、`syntax.t`、flaky `batch.t`
-- **根本原因**:
-  emit-driven 実装が多く、time-based operator に background clock / cue が無い
-- **変更レイヤ**:
-  supply registry、scheduler cue、native supply mut methods
-- **最初の 1 PR**:
-  `batch(:seconds)` 系の flush を emit 依存から scheduler cue 依存へ分離する
-- **完了条件**:
-  Supply operator が「次の emit が来たら動く」のではなく、時間と demand の両方で駆動される
-
-- **コード choke point**:
-  - `src/runtime/native_supply_mut_methods.rs`
-  - supply registry 群
-  - scheduler cue の接続点
-- **Next slice**:
-  `batch(:seconds)` を emit-driven flush から scheduler cue-driven flush へ分離する
-- **Canary tests**:
-  `roast/S17-supply/stable.t`, `roast/S17-supply/migrate.t`,
-  `roast/S17-supply/syntax.t`
-- **Primary files**:
-  `src/runtime/native_supply_mut_methods.rs`,
-  `src/runtime/native_methods/scheduler.rs`,
-  supply state registry modules
-
-### 4.4 async IO / Proc::Async / socket supplies
-
-- **対象**:
-  `procasync/*`、`IO-Socket-Async*`、supply syntax の一部
-- **根本原因**:
-  encoding、stdin/stdout/stderr supply bridge、socket/listener 駆動が未成熟
-- **変更レイヤ**:
-  `methods_object_native_ctors_io.rs`、`native_methods/socket_*`、encoding layer
-- **最初の 1 PR**:
-  `Proc::Async` の encoding 無し happy-path を 1 本通す
-- **完了条件**:
-  child process / socket / Supply bridge が同じ scheduler と event-source model に載る
-
-- **コード choke point**:
-  - `src/runtime/methods_object_native_ctors_io.rs`
-  - `src/runtime/native_proc_async.rs`
-  - `src/runtime/native_methods/socket_async_conn.rs`
-  - `src/runtime/native_methods/encoding.rs`
-
-`Proc::Async` と socket supply は最後に見た目だけ合わせるのではなく、
-**event source -> channel/supply bridge -> scheduler** の 1 本化を先に考えるべき。
-
-- **Next slice**:
-  encoding 無しの `Proc::Async` happy-path を supply bridge と done/quit delivery まで揃える
-- **Canary tests**:
-  `roast/S17-procasync/basic.t`, `roast/S17-promise/basic.t`,
-  `roast/S32-io/IO-Socket-Async.t`
-- **Primary files**:
-  `src/runtime/methods_object_native_ctors_io.rs`,
-  `src/runtime/native_proc_async.rs`,
-  `src/runtime/native_methods/socket_async_conn.rs`
+- **現状**: 408 planned に対し 400 実行時点で 8 失敗（test 77, 108, 136, 141, 151, 362,
+  407-408）、plan mismatch あり。
+- **論点**: hyper/candidate selection の callable side。以前は ~154 件失敗していたが、
+  candidate selection 周りの一般修正で 8 件まで大きく縮小している。
+- **変更レイヤ**: `src/runtime/methods_dispatch_match2.rs`
+- **Next slice**: plan mismatch の原因を先に特定してから残り 8 件を潰す。
 
 ---
 
-## 5. whitelist を目標にしない項目
+## 6. 並行・非同期（S17）
 
-### 5.1 rakudo 側も失敗する、または roast 側の問題が強いもの
+大半は完了した（semaphore.t、then.t、scheduler/basic.t、supply/migrate.t、supply/stable.t、
+S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t —
+詳細は `news/2026-06.md` / `news/2026-07.md`）。残るのは次の 2 ファイル。
+
+### 6.1 `S17-lowlevel/lock.t` — 本物の race condition
+
+- **現状**: 3 planned に対し TAP 順序異常＋2 失敗。`Thread .join` を実スレッド join に
+  ルーティングする修正（#4026）が landed した後も再現する。
+- **症状**: `Lock.protect` 配下で複数スレッドが共有カウンタを increment するテストで、
+  期待列（10, 20, 30, ..., 1000）に対し実際の出力から特定のインクリメントが欠落したり
+  重複したりする（例: `420` が `0` になる、`10` が丸ごと消える、`710` が二重に出る）。
+  これは shared-scalar coherence の未解決部分であり、`S17-lowlevel/semaphore.t` で行った
+  `call_protect_block` 型の reconcile/writeback への寄せが `Lock` 自体にはまだ
+  適用されていない可能性が高い。
+- **変更レイヤ**: `shared_vars` / `shared_vars_dirty`、`Lock.protect` の critical section
+  entry/exit
+- **Primary files**: `src/runtime/native_methods/state_lock.rs`,
+  `src/runtime/runtime_shared_vars.rs`
+- **Next slice**: `Lock.protect` を `call_protect_block`（既存の resync/writeback
+  chokepoint）へ実際に寄せられているか確認し、寄せられていなければ semaphore.t の修正
+  （#3992）と同じパターンを適用する。TAP 順序異常は別に fire-and-forget スレッド出力の
+  drain タイミングの問題の可能性がある。
+
+### 6.2 `S17-supply/syntax.t`
+
+- **現状**: 88/90（test 75, 90 が失敗）。根本原因分析は `TODO_roast/S17.md` に記録済み:
+  - test 75: nested `whenever`（on-demand supply が `whenever Supply.interval {}` の
+    内側にある場合）は react loop でなく非-react tap 経路（`native_supply_mut`
+    tap/act）を通るため、その async body 完了時の `on_close_callbacks` 発火が
+    react-loop 側の仕組みに乗らない。
+  - test 90: 2 つの `whenever` がそれぞれ `last` する cross-whenever ordering — hard case、
+    据え置き。
+- **Canary**: `roast/S17-supply/syntax.t`
+
+### 6.3 async IO / Proc::Async / socket supplies（変化なし）
+
+- **対象**: `procasync/*`、`IO-Socket-Async*`
+- **根本原因**: encoding、stdin/stdout/stderr supply bridge、socket/listener 駆動が未成熟。
+- **変更レイヤ**: `methods_object_native_ctors_io.rs`、`native_methods/socket_*`、encoding layer
+- **Next slice**: encoding 無しの `Proc::Async` happy-path を supply bridge と done/quit
+  delivery まで揃える。
+- **Primary files**: `src/runtime/methods_object_native_ctors_io.rs`,
+  `src/runtime/native_proc_async.rs`, `src/runtime/native_methods/socket_async_conn.rs`
+
+---
+
+## 7. whitelist を目標にしない項目
+
+### 7.1 rakudo 側も失敗する、または roast 側の問題が強いもの
 
 ここは mutsu 側で一般改善が入るのはよいが、
 **そのファイルを whitelist すること自体を目標にしない**。
@@ -779,7 +253,8 @@ container identity や lazy 配列とは別に、
 - `S05-nonstrings/basic.t`
 - `S05-metasyntax/angle-brackets.t`
 - `S05-mass/rx.t`
-- `S06-advanced/caller.t`
+- `S06-advanced/caller.t` — stale test・over-stated plan（22 planned vs 実質 19 assertion）。
+  rakudo 自身の期待値と乖離しており unpassable と確定済み（#3975）。
 - `S06-advanced/return_function.t`
 - `S10-packages/require-and-use--dead-file.t`
 - `S12-traits/parameterized.t`
@@ -787,156 +262,28 @@ container identity や lazy 配列とは別に、
 - `S12-class/open_closed.t`
 - `S32-str/sprintf.t`
 
-### 5.2 低 ROI で後回しにすべきもの
+### 7.2 低 ROI で後回しにすべきもの
 
-- `S32-str/CollationTest_NON_IGNORABLE-3.t`
-  - 2 ケースのために実装が重すぎる。
-- `S32-str/format.t`
-  - `RakuAST` が無い限り最後まで通しにくい。
+- `S32-str/CollationTest_NON_IGNORABLE-3.t` — 2 ケースのために実装が重すぎる（§1.1 参照）。
+- `S32-str/format.t` — `RakuAST` が無い限り最後まで通しにくい（§1.1 参照）。
 
 ---
 
-## 6. 今のおすすめ着手順
+## 8. 今のおすすめ着手順
 
 「次に何をやるか」を 1 本だけ選ぶなら、順番はこう見るのが妥当。
 
-1. `S32-exceptions/misc.t`
-   reusable な型付き例外を増やす。
-2. ~~IO 三兄弟~~ — **完了 2026-07-01**（`io-handle` / `io-cathandle` / `lock` 全て whitelist 済み）。
-3. 第一級コンテナ campaign
-   `docs/container-identity.md` に沿って slot identity を前に進める。
-4. Seq single-pass 設計メモの新設
-   lazy 配列と混ぜずに `X::Seq::Consumed` 軸を切り出す。
-5. S17 を 4 軸へ分解した上で、まず semaphore / scheduler を触る。
+1. **`S06-operator-overloading/infix.t` の残り 7 件**（§2.4）— 局所修正で閉じられる可能性が高い。
+2. **`S04-declarations/my-6e.t` の test 61**（§2.1）— 残り 1 件。
+3. **`S17-lowlevel/lock.t` の race condition**（§6.1）— semaphore.t で確立した
+   reconcile/writeback パターンを `Lock` にも適用できれば早い。
+4. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
+   splice.t / attributes.t / multislice hash 側の slot identity を前に進める。
+   これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
+5. **`S03-metaops/hyper.t`**（§5）— plan mismatch の原因を先に特定してから、
+   残りの失敗を分類して潰す。
+6. **`S09-subscript/slice.t`**（§4）— 24 件を種類ごとに分類し、lazy array 基盤工事の
+   一環として進める。
 
-その一方で、次は**個別テストを直接殴るより、先に基盤 campaign を系統だって進めた方が速い**ので、原則として後回し。
-
-ここでいう「後回し」は、
-
-- 難しいから放置する
-- 価値が低いから無視する
-
-という意味ではない。
-
-意味は逆で、これらは **main track の canary** であり、
-個別に special case を足すより
-
-- 第一級コンテナ
-- lazy / Seq 消費モデル
-- dispatch 基盤
-
-のどれかを先に前進させた方が、結果としてまとめて解ける、という判断である。
-
-- `S26-documentation/12-non-breaking-space.t`
-- `S12-introspection/walk.t`
-- `S32-array/splice.t`
-- `S32-hash/adverbs.t` の typed-hash default 群
-- `S09-subscript/slice.t`
-
-補足:
-
-- `S32-array/splice.t` は「splice 固有のロジック不足」が主因ではなく、
-  self-splice / push-replace-self が **true first-class element containers** を要求する
-  [container identity canary](/home/tokuhirom/work/mutsu-codex/TODO_roast/S32.md:83)。
-- `S32-hash/adverbs.t` の typed-hash default 群も、missing-key default の one-off というより
-  container/default survival の canary。
-- `S09-subscript/slice.t` も parser 小修正だけでは閉じず、lazy source 保持と nested slice semantics の両方に触れる。
-
-## 6.1 `S32-exceptions/misc.t` をやるなら、何を順にやるか
-
-このファイルは「例外を追加する」だけでは終わらない。残件は 4 束に分けて着手する。
-
-1. **compile-sorrow grouping**
-   - 変更レイヤ: parser/compiler の error accumulator
-   - 対象: `X::Comp::Group`
-   - 最初の 1 PR: 複数 compile failure を即 throw せず収集する土台
-2. **source-format preserving warning**
-   - 変更レイヤ: literal AST/source span
-   - 対象: sink warning 群
-   - 最初の 1 PR: `Expr::Literal` に source text か span を持たせ、warning builder へ通す
-3. **BEGIN textual-time execution**
-   - 変更レイヤ: compiler/unit init ordering
-   - 対象: `X::Comp::BeginTime`
-   - 最初の 1 PR: BEGIN を unit 末尾の後処理ではなく、その位置で実行する最小モデル
-4. **純 parser / control-flow one-off**
-   - 対象: `my $x :a`, `my Int (Str $x)`, `gather{return}`, `&[unknownop]`
-   - これは最後にまとめて取る
-
-この順にしないと、細かな `X::` を足しても not-run が減らない。
-
-実コードで最初に見る場所も固定しておく。
-
-- **compile-sorrow grouping**
-  - `src/runtime/regex_parse_core.rs`
-  - compile-time error を `X::Comp::Group` へ畳む既存断片があるので、まずここを一般化する
-- **source-format warning**
-  - `src/ast.rs` の `Expr::Literal`
-  - warning emission 側は `src/runtime/builtins_control_flow.rs`
-  - ここに source text / span を通さない限り `:foo(42)` が `foo => 42` に崩れる
-- **BEGIN textual-time execution**
-  - `src/compiler/helpers_phasers.rs`
-  - `src/runtime/phasers.rs`
-  - `src/runtime/registration_sub.rs`
-  - すでに `X::Comp::BeginTime` の箱はあるので、問題は「いつ走らせるか」
-- **param type / suppressed name 系**
-  - `src/runtime/registration_sub.rs::validate_param_type_constraints`
-  - `src/runtime/runtime_encoding.rs` の `suppressed_names`
-- **`gather { return }`**
-  - parser ではなく runtime の control-flow signal 境界を探す仕事
-
-## 6.2 次に新設すべき設計メモ
-
-まだ `BLOCKERS.md` だけでは足りず、専用メモを起こした方がよいものが 2 つある。
-
-1. **Seq single-pass consumption**
-   - なぜ必要か:
-     lazy array と混ざるが、本質は「消費済み状態をどこに保持し、どの API がそれを見るか」
-   - 最初に棚卸しするコード:
-     `methods_call_dispatch.rs`, `methods_dispatch_match2.rs`,
-     `comparison.rs`, `builtins_operators_infix.rs`
-2. **S17 scheduler / supply drive model**
-   - なぜ必要か:
-     semaphore, `start`, `batch(:seconds)`, Proc::Async, socket supply が
-     全部「誰がいつ event loop を回すか」で再合流する
-   - 最初に棚卸しするコード:
-     `native_methods/scheduler.rs`, `methods_promise.rs`,
-     `native_supply_mut_methods.rs`, `native_proc_async.rs`
-
-この 2 本は次の文書として起こした:
-
-- [docs/seq-single-pass-consumption.md](../docs/seq-single-pass-consumption.md)
-- [docs/s17-scheduler-supply-drive-model.md](../docs/s17-scheduler-supply-drive-model.md)
-
-## 6.3 完了済みで main list から外す項目
-
-この版では、次を blocker の主列から外す。
-
-- `S32-array/adverbs.t`
-- `S12-methods/qualified.t`
-- `S09-typed-arrays/native-shape1-int.t`
-- `S09-typed-arrays/native-shape1-num.t`
-- `S09-typed-arrays/native-shape1-str.t`
-
-いずれも既に whitelist 済みで、今の優先順位づけを歪めるため。
-
----
-
-## 7. 旧版から落とした主な項目
-
-今回の再評価で、このファイルからは次の「完了済みなのに残っていた項目」を整理対象から外した。
-
-- `S05-capture/array-alias.t`
-- `S05-match/capturing-contexts.t`
-- `S03-binding/attributes.t`
-- `S03-binding/nested.t`
-- `S04-statements/gather.t`
-- `S06-advanced/lexical-subs.t`
-- `S12-methods/accessors.t`
-- `S32-io/io-path.t`
-- `S32-list/skip.t`
-- `S09-hashes/objecthash.t`
-- `S17-promise/nonblocking-await.t`
-- `S17-supply/categorize.t`
-
-これらはすでに whitelist 済みであり、
-今後この文書では「最近完了した項目」としても原則扱わない。
+whitelist を目標にしない §7 の項目は、mutsu 側の一般改善のついでに触れるのはよいが、
+そのファイル単体を通すことを目的にしない。
