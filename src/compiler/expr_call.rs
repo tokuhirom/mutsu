@@ -87,21 +87,33 @@ impl Compiler {
             let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
             self.code.emit(OpCode::Dup);
             self.code.emit(OpCode::SetGlobal(tmp_idx));
-            // For each target variable, index into the RHS and assign
+            // For each target variable, index into the RHS and assign.
+            // The FIRST `@`/`%` target is greedy: it slurps all remaining RHS
+            // values via `.skip(i)`, and every target after it receives an empty
+            // container / Nil (`(*, @b, $c) = 1..4` → `@b` is `[2,3,4]`, `$c` is
+            // undefined). `seen_slurpy` tracks that tail consumption.
+            let mut seen_slurpy = false;
             for (i, target) in targets.iter().enumerate() {
                 match target {
                     Expr::Var(var_name) => {
-                        self.code.emit(OpCode::GetGlobal(tmp_idx));
-                        let idx = self.code.add_constant(Value::Int(i as i64));
-                        self.code.emit(OpCode::LoadConst(idx));
-                        self.code.emit(OpCode::Index {
-                            is_positional: true,
-                        });
+                        if seen_slurpy {
+                            let nil_idx = self.code.add_constant(Value::Nil);
+                            self.code.emit(OpCode::LoadConst(nil_idx));
+                        } else {
+                            self.code.emit(OpCode::GetGlobal(tmp_idx));
+                            let idx = self.code.add_constant(Value::Int(i as i64));
+                            self.code.emit(OpCode::LoadConst(idx));
+                            self.code.emit(OpCode::Index {
+                                is_positional: true,
+                            });
+                        }
                         let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                         self.code.emit(OpCode::AssignExpr(name_idx));
                     }
                     Expr::ArrayVar(var_name) => {
-                        let rhs_expr = if i > 0 {
+                        let rhs_expr = if seen_slurpy {
+                            Expr::ArrayLiteral(Vec::new())
+                        } else if i > 0 {
                             Expr::MethodCall {
                                 target: Box::new(Expr::Var(tmp_name.clone())),
                                 name: crate::symbol::Symbol::intern("skip"),
@@ -115,16 +127,27 @@ impl Compiler {
                         self.compile_expr(&rhs_expr);
                         let name_idx = self.code.add_constant(Value::str(format!("@{}", var_name)));
                         self.code.emit(OpCode::AssignExpr(name_idx));
+                        seen_slurpy = true;
                     }
                     Expr::HashVar(var_name) => {
-                        self.code.emit(OpCode::GetGlobal(tmp_idx));
-                        let idx = self.code.add_constant(Value::Int(i as i64));
-                        self.code.emit(OpCode::LoadConst(idx));
-                        self.code.emit(OpCode::Index {
-                            is_positional: true,
-                        });
+                        // A hash target is greedy too: slurp the remaining pairs.
+                        let rhs_expr = if seen_slurpy {
+                            Expr::Hash(Vec::new())
+                        } else if i > 0 {
+                            Expr::MethodCall {
+                                target: Box::new(Expr::Var(tmp_name.clone())),
+                                name: crate::symbol::Symbol::intern("skip"),
+                                args: vec![Expr::Literal(Value::Int(i as i64))],
+                                modifier: None,
+                                quoted: false,
+                            }
+                        } else {
+                            Expr::Var(tmp_name.clone())
+                        };
+                        self.compile_expr(&rhs_expr);
                         let name_idx = self.code.add_constant(Value::str(format!("%{}", var_name)));
                         self.code.emit(OpCode::AssignExpr(name_idx));
+                        seen_slurpy = true;
                     }
                     Expr::Index {
                         target,
