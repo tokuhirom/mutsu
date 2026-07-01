@@ -2213,7 +2213,21 @@ impl Interpreter {
                     let v = vals.get(i).cloned().unwrap_or(Value::Nil);
                     self.assign_into_computed_target(&resolved, k, v)?;
                 }
-                self.stack.push(val);
+                // A slice assignment's rvalue is the list of values actually
+                // assigned (`foo()[0,1] = 10, 20, 30` yields `(10, 20)`), truncated
+                // to the number of slots -- not the whole RHS. A 1-element slice
+                // yields one itemized element.
+                let assigned: Vec<Value> = keys
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| vals.get(i).cloned().unwrap_or(Value::Nil))
+                    .collect();
+                let result = if idx_is_single_element {
+                    Self::itemize_value(assigned.into_iter().next().unwrap_or(Value::Nil))
+                } else {
+                    Value::array(assigned)
+                };
+                self.stack.push(result);
                 return Ok(());
             }
         }
