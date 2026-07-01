@@ -269,18 +269,26 @@ impl Interpreter {
 
     /// Write a shared variable. Updates both the local env and shared_vars.
     pub(crate) fn set_shared_var(&mut self, key: &str, value: Value) {
-        // Ensure @-variables always store Array(true) (real Arrays)
-        let value = if key.starts_with('@') {
-            match value {
-                // Preserve Shaped arrays; only normalize List to Array.
-                Value::Array(items, ArrayKind::List) => Value::Array(items, ArrayKind::Array),
-                other => other,
-            }
-        } else {
-            value
-        };
         self.env.insert(key.to_string(), value.clone());
         if self.shared_vars_active {
+            // Ensure @-variables always store Array(true) (real Arrays) in the
+            // cross-thread shared store, which backs the atomic-array CAS
+            // mechanism and expects non-flattening Array semantics. This must
+            // NOT touch the plain `env` write above: a `:=`-bound `@`-variable
+            // can legitimately hold a List (binding doesn't itemize/coerce),
+            // and this function runs on every env write through
+            // `set_env_with_main_alias` — even outside any actual threading —
+            // so coercing there would silently corrupt List identity for
+            // ordinary single-threaded code.
+            let value = if key.starts_with('@') {
+                match value {
+                    // Preserve Shaped arrays; only normalize List to Array.
+                    Value::Array(items, ArrayKind::List) => Value::Array(items, ArrayKind::Array),
+                    other => other,
+                }
+            } else {
+                value
+            };
             let mut sv = self.shared_vars.write().unwrap();
             // Skip overwriting @-variables that have an active CAS atomic
             // copy — the atomic copy is the authoritative source of truth

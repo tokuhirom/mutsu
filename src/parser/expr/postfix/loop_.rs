@@ -2144,13 +2144,22 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     rest = after;
                     continue;
                 }
-                let (r, index) = parse_bracket_indices(r)?;
+                let (r, parsed) = parse_bracket_indices_inner(r)?;
                 let (r, _) = ws(r)?;
                 let (r, _) = parse_char(r, ']')?;
+                // A semicolon-separated multi-dim index (`».[1;1]`) must pass
+                // each dimension as its own AT-POS argument so that per-item
+                // dispatch performs nested/true-multidim indexing (matching
+                // the non-hyper `@a[1;1]` -> MultiDimIndex desugaring),
+                // instead of indexing with a single ArrayLiteral key.
+                let args = match parsed {
+                    ParsedBracketIndex::Single(index) => vec![index],
+                    ParsedBracketIndex::MultiDim(dimensions) => dimensions,
+                };
                 expr = Expr::HyperMethodCall {
                     target: Box::new(expr),
                     name: Symbol::intern("AT-POS"),
-                    args: vec![index],
+                    args,
                     modifier: None,
                     quoted: false,
                 };
@@ -2371,6 +2380,28 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
                     .ok()
                     .map(|(rr, name)| (rr, name.to_string()))
+            };
+            // Qualified method name: C::x (e.g., `».Any::elems`), mirroring the
+            // non-hyper `.method` parse above. Skipped for `!Type::method`
+            // (already fully qualified by `parse_private_method_name`).
+            let parsed_static_name = if modifier != Some('!') {
+                parsed_static_name.map(|(r, mut qualified)| {
+                    let mut r = r;
+                    while let Some(after_colons) = r.strip_prefix("::") {
+                        if let Ok((r2, part)) = take_while1(after_colons, |c: char| {
+                            c.is_alphanumeric() || c == '_' || c == '-'
+                        }) {
+                            qualified.push_str("::");
+                            qualified.push_str(part);
+                            r = r2;
+                        } else {
+                            break;
+                        }
+                    }
+                    (r, qualified)
+                })
+            } else {
+                parsed_static_name
             };
             if let Some((r, name)) = parsed_static_name {
                 let name = Symbol::intern(&name);

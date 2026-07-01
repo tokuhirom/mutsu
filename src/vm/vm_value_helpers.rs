@@ -315,6 +315,8 @@ impl Interpreter {
                 | "Mix"
                 | "List"
                 | "Seq"
+                | "HyperSeq"
+                | "RaceSeq"
                 | "Range"
                 | "Any"
                 | "Mu"

@@ -115,15 +115,16 @@ impl Interpreter {
                 }
                 return Ok(Value::array(items));
             }
-            let generated = 1024usize;
-            let mut out = Vec::with_capacity(generated);
-            for _ in 0..generated {
-                let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
-                    % pool.len();
-                out.push(pool[idx].clone());
-            }
+            // `.roll(*)` is a genuinely infinite Seq: each pull is an
+            // independent random pick from `pool`. Represent it as a
+            // sequence-spec lazy list (like `1...*`) instead of eagerly
+            // generating a fixed-size prefix, so it renders Rakudo's `(...)`
+            // gist placeholder and can be pulled indefinitely.
             return Ok(Value::LazyList(std::sync::Arc::new(
-                crate::value::LazyList::new_cached(out),
+                crate::value::LazyList::new_sequence(
+                    Vec::new(),
+                    crate::value::SequenceSpec::RollPool(pool),
+                ),
             )));
         };
         if method == "pick" {

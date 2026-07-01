@@ -175,6 +175,10 @@ pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
     );
     let mut attrs = HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert(
+        "kind".to_string(),
+        Value::Package(crate::symbol::Symbol::intern(type_name)),
+    );
     let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Seq::Consumed"), attrs);
     let mut err = RuntimeError::new(&msg);
     err.exception = Some(Box::new(ex));
@@ -1138,6 +1142,10 @@ pub(crate) enum SequenceSpec {
     GeometricRat { num: i64, den: i64 },
     /// Geometric progression with floating-point ratio
     Geometric { ratio: f64 },
+    /// Infinite `.roll(*)`: each additional element is an independent
+    /// uniform-random pick from `pool` (unlike Arithmetic/Geometric, this
+    /// never terminates and has no fixed "next" formula beyond the pool).
+    RollPool(Vec<Value>),
 }
 
 /// Specification for a lazy scan (triangle) reduction.
