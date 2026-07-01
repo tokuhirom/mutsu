@@ -2023,6 +2023,8 @@ impl Interpreter {
             shared_vars_active: false,
             sigilless_attrs_active: false,
             shared_vars_dirty: Arc::new(RwLock::new(HashSet::new())),
+            shared_critical_dirty: Arc::new(RwLock::new(HashSet::new())),
+            critical_section_depth: 0,
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
             dispatch_ambiguous: false,

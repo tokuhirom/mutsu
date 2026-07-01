@@ -119,13 +119,22 @@ impl Interpreter {
         match method {
             "acquire" => {
                 semaphore_acquire(&rt)?;
+                // Entering the critical section: pull the latest value of any
+                // shared scalar a previous holder committed inside its own
+                // critical section, so `$r += $i` here reads the accumulated
+                // value rather than this thread's stale clone-time copy.
+                self.enter_critical_section();
                 Ok(Value::Nil)
             }
             "try_acquire" => {
                 let ok = semaphore_try_acquire(&rt)?;
+                if ok {
+                    self.enter_critical_section();
+                }
                 Ok(Value::Bool(ok))
             }
             "release" => {
+                self.leave_critical_section();
                 semaphore_release(&rt)?;
                 Ok(Value::Nil)
             }

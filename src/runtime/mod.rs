@@ -1286,6 +1286,17 @@ pub struct Interpreter {
     /// `clone_for_thread`). `sync_shared_vars_to_env` only syncs these keys so
     /// that function parameters aren't overwritten with stale values.
     shared_vars_dirty: Arc<RwLock<HashSet<String>>>,
+    /// Keys in shared_vars that were written by some thread *while it held a
+    /// critical section* (Semaphore/Lock). Entering a critical section syncs
+    /// exactly these scalars back into the local env, so a bare
+    /// read-modify-write of a shared accumulator (`$s.acquire; $r += $i;
+    /// $s.release`) reads the value the previous holder committed — while a
+    /// per-iteration loop lexical (`my $i = $_`, written outside any critical
+    /// section) keeps this thread's own captured snapshot.
+    shared_critical_dirty: Arc<RwLock<HashSet<String>>>,
+    /// Depth of nested critical sections (Semaphore/Lock) this interpreter
+    /// currently holds. Writes performed while > 0 mark `shared_critical_dirty`.
+    critical_section_depth: usize,
     /// Registry of encodings (both built-in and user-registered).
     /// Each entry maps a canonical name to an EncodingEntry.
     encoding_registry: Vec<EncodingEntry>,
