@@ -199,6 +199,7 @@ impl Interpreter {
                     "Promise",
                     "schedule-on",
                     "native-descriptor",
+                    "migrate",
                 ]
                 .iter()
                 .map(|s| s.to_string())

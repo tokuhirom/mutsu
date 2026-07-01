@@ -64,6 +64,13 @@ struct SupplierTapSubscription {
     zip_tap: Option<ZipTapState>,
     /// Zip-latest tap state
     zip_latest_tap: Option<ZipLatestTapState>,
+    /// Migrate tap state: this tap is the outer migrate subscription on the
+    /// master supply-of-supplies; each emitted value must itself be a Supply.
+    migrate_state: Option<MigrateState>,
+    /// Forward tap: emitted values are re-emitted verbatim to this downstream
+    /// supplier (used by `migrate` to pipe the currently-active inner supply
+    /// into the migrate output supplier).
+    forward_downstream: Option<u64>,
     /// Stable identifier so taps can be closed individually.
     tap_id: u64,
     /// When set, this tap is closed and should no longer receive emits.
@@ -80,6 +87,16 @@ struct ZipTapState {
 struct ZipLatestTapState {
     zip_latest_state_id: u64,
     source_index: usize,
+}
+
+#[derive(Clone)]
+struct MigrateState {
+    /// The migrate output supplier that downstream taps subscribe to.
+    downstream_supplier_id: u64,
+    /// The inner supply currently being forwarded, and the tap id of the
+    /// forward subscription registered on it (so a switch can close it).
+    current_inner_supplier_id: Option<u64>,
+    current_inner_tap_id: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -166,6 +183,118 @@ pub(in crate::runtime) fn close_supplier_tap(supplier_id: u64, tap_id: u64) {
     }
 }
 
+/// Register the outer `migrate` tap on the master supply-of-supplies. Each
+/// value it receives must itself be a Supply; the interpreter switches the
+/// forwarded inner supply via `migrate_switch_inner`.
+pub(in crate::runtime) fn register_supplier_migrate_tap(master_sid: u64, downstream_sid: u64) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(master_sid)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::Nil,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: None,
+                start_state: None,
+                batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
+                flat_downstream: None,
+                channel_sink: None,
+                zip_tap: None,
+                zip_latest_tap: None,
+                tap_id: next_tap_id(),
+                closed: false,
+                migrate_state: Some(MigrateState {
+                    downstream_supplier_id: downstream_sid,
+                    current_inner_supplier_id: None,
+                    current_inner_tap_id: None,
+                }),
+                forward_downstream: None,
+            });
+    }
+}
+
+/// Register a verbatim-forward tap on an inner supply that re-emits each value
+/// to the given downstream supplier. Returns the new tap id.
+fn register_supplier_forward_tap(inner_sid: u64, downstream_sid: u64) -> u64 {
+    let tap_id = next_tap_id();
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(inner_sid)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::Nil,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: None,
+                start_state: None,
+                batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
+                flat_downstream: None,
+                channel_sink: None,
+                zip_tap: None,
+                zip_latest_tap: None,
+                tap_id,
+                closed: false,
+                migrate_state: None,
+                forward_downstream: Some(downstream_sid),
+            });
+    }
+    tap_id
+}
+
+/// Switch the migrate tap to a new inner supply: close the forward tap on the
+/// previously-active inner supply (if any), register a fresh forward tap on the
+/// new inner supply, and remember it on the migrate state.
+pub(in crate::runtime) fn migrate_switch_inner(
+    master_sid: u64,
+    tap_index: usize,
+    new_inner_sid: u64,
+    downstream_sid: u64,
+) {
+    let old = {
+        let mut result = None;
+        if let Ok(mut map) = supplier_subscriptions_map().lock()
+            && let Some(subs) = map.get_mut(&master_sid)
+            && let Some(tap) = subs.taps.get_mut(tap_index)
+            && let Some(ref ms) = tap.migrate_state
+            && let (Some(sid), Some(tid)) = (ms.current_inner_supplier_id, ms.current_inner_tap_id)
+        {
+            result = Some((sid, tid));
+        }
+        result
+    };
+    if let Some((sid, tid)) = old {
+        close_supplier_tap(sid, tid);
+    }
+    let new_tap_id = register_supplier_forward_tap(new_inner_sid, downstream_sid);
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&master_sid)
+        && let Some(tap) = subs.taps.get_mut(tap_index)
+        && let Some(ref mut ms) = tap.migrate_state
+    {
+        ms.current_inner_supplier_id = Some(new_inner_sid);
+        ms.current_inner_tap_id = Some(new_tap_id);
+    }
+}
+
 /// Close all taps on the given supplier so they stop receiving emits.
 pub(in crate::runtime) fn close_all_supplier_taps(supplier_id: u64) {
     if let Ok(mut map) = supplier_subscriptions_map().lock()
@@ -224,6 +353,8 @@ pub(in crate::runtime) fn register_supplier_channel_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -275,6 +406,8 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -311,6 +444,8 @@ pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -347,6 +482,8 @@ pub(in crate::runtime) fn register_supplier_lines_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -382,6 +519,8 @@ pub(in crate::runtime) fn register_supplier_words_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -424,6 +563,8 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -484,6 +625,20 @@ pub(in crate::runtime) enum SupplierEmitAction {
     ZipLatestBuffer {
         zip_latest_state_id: u64,
         source_index: usize,
+        value: Value,
+    },
+    /// Migrate: the master supply emitted a value; it must be a Supply, and the
+    /// migrate tap should switch its forwarded inner supply to it (or throw
+    /// X::Supply::Migrate::Needs if it is not a Supply).
+    Migrate {
+        value: Value,
+        master_supplier_id: u64,
+        downstream_supplier_id: u64,
+        tap_index: usize,
+    },
+    /// Forward: re-emit a value verbatim to the given downstream supplier.
+    ForwardEmit {
+        downstream_supplier_id: u64,
         value: Value,
     },
 }
@@ -670,6 +825,18 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                     source_index: zlt.source_index,
                     value: emitted_value.clone(),
                 });
+            } else if let Some(ref ms) = tap.migrate_state {
+                actions.push(SupplierEmitAction::Migrate {
+                    value: emitted_value.clone(),
+                    master_supplier_id: supplier_id,
+                    downstream_supplier_id: ms.downstream_supplier_id,
+                    tap_index: idx,
+                });
+            } else if let Some(downstream_sid) = tap.forward_downstream {
+                actions.push(SupplierEmitAction::ForwardEmit {
+                    downstream_supplier_id: downstream_sid,
+                    value: emitted_value.clone(),
+                });
             } else {
                 actions.push(SupplierEmitAction::Call(
                     tap.callback.clone(),
@@ -761,6 +928,8 @@ pub(in crate::runtime) fn register_supplier_unique_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -800,6 +969,8 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -841,6 +1012,8 @@ pub(in crate::runtime) fn register_supplier_start_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -924,6 +1097,8 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -1205,6 +1380,8 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -1242,6 +1419,8 @@ pub(in crate::runtime) fn register_supplier_flat_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -1329,6 +1508,8 @@ pub(in crate::runtime) fn register_supplier_zip_tap(
                 zip_latest_tap: None,
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }
@@ -1367,6 +1548,8 @@ pub(in crate::runtime) fn register_supplier_zip_latest_tap(
                 }),
                 tap_id: next_tap_id(),
                 closed: false,
+                migrate_state: None,
+                forward_downstream: None,
             });
     }
 }

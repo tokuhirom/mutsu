@@ -515,6 +515,72 @@ impl Interpreter {
         Ok(Value::make_instance(Symbol::intern("Supply"), reduce_attrs))
     }
 
+    /// Handle a `Migrate` emit action: the master supply-of-supplies emitted a
+    /// value. It must be a Supply; switch the forwarded inner supply to it. If
+    /// it is not a Supply, throw X::Supply::Migrate::Needs (propagated to the
+    /// `emit` caller).
+    pub(in crate::runtime) fn handle_supply_migrate(
+        &mut self,
+        value: Value,
+        master_supplier_id: u64,
+        downstream_supplier_id: u64,
+        tap_index: usize,
+    ) -> Result<(), RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &value
+            && *class_name == "Supply"
+        {
+            if let Some(Value::Int(inner_sid)) = attributes.as_map().get("supplier_id") {
+                crate::runtime::native_methods::migrate_switch_inner(
+                    master_supplier_id,
+                    tap_index,
+                    *inner_sid as u64,
+                    downstream_supplier_id,
+                );
+            } else {
+                // A cold (non-live) supply: forward its already-known values now.
+                let vals = self.supply_list_values(&attributes.as_map(), true)?;
+                for v in vals {
+                    self.handle_supply_forward(downstream_supplier_id, v)?;
+                }
+            }
+            return Ok(());
+        }
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert(
+            "message".to_string(),
+            Value::str(".migrate needs Supplies to be emitted".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Supply::Migrate::Needs"), ex_attrs);
+        let mut err = RuntimeError::new(".migrate needs Supplies to be emitted");
+        err.exception = Some(Box::new(ex));
+        Err(err)
+    }
+
+    /// Handle a `ForwardEmit` action: re-emit a value verbatim into the
+    /// downstream supplier and run its (plain) tap callbacks.
+    pub(in crate::runtime) fn handle_supply_forward(
+        &mut self,
+        downstream_supplier_id: u64,
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        use crate::runtime::native_methods::{
+            SupplierEmitAction, supplier_emit, supplier_emit_callbacks,
+        };
+        supplier_emit(downstream_supplier_id, value.clone());
+        let ds_actions = supplier_emit_callbacks(downstream_supplier_id, &value);
+        for da in ds_actions {
+            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = da {
+                Self::sleep_for_supply_delay(delay_seconds);
+                self.call_sub_value(tap, vec![emitted], true)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Supply.zip-latest(...) as a class method
     pub(super) fn dispatch_supply_zip_latest_class(
         &mut self,

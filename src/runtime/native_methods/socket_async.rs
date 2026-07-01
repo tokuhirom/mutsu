@@ -172,6 +172,25 @@ impl Interpreter {
                         }
                     }
                 }
+                SupplierEmitAction::Migrate {
+                    value: val,
+                    master_supplier_id,
+                    downstream_supplier_id,
+                    tap_index,
+                } => {
+                    self.handle_supply_migrate(
+                        val,
+                        master_supplier_id,
+                        downstream_supplier_id,
+                        tap_index,
+                    )?;
+                }
+                SupplierEmitAction::ForwardEmit {
+                    downstream_supplier_id,
+                    value: val,
+                } => {
+                    self.handle_supply_forward(downstream_supplier_id, val)?;
+                }
             }
         }
         Ok(())

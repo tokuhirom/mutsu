@@ -13,6 +13,27 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            "migrate" => {
+                // `migrate` forwards values from the most-recently-emitted inner
+                // Supply of a supply-of-supplies. Requires a live source (a bare
+                // `Supply.migrate` class call has no supplier_id and dies here).
+                let source_sid = match attributes.get("supplier_id") {
+                    Some(Value::Int(sid)) => *sid as u64,
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "migrate can only be called on a live Supply",
+                        ));
+                    }
+                };
+                let downstream_sid = next_supplier_id();
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                new_attrs.insert("live".to_string(), Value::Bool(true));
+                new_attrs.insert("supplier_id".to_string(), Value::Int(downstream_sid as i64));
+                new_attrs.insert("migrate_source".to_string(), Value::Int(source_sid as i64));
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
+            }
             "encode" => {
                 let source_values = match attributes.get("values") {
                     Some(Value::Array(items, ..)) => items.to_vec(),
