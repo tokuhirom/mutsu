@@ -59,29 +59,29 @@ impl Interpreter {
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
-        // A single scalar index assigns to one element (a scalar slot), so the
-        // assignment's rvalue is itemized just like a scalar-variable assignment
-        // (`@z = (@a[0] = 1, 2)` => `@z.elems == 1`). A slice index (bare list /
-        // Range / Seq) distributes to several elements and keeps the flat list as
-        // its value. Computed from the RAW index before any normalization —
-        // a range that is (incorrectly) stringified to one hash key later must
-        // still be recognized as a slice here. An itemized subscript
-        // (`@a[$(7,8,9)]`, an `ItemList`/`Scalar`-wrapped list) is a single index.
+        // A subscript that names exactly ONE element assigns to a scalar slot, so
+        // the assignment's rvalue is itemized just like a scalar-variable
+        // assignment (`@z = (@a[0] = 1, 2)` => `@z.elems == 1`, and likewise for
+        // `@a[0,]`, `%h<x>`, `%h{'x'}`). A multi-element slice (a list of indices,
+        // or a Range) distributes to several elements and keeps the flat list as
+        // its value. Computed from the RAW index before normalization: a range
+        // (incl. the string `GenericRange` that a hash subscript enumerates into
+        // several keys) is always a slice; a 1-element index list acts as a single
+        // element; an itemized subscript (`@a[$(7,8,9)]`) is a single index.
         let idx_is_single_element = match &idx {
-            Value::Array(_, crate::value::ArrayKind::ItemList) => true,
+            Value::Array(items, kind) => {
+                matches!(kind, crate::value::ArrayKind::ItemList) || items.len() == 1
+            }
+            Value::Seq(items) | Value::Slip(items) => items.len() == 1,
             Value::Scalar(inner) => {
                 !inner.is_range() && !matches!(inner.as_ref(), Value::Array(..))
             }
-            other => !matches!(
-                other,
-                Value::Array(..)
-                    | Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::Seq(..)
-                    | Value::Slip(..)
-            ),
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => false,
+            _ => true,
         };
         // An *itemized* list/Range subscript (`@a[$(7,8,9)] = …`) is a SINGLE
         // index (its `.Int`, the element count), not a slice — itemization makes
@@ -464,7 +464,14 @@ impl Interpreter {
                     if bind_mode {
                         self.mark_bound_index(&var_name, encoded_idx);
                     }
-                    self.stack.push(val);
+                    // A 1-element slice (`@a[0,]`) names a single scalar slot, so
+                    // its rvalue itemizes like a single-index assignment.
+                    let result = if idx_is_single_element {
+                        Self::itemize_value(val)
+                    } else {
+                        val
+                    };
+                    self.stack.push(result);
                     return Ok(());
                 }
                 if vals.is_empty() {
@@ -1409,10 +1416,9 @@ impl Interpreter {
                 }
             }
         }
-        // Restricted to positional array elements: hash single-key assignment
-        // exits through other push sites, and a string-range hash subscript
-        // (`%a{'x'..'z'}`) is currently mis-stringified to one key, so treating it
-        // as a single element here would wrongly itemize a slice result.
+        // Positional array elements only: hash single-key / hash-slice assignment
+        // exits through other push sites (not reached here), and this restriction
+        // keeps a string-range hash subscript from being mis-itemized.
         let result = if idx_is_single_element && !var_name.starts_with('%') {
             Self::itemize_value(val)
         } else {
