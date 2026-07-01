@@ -1360,6 +1360,12 @@ pub(crate) struct LazyThunkData {
 
 // --- SharedPromise: thread-safe promise state ---
 
+/// A callback registered via `SharedPromise::on_resolve` while the promise
+/// was still `Planned`. Invoked with (status, result, output, stderr) once
+/// the promise resolves. Boxed so `.then`/`.andthen`/`.orelse` chains can
+/// queue heterogeneous closures.
+pub(crate) type PromiseWaiter = Box<dyn FnOnce(String, Value, String, String) + Send>;
+
 struct PromiseState {
     status: String, // "Planned", "Kept", "Broken"
     result: Value,
@@ -1370,6 +1376,18 @@ struct PromiseState {
     /// thread. Used e.g. to hand off newly-opened IO handle state that
     /// lives inside the per-thread Interpreter.
     thread_payload: Option<Box<dyn std::any::Any + Send>>,
+    /// Callbacks queued by `.then`/`.andthen`/`.orelse` while `Planned`,
+    /// drained and run **in registration order** by whichever `keep`/
+    /// `break_with` call resolves this promise. See `on_resolve` for why:
+    /// without a shared, ordered queue, each combinator call on an
+    /// unresolved promise used to spawn its own OS thread that raced the
+    /// others to wake from the same `Condvar::notify_all`, so sibling
+    /// callbacks (e.g. an independent `.then` alongside an `.andthen`
+    /// chain, both registered on the same promise) had no ordering
+    /// guarantee and could run in either order depending on OS scheduling
+    /// — observable as an intermittent CI-only failure under load
+    /// (S17-promise/then.t "simple keep"/"simple break").
+    waiters: Vec<PromiseWaiter>,
 }
 
 #[derive(Debug, Clone)]
