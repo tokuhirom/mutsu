@@ -1166,6 +1166,15 @@ impl Interpreter {
                 let arc = arc.clone();
                 if scalar {
                     val = Self::normalize_scalar_assignment_value(val);
+                } else {
+                    // Container identity (§3.1): re-apply the element-type +
+                    // `array[T]` metadata so a typed native array written through
+                    // its shared cell (`my @b := @a; @a = ...`) keeps its identity.
+                    // The metadata-tagging block further below is bypassed by this
+                    // early return, so it must be applied here.
+                    let name = name.clone();
+                    let old = arc.lock().unwrap().clone();
+                    val = self.array_container_writethrough_value(&name, val, &old)?;
                 }
                 arc.lock().unwrap().clone_from(&val);
                 self.flush_local_to_env(code, idx);

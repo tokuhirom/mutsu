@@ -3,6 +3,70 @@ use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
 impl Interpreter {
+    /// Container identity (§3.1): compute the value to write THROUGH a shared
+    /// `ContainerRef` cell for a whole-container reassignment of an `@`
+    /// variable (`@a = ...` when `@a`'s slot holds a shared cell — e.g. a
+    /// `:=`-bound alias `my @b := @a` or a loop-var alias `for @src -> @a`).
+    /// Coerces the raw RHS to an Array and re-applies the element-type coercion +
+    /// `array[T]` metadata so a typed native array keeps its identity
+    /// (`@a.WHAT === array[int]`) after the write-through. Non-`@` names return
+    /// `raw` unchanged.
+    pub(super) fn array_container_writethrough_value(
+        &mut self,
+        name: &str,
+        raw: Value,
+        old: &Value,
+    ) -> Result<Value, RuntimeError> {
+        if !name.starts_with('@') {
+            return Ok(raw);
+        }
+        let mut val = crate::runtime::coerce_to_array(raw);
+        val = self.coerce_typed_container_assignment(name, val, false)?;
+        // Prefer a declared constraint (`my int @a`); otherwise inherit the type
+        // identity of the container currently held by the shared cell. A bound
+        // typed array (`for @testing -> @a { @a = ... }`, `my @b := @a`) has no
+        // `var_type_constraint` on the alias name — its `array[T]` identity lives
+        // in the cell's embedded metadata, which a whole reassignment must keep.
+        let info = if let Some(value_type) = loan_env!(self, var_type_constraint(name)) {
+            Some(crate::runtime::ContainerTypeInfo {
+                declared_type: if crate::runtime::native_types::is_native_array_element_type(
+                    &value_type,
+                ) {
+                    Some(format!("array[{value_type}]"))
+                } else {
+                    None
+                },
+                value_type,
+                key_type: None,
+            })
+        } else {
+            self.container_type_metadata(old)
+        };
+        if let Some(info) = info {
+            // Coerce elements to the inherited element type (a bound
+            // `array[int]` must reject/convert non-int values just like a
+            // declared one).
+            if crate::runtime::native_types::is_native_array_element_type(&info.value_type)
+                && let Value::Array(items, kind) = &val
+            {
+                let coerced = self.coerce_typed_array_elements(
+                    name,
+                    &info.value_type,
+                    items,
+                    *kind,
+                    &|_| None,
+                    false,
+                )?;
+                val = Value::Array(
+                    Arc::new(crate::value::ArrayData::new(coerced)),
+                    *kind,
+                );
+            }
+            val = self.tag_container_metadata(val, info);
+        }
+        Ok(val)
+    }
+
     pub(super) fn normalize_scalar_assignment_value(val: Value) -> Value {
         let is_nilish = |v: &Value| match v {
             Value::Nil => true,
