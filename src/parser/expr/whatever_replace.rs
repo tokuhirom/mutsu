@@ -138,12 +138,12 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
             args: args.clone(),
             modifier: *modifier,
         },
+        // Only the *target* of an invocation curries; a Whatever passed as a call
+        // *argument* stays a Whatever value (see `count_whatever`/`contains_whatever`),
+        // so the args are left untouched rather than replaced by numbered params.
         Expr::CallOn { target, args } => Expr::CallOn {
             target: Box::new(replace_whatever_numbered(target, counter)),
-            args: args
-                .iter()
-                .map(|a| replace_whatever_numbered(a, counter))
-                .collect(),
+            args: args.clone(),
         },
         Expr::Index {
             target,
@@ -312,9 +312,10 @@ pub(crate) fn replace_whatever_single(expr: &Expr) -> Expr {
             args: args.clone(),
             modifier: *modifier,
         },
+        // Only the target curries; a Whatever call *argument* stays a value.
         Expr::CallOn { target, args } => Expr::CallOn {
             target: Box::new(replace_whatever_single(target)),
-            args: args.iter().map(replace_whatever_single).collect(),
+            args: args.clone(),
         },
         Expr::Index {
             target,
