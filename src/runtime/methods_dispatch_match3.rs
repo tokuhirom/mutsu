@@ -614,7 +614,11 @@ impl Interpreter {
             | Value::GenericRange { .. } => {
                 Ok(Value::array(crate::runtime::utils::value_to_list(&target)))
             }
-            other => Ok(other),
+            // A plain scalar interprets itself as a single-element List.
+            other => Ok(Value::Array(
+                std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
+                crate::value::ArrayKind::List,
+            )),
         }
     }
 

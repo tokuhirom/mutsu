@@ -423,6 +423,11 @@ impl Interpreter {
                     let n = last.to_f64();
                     Value::Num(n * ratio)
                 }
+                crate::value::SequenceSpec::RollPool(pool) => {
+                    let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
+                        % pool.len();
+                    pool[idx].clone()
+                }
             };
             items.push(next);
         }

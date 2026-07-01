@@ -35,28 +35,43 @@ fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
     }
     let search = &after_left[..search_limit];
 
-    // Find the earliest right delimiter (any of >>, <<, \u{00BB}, \u{00AB})
-    let mut best: Option<(usize, bool, usize)> = None; // (byte_offset, dwim_right, marker_len)
+    // Collect every candidate right-delimiter occurrence (any of >>, <<,
+    // \u{00BB}, \u{00AB}) in ascending byte-offset order. An operator whose
+    // last character is itself `>` (e.g. `=>`) can make the closing `>>`
+    // marker overlap with the operator text — e.g. `<<=>>>` (`<<` + `=>` +
+    // `>>`) has a spurious `>>` match one byte earlier (`=` + the first two
+    // `>`s), which would wrongly yield the reserved bare `=` operator. Try
+    // candidates in order and skip any that resolve to an invalid op instead
+    // of bailing out on the first (possibly overlapping) match.
+    let mut candidates: Vec<(usize, bool, usize)> = Vec::new(); // (byte_offset, dwim_right, marker_len)
     for (marker, dwim_right, marker_len) in [
         (">>", true, 2usize),
         ("<<", false, 2),
         ("\u{00BB}", true, '\u{00BB}'.len_utf8()),
         ("\u{00AB}", false, '\u{00AB}'.len_utf8()),
     ] {
-        if let Some(pos) = search.find(marker)
-            && pos > 0
-            && (best.is_none() || pos < best.unwrap().0)
-        {
-            best = Some((pos, dwim_right, marker_len));
+        let mut from = 0;
+        while let Some(rel_pos) = search[from..].find(marker) {
+            let pos = from + rel_pos;
+            if pos > 0 {
+                candidates.push((pos, dwim_right, marker_len));
+            }
+            // Step past only the first char of this match (not the whole
+            // marker) so overlapping matches — e.g. the two `>>` markers
+            // that share a byte in `=>>>` — are still found on the next
+            // iteration. Stepping by a full char keeps `from` on a UTF-8
+            // boundary for multi-byte markers like `\u{00BB}`.
+            from = pos + search[pos..].chars().next().map_or(1, |c| c.len_utf8());
         }
     }
+    candidates.sort_by_key(|&(pos, ..)| pos);
 
-    if let Some((end, dwim_right, right_marker_len)) = best {
+    for (end, dwim_right, right_marker_len) in candidates {
         let op = &after_left[..end];
         // Reject bare `=` as the operator — that is hyper-assignment syntax
         // (e.g. `»=»`), handled at the statement level.
         if op == "=" {
-            return None;
+            continue;
         }
         return Some((
             op.to_string(),

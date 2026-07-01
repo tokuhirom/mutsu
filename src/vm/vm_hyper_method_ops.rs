@@ -349,8 +349,12 @@ impl Interpreter {
                     // (e.g., .join, .elems, .sort, .reverse, .unique, .squish).
                     let is_iterable_item =
                         matches!(item, Value::Array(..) | Value::Seq(..) | Value::Slip(..));
+                    // A qualified dispatch (`».Any::elems`) still names a
+                    // plain list-native method once the owner prefix is
+                    // stripped, so nodality is decided on the unqualified tail.
+                    let unqualified_method = method.rsplit("::").next().unwrap_or(&method);
                     let is_list_native_method = matches!(
-                        method.as_str(),
+                        unqualified_method,
                         "join"
                             | "elems"
                             | "end"
@@ -368,7 +372,6 @@ impl Interpreter {
                             | "minmax"
                             | "sum"
                             | "flat"
-                            | "eager"
                             | "lazy"
                             | "sink"
                             | "cache"
@@ -401,6 +404,7 @@ impl Interpreter {
                             | "kv"
                             | "keys"
                             | "values"
+                            | "tree"
                             | "pairs"
                             | "antipairs"
                             | "classify"

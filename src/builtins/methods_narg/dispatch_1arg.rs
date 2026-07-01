@@ -1621,24 +1621,32 @@ pub(crate) fn native_method_1arg(
                 if !target.is_range() && items.is_empty() {
                     return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
                 }
-                let generated = 1024usize;
-                let mut out = Vec::with_capacity(generated);
-                for _ in 0..generated {
-                    if target.is_range() {
+                if target.is_range() {
+                    // A range's pool isn't a finite Vec (it may be huge or
+                    // infinite), so it still needs a per-pull sampler rather
+                    // than `SequenceSpec::RollPool`'s static pool. Generate a
+                    // bounded eager prefix as before.
+                    let generated = 1024usize;
+                    let mut out = Vec::with_capacity(generated);
+                    for _ in 0..generated {
                         if let Some(v) = sample_from_range(target) {
                             out.push(v);
                         }
-                    } else {
-                        let mut idx =
-                            (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-                        if idx >= items.len() {
-                            idx = items.len() - 1;
-                        }
-                        out.push(items[idx].clone());
                     }
+                    return Some(Ok(Value::LazyList(Arc::new(
+                        crate::value::LazyList::new_cached(out),
+                    ))));
                 }
+                // A finite pool: `.roll(*)` is a genuinely infinite Seq (each
+                // pull an independent random pick), so represent it as a
+                // sequence-spec lazy list (like `1...*`) instead of eagerly
+                // generating a fixed-size prefix. This renders Rakudo's
+                // `(...)` gist placeholder and can be pulled indefinitely.
                 return Some(Ok(Value::LazyList(Arc::new(
-                    crate::value::LazyList::new_cached(out),
+                    crate::value::LazyList::new_sequence(
+                        Vec::new(),
+                        crate::value::SequenceSpec::RollPool(items),
+                    ),
                 ))));
             }
             let count = count.unwrap_or(0);

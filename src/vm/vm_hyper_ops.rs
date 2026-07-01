@@ -253,6 +253,25 @@ impl Interpreter {
             }
             return Ok(Value::Hash(Value::hash_arc(result)));
         }
+        // A Pair leaf broadcasts the op into its `.value`, keeping `.key`
+        // unchanged (https://github.com/rakudo/rakudo/issues/4700). Only
+        // applies when the *other* side is a plain scalar (not itself a Pair
+        // or an Iterable) — those cases fall through to the generic
+        // element-wise/base-case handling below.
+        if let Value::Pair(k, v) = left
+            && !matches!(right, Value::Pair(..))
+            && !Self::is_listy(right)
+        {
+            let new_v = self.hyper_op_pair(op, v, right, dwim_left, dwim_right)?;
+            return Ok(Value::Pair(k.clone(), Box::new(new_v)));
+        }
+        if let Value::Pair(k, v) = right
+            && !matches!(left, Value::Pair(..))
+            && !Self::is_listy(left)
+        {
+            let new_v = self.hyper_op_pair(op, left, v, dwim_left, dwim_right)?;
+            return Ok(Value::Pair(k.clone(), Box::new(new_v)));
+        }
         // At least one side is a (non-hash) Iterable: distribute element-wise,
         // recursing so nested Iterables/Hashes are handled at every depth.
         if Self::is_listy(left) || Self::is_listy(right) {
@@ -319,7 +338,18 @@ impl Interpreter {
             // Preserve List kind when inputs are Lists (not Arrays)
             let left_is_array = matches!(left, Value::Array(_, crate::value::ArrayKind::Array));
             let right_is_array = matches!(right, Value::Array(_, crate::value::ArrayKind::Array));
-            return if !left_is_array && !right_is_array {
+            // A typed source array (`Int @foo`) only keeps its Array shape
+            // when every result still satisfies the element type; otherwise
+            // the hyper op degrades to a plain List (rakudo#5778) rather than
+            // raising a type-check error on assignment.
+            let declared_type = [left, right].into_iter().find_map(|side| match side {
+                Value::Array(data, crate::value::ArrayKind::Array) => data.value_type.clone(),
+                _ => None,
+            });
+            let fits_declared_type = declared_type
+                .as_deref()
+                .is_none_or(|t| results.iter().all(|v| self.type_matches_value(t, v)));
+            return if (!left_is_array && !right_is_array) || !fits_declared_type {
                 Ok(Value::Array(
                     std::sync::Arc::new(crate::value::ArrayData::new(results)),
                     crate::value::ArrayKind::List,
