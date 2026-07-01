@@ -514,6 +514,18 @@ impl Interpreter {
                 if let Some(quit_reason) = on_demand_quit {
                     if let Some(quit_fn) = quit_cb {
                         self.call_supply_quit_handler(quit_fn, quit_reason)?;
+                        // Dispatching the quit callback clears
+                        // `pending_rw_writeback_sources`
+                        // (call_compiled_closure_with_topic), which drops the tap
+                        // callback's captured-outer writes recorded above. Re-record
+                        // them after the handler so the enclosing `.tap` call site
+                        // still drains the tap block's scalar writes (e.g.
+                        // `$emits-run++` in `supply { emit ...; die }`).
+                        if let Value::Sub(ref data) = tap_cb
+                            && let Some(code) = data.compiled_code.clone()
+                        {
+                            self.record_eager_block_free_var_writeback(&code, &data.params);
+                        }
                     } else {
                         return Err(Self::runtime_error_from_supply_reason(quit_reason));
                     }
