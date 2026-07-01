@@ -216,23 +216,37 @@ impl Interpreter {
         {
             return Err(err);
         }
-        // When assigning Nil to a typed variable, reset to the type object
-        let mut val =
-            if matches!(val, Value::Nil) && !name.starts_with('@') && !name.starts_with('%') {
-                if let Some(constraint) = loan_env!(self, var_type_constraint(&name)) {
-                    if constraint == "Mu" {
-                        val
-                    } else {
-                        let nominal =
-                            loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                        Value::Package(Symbol::intern(&nominal))
-                    }
-                } else {
+        // Validate/coerce against a scalar type constraint. Nil resets to the
+        // type object; a non-Nil value that violates the constraint throws
+        // X::TypeCheck::Assignment (e.g. `infix:<=>($int, "foo")`), matching the
+        // SetLocal path -- expression-context assignment to a captured typed
+        // scalar must type-check just like a statement-level one.
+        let mut val = if !name.starts_with('@')
+            && !name.starts_with('%')
+            && let Some(constraint) = loan_env!(self, var_type_constraint(&name))
+        {
+            if matches!(val, Value::Nil) {
+                if constraint == "Mu" {
                     val
+                } else {
+                    let nominal =
+                        loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
+                    Value::Package(Symbol::intern(&nominal))
                 }
+            } else if !self.type_matches_value(&constraint, &val) {
+                return Err(runtime::utils::type_check_assignment_typed_error(
+                    &name,
+                    &constraint,
+                    &val,
+                ));
+            } else if !matches!(val, Value::Package(_)) {
+                loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
             } else {
                 val
-            };
+            }
+        } else {
+            val
+        };
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         if matches!(self.env().get(&readonly_key), Some(Value::Bool(true)))
