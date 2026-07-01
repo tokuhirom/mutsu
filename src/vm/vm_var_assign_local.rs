@@ -293,6 +293,24 @@ impl Interpreter {
             };
             val = self.tag_container_metadata(val, info);
         }
+        // Write through a `ContainerRef` slot (e.g. a raw `\target` bound to a
+        // multi-dim subscript lvalue, or a `:=`-bound scalar) so an
+        // expression-context assignment mutates the shared cell rather than
+        // detaching the alias. Mirrors the statement-form `SetLocal` path and
+        // the simple-local fast path above. A `=`-array-shared scalar reassigned
+        // as a whole still REPLACES the slot (raku value semantics).
+        if let Value::ContainerRef(arc) = &self.locals[idx] {
+            // Restrict to scalar (sigilless `\target` / `$`) names: `@`/`%` vars
+            // keep their existing whole-reassignment semantics here.
+            let scalar = !name.starts_with('@') && !name.starts_with('%');
+            if scalar && !(self.array_share_active && self.is_array_share_scalar(name)) {
+                let arc = arc.clone();
+                arc.lock().unwrap().clone_from(&val);
+                self.flush_local_to_env(code, idx);
+                self.stack.push(val);
+                return Ok(());
+            }
+        }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
         if let Some(alias_name) = self.env().get(&alias_key).and_then(|v| {

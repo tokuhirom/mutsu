@@ -171,6 +171,29 @@ impl Compiler {
     /// Promise and run later on another thread), so the locals it captures and
     /// mutates must be promoted to shared `ContainerRef` cells (escape analysis).
     pub(super) fn compile_call_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
+        // An array multi-dimensional subscript (`@a[0;1;2]`) passed as a raw
+        // `\target` / `is rw` argument must alias the underlying nested array
+        // slot, so a later `target = v` inside the callee mutates the real
+        // container and is visible immediately. Emit a `MultiDimIndexBindRef`
+        // that descends to the leaf and promotes it to a shared `ContainerRef`
+        // cell; the callee binds through it. Slice dimensions (`@a[*; 0,1]`)
+        // can't collapse to a single cell, so the op pushes the read value as a
+        // fallback. A HASH subscript (`%h{"a";"b"}`) is deliberately NOT routed
+        // here: promoting a hash leaf to a cell mutates the shared hash `Arc`
+        // in place, which would corrupt other values that alias it (e.g. a
+        // snapshot captured into a `for` list), so hash multislices keep the
+        // plain read path below.
+        if let Expr::MultiDimIndex { target, dimensions } = arg
+            && !matches!(target.as_ref(), Expr::HashVar(_))
+        {
+            self.compile_expr(target);
+            for dim in dimensions {
+                self.compile_expr(dim);
+            }
+            self.code
+                .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+            return;
+        }
         // A call argument's value is normally passed to the callee, not stored
         // in the caller frame, so a closure argument is conservatively
         // NON-escaping (the #2746 guard: `map {...}` / `lives-ok {...}` must not

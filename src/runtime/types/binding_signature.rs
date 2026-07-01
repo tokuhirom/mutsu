@@ -1126,7 +1126,16 @@ impl Interpreter {
                     if pd.sigilless {
                         let alias_key = sigilless_alias_key(&pd.name);
                         let readonly_key = sigilless_readonly_key(&pd.name);
-                        if let Some((source_name, inner)) = varref_from_value(&raw_arg) {
+                        if matches!(&value, Value::ContainerRef(_)) {
+                            // A multi-dimensional subscript lvalue (`@a[0;1;2]`)
+                            // arrives as a shared `ContainerRef` cell aliasing the
+                            // real array/hash element. Bind the raw `\target` param
+                            // to the cell as a writable, anonymous alias so a later
+                            // `target = v` writes through to the underlying
+                            // container (and is visible immediately).
+                            self.env.remove(&alias_key);
+                            self.env.insert(readonly_key, Value::Bool(false));
+                        } else if let Some((source_name, inner)) = varref_from_value(&raw_arg) {
                             let resolved_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
                             value = inner;
