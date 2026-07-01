@@ -101,8 +101,27 @@ impl Interpreter {
         drop(handles_guard);
         // Thread clones write through the parent's shared stdout/stderr buffers
         // so concurrent output interleaves in real chronological order.
+        // A thread spawned *inside* a subtest must keep buffering its output into
+        // `shared_thread_output`: its TAP lines are subtest-internal and are drained
+        // (indented) into the subtest, not flushed raw to top-level stdout. The
+        // thread clone's own `tap` resets `subtest_depth` to 0, so an immediate
+        // flush from such a clone would leak the subtest-internal line to the real
+        // top-level stream ("tests out of sequence"). Only threads spawned at top
+        // level (no active subtest) may flush immediately.
+        let parent_in_subtest = self.tap.subtest_depth() != 0;
         let thread_output_sink = {
             let mut parent_sink = self.output_sink_mut();
+            // When the parent flushes stdout immediately (CLI / REPL mode) and the
+            // thread is spawned at top level, the clone must do the same so its
+            // `say`/`pass` output lands in real chronological order relative to the
+            // main thread's direct writes. Otherwise the clone buffers into
+            // `shared_thread_output` and is only drained at the next sync point
+            // (`await` / `.result`), which lands a worker-thread test line *after*
+            // an intervening main-thread one — producing TAP "tests out of
+            // sequence". In buffered/capture mode (parent `immediate_stdout ==
+            // false`) the shared buffer is still used, so `run()` capture is
+            // unaffected.
+            let parent_immediate = parent_sink.immediate_stdout && !parent_in_subtest;
             let shared_out = Arc::clone(
                 parent_sink
                     .shared_thread_output
@@ -117,7 +136,7 @@ impl Interpreter {
                 output: String::new(),
                 stderr_output: String::new(),
                 output_emitted: false,
-                immediate_stdout: false,
+                immediate_stdout: parent_immediate,
                 is_thread_clone: true,
                 shared_thread_output: Some(shared_out),
                 shared_thread_stderr: Some(shared_err),
