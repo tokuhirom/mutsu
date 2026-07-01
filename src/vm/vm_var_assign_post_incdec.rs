@@ -712,6 +712,11 @@ impl Interpreter {
             if let Some(val) = self.env().get(&name).cloned() {
                 self.update_local_if_exists(code, &name, &val);
             }
+            // Inside a critical section, propagate the whole mutated aggregate to
+            // the shared store: the COW element write above landed only in this
+            // thread's local env (an `@`/`%` name COW-detaches, dropping the
+            // shared Arc link), so the next lock holder must re-read it on entry.
+            self.writeback_critical_var(&name);
         } else {
             // Autovivify typed containers for inc/dec on undefined variables
             let constraint = loan_env!(self, var_type_constraint(&name));

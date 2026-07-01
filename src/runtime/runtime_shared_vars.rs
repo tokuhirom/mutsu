@@ -171,6 +171,88 @@ impl Interpreter {
             .unwrap_or(false)
     }
 
+    /// Enter a critical section (Semaphore/Lock). Increments the depth so that
+    /// writes performed while held mark `shared_critical_dirty`, and refreshes
+    /// this thread's env copy of every scalar a previous holder committed inside
+    /// its own critical section.
+    pub(crate) fn enter_critical_section(&mut self) {
+        self.critical_section_depth += 1;
+        self.sync_critical_shared_scalars_to_env();
+    }
+
+    /// Leave a critical section.
+    pub(crate) fn leave_critical_section(&mut self) {
+        self.critical_section_depth = self.critical_section_depth.saturating_sub(1);
+    }
+
+    /// True while this interpreter holds at least one critical section.
+    pub(crate) fn in_critical_section(&self) -> bool {
+        self.critical_section_depth > 0
+    }
+
+    /// Write the current local value of `name` back to the shared store when a
+    /// critical section is held. Used after an in-place element mutation of a
+    /// shared `@`/`%` aggregate (`$s.acquire; @r[$i]++; $s.release`), whose COW
+    /// write lands only in the local env; the lock serializes the whole-
+    /// container round-trip so the next holder re-reads it on entry.
+    pub(crate) fn writeback_critical_var(&mut self, name: &str) {
+        if self.critical_section_depth == 0 || !self.shared_vars_active {
+            return;
+        }
+        if let Some(val) = self.env.get(name).cloned() {
+            self.set_shared_var(name, val);
+        }
+    }
+
+    /// Record that `key` was written while a critical section was held, so the
+    /// next holder re-reads it on entry. Covers scalars and `@`/`%` aggregates
+    /// (whole-container round-trip through the shared store, serialized by the
+    /// lock); internal `__mutsu_` bookkeeping keys manage their own propagation.
+    pub(crate) fn mark_critical_dirty(&self, key: &str) {
+        if key.starts_with("__mutsu_") {
+            return;
+        }
+        if self
+            .shared_critical_dirty
+            .read()
+            .ok()
+            .is_some_and(|d| d.contains(key))
+        {
+            return;
+        }
+        if let Ok(mut d) = self.shared_critical_dirty.write() {
+            d.insert(key.to_string());
+        }
+    }
+
+    /// Refresh this thread's env copies of *scalar* shared variables that some
+    /// thread wrote while holding a critical section, so a bare
+    /// read-modify-write inside a critical section (`$s.acquire; $r += $i;
+    /// $s.release`) reads the value committed by the previous holder rather than
+    /// the stale copy captured when this thread was cloned.
+    ///
+    /// Only keys written *inside* a critical section are pulled: a per-Promise
+    /// loop lexical (`my $i = $_`, assigned outside any critical section) keeps
+    /// this thread's own captured snapshot.
+    fn sync_critical_shared_scalars_to_env(&mut self) {
+        if !self.shared_vars_active {
+            return;
+        }
+        let keys: Vec<String> = {
+            let d = self.shared_critical_dirty.read().unwrap();
+            if d.is_empty() {
+                return;
+            }
+            d.iter().cloned().collect()
+        };
+        let sv = self.shared_vars.read().unwrap();
+        for key in keys {
+            if let Some(val) = sv.get(&key) {
+                self.env.insert(key, val.clone());
+            }
+        }
+    }
+
     pub(crate) fn mark_shared_var_dirty(&self, key: &str) {
         if self
             .shared_vars_dirty
@@ -222,6 +304,11 @@ impl Interpreter {
                 // Mark this key as explicitly updated so sync_shared_vars_to_env
                 // knows to propagate it (vs keys only initialized by clone_for_thread).
                 self.mark_shared_var_dirty(key);
+                // Writes performed inside a critical section are re-read by the
+                // next holder on entry (see `enter_critical_section`).
+                if self.in_critical_section() {
+                    self.mark_critical_dirty(key);
+                }
             }
         }
     }

@@ -238,6 +238,8 @@ impl Interpreter {
             shared_vars_active: true,
             sigilless_attrs_active: self.sigilless_attrs_active,
             shared_vars_dirty: Arc::clone(&self.shared_vars_dirty),
+            shared_critical_dirty: Arc::clone(&self.shared_critical_dirty),
+            critical_section_depth: 0,
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
             dispatch_ambiguous: false,
