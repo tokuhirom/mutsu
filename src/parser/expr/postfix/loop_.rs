@@ -2184,6 +2184,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
 
             // Check for ».method / >>.method and modifier forms like ».?method, ».+method, »!Type::meth.
+            let had_dot = after_hyper.starts_with('.');
             let r = after_hyper.strip_prefix('.').unwrap_or(after_hyper);
             // Hyper dotted postfix update: >>.++ / >>.--
             if let Some((op, len)) = parse_postfix_update_op(r) {
@@ -2404,7 +2405,17 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 parsed_static_name
             };
             if let Some((r, name)) = parsed_static_name {
-                let name = Symbol::intern(&name);
+                // Bare (non-dotted) hyper postfix on a builtin wordy postfix
+                // operator (currently just `i`, e.g. `@a»i`) calls the
+                // *operator* (`&postfix:<i>`), not a method — `i` is not a
+                // real dispatchable method (`@a».i` correctly throws
+                // X::Method::NotFound). Mirrors the non-hyper `4\i` vs `4.i`
+                // distinction (`strip_imaginary_suffix` in `primary/number.rs`).
+                let name = if !had_dot && modifier.is_none() && name == "i" {
+                    Symbol::intern("postfix:<i>")
+                } else {
+                    Symbol::intern(&name)
+                };
                 if r.starts_with('(') {
                     let (r, _) = parse_char(r, '(')?;
                     let (r, _) = ws(r)?;
@@ -2721,26 +2732,23 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
 
         // Postfix i (imaginary number): (expr)i or (expr)\i → Complex(0, expr)
         // The \i form uses unspace to separate the postfix from the preceding token
-        // (e.g. Inf\i avoids being parsed as the identifier "Infi").
+        // (e.g. Inf\i avoids being parsed as the identifier "Infi"). This is the
+        // `&postfix:<i>` *operator*, not a dispatchable method — `(expr).i` (the
+        // dotted method-call form) correctly throws X::Method::NotFound, so this
+        // compiles to a function call rather than `Expr::MethodCall`.
         if rest.starts_with("\\i") && !is_ident_char(rest.as_bytes().get(2).copied()) {
             rest = &rest[2..];
-            expr = Expr::MethodCall {
-                target: Box::new(expr),
-                name: Symbol::intern("i"),
-                args: vec![],
-                modifier: None,
-                quoted: false,
+            expr = Expr::Call {
+                name: Symbol::intern("postfix:<i>"),
+                args: vec![expr],
             };
             continue;
         }
         if rest.starts_with('i') && !is_ident_char(rest.as_bytes().get(1).copied()) {
             rest = &rest[1..];
-            expr = Expr::MethodCall {
-                target: Box::new(expr),
-                name: Symbol::intern("i"),
-                args: vec![],
-                modifier: None,
-                quoted: false,
+            expr = Expr::Call {
+                name: Symbol::intern("postfix:<i>"),
+                args: vec![expr],
             };
             continue;
         }

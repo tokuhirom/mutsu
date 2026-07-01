@@ -98,6 +98,7 @@ impl Interpreter {
                 | Value::Set(..)
                 | Value::Bag(..)
                 | Value::Mix(..)
+                | Value::Slip(..)
         )
     }
 

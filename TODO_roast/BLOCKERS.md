@@ -186,24 +186,33 @@ surface のうち 1 ファイル。
 
 ### 5.1 `S03-metaops/hyper.t`
 
-- **現状**: 420 planned 全実行、5 失敗（test 77, 362, 407-408, 411）。plan mismatch は解消。
+- **現状**: 420 planned 全実行、3 失敗（test 362, 407-408）。plan mismatch は解消。
 - **今回の進捗**: plan mismatch の原因は `<<op>>` 系ハイパーメタ演算子の閉じ `>>` 探索が
   演算子文字列自体と重なるケース（`<<=>>>` = `<<`+`=>`+`>>`）で誤って最短一致を採用し、
   以降のファイル全体を静かに打ち切っていたパーサバグだった（`hyper_concat.rs`）。
   副次的に `set_shared_var`（`@`/`%` への env 書き込み全経路を通る、hyper 専用ではない
   一般関数）が非スレッド文脈でも List→Array を無条件正規化しており、`:=` で束縛した
-  List の kind を最初の env sync で破壊していた一般バグも発見・修正。詳細は
-  `TODO_roast/S03.md` の hyper.t エントリと news 参照。
-- **残り 5 件**: (1) test 77 `.i` の dotted-vs-backslash 区別（AST 未分化）、
-  (2) test 362 ユーザ定義 custom infix 演算子とビルトイン演算子文字の字句衝突
-  （`infix:<+-*/>` の `*` が Whatever と誤認）、(3)(4) test 407-408 `».+`/`».*` の
-  all-candidates MRO dispatch 未実装、(5) test 411 `xx` の per-element hyper 分配。
+  List の kind を最初の env sync で破壊していた一般バグも発見・修正。さらに `is_listy()`
+  （hyper 分配の判定）に `Value::Slip` が抜けており `|<1 2> >>xx>> 2` が per-element
+  分配されない不具合、および `.i`（postfix imaginary）が dotted 呼び出し
+  （`4.i`/`@a».i`、本来 X::Method::NotFound）と bare 呼び出し
+  （`4\i`/`(expr)i`/`@a»i`、`&postfix:<i>` 演算子）を区別できていなかった不具合を修正。
+  詳細は `TODO_roast/S03.md` の hyper.t エントリと news 参照。
+- **残り 3 件**: (1) test 362 ユーザ定義 custom infix 演算子とビルトイン演算子文字の
+  字句衝突（`infix:<+-*/>` の `*` が Whatever と誤認）、(2)(3) test 407-408 `».+`/`».*` の
+  all-candidates MRO dispatch 未実装（非 hyper の `.+`/`.*` でも同じ欠落を確認済み —
+  mutsu のビルトイン型は List/Any/Cool のような多段クラス階層に渡る重複メソッド定義を
+  モデル化していない、根本的なアーキテクチャギャップ。個別メソッドの候補数を
+  ハードコードするのは禁止されているテスト特化ハックそのものなので不可）。
   いずれも局所修正では閉じない、それぞれ独立した深掘りが必要な項目。
 - **変更レイヤ**: `src/parser/expr/precedence_meta_ops/hyper_concat.rs`,
   `src/vm/vm_hyper_method_ops.rs`, `src/vm/vm_hyper_ops.rs`,
-  `src/runtime/runtime_shared_vars.rs`
-- **Next slice**: 残り 5 件のうち (3)(4) の all-candidates dispatch から着手するのが
-  最も汎用的（他の `».+`/`».*` 系テストにも波及しうる）。
+  `src/runtime/runtime_shared_vars.rs`, `src/parser/expr/postfix/loop_.rs`,
+  `src/parser/primary/number.rs`, `src/runtime/builtins_operators_fallback.rs`
+- **Next slice**: 残り 3 件はいずれも大きめの独立作業（custom operator の longest-match
+  字句解析、MRO 多重候補 dispatch の新規実装）。次に着手するなら (2)(3) の
+  all-candidates dispatch が最も汎用的（他の `».+`/`».*` 系テストにも波及しうる）が、
+  スコープはこのファイル単体では収まらない見込み。
 
 ---
 

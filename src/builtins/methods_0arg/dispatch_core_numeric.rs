@@ -1,11 +1,11 @@
 use super::{int_lsb_value, int_msb_value, is_infinite_range, range_elems_lazy_failure};
 use crate::builtins::rng::builtin_rand;
-/// Numeric and element methods: elems, default, Complex-i/i, abs, lsb, msb, rand,
+/// Numeric and element methods: elems, default, abs, lsb, msb, rand,
 /// uc, lc, fc, tc, sign
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::Signed;
 
 /// Check if a Package type object is calling a :D-requiring numeric method.
 /// Returns X::Parameter::InvalidConcreteness error if so.
@@ -175,21 +175,6 @@ pub(super) fn dispatch(
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))
-        }
-        "Complex-i" | "i" => {
-            let imag = match target {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                Value::BigInt(n) => n.to_f64().unwrap_or(0.0),
-                Value::BigRat(n, d) if !d.is_zero() => {
-                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
-                }
-                Value::Complex(r, i) => return Some(Some(Ok(Value::Complex(-*i, *r)))),
-                _ => return Some(None),
-            };
-            Some(Some(Ok(Value::Complex(0.0, imag))))
         }
         "abs" => {
             let result = match target {
