@@ -24,6 +24,126 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Multi-dimensional index as an lvalue (`:=` bind RHS / raw `\target` /
+    /// `is rw` argument). Stack: [target, dim0, ..., dimN-1] → [ref|value].
+    /// Produces a shared `ContainerRef` cell for the leaf when every dimension
+    /// is a single scalar index; otherwise (slice dimensions) it falls back to
+    /// the plain read value, which does not alias.
+    pub(super) fn exec_multi_dim_index_bind_ref_op(
+        &mut self,
+        ndims: u32,
+    ) -> Result<(), RuntimeError> {
+        let ndims = ndims as usize;
+        let mut dims = Vec::with_capacity(ndims);
+        for _ in 0..ndims {
+            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+        }
+        dims.reverse();
+        let target = self.stack.pop().unwrap_or(Value::Nil);
+
+        if let Some(slot) = self.multi_dim_slot_ref(&target, &dims)? {
+            self.stack.push(slot);
+        } else {
+            let result = self.multi_dim_index_read(&target, &dims)?;
+            self.stack.push(result);
+        }
+        Ok(())
+    }
+
+    /// Descend a nested array/hash through all-scalar dimensions, promoting the
+    /// leaf to a shared `ContainerRef` cell (autovivifying missing intermediate
+    /// levels). Returns `None` (caller falls back to a plain read) when any
+    /// dimension is a slice, or when a non-terminal level is a non-descendable
+    /// scalar / not-yet-existent hash key.
+    fn multi_dim_slot_ref(
+        &mut self,
+        target: &Value,
+        dims: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        if dims.is_empty() {
+            return Ok(None);
+        }
+        // A slice dimension (`*`, a list, or a range) selects multiple leaves and
+        // cannot collapse to a single cell.
+        for d in dims {
+            if matches!(
+                Self::normalize_multidim_dim(d),
+                Value::Whatever | Value::Array(..)
+            ) {
+                return Ok(None);
+            }
+        }
+
+        // Read through a `ContainerRef` / `Scalar` wrapper while keeping the
+        // shared `Arc`, so in-place promotions land in the real container.
+        let mut cur = match target {
+            Value::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            Value::Scalar(inner) => inner.as_ref().clone(),
+            other => other.clone(),
+        };
+        // A hash-rooted multislice is intentionally not aliased: promoting a hash
+        // leaf to a cell mutates the shared hash `Arc` in place, corrupting other
+        // values that alias it. Fall back to a plain read for hash roots.
+        if matches!(cur, Value::Hash(..)) {
+            return Ok(None);
+        }
+
+        for (i, dim) in dims.iter().enumerate() {
+            let terminal = i + 1 == dims.len();
+            let resolved = self
+                .resolve_whatever_code_index(dim, &cur)
+                .unwrap_or_else(|| dim.clone());
+            // Only descend a path that ALREADY exists. Autovivifying a missing
+            // slot here is wrong: the same `@a[0;1;2]` expression is compiled as a
+            // bind-ref for EVERY argument position, including read-only ones
+            // (`is-deeply @a[0;1;2], ...`), so eagerly creating the slot would
+            // corrupt a plain read. A missing leaf therefore falls back to a plain
+            // read (the assignment to it is not aliased — a limitation pending a
+            // deferred array-element ref, the array analogue of `HashEntryRef`).
+            let next = match &cur {
+                Value::Array(items, ..) => {
+                    let Some(idx) = Self::index_to_usize(&resolved) else {
+                        return Ok(None);
+                    };
+                    if idx >= items.len() {
+                        return Ok(None);
+                    }
+                    match cur.array_slot_ref(idx, terminal) {
+                        Some(v) => v,
+                        None => return Ok(None),
+                    }
+                }
+                Value::Hash(map, ..) => {
+                    let key = Value::hash_key_encode(&resolved);
+                    if !map.contains_key(&key) {
+                        return Ok(None);
+                    }
+                    match cur.hash_slot_ref(&key, terminal) {
+                        Some(v) => v,
+                        None => return Ok(None),
+                    }
+                }
+                _ => return Ok(None),
+            };
+            if terminal {
+                return Ok(Some(next));
+            }
+            // Descend into the intermediate level (which already exists).
+            cur = match next {
+                Value::ContainerRef(cell) => {
+                    let inner = cell.lock().unwrap().clone();
+                    match inner {
+                        Value::Array(..) | Value::Hash(..) => inner,
+                        _ => return Ok(None),
+                    }
+                }
+                Value::Array(..) | Value::Hash(..) => next,
+                _ => return Ok(None),
+            };
+        }
+        Ok(None)
+    }
+
     /// Check that all scalar indices are within bounds for a shaped array.
     /// `dim_offset` tracks the 1-based dimension number for error messages.
     fn check_shaped_array_bounds(

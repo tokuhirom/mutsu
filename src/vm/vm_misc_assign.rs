@@ -297,6 +297,29 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // Write through a `ContainerRef` slot/binding (e.g. a raw `\target` bound
+        // to a multi-dim subscript lvalue, or a `:=`-bound scalar reached by name)
+        // so an expression-context assignment mutates the shared cell instead of
+        // detaching the alias. Mirrors the SetLocal / AssignExprLocal write-through.
+        {
+            let current = code
+                .locals
+                .iter()
+                .position(|n| n == &name)
+                .and_then(|idx| self.locals.get(idx).cloned())
+                .or_else(|| self.get_env_with_main_alias(&name));
+            if let Some(Value::ContainerRef(arc)) = current {
+                // Restrict to scalar (sigilless `\target` / `$`) names: `@`/`%`
+                // vars have their own ContainerRef handling and must keep their
+                // existing whole-reassignment semantics here.
+                let scalar = !name.starts_with('@') && !name.starts_with('%');
+                if scalar && !(self.array_share_active && self.is_array_share_scalar(&name)) {
+                    arc.lock().unwrap().clone_from(&val);
+                    self.stack.push(val);
+                    return Ok(());
+                }
+            }
+        }
         // Circular hash reference fixup
         if name.starts_with('%') {
             Self::fixup_circular_hash_refs(&mut val, &old_hash_arc);

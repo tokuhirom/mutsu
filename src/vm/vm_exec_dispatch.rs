@@ -2729,6 +2729,10 @@ impl Interpreter {
                 self.exec_multi_dim_index_assign_generic_op(*ndims)?;
                 *ip += 1;
             }
+            OpCode::MultiDimIndexBindRef(ndims) => {
+                self.exec_multi_dim_index_bind_ref_op(*ndims)?;
+                *ip += 1;
+            }
             OpCode::HyperSlice(adverb) => {
                 self.exec_hyper_slice_op(*adverb)?;
                 *ip += 1;

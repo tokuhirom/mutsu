@@ -683,6 +683,14 @@ pub(crate) enum OpCode {
     /// Multi-dimensional index assignment (generic target)
     /// Stack: [target, dim0, ..., dimN, value]
     MultiDimIndexAssignGeneric(u32),
+    /// Multi-dimensional index as an lvalue (`:=` bind RHS, or a raw `\target` /
+    /// `is rw` argument). Descends the nested array/hash through all (scalar)
+    /// dimensions, promoting the leaf to a shared `ContainerRef` cell so a later
+    /// assignment writes through to the real container. If any dimension is a
+    /// slice (Whatever / list), it can't collapse to a single cell, so the read
+    /// value is pushed instead (a non-aliasing fallback).
+    /// Stack: [target, dim0, ..., dimN] → [ContainerRef | value]
+    MultiDimIndexBindRef(u32),
     /// Hash hyperslice: recursively iterate hash with given adverb mode.
     /// Stack: [target] → [result list]
     HyperSlice(u8),
