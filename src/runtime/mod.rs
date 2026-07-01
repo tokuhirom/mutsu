@@ -1342,6 +1342,13 @@ pub struct Interpreter {
     /// Method-level wrap chains: (class_name, method_name, candidate_index) ->
     /// stack of (handle_id, wrapper_sub).
     method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,
+    /// Metamodel method fallbacks registered via `.^add_fallback(cond, calc)`:
+    /// class_name -> list of (condition, calculator) code pairs. When a method
+    /// is not found on a value of that class, each condition is called with
+    /// `(invocant, method_name)`; the first that returns True has its calculator
+    /// called with `(invocant, method_name)` to produce the method body, which is
+    /// then invoked with the invocant.
+    method_fallbacks: HashMap<String, Vec<(Value, Value)>>,
     /// Names suppressed by `anon class`. These bare words should error as undeclared.
     suppressed_names: HashSet<String>,
     /// Bare enum variant names poisoned by redeclaration from different enums.

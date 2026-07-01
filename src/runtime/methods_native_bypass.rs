@@ -25,6 +25,7 @@ impl Interpreter {
                 | "add_attribute"
                 | "add_method"
                 | "add_multi_method"
+                | "add_fallback"
                 | "compose"
                 | "archetypes"
                 | "name"

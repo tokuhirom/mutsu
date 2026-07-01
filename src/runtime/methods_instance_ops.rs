@@ -1740,6 +1740,11 @@ impl Interpreter {
                     return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
                 }
 
+                // Metamodel method fallback (`.^add_fallback`): before failing,
+                // consult any dynamic fallbacks registered for this value's class.
+                if let Some(result) = self.try_method_fallback(&target, method, &args) {
+                    return result;
+                }
                 let type_name = match &target {
                     Value::Instance { class_name, .. } => class_name.resolve(),
                     Value::Package(name) => name.resolve(),
@@ -1748,6 +1753,66 @@ impl Interpreter {
                 Err(make_method_not_found_error(method, &type_name, false))
             }
         }
+    }
+
+    /// Consult metamodel method fallbacks registered via `.^add_fallback` for a
+    /// value whose method lookup just failed. Returns `Some(result)` when a
+    /// fallback's condition matched (and its calculated method body was invoked),
+    /// or `None` when no fallback applies (the caller then raises NotFound).
+    fn try_method_fallback(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if self.method_fallbacks.is_empty() {
+            return None;
+        }
+        let type_name = match target {
+            Value::Instance { class_name, .. } => class_name.resolve(),
+            Value::Package(name) => name.resolve(),
+            _ => crate::runtime::utils::value_type_name(target).to_string(),
+        };
+        // Consult the class itself first, then its ancestors (MRO).
+        let mut classes = vec![type_name.clone()];
+        classes.extend(
+            self.class_mro(&type_name)
+                .into_iter()
+                .filter(|c| c != &type_name),
+        );
+        let name_val = Value::str(method.to_string());
+        for cn in classes {
+            let Some(fallbacks) = self.method_fallbacks.get(&cn).cloned() else {
+                continue;
+            };
+            for (condition, calculator) in fallbacks {
+                let cond = match self.call_sub_value(
+                    condition,
+                    vec![target.clone(), name_val.clone()],
+                    false,
+                ) {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                };
+                if !cond.truthy() {
+                    continue;
+                }
+                // The calculator returns the method body (a Callable) for this
+                // name; invoke it with the invocant (and any call args).
+                let method_code = match self.call_sub_value(
+                    calculator,
+                    vec![target.clone(), name_val.clone()],
+                    false,
+                ) {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                };
+                let mut call_args = vec![target.clone()];
+                call_args.extend_from_slice(args);
+                return Some(self.call_sub_value(method_code, call_args, false));
+            }
+        }
+        None
     }
 
     /// Mutate an array attribute in a Proxy subclass's shared storage.
