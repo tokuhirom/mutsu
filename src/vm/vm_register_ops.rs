@@ -84,7 +84,15 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
-            let upvalues = self.capture_upvalues(code, &compiled_code);
+            let mut upvalues = self.capture_upvalues(code, &compiled_code);
+            let mut captured_env = self.capture_closure_env(code, &compiled_code);
+            self.freeze_readonly_owned_captures(
+                code,
+                &compiled_code,
+                &owned_captures,
+                &mut captured_env,
+                &mut upvalues,
+            );
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -100,7 +108,7 @@ impl Interpreter {
                 is_raw: false,
                 // Upvalue snapshot (single-store Slice E): capture only free vars,
                 // shadow-meta, and system names; see `capture_closure_env`.
-                env: self.capture_closure_env(code, &compiled_code),
+                env: captured_env,
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
@@ -141,9 +149,16 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
-            let upvalues = self.capture_upvalues(code, &compiled_code);
+            let mut upvalues = self.capture_upvalues(code, &compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
             let mut env = self.capture_closure_env(code, &compiled_code);
+            self.freeze_readonly_owned_captures(
+                code,
+                &compiled_code,
+                &owned_captures,
+                &mut env,
+                &mut upvalues,
+            );
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }
@@ -194,6 +209,59 @@ impl Interpreter {
     /// closure's `owned_captures`: read at call time from its own frozen captured
     /// env so each loop iteration's closure sees its own value (Raku
     /// per-iteration binding), immune to the dual-store slot re-injection.
+    /// Value-freeze a *read-only* `:=`-bound loop capture in a just-built closure
+    /// env. `my $in := @a[$i]` makes `$in` a `ContainerRef` aliasing an element;
+    /// the loop re-points the same lexical each iteration, so a closure that only
+    /// READS `$in` (an `owned_capture` not in `captured_mutated_locals`) would
+    /// otherwise freeze the shared/re-pointed cell and every iteration's closure
+    /// resolves to the loop's final binding (roast S17-lowlevel/lock.t cue tests,
+    /// `$out = $in * 10`). A *mutated* capture is boxed into a genuinely-shared
+    /// cell by `box_captured_lexicals` and must keep its live `ContainerRef`, so
+    /// only the read-only ones are snapshotted to a plain value.
+    pub(super) fn freeze_readonly_owned_captures(
+        &self,
+        code: &CompiledCode,
+        cc: &Option<std::sync::Arc<CompiledCode>>,
+        owned_captures: &[Symbol],
+        env: &mut Env,
+        upvalues: &mut [Option<Value>],
+    ) {
+        let cc_upvalue_syms: &[Symbol] = cc
+            .as_ref()
+            .map(|c| c.upvalue_syms.as_slice())
+            .unwrap_or(&[]);
+        for sym in owned_captures {
+            // A *mutated* capture is boxed into a genuinely-shared cell by
+            // `box_captured_lexicals` and must keep its live `ContainerRef`.
+            if code.captured_mutated_locals.contains(sym) {
+                continue;
+            }
+            if !matches!(env.get_sym(*sym), Some(Value::ContainerRef(_))) {
+                continue;
+            }
+            // Deep-deref: the per-iteration binding can nest (`$in`'s own cell
+            // wrapping the element cell, plus prior iterations' wrappers).
+            let mut v = env.get_sym(*sym).cloned().unwrap();
+            let mut guard = 0;
+            while let Value::ContainerRef(_) = v {
+                v = v.into_deref();
+                guard += 1;
+                if guard > 64 {
+                    break;
+                }
+            }
+            env.insert_sym(*sym, v.clone());
+            // The read path resolves a free var from the upvalue snapshot (Slice
+            // E), captured from the creating frame's slot — which holds the same
+            // shared `ContainerRef`. Freeze that entry to the snapshot too.
+            if let Some(uv_idx) = cc_upvalue_syms.iter().position(|s| s == sym)
+                && let Some(slot) = upvalues.get_mut(uv_idx)
+            {
+                *slot = Some(v);
+            }
+        }
+    }
+
     pub(super) fn compute_owned_captures(
         &self,
         compiled_code: &Option<std::sync::Arc<CompiledCode>>,
