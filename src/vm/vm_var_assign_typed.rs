@@ -57,10 +57,7 @@ impl Interpreter {
                     &|_| None,
                     false,
                 )?;
-                val = Value::Array(
-                    Arc::new(crate::value::ArrayData::new(coerced)),
-                    *kind,
-                );
+                val = Value::Array(Arc::new(crate::value::ArrayData::new(coerced)), *kind);
             }
             val = self.tag_container_metadata(val, info);
         }
