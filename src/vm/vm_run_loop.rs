@@ -615,8 +615,12 @@ impl Interpreter {
     /// The rvalue produced by a *scalar* assignment expression is the itemized
     /// container value, so a following list context sees it as one element:
     /// `@p = ($x = 3, 4)` gives `((3,4),)`. `@`/`%`/`&` names keep their value.
+    ///
+    /// The topic `$_` is excluded: when it aliases a whole container (`given @a {
+    /// .=reverse }`) the assignment writes back through the alias, and itemizing
+    /// the result would wrap the container written back to `@a`.
     pub(crate) fn itemize_scalar_assign_result(name: &str, val: Value) -> Value {
-        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') || name == "_" {
             val
         } else {
             Self::itemize_value(val)
