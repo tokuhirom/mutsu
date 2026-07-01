@@ -145,6 +145,8 @@ impl Interpreter {
                     | "printf"
                     | "split"
                     | "comb"
+                    | "raku"
+                    | "perl"
             )
         {
             return true;

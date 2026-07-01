@@ -167,6 +167,39 @@ impl PartialEq for Value {
                     ..
                 },
             ) => ap == bp && an == bn,
+            // `IO::Handle` carries internal open-state attributes (`handle` — an
+            // opaque integer indexing this process's open-file registry; `mode`
+            // — how it happened to be opened) that are unique per `.open()` call
+            // and have no bearing on logical identity. Verified against real
+            // Rakudo (2022.12): `$cat1 eqv $cat2` for two `IO::CatHandle`s built
+            // from independently-opened handles to the same file (one opened
+            // directly, one reopened via `$h.raku.EVAL` reconstruction, as
+            // `IO::CatHandle.new` does internally for an un-opened source) is
+            // `True` — so Rakudo's own comparison only looks at the public,
+            // reproducible attributes (path/chomp/nl-in/nl-out/encoding/bin),
+            // never at internal open state. Compare that allow-list only
+            // (mirrors the class-specific carve-outs for Date/DateTime/Signature
+            // in `Value::eqv`).
+            (
+                Value::Instance {
+                    class_name: a,
+                    attributes: aa,
+                    ..
+                },
+                Value::Instance {
+                    class_name: b,
+                    attributes: ba,
+                    ..
+                },
+            ) if a == "IO::Handle" && b == "IO::Handle" => {
+                let a_map = aa.as_map();
+                let b_map = ba.as_map();
+                const COMPARABLE_KEYS: &[&str] =
+                    &["path", "chomp", "nl-in", "nl-out", "encoding", "bin"];
+                COMPARABLE_KEYS
+                    .iter()
+                    .all(|k| a_map.get(*k) == b_map.get(*k))
+            }
             (
                 Value::Instance {
                     class_name: a,

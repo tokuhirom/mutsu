@@ -109,6 +109,51 @@ impl Interpreter {
                 }
                 Ok(Value::str_from("IO::Handle()"))
             }
+            "raku" | "perl" => {
+                // Reconstructable but deliberately *unopened*: matches rakudo's
+                // own `.raku` (no `handle`/`mode` shown), and lets `IO::CatHandle`
+                // re-open this handle itself when it appears as one of its
+                // sources (`cat_open_source` opens any un-opened `IO::Handle`
+                // source via `.open(:r)` before reading it).
+                let mut parts = Vec::new();
+                if let Some(path_val) = target.get("path") {
+                    let path_raku = self
+                        .call_method_with_values(path_val.clone(), "raku", vec![])
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|_| path_val.to_string_value());
+                    parts.push(format!("path => {path_raku}"));
+                }
+                if let Some(chomp) = target.get("chomp") {
+                    parts.push(format!(
+                        "chomp => {}",
+                        if chomp.truthy() { "True" } else { "False" }
+                    ));
+                }
+                if let Some(nl_in) = target.get("nl-in") {
+                    let nl_in_raku = self
+                        .call_method_with_values(nl_in.clone(), "raku", vec![])
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|_| nl_in.to_string_value());
+                    parts.push(format!("nl-in => {nl_in_raku}"));
+                }
+                if let Some(nl_out) = target.get("nl-out") {
+                    parts.push(format!(
+                        "nl-out => {}",
+                        crate::builtins::methods_0arg::raku_repr::escape_raku_str(
+                            &nl_out.to_string_value()
+                        )
+                    ));
+                }
+                if let Some(encoding) = target.get("encoding") {
+                    parts.push(format!(
+                        "encoding => {}",
+                        crate::builtins::methods_0arg::raku_repr::escape_raku_str(
+                            &encoding.to_string_value()
+                        )
+                    ));
+                }
+                Ok(Value::str(format!("IO::Handle.new({})", parts.join(", "))))
+            }
             "open" => {
                 // IO::Handle.new(:path(...)).open(:w, :nl-out(...))
                 // Merge instance attributes with open args (args override instance attrs)
