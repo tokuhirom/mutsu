@@ -336,6 +336,25 @@ impl Compiler {
                         has_arg: trait_arg.is_some(),
                     });
                 }
+                // An uninitialized scalar declared `is default(V)` used as an
+                // expression (`(my $x is default(42))`, `(my Foo $b is
+                // default(42))`) must evaluate to its default, not the raw Nil the
+                // container was seeded with. The `default` trait was just applied
+                // to the container above; read the variable back so the expression
+                // result reflects it. Gated on an uninitialized (Nil) declaration,
+                // so a real initializer (`my $d is default(42) = "foo"`) still
+                // returns its assigned value.
+                let has_default_trait = custom_traits.iter().any(|(t, _)| t == "default");
+                let is_nil_init = matches!(expr, Expr::Literal(Value::Nil));
+                if has_default_trait
+                    && is_nil_init
+                    && !name.starts_with('@')
+                    && !name.starts_with('%')
+                    && name != "__ANON_STATE__"
+                {
+                    self.code.emit(OpCode::Pop);
+                    self.emit_get_named_var(name);
+                }
             }
             Stmt::Expr(inner_expr) => {
                 self.compile_expr(inner_expr);
