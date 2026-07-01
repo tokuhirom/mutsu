@@ -187,35 +187,14 @@ impl Interpreter {
         right: Value,
         rhs_is_match_regex: bool,
     ) -> Result<Value, RuntimeError> {
-        // When RHS is Whatever, autoprime: return a WhateverCode that takes
-        // one argument and smartmatches LHS against it.
-        // In Raku, `$x ~~ *` produces `-> $a { $x ~~ $a }`.
-        if matches!(&right, Value::Whatever) {
-            use crate::ast::{Expr, Stmt};
-            use crate::env::Env;
-            let mut env = Env::new();
-            env.insert(
-                "__mutsu_callable_type".to_string(),
-                Value::str_from("WhateverCode"),
-            );
-            // Capture the LHS value in the closure environment
-            env.insert("__wc_sm_lhs".to_string(), left);
-            let param = "__wc_0".to_string();
-            let body = vec![Stmt::Expr(Expr::Binary {
-                left: Box::new(Expr::Var("__wc_sm_lhs".to_string())),
-                op: crate::token_kind::TokenKind::SmartMatch,
-                right: Box::new(Expr::Var(param.clone())),
-            })];
-            return Ok(Value::make_sub(
-                Symbol::intern("GLOBAL"),
-                Symbol::intern("<whatevercode-smartmatch>"),
-                vec![param],
-                Vec::new(),
-                body,
-                false,
-                env,
-            ));
-        }
+        // A Whatever *value* on the RHS smartmatches to True (`X ~~ *` is always
+        // True per Whatever's ACCEPTS). The autoprime of a *syntactic* bare `*`
+        // (`$x ~~ *` → `-> $a { $x ~~ $a }`) is handled at parse time in the
+        // precedence parser, which can tell a bare `*` from a parenthesized `(*)`
+        // / a variable holding a Whatever — those reach here as a Whatever value
+        // and must be True, not re-primed. So do NOT autoprime here; fall through
+        // to `vm_smart_match`, whose `pure_smart_match((_, Whatever)) => true`
+        // arm returns True.
         let is_regex = matches!(
             &right,
             Value::Regex(_)
