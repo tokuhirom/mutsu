@@ -425,7 +425,12 @@ impl Interpreter {
             self.set_env_with_main_alias(&sv, val.clone());
             self.update_local_if_exists(code, &sv, &val);
         }
-        self.stack.push(val);
+        // A scalar assignment used as an rvalue yields the *itemized* container
+        // value, so a following list context treats it as one element (matching
+        // the local-var path). Covers package-qualified / global scalars
+        // (`@z = ($Foo::c = 3, 4)` -> `((3,4),)`). `@`/`%`/`&` keep their value.
+        self.stack
+            .push(Self::itemize_scalar_assign_result(&name, val));
         Ok(())
     }
 
