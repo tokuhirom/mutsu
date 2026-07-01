@@ -7,6 +7,23 @@ fn decimal_digit_value(c: char) -> Option<u32> {
     crate::builtins::unicode::unicode_decimal_digit_value(c)
 }
 
+/// Recognize the imaginary-number literal suffix after a numeral: bare `i`
+/// (`4i`) or the backslash-escaped `\i` (`4\i`). The backslash form is Raku's
+/// generic "don't continue scanning the previous token" disambiguator; unlike
+/// the dotted `.i` method-call syntax, both forms are the postfix *operator*
+/// (`&postfix:<i>`), not a real dispatchable method — `4.i` correctly throws
+/// X::Method::NotFound. Returns the remaining input after the suffix.
+fn strip_imaginary_suffix(rest: &str) -> Option<&str> {
+    let after = rest
+        .strip_prefix('i')
+        .or_else(|| rest.strip_prefix("\\i"))?;
+    if after.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+        None
+    } else {
+        Some(after)
+    }
+}
+
 /// Build a fatal parse error with X::Str::Numeric exception for invalid radix digits.
 fn make_radix_digit_error(base: u32, body: &str, pos: usize) -> PError {
     let message = format!(
@@ -292,18 +309,16 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
             let full = format!("{}{}", clean, exp_part);
             let n: f64 = full.parse().unwrap_or(0.0);
             // Check for imaginary suffix
-            if r2.starts_with('i')
-                && !r2[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
-            {
-                return Ok((&r2[1..], Expr::Literal(Value::Complex(0.0, n))));
+            if let Some(r3) = strip_imaginary_suffix(r2) {
+                return Ok((r3, Expr::Literal(Value::Complex(0.0, n))));
             }
             return Ok((r2, Expr::Literal(Value::Num(n))));
         }
     }
-    // Check for imaginary suffix: 4i
-    if rest.starts_with('i') && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+    // Check for imaginary suffix: 4i / 4\i
+    if let Some(r) = strip_imaginary_suffix(rest) {
         let n: i64 = clean.parse().unwrap_or(0);
-        return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n as f64))));
+        return Ok((r, Expr::Literal(Value::Complex(0.0, n as f64))));
     }
     // Try i64 first, fall back to BigInt for large integers
     if let Ok(n) = clean.parse::<i64>() {
@@ -354,19 +369,15 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
     if let Some(exp) = exp_part {
         let full = format!("{}{}", num_str, exp);
         let n: f64 = full.parse().unwrap_or(0.0);
-        if rest.starts_with('i')
-            && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
-        {
-            return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+        if let Some(r) = strip_imaginary_suffix(rest) {
+            return Ok((r, Expr::Literal(Value::Complex(0.0, n))));
         }
         Ok((rest, Expr::Literal(Value::Num(n))))
     } else {
         // Check for imaginary suffix first
         let n: f64 = num_str.parse().unwrap_or(0.0);
-        if rest.starts_with('i')
-            && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
-        {
-            return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+        if let Some(r) = strip_imaginary_suffix(rest) {
+            return Ok((r, Expr::Literal(Value::Complex(0.0, n))));
         }
         // Produce Rat: numerator = int_part * 10^frac_digits + frac_part, denominator = 10^frac_digits
         let frac_digits = frac_clean.len() as u32;
@@ -439,18 +450,14 @@ pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
     if let Some(exp) = exp_part {
         let full = format!("{}{}", num_str, exp);
         let n: f64 = full.parse().unwrap_or(0.0);
-        if rest.starts_with('i')
-            && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
-        {
-            return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+        if let Some(r) = strip_imaginary_suffix(rest) {
+            return Ok((r, Expr::Literal(Value::Complex(0.0, n))));
         }
         Ok((rest, Expr::Literal(Value::Num(n))))
     } else {
         let n: f64 = format!("0.{}", frac_clean).parse().unwrap_or(0.0);
-        if rest.starts_with('i')
-            && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
-        {
-            return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+        if let Some(r) = strip_imaginary_suffix(rest) {
+            return Ok((r, Expr::Literal(Value::Complex(0.0, n))));
         }
         let frac_digits = frac_clean.len() as u32;
         let denom = 10i64.pow(frac_digits);

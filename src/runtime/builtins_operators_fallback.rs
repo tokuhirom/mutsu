@@ -152,6 +152,12 @@ impl Interpreter {
                         } else {
                             arg.clone()
                         };
+                        // Applying `i` to an existing Complex (directly, or via a
+                        // `.Numeric` coercion that returns one) rotates it 90°
+                        // (multiplies by i): `(r+ei)\i == -e+ri`.
+                        if let Value::Complex(r, i) = coerced {
+                            return Ok(Value::Complex(-i, r));
+                        }
                         let n = crate::runtime::coerce_to_numeric(coerced);
                         let num_val = match &n {
                             Value::Int(i) => *i as f64,

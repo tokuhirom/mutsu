@@ -505,7 +505,7 @@ pub(crate) fn native_method_0arg(
             | "acos" | "atan" | "sinh" | "cosh" | "tanh" | "sec" | "cosec" | "cotan" | "asec"
             | "acosec" | "acotan" | "sech" | "cosech" | "cotanh" | "asech" | "acosech"
             | "acotanh" | "atan2" | "narrow" | "polymod" | "base" | "chr" | "expmod" | "lsb"
-            | "msb" | "is-int" | "i" | "Complex-i" => {
+            | "msb" | "is-int" => {
                 let coerced = if let Ok(i) = s.parse::<i64>() {
                     Value::Int(i)
                 } else if let Ok(f) = s.parse::<f64>() {
