@@ -32,6 +32,7 @@ impl SharedPromise {
                     stderr_output: String::new(),
                     class_name,
                     thread_payload: None,
+                    waiters: Vec::new(),
                 }),
                 Condvar::new(),
             )),
@@ -49,6 +50,7 @@ impl SharedPromise {
                     stderr_output: String::new(),
                     class_name: Symbol::intern("Promise"),
                     thread_payload: None,
+                    waiters: Vec::new(),
                 }),
                 Condvar::new(),
             )),
@@ -83,10 +85,13 @@ impl SharedPromise {
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
         state.status = "Kept".to_string();
-        state.result = result;
-        state.output = output;
-        state.stderr_output = stderr;
+        state.result = result.clone();
+        state.output = output.clone();
+        state.stderr_output = stderr.clone();
+        let waiters = std::mem::take(&mut state.waiters);
         cvar.notify_all();
+        drop(state);
+        Self::dispatch_waiters(waiters, "Kept".to_string(), result, output, stderr);
     }
 
     /// Try to keep; returns Err(current_status) if already kept/broken.
@@ -97,8 +102,17 @@ impl SharedPromise {
             return Err(state.status.clone());
         }
         state.status = "Kept".to_string();
-        state.result = result;
+        state.result = result.clone();
+        let waiters = std::mem::take(&mut state.waiters);
         cvar.notify_all();
+        drop(state);
+        Self::dispatch_waiters(
+            waiters,
+            "Kept".to_string(),
+            result,
+            String::new(),
+            String::new(),
+        );
         Ok(())
     }
 
@@ -106,10 +120,13 @@ impl SharedPromise {
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
         state.status = "Broken".to_string();
-        state.result = error;
-        state.output = output;
-        state.stderr_output = stderr;
+        state.result = error.clone();
+        state.output = output.clone();
+        state.stderr_output = stderr.clone();
+        let waiters = std::mem::take(&mut state.waiters);
         cvar.notify_all();
+        drop(state);
+        Self::dispatch_waiters(waiters, "Broken".to_string(), error, output, stderr);
     }
 
     /// Try to break; returns Err(current_status) if already kept/broken.
@@ -120,9 +137,72 @@ impl SharedPromise {
             return Err(state.status.clone());
         }
         state.status = "Broken".to_string();
-        state.result = error;
+        state.result = error.clone();
+        let waiters = std::mem::take(&mut state.waiters);
         cvar.notify_all();
+        drop(state);
+        Self::dispatch_waiters(
+            waiters,
+            "Broken".to_string(),
+            error,
+            String::new(),
+            String::new(),
+        );
         Ok(())
+    }
+
+    /// Register a callback to run once this promise resolves. If it is
+    /// already resolved, the callback runs synchronously on the caller's
+    /// thread (matching the existing `.then`/`.andthen`/`.orelse` fast path
+    /// for an already-kept/broken promise) and this returns `true`.
+    /// Otherwise the callback is queued and this returns `false`: some
+    /// future `keep`/`try_keep`/`break_with`/`try_break` call will run every
+    /// queued waiter, **in registration order**, on a single dedicated
+    /// thread. Registering into this shared, ordered queue (rather than
+    /// having each caller spawn its own thread that blocks on `wait()`)
+    /// is what makes sibling callbacks on the same promise (e.g. an
+    /// independent `.then` alongside an `.andthen` chain) deterministically
+    /// ordered instead of racing each other's OS thread wake-up latency.
+    pub(crate) fn on_resolve(&self, waiter: PromiseWaiter) -> bool {
+        let (lock, _) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        if state.status == "Planned" {
+            state.waiters.push(waiter);
+            false
+        } else {
+            let status = state.status.clone();
+            let result = state.result.clone();
+            let output = state.output.clone();
+            let stderr = state.stderr_output.clone();
+            drop(state);
+            waiter(status, result, output, stderr);
+            true
+        }
+    }
+
+    /// Run every queued waiter, in order, on a single dedicated thread (so
+    /// resolving a promise never blocks the resolver on arbitrary user
+    /// callback code). No-op when there is nothing queued.
+    fn dispatch_waiters(
+        waiters: Vec<PromiseWaiter>,
+        status: String,
+        result: Value,
+        output: String,
+        stderr: String,
+    ) {
+        if waiters.is_empty() {
+            return;
+        }
+        crate::runtime::builtins_system::spawn_user_thread(move || {
+            for waiter in waiters {
+                waiter(
+                    status.clone(),
+                    result.clone(),
+                    output.clone(),
+                    stderr.clone(),
+                );
+            }
+        });
     }
 
     /// Check if promise is resolved (Kept or Broken).
