@@ -2118,6 +2118,22 @@ impl Interpreter {
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let target = self.stack.pop().unwrap_or(Value::Nil);
         let key = idx.to_string_value();
+        // A single scalar index names one element, so the assignment's rvalue is
+        // itemized (like a scalar-variable / named single-index assignment);
+        // `@z = (foo()[$b] = l, l)` => `@z.elems == 1`. A multi-element slice
+        // (list of indices / Range) keeps the flat list.
+        let idx_is_single_element = match &idx {
+            Value::Array(items, kind) => {
+                matches!(kind, crate::value::ArrayKind::ItemList) || items.len() == 1
+            }
+            Value::Seq(items) | Value::Slip(items) => items.len() == 1,
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => false,
+            _ => true,
+        };
 
         // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
         let (val, bind_source) = match raw_val {
@@ -2272,7 +2288,12 @@ impl Interpreter {
                         self.update_local_if_exists(code, src, &cell_val);
                     }
                 }
-                self.stack.push(val);
+                let result = if idx_is_single_element {
+                    Self::itemize_value(val)
+                } else {
+                    val
+                };
+                self.stack.push(result);
             }
             Value::HashEntryRef { .. } => {
                 // Resolve the HashEntryRef and assign into the resolved container.
