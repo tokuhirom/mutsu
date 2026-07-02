@@ -224,7 +224,7 @@ impl Compiler {
                             self.code.emit(OpCode::Dup);
                             self.code.emit(OpCode::MarkBindContext);
                             self.code.emit(OpCode::MarkVarDeclContext);
-                            let slot = self.alloc_local(name);
+                            let slot = self.declare_local(name);
                             self.code.emit(OpCode::SetLocal(slot));
                         } else {
                             self.compile_expr(expr);
@@ -262,7 +262,7 @@ impl Compiler {
                                     self.code.emit(OpCode::MarkScalarBindContext);
                                 }
                                 self.code.emit(OpCode::MarkVarDeclContext);
-                                let slot = self.alloc_local(name);
+                                let slot = self.declare_local(name);
                                 self.code.emit(OpCode::SetLocal(slot));
                             } else {
                                 self.emit_set_named_var(name);
