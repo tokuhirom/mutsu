@@ -418,7 +418,15 @@ pub(crate) fn parse_list_infix_loop<'a>(
                 .unwrap_or_else(|| "left".to_string());
             let mut args = vec![left.clone(), right];
             r = r2;
-            if assoc != "left" {
+            // Only genuine associativity values collect the full operand run here:
+            // `list` (pass all to the routine), `right` (right-fold), `non` (reject
+            // >2), and `chain` (expanded pairwise downstream). The precedence-trait
+            // placeholders `equiv`/`tighter`/`looser` are NOT associativity and must
+            // fold left-associatively via the outer loop like `left`: a user operator
+            // never chains merely because `is equiv(&infix:<==>)` copied a built-in
+            // chain op's precedence — rakudo keeps it non-chaining, so `6 op 4 op 2`
+            // is `(6 op 4) op 2`, not one n-ary `op(6,4,2)` call.
+            if matches!(assoc.as_str(), "list" | "right" | "non" | "chain") {
                 loop {
                     let (r_ws, _) = ws(r)?;
                     let ws_between = &r[..r.len() - r_ws.len()];

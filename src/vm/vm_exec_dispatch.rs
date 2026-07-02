@@ -2407,7 +2407,11 @@ impl Interpreter {
 
             // -- Composite --
             OpCode::MakeArray(n) => {
-                self.exec_make_array_op(*n, false);
+                // A user-overloaded list-associative `infix:<,>` intercepts the
+                // bare value-list before it becomes a List.
+                if !self.try_comma_overload(*n)? {
+                    self.exec_make_array_op(*n, false);
+                }
                 *ip += 1;
             }
             OpCode::MakeRealArray(n) => {

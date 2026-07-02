@@ -78,6 +78,42 @@ impl Interpreter {
         Ok(())
     }
 
+    /// When the user has overloaded the list-associative comma operator
+    /// (`sub infix:<,> {...}`), a bare value-list expression (`5, 5`) dispatches
+    /// to that sub with ALL comma operands at once (raku's `infix:<,>` is
+    /// list-associative), instead of building a `List`. Returns `true` when the
+    /// call was made (result pushed); `false` when no override applies, in which
+    /// case the operands are left on the stack for normal list construction.
+    ///
+    /// Guarded on the (normally empty) `user_declared_infix_ops` set so ordinary
+    /// list construction pays only a set-emptiness check. Argument-list commas
+    /// (`f(a, b)`) are compiled directly, not through `MakeArray`, so they are
+    /// unaffected — matching raku, where `infix:<,>` overloads value lists only.
+    pub(super) fn try_comma_overload(&mut self, n: u32) -> Result<bool, RuntimeError> {
+        if n < 2
+            || self.user_declared_infix_ops.is_empty()
+            || !self.user_declared_infix_ops.contains("infix:<,>")
+        {
+            return Ok(false);
+        }
+        let n = n as usize;
+        let start = self.stack.len() - n;
+        let args: Vec<Value> = self.stack.drain(start..).collect();
+        if let Some(def) = loan_env!(self, resolve_function_with_types("infix:<,>", &args)) {
+            let empty_fns = HashMap::new();
+            let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
+            self.stack.push(result);
+            Ok(true)
+        } else {
+            // No candidate matched the operand count: restore the stack and let
+            // normal list construction proceed.
+            for a in args {
+                self.stack.push(a);
+            }
+            Ok(false)
+        }
+    }
+
     /// Try to dispatch a binary operation to a user-defined infix operator.
     /// Returns Some(result) if a user-defined candidate matched, None otherwise.
     pub(super) fn try_user_infix(
