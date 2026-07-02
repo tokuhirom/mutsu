@@ -97,6 +97,25 @@ impl LazyList {
         self.is_genuinely_lazy() && self.cat_pull.is_none()
     }
 
+    /// Whether iterating this list could hang or be unsafe to consume twice
+    /// right now (a live generator with no complete cache yet) — as opposed
+    /// to `is_genuinely_lazy()`, which answers `.is-lazy` and is also True for
+    /// an explicitly `lazy`-marked but ALREADY fully-cached, finite list
+    /// (`lazy 3,4,5`, or `(lazy ^2).cache`). `eqv` on two such same-type lazy
+    /// operands must throw ONLY when forcing could actually hang/misbehave —
+    /// a cache-only list (no coroutine/sequence_spec/etc, regardless of the
+    /// `lazy` marker) is safe to compare (roast S03-operators/eqv.t: "eqv
+    /// between identical lazy Seqs does not die" after `.cache`).
+    pub(crate) fn eqv_would_hang(&self) -> bool {
+        self.sequence_spec.is_some()
+            || self.lazy_pipe.is_some()
+            || self.closure_seq.is_some()
+            || self.scan_spec.is_some()
+            || self.cat_pull.is_some()
+            || ((self.coroutine.is_some() || !self.body.is_empty() || self.compiled_code.is_some())
+                && self.is_lazy_marked())
+    }
+
     /// Whether this list was produced from a `gather` block (carries the
     /// `__mutsu_lazylist_from_gather` env marker).
     pub(crate) fn is_from_gather(&self) -> bool {
