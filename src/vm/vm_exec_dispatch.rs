@@ -1715,8 +1715,8 @@ impl Interpreter {
                 self.exec_does_op(code)?;
                 *ip += 1;
             }
-            OpCode::DoesVar(name_idx) => {
-                self.exec_does_var_op(code, *name_idx)?;
+            OpCode::DoesVar(name_idx, slot) => {
+                self.exec_does_var_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
             OpCode::SetDoesContext(flag) => {

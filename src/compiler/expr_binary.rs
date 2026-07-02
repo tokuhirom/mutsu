@@ -570,8 +570,9 @@ impl Compiler {
                     self.code.emit(OpCode::SetDoesContext(true));
                     self.compile_expr(right);
                     self.code.emit(OpCode::SetDoesContext(false));
+                    let slot = self.local_map.get(&name).copied();
                     let name_idx = self.code.add_constant(Value::str(name));
-                    self.code.emit(OpCode::DoesVar(name_idx));
+                    self.code.emit(OpCode::DoesVar(name_idx, slot));
                     return;
                 }
             }

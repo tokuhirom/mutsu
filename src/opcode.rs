@@ -380,7 +380,10 @@ pub(crate) enum OpCode {
     // -- Type check --
     Isa,
     Does,
-    DoesVar(u32),
+    /// `$x does R` in-place mixin. `.0` = constant index of the target variable
+    /// name; `.1` = compiler-baked local slot for that name (§1.5), `None` when the
+    /// target is not a resolvable local (falls back to the by-name writeback).
+    DoesVar(u32, Option<u32>),
     /// Set/clear the in_does_rhs flag so role calls return Pairs instead of
     /// throwing X::Coerce::Impossible during `does` RHS evaluation.
     SetDoesContext(bool),

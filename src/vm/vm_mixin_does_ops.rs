@@ -325,6 +325,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -340,7 +341,8 @@ impl Interpreter {
         self.carrier_writeback_changed_aggregates(code, &pre_env);
         let name = Self::const_str(code, name_idx).to_string();
         self.env_mut().insert(name.clone(), updated.clone());
-        self.update_local_if_exists(code, &name, &updated);
+        // §1.5: mirror into the compiler-baked local slot when known, else by name.
+        self.write_local_slot_or_name(code, slot, &name, updated.clone());
         // Capture Mixin value for trait_mod writeback: when `$r does Role`
         // runs inside a trait_mod:<is>, the Mixin needs to propagate back
         // to the outer scope's `&name` variable.
