@@ -465,7 +465,9 @@ impl Interpreter {
         if smiley.is_none() {
             return false;
         }
-        interp.has_class(base) || Self::is_builtin_type(base)
+        // `has_type` (not just `has_class`) so a subset / role / enum base is also
+        // recognized — `T:D` for `subset T ...` is a type term, not a bare Str.
+        interp.has_type(base) || Self::is_builtin_type(base)
     }
 
     /// Get the current $*COLLATION settings, falling back to defaults.
