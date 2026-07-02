@@ -2136,7 +2136,7 @@ impl Interpreter {
         };
 
         // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
-        let (val, bind_source) = match raw_val {
+        let (val, bind_source, was_bind) = match raw_val {
             Value::Pair(ref name, ref payload) if name == "__mutsu_bind_index_value" => {
                 match payload.as_ref() {
                     Value::Array(items, ..) if items.len() >= 2 => {
@@ -2148,12 +2148,12 @@ impl Interpreter {
                             }),
                             _ => None,
                         };
-                        (value, source)
+                        (value, source, true)
                     }
-                    other => (other.clone(), None),
+                    other => (other.clone(), None, true),
                 }
             }
-            other => (other, None),
+            other => (other, None, false),
         };
 
         // Phase 2 Stage 2: a `:=` bind to a stack-computed element target
@@ -2348,6 +2348,21 @@ impl Interpreter {
                 self.stack.push(val);
             }
             _ => {
+                // A `:=` bind of a positional/associative element requires a
+                // bindable container (Array/Hash) as the target. Binding into a
+                // type object (`(List)[0] := 1`, `(Int)[0] := 1`) or any other
+                // non-container value has no slot to bind and must throw X::Bind
+                // (Raku's own message here is the BIND-POS type-object error, but
+                // roast asserts X::Bind — S32-exceptions/misc.t). Without this the
+                // bind silently succeeded.
+                if was_bind {
+                    return Err(RuntimeError::typed(
+                        "X::Bind",
+                        [("target".to_string(), Value::str(target.to_string_value()))]
+                            .into_iter()
+                            .collect(),
+                    ));
+                }
                 self.stack.push(val);
             }
         }
