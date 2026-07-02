@@ -172,9 +172,21 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
   — self-splice / push-replace-self が true first-class element container を要求する
   container identity の canary。
 - `S26-documentation/12-non-breaking-space.t`（1/2、test 2 が失敗）
-  — Pod テーブル中の non-breaking space 文字を網羅列挙してテストする subtest。
-  過去の分析では「BEGIN 中の配列 lexical 変更が外へ永続化しない」ことが疑われていたが、
-  専用の再調査はまだ未実施。個別の最小再現から始める必要がある。
+  — 2026-07-02 に root-cause 確定＝**BEGIN が compile-time でなく source 順 runtime 実行**される問題。
+  test は末尾 `BEGIN { @nbchars = [...]; @bchars = [...] }` で配列を設定し、冒頭 line 8
+  `my $nbchar-count = @nbchars.elems` で読む。raku は BEGIN を compile-time 実行するので line 8 が読む時
+  @nbchars は既に 4 要素だが、mutsu は BEGIN を line 108 の位置で実行→line 8 の read が pre-BEGIN(空)を見て
+  `$nbchar-count = 0`→`plan 0+1`＝`plan 1`＋`for 0..^0`＝0 反復で subtest が 0 test 実行→fail。
+  最小再現: `my @a; my $c = @a.elems; BEGIN { @a = 1,2,3 }; say $c` が mutsu=0/raku=4。
+  ★注意: `my @a; BEGIN { @a = 1,2,3 }; say @a.elems`（read が BEGIN の**後**）は mutsu も 3 で正しい
+  ＝問題は read が BEGIN より**前**の時のみ。
+  **試行と blocker**: 冒頭 `compile()` に「top-level BEGIN と bare `my` decl を front に hoist」する
+  `hoist_begin_phasers` を実装したが、**identity reorder（順序保持の to_vec）は 3 で正しいのに、
+  bucket-reorder（bare_decls+begins+rest に分割再結合）は interspersed した `SetLine` 等も動かすため
+  以前 pass していた `my @a; BEGIN` すら 0 に壊す**（compile-order / local-slot / SetLine 依存が判明）→revert。
+  正攻法は AST 再配置でなく **BEGIN body を compile-time に sub-interpreter で eval して初期状態に反映**
+  （raku 準拠）か bytecode-level の BEGIN prelude。declaration-model と同じ深い層で、専用セッション要。
+  [[project_declaration_model_hoisted_cell_clobber]] / [[project_begin_compile_time_timing]] と同族。
 
 ### 3.2 サブキャンペーンと choke point
 
