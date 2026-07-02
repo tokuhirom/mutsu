@@ -258,9 +258,9 @@ impl Compiler {
             //    - modifies tmp_val in place
             //    - pushes new value on stack
             if increment {
-                self.code.emit(OpCode::PreIncrement(tmp_val_idx));
+                self.code.emit(OpCode::PreIncrement(tmp_val_idx, None));
             } else {
-                self.code.emit(OpCode::PreDecrement(tmp_val_idx));
+                self.code.emit(OpCode::PreDecrement(tmp_val_idx, None));
             }
             // Stack now has new value; tmp_val also has new value
             // Save new value, we'll push it back at the end

@@ -2952,12 +2952,12 @@ impl Interpreter {
             }
 
             // -- Prefix increment/decrement --
-            OpCode::PreIncrement(name_idx) => {
-                self.exec_pre_increment_op(code, *name_idx)?;
+            OpCode::PreIncrement(name_idx, slot) => {
+                self.exec_pre_increment_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
-            OpCode::PreDecrement(name_idx) => {
-                self.exec_pre_decrement_op(code, *name_idx)?;
+            OpCode::PreDecrement(name_idx, slot) => {
+                self.exec_pre_decrement_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
             OpCode::PreIncrementIndex(name_idx) => {

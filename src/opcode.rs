@@ -770,8 +770,11 @@ pub(crate) enum OpCode {
     UptoRange,
 
     // -- Prefix increment/decrement (returns NEW value) --
-    PreIncrement(u32),
-    PreDecrement(u32),
+    // Optional second field: the compile-time-resolved local slot for the named
+    // scalar (§1.5, mirrors PostIncrement/PostDecrement — docs/lexical-scope-slot-
+    // campaign.md). `None` for a non-local / temp-value target (env-by-name).
+    PreIncrement(u32, Option<u32>),
+    PreDecrement(u32, Option<u32>),
     PreIncrementIndex(u32),
     PreDecrementIndex(u32),
 
@@ -1596,8 +1599,8 @@ impl CompiledCode {
                 | OpCode::SetGlobalRaw(idx)
                 | OpCode::PostIncrement(idx, _)
                 | OpCode::PostDecrement(idx, _)
-                | OpCode::PreIncrement(idx)
-                | OpCode::PreDecrement(idx)
+                | OpCode::PreIncrement(idx, _)
+                | OpCode::PreDecrement(idx, _)
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx) => Some(*idx),
                 OpCode::AssignExpr(idx) | OpCode::TopicDotAssign(idx) => Some(*idx),
@@ -1695,8 +1698,8 @@ impl CompiledCode {
                 | OpCode::SetGlobalRaw(idx)
                 | OpCode::PostIncrement(idx, _)
                 | OpCode::PostDecrement(idx, _)
-                | OpCode::PreIncrement(idx)
-                | OpCode::PreDecrement(idx)
+                | OpCode::PreIncrement(idx, _)
+                | OpCode::PreDecrement(idx, _)
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx)
                 | OpCode::AssignExpr(idx)
@@ -1754,8 +1757,8 @@ impl CompiledCode {
             | OpCode::SetGlobalRaw(idx)
             | OpCode::PostIncrement(idx, _)
             | OpCode::PostDecrement(idx, _)
-            | OpCode::PreIncrement(idx)
-            | OpCode::PreDecrement(idx)
+            | OpCode::PreIncrement(idx, _)
+            | OpCode::PreDecrement(idx, _)
             | OpCode::GetArrayVar(idx)
             | OpCode::GetHashVar(idx)
             | OpCode::AssignExpr(idx)
@@ -1823,8 +1826,8 @@ impl CompiledCode {
             | OpCode::SetGlobalRaw(idx)
             | OpCode::PostIncrement(idx, _)
             | OpCode::PostDecrement(idx, _)
-            | OpCode::PreIncrement(idx)
-            | OpCode::PreDecrement(idx)
+            | OpCode::PreIncrement(idx, _)
+            | OpCode::PreDecrement(idx, _)
             | OpCode::AssignExpr(idx)
             | OpCode::TopicDotAssign(idx)
             | OpCode::AtomicCompoundVar { name_idx: idx, .. } => Some(*idx),
@@ -2315,8 +2318,8 @@ impl CompiledCode {
                     | OpCode::PostDecrement(..)
                     | OpCode::PostIncrementIndex(_)
                     | OpCode::PostDecrementIndex(_)
-                    | OpCode::PreIncrement(_)
-                    | OpCode::PreDecrement(_)
+                    | OpCode::PreIncrement(..)
+                    | OpCode::PreDecrement(..)
                     | OpCode::PreIncrementIndex(_)
                     | OpCode::PreDecrementIndex(_)
                     | OpCode::MultiDimIndexAssign { .. }
