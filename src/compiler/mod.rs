@@ -8,6 +8,27 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 static STATE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+/// §1.4 shadow-slot activation gate (`MUTSU_SHADOW_SLOTS`).
+///
+/// When set, [`Compiler::declare_local`] gives a shadowing inner-block `my $x`
+/// its **own** fresh local slot (instead of sharing the outer `$x`'s slot) and
+/// [`Compiler::pop_local_scope`] restores the outer binding in `local_map` on
+/// scope exit. The DEFAULT (unset) build is byte-identical: `declare_local`
+/// resolves like `alloc_local` (get-or-create by name), so shadowing correctness
+/// keeps relying on the runtime `BlockScope` env restore.
+///
+/// Activation alone is NOT yet coherent: the name-keyed env store cannot hold two
+/// live `$x` (§1.3 dual-store) and ~80 by-name leaf writebacks resolve to the
+/// outer slot (§1.5 remaining leaf sites). This toggle is the development
+/// substrate the campaign greens slice-by-slice before the default is flipped —
+/// the same env-var-gated pattern the env_dirty campaign used. See
+/// docs/lexical-scope-slot-campaign.md and ANALYSIS.md §1.4.
+fn shadow_slots_active() -> bool {
+    use std::sync::OnceLock;
+    static ACTIVE: OnceLock<bool> = OnceLock::new();
+    *ACTIVE.get_or_init(|| std::env::var_os("MUTSU_SHADOW_SLOTS").is_some())
+}
 mod expr;
 mod expr_binary;
 mod expr_block;
@@ -430,9 +451,50 @@ impl Compiler {
     /// push/pop plumbing and the single declaration entry point — is the substrate
     /// that campaign builds on. See ANALYSIS.md §1.4.
     fn declare_local(&mut self, name: &str) -> u32 {
-        let slot = self.alloc_local(name);
+        if !shadow_slots_active() {
+            // DEFAULT build: behavior-preserving. Resolve like `alloc_local`
+            // (get-or-create by name); a nested `my $x` shares the outer slot.
+            let slot = self.alloc_local(name);
+            if let Some(frame) = self.local_scopes.last_mut() {
+                frame.entry(name.to_string()).or_insert(None);
+            }
+            return slot;
+        }
+        // §1.4 shadow-slot activation (gated by `MUTSU_SHADOW_SLOTS`).
+        //
+        // - Same-scope redeclaration (`my $x; my $x`) reuses the existing slot.
+        // - A name already bound in an ENCLOSING scope is a genuine shadow: give
+        //   it a fresh slot (a second `code.locals` entry with the same name) and
+        //   record the outer slot to restore on scope exit.
+        // - Otherwise it is a first declaration: allocate normally.
+        let in_current_scope = self
+            .local_scopes
+            .last()
+            .is_some_and(|f| f.contains_key(name));
+        if in_current_scope {
+            return *self
+                .local_map
+                .get(name)
+                .expect("current-scope declaration must be in local_map");
+        }
+        let prev = self.local_map.get(name).copied();
+        let slot = if prev.is_some() {
+            let s = self.code.locals.len() as u32;
+            let is_simple = name.starts_with('$')
+                && !name.starts_with("$*")
+                && !name.contains("::")
+                && name != "_"
+                && !name.starts_with('.')
+                && !name.starts_with('!');
+            self.code.locals.push(name.to_string());
+            self.code.simple_locals.push(is_simple);
+            self.local_map.insert(name.to_string(), s);
+            s
+        } else {
+            self.alloc_local(name)
+        };
         if let Some(frame) = self.local_scopes.last_mut() {
-            frame.entry(name.to_string()).or_insert(None);
+            frame.insert(name.to_string(), prev);
         }
         slot
     }
@@ -449,7 +511,23 @@ impl Compiler {
     /// slots, this is where a `Some(prev)` entry will restore the outer binding in
     /// `local_map` (see [`declare_local`]).
     fn pop_local_scope(&mut self) {
-        self.local_scopes.pop();
+        let Some(frame) = self.local_scopes.pop() else {
+            return;
+        };
+        if !shadow_slots_active() {
+            // DEFAULT build: behavior-preserving no-op (frame already dropped).
+            return;
+        }
+        // §1.4 shadow-slot activation: restore the outer binding for every name
+        // this scope shadowed. A `None` entry was a first declaration in this
+        // scope; leave its slot in `local_map` (monotonic, matching the default
+        // build) so a later reference still resolves to a slot and the runtime
+        // `block_declared_vars` machinery keeps enforcing out-of-scope errors.
+        for (name, prev) in frame {
+            if let Some(outer_slot) = prev {
+                self.local_map.insert(name, outer_slot);
+            }
+        }
     }
 
     fn emit_set_named_var(&mut self, name: &str) {
