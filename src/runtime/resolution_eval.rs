@@ -134,16 +134,10 @@ impl Interpreter {
         // `var_type_constraints` is a flat name-keyed table, not a real scope
         // stack — that constraint would otherwise survive this call's return
         // and wrongly apply to any later code using the same variable name.
-        let saved_var_type_constraints = self.snapshot_var_type_constraints();
         let saved_code_env: std::collections::HashMap<Symbol, Value> = self
             .env
             .iter()
-            .filter(|(k, _)| {
-                k.starts_with("&")
-                    || k.starts_with("__mutsu_callable_id::")
-                    || k.starts_with("__mutsu_type::")
-                    || k.starts_with("__mutsu_hash_key_type::")
-            })
+            .filter(|(k, _)| k.starts_with("&") || k.starts_with("__mutsu_callable_id::"))
             .map(|(k, v)| (*k, v.clone()))
             .collect();
         let (code, compiled_fns) = self.compile_block_value(body);
@@ -180,13 +174,8 @@ impl Interpreter {
         self.registry_mut().proto_functions = saved_proto_functions;
         self.operator_assoc = saved_operator_assoc;
         self.user_declared_infix_ops = saved_user_declared_infix_ops;
-        self.restore_var_type_constraints(saved_var_type_constraints);
-        self.env.retain(|k, _| {
-            !(k.starts_with("&")
-                || k.starts_with("__mutsu_callable_id::")
-                || k.starts_with("__mutsu_type::")
-                || k.starts_with("__mutsu_hash_key_type::"))
-        });
+        self.env
+            .retain(|k, _| !(k.starts_with("&") || k.starts_with("__mutsu_callable_id::")));
         for (k, v) in saved_code_env {
             self.env.insert_sym(k, v);
         }
@@ -225,13 +214,25 @@ impl Interpreter {
             .filter(|k| k.with_str(|s| crate::env::is_plain_user_lexical(s) && !s.starts_with('&')))
             .copied()
             .collect();
+        // `our @e1 = ...` inside the block is package-scoped and must persist
+        // after the block returns (unlike a `my` lexical); the plain-lexical
+        // heuristic below cannot tell `our` and `my` apart by name alone, so
+        // collect the block's own `our`-declared names to exclude them from
+        // the leaked-lexical cleanup (roast S04-declarations/our.t,
+        // "our-scoped array/hash has correct value").
+        let mut our_names = std::collections::HashSet::new();
+        Self::collect_our_decl_names(body, &mut our_names);
         let result = self.eval_block_value(body);
         let leaked: Vec<Symbol> = self
             .env
             .keys()
             .filter(|k| {
                 !pre_lexicals.contains(k)
-                    && k.with_str(|s| crate::env::is_plain_user_lexical(s) && !s.starts_with('&'))
+                    && k.with_str(|s| {
+                        crate::env::is_plain_user_lexical(s)
+                            && !s.starts_with('&')
+                            && !our_names.contains(s)
+                    })
             })
             .copied()
             .collect();
@@ -239,6 +240,46 @@ impl Interpreter {
             self.env.remove_sym(key);
         }
         result
+    }
+
+    /// Collect the plain-lexical env keys (`@e1` -> `"e1"`/`"@e1"` depending
+    /// on the caller's convention — here the *bare* `VarDecl.name`, matching
+    /// what `is_plain_user_lexical` checks) declared with `our` anywhere in
+    /// `stmts`, recursing into the statement containers a test-assertion
+    /// block commonly nests declarations in. Not exhaustive over every `Stmt`
+    /// variant with a nested body, but covers the realistic shapes; missing a
+    /// deeply-nested case only reverts to the pre-existing behavior.
+    fn collect_our_decl_names(stmts: &[Stmt], out: &mut std::collections::HashSet<String>) {
+        for stmt in stmts {
+            match stmt {
+                Stmt::VarDecl {
+                    name, is_our: true, ..
+                } => {
+                    out.insert(name.clone());
+                }
+                Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                    Self::collect_our_decl_names(inner, out);
+                }
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    Self::collect_our_decl_names(then_branch, out);
+                    Self::collect_our_decl_names(else_branch, out);
+                }
+                Stmt::While { body, .. }
+                | Stmt::Loop { body, .. }
+                | Stmt::React { body, .. }
+                | Stmt::Whenever { body, .. }
+                | Stmt::Given { body, .. }
+                | Stmt::When { body, .. }
+                | Stmt::For { body, .. } => {
+                    Self::collect_our_decl_names(body, out);
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Fast path for simple closures (e.g. sequence generators) that don't
