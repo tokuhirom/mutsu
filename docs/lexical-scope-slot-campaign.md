@@ -89,7 +89,15 @@ broadcast = touches every slot with the name.
       Prefix `++`/`--` and compound-assign-on-local are still by-name — S2b. *(done)*
 - [ ] S3 — `:=` bind: bake source/target slots at emit time instead of
       `resolve_pending_alias_binds` name lookup.
-- [ ] S4 — param-slot precompute: use the scope-correct slot.
+- [x] **S4 — param-slot precompute.** The compiler bakes the positional-param →
+      local-slot map into `CompiledCode::param_local_slots` at emit time (from
+      `local_map`, right after the param `alloc_local` loops, before the body can
+      shadow a param — so it stays the parameter binding slot once §1.4 gives a
+      body `my $x` its own slot). `CompiledFunction::precompute_param_local_slots`
+      uses the baked list instead of searching `code.locals` by name, falling back
+      to the by-name search only for hand-built chunks that never recorded it.
+      Verified byte-identical to the old `position` search across the whole
+      `make test` suite via a temporary `debug_assert_eq!` (never fired). *(done)*
 - [ ] S5+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites.
 - [ ] §1.4 flip + `pop_local_scope` restore.
 - [ ] §1.3 slot-indexed locals + drop BlockScope clone.

@@ -379,6 +379,39 @@ impl Compiler {
         slot
     }
 
+    /// Record the compiler-authoritative positional-parameter → local-slot map
+    /// into `code.param_local_slots`, so the VM's `precompute_param_local_slots`
+    /// need not re-resolve parameter names by searching `locals` (§1.5).
+    ///
+    /// Must be called immediately after the parameter `alloc_local` loops and
+    /// BEFORE the body is compiled: at that point `local_map[name]` is exactly the
+    /// parameter's slot. (Once §1.4 gives a shadowing body `my $x` its own slot,
+    /// `local_map` for that name would move; recording here captures the parameter
+    /// binding slot unambiguously.) The order and filtering mirror
+    /// `CompiledFunction::precompute_param_local_slots`: positional `param_defs`
+    /// (skipping `named`), or `params` when `param_defs` is empty; a name with no
+    /// allocated slot (e.g. an anonymous `$`) is skipped.
+    fn record_param_local_slots(&mut self, params: &[String], param_defs: &[crate::ast::ParamDef]) {
+        let mut slots: Vec<u32> = Vec::new();
+        if !param_defs.is_empty() {
+            for pd in param_defs {
+                if pd.named {
+                    continue;
+                }
+                if let Some(&slot) = self.local_map.get(&pd.name) {
+                    slots.push(slot);
+                }
+            }
+        } else {
+            for param in params {
+                if let Some(&slot) = self.local_map.get(param) {
+                    slots.push(slot);
+                }
+            }
+        }
+        self.code.param_local_slots = slots;
+    }
+
     /// Designated entry point for a genuine `my`/`state`/`our` DECLARATION.
     ///
     /// **Groundwork, currently behavior-preserving.** It resolves the slot exactly

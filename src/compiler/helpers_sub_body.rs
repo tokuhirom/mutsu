@@ -172,6 +172,9 @@ impl Compiler {
                 Self::alloc_sub_signature_locals(&mut sub_compiler, outer_params);
             }
         }
+        // Bake the positional-param → slot map now, while `local_map` still holds
+        // exactly the parameter slots (before the body can shadow them). §1.5.
+        sub_compiler.record_param_local_slots(params, param_defs);
         // Hoist sub declarations within the sub body
         sub_compiler.hoist_sub_decls(body, true);
         // Emit SetSourceLine at the start of the function body so that
@@ -605,6 +608,9 @@ impl Compiler {
                 }
             }
         }
+        // Bake the positional-param → slot map now, while `local_map` still holds
+        // exactly the parameter slots (before the body can shadow them). §1.5.
+        sub_compiler.record_param_local_slots(params, param_defs);
         // Hoist sub declarations within the closure body
         sub_compiler.hoist_sub_decls(body, true);
         // If body contains CATCH/CONTROL, wrap in implicit try. compile_try

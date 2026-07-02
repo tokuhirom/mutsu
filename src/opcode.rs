@@ -1370,6 +1370,15 @@ pub(crate) struct CompiledCode {
     /// Maps local slot indices to qualified package names for `our` variables.
     /// Used by BlockScope restoration to sync local slots from their global values.
     pub(crate) our_locals: Vec<(usize, String)>,
+    /// Compiler-authoritative positional-parameter → local-slot mapping, in the
+    /// order `precompute_param_local_slots` expects (positional `param_defs`, or
+    /// `params` when `param_defs` is empty). Baked at emit time from the
+    /// compiler's `local_map` so `CompiledFunction::precompute_param_local_slots`
+    /// does not have to re-resolve parameter names by searching `locals` (§1.5:
+    /// remove name→slot runtime resolution). Empty when the compiler did not
+    /// record it (e.g. hand-built `CompiledCode::new()` chunks), in which case
+    /// precompute falls back to the by-name search.
+    pub(crate) param_local_slots: Vec<u32>,
     /// Pre-compiled closure bodies embedded in this code chunk.
     pub(crate) closure_compiled_codes: Vec<Arc<CompiledCode>>,
     /// Parallel to `closure_compiled_codes`: `closure_escapes[i]` is true if the
@@ -1557,6 +1566,7 @@ impl CompiledCode {
             simple_locals: Vec::new(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
+            param_local_slots: Vec::new(),
             closure_compiled_codes: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
@@ -2658,7 +2668,22 @@ pub(crate) struct CompiledFunction {
 
 impl CompiledFunction {
     /// Pre-compute the mapping from positional parameter index to locals slot index.
+    ///
+    /// Prefers the compiler-baked `code.param_local_slots` (authoritative slots
+    /// recorded from `local_map` at emit time — §1.5, no name search). Falls back
+    /// to the legacy by-name `locals.position` search only for hand-built code
+    /// chunks that never recorded it.
     pub(crate) fn precompute_param_local_slots(&mut self) {
+        if !self.code.param_local_slots.is_empty() {
+            self.param_local_slots = Some(
+                self.code
+                    .param_local_slots
+                    .iter()
+                    .map(|&s| s as usize)
+                    .collect(),
+            );
+            return;
+        }
         let mut slots = Vec::new();
         if !self.param_defs.is_empty() {
             for pd in &self.param_defs {
