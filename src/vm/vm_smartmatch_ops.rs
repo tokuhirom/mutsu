@@ -10,6 +10,7 @@ impl Interpreter {
         rhs_end: u32,
         negate: bool,
         lhs_var: &Option<String>,
+        lhs_slot: Option<u32>,
         rhs_is_match_regex: bool,
         lhs_is_literal: bool,
         rhs_pure_regex: bool,
@@ -98,7 +99,16 @@ impl Interpreter {
             // Reverse write-through: if the lhs alias names a compiled local slot,
             // mirror the (possibly substitution-modified) topic into it so the
             // caller sees it without an O(locals) sync_locals_from_env pull.
-            self.update_local_if_exists(code, var_name, &modified_topic);
+            // §1.5: prefer the compile-time-baked `lhs_slot` (scope-correct even
+            // once a name occupies several slots) over the by-name resolution; the
+            // by-name fallback stays for a `None` slot (global LHS, or an EVAL /
+            // carrier where the var is an outer lexical with no current-frame slot).
+            match lhs_slot {
+                Some(slot) if (slot as usize) < self.locals.len() => {
+                    self.locals[slot as usize] = modified_topic.clone();
+                }
+                _ => self.update_local_if_exists(code, var_name, &modified_topic),
+            }
             // The env insert above bypasses `set_env_with_main_alias`, and
             // `update_local_if_exists` only touches the *current* frame's slot —
             // when `$x ~~ s///` runs inside an EVAL/carrier, `var_name` is an outer

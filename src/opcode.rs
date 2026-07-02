@@ -333,6 +333,12 @@ pub(crate) enum OpCode {
         negate: bool,
         /// Variable name for LHS (to write back after s/// substitution)
         lhs_var: Option<String>,
+        /// Compile-time-resolved local slot for `lhs_var`, when it names a
+        /// current-scope local (§1.5: bakes the scope-correct slot so the
+        /// modified-topic writeback does not re-resolve the name at run time —
+        /// see docs/lexical-scope-slot-campaign.md). `None` for a global / not-a-
+        /// local LHS, where the writeback stays env-by-name.
+        lhs_slot: Option<u32>,
         /// True when RHS was originally `m//` (MatchRegex), which affects
         /// failure return value: `m//` failure returns False, bare `//` returns Nil.
         rhs_is_match_regex: bool,
