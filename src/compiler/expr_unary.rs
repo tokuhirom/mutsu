@@ -39,18 +39,20 @@ impl Compiler {
                     // increments the live variable. Emit the temp save, then the
                     // pre-increment on the underlying variable.
                     self.emit_temp_save(&var);
+                    let slot = self.local_map.get(&var).copied();
                     let name_idx = self.code.add_constant(Value::str(var));
-                    self.code.emit(OpCode::PreIncrement(name_idx));
+                    self.code.emit(OpCode::PreIncrement(name_idx, slot));
                 } else if let Expr::Var(name) = expr {
                     if name.starts_with('!') && name.len() > 1 {
                         self.alloc_local(name);
                     }
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
-                    self.code.emit(OpCode::PreIncrement(name_idx));
+                    let slot = self.local_map.get(name).copied();
+                    self.code.emit(OpCode::PreIncrement(name_idx, slot));
                 } else if let Expr::BareWord(name) = expr {
                     if self.sigilless_locals.contains(name.as_str()) {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
-                        self.code.emit(OpCode::PreIncrement(name_idx));
+                        self.code.emit(OpCode::PreIncrement(name_idx, None));
                     } else {
                         self.compile_expr(&Expr::Call {
                             name: Symbol::intern("__mutsu_incdec_nomatch"),
@@ -60,8 +62,9 @@ impl Compiler {
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::Pop);
+                    let slot = self.local_map.get(&var_name).copied();
                     let name_idx = self.code.add_constant(Value::str(var_name));
-                    self.code.emit(OpCode::PreIncrement(name_idx));
+                    self.code.emit(OpCode::PreIncrement(name_idx, slot));
                 } else if let Expr::Index { target, index, .. } = expr {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
@@ -83,18 +86,20 @@ impl Compiler {
                     // `--temp $c`: temporize `$c` then pre-decrement it (see the
                     // `++temp` case above).
                     self.emit_temp_save(&var);
+                    let slot = self.local_map.get(&var).copied();
                     let name_idx = self.code.add_constant(Value::str(var));
-                    self.code.emit(OpCode::PreDecrement(name_idx));
+                    self.code.emit(OpCode::PreDecrement(name_idx, slot));
                 } else if let Expr::Var(name) = expr {
                     if name.starts_with('!') && name.len() > 1 {
                         self.alloc_local(name);
                     }
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
-                    self.code.emit(OpCode::PreDecrement(name_idx));
+                    let slot = self.local_map.get(name).copied();
+                    self.code.emit(OpCode::PreDecrement(name_idx, slot));
                 } else if let Expr::BareWord(name) = expr {
                     if self.sigilless_locals.contains(name.as_str()) {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
-                        self.code.emit(OpCode::PreDecrement(name_idx));
+                        self.code.emit(OpCode::PreDecrement(name_idx, None));
                     } else {
                         self.compile_expr(&Expr::Call {
                             name: Symbol::intern("__mutsu_incdec_nomatch"),
@@ -104,8 +109,9 @@ impl Compiler {
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::Pop);
+                    let slot = self.local_map.get(&var_name).copied();
                     let name_idx = self.code.add_constant(Value::str(var_name));
-                    self.code.emit(OpCode::PreDecrement(name_idx));
+                    self.code.emit(OpCode::PreDecrement(name_idx, slot));
                 } else if let Expr::Index { target, index, .. } = expr {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);

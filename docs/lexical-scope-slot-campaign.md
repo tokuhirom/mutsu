@@ -87,7 +87,15 @@ broadcast = touches every slot with the name.
       dual-store concern, not a name→slot ambiguity). `None` for non-local targets
       (`our`/dynamic/temp-value/`AtomicCompoundVar`), which keep the by-name path.
       Prefix `++`/`--` and compound-assign-on-local are still by-name — S2b. *(done)*
-- [ ] S3 — `:=` bind: bake source/target slots at emit time instead of
+- [x] **S3 — prefix `++$x`/`--$x`.** `PreIncrement`/`PreDecrement` gain the same
+      compile-time `Option<u32>` slot; `exec_pre_increment_op`/`exec_pre_decrement_op`
+      mirror the new value into the baked slot instead of `update_local_if_exists`.
+      Same pattern as S2. Behavior-preserving today. *(done)*
+      - Note: prefix `++$a` where `$a` is `:=`-bound does NOT propagate to the alias
+        (`my $b := $a; ++$a` leaves `$b` stale) — a **pre-existing** bug (the prefix
+        path lacks the `local_bind_pairs` propagation that the postfix RMW chokepoint
+        has). Out of scope for the slot-baking; noted for a later fix.
+- [ ] S4 — `:=` bind: bake source/target slots at emit time instead of
       `resolve_pending_alias_binds` name lookup.
 - [x] **S4 — param-slot precompute.** The compiler bakes the positional-param →
       local-slot map into `CompiledCode::param_local_slots` at emit time (from

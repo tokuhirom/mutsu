@@ -213,11 +213,12 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         // Phase 3 Stage 2: scalar attribute increments read-modify-write the cell.
         let attr_name = Self::const_str(code, name_idx).to_string();
         self.sync_attr_local_from_cell_by_name(code, &attr_name);
-        let r = self.exec_pre_increment_op_inner(code, name_idx);
+        let r = self.exec_pre_increment_op_inner(code, name_idx, slot);
         if r.is_ok() {
             self.mirror_attr_local_to_cell_by_name(code, &attr_name);
         }
@@ -228,6 +229,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         if let Some(r) = self.try_slotless_attr_incdec(code, name, true, true) {
@@ -307,7 +309,14 @@ impl Interpreter {
         self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
-        self.update_local_if_exists(code, name, &new_val);
+        // §1.5: mirror into the compile-time-baked slot when present (scope-correct
+        // under shadow slots); by-name fallback for a non-local target.
+        match slot {
+            Some(s) if (s as usize) < self.locals.len() => {
+                self.locals[s as usize] = new_val.clone();
+            }
+            _ => self.update_local_if_exists(code, name, &new_val),
+        }
         self.writeback_package_scope_var(name, &new_val);
         self.stack.push(new_val);
         Ok(())
@@ -317,11 +326,12 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         // Phase 3 Stage 2: scalar attribute decrements read-modify-write the cell.
         let attr_name = Self::const_str(code, name_idx).to_string();
         self.sync_attr_local_from_cell_by_name(code, &attr_name);
-        let r = self.exec_pre_decrement_op_inner(code, name_idx);
+        let r = self.exec_pre_decrement_op_inner(code, name_idx, slot);
         if r.is_ok() {
             self.mirror_attr_local_to_cell_by_name(code, &attr_name);
         }
@@ -332,6 +342,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         if let Some(r) = self.try_slotless_attr_incdec(code, name, false, true) {
@@ -411,7 +422,14 @@ impl Interpreter {
         self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
-        self.update_local_if_exists(code, name, &new_val);
+        // §1.5: mirror into the compile-time-baked slot when present (scope-correct
+        // under shadow slots); by-name fallback for a non-local target.
+        match slot {
+            Some(s) if (s as usize) < self.locals.len() => {
+                self.locals[s as usize] = new_val.clone();
+            }
+            _ => self.update_local_if_exists(code, name, &new_val),
+        }
         self.writeback_package_scope_var(name, &new_val);
         self.stack.push(new_val);
         Ok(())
