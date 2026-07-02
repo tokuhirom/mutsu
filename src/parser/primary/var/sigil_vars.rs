@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::ast::Expr;
 use crate::parser::helpers::{is_raku_identifier_start, normalize_raku_identifier, ws};
 use crate::parser::parse_result::{PError, PResult, parse_char};
+use crate::value::Value;
 
 use super::adverb::parse_var_name_adverb_suffixes;
 use super::ident::{
@@ -423,6 +424,15 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                 || n.starts_with("postcircumfix:<")
                 || n.starts_with("trait_mod:<")
         )
+        // `parse_sub_name_pub` only resolves a `:<<...>>`/`:«...»` operator
+        // name through the compile-time-*constant* registry (`constant`
+        // declarations), falling back to the raw, unresolved text when the
+        // name isn't a registered constant (e.g. `BEGIN my $plus = '+'`).
+        // A leftover interpolation sigil in the resolved name means that
+        // fallback fired, so skip this static path and let the slower
+        // `parse_operator_code_ref_suffix` path below build a genuine
+        // runtime lookup instead.
+        && !op_name.contains(['$', '@', '%'])
     {
         return Ok((op_rest, Expr::CodeVar(op_name)));
     }
@@ -435,9 +445,30 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
             name,
             "infix" | "prefix" | "postfix" | "term" | "circumfix" | "postcircumfix" | "trait_mod"
         )
-        && let Some((r, full_name)) = parse_operator_code_ref_suffix(name, rest)
+        && let Some((r, suffix)) = parse_operator_code_ref_suffix(name, rest)
     {
-        return Ok((r, Expr::CodeVar(full_name)));
+        let code_var_expr = match suffix {
+            OperatorCodeRefSuffix::Static(full_name) => Expr::CodeVar(full_name),
+            // `:<<...>>` / `:«...»` / a bare `:[...]` interpolate/evaluate their
+            // content at runtime (unlike the literal `:<...>` form), so the
+            // operator name is only known at runtime. Build it as string
+            // concatenation and resolve it the same way `&::("infix:<+>")`
+            // does (SymbolicDeref), rather than a compile-time CodeVar
+            // constant.
+            OperatorCodeRefSuffix::Dynamic(name_expr) => Expr::SymbolicDeref {
+                sigil: "&".to_string(),
+                expr: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::str(format!("{name}:<")))),
+                        op: crate::token_kind::TokenKind::Tilde,
+                        right: Box::new(name_expr),
+                    }),
+                    op: crate::token_kind::TokenKind::Tilde,
+                    right: Box::new(Expr::Literal(Value::str(">".to_string()))),
+                }),
+            },
+        };
+        return Ok((r, code_var_expr));
     }
     let full_name = if twigil.is_empty() {
         normalize_raku_identifier(name)
@@ -447,13 +478,32 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::CodeVar(full_name)))
 }
 
-fn parse_operator_code_ref_suffix<'a>(category: &str, rest: &'a str) -> Option<(&'a str, String)> {
+/// The operator name suffix (`:<+>`, `:<<$plus>>`, `:«$plus»`, `:[$plus]`)
+/// following an extended identifier category (`infix`, `prefix`, ...).
+enum OperatorCodeRefSuffix {
+    /// `:<...>` (and the quoted-string `:['...']`/`:["..."]` forms) — the
+    /// operator name is known at compile time.
+    Static(String),
+    /// `:<<...>>` / `:«...»` (qq-style interpolation) or a bare `:[expr]`
+    /// (a runtime expression) — the operator name is only known at
+    /// runtime.
+    Dynamic(Expr),
+}
+
+fn parse_operator_code_ref_suffix<'a>(
+    category: &str,
+    rest: &'a str,
+) -> Option<(&'a str, OperatorCodeRefSuffix)> {
     if let Some(after_open) = rest.strip_prefix(":<<")
         && let Some(end_pos) = after_open.find(">>")
     {
         let symbol = after_open[..end_pos].trim();
         let after_close = &after_open[end_pos + 2..];
-        return Some((after_close, format!("{category}:<{symbol}>")));
+        let name_expr = crate::parser::primary::quote_adverbs::process_content_with_flags(
+            symbol,
+            &crate::parser::primary::quote_adverbs::QuoteFlags::qq_double(),
+        );
+        return Some((after_close, OperatorCodeRefSuffix::Dynamic(name_expr)));
     }
 
     if let Some(after_open) = rest.strip_prefix(":<") {
@@ -467,7 +517,10 @@ fn parse_operator_code_ref_suffix<'a>(category: &str, rest: &'a str) -> Option<(
                     if depth == 0 {
                         let symbol = &after_open[..i];
                         let after_close = &after_open[i + 1..];
-                        return Some((after_close, format!("{category}:<{symbol}>")));
+                        return Some((
+                            after_close,
+                            OperatorCodeRefSuffix::Static(format!("{category}:<{symbol}>")),
+                        ));
                     }
                 }
                 '<' => depth += 1,
@@ -484,7 +537,11 @@ fn parse_operator_code_ref_suffix<'a>(category: &str, rest: &'a str) -> Option<(
     {
         let symbol = after_open[..end_pos].trim();
         let after_close = &after_open[end_pos + '\u{bb}'.len_utf8()..];
-        return Some((after_close, format!("{category}:<{symbol}>")));
+        let name_expr = crate::parser::primary::quote_adverbs::process_content_with_flags(
+            symbol,
+            &crate::parser::primary::quote_adverbs::QuoteFlags::qq_double(),
+        );
+        return Some((after_close, OperatorCodeRefSuffix::Dynamic(name_expr)));
     }
 
     if let Some(after_open) = rest.strip_prefix(":['")
@@ -494,7 +551,10 @@ fn parse_operator_code_ref_suffix<'a>(category: &str, rest: &'a str) -> Option<(
             .replace("\\'", "'")
             .replace("\\\\", "\\");
         let after_close = &after_open[end_pos + 2..];
-        return Some((after_close, format!("{category}:<{symbol}>")));
+        return Some((
+            after_close,
+            OperatorCodeRefSuffix::Static(format!("{category}:<{symbol}>")),
+        ));
     }
 
     if let Some(after_open) = rest.strip_prefix(":[\"")
@@ -502,7 +562,19 @@ fn parse_operator_code_ref_suffix<'a>(category: &str, rest: &'a str) -> Option<(
     {
         let symbol = &after_open[..end_pos];
         let after_close = &after_open[end_pos + 2..];
-        return Some((after_close, format!("{category}:<{symbol}>")));
+        return Some((
+            after_close,
+            OperatorCodeRefSuffix::Static(format!("{category}:<{symbol}>")),
+        ));
+    }
+
+    // A bare expression inside `[...]` (no quotes), e.g. `&infix:[$plus]` —
+    // the operator name is a runtime value, not a string literal.
+    if let Some(after_open) = rest.strip_prefix(":[")
+        && let Ok((after_expr, expr)) = crate::parser::expr::expression(after_open)
+        && let Some(after_close) = after_expr.strip_prefix(']')
+    {
+        return Some((after_close, OperatorCodeRefSuffix::Dynamic(expr)));
     }
 
     None

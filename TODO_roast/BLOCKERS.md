@@ -102,11 +102,22 @@
 
 ### 2.4 `S06-operator-overloading/infix.t`
 
-- **現状**: 35/42（7 失敗: test 22-23, 28, 31-32, 35, 40）。
-- **経緯**: `import ClassName` 経由の演算子メソッド export（#3982）で 14→35 まで前進したが、
-  直近のコミットメッセージが示唆する「ほぼ完了」には未達。test 11 は rakudo 自身が
-  `#?rakudo todo` で divergent としている既知の1件で、それとは別に 7 件が未解決。
-- **評価**: whitelist する前にこの 7 件を個別に潰す必要がある。安易に whitelist しないこと。
+- **現状（2026-07-02 更新）**: 48/50（残り 2 失敗: test 31-32 のみ）。test 11, 33 は
+  rakudo 自身が divergent としている既知の TODO で数に入らない。
+- **経緯**: `import ClassName` 経由の演算子メソッド export（#3982）→ 35/42 → LTM 拡張・
+  `is assoc('non')`・user-declared `infix:<+>`/`infix:<+=>` fast-path override・
+  `infix:OP:[...]`/`infix:OP:«...»` 呼び出し構文で 42/44 → `&infix:<<$var>>`/`«$var»`/
+  `[$var]`（interpolating/expression な演算子名参照。詳細は `TODO_roast/S06.md`）の
+  ランタイム解決を追加して 48/50 まで前進。
+- **残り (test 31-32)**: `sub infix:<,>($a,$b){...}` によるカンマ演算子そのものの
+  オーバーロード（EVAL 内限定）。カンマは list/引数区切りとしてパーサ全体に
+  ハードコードされた特殊トークンであり、他の user 演算子のような汎用 dispatch
+  経路に乗っていない。real raku でも EVAL の外（同一ファイルのトップレベル）では
+  効かない——EVAL は新しいコンパイル単位として、宣言済みの演算子テーブルを
+  引き継いで再パースするため機能する、という compile-time な仕組み。
+- **評価**: 深い・リスクの高いアーキテクチャ変更（カンマを他の user 演算子と同じ
+  拡張可能テーブル経由にする必要があり、あらゆる箇所の区切り用途を壊さずに行う
+  必要がある）。安易に着手しない。whitelist するにはこの 2 件を解決する必要がある。
 - **Canary**: `roast/S06-operator-overloading/infix.t`
 
 ---
@@ -307,16 +318,18 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t —
 
 「次に何をやるか」を 1 本だけ選ぶなら、順番はこう見るのが妥当。
 
-1. **`S06-operator-overloading/infix.t` の残り 7 件**（§2.4）— 局所修正で閉じられる可能性が高い。
-2. **`S17-lowlevel/lock.t` の race condition**（§6.1）— semaphore.t で確立した
+1. **`S17-lowlevel/lock.t` の race condition**（§6.1）— semaphore.t で確立した
    reconcile/writeback パターンを `Lock` にも適用できれば早い。
-3. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
+2. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
    splice.t / attributes.t / multislice hash 側の slot identity を前に進める。
    これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
-4. **`S03-metaops/hyper.t`**（§5）— plan mismatch の原因を先に特定してから、
+3. **`S03-metaops/hyper.t`**（§5）— plan mismatch の原因を先に特定してから、
    残りの失敗を分類して潰す。
-5. **`S09-subscript/slice.t`**（§4）— 24 件を種類ごとに分類し、lazy array 基盤工事の
+4. **`S09-subscript/slice.t`**（§4）— 24 件を種類ごとに分類し、lazy array 基盤工事の
    一環として進める。
+
+`S06-operator-overloading/infix.t`（§2.4）は残り 2 件（カンマ演算子オーバーロード）が
+深いアーキテクチャ変更を要するため、上記優先順から外した。
 
 whitelist を目標にしない §7 の項目は、mutsu 側の一般改善のついでに触れるのはよいが、
 そのファイル単体を通すことを目的にしない。
