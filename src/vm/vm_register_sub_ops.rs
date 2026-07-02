@@ -224,6 +224,16 @@ impl Interpreter {
                         self.record_exported_sub_value(pkg, resolved_name.clone(), val.clone());
                     }
                 }
+                if !signature_alternates.is_empty() {
+                    // Remember that this name was declared with signature alternates,
+                    // whose `state` cell is shared across all alternates. A resolved
+                    // per-candidate `FunctionDef` carries no alternate marker, so the
+                    // OTF-dispatch gate consults this set to keep state-bearing
+                    // candidates of such a name on the interpreter (which honors the
+                    // shared cell). See `multi_candidate_state_forces_interpreter`.
+                    self.multi_alternate_signature_names
+                        .insert(Symbol::intern(&resolved_name));
+                }
                 for (alt_params, alt_param_defs) in signature_alternates {
                     self.loan_env_for(|i| {
                         i.register_sub_decl(
