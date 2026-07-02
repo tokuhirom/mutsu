@@ -756,7 +756,9 @@ impl Interpreter {
                 }
                 match attrs.get("path").cloned() {
                     Some(p) if !matches!(p, Value::Nil) => Value::str(p.to_string_value()),
-                    _ => Value::str("IO::CatHandle".to_string()),
+                    // A closed/exhausted or zero-source cat has no active path;
+                    // rakudo renders it as `<closed IO::CatHandle>`.
+                    _ => Value::str("<closed IO::CatHandle>".to_string()),
                 }
             }
             "lock" | "unlock" => {
@@ -898,6 +900,40 @@ impl Interpreter {
                     class_name.resolve(),
                     parts.join(", ")
                 ))
+            }
+            // Write and low-level byte methods are not implemented on a read-only
+            // cat handle; rakudo raises X::NYI for each.
+            "flush" | "out-buffer" | "print" | "printf" | "print-nl" | "put" | "say" | "write"
+            | "WRITE" | "READ" | "EOF" => {
+                let feature = format!("IO::CatHandle.{}", method);
+                let mut ex_attrs = HashMap::new();
+                ex_attrs.insert("feature".to_string(), Value::str(feature.clone()));
+                let mut err = RuntimeError::new(format!("{} not yet implemented. Sorry.", feature));
+                err.exception = Some(Box::new(Value::make_instance(
+                    Symbol::intern("X::NYI"),
+                    ex_attrs,
+                )));
+                return Err(err);
+            }
+            // `.slurp-rest` is obsolete; use `.slurp` with an IO::CatHandle.
+            "slurp-rest" => {
+                let mut ex_attrs = HashMap::new();
+                ex_attrs.insert("old".to_string(), Value::str("slurp-rest".to_string()));
+                ex_attrs.insert("replacement".to_string(), Value::str("slurp".to_string()));
+                ex_attrs.insert(
+                    "when".to_string(),
+                    Value::str("with IO::CatHandle".to_string()),
+                );
+                let msg = "Unsupported use of slurp-rest with IO::CatHandle; \
+                           in Raku please use: slurp"
+                    .to_string();
+                ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+                let mut err = RuntimeError::new(msg);
+                err.exception = Some(Box::new(Value::make_instance(
+                    Symbol::intern("X::Obsolete"),
+                    ex_attrs,
+                )));
+                return Err(err);
             }
             _ => {
                 return Err(RuntimeError::new(format!(

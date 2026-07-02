@@ -1,6 +1,13 @@
 use super::*;
 
 impl Interpreter {
+    /// Whether `v` is an `IO::CatHandle` instance. Used to keep the generic
+    /// 0-arg `.say`/`.print`/`.put`/`.printf` "stringify the invocant" behavior
+    /// from shadowing the cat's own (X::NYI) write methods.
+    fn is_io_cathandle(v: &Value) -> bool {
+        matches!(v, Value::Instance { class_name, .. } if class_name == "IO::CatHandle")
+    }
+
     /// Dispatch methods by name - first group (string, IO, coercion, misc).
     /// Returns Some(result) if the method was handled, None to fall through.
     #[allow(clippy::too_many_lines)]
@@ -67,10 +74,23 @@ impl Interpreter {
             "from-loop" | "from_loop" if matches!(&target, Value::Package(name) if name == "Seq") => {
                 Some(self.dispatch_seq_from_loop(args))
             }
-            "say" if args.is_empty() => Some(self.dispatch_say(&target)),
-            "print" if args.is_empty() => Some(self.dispatch_print(&target)),
-            "put" if args.is_empty() => Some(self.dispatch_put(&target)),
-            "printf" if args.is_empty() => Some(self.dispatch_printf(&target)),
+            // `$obj.say`/`.print`/`.put`/`.printf` (no args) stringify and print the
+            // invocant — EXCEPT on an IO::CatHandle, where these are write methods
+            // that route to the native handler (which raises X::NYI on a read-only
+            // cat). Without this guard the generic form would silently print the
+            // cat's gist instead of throwing.
+            "say" if args.is_empty() && !Self::is_io_cathandle(&target) => {
+                Some(self.dispatch_say(&target))
+            }
+            "print" if args.is_empty() && !Self::is_io_cathandle(&target) => {
+                Some(self.dispatch_print(&target))
+            }
+            "put" if args.is_empty() && !Self::is_io_cathandle(&target) => {
+                Some(self.dispatch_put(&target))
+            }
+            "printf" if args.is_empty() && !Self::is_io_cathandle(&target) => {
+                Some(self.dispatch_printf(&target))
+            }
             "sprintf" if args.is_empty() => Some(self.dispatch_sprintf(&target)),
             "sprintf" => {
                 // Method form `$format.sprintf(*@args)` == `sprintf($format, @args)`

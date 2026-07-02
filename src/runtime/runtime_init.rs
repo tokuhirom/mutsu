@@ -752,6 +752,21 @@ impl Interpreter {
                     "unlock",
                     "raku",
                     "perl",
+                    // Write/low-level methods are NYI on a read-only cat; the
+                    // native handler raises X::NYI for them (rakudo does too).
+                    "flush",
+                    "out-buffer",
+                    "print",
+                    "printf",
+                    "print-nl",
+                    "put",
+                    "say",
+                    "write",
+                    "WRITE",
+                    "READ",
+                    "EOF",
+                    // Obsolete: `.slurp-rest` -> `.slurp`.
+                    "slurp-rest",
                 ]
                 .iter()
                 .map(|s| s.to_string())
