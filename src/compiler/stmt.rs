@@ -1063,7 +1063,7 @@ impl Compiler {
                             .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
                     }
                 }
-                let slot = self.alloc_local(name);
+                let slot = self.declare_local(name);
                 if *is_state {
                     if let Some((guard_idx, key, key_idx)) = state_guard_idx {
                         // Patch the guard jump target to the StateVarInit instruction

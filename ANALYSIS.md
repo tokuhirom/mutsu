@@ -156,6 +156,23 @@ rev3 で「最大の設計負債」としていた `locals ↔ env` 二重スト
 > 現状の全 `t/`・roast はこの分離スロットを導入せず、`BlockScope` が毎回 `locals` 全体を
 > clone/restore する (`vm/vm_misc_scope.rs`) ことで正しさを担保している —— この clone こそ
 > §1.4 が最終的に消したいコストだが、消すには上記 writeback IR 化が前提。
+>
+> **追記 (2026-07-02, release 実測): 結合先は §1.5 だけでなく §1.3 (env↔slot dual-store) も。**
+> 分離スロットを release ビルドで検証したところ、破綻は **5 つの独立機構**に及ぶと判明:
+> (1) `$x++`/`$x--`/`$x OP= …` の RMW 書き戻しチョークポイント `store_named_scalar_rmw_result`
+>   (`vm/vm_var_assign_typed.rs`、`find_local_slot` + `code.locals.position` で slot 解決)
+>   —— `roast/S03-operators/autoincrement.t`。値の**読み**は env 経由 (scope 正)、slot ミラーが
+>   名前解決なので、read が使うコンパイル時 slot とズレる。(2) `undefine`/rw-arg 書き戻し。
+>   (3) `my @a := EVAL "my $t @"` の `:=` バインド + EVAL —— `roast/S09-typed-arrays/native-str.t`
+>   (`:=` 経路が census で position/rposition 混在と判明)。(4) role mixin —— `roast/S14-roles/mixin-6e.t`。
+>   (5) `roast/S02-types/hash.t`。`position`/`rposition` のどちらでも別のサブセットが割れ、普遍解なし。
+>   したがって**シャドウ衝突の実修正は §1.5 (名前ベース slot 解決の撤廃) および §1.3 (dual-store 統合)
+>   と一体のキャンペーンとして実施予定**であり、単独スライス化はしない。
+>
+> **本 PR で着地したのは scaffolding のみ (挙動不変):** ブロック境界での scope frame push/pop
+> (`push/pop_dynamic_scope_lexical` → `push_local_scope`/`pop_local_scope`) と、宣言の単一入口
+> `declare_local` (現状は `alloc_local` と同一解決＝シャドウは外側 slot を共有)。`local_scopes`
+> スタックは将来キャンペーンが分離スロット化する土台。CI green を維持したまま基盤だけを先行導入した。
 
 ### 1.5 最適化パスが事実上皆無 + opcode セットの肥大
 

@@ -17,6 +17,9 @@ impl Compiler {
     }
 
     pub(super) fn push_dynamic_scope_lexical(&mut self) -> LexicalScopeSnapshot {
+        // Enter a fresh local-slot scope frame (§1.4 groundwork; inert today —
+        // `declare_local` still shares the outer slot for a nested `my $x`).
+        self.push_local_scope();
         // `std::mem::take` resets the current-scope constant set: the entered
         // block starts with no constants of its own, so an inner `constant X`
         // may legitimately shadow an outer one without being a redeclaration.
@@ -32,6 +35,8 @@ impl Compiler {
     }
 
     pub(super) fn pop_dynamic_scope_lexical(&mut self, saved: LexicalScopeSnapshot) {
+        // Drop the exiting block's local-slot scope frame (§1.4 groundwork).
+        self.pop_local_scope();
         self.dynamic_scope_all = saved.dynamic_scope_all;
         self.dynamic_scope_names = saved.dynamic_scope_names;
         // Constants declared inside the exiting block are `our`-scoped: they stay

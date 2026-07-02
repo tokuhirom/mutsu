@@ -35,6 +35,23 @@ mod stmt;
 pub(crate) struct Compiler {
     code: CompiledCode,
     local_map: HashMap<String, u32>,
+    /// Lexical scope stack for local-slot allocation (§1.4 groundwork). Pushed and
+    /// popped at every block boundary (`push_dynamic_scope_lexical` /
+    /// `pop_dynamic_scope_lexical`); each frame records the names declared in that
+    /// scope via [`declare_local`], the single declaration entry point.
+    ///
+    /// This is intentionally INERT today — `declare_local` still resolves slots
+    /// like `alloc_local` (a nested `my $x` shares the outer `$x`'s slot), so there
+    /// is no behavior change and no duplicate names in `code.locals`. The map value
+    /// (`Option<u32>` = the pre-declaration slot to restore on scope exit) is the
+    /// shape the future fix needs; it is left `None` for now.
+    ///
+    /// Giving a shadow its own fresh slot — the actual collision fix — is deferred
+    /// because it breaks the VM's by-name runtime slot resolution and env↔slot
+    /// coherence, and must be done as one campaign with §1.5 (remove name-based
+    /// slot resolution) and §1.3 (collapse the dual store). See ANALYSIS.md §1.4.
+    /// Frame 0 is the compilation-unit / routine top level and is never popped.
+    local_scopes: Vec<HashMap<String, Option<u32>>>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
     compiled_functions: HashMap<String, CompiledFunction>,
@@ -178,6 +195,8 @@ impl Compiler {
         Self {
             code: CompiledCode::new(),
             local_map: HashMap::new(),
+            // Frame 0 = compilation-unit / routine top level; never popped.
+            local_scopes: vec![HashMap::new()],
             local_types: HashMap::new(),
             compiled_functions: HashMap::new(),
             current_package: "GLOBAL".to_string(),
@@ -337,6 +356,46 @@ impl Compiler {
         self.code.simple_locals.push(is_simple);
         self.local_map.insert(name.to_string(), slot);
         slot
+    }
+
+    /// Designated entry point for a genuine `my`/`state`/`our` DECLARATION.
+    ///
+    /// **Groundwork, currently behavior-preserving.** It resolves the slot exactly
+    /// like [`alloc_local`] (get-or-create), so a nested-block `my $x` still shares
+    /// the outer `$x`'s slot — today's shadowing correctness continues to rely on
+    /// the runtime env restore (`BlockScope`). The only new work is recording the
+    /// declared name in the innermost [`local_scopes`] frame.
+    ///
+    /// The real §1.4 fix — giving a shadow its own fresh slot and restoring the
+    /// outer binding on scope exit — is deliberately NOT done here: it produces
+    /// duplicate names in `code.locals`, which the VM's ~40 by-name runtime slot
+    /// resolvers (`find_local_slot`, the RMW writeback chokepoint, `SmartMatchExpr`,
+    /// `:=`-bind, the env↔slot coherence sweeps, …) cannot disambiguate. Landing it
+    /// soundly requires removing name-based runtime slot resolution (§1.5) together
+    /// with the env↔slot dual store (§1.3). This scaffolding — the per-block
+    /// push/pop plumbing and the single declaration entry point — is the substrate
+    /// that campaign builds on. See ANALYSIS.md §1.4.
+    fn declare_local(&mut self, name: &str) -> u32 {
+        let slot = self.alloc_local(name);
+        if let Some(frame) = self.local_scopes.last_mut() {
+            frame.entry(name.to_string()).or_insert(None);
+        }
+        slot
+    }
+
+    /// Enter a nested lexical scope for local-slot allocation. Paired with
+    /// [`pop_local_scope`]; driven by the block-boundary hooks
+    /// (`push_dynamic_scope_lexical`/`pop_dynamic_scope_lexical`).
+    fn push_local_scope(&mut self) {
+        self.local_scopes.push(HashMap::new());
+    }
+
+    /// Leave the innermost lexical scope. Behavior-preserving today: it only drops
+    /// the scope frame. When the §1.4/§1.5/§1.3 campaign gives shadows distinct
+    /// slots, this is where a `Some(prev)` entry will restore the outer binding in
+    /// `local_map` (see [`declare_local`]).
+    fn pop_local_scope(&mut self) {
+        self.local_scopes.pop();
     }
 
     fn emit_set_named_var(&mut self, name: &str) {
