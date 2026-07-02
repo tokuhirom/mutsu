@@ -342,6 +342,7 @@ impl Interpreter {
                         self.write_back_to_source_var(
                             code,
                             &spec.source_var_names,
+                            &spec.source_var_locals,
                             &param_name,
                             idx,
                         );
@@ -391,6 +392,7 @@ impl Interpreter {
                         self.write_back_to_source_var(
                             code,
                             &spec.source_var_names,
+                            &spec.source_var_locals,
                             &param_name,
                             idx,
                         );
@@ -441,6 +443,7 @@ impl Interpreter {
                         self.write_back_to_source_var(
                             code,
                             &spec.source_var_names,
+                            &spec.source_var_locals,
                             &param_name,
                             idx,
                         );
@@ -485,6 +488,7 @@ impl Interpreter {
                         self.write_back_to_source_var(
                             code,
                             &spec.source_var_names,
+                            &spec.source_var_locals,
                             &param_name,
                             idx,
                         );
@@ -519,6 +523,7 @@ impl Interpreter {
                         self.write_back_to_source_var(
                             code,
                             &spec.source_var_names,
+                            &spec.source_var_locals,
                             &param_name,
                             idx,
                         );

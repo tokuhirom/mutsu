@@ -1733,6 +1733,7 @@ impl Compiler {
                 };
                 let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
                 let source_var_names = Self::for_iterable_var_names(iterable);
+                let source_var_locals = self.for_source_var_locals(&source_var_names);
                 // When the block parameter has a type constraint other than Mu
                 // or Junction, junction items should be autothreaded (expanded
                 // into their eigenstates).
@@ -1763,6 +1764,7 @@ impl Compiler {
                     rw_param_names,
                     kv_mode,
                     source_var_names,
+                    source_var_locals,
                     autothread_junctions,
                     explicit_zero_params: *explicit_zero_params,
                     multi_param_names: params

@@ -15,6 +15,8 @@ pub(super) struct ForLoopSpec {
     pub(super) rw_param_names: Vec<String>,
     pub(super) kv_mode: bool,
     pub(super) source_var_names: Vec<String>,
+    /// Compiler-baked local slot for each `source_var_names` entry (§1.5).
+    pub(super) source_var_locals: Vec<Option<u32>>,
     pub(super) autothread_junctions: bool,
     /// When true, `-> {}` was used — throw on any items.
     pub(super) explicit_zero_params: bool,

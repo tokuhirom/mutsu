@@ -866,6 +866,17 @@ impl Compiler {
         }
     }
 
+    /// Bake the local slot for each per-element writeback target of a
+    /// `for ($a, $b, $c) { ... }` loop (§1.5). `None` for a name that has no
+    /// local slot at this point (`our`/global/undeclared), which keeps the
+    /// runtime by-name writeback path. Parallel to the `source_var_names` list.
+    fn for_source_var_locals(&self, names: &[String]) -> Vec<Option<u32>> {
+        names
+            .iter()
+            .map(|name| self.local_map.get(name).copied())
+            .collect()
+    }
+
     fn for_iterable_var_names(iterable: &Expr) -> Vec<String> {
         // A single parenthesized scalar (`for ($x) -> $v is rw`) reaches here as
         // `Grouped(Var)`; unwrap it so the per-element rw writeback targets `$x`.
