@@ -726,7 +726,7 @@ impl Interpreter {
             spec.trim()
         );
         let mut err = RuntimeError::new(&message);
-        err.code = Some(crate::value::RuntimeErrorCode::ParseGeneric);
+        err.set_code(Some(crate::value::RuntimeErrorCode::ParseGeneric));
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message.clone()));
         attrs.insert("payload".to_string(), Value::str(message));

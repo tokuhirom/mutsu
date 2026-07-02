@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 //! Date, Instant, and Duration arithmetic helpers.
 
 use super::rat::to_big_rat_parts;

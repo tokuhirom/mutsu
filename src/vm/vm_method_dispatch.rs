@@ -536,11 +536,11 @@ impl Interpreter {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{}::{}", owner_class, method_name);
-                    let matches_frame = if let Some(_target_id) = e.leave_callable_id {
+                    let matches_frame = if let Some(_target_id) = e.leave_callable_id() {
                         // Methods don't have callable IDs, so this won't match
                         false
-                    } else if let Some(target_routine) = e.leave_routine.as_ref() {
-                        target_routine == &routine_key
+                    } else if let Some(target_routine) = e.leave_routine() {
+                        target_routine == routine_key
                     } else {
                         e.label.is_none()
                     };
@@ -562,7 +562,7 @@ impl Interpreter {
                 Err(e) if e.return_value.is_some() => {
                     // Non-local return: if the signal targets a specific callable,
                     // only catch it if this method is the target.
-                    if let Some(target_id) = e.return_target_callable_id
+                    if let Some(target_id) = e.return_target_callable_id()
                         && target_id != method_callable_id
                     {
                         loan_env!(self, restore_let_saves(let_mark));
@@ -772,7 +772,7 @@ impl Interpreter {
         } else {
             match final_result {
                 Ok(v) => Ok(v),
-                Err(e) if e.return_value.is_some() && e.return_target_callable_id.is_none() => {
+                Err(e) if e.return_value.is_some() && e.return_target_callable_id().is_none() => {
                     Ok(e.return_value.unwrap())
                 }
                 Err(e) => Err(e),
@@ -1272,10 +1272,10 @@ impl Interpreter {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{}::{}", owner_class, method_name);
-                    let matches_frame = if let Some(_target_id) = e.leave_callable_id {
+                    let matches_frame = if let Some(_target_id) = e.leave_callable_id() {
                         false
-                    } else if let Some(target_routine) = e.leave_routine.as_ref() {
-                        target_routine == &routine_key
+                    } else if let Some(target_routine) = e.leave_routine() {
+                        target_routine == routine_key
                     } else {
                         e.label.is_none()
                     };
@@ -1295,7 +1295,7 @@ impl Interpreter {
                     break;
                 }
                 Err(e) if e.return_value.is_some() => {
-                    if let Some(target_id) = e.return_target_callable_id
+                    if let Some(target_id) = e.return_target_callable_id()
                         && target_id != method_callable_id
                     {
                         loan_env!(self, restore_let_saves(let_mark));
@@ -1452,7 +1452,7 @@ impl Interpreter {
         } else {
             match final_result {
                 Ok(v) => Ok(v),
-                Err(e) if e.return_value.is_some() && e.return_target_callable_id.is_none() => {
+                Err(e) if e.return_value.is_some() && e.return_target_callable_id().is_none() => {
                     Ok(e.return_value.unwrap())
                 }
                 Err(e) => Err(e),

@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 //! Range-arithmetic helpers: offset, scale, divide, and mixin-range wrappers.
 
 use crate::value::{RuntimeError, Value, make_rat};

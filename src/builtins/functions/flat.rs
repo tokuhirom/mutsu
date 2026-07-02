@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 use crate::value::{ArrayKind, Value};
 
 pub(crate) fn is_infinite_range(value: &Value) -> bool {

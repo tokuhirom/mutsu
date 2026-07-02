@@ -1,5 +1,3 @@
-#![allow(clippy::result_large_err)]
-
 use super::allomorph::{allomorph_accepts, out_of_range_failure};
 use super::base::{
     BaseDigits, f64_to_rat, parse_radix_checked, range_pick_n_fast, rat_base_repeating, rat_to_base,

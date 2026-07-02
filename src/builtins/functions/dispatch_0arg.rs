@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 use super::time::builtin_times;
 use crate::builtins::rng::{builtin_rand, builtin_srand_auto};
 use crate::value::{RuntimeError, Value};

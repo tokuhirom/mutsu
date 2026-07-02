@@ -29,7 +29,6 @@ pub fn dump_vm_stats() {
 }
 
 /// Parse source code and return a pretty-printed AST string.
-#[allow(clippy::result_large_err)]
 pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
     let (stmts, _) = parse_dispatch::parse_source(input)?;
     Ok(format!("{:#?}", stmts))

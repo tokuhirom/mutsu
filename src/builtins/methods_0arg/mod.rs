@@ -1,5 +1,3 @@
-#![allow(clippy::result_large_err)]
-
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, EnumValue, RuntimeError, Value};

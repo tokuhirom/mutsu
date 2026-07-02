@@ -108,10 +108,10 @@ impl Interpreter {
                             // EVAL'd code reports the EVAL pseudo-file and the
                             // line within that source (Raku exposes `.filename`
                             // matching /EVAL/ and `.line`).
+                            let line = e.line().unwrap_or(1) as i64;
                             if let Some(ref mut exc_box) = e.exception
                                 && let Value::Instance { attributes, .. } = exc_box.as_mut()
                             {
-                                let line = e.line.unwrap_or(1) as i64;
                                 attributes.insert_if_absent("line".to_string(), Value::Int(line));
                                 attributes.insert_if_absent(
                                     "filename".to_string(),
@@ -266,7 +266,7 @@ impl Interpreter {
                         || err.message.contains("X::Redeclaration")
                         || err.message.contains("parse error")
                         // Any error with a parse error code is a compile-time error
-                        || err.code.is_some_and(|c| c.is_parse())
+                        || err.code().is_some_and(|c| c.is_parse())
                 } else if expected_normalized == "X::AdHoc" {
                     // X::AdHoc matches any ad-hoc error
                     true
@@ -493,10 +493,10 @@ impl Interpreter {
                             // EVAL'd code reports the EVAL pseudo-file and the
                             // line within that source (Raku exposes `.filename`
                             // matching /EVAL/ and `.line`).
+                            let line = e.line().unwrap_or(1) as i64;
                             if let Some(ref mut exc_box) = e.exception
                                 && let Value::Instance { attributes, .. } = exc_box.as_mut()
                             {
-                                let line = e.line.unwrap_or(1) as i64;
                                 attributes.insert_if_absent("line".to_string(), Value::Int(line));
                                 attributes.insert_if_absent(
                                     "filename".to_string(),

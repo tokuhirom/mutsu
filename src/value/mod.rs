@@ -159,14 +159,12 @@ pub(crate) fn seq_is_cached(arc_ptr: &Arc<Vec<Value>>) -> bool {
 }
 
 /// Build a structured X::Seq::Consumed error.
-#[allow(clippy::result_large_err)]
 pub(crate) fn seq_consumed_error() -> RuntimeError {
     seq_consumed_error_for("Seq")
 }
 
 /// Build a structured X::Seq::Consumed error naming the consumed type
 /// (e.g. "Seq", "HyperSeq", "RaceSeq").
-#[allow(clippy::result_large_err)]
 pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
     let msg = format!(
         "The iterator of this {type_name} is already in use/consumed by another {type_name} \
@@ -187,7 +185,6 @@ pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
 
 /// Mark a Seq (identified by its Arc) as consumed.
 /// Returns Err if the Seq was already consumed.
-#[allow(clippy::result_large_err)]
 pub(crate) fn seq_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<(), RuntimeError> {
     let mut list = consumed_seqs().lock().unwrap();
     // Clean up expired Weak references and check for duplicates

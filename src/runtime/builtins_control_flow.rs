@@ -212,7 +212,7 @@ impl Interpreter {
             Some(Value::WeakSub(weak)) => {
                 if let Some(sub) = weak.upgrade() {
                     if Some(sub.id) != current_callable_id && Some(sub.id) != current_block_id {
-                        sig.leave_callable_id = Some(sub.id);
+                        sig.set_leave_callable_id(Some(sub.id));
                     }
                 } else {
                     return Err(RuntimeError::new("Callable has been freed"));
@@ -220,11 +220,11 @@ impl Interpreter {
             }
             Some(Value::Sub(data)) => {
                 if Some(data.id) != current_callable_id && Some(data.id) != current_block_id {
-                    sig.leave_callable_id = Some(data.id);
+                    sig.set_leave_callable_id(Some(data.id));
                 }
             }
             Some(Value::Routine { package, name, .. }) => {
-                sig.leave_routine = Some(format!("{package}::{name}"));
+                sig.set_leave_routine(Some(format!("{package}::{name}")));
             }
             Some(Value::Nil) => {}
             Some(Value::Package(name)) if name == "Any" => {}
@@ -238,9 +238,9 @@ impl Interpreter {
                         _ => None,
                     });
                 if let Some(id) = caller_callable_id {
-                    sig.leave_callable_id = Some(id);
+                    sig.set_leave_callable_id(Some(id));
                 } else if let Some(frame) = self.routine_stack_top() {
-                    sig.leave_routine = Some(format!("{}::{}", frame.package, frame.name));
+                    sig.set_leave_routine(Some(format!("{}::{}", frame.package, frame.name)));
                 }
             }
             Some(Value::Package(name)) if name == "Block" => {}

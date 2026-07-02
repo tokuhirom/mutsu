@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 use crate::value::{ArrayKind, RuntimeError, Value};
 
 /// Perl 5-compatible `times` builtin: returns `($user, $system)` CPU times in seconds.

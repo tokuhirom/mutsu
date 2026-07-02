@@ -107,7 +107,7 @@ fn process_line(
         }
         Err(err) => {
             // If it looks like incomplete input (parse error), try accumulating
-            if err.code.is_some_and(|c| c.is_parse()) && is_incomplete(accumulated) {
+            if err.code().is_some_and(|c| c.is_parse()) && is_incomplete(accumulated) {
                 return (LineResult::Continue, None);
             }
             Some(format!("Error: {}\n", err.message))

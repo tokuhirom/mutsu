@@ -296,7 +296,6 @@ fn decode_named_entities(entity: &str) -> String {
         .collect()
 }
 
-#[allow(clippy::result_large_err)]
 fn validate_pod_blocks(source: &str) -> Result<(), RuntimeError> {
     let mut stack: Vec<String> = Vec::new();
 
@@ -347,7 +346,6 @@ fn validate_pod_blocks(source: &str) -> Result<(), RuntimeError> {
     Ok(())
 }
 
-#[allow(clippy::result_large_err)]
 fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError> {
     let (stmts, _) = parse_dispatch::parse_source(source)?;
     // Filter out SetLine annotations for DOC INIT block detection
@@ -381,7 +379,6 @@ fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError
     ))
 }
 
-#[allow(clippy::result_large_err)]
 pub fn run_doc_mode(source: &str) -> Result<DocModeResult, RuntimeError> {
     validate_pod_blocks(source)?;
     let (mut output, status, halted) = run_doc_init_blocks(source)?;

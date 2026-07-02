@@ -89,7 +89,7 @@ impl Interpreter {
     /// An explicit `ExceptionObject.throw` is dispatched natively, so the
     /// `throw` invocation never appears as its own callframe on the routine
     /// stack. Raku, by contrast, includes the `Exception.throw` setting frame at
-    /// the top of `.backtrace.list` (it is hidden from the rendered gist as a
+    /// the top of `.backtrace().list` (it is hidden from the rendered gist as a
     /// setting frame, but still counts toward `.list.elems`). Passing the method
     /// name here reproduces that extra structured-only frame.
     pub(super) fn build_backtrace_value_with_leading(&self, leading: Option<&str>) -> Value {

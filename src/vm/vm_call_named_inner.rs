@@ -233,10 +233,10 @@ impl Interpreter {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{fn_package}::{fn_name}");
-                    let matches_frame = if let Some(target_id) = e.leave_callable_id {
+                    let matches_frame = if let Some(target_id) = e.leave_callable_id() {
                         Some(target_id) == callable_id
-                    } else if let Some(target_routine) = e.leave_routine.as_ref() {
-                        target_routine == &routine_key
+                    } else if let Some(target_routine) = e.leave_routine() {
+                        target_routine == routine_key
                     } else {
                         e.label.is_none()
                     };
@@ -258,7 +258,7 @@ impl Interpreter {
                 Err(e) if e.return_value.is_some() => {
                     // Non-local return: if the signal targets a specific callable,
                     // only catch it if this routine is the target.
-                    if let Some(target_id) = e.return_target_callable_id
+                    if let Some(target_id) = e.return_target_callable_id()
                         && callable_id != Some(target_id)
                     {
                         loan_env!(self, restore_let_saves(let_mark));

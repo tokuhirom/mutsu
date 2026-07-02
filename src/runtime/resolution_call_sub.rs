@@ -434,10 +434,10 @@ impl Interpreter {
             let result = match self.eval_block_value(&data.body) {
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{}::{}", data.package, data.name);
-                    let matches_frame = if let Some(target_id) = e.leave_callable_id {
+                    let matches_frame = if let Some(target_id) = e.leave_callable_id() {
                         target_id == data.id
-                    } else if let Some(target_routine) = e.leave_routine.as_ref() {
-                        target_routine == &routine_key
+                    } else if let Some(target_routine) = e.leave_routine() {
+                        target_routine == routine_key
                     } else {
                         e.label.is_none()
                     };
@@ -589,14 +589,14 @@ impl Interpreter {
                 // Only propagate non-local return if we can identify the target
                 // routine (via __mutsu_callable_id in captured env or already set).
                 // If no target exists, catch it locally (e.g., supply block done+return).
-                let has_target = e.return_target_callable_id.is_some()
+                let has_target = e.return_target_callable_id().is_some()
                     || data.env.contains_key("__mutsu_callable_id");
                 if has_target {
                     let mut e = result.unwrap_err();
-                    if e.return_target_callable_id.is_none()
+                    if e.return_target_callable_id().is_none()
                         && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
                     {
-                        e.return_target_callable_id = Some(*id as u64);
+                        e.set_return_target_callable_id(Some(*id as u64));
                     }
                     return Err(e);
                 }

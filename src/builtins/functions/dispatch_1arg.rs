@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 use super::flat::{deitemize_flat_operand, flat_val, is_infinite_range};
 use super::math::factorial_bigint;
 use super::uniparse::uniparse_impl;

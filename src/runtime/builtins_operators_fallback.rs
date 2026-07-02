@@ -559,13 +559,13 @@ impl Interpreter {
             // Non-local return targeting a different callable: propagate
             if let Err(ref e) = result
                 && e.return_value.is_some()
-                && e.return_target_callable_id.is_some()
+                && e.return_target_callable_id().is_some()
             {
                 let my_id = self.env.get(&callable_key).and_then(|v| match v {
                     Value::Int(i) => Some(*i as u64),
                     _ => None,
                 });
-                if my_id != e.return_target_callable_id {
+                if my_id != e.return_target_callable_id() {
                     return result;
                 }
             }

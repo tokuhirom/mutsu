@@ -270,7 +270,7 @@ impl Interpreter {
         // Non-local return targeting a different callable: propagate without absorbing
         if let Err(ref e) = call_result
             && e.return_value.is_some()
-            && let Some(_target_id) = e.return_target_callable_id
+            && let Some(_target_id) = e.return_target_callable_id()
         {
             // The callable_id for this function is resolved from env.
             let callable_key = format!("__mutsu_callable_id::{}::{}", def.package, def.name);
@@ -278,7 +278,7 @@ impl Interpreter {
                 Value::Int(i) => Some(*i as u64),
                 _ => None,
             });
-            if my_id != e.return_target_callable_id {
+            if my_id != e.return_target_callable_id() {
                 return call_result;
             }
         }
@@ -575,7 +575,7 @@ impl Interpreter {
 
     /// Enhance a binding error with function name, call profile, and signature info.
     pub(crate) fn enhance_binding_error(
-        err: RuntimeError,
+        mut err: RuntimeError,
         func_name: &str,
         param_defs: &[crate::ast::ParamDef],
         args: &[Value],
@@ -584,6 +584,9 @@ impl Interpreter {
         if err.is_return() || err.is_last() || err.is_next() || func_name.is_empty() {
             return err;
         }
+        // Capture the hint before `err.exception` is (possibly) moved out below,
+        // so the later `set_hint` does not clash with that partial move.
+        let hint = err.take_hint();
         // Build call profile: func_name(Type1, Type2, ...)
         let arg_types: Vec<String> = Self::arg_type_names(args);
         let call_profile = format!("{}({})", func_name, arg_types.join(", "));
@@ -687,7 +690,7 @@ impl Interpreter {
                 enhanced.exception = Some(ex);
             }
         }
-        enhanced.hint = err.hint;
+        enhanced.set_hint(hint);
         enhanced
     }
 }

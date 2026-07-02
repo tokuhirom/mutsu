@@ -95,13 +95,13 @@ fn format_parse_error(err: &RuntimeError, source: &str, program_name: &str) -> S
     out.push_str(&short_msg);
     out.push('\n');
 
-    if let Some(line) = err.line {
+    if let Some(line) = err.line() {
         out.push_str(&format!("at {}:{}\n", program_name, line));
 
         let source_lines: Vec<&str> = source.lines().collect();
         if line >= 1 && line <= source_lines.len() {
             let src_line = source_lines[line - 1];
-            let col = err.column.unwrap_or(1);
+            let col = err.column().unwrap_or(1);
             let col_idx = col.saturating_sub(1).min(src_line.len());
             let before = &src_line[..col_idx];
             let after = &src_line[col_idx..];
@@ -111,7 +111,7 @@ fn format_parse_error(err: &RuntimeError, source: &str, program_name: &str) -> S
         }
     }
 
-    if let Some(hint) = &err.hint {
+    if let Some(hint) = err.hint() {
         out.push('\n');
         out.push_str(hint);
     }
@@ -122,32 +122,32 @@ fn format_parse_error(err: &RuntimeError, source: &str, program_name: &str) -> S
 fn print_error(prefix: &str, err: &RuntimeError, source: Option<&str>, program_name: Option<&str>) {
     // For runtime errors with a backtrace, use the Raku-style format:
     // message\n  in sub foo at file line N\n  in block <unit> at file line N
-    if err.backtrace.is_some() && err.code.is_none() {
+    if err.backtrace().is_some() && err.code().is_none() {
         eprintln!("{}", err.message);
-        if let Some(ref bt) = err.backtrace {
+        if let Some(bt) = err.backtrace() {
             eprintln!("{}", bt);
         }
         return;
     }
 
     // For parse errors with source context, show a nice snippet
-    if let (Some(code), Some(src), Some(name)) = (err.code, source, program_name)
+    if let (Some(code), Some(src), Some(name)) = (err.code(), source, program_name)
         && code.is_parse()
-        && err.line.is_some()
+        && err.line().is_some()
     {
         eprintln!("{}", format_parse_error(err, src, name));
         return;
     }
 
     eprintln!("{}: {}", prefix, err.message);
-    if let Some(line) = err.line {
-        if let Some(col) = err.column {
+    if let Some(line) = err.line() {
+        if let Some(col) = err.column() {
             eprintln!("  at line {}, column {}", line, col);
         } else {
             eprintln!("  at line {}", line);
         }
     }
-    if let Some(hint) = &err.hint {
+    if let Some(hint) = err.hint() {
         eprintln!("  hint: {}", hint);
     }
 }

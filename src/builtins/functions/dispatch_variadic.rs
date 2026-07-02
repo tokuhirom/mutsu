@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 use super::dispatch_2arg::native_function_2arg;
 use super::flat::{deitemize_flat_operand, flat_val, is_infinite_range};
 use super::math::{gcd_u64, generic_range_as_bigint, is_extrema_named_pair};
