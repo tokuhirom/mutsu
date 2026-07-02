@@ -380,7 +380,12 @@ pub(crate) enum OpCode {
     // -- Type check --
     Isa,
     Does,
-    DoesVar(u32),
+    /// `$x does Role` on a named variable. First field is the variable's name
+    /// (const-pool index); the optional second is its compile-time-resolved local
+    /// slot (§1.5: the mixed-in value is written back through this exact slot
+    /// instead of a by-name `code.locals` search — docs/lexical-scope-slot-
+    /// campaign.md). `None` for a non-local / EVAL-carrier target.
+    DoesVar(u32, Option<u32>),
     /// Set/clear the in_does_rhs flag so role calls return Pairs instead of
     /// throwing X::Coerce::Impossible during `does` RHS evaluation.
     SetDoesContext(bool),
