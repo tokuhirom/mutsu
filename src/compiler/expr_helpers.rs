@@ -618,10 +618,14 @@ impl Compiler {
         // gate (the runtime half — pending_local_updates / `$/`-as-local — is in
         // the smartmatch op).
         let rhs_pure_regex = matches!(v, Value::Regex(_));
+        let lhs_slot = lhs_var
+            .as_ref()
+            .and_then(|name| self.local_map.get(name).copied());
         let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
             rhs_end: 0,
             negate: false,
             lhs_var,
+            lhs_slot,
             // Standalone m// (not in ~~ context) returns Nil on failure, not False.
             // Setting this to false makes smart_match_op return $/ (Nil) on failure.
             rhs_is_match_regex: false,

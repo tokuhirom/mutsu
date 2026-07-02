@@ -384,6 +384,15 @@ impl Compiler {
                     Expr::Var(name) => Some(name.clone()),
                     _ => None,
                 };
+                // §1.5: bake the scope-correct local slot for the LHS variable now,
+                // while `local_map` reflects the current lexical scope, so the
+                // runtime topic writeback (`$x ~~ s///`) writes the exact slot
+                // instead of re-resolving the name against `code.locals` (which is
+                // ambiguous once shadow slots exist). See
+                // docs/lexical-scope-slot-campaign.md.
+                let lhs_slot = lhs_var
+                    .as_ref()
+                    .and_then(|name| self.local_map.get(name).copied());
                 let rhs_is_match_regex = matches!(right, Expr::MatchRegex(_));
                 // Only a *destructive* `s///` / `tr///` against a literal LHS is an
                 // X::Assignment::RO. Non-destructive `S///` / `TR///` return a copy
@@ -403,6 +412,7 @@ impl Compiler {
                     rhs_end: 0,
                     negate: matches!(op, TokenKind::BangTilde),
                     lhs_var,
+                    lhs_slot,
                     rhs_is_match_regex,
                     lhs_is_literal,
                     rhs_pure_regex,
