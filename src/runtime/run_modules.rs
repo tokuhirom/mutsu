@@ -135,6 +135,36 @@ impl Interpreter {
             .map(|p| (p, None))
     }
 
+    /// Default install directory for a well-known repository name
+    /// ("site"/"home"/"vendor"/"perl"), mirroring the XDG pattern used by
+    /// `precomp.rs::cache_dir()`. Returns `None` (no default available) rather
+    /// than erroring when `$HOME`/`XDG_DATA_HOME` can't be determined; callers
+    /// must not assume the directory exists yet.
+    pub(super) fn default_repo_dir(kind: &str) -> Option<std::path::PathBuf> {
+        let base = if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+            std::path::PathBuf::from(xdg)
+        } else if let Ok(home) = std::env::var("HOME") {
+            std::path::PathBuf::from(home).join(".local").join("share")
+        } else {
+            return None;
+        };
+        Some(base.join("mutsu").join("repo").join(kind))
+    }
+
+    /// Append the default "site" repository (see `default_repo_dir`) to the
+    /// end of `lib_paths` as an `inst#` entry, so a plain `use ModuleName`
+    /// finds modules installed there via
+    /// `CompUnit::RepositoryRegistry.repository-for-name("site").install(...)`.
+    /// Appended (not prepended) so explicit `-I`/`MUTSULIB`/project-local
+    /// paths still win, matching real Raku's `-I` semantics of inserting in
+    /// front of the default site/vendor/core chain. No-op if the directory
+    /// can't be determined; the directory need not exist yet.
+    pub fn add_default_site_repo(&mut self) {
+        if let Some(dir) = Self::default_repo_dir("site") {
+            self.add_lib_path(format!("inst#{}", dir.display()));
+        }
+    }
+
     /// Parse a dist JSON string and return the file ID for the given module name.
     /// Installed distributions store provides as {"ModuleName": {"file": "hexid"}}.
     fn find_module_file_id_in_dist_json(json_str: &str, module: &str) -> Option<String> {

@@ -2183,14 +2183,26 @@ impl Interpreter {
         crate::env::set_global_base(enum_base);
         interpreter.env.insert("Any".to_string(), Value::Nil);
         // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
+        // (attrs mirror explicit `.new()` construction, see
+        // methods_object_dispatch_new.rs's "CompUnit::Repository::FileSystem" arm,
+        // so `.short-id`/`.prefix` behave the same on the default instance).
         {
             let mut attrs = HashMap::new();
-            attrs.insert("prefix".to_string(), Value::str_from("."));
+            attrs.insert("prefix".to_string(), interpreter.make_io_path_instance("."));
+            attrs.insert("short-id".to_string(), Value::str_from("file"));
             attrs.insert("__mutsu_precomp_enabled".to_string(), Value::Bool(true));
             let repo =
                 Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
             interpreter.env.insert("*REPO".to_string(), repo);
         }
+        // Every interpreter instance (top-level CLI, REPL, EVAL, and the
+        // nested in-process Interpreter that Test::Util's `is_run` spawns
+        // for its fast path) needs the default "site" repository wired into
+        // module resolution -- not just the top-level CLI -- so a plain
+        // `use ModuleName` finds anything installed via
+        // `CompUnit::RepositoryRegistry.repository-for-name("site").install(...)`
+        // regardless of how the interpreter was embedded.
+        interpreter.add_default_site_repo();
         interpreter
     }
 }
