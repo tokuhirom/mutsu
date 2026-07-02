@@ -444,6 +444,81 @@ impl Interpreter {
                 return Err(RuntimeError::typed("X::Assignment::RO", attrs));
             }
         }
+        // Buf/Blob element and slice assignment (`$b[i] = v` / `$b[i,j] = v,w`):
+        // mutate the underlying "bytes" array in place through the instance's
+        // shared attribute cell. Buf identity lives in that cell (not the
+        // variable slot it happens to be stored in), so no `env_root_descended_mut`
+        // rebind is needed — a `with_attr_mut` write is visible to every alias.
+        // `:=`-binding to a Buf index is not handled here (falls through to the
+        // generic path below, unchanged from before this fix).
+        if !bind_mode
+            && let Some(Value::Instance {
+                attributes,
+                class_name,
+                ..
+            }) = self.env().get(&var_name)
+        {
+            let cn = class_name.resolve();
+            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                if crate::runtime::utils::is_blob_like_class(&cn) {
+                    return Err(RuntimeError::assignment_ro(Some("Blob")));
+                }
+                let attributes = attributes.clone();
+                if let Value::Array(keys, ..) = &idx {
+                    let vals = self.assignment_rhs_values(&val)?;
+                    let indices = keys
+                        .iter()
+                        .map(|k| {
+                            Self::index_to_usize(k)
+                                .ok_or_else(|| RuntimeError::new("Index out of range"))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let max_idx = indices.iter().copied().max().unwrap_or(0);
+                    let mut resize_err = None;
+                    let mut assigned = Vec::new();
+                    attributes.with_attr_mut("bytes", |bytes_val| {
+                        if let Value::Array(items, ..) = bytes_val {
+                            let arr = Arc::make_mut(items);
+                            if let Err(e) = Self::autoviv_resize(arr, max_idx + 1, Value::Int(0)) {
+                                resize_err = Some(e);
+                                return;
+                            }
+                            for (i, &pos) in indices.iter().enumerate() {
+                                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                                let byte = crate::runtime::to_int(&v) & 0xff;
+                                arr[pos] = Value::Int(byte);
+                                assigned.push(Value::Int(byte));
+                            }
+                        }
+                    });
+                    if let Some(e) = resize_err {
+                        return Err(e);
+                    }
+                    self.stack.push(Value::array(assigned));
+                    return Ok(());
+                } else if let Some(pos) = Self::index_to_usize(&idx) {
+                    let byte = crate::runtime::to_int(&val) & 0xff;
+                    let mut resize_err = None;
+                    attributes.with_attr_mut("bytes", |bytes_val| {
+                        if let Value::Array(items, ..) = bytes_val {
+                            let arr = Arc::make_mut(items);
+                            if let Err(e) = Self::autoviv_resize(arr, pos + 1, Value::Int(0)) {
+                                resize_err = Some(e);
+                                return;
+                            }
+                            arr[pos] = Value::Int(byte);
+                        }
+                    });
+                    if let Some(e) = resize_err {
+                        return Err(e);
+                    }
+                    self.stack.push(val);
+                    return Ok(());
+                } else {
+                    return Err(RuntimeError::new("Index out of range"));
+                }
+            }
+        }
         let encoded_idx = Self::encode_bound_index(&idx);
         // Slice 2b: is the existing element a `=` value share (`@aoa[i] = @row`)?
         // A non-bind reassignment to such an element REPLACES the shared cell

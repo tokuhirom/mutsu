@@ -5,8 +5,8 @@
 個々の失敗を片端から潰すためではなく、
 **今どこを直せば何がまとめて動くか**を判断するために使う。
 
-**最終更新 2026-07-02**（§4 真の lazy 配列 / 無限列キャンペーンの
-`S09-subscript/slice.t` 根本原因 6 件を解消・再集計）
+**最終更新 2026-07-03**（§4 `S09-subscript/slice.t` の Buf スライス代入
+[test 31] を解消・再集計）
 
 ## この文書の読み方
 
@@ -225,8 +225,7 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 
 ### 4.1 `S09-subscript/slice.t`
 
-- **現状（2026-07-02 更新）**: 50/56（実行は 56/56 まで完走するようになった。以前は
-  test 39/56 でネスト lazy サブリスト代入の未実装により panic して中断していた）。
+- **現状（2026-07-03 更新）**: 51/56。
 - **今回解決した根本原因**（詳細は `TODO_roast/S09.md` の該当エントリ）:
   1. `:=` bind が `sequence_spec`/`closure_seq`/`lazy_pipe` 系 `LazyList` を
      `coroutine` 以外は強制マテリアライズしていた（`vm_var_assign_set_local.rs`）。
@@ -249,10 +248,22 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
      `SliceKeyTree`（write pass `assign_slice_key_tree` ＋ 代入完了後に再読込して
      nested な返り値を組み立てる `read_slice_key_tree`。重複インデックスは
      「書き込み時点の値」でなく「最終状態」を返すため別パスが必要）で解消。
-- **残り 6 件（laziness とは無関係、それぞれ別機能）**:
+- **2026-07-03 解決**: test 31（Buf スライス代入 `$b[0,1] = 2,3`）。原因は
+  Buf/Blob（`Value::Instance`）に対する index-assign 専用パスが存在せず、
+  汎用フォールバックが「未初期化コンテナ」と誤認して `$b` をハッシュ
+  `{0=>2, 1=>3}` で丸ごと上書きしていたこと。`InstanceAttrs::with_attr_mut`
+  経由で共有 "bytes" セルへ直接書き込む専用分岐を追加（変数の再束縛不要
+  ＝ Buf の identity は共有 attribute cell 側にあるため）。単一 index・
+  スライス双方に対応、値は uint8 ネイティブ配列と同じ mod 256 マスク、
+  範囲外は 0 埋めで自動延伸、immutable な Blob への書き込みは拒否。
+  詳細・テストは `TODO_roast/S09.md` / `t/buf-index-slice-assign.t`。
+- **残り 5 件（laziness とは無関係、それぞれ別機能）**:
   - test 15: `@slice := @array[1,2]; @slice = <A B C D>` で bound slice の
-    固定 arity（余った RHS を捨てる）が未実装。
-  - test 31: Buf スライス代入 (`$b[0,1] = 2,3`) 未実装。
+    固定 arity（余った RHS を捨てる）が未実装。調査済み: 新しい `Value`
+    variant（配列+index list を束ねる slice-view セル）が要る、§3
+    container-identity と同格の本格作業。既存の `ContainerRef`/
+    `HashEntryRef` はどちらも「1 要素」用で、N-index のスライスを表現
+    できない。
   - test 35（62 assertion、18/62 で中断）: ネストインデックスへの slice adverb
     （`:p`/`:k`/`:v`/`:kv`/`:exists`/`:delete` の組み合わせ）— §3 の
     container-identity 領域に属する別の大きな機能。
@@ -262,9 +273,10 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
   - test 56: `@a[**]`（HyperWhatever hammer index）。ローカルの `raku` 自体が
     "not yet implemented. Sorry." を返すため、この環境では参照実装との
     突き合わせ自体ができない。
-- **Next slice**: 残り 6 件は互いに独立した別機能。着手するなら test 35
-  （nested slice adverbs）が最も汎用性が高いが、§3 のコンテナ identity
-  キャンペーンと同根の大仕事。whitelist にはこの 6 件全ての解決が必要。
+- **Next slice**: 残り 5 件は互いに独立した別機能。test 15 は専用 `Value`
+  variant を要する§3 相当の作業として着手するなら本腰を入れる想定。test 35
+  （nested slice adverbs）も同根の大仕事。whitelist にはこの 5 件全ての
+  解決が必要。
 
 ---
 
