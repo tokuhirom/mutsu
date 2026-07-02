@@ -317,6 +317,10 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         Expr::Var(n) if n.starts_with("__ANON_STATE_") => Some("unnamed $ variable".to_string()),
         Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => None,
         Expr::Var(n) => Some(format!("${}", n)),
+        // The trailing result read a `my (...)` destructuring block leaves — an
+        // internal `@__destructure_tmp__` — is not a user-written bare array, so
+        // it must not produce a spurious sink warning on `my ($a,$b) = 1,2;`.
+        Expr::ArrayVar(n) if n == "__destructure_tmp__" => None,
         Expr::ArrayVar(n) => Some(format!("@{}", n)),
         Expr::HashVar(n) => Some(format!("%{}", n)),
         Expr::ArrayLiteral(elems) if elems.is_empty() => Some("()".to_string()),
