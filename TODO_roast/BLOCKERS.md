@@ -5,8 +5,8 @@
 個々の失敗を片端から潰すためではなく、
 **今どこを直せば何がまとめて動くか**を判断するために使う。
 
-**最終更新 2026-07-01**（2026-06-29〜07-01 の大量の完了項目を `news/2026-06.md` /
-`news/2026-07.md` に移し、残件のみを再集計した版）
+**最終更新 2026-07-02**（§4 真の lazy 配列 / 無限列キャンペーンの
+`S09-subscript/slice.t` 根本原因 6 件を解消・再集計）
 
 ## この文書の読み方
 
@@ -220,20 +220,51 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 ## 4. 真の lazy 配列 / 無限列
 
 `eqv` の both-lazy ガードと `+a`/`+@a` の Seq single-pass consumption は完了済み
-（詳細は `news/2026-06.md`）。残るのは 1 ファイルのみ。
+（詳細は `news/2026-06.md`）。lazy 配列そのものの基盤（L1-L2b、`docs/lazy-arrays.md`
+参照）も完了済み。残るのは 1 ファイルのみ、かつ根本原因の大半は解決済み。
 
 ### 4.1 `S09-subscript/slice.t`
 
-- **現状**: 32/56（24 失敗）。以前は途中で中断していたが、周辺の一般修正で最後まで
-  実行が通るようになった。
-- **論点**: sequence-literal-in-index、slice adverbs、lazy semantics が絡む。
-  `docs/lazy-arrays.md` の L2b-L4 と同じ話 — Array が lazy を保ったまま
-  mutation / slice / slurpy に耐えられない。
-- **変更レイヤ**: `LazyList` 表現、`@`-assign preserve、mutation 時 reify、slice/index
-- **Primary files**: `src/runtime/resolution_lazy.rs`, `src/runtime/methods_call_dispatch.rs`,
-  `src/runtime/methods_type_coerce.rs`
-- **Next slice**: 24 件の失敗を種類ごとに分類し、`docs/lazy-arrays.md` に沿って
-  reify/mutation を進める。
+- **現状（2026-07-02 更新）**: 50/56（実行は 56/56 まで完走するようになった。以前は
+  test 39/56 でネスト lazy サブリスト代入の未実装により panic して中断していた）。
+- **今回解決した根本原因**（詳細は `TODO_roast/S09.md` の該当エントリ）:
+  1. `:=` bind が `sequence_spec`/`closure_seq`/`lazy_pipe` 系 `LazyList` を
+     `coroutine` 以外は強制マテリアライズしていた（`vm_var_assign_set_local.rs`）。
+  2. `LazyList::is_genuinely_lazy()` が「有限リストに `.lazy` を掛けた」ケース
+     （cache のみで coroutine/body なし）を見逃し `.is-lazy` が `False` になっていた
+     （`value_lazy.rs`）。
+  3. `lazy`/`eager`/`hyper` 文prefix のパーサが後続のカンマリスト全体でなく先頭の
+     1 項だけを対象にしていた深いバグ（`lazy 3,4,5` が `(3.lazy, 4, 5)` に、
+     `lazy 1...*` が `(1.lazy)...*` にパースされていた）。`return` の
+     `parse_comma_or_expr` と同様に全体を消費するよう修正
+     （`parser/expr/postfix/loop_.rs`）。
+  4. read 側でネストした `LazyList` サブインデックス（`@a[1,(lazy 3,4,5)]`）が
+     再帰されていなかった（`vm_var_index_ops.rs`）。
+  5. フラットなスライス代入（`@a[1,3] = ...`）を式コンテキスト（`say (...)` 等）で
+     使うと env にしか書き戻らず locals とズレる dual-store bug
+     （`vm_var_assign_index_named.rs`、early return が共有の locals-resync tail を
+     skip していた）。
+  6. ネスト lazy サブリストへの代入・bind（`@a[1,(lazy 3,4,5)] = "a"...*` や
+     トップレベル `@a[lazy 1,2,(4,5)] = ...`）が未実装で panic していた——新設の
+     `SliceKeyTree`（write pass `assign_slice_key_tree` ＋ 代入完了後に再読込して
+     nested な返り値を組み立てる `read_slice_key_tree`。重複インデックスは
+     「書き込み時点の値」でなく「最終状態」を返すため別パスが必要）で解消。
+- **残り 6 件（laziness とは無関係、それぞれ別機能）**:
+  - test 15: `@slice := @array[1,2]; @slice = <A B C D>` で bound slice の
+    固定 arity（余った RHS を捨てる）が未実装。
+  - test 31: Buf スライス代入 (`$b[0,1] = 2,3`) 未実装。
+  - test 35（62 assertion、18/62 で中断）: ネストインデックスへの slice adverb
+    （`:p`/`:k`/`:v`/`:kv`/`:exists`/`:delete` の組み合わせ）— §3 の
+    container-identity 領域に属する別の大きな機能。
+  - test 54-55: 重複インデックスを含むネスト lazy リストへの **bind**
+    （`@a[lazy 1,2,(4,5),4,5] := ...`）が `=` 代入と異なる挙動（境界での
+    打ち切りなし・返り値が書き込み時点の値）。狭いエッジケースで今回は深追いせず。
+  - test 56: `@a[**]`（HyperWhatever hammer index）。ローカルの `raku` 自体が
+    "not yet implemented. Sorry." を返すため、この環境では参照実装との
+    突き合わせ自体ができない。
+- **Next slice**: 残り 6 件は互いに独立した別機能。着手するなら test 35
+  （nested slice adverbs）が最も汎用性が高いが、§3 のコンテナ identity
+  キャンペーンと同根の大仕事。whitelist にはこの 6 件全ての解決が必要。
 
 ---
 
@@ -339,8 +370,9 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowl
    これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
 2. **`S03-metaops/hyper.t`**（§5）— plan mismatch の原因を先に特定してから、
    残りの失敗を分類して潰す。
-3. **`S09-subscript/slice.t`**（§4）— 24 件を種類ごとに分類し、lazy array 基盤工事の
-   一環として進める。
+3. **`S09-subscript/slice.t`**（§4）— lazy array 起因の失敗は解消済み（2026-07-02）。
+   残り 6 件は test 35（nested slice adverbs、§3 と同根の大仕事）以外は独立した
+   小粒な機能ギャップ。
 4. **`S17-supply/syntax.t`**（§6.2）— test 75/90 は個別に深掘りが必要（hard case）。
 
 `S06-operator-overloading/infix.t`（§2.4）は残り 2 件（カンマ演算子オーバーロード）が

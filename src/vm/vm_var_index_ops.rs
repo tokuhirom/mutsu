@@ -685,9 +685,15 @@ impl Interpreter {
                         };
                         let effective_idx = resolved_idx.as_ref().unwrap_or(idx);
                         // Nested list index: @a[0,(1,2)] => (a[0], (a[1], a[2]))
+                        // A `LazyList` sublist (`@a[1,(lazy 3,4,5)]`) recurses too,
+                        // so the nested slice gets the lazy stop-at-boundary
+                        // semantics via the top-level `is_lazy_index` normalization.
                         if matches!(
                             effective_idx,
-                            Value::Array(..) | Value::Seq(..) | Value::Slip(..)
+                            Value::Array(..)
+                                | Value::Seq(..)
+                                | Value::Slip(..)
+                                | Value::LazyList(..)
                         ) {
                             self.stack.push(target.clone());
                             self.stack.push(effective_idx.clone());

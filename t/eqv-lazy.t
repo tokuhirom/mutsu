@@ -1,6 +1,6 @@
 use Test;
 
-plan 16;
+plan 18;
 
 # `.List` / `.Array` on a genuinely-lazy sequence preserve laziness (they must
 # NOT materialize the infinite tail) and report the coerced `.WHAT`.
@@ -33,4 +33,16 @@ plan 16;
     lives-ok { (1…∞) eqv (1…∞).List }, 'both lazy but different type lives';
     lives-ok { (1…∞) eqv (1, 3)     }, 'only one lazy lives';
     lives-ok { (1…∞).List eqv (1…3).List }, 'one lazy List lives';
+}
+
+# A `lazy`-marked but already fully-cached FINITE list (`.is-lazy` True, but
+# nothing left to force) is safe to `eqv` even against itself — roast
+# S03-operators/eqv.t 'eqv between identical lazy Seqs does not die'.
+{
+    my $a = lazy ^2;
+    my $b = $a;
+    $a.cache;
+    my $result;
+    lives-ok { $result = $a eqv $b }, 'eqv between identical cached lazy Seqs does not die';
+    is-deeply $result, True, 'eqv between identical cached lazy Seqs returns True';
 }

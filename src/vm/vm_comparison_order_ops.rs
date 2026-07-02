@@ -513,7 +513,7 @@ impl Interpreter {
     /// `.List`-coerced one is `List`, a `.Array`/`@`-coerced one is `Array`.
     fn lazy_eqv_type(v: &Value) -> Option<&'static str> {
         match v {
-            Value::LazyList(ll) if ll.is_genuinely_lazy() => Some(if ll.in_array_context() {
+            Value::LazyList(ll) if ll.eqv_would_hang() => Some(if ll.in_array_context() {
                 "Array"
             } else if ll.in_list_context() {
                 "List"
