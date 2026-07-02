@@ -48,6 +48,19 @@ impl Interpreter {
                             new_args,
                         ));
                     }
+                    if matches!(name.as_str(), "site" | "home" | "vendor" | "perl")
+                        && let Some(dir) = Self::default_repo_dir(&name)
+                    {
+                        let new_args = vec![Value::Pair(
+                            "prefix".to_string(),
+                            Box::new(Value::str(dir.display().to_string())),
+                        )];
+                        return Some(self.call_method_with_values(
+                            Value::Package(Symbol::intern("CompUnit::Repository::Installation")),
+                            "new",
+                            new_args,
+                        ));
+                    }
                     return Some(Ok(Value::Nil));
                 }
                 None
