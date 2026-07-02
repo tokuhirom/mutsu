@@ -178,6 +178,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         source_var_names: &[String],
+        source_var_locals: &[Option<u32>],
         param_name: &Option<String>,
         idx: usize,
     ) {
@@ -190,7 +191,18 @@ impl Interpreter {
         };
         let target = &source_var_names[idx];
         self.env_mut().insert(target.clone(), current_val.clone());
-        self.update_local_if_exists(code, target, &current_val);
+        // §1.5: write straight into the compiler-baked slot when known, instead of
+        // re-resolving `target` by name; fall back to the by-name search only when
+        // the compiler recorded no slot (`our`/global/undeclared target).
+        match source_var_locals.get(idx).copied().flatten() {
+            Some(slot) => {
+                let slot = slot as usize;
+                if slot < self.locals.len() {
+                    self.locals[slot] = current_val;
+                }
+            }
+            None => self.update_local_if_exists(code, target, &current_val),
+        }
     }
 
     /// Write back the named rw param to the source container at the given index.

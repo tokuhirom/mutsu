@@ -892,6 +892,13 @@ pub(crate) enum OpCode {
         /// Variable names for per-element writeback when the iterable is a list
         /// of scalar variables (e.g. `for ($a, $b, $c) { $_++ }`).
         source_var_names: Vec<String>,
+        /// Compiler-baked local slot for each `source_var_names` entry (§1.5): the
+        /// per-element writeback (`write_back_to_source_var`) writes the mutated
+        /// loop value straight into `locals[slot]` instead of re-resolving the
+        /// target name via `update_local_if_exists`. `None` for a target with no
+        /// local slot (`our`/global/undeclared), which keeps the by-name path.
+        /// Parallel to `source_var_names`.
+        source_var_locals: Vec<Option<u32>>,
         /// When true, Junction items are expanded into their eigenstates
         /// (parameter type is Any or more specific, not Mu or Junction).
         autothread_junctions: bool,

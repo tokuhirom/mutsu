@@ -222,6 +222,7 @@ impl Compiler {
             .as_ref()
             .and_then(|p| self.local_map.get(p.as_str()).copied());
         let source_var_names = Self::for_iterable_var_names(iterable);
+        let source_var_locals = self.for_source_var_locals(&source_var_names);
         let loop_idx = self.code.emit(OpCode::ForLoop {
             param_idx,
             param_local,
@@ -236,6 +237,7 @@ impl Compiler {
             rw_param_names: Vec::new(),
             kv_mode: false,
             source_var_names,
+            source_var_locals,
             autothread_junctions: false,
             explicit_zero_params: false,
             multi_param_names: Vec::new(),

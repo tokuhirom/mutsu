@@ -106,6 +106,22 @@ broadcast = touches every slot with the name.
       to the by-name search only for hand-built chunks that never recorded it.
       Verified byte-identical to the old `position` search across the whole
       `make test` suite via a temporary `debug_assert_eq!` (never fired). *(done)*
-- [ ] S5+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites.
+- [x] **S5 — for-loop scalar-list source writeback.** `for ($a, $b, $c) { $_++ }`
+      (and the `<-> $v` rw-param form) writes each mutated loop value back to its
+      source scalar; `write_back_to_source_var` resolved the target via
+      `update_local_if_exists` (name search). The compiler now bakes a
+      `source_var_locals: Vec<Option<u32>>` (parallel to `source_var_names`) into
+      the `ForLoop` opcode/`ForLoopSpec` from `local_map`; the writeback writes
+      `self.locals[slot]` directly, falling back to by-name only for a `None`
+      (an `our`/global/undeclared target). Verified byte-identical to the old
+      by-name resolution across the whole `make test` suite via a temporary
+      `debug_assert_eq!` (never fired). *(done)*
+- [ ] S6+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
+      for-loop *container* source writeback (`write_back_container_source`,
+      `write_back_for_topic_item`) still resolves its source by the runtime-derived
+      `container_ref_var` name (a §1.3 dual-store concern, not a compile-time slot);
+      the `single_array_source` live-array re-read (`vm_for_loop_dispatch.rs`);
+      element/index-assign, computed-attr, mixin, delete, and the ~80
+      `update_local_if_exists` callers generally.
 - [ ] §1.4 flip + `pop_local_scope` restore.
 - [ ] §1.3 slot-indexed locals + drop BlockScope clone.
