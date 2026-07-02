@@ -245,6 +245,9 @@ impl Interpreter {
                 body,
                 ..
             } => {
+                if let Some(r) = Self::find_undeclared_var_in_param_wheres(param_defs) {
+                    return Some(r);
+                }
                 let mut inner = declared.clone();
                 Self::add_routine_locals(params, body, &mut inner);
                 Self::add_sub_signature_locals(param_defs, &mut inner);
@@ -256,6 +259,9 @@ impl Interpreter {
                 body,
                 ..
             } => {
+                if let Some(r) = Self::find_undeclared_var_in_param_wheres(param_defs) {
+                    return Some(r);
+                }
                 let mut inner = declared.clone();
                 Self::add_routine_locals(params, body, &mut inner);
                 Self::add_sub_signature_locals(param_defs, &mut inner);
@@ -298,6 +304,111 @@ impl Interpreter {
     /// and `@rest`. The simplified `params: Vec<String>` only records the outer
     /// parameter name, so these inner names would otherwise be flagged as
     /// undeclared when used in the body.
+    /// A parameter's `where` constraint is checked left-to-right: it may name the
+    /// parameter it constrains and any *earlier* parameter, but referencing a
+    /// *later* parameter is `X::Undeclared` (that param is not in scope yet). Walk
+    /// the signature accumulating bound names, and for each `where` flag a
+    /// reference to a name that only becomes a parameter later. Matches
+    /// `sub foo($x where { $x == $y }, $y) {}` → X::Undeclared. (subtypes.t 77)
+    fn find_undeclared_var_in_param_wheres(
+        param_defs: &[crate::ast::ParamDef],
+    ) -> Option<(&'static str, String, Vec<String>)> {
+        let bare = |n: &str| n.trim_start_matches(['$', '@', '%', '&']).to_string();
+        // Names of params that appear *after* index i, for each i.
+        let all_names: Vec<String> = param_defs
+            .iter()
+            .filter(|pd| !pd.name.is_empty())
+            .map(|pd| bare(&pd.name))
+            .collect();
+        let mut seen_upto = HashSet::new();
+        for (i, pd) in param_defs
+            .iter()
+            .filter(|pd| !pd.name.is_empty())
+            .enumerate()
+        {
+            let self_name = bare(&pd.name);
+            // The param may reference itself and earlier params in its own `where`.
+            seen_upto.insert(self_name.clone());
+            if let Some(where_expr) = &pd.where_constraint {
+                let mut refs = HashSet::new();
+                Self::collect_where_var_refs(where_expr, &mut refs);
+                // A reference to a param declared strictly later is undeclared.
+                for r in &refs {
+                    let is_later_param = all_names.iter().skip(i + 1).any(|later| later == r)
+                        && !seen_upto.contains(r);
+                    if is_later_param {
+                        return Some(("$", r.clone(), Vec::new()));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Collect the bare names of all `$`/`@`/`%`/`&` variables referenced anywhere
+    /// in `expr`, descending through the expression / block forms a `where`
+    /// constraint can take. Conservative: unhandled forms are simply not walked
+    /// (this only ever *misses* references, never invents them).
+    fn collect_where_var_refs(expr: &Expr, out: &mut HashSet<String>) {
+        use Expr::*;
+        match expr {
+            Var(n) | ArrayVar(n) | HashVar(n) | CodeVar(n) => {
+                out.insert(n.clone());
+            }
+            Grouped(e) | ZenSlice(e) | PositionalPair(e) | Eager(e) | Itemize(e) => {
+                Self::collect_where_var_refs(e, out)
+            }
+            Unary { expr, .. } | PostfixOp { expr, .. } => Self::collect_where_var_refs(expr, out),
+            Binary { left, right, .. } => {
+                Self::collect_where_var_refs(left, out);
+                Self::collect_where_var_refs(right, out);
+            }
+            Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::collect_where_var_refs(cond, out);
+                Self::collect_where_var_refs(then_expr, out);
+                Self::collect_where_var_refs(else_expr, out);
+            }
+            Index { target, index, .. } => {
+                Self::collect_where_var_refs(target, out);
+                Self::collect_where_var_refs(index, out);
+            }
+            MethodCall { target, args, .. } | CallOn { target, args } => {
+                Self::collect_where_var_refs(target, out);
+                args.iter()
+                    .for_each(|a| Self::collect_where_var_refs(a, out));
+            }
+            Call { args, .. } => args
+                .iter()
+                .for_each(|a| Self::collect_where_var_refs(a, out)),
+            StringInterpolation(parts) | ArrayLiteral(parts) | CaptureLiteral(parts) => parts
+                .iter()
+                .for_each(|p| Self::collect_where_var_refs(p, out)),
+            Block(stmts) | AnonSub { body: stmts, .. } | Lambda { body: stmts, .. } => {
+                Self::collect_where_var_refs_in_stmts(stmts, out)
+            }
+            _ => {}
+        }
+    }
+
+    fn collect_where_var_refs_in_stmts(stmts: &[Stmt], out: &mut HashSet<String>) {
+        for s in stmts {
+            match s {
+                Stmt::Expr(e) => Self::collect_where_var_refs(e, out),
+                Stmt::Assign { expr, .. } | Stmt::VarDecl { expr, .. } => {
+                    Self::collect_where_var_refs(expr, out)
+                }
+                Stmt::Say(es) | Stmt::Print(es) | Stmt::Put(es) | Stmt::Note(es) => {
+                    es.iter().for_each(|e| Self::collect_where_var_refs(e, out))
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn add_sub_signature_locals(param_defs: &[crate::ast::ParamDef], out: &mut HashSet<String>) {
         for pd in param_defs {
             Self::collect_param_sub_signature(&pd.sub_signature, out);
