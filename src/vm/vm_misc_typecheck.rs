@@ -162,6 +162,12 @@ impl Interpreter {
         }
         if runtime::is_known_type_constraint(base_constraint) {
             if !matches!(value, Value::Nil) && !self.type_matches_value(constraint, &value) {
+                // A subset `where { … or fail "msg" }` that failed by throwing
+                // surfaces its own exception (custom message) rather than the
+                // generic type-check error.
+                if let Some(fail) = self.subset_where_fail.take() {
+                    return Err(*fail);
+                }
                 if base_constraint == "Int"
                     && matches!(value, Value::Num(f) if f.is_nan() || f.is_infinite())
                 {
@@ -266,6 +272,11 @@ impl Interpreter {
             && !self.type_matches_value(constraint, &value)
             && !self.is_container_subclass(constraint)
         {
+            // A subset `where { … or fail "msg" }` that failed by throwing surfaces
+            // its own exception (custom message), not the generic type-check error.
+            if let Some(fail) = self.subset_where_fail.take() {
+                return Err(*fail);
+            }
             if bind_mode {
                 return Err(crate::runtime::utils::type_check_binding_typed_error(
                     constraint, &value,

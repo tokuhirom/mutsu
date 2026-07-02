@@ -1124,6 +1124,15 @@ pub struct Interpreter {
     /// Cleared per-name on subset redeclaration; starts empty per thread (the
     /// cache is a pure recomputable optimization). See `type_matches_value`.
     subset_predicate_cache: HashMap<String, SubsetPredicateCompiled>,
+    /// Side-channel: the exception raised by the most recent subset `where`
+    /// predicate that failed by *throwing* (a `fail "msg"` inside the `where`,
+    /// e.g. `subset Even of Int where { $_ %% 2 or fail "..." }`). `type_matches_value`
+    /// records it here (returning `false` as usual), so the ASSIGNMENT/binding
+    /// type-check can surface the custom message instead of the generic
+    /// "expected X, got Y". Smartmatch / dispatch callers ignore it (a `where`
+    /// that fails is just "no match" there). Set to `None` before each subset
+    /// predicate runs; consumed (and cleared) by the type-check op.
+    pub(crate) subset_where_fail: Option<Box<RuntimeError>>,
     private_zeroarg_method_cache: HashMap<(String, String), Option<(String, MethodDef)>>,
     module_load_stack: Vec<String>,
     /// The current distribution context ($?DISTRIBUTION).

@@ -253,6 +253,16 @@ impl Interpreter {
         compiled
     }
 
+    /// Record the exception raised by a subset `where` predicate that failed by
+    /// throwing (a `fail "msg"` inside the `where`). Only genuine failures /
+    /// user exceptions are kept — a control-flow signal (`return`/`last`/…) is
+    /// not a type-check message. See `subset_where_fail`.
+    fn record_subset_where_fail(&mut self, e: RuntimeError) {
+        if e.is_fail() || e.exception.is_some() {
+            self.subset_where_fail = Some(Box::new(e));
+        }
+    }
+
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
         if let Value::Scalar(inner) = value {
             return self.type_matches_value(constraint, inner.as_ref());
@@ -555,6 +565,9 @@ impl Interpreter {
                 return false;
             }
             let predicate_value = self.coerce_value_for_constraint(&subset.base, value.clone());
+            // Clear any stale `where`-`fail` message; captured below if this
+            // subset's predicate fails by throwing (see `subset_where_fail`).
+            self.subset_where_fail = None;
             let ok = if let Some(pred) = &subset.predicate {
                 // A predicate that takes its candidate value through a single
                 // simple variable is equivalent to running its body with that
@@ -589,10 +602,13 @@ impl Interpreter {
                     let compiled = self.compile_subset_predicate(constraint, body);
                     let saved = self.env.get(bind_name).cloned();
                     self.env.insert(bind_name.to_string(), predicate_value);
-                    let result = self
-                        .eval_precompiled_block_fast(&compiled.0, &compiled.1)
-                        .map(|v| v.truthy())
-                        .unwrap_or(false);
+                    let result = match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
+                        Ok(v) => v.truthy(),
+                        Err(e) => {
+                            self.record_subset_where_fail(e);
+                            false
+                        }
+                    };
                     if let Some(old) = saved {
                         self.env.insert(bind_name.to_string(), old);
                     } else {
@@ -615,21 +631,45 @@ impl Interpreter {
                     if is_callable_expr {
                         // Evaluate to get a callable, then call with the value
                         match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
-                            Ok(callable @ Value::Sub(_)) => self
-                                .call_sub_value(callable, vec![predicate_value], false)
-                                .map(|v| v.truthy())
-                                .unwrap_or(false),
+                            Ok(callable @ Value::Sub(_)) => {
+                                match self.call_sub_value(callable, vec![predicate_value], false) {
+                                    // A `fail "msg"` inside the predicate body
+                                    // returns an unhandled Failure (not an Err) from
+                                    // the sub call; capture its message too.
+                                    Ok(v) => {
+                                        if let Some(e) =
+                                            self.failure_to_runtime_error_if_unhandled(&v)
+                                        {
+                                            self.record_subset_where_fail(e);
+                                            false
+                                        } else {
+                                            v.truthy()
+                                        }
+                                    }
+                                    Err(e) => {
+                                        self.record_subset_where_fail(e);
+                                        false
+                                    }
+                                }
+                            }
                             Ok(v) => v.truthy(),
-                            Err(_) => false,
+                            Err(e) => {
+                                self.record_subset_where_fail(e);
+                                false
+                            }
                         }
                     } else {
                         // Bare expression: set $_ and evaluate directly
                         let saved = self.env.get("_").cloned();
                         self.env.insert("_".to_string(), predicate_value);
-                        let result = self
-                            .eval_precompiled_block_fast(&compiled.0, &compiled.1)
-                            .map(|v| self.smart_match(value, &v))
-                            .unwrap_or(false);
+                        let result =
+                            match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
+                                Ok(v) => self.smart_match(value, &v),
+                                Err(e) => {
+                                    self.record_subset_where_fail(e);
+                                    false
+                                }
+                            };
                         if let Some(old) = saved {
                             self.env.insert("_".to_string(), old);
                         } else {

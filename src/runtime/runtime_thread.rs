@@ -201,6 +201,7 @@ impl Interpreter {
             predictive_seq_iters: self.predictive_seq_iters.clone(),
             protect_block_cache: HashMap::new(),
             subset_predicate_cache: HashMap::new(),
+            subset_where_fail: None,
             private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             current_distribution: self.current_distribution.clone(),
