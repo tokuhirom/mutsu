@@ -274,3 +274,35 @@ classes and the burndown owner:
 preserving with the gate off, verified by the toggle-ON roast file flipping green);
 class-1 is unblocked only by the §1.3 half. Flip the gate default and drop the
 `exec_block_scope_op` `locals.clone()` once the toggle-ON whitelist survey is green.
+
+### Root-cause fix: shadow ⟺ active-ancestor, not `local_map` presence (2026-07-03)
+
+The toggle-ON `prove t/` burndown went from **~20 failing files → 1** with a single
+compiler fix. `declare_local` classified any name already in `local_map` as a
+shadow — but `local_map` retains names from already-popped **sibling** blocks (kept
+monotonic so the out-of-scope machinery works). So a sibling `my $a` was minted a
+spurious fresh slot, creating a duplicate `code.locals` entry that corrupted every
+by-name (`position`/`rposition`) writeback resolver (`\($a)` write-through, rw-arg,
+capture-element, per-iteration closure capture, …) — they read the WRONG `"a"` slot.
+
+Fix: a genuine shadow requires the name to be declared in an **active enclosing
+(ancestor) scope frame** still on the `local_scopes` stack — not mere presence in
+`local_map`. A leaked-sibling name takes `alloc_local` (reuses the sibling's slot,
+no duplicate). This greened the class-1 closure-capture families AND the class-2
+writeback families at once (they were all the same spurious-duplicate root cause).
+
+Remaining toggle-ON `t/` failure (1): `lexical-scope-slot-writeback.t` test 3 —
+`undefine($foo)` inside a genuine nested shadow writes back via
+`apply_pending_rw_writeback` → `find_local_slot` (position = outer), not the live
+inner slot. `s///` (S1 baked `lhs_slot`) and `++` (S2/S3 baked slot) already hit the
+inner slot; `s///` (S1 baked `lhs_slot`) and `++` (S2/S3 baked slot) already hit
+the inner slot. The parallel `emit_undefine_scalar_store` fix above
+(`AssignExprLocal(slot)`) closes this last `t/` failure too — so the toggle-ON
+`prove t/` survey is now fully green. (All gated; the gate OFF is byte-identical
+and CI-green.)
+
+**Impact on the roast survey:** the ~102-file / 83-regression roast count above was
+measured with the OLD `local_map`-presence shadow rule, which minted spurious
+sibling-shadow duplicates. This active-ancestor rule removes that whole spurious
+class, so the real toggle-ON roast regression set is expected to be far smaller —
+a fresh survey should be re-run on top of this fix before burning down class-2.
