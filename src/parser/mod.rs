@@ -38,6 +38,17 @@ pub(crate) fn set_current_language_version(version: &str) {
     stmt::simple::set_current_language_version(version);
 }
 
+/// Run `f` with the given names pre-seeded as known user-sub names, so any parse
+/// performed inside `f` (e.g. a re-entrant `Interpreter::run`) recognizes them as
+/// callable in listop form. Restores the previous (empty) preseed afterwards.
+/// Used by `throws-like`/EVAL so caller-scope lexical `&name` subs parse as calls.
+pub(crate) fn with_user_sub_preseed<R>(names: Vec<String>, f: impl FnOnce() -> R) -> R {
+    stmt::set_eval_user_sub_preseed(names);
+    let result = f();
+    stmt::set_eval_user_sub_preseed(Vec::new());
+    result
+}
+
 use std::cell::RefCell;
 
 use crate::ast::Stmt;

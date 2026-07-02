@@ -553,14 +553,22 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             } else if sub_pd.name.starts_with('@')
                 || sub_pd.name.starts_with('$')
                 || !sub_pd.name.is_empty()
+                || sub_pd.sub_signature.is_some()
             {
                 // Slurpy *@rest or *$rest: collect remaining positional values
                 let remaining: Vec<Value> = positional[nested_positional_idx..].to_vec();
                 nested_positional_idx = positional.len();
+                let remaining_value = Value::array(remaining);
                 if !sub_pd.name.is_empty() {
                     interpreter
                         .env
-                        .insert(sub_pd.name.clone(), Value::array(remaining));
+                        .insert(sub_pd.name.clone(), remaining_value.clone());
+                }
+                // A slurpy param may itself destructure the list it collects,
+                // e.g. `*@ ($a, $b, $y, *@)`. Bind those inner params against the
+                // collected list so nested slurpy destructuring reaches them.
+                if let Some(nested) = &sub_pd.sub_signature {
+                    bind_sub_signature_from_value(interpreter, nested, &remaining_value)?;
                 }
             }
             continue;

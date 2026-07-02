@@ -133,10 +133,17 @@ impl Interpreter {
             // Infinite ranges and non-matching types fall through to normal check
         }
         if matches!(value, Value::Nil) && self.is_definite_constraint(constraint) {
-            return Err(RuntimeError::new(format!(
-                "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
-                constraint
-            )));
+            // A subset (named or anon-from-`where`) whose base is `:D` does not
+            // require an initializer — only an explicit `:D` smiley on the declared
+            // type does. Only raise MissingInitializer when one is truly required;
+            // otherwise the Nil (type-object) default is allowed at declaration.
+            if self.constraint_requires_initializer(constraint) {
+                return Err(RuntimeError::new(format!(
+                    "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                    constraint
+                )));
+            }
+            return Ok(());
         }
         // Native integer type check: validate value is an integer in range.
         // Native types cannot hold Nil/type objects — reject them.

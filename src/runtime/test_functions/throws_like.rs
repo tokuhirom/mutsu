@@ -74,15 +74,21 @@ impl Interpreter {
                 // EVAL `my $x` is a fresh lexical that does not touch the caller's
                 // same-named variable).
                 let mut eval_declared_names: Vec<Symbol> = Vec::new();
+                // Caller-scope lexical `&name` subs (e.g. `my &b2 := ...`) live in
+                // the copied env, not the registry. Seed their bare names so the
+                // EVAL'd code parses `b2 Num` (a listop call with a bareword-type
+                // argument) as a call rather than two disjoint terms.
+                let user_subs = nested.collect_eval_user_sub_names();
                 let pre_check_result = {
                     let op_names = nested.collect_operator_sub_names();
                     let op_assoc = nested.collect_operator_assoc_map();
                     let imported_names = nested.collect_eval_imported_function_names();
-                    match crate::parser::parse_program_with_operators(
+                    match crate::parser::parse_program_with_operators_and_user_subs(
                         code,
                         &op_names,
                         &op_assoc,
                         &imported_names,
+                        &user_subs,
                     ) {
                         Ok((stmts, _)) => {
                             for stmt in &stmts {
@@ -131,7 +137,11 @@ impl Interpreter {
                 if let Err(e) = pre_check_result {
                     Err(e)
                 } else {
-                    let run_result = nested.run(code).map(|_| Value::Nil);
+                    // Keep the lexical `&name` subs seeded during the real parse
+                    // inside `run`, so listop calls like `b2 Num` parse as calls.
+                    let run_result =
+                        crate::parser::with_user_sub_preseed(user_subs, || nested.run(code))
+                            .map(|_| Value::Nil);
                     // Write back mutations the code made to the caller's lexicals
                     // (e.g. `$str`), whether or not it threw — Raku runs the code
                     // in the caller's scope, so partial work before a throw is
