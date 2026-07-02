@@ -663,6 +663,48 @@ impl Interpreter {
                     } else {
                         format!("@{}", pd.name)
                     };
+                    // Single lazy source to a `*@` slurpy: bind the slurpy
+                    // directly to the lazy list (kept lazy — `.is-lazy` True,
+                    // reify-on-index) rather than flattening it, which would hang
+                    // on an infinite source or (below) drop it in as a capped
+                    // prefix. Matches Rakudo's `sub f(*@x){}; f(1..Inf)` → @x lazy.
+                    // Only for the plain (non-alias) `*@` case with exactly one
+                    // remaining positional argument. (lazy-arrays.md L4)
+                    let single_lazy_value: Option<Value> = if !is_alias_slurpy {
+                        let rest: Vec<Value> = args[positional_idx..]
+                            .iter()
+                            .map(|a| unwrap_varref_value(a.clone()))
+                            .filter(|a| !matches!(a, Value::Pair(..)))
+                            .collect();
+                        match rest.as_slice() {
+                            [Value::LazyList(ll)] if ll.is_genuinely_lazy() => Some(
+                                Value::LazyList(std::sync::Arc::new(ll.with_array_context())),
+                            ),
+                            // A bare infinite range (`f(1..Inf)` / `f(1..*)`) also
+                            // stays lazy: convert it to the same reify-on-index lazy
+                            // array `my @a = 1..*` produces.
+                            [other] => {
+                                crate::runtime::utils::infinite_int_range_to_lazy_array(other)
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(slurpy_value) = single_lazy_value {
+                        if !pd.name.is_empty() {
+                            self.bind_param_value(&slurpy_key, slurpy_value.clone());
+                            self.bind_param_type_constraint(
+                                &slurpy_key,
+                                pd.type_constraint.clone(),
+                            );
+                        }
+                        if let Some(sub_params) = &pd.sub_signature {
+                            bind_sub_signature_from_value(self, sub_params, &slurpy_value)?;
+                        }
+                        positional_idx = args.len();
+                        continue;
+                    }
                     while positional_idx < args.len() {
                         let raw_arg = args[positional_idx].clone();
                         // The source name comes from the varref capture the caller
