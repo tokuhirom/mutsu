@@ -144,11 +144,25 @@ impl Interpreter {
             } else {
                 right
             }
-        } else if negate {
-            // Smartmatch must NOT force lazy values (lazy ~~ anything → False)
-            self.eval_smartmatch_with_junctions_ex(left, right, true, rhs_is_match_regex)?
         } else {
-            self.eval_smartmatch_with_junctions_ex(left, right, false, rhs_is_match_regex)?
+            // When the RHS is a callable (`$x ~~ (* =:= $y)`), Raku binds the
+            // topic to the code's parameter `is raw` — so a container-identity
+            // body (`Code.ACCEPTS preserves container`) sees the caller's actual
+            // container, not a decontainerized copy. Record the LHS variable as
+            // the argument source so the raw-`_` binding aliases `_` to it (the
+            // same path an explicit `(* =:= $y)($x)` call takes). Harmless for a
+            // by-value param, which ignores `arg_sources`.
+            // `lhs_var` is only `Some` for a scalar LHS (`Expr::Var`); an array /
+            // hash LHS compiles to `ArrayVar` / `HashVar` and yields `None`. The
+            // name is already sigil-less (`$foo` -> `"foo"`), matching the alias
+            // root used by the raw-`_` binding.
+            if matches!(right, Value::Sub(_))
+                && let Some(v) = lhs_var
+                && !v.is_empty()
+            {
+                self.set_pending_call_arg_sources(Some(vec![Some(v.clone())]));
+            }
+            self.eval_smartmatch_with_junctions_ex(left, right, negate, rhs_is_match_regex)?
         };
         self.stack.push(out);
         // Slice 6.3 step 2 — precise env_dirty for smartmatch. Skip the

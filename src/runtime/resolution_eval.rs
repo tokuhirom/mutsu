@@ -222,7 +222,17 @@ impl Interpreter {
         // "our-scoped array/hash has correct value").
         let mut our_names = std::collections::HashSet::new();
         Self::collect_our_decl_names(body, &mut our_names);
+        // A lexical pragma such as `use fatal` inside a test-assertion block
+        // (`throws-like { use fatal; ... }`) is scoped to that block. This Rust
+        // entry point runs the body directly without the compiler's block-level
+        // import scope, so `fatal_mode` would otherwise leak into the tests that
+        // follow. Save and restore it around the body.
+        let saved_fatal_mode = self.fatal_mode;
         let result = self.eval_block_value(body);
+        // Whether `use fatal` was in effect at the block's end (before the
+        // scope-restore below) drives the trailing-Failure check further down.
+        let block_fatal_mode = self.fatal_mode;
+        self.fatal_mode = saved_fatal_mode;
         let leaked: Vec<Symbol> = self
             .env
             .keys()
@@ -238,6 +248,19 @@ impl Interpreter {
             .collect();
         for key in leaked {
             self.env.remove_sym(key);
+        }
+        // Under `use fatal` (in the block's lexical scope), a trailing reified
+        // list/Seq whose element is an unhandled Failure must throw so a
+        // `throws-like { use fatal; "a".map: *.Int }` assertion sees the
+        // exception. A bare trailing Failure is already surfaced by the block's
+        // own return handling; this covers the list-wrapped case that the map's
+        // per-element WhateverCode produces. Gated on the block's own fatal
+        // state (captured above, before the scope-restore).
+        if block_fatal_mode
+            && let Ok(ref val) = result
+            && let Some(err) = self.unhandled_failure_in_list_for_fatal(val)
+        {
+            return Err(err);
         }
         result
     }

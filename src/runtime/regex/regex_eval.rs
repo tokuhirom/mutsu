@@ -193,6 +193,19 @@ impl Interpreter {
             ..Default::default()
         };
         self.copy_decl_registry_into(&mut interp);
+        // Propagate the `Test` module gating so a test-function call inside a
+        // `<?{ ... }>` / `<!{ ... }>` assertion (`<?{ pass 'x'; True }>`) resolves
+        // to its return value instead of dying as an unknown function — otherwise
+        // the whole probe errors and the assertion wrongly evaluates to False.
+        // The scratch interp buffers its output (immediate_stdout defaults to
+        // false) and is then dropped, so no TAP line is emitted here; the real
+        // emission happens once, on the winning match path, when the assertion's
+        // code block is re-run in the parent interpreter
+        // (`execute_regex_code_blocks`).
+        if self.test_module_loaded() {
+            interp.loaded_modules = self.loaded_modules.clone();
+            interp.tap.ensure_state();
+        }
         match interp.eval_block_value(&stmts) {
             Ok(val) => val.truthy(),
             Err(_) => false,

@@ -400,12 +400,21 @@ impl Interpreter {
         // keeps the enclosing lexical `$_` (mutsu compiles such a bare block as a
         // routine for `return`/`&?ROUTINE` purposes, but its topic must still be
         // the outer `$_`). Skip the reset when an explicit `$_` param is present
-        // or when the signature is made of placeholder params (`$^x`).
+        // or when the signature is made of placeholder params (`$^x`). A
+        // WhateverCode (`*.foo`) is likewise a placeholder block: its `*` compiles
+        // to a synthetic `__wc_N` positional param, and any `$_` in its body must
+        // still refer to the caller's topic (S02 "no scoping issues when using
+        // topic variables": `do { $_ = 42; (Int).map(*.new($_)) }` -> `Int.new(42)`).
         let has_placeholder_param = data.param_defs.iter().any(|pd| {
             pd.name.starts_with('^') || pd.name.starts_with("@^") || pd.name.starts_with("%^")
         });
+        let is_whatever_code = matches!(
+            data.env.get("__mutsu_callable_type"),
+            Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+        );
         if cc.is_routine
             && !has_placeholder_param
+            && !is_whatever_code
             && !data.param_defs.iter().any(|pd| pd.name == "_")
         {
             self.env_mut().insert(

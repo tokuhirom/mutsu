@@ -146,6 +146,29 @@ impl Interpreter {
         Some(RuntimeError::new("Failed"))
     }
 
+    /// Under `use fatal`, an unhandled Failure that ends up *inside* a reified
+    /// list/`Seq` (rather than as a bare value) must still throw — e.g.
+    /// `use fatal; "a".map: *.Int` produces a `Seq` whose element is the
+    /// WhateverCode's per-item Failure, which Raku throws when the sequence is
+    /// returned/assigned/sunk. This descends one level into a list value and
+    /// returns the first contained unhandled Failure's error. Fatal-gated at the
+    /// call sites, so non-fatal code keeps its soft-Failure lists intact.
+    pub(crate) fn unhandled_failure_in_list_for_fatal(
+        &self,
+        value: &Value,
+    ) -> Option<RuntimeError> {
+        let items: &[Value] = match value {
+            Value::Seq(items)
+            | Value::Slip(items)
+            | Value::HyperSeq(items)
+            | Value::RaceSeq(items) => items,
+            _ => return None,
+        };
+        items
+            .iter()
+            .find_map(|it| self.failure_to_runtime_error_if_unhandled(it))
+    }
+
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
         let exception = err.exception.as_deref().cloned().unwrap_or_else(|| {
             let mut attrs = std::collections::HashMap::new();

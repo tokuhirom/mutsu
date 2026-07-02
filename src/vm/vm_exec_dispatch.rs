@@ -2181,10 +2181,18 @@ impl Interpreter {
                 // Peek (do not pop): a trailing unhandled Failure must be thrown
                 // so the enclosing CATCH handler (or `try`) sees it, while a
                 // normal value remains on the stack as the block's return value.
-                if let Some(val) = self.stack.last()
-                    && let Some(err) = self.failure_to_runtime_error_if_unhandled(val)
-                {
-                    return Err(err);
+                if let Some(val) = self.stack.last() {
+                    if let Some(err) = self.failure_to_runtime_error_if_unhandled(val) {
+                        return Err(err);
+                    }
+                    // Under `use fatal`, a block/routine that returns a reified
+                    // list/Seq whose element is an unhandled Failure throws too
+                    // (`use fatal; { "a".map: *.Int }()`).
+                    if self.fatal_mode
+                        && let Some(err) = self.unhandled_failure_in_list_for_fatal(val)
+                    {
+                        return Err(err);
+                    }
                 }
                 *ip += 1;
             }
@@ -2300,6 +2308,16 @@ impl Interpreter {
                         _ => {
                             // Sinking an unhandled Failure always throws (Raku behavior)
                             if let Some(err) = self.failure_to_runtime_error_if_unhandled(&val) {
+                                return Err(err);
+                            }
+                            // Under `use fatal`, sinking a reified list/Seq whose
+                            // element is an unhandled Failure also throws (e.g.
+                            // `use fatal; "a".map: *.Int`). Non-fatal code keeps
+                            // its soft-Failure lists (a plain `[Failure]` sink is a
+                            // no-op without fatal).
+                            if self.fatal_mode
+                                && let Some(err) = self.unhandled_failure_in_list_for_fatal(&val)
+                            {
                                 return Err(err);
                             }
                             // Sinking a Proc with non-zero exitcode throws X::Proc::Unsuccessful
