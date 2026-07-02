@@ -207,6 +207,11 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("subset", input).ok_or_else(|| PError::expected("subset declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
+    // Register the subset as a user-declared type so a later `$x ~~ S` parses `S`
+    // as a type term, not the `S///` non-destructive-substitution operator
+    // (`~~ S/.../.../` is valid, so the bareword `S` after `~~` is otherwise taken
+    // as a substitution — subtypes.t 68). Classes/roles/grammars already do this.
+    super::super::simple::register_user_type(&name);
     let (mut rest, _) = ws(rest)?;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();

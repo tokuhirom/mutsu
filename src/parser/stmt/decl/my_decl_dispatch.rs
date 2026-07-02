@@ -91,6 +91,9 @@ pub(super) fn try_keyword_dispatch(
         if let Some(r) = keyword("subset", after_type) {
             let (r, _) = ws1(r)?;
             let (r, name) = qualified_ident(r)?;
+            // Register so a later `$x ~~ MyStr` parses the name as a type term, not
+            // the `S///` substitution operator (see constant_subset.rs / subtypes.t 68).
+            super::super::simple::register_user_type(&name);
             let (mut r, _) = ws(r)?;
             while let Some(r2) = keyword("is", r) {
                 let (r2, _) = ws1(r2)?;
