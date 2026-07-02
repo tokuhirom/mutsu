@@ -735,6 +735,11 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name: &str,
+        // §1.5: compile-time-resolved local slot for `name`, when it is a
+        // current-scope local. Drives the slot mirror + `local_bind_pairs` source
+        // resolution below instead of a by-name `code.locals` search (ambiguous
+        // once a name occupies several slots). `None` = non-local / no baked slot.
+        slot: Option<u32>,
         new_val: Value,
     ) -> Result<Value, RuntimeError> {
         let new_val = self.maybe_wrap_native_int(name, new_val);
@@ -757,7 +762,15 @@ impl Interpreter {
                 .insert("__mutsu_rw_map_topic__".to_string(), new_val.clone());
         }
         self.sync_anon_state_value(name, &new_val);
-        self.update_local_if_exists(code, name, &new_val);
+        // §1.5: mirror into the compile-time-baked slot when present (scope-correct
+        // even once a name occupies several slots); fall back to the by-name
+        // resolution for a non-local / no-baked-slot target.
+        match slot {
+            Some(s) if (s as usize) < self.locals.len() => {
+                self.locals[s as usize] = new_val.clone();
+            }
+            _ => self.update_local_if_exists(code, name, &new_val),
+        }
         // Slice F: an inc/dec (`$*foo++`) of a caller-declared dynamic variable
         // writes only `env` by name; record it so the call-site drain writes it
         // through to the caller frame's slot (mirrors the SetGlobal path).
@@ -766,7 +779,13 @@ impl Interpreter {
         }
         // Propagate via local_bind_pairs (for `:=` bindings within this scope
         // or cross-scope bindings resolved by resolve_pending_alias_binds).
-        if let Some(source_idx) = code.locals.iter().position(|n| n == name) {
+        // §1.5: prefer the baked slot as the bind-pair source; fall back to the
+        // by-name lookup for a non-local target.
+        let source_idx = match slot {
+            Some(s) => Some(s as usize),
+            None => code.locals.iter().position(|n| n == name),
+        };
+        if let Some(source_idx) = source_idx {
             let mut env_updates = Vec::new();
             for &(src, tgt) in &self.local_bind_pairs {
                 if src == source_idx {

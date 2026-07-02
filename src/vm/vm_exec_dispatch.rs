@@ -2878,12 +2878,12 @@ impl Interpreter {
             }
 
             // -- Postfix operators --
-            OpCode::PostIncrement(name_idx) => {
-                self.exec_post_increment_op(code, *name_idx)?;
+            OpCode::PostIncrement(name_idx, slot) => {
+                self.exec_post_increment_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
-            OpCode::PostDecrement(name_idx) => {
-                self.exec_post_decrement_op(code, *name_idx)?;
+            OpCode::PostDecrement(name_idx, slot) => {
+                self.exec_post_decrement_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
             OpCode::PostIncrementIndex(name_idx) => {

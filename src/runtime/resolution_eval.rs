@@ -385,10 +385,15 @@ impl Interpreter {
                     crate::opcode::OpCode::SetLocal(slot)
                     | crate::opcode::OpCode::AssignExprLocal(slot)
                     | crate::opcode::OpCode::PreIncrement(slot)
-                    | crate::opcode::OpCode::PreDecrement(slot)
-                    | crate::opcode::OpCode::PostIncrement(slot)
-                    | crate::opcode::OpCode::PostDecrement(slot) => {
+                    | crate::opcode::OpCode::PreDecrement(slot) => {
                         assigned_slots.insert(*slot as usize);
+                    }
+                    // Post inc/dec carry (name_idx, slot); keep the pre-existing
+                    // field-0 behavior for this EVAL-writeback detection (unchanged
+                    // by §1.5 slice S2).
+                    crate::opcode::OpCode::PostIncrement(name_idx, _)
+                    | crate::opcode::OpCode::PostDecrement(name_idx, _) => {
+                        assigned_slots.insert(*name_idx as usize);
                     }
                     _ => {}
                 }

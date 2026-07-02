@@ -9,13 +9,14 @@ impl Compiler {
                 self.alloc_local(name);
             }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
-            self.code.emit(OpCode::PostIncrement(name_idx));
+            let slot = self.local_map.get(name).copied();
+            self.code.emit(OpCode::PostIncrement(name_idx, slot));
         } else if let Expr::BareWord(name) = expr {
             if self.sigilless_locals.contains(name.as_str()) {
                 // Sigilless rw binding (e.g. for-loop `-> \v { v++ }`): the bare
-                // word IS the env var, so increment it in place by name.
+                // word IS the env var (no local slot), so increment it by name.
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::PostIncrement(name_idx));
+                self.code.emit(OpCode::PostIncrement(name_idx, None));
             } else {
                 self.compile_expr(&Expr::Call {
                     name: Symbol::intern("__mutsu_incdec_nomatch"),
@@ -26,8 +27,9 @@ impl Compiler {
             // state/my declarator in expression position: `state $x++`, `my $x.++`
             self.compile_expr(expr);
             self.code.emit(OpCode::Pop);
+            let slot = self.local_map.get(&var_name).copied();
             let name_idx = self.code.add_constant(Value::str(var_name));
-            self.code.emit(OpCode::PostIncrement(name_idx));
+            self.code.emit(OpCode::PostIncrement(name_idx, slot));
         } else if let Expr::Index { target, index, .. } = expr {
             if let Some(name) = Self::postfix_index_name(target) {
                 self.compile_expr(index);
@@ -64,7 +66,7 @@ impl Compiler {
                 let tmp_result_idx = self.code.add_constant(Value::str(tmp_result_name.clone()));
                 self.compile_expr(expr);
                 self.code.emit(OpCode::SetGlobal(tmp_value_idx));
-                self.code.emit(OpCode::PostIncrement(tmp_value_idx));
+                self.code.emit(OpCode::PostIncrement(tmp_value_idx, None));
                 self.code.emit(OpCode::SetGlobal(tmp_result_idx));
                 let assign_expr = Expr::Call {
                     name: Symbol::intern("__mutsu_assign_method_lvalue"),
@@ -100,12 +102,13 @@ impl Compiler {
                 self.alloc_local(name);
             }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
-            self.code.emit(OpCode::PostDecrement(name_idx));
+            let slot = self.local_map.get(name).copied();
+            self.code.emit(OpCode::PostDecrement(name_idx, slot));
         } else if let Expr::BareWord(name) = expr {
             if self.sigilless_locals.contains(name.as_str()) {
-                // Sigilless rw binding (e.g. for-loop `-> \v { v-- }`).
+                // Sigilless rw binding (e.g. for-loop `-> \v { v-- }`) — env var.
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::PostDecrement(name_idx));
+                self.code.emit(OpCode::PostDecrement(name_idx, None));
             } else {
                 self.compile_expr(&Expr::Call {
                     name: Symbol::intern("__mutsu_incdec_nomatch"),
@@ -115,8 +118,9 @@ impl Compiler {
         } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
             self.compile_expr(expr);
             self.code.emit(OpCode::Pop);
+            let slot = self.local_map.get(&var_name).copied();
             let name_idx = self.code.add_constant(Value::str(var_name));
-            self.code.emit(OpCode::PostDecrement(name_idx));
+            self.code.emit(OpCode::PostDecrement(name_idx, slot));
         } else if let Expr::Index { target, index, .. } = expr {
             if let Some(name) = Self::postfix_index_name(target) {
                 self.compile_expr(index);
@@ -153,7 +157,7 @@ impl Compiler {
                 let tmp_result_idx = self.code.add_constant(Value::str(tmp_result_name.clone()));
                 self.compile_expr(expr);
                 self.code.emit(OpCode::SetGlobal(tmp_value_idx));
-                self.code.emit(OpCode::PostDecrement(tmp_value_idx));
+                self.code.emit(OpCode::PostDecrement(tmp_value_idx, None));
                 self.code.emit(OpCode::SetGlobal(tmp_result_idx));
                 let assign_expr = Expr::Call {
                     name: Symbol::intern("__mutsu_assign_method_lvalue"),
@@ -208,9 +212,9 @@ impl Compiler {
             //    - pushes old value on stack
             //    - sets tmp_val = old +/- 1
             if increment {
-                self.code.emit(OpCode::PostIncrement(tmp_val_idx));
+                self.code.emit(OpCode::PostIncrement(tmp_val_idx, None));
             } else {
-                self.code.emit(OpCode::PostDecrement(tmp_val_idx));
+                self.code.emit(OpCode::PostDecrement(tmp_val_idx, None));
             }
             // Stack now has old value; tmp_val has new value
             self.code.emit(OpCode::SetGlobal(tmp_old_idx));
