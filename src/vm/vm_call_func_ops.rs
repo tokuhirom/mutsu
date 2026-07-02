@@ -1739,7 +1739,16 @@ impl Interpreter {
                 .as_ref()
                 .is_none_or(|rt| !rt.contains('('))
             && def.param_defs.iter().all(|pd| {
-                !pd.sigilless && pd.sub_signature.is_none() && pd.traits.is_empty()
+                // A capture parameter (`|c` / `|c($a, $b)`) is sigilless + slurpy and
+                // binds the argument list read-only (its sub-signature only
+                // destructures that capture), so it does NOT alias-write back to the
+                // caller the way a sigilless *scalar* (`\x`) does — it OTF-compiles
+                // exactly as it does at top level. A sigilless scalar and a
+                // non-capture sub-signature stay excluded (caller-alias writeback
+                // across an EVAL boundary — see the doc comment above).
+                let is_capture = pd.slurpy && pd.sigilless;
+                (is_capture || (!pd.sigilless && pd.sub_signature.is_none()))
+                    && pd.traits.is_empty()
             })
             && !Self::function_body_declares_state(&def.body)
             && !Self::module_otf_body_needs_interpreter(&def.body)
