@@ -303,6 +303,7 @@ roast/S04-declarations/constant-6.d.t
 roast/S04-declarations/constant.t
 roast/S04-declarations/implicit-parameter.t
 roast/S04-declarations/multiple.t
+roast/S04-declarations/my-6e.t
 roast/S04-declarations/our.t
 roast/S04-declarations/smiley.t
 roast/S04-declarations/state.t
