@@ -133,7 +133,30 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 ### 3.1 残っている対象
 
 - `S02-names-vars/variables-and-packages.t`（30/39、9 失敗: test 29-34, 37-39）
-  — BEGIN-time compile execution、forward-reference detection が根本原因。
+  — 全 9 失敗が独立した深い lexical/scoping/BEGIN 問題。2026-07-02 に各グループを root-cause 精査した結果:
+  - **test 29-31（BEGIN block init）**: `{ baz(); ...; my $a; BEGIN { $a = 3 }; sub baz { $a++ } }` が
+    3,4,5 でなく **0,1,2**。`BEGIN { $a = 3 }` が compile-time に走らないため `$a` が 3 に初期化されない。
+    → BEGIN compile-time execution（declaration model 再設計・medium-large）。
+  - **test 32-34（escaped `our sub`）**: `{ my $a = 3; our sub grtz { $a++ } }; &OUR::grtz()` が
+    3,4,5 でなく **0,1** / **0,0,1**。★**block 内で呼べば 3,4 で正しい**が、block 退出後は 0。
+    根因＝`escaped_our_lexical_cells["a"]` が **0-seed** の cell を保持（0→1 と increment するので cell 自体は
+    persist されている）。`my $a=3` を実行する code frame の `needs_cell_escaping_our_sub` に "a" が入って
+    おらず（nested block/closure の **code レベルで cell 分類が別 frame に落ちている**＝`nceos` vs `nceos_free` の
+    own/free 判定、opcode.rs:2129-2147）、assignment 時 boxing の persist branch（vm_var_assign_set_local.rs:54）
+    が発火しない。hoisted RegisterSub が `my $a=3` 前に空 cell を persist し、in-place persist が cell(3) で
+    上書きできていない。★assignment 時に persist を足す fix（試行済）は branch 非発火で**無効**＝
+    `collect_escaping_our_lexical_names`（accessors_state.rs:137・`_free` を読まない）と box_decl 両方の
+    code-level 分類を直す必要。
+  - **test 37-38（X::Redeclaration::Outer）**: `sub s($i is copy){ for ...{ @a.push($i); my $i=1 } }` が
+    silent（raku=compile-time「Lexical symbol '$i' is already bound to an outer symbol」）。
+    → block 内で outer 名を **使用後に** `my` 再宣言する use-before-decl の compile-time scope 解析が必要
+    （既存の same-scope 重複検出とは別軸）。
+  - **test 39（`$OUTER::_`）**: `for "a" { $t = sub { $OUTER::_ } }; $t()` が 'a' でなく **Nil**。
+    **2 バグ**: ①`$OUTER::x` は `GetOuterVar`→`get_outer_var`（vm_var_get_ops.rs:357）が closure の captured
+    env でなく `outer_scope_locals`（lexical block nesting 用）を見るため closure 呼び出し時に空→Nil
+    （skip-own-scope セマンティクスも要）②`for "a" { sub {$_} }` 自体が topic `$_` を capture できず `(Any)`。
+  - ★全て load-bearing な closure-capture / declaration-model に触る高リスク変更。盲目的な部分 fix は避け、
+    1 グループずつ専用セッションで攻めること。最も infra が揃うのは 32-34（`escaped_our_lexical_cells` 機構）。
 - `S14-traits/attributes.t`（4/8、bad plan：8 planned に対し 4 で中断）
   — `Attribute.container.VAR does Role` に必要な「scalar 属性が Scalar コンテナを VAR として
   持ち、合成時に role を mixin し、それがインスタンスの per-attribute コンテナに伝播する」
