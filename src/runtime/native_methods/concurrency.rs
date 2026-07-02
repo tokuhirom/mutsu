@@ -24,8 +24,13 @@ impl Interpreter {
                     .ok_or_else(|| RuntimeError::new("Lock.protect could not find lock state"))?;
                 let me = current_thread_id();
                 acquire_lock(&lock, me)?;
+                // Entering the critical section: pull the latest value of any
+                // shared scalar a previous holder committed inside its own
+                // critical section (mirrors Semaphore.acquire).
+                self.enter_critical_section();
                 let code = args.first().cloned().unwrap_or(Value::Nil);
                 let result = self.call_protect_block(&code);
+                self.leave_critical_section();
                 let _ = release_lock(&lock, me);
                 result
             }
@@ -49,6 +54,7 @@ impl Interpreter {
                     Ok(Value::Promise(promise))
                 } else {
                     acquire_lock(&lock, me)?;
+                    self.enter_critical_section();
                     Ok(Value::Nil)
                 }
             }
@@ -68,6 +74,7 @@ impl Interpreter {
                 if is_async {
                     async_release_lock(&lock)?;
                 } else {
+                    self.leave_critical_section();
                     let me = current_thread_id();
                     release_lock(&lock, me)?;
                 }

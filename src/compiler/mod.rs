@@ -109,6 +109,19 @@ pub(crate) struct Compiler {
     /// to a cell. Cleared while compiling the inner `target` so only the outermost
     /// index is terminal.
     bind_terminal: bool,
+    /// When true, the *immediate* upcoming `compile_call_arg` call compiles a
+    /// `:=` bind/rebind target (`my $x := @a[$i]`), not a genuine function-call
+    /// argument. `compile_call_arg` reads this once at entry and clears it
+    /// before any nested compilation, so a call nested inside the bind RHS
+    /// (`my $x := f(@a[$i])`) still sees `false` for its own arguments and
+    /// keeps the normal `is rw` writeback machinery. Guards against reusing the
+    /// call-argument `is rw` Index writeback temps (`__mutsu_index_rw_*`) for a
+    /// bind: those temps are compile-time-fixed global names, and inside a loop
+    /// body the same bind statement re-executes every iteration, so the
+    /// call-argument writeback's "write through an existing ContainerRef"
+    /// semantics corrupt the *previous* iteration's bound cell instead of
+    /// storing a fresh one (see the `lock.t` array-corruption investigation).
+    bind_target_direct: bool,
     /// Variables declared as `constant` (no Scalar container).
     constant_vars: std::collections::HashSet<String>,
     /// Subset of `constant_vars` whose declaring lexical block is still open.
@@ -220,6 +233,7 @@ impl Compiler {
             bind_vardecl: false,
             scalar_bind_autovivify: false,
             bind_terminal: false,
+            bind_target_direct: false,
             constant_vars: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),

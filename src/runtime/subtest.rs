@@ -174,6 +174,15 @@ impl Interpreter {
         label: &str,
         run_result: Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
+        // A fire-and-forget thread spawned inside this subtest (`Thread.start`
+        // with no `.finish`/`.join`) buffers its TAP output into
+        // `shared_thread_output` rather than writing immediately (see
+        // `dispatch_thread_start`), since its lines are subtest-internal and
+        // must be indented into this subtest, not leaked to the top-level
+        // stream. Drain it now, before taking the subtest's own output below,
+        // so any such buffered lines are folded into `subtest_output` and get
+        // indented/numbered along with the rest of this subtest's assertions.
+        self.drain_shared_thread_output();
         let mut subtest_output = std::mem::take(&mut self.output_sink_mut().output);
         let subtest_state = self.tap.take_state();
         let subtest_failed = subtest_state.as_ref().map(|s| s.failed).unwrap_or(0);

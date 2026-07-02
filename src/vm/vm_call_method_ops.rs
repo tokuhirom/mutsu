@@ -546,11 +546,16 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::new("Lock.protect could not find lock state"))?;
             let me = crate::runtime::native_methods::current_thread_id();
             crate::runtime::native_methods::acquire_lock(&lock, me)?;
+            // Entering the critical section: pull the latest value of any
+            // shared scalar a previous holder committed inside its own
+            // critical section (mirrors Semaphore.acquire).
+            self.enter_critical_section();
             let code_val = args.into_iter().next().unwrap_or(Value::Nil);
             let result = match self.try_exec_simple_shared_protect_block(code, &code_val)? {
                 Some(value) => Ok(value),
                 None => self.exec_protect_block_inline(code, &code_val),
             };
+            self.leave_critical_section();
             let _ = crate::runtime::native_methods::release_lock(&lock, me);
             self.stack.push(result?);
             return Ok(());

@@ -1015,6 +1015,7 @@ impl Compiler {
                     self.bind_vardecl = false;
                     self.scalar_bind_autovivify = true;
                     self.bind_terminal = true;
+                    self.bind_target_direct = true;
                     self.compile_call_arg(expr);
                     self.scalar_bind_autovivify = false;
                     self.bind_terminal = false;
@@ -1036,6 +1037,7 @@ impl Compiler {
                     // COW push would then detach the alias.)
                     self.scalar_bind_autovivify = true;
                     self.bind_terminal = true;
+                    self.bind_target_direct = true;
                     self.compile_call_arg(expr);
                     self.scalar_bind_autovivify = false;
                     self.bind_terminal = false;
@@ -1450,6 +1452,7 @@ impl Compiler {
                     if scalar_elem_bind {
                         self.scalar_bind_autovivify = true;
                         self.bind_terminal = true;
+                        self.bind_target_direct = true;
                         self.compile_call_arg(expr);
                         self.scalar_bind_autovivify = false;
                         self.bind_terminal = false;
