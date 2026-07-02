@@ -1,5 +1,88 @@
 # Changelog
 
+## [v0.2.1](https://github.com/tokuhirom/mutsu/compare/v0.2.0...v0.2.1) - 2026-07-02
+
+- fix(regex): keep highest-priority alternative on full-match ties (advent2009-day10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3985
+- fix(multislice): array `@a[i;j;k]` lvalue aliasing for raw `\target` / `is rw` args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3987
+- fix(promise): drain worker-thread output at .result sync point (S17 then.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3989
+- feat(supply): implement Supply.stable debounce (S17 stable.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3990
+- docs(S17): mark then.t/stable.t passing; record start.t ordering blocker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3991
+- fix(assign): greedy @/% slurp in positional list assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3988
+- fix(concurrency): Semaphore critical sections share scalar/array writes (S17 semaphore.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3992
+- fix(supply): preserve tap-callback writeback across quit handler (S17 syntax.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3994
+- fix(assign): chained inner @/% list-assignment absorbs comma by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3993
+- ci: make t/ TAP suite fatal in CI by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3995
+- fix(assign): symbolic-deref assignment in expression context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3997
+- fix(subst): interpolate $x.method() postfix calls in s/// replacement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3996
+- fix(assign): item-deref lvalue `$(EXPR) = value` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3998
+- feat(supply): implement Supply.migrate combinator (S17 migrate.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3999
+- fix(assign): word-form compound ops list precedence + scalar-assign itemization by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4000
+- fix(hyperrace): enforce single-iterator contract on HyperSeq/RaceSeq (S07 basics.t 87->90) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4001
+- fix(eval): persist grammar tokens declared inside EVAL so .parse works by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4003
+- fix(assign): infix:<=> called as a function assigns to arg0 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4004
+- fix(assign): reassigning Nil to an untyped scalar resets it to Any by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4002
+- fix(assign): ,= on a hash/array reads the LHS as that container by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4006
+- fix(assign): reverse meta-op assignment `$x R op= $y` targets the right operand by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4007
+- fix(assign): itemize the rvalue of a package/global scalar assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4008
+- docs(roast): update assign.t status (46 -> 22 failures) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4009
+- fix(assign): $(EXPR) = a, b is item assignment (comma not part of RHS) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4011
+- fix(concurrency): flush thread-clone stdout in execution order (S17 start.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4010
+- fix(assign): string-range hash subscript is a slice over enumerated keys by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4012
+- fix(assign): a 1-element array slice itemizes its rvalue by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4013
+- docs(roast): update assign.t status (16 failures) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4014
+- fix(io): finish IO::CatHandle perl-method and on-switch subtests (io-cathandle.t 29->31) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4005
+- fix(assign): package-qualified scalar store syncs the `our` lexical alias by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4015
+- fix(assign): computed single-index element assignment itemizes its rvalue by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4016
+- fix(assign): single hash-key assignment itemizes its rvalue by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4017
+- fix(react): share captured-outer lexicals across sibling whenever callbacks (S17 syntax.t test 57) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4018
+- fix(assign): computed slice assignment rvalue is the assigned values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4019
+- fix(assign): list-destructure rvalue is the LHS targets, not the RHS by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4020
+- docs(roast): update assign.t status (10 failures) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4021
+- fix(assign): ($a, *) list-target scalar takes one item by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4023
+- docs(roast): record S17-supply/syntax.t test 90 root-cause blocker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4024
+- fix(assign): finish S03 assign.t — slice-in-list width, (($a)) slurp, ,= list precedence, ~>/~<, %= on :U by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4025
+- fix(thread): route Thread .join to the real thread-join (S17 lock.t condvar) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4026
+- fix(concurrency): fix root cause of S17-promise/then.t's CI-only flake by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4027
+- fix(closures): per-iteration freeze for read-only := loop-local captures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4028
+- feat(metamodel): implement .^add_fallback for dynamic method fallbacks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4029
+- test(roast): whitelist S17-lowlevel/cas-int.t (24/24) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4030
+- docs(roast): refresh BLOCKERS.md against 2026-06-29..07-01 progress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4031
+- fix(container): capture element-mutated free containers in closures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4032
+- test(roast): whitelist S17-supply/batch.t (9/9) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4033
+- fix(container): keep typed-array identity on reassign through a shared cell by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4034
+- fix(supply): fire on-demand supply's own closing callback on the .tap path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4035
+- fix(hyper): fix hyper-metaop parse abort and a general List/Array shared-var corruption bug by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4036
+- docs(roast): record S17-supply/syntax.t status after #4035 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4037
+- fix(hyper): fix xx/Slip hyper distribution and dotted-vs-bare postfix :<i> dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4039
+- fix(default): is default + where/subset compile-time eval (whatever.t 122-123) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4038
+- fix(hyper): postfix:<i> is an operator not a .i method; lazy-Seq gist placeholder by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4040
+- fix(parser): sequence operator binds tighter than listop/call args (whatever.t 119) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4042
+- fix(parser): longest-token matching for user-declared symbol infix operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4041
+- fix(smartmatch): a Whatever RHS value smartmatches to True (whatever.t 121) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4043
+- fix(whatevercode): a Whatever call argument is a value, not a curry placeholder (whatever.t 126) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4044
+- docs(analysis): §1.4 lexical slot scope is inseparable from §1.5 writeback IR by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4045
+- fix(multi): OTF-compile state-bearing multi candidates and caching-proto bodies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4047
+- refactor(error): box RuntimeError cold fields (272→120 B), drop 51 result_large_err allows by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4048
+- fix(parser,runtime): infix operator overloading gaps + my-6e.t typed-var hoisting by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4046
+- fix(otf): OTF-compile module subs with capture parameters; confirm code-signature OTF complete by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4050
+- fix(vm): restore current_code around nested/ephemeral block runs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4051
+- docs(roast): record multislice §2.3 root cause as the §3 container-cell campaign by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4052
+- feat(compiler): lexical scope stack for local slots + innermost-shadow runtime resolution (§1.4/§1.5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4049
+- fix(bind): throw X::Bind when binding an element into a non-container target by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4053
+- fix(compiler): block-own my $x shadows outer var for nested subs from block start by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4054
+- fix(lazy): reify-on-mutation for lazy @-arrays — elem-assign/:delete no longer lose elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4056
+- fix(class): X::Redeclaration for same-scope class redeclaration by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4055
+- fix(parser): resolve &infix:<<$var>> / «$var» / [$var] operator names at runtime by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4057
+- test(match): pin capture numbering + @m container-kind; mark PLAN §F items done by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4058
+- fix(lazy): bind a single lazy/infinite source to a *@ slurpy lazily (§F lazy-seq ④) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4059
+- docs(blockers): root-cause analysis of variables-and-packages.t 9 failures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4060
+- fix(subset): surface a subset where-predicate's fail() message on assignment (subtypes.t 25) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4061
+- fix(subset): param where referencing a later param is X::Undeclared (subtypes.t 77) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4062
+- docs(blockers): root-cause 12-non-breaking-space.t (BEGIN runs at runtime not compile-time) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4063
+- fix(dispatch): multi-method subset param beats its base + Subset:D smartmatch term (subtypes.t 83) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4064
+- fix(parser): register subset names as user types so `~~ S` is a term, not S/// (subtypes.t 68) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4065
+- fix(destructure): enforce literal/where postconstraints in my (...) + yield the list (subtypes.t 90) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4066
+
 ## [v0.2.0](https://github.com/tokuhirom/mutsu/compare/v0.1.2...v0.2.0) - 2026-06-30
 
 - fix(scope): block-local my in if/while branch no longer leaks (my-6e.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3943
