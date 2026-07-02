@@ -86,6 +86,26 @@
 - **Next slice**: array 側の残り 28 件から着手し、hash 側の plan mismatch（中断の原因）を
   先に切り分ける。
 - **Primary files**: `src/vm/vm_var_index_ops.rs`, `src/vm/vm_var_assign_ops.rs`
+- **調査結果（2026-07-02）**: array 側の 28 失敗（例: test 245, line 120）を再現したところ、
+  直接代入 `@array[0;0;3] = 999`（境界外インデックスへの自動延伸）自体は正しく動く：
+  ```
+  my @array = [[[42,666,[314]],],];
+  @array[0;0;3] = 999;  # OK: [[[42, 666, [314], 999],],]
+  ```
+  失敗するのは、この**境界外・自動延伸が必要な多次元インデックス式を sigilless bind
+  （`\target`）でサブルーチン引数として渡し、後から `target = 999` で代入する**ケース
+  （テストの `assignable-ok(\target, \values, @result)` ヘルパーが使うパターン）：
+  ```
+  sub f(\target, \values) { target = values }
+  f(@array[0;0;3], 999);  # mutsu: 何もしない（Nil を返す）; raku: 正しく延伸して代入
+  ```
+  つまり根本原因は「lvalue 書き戻し経路」一般ではなく、**§3 のコンテナ id キャンペーン
+  （配列/ハッシュ要素の cell 化）そのもの**——多次元インデックス式が返す「書き込み可能な
+  参照」が、値としてキャプチャされた後もオリジナルの配列への自動延伸込みの書き込みを
+  実現できる第一級コンテナ（cell）になっていない。§2 の「局所修正」の範疇を超え、§3.2 の
+  「配列/ハッシュ要素 cell 化」（`docs/container-identity.md`、対象に `splice.t` と並記）と
+  同一の基盤工事が前提条件。単体の parser/dispatch 修正では閉じない。
+  次に着手するなら §3 のキャンペーンとして本腰を入れる想定で計画すること。
 
 ### 2.4 `S06-operator-overloading/infix.t`
 
