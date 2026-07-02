@@ -225,14 +225,19 @@ impl Interpreter {
         // A lexical pragma such as `use fatal` inside a test-assertion block
         // (`throws-like { use fatal; ... }`) is scoped to that block. This Rust
         // entry point runs the body directly without the compiler's block-level
-        // import scope, so `fatal_mode` would otherwise leak into the tests that
-        // follow. Save and restore it around the body.
+        // import scope, so a `use fatal` *raised* here would otherwise leak into
+        // the tests that follow. Clear only a block-local raise (off -> on);
+        // never force `fatal_mode` back on, so a block that legitimately lowered
+        // an already-on fatal keeps it off (roast S04-exceptions/fail.t, where an
+        // earlier sub leaked fatal on and a later subtest turns it back off).
         let saved_fatal_mode = self.fatal_mode;
         let result = self.eval_block_value(body);
         // Whether `use fatal` was in effect at the block's end (before the
         // scope-restore below) drives the trailing-Failure check further down.
         let block_fatal_mode = self.fatal_mode;
-        self.fatal_mode = saved_fatal_mode;
+        if !saved_fatal_mode && block_fatal_mode {
+            self.fatal_mode = false;
+        }
         let leaked: Vec<Symbol> = self
             .env
             .keys()
