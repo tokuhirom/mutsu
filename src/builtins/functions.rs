@@ -1,5 +1,3 @@
-#![allow(clippy::result_large_err)]
-
 mod dispatch_0arg;
 mod dispatch_1arg;
 mod dispatch_2arg;

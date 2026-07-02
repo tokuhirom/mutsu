@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 //! Power (exponentiation) and unary negation operators.
 
 use super::rat::{bigint_ratio_to_f64, is_fat_rat_like, make_fat_rat};

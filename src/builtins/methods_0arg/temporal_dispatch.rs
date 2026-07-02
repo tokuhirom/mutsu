@@ -1,5 +1,3 @@
-#![allow(clippy::result_large_err)]
-
 use super::temporal::*;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};

@@ -1,5 +1,3 @@
-#![allow(clippy::result_large_err)]
-
 use crate::runtime;
 use crate::value::Value;
 use num_bigint::BigInt;

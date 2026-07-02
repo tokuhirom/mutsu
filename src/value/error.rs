@@ -73,13 +73,39 @@ pub enum Control {
     Done,
 }
 
+/// Cold, rarely-set routing/diagnostic fields of a [`RuntimeError`], boxed
+/// behind a single `Option<Box<..>>` so the common error carries none of them
+/// inline. Keeping these out of `RuntimeError` shrinks it below Clippy's
+/// `result_large_err` threshold (was 272 B), so the ~1280 `Result<_,
+/// RuntimeError>` signatures no longer need `#[allow(clippy::result_large_err)]`
+/// (ANALYSIS §2.2 / §7-4). Every field is accessed through the getter/setter
+/// methods on `RuntimeError`; the box is allocated lazily on first write.
+#[derive(Debug, Default)]
+pub struct RuntimeErrorCold {
+    /// Parse-error classification (set only for parse failures).
+    pub code: Option<RuntimeErrorCode>,
+    /// 1-based source line of a parse failure.
+    pub line: Option<usize>,
+    /// 1-based source column of a parse failure.
+    pub column: Option<usize>,
+    /// A human-readable hint appended to the rendered error.
+    pub hint: Option<String>,
+    /// A `LEAVE`/routine unwind targets a routine frame via this callable ID.
+    pub leave_callable_id: Option<u64>,
+    /// A `LEAVE`/routine unwind targets a routine frame via this `Pkg::name`.
+    pub leave_routine: Option<String>,
+    /// For non-local returns (CX::Return from a block), the callable ID of the
+    /// lexically enclosing routine that the return targets.
+    pub return_target_callable_id: Option<u64>,
+    /// Container name for Scalar container binding (e.g. when/default returning $a)
+    pub container_name: Option<String>,
+    /// Formatted backtrace string from the call stack at the point of error.
+    pub backtrace: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct RuntimeError {
     pub message: String,
-    pub code: Option<RuntimeErrorCode>,
-    pub line: Option<usize>,
-    pub column: Option<usize>,
-    pub hint: Option<String>,
     pub return_value: Option<Value>,
     /// The control-flow signal this error carries, if any (see `Control`).
     /// Replaces the former `is_*` bools for the migrated signals; read via the
@@ -96,17 +122,12 @@ pub struct RuntimeError {
     /// single-signal `control` enum and stays a separate flag.
     pub is_leave: bool,
     pub label: Option<String>,
-    pub leave_callable_id: Option<u64>,
-    pub leave_routine: Option<String>,
-    /// For non-local returns (CX::Return from a block), the callable ID of the
-    /// lexically enclosing routine that the return targets.
-    pub return_target_callable_id: Option<u64>,
-    /// Container name for Scalar container binding (e.g. when/default returning $a)
-    pub container_name: Option<String>,
     /// Structured exception object (e.g. X::AdHoc, X::Promise::Vowed)
     pub exception: Option<Box<Value>>,
-    /// Formatted backtrace string from the call stack at the point of error.
-    pub backtrace: Option<String>,
+    /// Cold routing/diagnostic fields, allocated lazily. Accessed via the
+    /// getter/setter methods below; `pub(crate)` only so the `..RuntimeError::new()`
+    /// functional-update idiom keeps working at construction sites.
+    pub(crate) cold: Option<Box<RuntimeErrorCold>>,
 }
 
 /// The runtime type-object Value for a type *name*, used as the `.expected`
@@ -125,22 +146,87 @@ impl RuntimeError {
     pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
-            code: None,
-            line: None,
-            column: None,
-            hint: None,
             return_value: None,
             control: None,
             fail_handled: false,
             is_leave: false,
             label: None,
-            leave_callable_id: None,
-            leave_routine: None,
-            return_target_callable_id: None,
-            container_name: None,
             exception: None,
-            backtrace: None,
+            cold: None,
         }
+    }
+
+    // ----- cold-field accessors (read) -----
+    //
+    // These mirror the former public fields; a `None` cold box reads as `None`.
+
+    pub fn code(&self) -> Option<RuntimeErrorCode> {
+        self.cold.as_ref().and_then(|c| c.code)
+    }
+    pub fn line(&self) -> Option<usize> {
+        self.cold.as_ref().and_then(|c| c.line)
+    }
+    pub fn column(&self) -> Option<usize> {
+        self.cold.as_ref().and_then(|c| c.column)
+    }
+    pub fn hint(&self) -> Option<&str> {
+        self.cold.as_ref().and_then(|c| c.hint.as_deref())
+    }
+    pub fn leave_callable_id(&self) -> Option<u64> {
+        self.cold.as_ref().and_then(|c| c.leave_callable_id)
+    }
+    pub fn leave_routine(&self) -> Option<&str> {
+        self.cold.as_ref().and_then(|c| c.leave_routine.as_deref())
+    }
+    pub fn return_target_callable_id(&self) -> Option<u64> {
+        self.cold.as_ref().and_then(|c| c.return_target_callable_id)
+    }
+    pub fn container_name(&self) -> Option<&str> {
+        self.cold.as_ref().and_then(|c| c.container_name.as_deref())
+    }
+    pub fn backtrace(&self) -> Option<&str> {
+        self.cold.as_ref().and_then(|c| c.backtrace.as_deref())
+    }
+
+    /// Move the container name out of the error, leaving it `None`.
+    pub(crate) fn take_container_name(&mut self) -> Option<String> {
+        self.cold.as_mut().and_then(|c| c.container_name.take())
+    }
+    /// Move the hint out of the error, leaving it `None`.
+    pub(crate) fn take_hint(&mut self) -> Option<String> {
+        self.cold.as_mut().and_then(|c| c.hint.take())
+    }
+
+    // ----- cold-field accessors (write) -----
+    //
+    // Each lazily allocates the cold box on first write via `cold_mut`.
+
+    fn cold_mut(&mut self) -> &mut RuntimeErrorCold {
+        self.cold.get_or_insert_with(Default::default)
+    }
+    pub(crate) fn set_code(&mut self, v: Option<RuntimeErrorCode>) {
+        self.cold_mut().code = v;
+    }
+    pub(crate) fn set_line(&mut self, v: Option<usize>) {
+        self.cold_mut().line = v;
+    }
+    pub(crate) fn set_hint(&mut self, v: Option<String>) {
+        self.cold_mut().hint = v;
+    }
+    pub(crate) fn set_leave_callable_id(&mut self, v: Option<u64>) {
+        self.cold_mut().leave_callable_id = v;
+    }
+    pub(crate) fn set_leave_routine(&mut self, v: Option<String>) {
+        self.cold_mut().leave_routine = v;
+    }
+    pub(crate) fn set_return_target_callable_id(&mut self, v: Option<u64>) {
+        self.cold_mut().return_target_callable_id = v;
+    }
+    pub(crate) fn set_container_name(&mut self, v: Option<String>) {
+        self.cold_mut().container_name = v;
+    }
+    pub(crate) fn set_backtrace(&mut self, v: Option<String>) {
+        self.cold_mut().backtrace = v;
     }
 
     /// `return` control signal (non-local return carrying `return_value`).
@@ -260,21 +346,18 @@ impl RuntimeError {
     ) -> Self {
         Self {
             message: message.into(),
-            code: Some(code),
-            line: Some(line),
-            column: Some(column),
-            hint: None,
+            cold: Some(Box::new(RuntimeErrorCold {
+                code: Some(code),
+                line: Some(line),
+                column: Some(column),
+                ..Default::default()
+            })),
             return_value: None,
             control: None,
             fail_handled: false,
             is_leave: false,
             label: None,
-            leave_callable_id: None,
-            leave_routine: None,
-            return_target_callable_id: None,
-            container_name: None,
             exception: None,
-            backtrace: None,
         }
     }
 

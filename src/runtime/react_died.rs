@@ -13,7 +13,7 @@ impl Interpreter {
     /// the original error message and backtrace in its gist.
     pub(crate) fn wrap_react_died(inner: RuntimeError) -> RuntimeError {
         let original_message = inner.message.clone();
-        let backtrace_str = inner.backtrace.clone().unwrap_or_default();
+        let backtrace_str = inner.backtrace().unwrap_or_default().to_string();
         let mut gist = format!(
             "A react block:\n\nDied because of the exception:\n    {}",
             original_message

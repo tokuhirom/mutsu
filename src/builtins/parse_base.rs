@@ -9,8 +9,6 @@
 //! - `X::Syntax::Number::RadixOutOfRange` when radix is not in 2..36
 //! - `X::Str::Numeric` for malformed input (with `source`, `pos`, `reason`)
 
-#![allow(clippy::result_large_err)]
-
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, make_big_rat};
 use num_bigint::BigInt;

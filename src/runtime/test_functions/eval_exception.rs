@@ -218,7 +218,7 @@ impl Interpreter {
         let ok = eval_result.is_ok();
         let eval_err_msg = match &eval_result {
             Err(e) => {
-                let msg = if e.code.is_some_and(|c| c.is_parse()) {
+                let msg = if e.code().is_some_and(|c| c.is_parse()) {
                     format!("Unable to parse expression; {}", e.message)
                 } else {
                     e.message.clone()

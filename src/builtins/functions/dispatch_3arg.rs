@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 use crate::value::{RuntimeError, Value};
 
 pub(crate) fn native_function_3arg(

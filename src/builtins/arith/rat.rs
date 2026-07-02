@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 //! Rational-number and BigNum helper utilities used by arith ops.
 
 use crate::value::{Value, make_rat};

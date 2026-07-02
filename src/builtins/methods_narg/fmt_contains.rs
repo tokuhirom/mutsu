@@ -1,5 +1,3 @@
-#![allow(clippy::result_large_err)]
-
 use super::str_match::is_str_or_match_receiver;
 use crate::runtime;
 use crate::value::{RuntimeError, Value};

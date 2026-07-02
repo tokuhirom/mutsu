@@ -167,11 +167,13 @@ impl Interpreter {
                 }
                 self.stack.truncate(stack_base);
             }
-            Err(e) if e.is_succeed() => {
+            Err(mut e) if e.is_succeed() => {
+                // Take the container name before moving `return_value` out (a
+                // method borrow of `e` cannot coexist with a partial move).
+                self.container_ref_var = e.take_container_name();
                 if let Some(v) = e.return_value {
                     last = v;
                 }
-                self.container_ref_var = e.container_name;
                 loan_env!(self, set_when_matched(true));
             }
             Err(e) => {
@@ -278,7 +280,7 @@ impl Interpreter {
                 let last = self.stack.last().cloned().unwrap_or(Value::Nil);
                 let mut sig = RuntimeError::succeed_signal();
                 sig.return_value = Some(last);
-                sig.container_name = self.container_ref_var.take();
+                sig.set_container_name(self.container_ref_var.take());
                 return Err(sig);
             }
         }
@@ -307,7 +309,7 @@ impl Interpreter {
         let last = self.stack.last().cloned().unwrap_or(Value::Nil);
         let mut sig = RuntimeError::succeed_signal();
         sig.return_value = Some(last);
-        sig.container_name = self.container_ref_var.take();
+        sig.set_container_name(self.container_ref_var.take());
         *ip = end;
         Err(sig)
     }

@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 use super::*;
 
 impl Interpreter {
@@ -3143,7 +3142,7 @@ impl Interpreter {
                 let current_file = self.current_source_file();
                 let mut err = self.runtime_error_from_exception_value(val, "Died", false);
                 if !backtrace_str.is_empty() {
-                    err.backtrace = Some(backtrace_str);
+                    err.set_backtrace(Some(backtrace_str));
                 }
                 // Attach backtrace, line, and file to the exception value
                 if let Some(ref mut exc_box) = err.exception

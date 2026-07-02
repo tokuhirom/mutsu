@@ -1,5 +1,3 @@
-#![allow(clippy::result_large_err)]
-
 use crate::builtins::methods_0arg::temporal;
 use crate::value::{RuntimeError, Value};
 use std::sync::Arc;

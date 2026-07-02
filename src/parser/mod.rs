@@ -92,10 +92,10 @@ fn build_vcs_conflict_error(lines: &[i64]) -> RuntimeError {
     };
 
     let mut err = RuntimeError::new(PAYLOAD);
-    err.code = Some(RuntimeErrorCode::ParseGeneric);
+    err.set_code(Some(RuntimeErrorCode::ParseGeneric));
     if lines.len() <= 1 {
         let line = lines.first().copied().unwrap_or(1);
-        err.line = Some(line as usize);
+        err.set_line(Some(line as usize));
         err.exception = Some(Box::new(make_adhoc(line)));
         return err;
     }
@@ -108,7 +108,7 @@ fn build_vcs_conflict_error(lines: &[i64]) -> RuntimeError {
     group_attrs.insert("worries".to_string(), Value::array(vec![]));
     group_attrs.insert("panic".to_string(), panic);
     group_attrs.insert("message".to_string(), Value::str(PAYLOAD.to_string()));
-    err.line = Some(*panic_line as usize);
+    err.set_line(Some(*panic_line as usize));
     err.exception = Some(Box::new(Value::make_instance(
         crate::symbol::Symbol::intern("X::Comp::Group"),
         group_attrs,
@@ -205,14 +205,13 @@ fn parse_error_hint(message: &str) -> Option<&'static str> {
 
 fn with_parse_hint(mut err: RuntimeError) -> RuntimeError {
     if let Some(hint) = parse_error_hint(&err.message) {
-        err.hint = Some(hint.to_string());
+        err.set_hint(Some(hint.to_string()));
     }
     err
 }
 
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
-#[allow(clippy::result_large_err)]
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // Clear any stale parse warnings from previous/backtracked parses
     PARSE_WARNINGS.with(|w| w.borrow_mut().clear());
@@ -265,7 +264,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
             if e.is_fatal() {
                 // Fatal parse errors (e.g. bare say/print/put) pass through directly
                 let mut err = RuntimeError::new(format!("{}", e));
-                err.code = Some(RuntimeErrorCode::ParseGeneric);
+                err.set_code(Some(RuntimeErrorCode::ParseGeneric));
                 if let Some(ex) = e.exception {
                     err.exception = Some(ex);
                 }
@@ -298,7 +297,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 }
             } else {
                 let mut err = RuntimeError::new(format!("Confused. parse error: {}", e));
-                err.code = Some(RuntimeErrorCode::ParseGeneric);
+                err.set_code(Some(RuntimeErrorCode::ParseGeneric));
                 Err(with_parse_hint(err))
             }
         }
@@ -336,7 +335,6 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
 
 /// Like `parse_program`, but pre-registers operator sub names so the parser
 /// recognizes them during EVAL.
-#[allow(clippy::result_large_err)]
 pub(crate) fn parse_program_with_operators(
     input: &str,
     operator_names: &[String],
@@ -352,7 +350,6 @@ pub(crate) fn parse_program_with_operators(
     )
 }
 
-#[allow(clippy::result_large_err)]
 pub(crate) fn parse_program_with_operators_and_user_subs(
     input: &str,
     operator_names: &[String],
@@ -448,9 +445,9 @@ mod tests {
         let err = parse_program("}").unwrap_err();
         assert!(err.message.contains("line 1, column 1"));
         assert!(err.message.contains("unparsed input"));
-        assert!(matches!(err.code, Some(RuntimeErrorCode::ParseUnparsed)));
-        assert_eq!(err.line, Some(1));
-        assert_eq!(err.column, Some(1));
+        assert!(matches!(err.code(), Some(RuntimeErrorCode::ParseUnparsed)));
+        assert_eq!(err.line(), Some(1));
+        assert_eq!(err.column(), Some(1));
     }
 
     #[test]
@@ -459,8 +456,8 @@ mod tests {
         assert!(err.message.contains("line 2"));
         assert!(err.message.contains("column"));
         assert!(err.message.contains("parse error"));
-        assert!(matches!(err.code, Some(RuntimeErrorCode::ParseExpected)));
-        assert_eq!(err.line, Some(2));
+        assert!(matches!(err.code(), Some(RuntimeErrorCode::ParseExpected)));
+        assert_eq!(err.line(), Some(2));
     }
 
     #[test]
@@ -474,8 +471,7 @@ mod tests {
         let err = parse_program("$x.").unwrap_err();
         assert!(err.message.contains("parse error"));
         assert!(
-            err.hint
-                .as_deref()
+            err.hint()
                 .is_some_and(|hint| hint.contains("method-call syntax"))
         );
     }

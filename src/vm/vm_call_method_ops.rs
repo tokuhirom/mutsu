@@ -335,7 +335,7 @@ impl Interpreter {
         // `.throw`/`.rethrow` on an exception instance: attach a backtrace built
         // from the current call stack. The `die`/`fail` opcodes do this, but an
         // explicit `ExceptionObject.throw` goes through method dispatch and would
-        // otherwise carry no frames (so `.backtrace.list` would be empty).
+        // otherwise carry no frames (so `.backtrace().list` would be empty).
         let target = if matches!(method, "throw" | "rethrow")
             && args.is_empty()
             && matches!(

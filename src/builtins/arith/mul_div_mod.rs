@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 //! Multiplication, division, and modulo arithmetic operators.
 
 use super::range::{mixin_range_arith, mixin_range_arith_val, range_divide, range_scale};

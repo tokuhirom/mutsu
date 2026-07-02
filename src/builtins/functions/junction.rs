@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 use crate::value::Value;
 
 /// Build a `Junction` for the `any`/`all`/`one`/`none` constructors.

@@ -1,5 +1,3 @@
-#![allow(clippy::result_large_err)]
-
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use num_bigint::BigInt;

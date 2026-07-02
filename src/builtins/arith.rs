@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 //! Arithmetic operator implementations: facade re-exporting themed submodules.
 //!
 //! Split from the original monolithic `arith.rs`. Each submodule owns a

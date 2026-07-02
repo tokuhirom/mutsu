@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 use crate::value::Value;
 use num_bigint::BigInt as NumBigInt;
 

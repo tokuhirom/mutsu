@@ -410,8 +410,8 @@ impl Interpreter {
                     }
                     Err(e)
                         if e.is_leave
-                            && e.leave_callable_id.is_none()
-                            && e.leave_routine.is_none()
+                            && e.leave_callable_id().is_none()
+                            && e.leave_routine().is_none()
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
                         if writes_back_loop_var {

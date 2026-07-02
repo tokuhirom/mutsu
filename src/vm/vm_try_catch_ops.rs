@@ -341,10 +341,10 @@ impl Interpreter {
                 } else {
                     let mut exc_attrs = std::collections::HashMap::new();
                     exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
-                    if let Some(line) = e.line {
+                    if let Some(line) = e.line() {
                         exc_attrs.insert("line".to_string(), Value::Int(line as i64));
                     }
-                    if let Some(ref bt) = e.backtrace {
+                    if let Some(bt) = e.backtrace() {
                         // Build a Backtrace object from the string for
                         // legacy errors that only have a string backtrace.
                         let bt_val = Self::backtrace_value_from_string(bt);

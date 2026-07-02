@@ -1,5 +1,3 @@
-#![allow(clippy::result_large_err)]
-
 use crate::value::{RuntimeError, Value};
 
 pub(crate) fn is_str_or_match_receiver(target: &Value) -> bool {

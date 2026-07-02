@@ -510,10 +510,10 @@ impl Interpreter {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{}::{}", data.package, data.name);
-                    let matches_frame = if let Some(target_id) = e.leave_callable_id {
+                    let matches_frame = if let Some(target_id) = e.leave_callable_id() {
                         target_id == data.id
-                    } else if let Some(target_routine) = e.leave_routine.as_ref() {
-                        target_routine == &routine_key
+                    } else if let Some(target_routine) = e.leave_routine() {
+                        target_routine == routine_key
                     } else {
                         e.label.is_none()
                     };
@@ -554,13 +554,13 @@ impl Interpreter {
                         // Only propagate if we can identify the target routine.
                         // If no target exists (e.g., supply block done+return),
                         // catch it locally.
-                        let has_target = e.return_target_callable_id.is_some()
+                        let has_target = e.return_target_callable_id().is_some()
                             || data.env.contains_key("__mutsu_callable_id");
                         if has_target {
-                            if e.return_target_callable_id.is_none()
+                            if e.return_target_callable_id().is_none()
                                 && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
                             {
-                                e.return_target_callable_id = Some(*id as u64);
+                                e.set_return_target_callable_id(Some(*id as u64));
                             }
                             loan_env!(self, restore_let_saves(let_mark));
                             handled_let_saves = true;
@@ -571,7 +571,7 @@ impl Interpreter {
                     }
                     // Routine closures: check if the return targets a specific
                     // callable; if so, only catch if it matches this closure.
-                    if let Some(target_id) = e.return_target_callable_id
+                    if let Some(target_id) = e.return_target_callable_id()
                         && target_id != data.id
                     {
                         loan_env!(self, restore_let_saves(let_mark));

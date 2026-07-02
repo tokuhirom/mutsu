@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 use super::flat::join_flat;
 use super::math::is_extrema_named_pair;
 use crate::builtins::rng::builtin_rand;
