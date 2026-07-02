@@ -526,6 +526,22 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Lock::Soft".to_string(),
+            ClassDef {
+                parents: vec!["Lock".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Lock::Soft".to_string(), "Lock".to_string()],
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "Lock::ConditionVariable".to_string(),
             ClassDef {
                 parents: Vec::new(),

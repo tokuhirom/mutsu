@@ -171,6 +171,15 @@ impl Compiler {
     /// Promise and run later on another thread), so the locals it captures and
     /// mutates must be promoted to shared `ContainerRef` cells (escape analysis).
     pub(super) fn compile_call_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
+        // Read-and-clear immediately: this call is the *direct* bind-target
+        // compile iff the caller just set the flag for us. Clearing it up
+        // front (before any nested `compile_expr`/`compile_call_arg`
+        // recursion below) means a genuine call nested inside a bind RHS
+        // (`my $x := f(@a[$i])`) sees `false` for its own argument compile,
+        // so `f`'s `is rw` writeback machinery is untouched. See the field
+        // doc on `bind_target_direct`.
+        let is_bind_target = self.bind_target_direct;
+        self.bind_target_direct = false;
         // An array multi-dimensional subscript (`@a[0;1;2]`) passed as a raw
         // `\target` / `is rw` argument must alias the underlying nested array
         // slot, so a later `target = v` inside the callee mutates the real
@@ -233,7 +242,23 @@ impl Compiler {
         };
         // For Index expressions, create temp variables for `is rw` writeback
         // and wrap with VarRef so `is rw` parameters can bind through.
-        if matches!(arg, Expr::Index { .. }) {
+        if matches!(arg, Expr::Index { .. }) && is_bind_target {
+            // `:=` bind to an Index expression (`my $x := @a[$i]`): the Index
+            // compile already promoted the element to a first-class
+            // `ContainerRef` cell on the stack (IndexAutovivifyLazyTerminal /
+            // array_slot_ref). Just wrap it with VarRef so SetLocal's
+            // `extract_varref_binding` sees `is_bind = true`. Skip the is-rw
+            // *call-argument* writeback temps entirely: there is no function
+            // call to writeback after here, and those temps are
+            // compile-time-fixed global names — reused verbatim on every
+            // iteration of a loop wrapping this same bind statement, whose
+            // "write through an existing ContainerRef" semantics would
+            // corrupt the *previous* iteration's bound cell instead of
+            // storing a fresh reference to this one.
+            let tmp = format!("__mutsu_bind_index_ref_{}", self.code.constants.len());
+            let name_idx = self.code.add_constant(Value::str(tmp));
+            self.code.emit(OpCode::WrapVarRef(name_idx));
+        } else if matches!(arg, Expr::Index { .. }) {
             let tmp = format!("__mutsu_index_rw_arg_{}", self.code.constants.len());
             let orig = format!("__mutsu_index_rw_orig_{}", self.code.constants.len());
             let tmp_idx = self.code.add_constant(Value::str(tmp.clone()));

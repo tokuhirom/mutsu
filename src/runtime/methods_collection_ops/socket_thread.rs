@@ -381,9 +381,19 @@ impl Interpreter {
 
         let thread_id = NEXT_THREAD_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
+        // A thread spawned *inside* a subtest must keep buffering its output
+        // through `shared_thread_output` (as `clone_for_thread` already
+        // arranges) rather than writing straight to stdout: its TAP lines are
+        // subtest-internal and must be drained (indented) into the subtest by
+        // `Thread.finish`, not leaked to the real top-level stream ("tests out
+        // of sequence"). Only threads spawned at top level get immediate
+        // stdout so their output lands in real chronological order relative
+        // to the main thread's direct writes.
+        let parent_in_subtest = self.tap.subtest_depth() != 0;
         let mut thread_interp = self.clone_for_thread();
-        // Enable immediate stdout so thread output goes directly to stdout
-        thread_interp.set_immediate_stdout(true);
+        if !parent_in_subtest {
+            thread_interp.set_immediate_stdout(true);
+        }
         let mutsu_tid = thread_id as i64;
         // Use the large user-code stack (matches `start {}` / Promise / Supply
         // worker threads): `Thread.start` runs arbitrary user code, and the
@@ -454,6 +464,12 @@ impl Interpreter {
         }
         // Sync shared variables back to env after thread completes
         self.sync_shared_vars_to_env();
+        // Joining a thread is a synchronization point: flush any output the
+        // thread buffered into `shared_thread_output` (e.g. TAP lines from a
+        // thread spawned inside a subtest, which cannot use immediate stdout —
+        // see `dispatch_thread_start`) so it lands in real chronological order
+        // now, rather than at some later, possibly out-of-order sync point.
+        self.drain_shared_thread_output();
         Ok(Value::Bool(true))
     }
 }

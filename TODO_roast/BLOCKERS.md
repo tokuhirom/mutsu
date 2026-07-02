@@ -34,8 +34,8 @@
   2. **真の lazy 配列 / 無限列** — 残りは `S09-subscript/slice.t` のみ。
   3. **dispatch / 演算子 sugar の desugar surface** — 残りは `hyper.t` のみ
      （`assign.t` は完了、詳細は `news/2026-07.md`）。
-  4. **並行実行基盤（S17）** — 大半は片づいたが、`Lock.protect` に本物の
-     race condition が残っている。
+  4. **並行実行基盤（S17）** — `Lock.protect` の race condition は解決済み
+     （§6 参照）。残るのは `S17-supply/syntax.t` のみ。
 
 ---
 
@@ -278,27 +278,8 @@ surface のうち 1 ファイル。
 ## 6. 並行・非同期（S17）
 
 大半は完了した（semaphore.t、then.t、scheduler/basic.t、supply/migrate.t、supply/stable.t、
-S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t —
-詳細は `news/2026-06.md` / `news/2026-07.md`）。残るのは次の 2 ファイル。
-
-### 6.1 `S17-lowlevel/lock.t` — 本物の race condition
-
-- **現状**: 3 planned に対し TAP 順序異常＋2 失敗。`Thread .join` を実スレッド join に
-  ルーティングする修正（#4026）が landed した後も再現する。
-- **症状**: `Lock.protect` 配下で複数スレッドが共有カウンタを increment するテストで、
-  期待列（10, 20, 30, ..., 1000）に対し実際の出力から特定のインクリメントが欠落したり
-  重複したりする（例: `420` が `0` になる、`10` が丸ごと消える、`710` が二重に出る）。
-  これは shared-scalar coherence の未解決部分であり、`S17-lowlevel/semaphore.t` で行った
-  `call_protect_block` 型の reconcile/writeback への寄せが `Lock` 自体にはまだ
-  適用されていない可能性が高い。
-- **変更レイヤ**: `shared_vars` / `shared_vars_dirty`、`Lock.protect` の critical section
-  entry/exit
-- **Primary files**: `src/runtime/native_methods/state_lock.rs`,
-  `src/runtime/runtime_shared_vars.rs`
-- **Next slice**: `Lock.protect` を `call_protect_block`（既存の resync/writeback
-  chokepoint）へ実際に寄せられているか確認し、寄せられていなければ semaphore.t の修正
-  （#3992）と同じパターンを適用する。TAP 順序異常は別に fire-and-forget スレッド出力の
-  drain タイミングの問題の可能性がある。
+S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowlevel/lock.t —
+詳細は `news/2026-06.md` / `news/2026-07.md`）。残るのは次の 1 ファイル。
 
 ### 6.2 `S17-supply/syntax.t`
 
@@ -353,15 +334,14 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t —
 
 「次に何をやるか」を 1 本だけ選ぶなら、順番はこう見るのが妥当。
 
-1. **`S17-lowlevel/lock.t` の race condition**（§6.1）— semaphore.t で確立した
-   reconcile/writeback パターンを `Lock` にも適用できれば早い。
-2. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
+1. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
    splice.t / attributes.t / multislice hash 側の slot identity を前に進める。
    これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
-3. **`S03-metaops/hyper.t`**（§5）— plan mismatch の原因を先に特定してから、
+2. **`S03-metaops/hyper.t`**（§5）— plan mismatch の原因を先に特定してから、
    残りの失敗を分類して潰す。
-4. **`S09-subscript/slice.t`**（§4）— 24 件を種類ごとに分類し、lazy array 基盤工事の
+3. **`S09-subscript/slice.t`**（§4）— 24 件を種類ごとに分類し、lazy array 基盤工事の
    一環として進める。
+4. **`S17-supply/syntax.t`**（§6.2）— test 75/90 は個別に深掘りが必要（hard case）。
 
 `S06-operator-overloading/infix.t`（§2.4）は残り 2 件（カンマ演算子オーバーロード）が
 深いアーキテクチャ変更を要するため、上記優先順から外した。
