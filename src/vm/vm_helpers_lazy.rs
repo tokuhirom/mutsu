@@ -61,23 +61,38 @@ impl Interpreter {
     /// never runs user code or hangs. (L2)
     pub(super) fn reify_lazy_array_slot(&mut self, name: &str) -> Result<(), RuntimeError> {
         let lazy = match self.env().get(name) {
-            Some(Value::LazyList(ll))
-                if ll.in_array_context()
-                    && (ll.sequence_spec.is_some()
-                        || ll.closure_seq.is_some()
-                        || ll.scan_spec.is_some()) =>
-            {
-                Some(ll.clone())
-            }
+            // Any `@`-array-context lazy list must materialize before an element
+            // mutation, not just the cache-backed infinite specs: a finite
+            // `(1..10).lazy` / `lazy gather {...}` is also a `Value::LazyList` with
+            // no backing Array, so a bare elem-assign would autovivify a fresh
+            // empty Array (losing the elements) instead of writing through.
+            Some(Value::LazyList(ll)) if ll.in_array_context() => Some(ll.clone()),
             _ => None,
         };
         if let Some(ll) = lazy {
-            // Reify a bounded prefix (matching the historical reify-to-cap of a
-            // capped `ArrayKind::Lazy` Array). With the L2b `[start]` seed the
-            // cache holds only one element, so `force_lazy_list_vm` (cache read)
-            // would lose the prefix on a front-mutation — extend to the cap.
-            const MAX_ARRAY_EXPAND: usize = 100_000;
-            let items = self.force_lazy_list_vm_n(&ll, MAX_ARRAY_EXPAND)?;
+            // A `.lazy`-on-a-finite-list is a pure cache-only `LazyList` (no source
+            // that can extend it). Its cache IS the complete data, so use it
+            // directly: `force_lazy_list_vm_n(cap)` would return an empty prefix
+            // (its cache-hit path needs `cache.len() >= needed`, which a short
+            // finite cache never satisfies) and drop the elements.
+            let has_extendable_source = ll.sequence_spec.is_some()
+                || ll.closure_seq.is_some()
+                || ll.scan_spec.is_some()
+                || ll.lazy_pipe.is_some()
+                || ll.coroutine.is_some()
+                || ll.walk_pending.is_some()
+                || ll.cat_pull.is_some()
+                || ll.compiled_code.is_some();
+            let items = if has_extendable_source {
+                // Reify a bounded prefix (matching the historical reify-to-cap of a
+                // capped `ArrayKind::Lazy` Array). The cap bounds a genuinely-
+                // infinite source so the mutation cannot hang; a finite source
+                // reifies fully below the cap.
+                const MAX_ARRAY_EXPAND: usize = 100_000;
+                self.force_lazy_list_vm_n(&ll, MAX_ARRAY_EXPAND)?
+            } else {
+                ll.cache.lock().unwrap().clone().unwrap_or_default()
+            };
             self.env_mut()
                 .insert(name.to_string(), Value::real_array(items));
         }
