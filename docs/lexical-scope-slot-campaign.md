@@ -144,5 +144,82 @@ broadcast = touches every slot with the name.
       `container_ref_var` name — a §1.3 concern); element/index-assign,
       computed-attr twigil cells, hyper writeback, and the ~80 `update_local_if_exists`
       callers generally — migrated onto `resolve_local_slot`/`write_local_slot_or_name`.
-- [ ] §1.4 flip + `pop_local_scope` restore.
+- [~] §1.4 flip + `pop_local_scope` restore — **landed gated** behind
+      `MUTSU_SHADOW_SLOTS` (default off = byte-identical). See the
+      "shadow-slot activation, gated" section below. Default flip pends §1.3.
 - [ ] §1.3 slot-indexed locals + drop BlockScope clone.
+
+## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
+
+A naive flip was implemented and measured, then reverted (branch
+`refactor/lexical-scope-1.4`, no code landed). The flip:
+
+- `declare_local`: allocate a **fresh** slot for a shadowing `my $x` (name already
+  in an enclosing scope frame), same-scope redeclaration reuses, first declaration
+  creates.
+- `pop_local_scope`: restore `local_map[name]` to the outer slot (`Some(prev)`) or
+  remove it (`None`) on scope exit.
+
+Reads compiled correctly (each `GetLocal(slot)` uses the compile-time `local_map`),
+and simple shadow tests (`my $x=1; { my $x=2; $x++; say $x } say $x` → `2 3 1`)
+passed. But the full `t/` suite broke **57+ files through the `r`- prefix alone
+(~40 % of the alphabet), i.e. an estimated ~120–140 total** — a catastrophic blast
+radius. The failures cluster into exactly the three coupled mechanisms the campaign
+predicted, confirming §1.4 is **not** a standalone slice:
+
+1. **§1.3 env↔locals dual store (the dominant class).** `env` is a name-keyed
+   `HashMap`; two live `$x` collapse to one env entry. `exec_get_local_op` /
+   `exec_set_local_op` and the `BlockScope` save/restore all key off
+   `code.locals[idx]` *by name*, so duplicate names cross-contaminate. Failing
+   families: `*-writeback-coherence`, `*-captured-outer-coherence`,
+   `closure-container-capture`, `cross-thread-shared-var`, `concurrent-cell`,
+   `env-dirty-reconcile-coherence`, `lock-protect-*`, `element-*`, `pair-value-*`.
+2. **§1.5 un-baked leaf writebacks (~80 `update_local_if_exists`/`find_local_slot`
+   callers).** These resolve name→slot by `position` = the **outer** (first) slot,
+   so an `undefine`/rw-arg/hyper/element writeback aimed at the live inner shadow
+   hits the outer slot. Failing families: `method-rw-param-writeback`,
+   `proto-rw-redispatch`, `nextsame-rw-redispatch`, `for-quanthash-values-rw`,
+   `hyper-meta-assign-list`, `capture-element-writethrough`.
+3. **Compile-time scope-exit resolution.** `pop_local_scope` removing a name from
+   `local_map` changed how a post-block reference compiles (`block-lexical-scope.t`
+   "chained our/my does not leak" no longer dies with X::Undeclared).
+
+**Conclusion (decisive):** the flip cannot land as the default until (a) the
+env-as-source-of-truth for locals is slot-indexed (§1.3) so duplicate names stop
+colliding, and (b) every remaining leaf writeback carries a compile-time slot
+(§1.5 S10+). Baking leaf sites one-at-a-time still leaves class 1 (env coherence)
+fatal, so **§1.3 is the load-bearing prerequisite** — it must come before, or fused
+with, the default flip. The per-variable opcode leaf slices (S1–S9) are done; the
+remaining leaf sites are multi-var / runtime-derived and do not reduce class-1
+breakage. See ANALYSIS.md §1.4 調査メモ.
+
+## §1.4 shadow-slot activation, gated (2026-07-03, branch `refactor/lexical-scope-1.4-shadow`)
+
+Rather than revert-and-wait, the shadow-slot allocation now **lands behind an
+env-var gate** (`MUTSU_SHADOW_SLOTS`), the same pattern the env_dirty campaign used
+(`MUTSU_NO_BLANKET_RECONCILE`, …). This is the shadow-half of the campaign, run in
+parallel with the §1.3/env substrate half.
+
+- **`declare_local`** (gate on): a same-scope redeclaration reuses; a name bound in
+  an enclosing scope becomes a genuine shadow with its **own fresh slot**; a first
+  declaration allocates normally.
+- **`pop_local_scope`** (gate on): restores the outer binding in `local_map` for
+  every shadowed name on scope exit. `None` (first-declaration) entries are left in
+  `local_map` (monotonic, matching the default build) so the runtime
+  `block_declared_vars` machinery keeps enforcing out-of-scope errors — this avoids
+  the naive flip's class-3 (`block-lexical-scope.t`) breakage.
+- **Gate off (default / CI):** both functions take an early return that is
+  byte-identical to the pre-campaign code (`alloc_local` get-or-create; pop is a
+  no-op). CI stays green.
+
+`MUTSU_SHADOW_SLOTS=1` toggle-ON baseline (2026-07-03, debug `prove t/`): shadowing
+is correct for simple cases (`2 3 1 30 20 10` on nested `my $x`/`my $y`), but the
+suite still shows the class-1 + class-2 breakage above (closure-capture,
+captured-outer-writeback, cross-thread, quanthash-rw, …). That failure set is the
+campaign's burndown target: the §1.3 half drives class-1 to zero (slot-indexed env)
+and the §1.5 S10+ leaf baking drives class-2 to zero, after which the gate default
+is flipped and the `exec_block_scope_op` whole-`locals` clone is removed.
+
+**Task split:** this branch owns the shadow-side compiler machinery (declare/pop);
+the env↔locals slot-indexing (§1.3) is the sibling half. Keep the gate OFF-default
+until both halves make the toggle-ON survey green.
