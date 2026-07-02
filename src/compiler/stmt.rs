@@ -2894,7 +2894,27 @@ impl Compiler {
                 self.code.emit(OpCode::RegisterEnum(idx));
             }
             Stmt::ClassDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
-            Stmt::ClassDecl { .. } => {
+            Stmt::ClassDecl { name, body, .. } => {
+                // Declaring the same class name twice in one lexical scope is an
+                // X::Redeclaration ("Redeclaration of symbol 'A'"), matching Raku's
+                // compile-time check. A stub (`class A {...}`) followed by its real
+                // definition is NOT a redeclaration (the stub carries no full body),
+                // and a same-named class in an inner block shadows rather than
+                // redeclares (the current-scope set is reset on block entry).
+                if !Self::is_stub_class_body(body) {
+                    let cname = name.resolve();
+                    if !self.class_names_current_scope.insert(cname.clone()) {
+                        let sym = cname.rsplit("::").next().unwrap_or(&cname).to_string();
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("symbol".to_string(), Value::str(sym));
+                        attrs.insert("what".to_string(), Value::str_from("symbol"));
+                        let err = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
+                        let cidx = self.code.add_constant(err);
+                        self.code.emit(OpCode::LoadConst(cidx));
+                        self.code.emit(OpCode::Die);
+                        return;
+                    }
+                }
                 // Pre-qualify the class name when compiling inside a
                 // `unit module`/`unit class` body so that the runtime
                 // registers it under the correct nested package
