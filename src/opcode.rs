@@ -938,6 +938,11 @@ pub(crate) enum OpCode {
         /// iterable. Separate from `source_var_names` (a per-index scalar-list
         /// writeback mechanism that must NOT be populated for a `@`-source).
         single_array_source: Option<String>,
+        /// Compiler-baked local slot for `single_array_source` (§1.5): the
+        /// live-array re-read reads `locals[slot]` directly instead of resolving
+        /// the source name via `find_local_slot`. `None` when the source is not a
+        /// resolvable local (keeps the by-name + env fallback).
+        single_array_source_local: Option<u32>,
     },
     /// Restore the single named for-loop param's prior binding, deferred until
     /// after the loop's LAST/post phasers have run (which must still see the

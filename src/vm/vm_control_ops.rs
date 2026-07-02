@@ -33,6 +33,8 @@ pub(super) struct ForLoopSpec {
     /// Bare source array name for `for @a` (live-array iteration). See the
     /// `OpCode::ForLoop` field of the same name.
     pub(super) single_array_source: Option<String>,
+    /// Compiler-baked local slot for `single_array_source` (§1.5).
+    pub(super) single_array_source_local: Option<u32>,
 }
 
 pub(super) struct WhileLoopSpec {
