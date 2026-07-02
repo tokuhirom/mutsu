@@ -9,6 +9,7 @@ pub(super) struct LexicalScopeSnapshot {
     constant_vars_in_scope: std::collections::HashSet<String>,
     constant_vars_current_scope: std::collections::HashSet<String>,
     my_vars_current_scope: std::collections::HashSet<String>,
+    class_names_current_scope: std::collections::HashSet<String>,
 }
 
 impl Compiler {
@@ -31,6 +32,9 @@ impl Compiler {
             // The entered block starts with no `my` vars of its own, so a same-named
             // `my` inside it shadows (rather than redeclares) an outer one.
             my_vars_current_scope: std::mem::take(&mut self.my_vars_current_scope),
+            // Likewise a same-named class inside an inner block shadows rather
+            // than redeclares the outer one.
+            class_names_current_scope: std::mem::take(&mut self.class_names_current_scope),
         }
     }
 
@@ -46,6 +50,7 @@ impl Compiler {
         self.constant_vars_in_scope = saved.constant_vars_in_scope;
         self.constant_vars_current_scope = saved.constant_vars_current_scope;
         self.my_vars_current_scope = saved.my_vars_current_scope;
+        self.class_names_current_scope = saved.class_names_current_scope;
     }
 
     pub(super) fn apply_dynamic_scope_pragma(&mut self, arg: Option<&Expr>) {

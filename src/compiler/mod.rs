@@ -128,6 +128,12 @@ pub(crate) struct Compiler {
     /// (`my $f = 10`) does run the assignment. Tracked here so the VarDecl
     /// compiler can suppress the reset for the bare-redeclaration case.
     my_vars_current_scope: std::collections::HashSet<String>,
+    /// Names of fully-defined classes/roles declared in the *current* lexical
+    /// block only (reset on block entry). Declaring the same class name twice in
+    /// one scope is an X::Redeclaration ("Redeclaration of symbol 'A'"); a stub
+    /// (`class A {...}`) followed by its real definition is NOT a redeclaration,
+    /// and a same-named class in an inner block shadows rather than redeclares.
+    class_names_current_scope: std::collections::HashSet<String>,
     /// Names of constants declared in an *enclosing* compiler (i.e. visible at a
     /// nested closure's definition point). Propagated into child closure
     /// compilers (which otherwise start with empty constant state). Used ONLY to
@@ -218,6 +224,7 @@ impl Compiler {
             constant_vars_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
+            class_names_current_scope: std::collections::HashSet::new(),
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             last_source_line: None,
