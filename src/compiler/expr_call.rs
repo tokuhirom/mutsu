@@ -3,17 +3,28 @@ use crate::symbol::Symbol;
 
 impl Compiler {
     /// Emit an assignment store to a named lvalue (value already on the stack).
-    /// Prefers the compile-time-baked `AssignExprLocal(slot)` when the name
-    /// resolves to a local — mirroring the general assignment path in
-    /// `compile_expr_assign` — so a shadowing inner-block `my $x` writes to its own
-    /// slot instead of the by-name `AssignExpr` resolving to the outer (first)
-    /// `code.locals` slot (§1.4 shadow-slot leaf, ANALYSIS.md §1.4). With shadow
-    /// slots off this is byte-equivalent (the shadow shares the outer slot). Used by
-    /// the `undefine($scalar)` rewrite (`roast/S32-scalar/defined.t` #31) and the
-    /// list-assignment target stores (`($a, $b) = …`, `roast/S03-operators/assign.t`).
-    /// `name` is the full sigil'd local key (`$x` stored bare as `x`, `@a`, `%h`).
+    /// Under the §1.4 shadow-slot gate (`MUTSU_SHADOW_SLOTS`), prefers the
+    /// compile-time-baked `AssignExprLocal(slot)` when the name resolves to a local
+    /// — mirroring the general assignment path in `compile_expr_assign` — so a
+    /// shadowing inner-block `my $x` writes to its own slot instead of the by-name
+    /// `AssignExpr` resolving to the outer (first) `code.locals` slot (ANALYSIS.md
+    /// §1.4). Used by the `undefine($scalar)` rewrite (`roast/S32-scalar/defined.t`
+    /// #31) and the list-assignment / lvalue target stores (`($a, $b) = …`,
+    /// `roast/S03-operators/assign.t`). `name` is the full sigil'd local key (`$x`
+    /// stored bare as `x`, `@a`, `%h`).
+    ///
+    /// Gated: with shadow slots OFF (the default / CI build) it emits the original
+    /// by-name `AssignExpr(name)` verbatim, so the compiled bytecode is byte-
+    /// identical to before this campaign. This matters because `AssignExprLocal`
+    /// and `AssignExpr` are NOT fully interchangeable for `@`/`%` targets (the
+    /// name-based op runs an extra attribute-cell mirror and container-identity
+    /// path that a circular `.raku.EVAL` roundtrip relies on —
+    /// `roast/S32-array/perl.t` #7). Keeping the default path on `AssignExpr`
+    /// avoids that divergence; the baked slot is only needed when shadows are live.
     fn emit_assign_local_or_name(&mut self, name: &str) {
-        if let Some(&slot) = self.local_map.get(name) {
+        if shadow_slots_active()
+            && let Some(&slot) = self.local_map.get(name)
+        {
             self.code.emit(OpCode::AssignExprLocal(slot));
         } else {
             let name_idx = self.code.add_constant(Value::str(name.to_string()));

@@ -245,6 +245,15 @@ classes and the burndown owner:
     `compile_expr_call` hand-emitted `AssignExpr(name)`; **fixed** by routing all
     through `emit_assign_local_or_name` (`roast/S03-operators/assign.t` non-TODO ON
     failures 5→1, only the unrelated `//= … for` #291 remains). *(this branch)*
+    - **`emit_assign_local_or_name` is GATED on `shadow_slots_active()`.** With the
+      gate OFF it emits the original `AssignExpr(name)` verbatim (byte-identical),
+      only preferring `AssignExprLocal(slot)` when shadows are live. Required
+      because `AssignExprLocal` and `AssignExpr` are **not** interchangeable for
+      `@`/`%` targets: the name-based op runs an extra attribute-cell mirror +
+      container-identity path a circular `.raku.EVAL` roundtrip depends on
+      (`roast/S32-array/perl.t` #7 regressed OFF when the bake was ungated —
+      caught only by `make roast`, NOT `make test`). **Lesson: validate the OFF
+      path with `make roast`, not just `prove t/`, before landing a leaf bake.**
   - `let`/`temp` restore (`S04-.../let.t`, `temp.t`): the scope-exit restore drains
     through the SHARED `apply_pending_rw_writeback` (`find_local_slot` by name) — the
     same drain rw-args use, so it belongs with the sibling (§1.3-adjacent) half, not a
