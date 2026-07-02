@@ -247,6 +247,20 @@ impl Interpreter {
         let saved_state_scope_id = self.state_scope_id.take();
         let saved_gather_for_loop_resume = self.gather_for_loop_resume.take();
         let saved_rw_map_topic_capture = self.rw_map_topic_capture.take();
+        // `current_code` is the raw address of the *caller's* live `CompiledCode`
+        // (see `exec_one`'s `self.current_code = code as *const CompiledCode as
+        // usize;` and the unsafe deref in `writeback_multidim_var_to_local`).
+        // `f` below runs a nested, ephemeral `CompiledCode` (e.g. a `dies-ok { }`
+        // block's `compile_block_value` result, owned by a stack-local in
+        // `eval_block_value`) that is dropped the instant `f` returns. Without
+        // restoring the caller's address here, `current_code` is left dangling —
+        // pointing at freed stack memory the next nested call's frame promptly
+        // reuses — and any *later* unsafe deref of it is undefined behavior
+        // (observed as a SIGABRT "slice::from_raw_parts requires the pointer to
+        // be aligned and non-null" panic inside `builtin_multidim_delete`,
+        // roast S32-array/multislice-6e.t, whenever a `dies-ok`/`lives-ok`/
+        // `throws-like`/EVAL block ran earlier in the same program).
+        let saved_current_code = self.current_code;
 
         self.in_smartmatch_rhs = false;
         self.transliterate_in_smartmatch = false;
@@ -303,6 +317,7 @@ impl Interpreter {
         self.state_scope_id = saved_state_scope_id;
         self.gather_for_loop_resume = saved_gather_for_loop_resume;
         self.rw_map_topic_capture = saved_rw_map_topic_capture;
+        self.current_code = saved_current_code;
 
         // The nested run shares `self.env` and may have mutated outer lexicals
         // (e.g. a deferred role-body statement writing an enclosing `my $x`).
