@@ -1580,6 +1580,14 @@ pub struct Interpreter {
     /// Structural (registry-shape) only, so it is sound to key on `(class, method)`
     /// and is cleared with the other method caches on any registry change.
     pub(crate) dispatch_multi_candidate: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Sub names declared with signature *alternates* (`multi f(A) | (B) {...}`).
+    /// Such a routine's `state` cell is shared across all its alternates via a
+    /// compile-time state_group; the OTF-compile path fragments that sharing (each
+    /// alternate compiles to its own body + `state` key), so a state-bearing
+    /// candidate of such a name must stay on the interpreter. Tracked at
+    /// registration because the resolved per-candidate `FunctionDef` carries no
+    /// alternate marker. See `multi_candidate_state_forces_interpreter`.
+    pub(crate) multi_alternate_signature_names: rustc_hash::FxHashSet<Symbol>,
     /// Memoized structural fingerprint of a method body, keyed by the *pointer*
     /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` Debug-traverses
     /// the whole body AST, which dominated the method-redispatch hot path
