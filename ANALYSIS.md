@@ -131,6 +131,32 @@ rev3 で「最大の設計負債」としていた `locals ↔ env` 二重スト
 - **内側ブロックのシャドウイングがスロット衝突**する (`my $x` が外側 `$x` と同じスロットに解決)。
   正しいシャドウイングは env フォールバックに依存しており、§1.3 と悪循環。
 
+> **調査メモ (2026-07-02): §1.4 は §1.5「名前ベース slot 解決」の撤廃と不可分。**
+> `alloc_local` にレキシカルスコープ push/pop を入れ、内側ブロックの `my $x` に
+> **専用スロット**を割り当てる素朴な実装 (scope スタックで `local_map` を復元) を試作した。
+> 変数の **read** はコンパイル時に `GetLocal(slot)` へ確定するため常に正しく、素朴実装でも
+> シャドウイングの read は通る。しかし **writeback 系が実行時に「名前 → slot」を再解決**して
+> いるため破綻する:
+> - `undefine($x)` / rw-arg 書き戻し → `vm/vm_env_helpers.rs::find_local_slot`
+>   (`code.locals` を名前で線形検索)。
+> - `$x ~~ s///` / `tr///` → `OpCode::SmartMatchExpr` の `lhs_var` (名前) を実行時に解決。
+>
+> 分離スロットにすると 1 つの名前が `code.locals` に**複数スロット**を占める。実行時の名前検索は
+> `position` (先頭) でも `rposition` (末尾) でも**普遍的に正しくない**:
+> - `undefine` を**シャドウブロック内**で呼ぶと生きているのは内側 (末尾) スロット
+>   (`roast/S32-scalar/defined.t` #31)。
+> - 同名の外側 `$x` に対し、内側シャドウブロックより**手前**で `s///` すると生きているのは
+>   外側 (先頭) スロット (`roast/S04-statements/for.t` #98)。
+>
+> 唯一の正解は**コンパイル時に確定した slot を writeback IR に載せる**こと
+> (SmartMatchExpr の lhs、rw-arg の varref/`pending_rw_writeback`、`find_local_slot` 依存箇所)。
+> これは §1.5 が指摘する「IR が lvalue/slot 情報を持たない」問題そのもので、read 経路と同じく
+> writeback 経路も**名前ベース解決を撤廃**する高 churn な結合作業になる。したがって §1.4 は
+> 単独スライスにできず、§1.5 (writeback IR の slot 化) と**同一キャンペーンで**着手すること。
+> 現状の全 `t/`・roast はこの分離スロットを導入せず、`BlockScope` が毎回 `locals` 全体を
+> clone/restore する (`vm/vm_misc_scope.rs`) ことで正しさを担保している —— この clone こそ
+> §1.4 が最終的に消したいコストだが、消すには上記 writeback IR 化が前提。
+
 ### 1.5 最適化パスが事実上皆無 + opcode セットの肥大
 
 定数畳み込み・DCE・peephole・レジスタ割り当ては無い。`1 + 2` は常に `LoadConst, LoadConst, Add` を出す。
@@ -141,7 +167,8 @@ rev3 で「最大の設計負債」としていた `locals ↔ env` 二重スト
 `ContainerEq{,Named,Indexed,Raw}`、`IndexAssign{ExprNamed,PseudoStashNamed,ExprNested,DeepNested,Generic}`。
 これらはパーサ形状を opcode に焼き込んでおり、1 命令 + フラグオペランドに畳めるはず。
 `is rw` の書き戻しも、引数のソース変数名を**文字列で定数プールに直列化**して VM が後から書き戻す方式
-(`compiler/mod.rs`) で、IR が lvalue/参照情報を持たないことの裏返し。
+(`compiler/mod.rs`) で、IR が lvalue/参照情報を持たないことの裏返し。**この writeback の slot 化は
+§1.4 (レキシカルスロットスコープ) の前提**でもある —— §1.4 の調査メモ参照。
 
 ### 1.6 パーサ (良好) と slang の擬似実装
 
