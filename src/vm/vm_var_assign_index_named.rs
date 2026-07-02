@@ -5,7 +5,149 @@ use std::sync::Arc;
 
 type BindSourceCell = (Option<String>, Arc<std::sync::Mutex<Value>>);
 
+/// A flat slice-assign key (`@a[1,(lazy 3,4,5)] = ...`), pre-resolved so the
+/// mutable-container recursion below never needs `&mut self` (a nested key's
+/// `LazyList` must be forced up front, before `env_root_descended_mut` takes
+/// out a `&mut Value` borrow on `self.env`).
+enum SliceKeyTree {
+    Leaf(Value),
+    /// A nested sublist target (`(3,4,5)` or `(lazy 3,4,5)`). The `bool` marks
+    /// whether the ORIGINAL value was genuinely lazy: Raku stops distributing
+    /// into a lazy nested sublist as soon as a leaf index runs past the
+    /// container's current length (mirrors the read-side `is_lazy_index`
+    /// stop-at-boundary rule), whereas a plain nested list autovivifies/fills
+    /// with `Any` like a top-level slice would.
+    Nested(Vec<SliceKeyTree>, bool),
+}
+
 impl Interpreter {
+    fn build_slice_key_tree(&mut self, key: &Value) -> Result<SliceKeyTree, RuntimeError> {
+        match key {
+            Value::LazyList(ll) => {
+                let items = self.force_lazy_list_vm(ll)?;
+                let children = items
+                    .iter()
+                    .map(|item| self.build_slice_key_tree(item))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(SliceKeyTree::Nested(children, true))
+            }
+            Value::Array(items, _) => {
+                let children = items
+                    .iter()
+                    .map(|item| self.build_slice_key_tree(item))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(SliceKeyTree::Nested(children, false))
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                let children = items
+                    .iter()
+                    .map(|item| self.build_slice_key_tree(item))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(SliceKeyTree::Nested(children, false))
+            }
+            other => Ok(SliceKeyTree::Leaf(other.clone())),
+        }
+    }
+
+    /// Largest leaf index in a NON-lazy-origin key tree, used to autoviv-resize
+    /// the container before assigning. A lazy-origin nested list must NOT grow
+    /// the array — it is bounded by the container's *current* length instead
+    /// (`assign_slice_key_tree` below), matching the read-side rule.
+    fn slice_key_tree_max_index(key: &SliceKeyTree) -> Option<usize> {
+        match key {
+            SliceKeyTree::Leaf(v) => Self::index_to_usize(v),
+            SliceKeyTree::Nested(children, lazy_origin) => children
+                .iter()
+                .filter_map(|c| {
+                    // A leaf living DIRECTLY under a lazy-origin nested list is
+                    // bounded rather than extended (see doc comment above). A
+                    // nested sub-tree still recurses on its own rules even when
+                    // its parent is lazy-origin (`@a[lazy 1,2,(4,5)]`'s `(4,5)`
+                    // is a plain sublist and DOES extend the array).
+                    if *lazy_origin && matches!(c, SliceKeyTree::Leaf(_)) {
+                        None
+                    } else {
+                        Self::slice_key_tree_max_index(c)
+                    }
+                })
+                .max(),
+        }
+    }
+
+    /// Recursively distribute `vals` across a (possibly nested) nested slice
+    /// key tree, writing each leaf through `assign_array_multidim`. Pure
+    /// side-effecting write pass — see `read_slice_key_tree` for building the
+    /// returned rvalue, which must be a SEPARATE post-write read: a duplicate
+    /// index appearing twice in the same key tree (`@a[lazy 1,2,(4,5),4,5]`)
+    /// overwrites an earlier write, and Raku's assignment result reflects the
+    /// FINAL value at each position, not the value seen at write time.
+    ///
+    /// `boundary_len` is the container's length *before* this slice-assign
+    /// began (captured once by the caller, ahead of any autoviv-resize) — a
+    /// FIXED snapshot, not re-read per node. Raku's lazy-origin stop-at-
+    /// boundary check is against that original length even after a sibling
+    /// plain nested sublist has already grown the array earlier in the same
+    /// operation (`@a[lazy 1,2,(4,5),4,5]`'s trailing `4,5` must still stop
+    /// at the pre-assignment length 5, not the length-6 the `(4,5)` sibling
+    /// just grew it to).
+    fn assign_slice_key_tree(
+        container: &mut Value,
+        key: &SliceKeyTree,
+        boundary_len: usize,
+        vals: &mut std::vec::IntoIter<Value>,
+        marks: &mut Vec<String>,
+    ) -> Result<(), RuntimeError> {
+        match key {
+            SliceKeyTree::Leaf(k) => {
+                let v = vals.next().unwrap_or(Value::Nil);
+                Self::assign_array_multidim(container, std::slice::from_ref(k), v)?;
+                marks.push(Self::encode_bound_index(k));
+                Ok(())
+            }
+            SliceKeyTree::Nested(children, lazy_origin) => {
+                for child in children {
+                    if *lazy_origin
+                        && let SliceKeyTree::Leaf(k) = child
+                        && let Some(i) = Self::index_to_usize(k)
+                        && i >= boundary_len
+                    {
+                        break;
+                    }
+                    Self::assign_slice_key_tree(container, child, boundary_len, vals, marks)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Build the nested rvalue of a slice assignment by reading the container
+    /// back AFTER all writes (`assign_slice_key_tree`) — see its doc comment
+    /// for why this must be a separate post-write pass.
+    fn read_slice_key_tree(container: &Value, key: &SliceKeyTree, boundary_len: usize) -> Value {
+        match key {
+            SliceKeyTree::Leaf(k) => Self::index_to_usize(k)
+                .and_then(|i| match container {
+                    Value::Array(items, ..) => items.get(i).cloned(),
+                    _ => None,
+                })
+                .unwrap_or(Value::Nil),
+            SliceKeyTree::Nested(children, lazy_origin) => {
+                let mut out = Vec::with_capacity(children.len());
+                for child in children {
+                    if *lazy_origin
+                        && let SliceKeyTree::Leaf(k) = child
+                        && let Some(i) = Self::index_to_usize(k)
+                        && i >= boundary_len
+                    {
+                        break;
+                    }
+                    out.push(Self::read_slice_key_tree(container, child, boundary_len));
+                }
+                Value::array(out)
+            }
+        }
+    }
+
     pub(crate) fn exec_index_assign_expr_named_op_inner(
         &mut self,
         code: &CompiledCode,
@@ -389,6 +531,55 @@ impl Interpreter {
             return Ok(());
         }
         match &idx {
+            // Top-level lazy index list: `@a[lazy 1,2,(4,5)] = ...`. Mirrors the
+            // `Value::Array` slice arm below but for a bare `LazyList` subscript
+            // (not wrapped in an outer Array) — the whole list is genuinely lazy,
+            // so distribution into ITS direct leaves stops at the container's
+            // current length (`assign_slice_key_tree`), while any plain nested
+            // sublist inside it (like `(4,5)` above) still extends normally.
+            Value::LazyList(_) if is_positional && var_name.starts_with('@') => {
+                let vals = self.assignment_rhs_values(&val)?;
+                let top_tree = self.build_slice_key_tree(&idx)?;
+                if let Some(container) = self.env_root_descended_mut(&var_name)
+                    && matches!(container, Value::Array(..))
+                {
+                    let boundary_len = if let Value::Array(items, ..) = container {
+                        items.len()
+                    } else {
+                        0
+                    };
+                    if let Some(max_idx) = Self::slice_key_tree_max_index(&top_tree)
+                        && let Value::Array(items, ..) = container
+                    {
+                        let arr = Arc::make_mut(items);
+                        Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                    }
+                    let mut vals_iter = vals.into_iter();
+                    let mut marks: Vec<String> = Vec::new();
+                    Self::assign_slice_key_tree(
+                        container,
+                        &top_tree,
+                        boundary_len,
+                        &mut vals_iter,
+                        &mut marks,
+                    )?;
+                    let result = Self::read_slice_key_tree(container, &top_tree, boundary_len);
+                    for encoded in marks {
+                        self.mark_initialized_index(&var_name, encoded);
+                    }
+                    // Early return (like the `Value::Array` slice arm), so repeat
+                    // the locals resync the shared tail would otherwise do.
+                    if let Some(slot) = self.find_local_slot(code, &var_name)
+                        && let Some(updated) = self.env().get(&var_name).cloned()
+                    {
+                        self.locals[slot] = updated;
+                    }
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                // Not an array container after all (e.g. a hash) — fall through
+                // to the shared generic tail below.
+            }
             Value::Array(keys, ..) => {
                 let mut vals = self.assignment_rhs_values(&val)?;
                 // Per-element type check for slice assignment to a typed array,
@@ -406,6 +597,26 @@ impl Interpreter {
                         }
                     }
                 }
+                // A nested sublist key (`@a[1,(lazy 3,4,5)] = ...`) must be
+                // resolved to a `SliceKeyTree` BEFORE `env_root_descended_mut`
+                // takes out a `&mut Value` borrow on `self.env` below — forcing
+                // a nested `LazyList` needs `&mut self`, which would otherwise
+                // conflict with that borrow.
+                let has_nested_key = keys.iter().any(|k| {
+                    matches!(
+                        k,
+                        Value::Array(..) | Value::Seq(..) | Value::Slip(..) | Value::LazyList(..)
+                    )
+                });
+                let key_trees = if has_nested_key {
+                    let trees = keys
+                        .iter()
+                        .map(|k| self.build_slice_key_tree(k))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Some(SliceKeyTree::Nested(trees, false))
+                } else {
+                    None
+                };
                 // Descend through a whole-container `:=` bound cell (`my @x :=
                 // @a`) so an array slice assignment mutates the shared inner
                 // Array (every alias observes it) instead of falling through to
@@ -416,6 +627,7 @@ impl Interpreter {
                     let is_shaped =
                         has_declared_shape || crate::runtime::utils::is_shaped_array(container);
                     let mut initialized_marks: Vec<String> = Vec::new();
+                    let mut nested_result: Option<Value> = None;
                     if is_shaped {
                         if bind_mode && is_bound_index {
                             return Err(RuntimeError::assignment_ro(None));
@@ -439,6 +651,33 @@ impl Interpreter {
                         }
                     } else if keys.is_empty() {
                         // Empty slice assignment (e.g. @n[*] on empty array): no-op
+                    } else if let Some(top_tree) = &key_trees {
+                        // Flat slice assignment with a nested sublist key:
+                        // @a[1,(lazy 3,4,5)] = ... — auto-extend for non-lazy-
+                        // origin leaves only; a lazy-origin nested sublist is
+                        // bounded by the container's current length instead
+                        // (`assign_slice_key_tree`).
+                        let boundary_len = if let Value::Array(items, ..) = container {
+                            items.len()
+                        } else {
+                            0
+                        };
+                        if let Some(max_idx) = Self::slice_key_tree_max_index(top_tree)
+                            && let Value::Array(items, ..) = container
+                        {
+                            let arr = Arc::make_mut(items);
+                            Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                        }
+                        let mut vals_iter = vals.into_iter();
+                        Self::assign_slice_key_tree(
+                            container,
+                            top_tree,
+                            boundary_len,
+                            &mut vals_iter,
+                            &mut initialized_marks,
+                        )?;
+                        nested_result =
+                            Some(Self::read_slice_key_tree(container, top_tree, boundary_len));
                     } else {
                         // Flat slice assignment: @a[2,3,4,6] = <foo bar foo bar>
                         // Auto-extend the array to accommodate all indices
@@ -465,12 +704,27 @@ impl Interpreter {
                         self.mark_bound_index(&var_name, encoded_idx);
                     }
                     // A 1-element slice (`@a[0,]`) names a single scalar slot, so
-                    // its rvalue itemizes like a single-index assignment.
-                    let result = if idx_is_single_element {
+                    // its rvalue itemizes like a single-index assignment. A
+                    // nested-key assignment (`@a[1,(lazy 3,4,5)] = ...`) instead
+                    // returns the nested shape built while assigning.
+                    let result = if let Some(nested) = nested_result {
+                        nested
+                    } else if idx_is_single_element {
                         Self::itemize_value(val)
                     } else {
                         val
                     };
+                    // This arm returns early (unlike the single-index write path,
+                    // which falls through to the shared tail below), so it must
+                    // repeat the locals resync here too — otherwise a slice
+                    // assignment mutates only the `env` copy while a variable
+                    // that also has a `locals` slot (the common case) keeps
+                    // reading its stale pre-assignment value.
+                    if let Some(slot) = self.find_local_slot(code, &var_name)
+                        && let Some(updated) = self.env().get(&var_name).cloned()
+                    {
+                        self.locals[slot] = updated;
+                    }
                     self.stack.push(result);
                     return Ok(());
                 }

@@ -698,10 +698,21 @@ impl Interpreter {
                     return Err(err);
                 }
                 match raw_popped {
-                    Value::LazyList(ref list) if list.coroutine.is_some() => {
-                        // Gather-based lazy list with coroutine: preserve laziness,
-                        // tagging it as living in `@` array context so gist/`.WHAT`
-                        // render `[...]`/`Array` rather than `(...)`/`Seq`.
+                    // `:=` binds the container itself rather than copying values
+                    // into a fresh Array, so — unlike plain `=` assignment, which
+                    // must stay conservative about mutation support (see
+                    // docs/lazy-arrays.md L2) — ANY genuinely-lazy list (gather
+                    // coroutine, infinite sequence/closure spec, lazy pipe, scan)
+                    // can be bound without forcing. A *plain* (non-`lazy`-marked)
+                    // gather is `.is-lazy` False (`is_genuinely_lazy()` alone
+                    // would miss it) but binding must still not force it — that
+                    // is the whole point of `:=` vs `=` (t/gather-lazy.t tests
+                    // 1/3) — so `coroutine.is_some()` is checked too. Tag it as
+                    // living in `@` array context so gist/`.WHAT` render
+                    // `[...]`/`Array` rather than `(...)`/`Seq`.
+                    Value::LazyList(ref list)
+                        if list.coroutine.is_some() || list.is_genuinely_lazy() =>
+                    {
                         Value::LazyList(std::sync::Arc::new(list.with_array_context()))
                     }
                     Value::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),

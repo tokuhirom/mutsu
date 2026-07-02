@@ -28,6 +28,42 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
+/// Parse the operand of a `lazy`/`eager`/`hyper` statement prefix: like
+/// `return`'s `parse_comma_or_expr`, these bind looser than the comma
+/// operator, so `lazy 3,4,5` must wrap the *entire* list `(3,4,5)` rather
+/// than just the first term (which `expression_no_sequence` alone would
+/// parse, leaving the trailing `,4,5` to be misread as siblings by whatever
+/// list the prefix expression itself sits in).
+fn parse_prefix_listop_operand(input: &str) -> PResult<'_, Expr> {
+    let (rest, first) = expression_no_sequence(input)?;
+    let (r, _) = ws(rest)?;
+    if !r.starts_with(',') || r.starts_with(",,") {
+        return Ok((rest, first));
+    }
+    let (r, _) = parse_char(r, ',')?;
+    let (r, _) = ws(r)?;
+    if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
+        return Ok((r, Expr::ArrayLiteral(vec![first])));
+    }
+    let mut items = vec![first];
+    let (mut r, second) = expression_no_sequence(r)?;
+    items.push(second);
+    loop {
+        let (r2, _) = ws(r)?;
+        if !r2.starts_with(',') {
+            return Ok((r2, Expr::ArrayLiteral(items)));
+        }
+        let (r2, _) = parse_char(r2, ',')?;
+        let (r2, _) = ws(r2)?;
+        if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')') {
+            return Ok((r2, Expr::ArrayLiteral(items)));
+        }
+        let (r2, next) = expression_no_sequence(r2)?;
+        items.push(next);
+        r = r2;
+    }
+}
+
 pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if let Some(rest) = input.strip_prefix("++⚛") {
         let (rest, expr) = postfix_expr(rest)?;
@@ -272,7 +308,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         if let Ok((r2, stmt)) = crate::parser::stmt::lazy_for_stmt_pub(r) {
             return Ok((r2, Expr::DoStmt(Box::new(stmt))));
         }
-        let (r, expr) = expression_no_sequence(r)?;
+        let (r, expr) = parse_prefix_listop_operand(r)?;
         return Ok((
             r,
             Expr::MethodCall {
@@ -288,7 +324,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("hyper") && !is_ident_char(input.as_bytes().get(5).copied()) {
         let r = &input[5..];
         let (r, _) = ws(r)?;
-        let (r, expr) = expression_no_sequence(r)?;
+        let (r, expr) = parse_prefix_listop_operand(r)?;
         return Ok((
             r,
             Expr::MethodCall {
@@ -304,7 +340,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("eager") && !is_ident_char(input.as_bytes().get(5).copied()) {
         let r = &input[5..];
         let (r, _) = ws(r)?;
-        let (r, expr) = expression_no_sequence(r)?;
+        let (r, expr) = parse_prefix_listop_operand(r)?;
         return Ok((r, Expr::Eager(Box::new(expr))));
     }
     // ^expr — upto operator: ^5 means 0..^5

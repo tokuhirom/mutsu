@@ -74,16 +74,18 @@ impl LazyList {
     /// `lazy` — a plain `gather` is `.is-lazy` `False` in Rakudo and must
     /// materialize on gist/Str rather than render a placeholder.
     pub(crate) fn is_genuinely_lazy(&self) -> bool {
-        if self.sequence_spec.is_some()
+        self.sequence_spec.is_some()
             || self.lazy_pipe.is_some()
             || self.closure_seq.is_some()
             || self.scan_spec.is_some()
             || self.cat_pull.is_some()
-        {
-            return true;
-        }
-        (self.coroutine.is_some() || !self.body.is_empty() || self.compiled_code.is_some())
-            && self.is_lazy_marked()
+            // The `__mutsu_preserve_lazy_on_array_assign` marker is set
+            // exclusively by an explicit `lazy` prefix / `.lazy` method call
+            // (see `dispatch_core_str.rs`), including on an already-finite
+            // list (`lazy 3,4,5` caches its 3 items but stays `.is-lazy` True
+            // in Rakudo) — so the marker alone is sufficient regardless of
+            // whether the list also carries a coroutine/body/compiled_code.
+            || self.is_lazy_marked()
     }
 
     /// Whether gist/Str/raku should render a `...` placeholder rather than
