@@ -387,6 +387,14 @@ impl Compiler {
         if let Some(&slot) = self.local_map.get(name) {
             return slot;
         }
+        self.alloc_fresh_local(name)
+    }
+
+    /// Allocate a BRAND-NEW local slot for `name`, unconditionally (unlike
+    /// [`alloc_local`], which reuses an existing same-named slot). `local_map` is
+    /// repointed at the new slot. The §1.4 shadow-allocation primitive: a nested
+    /// `my $x` shadowing an active-ancestor `$x` gets its own slot.
+    fn alloc_fresh_local(&mut self, name: &str) -> u32 {
         let slot = self.code.locals.len() as u32;
         let is_simple = name.starts_with('$')
             && !name.starts_with("$*")
@@ -463,10 +471,18 @@ impl Compiler {
         // §1.4 shadow-slot activation (gated by `MUTSU_SHADOW_SLOTS`).
         //
         // - Same-scope redeclaration (`my $x; my $x`) reuses the existing slot.
-        // - A name already bound in an ENCLOSING scope is a genuine shadow: give
-        //   it a fresh slot (a second `code.locals` entry with the same name) and
-        //   record the outer slot to restore on scope exit.
-        // - Otherwise it is a first declaration: allocate normally.
+        // - A name declared in an ACTIVE ENCLOSING (ancestor) scope is a genuine
+        //   shadow: give it a fresh slot (a second `code.locals` entry with the
+        //   same name) and record the outer slot to restore on scope exit.
+        // - Otherwise (a first declaration, OR a name left in the monotonic
+        //   `local_map` only by an already-popped SIBLING block) allocate normally
+        //   via `alloc_local` — reusing the sibling's slot. This is the crux: a
+        //   shadow must be gated on an active ancestor frame, NOT on mere presence
+        //   in `local_map`. `local_map` retains popped-sibling names so the runtime
+        //   out-of-scope machinery keeps working; treating such a leaked name as a
+        //   shadow would mint a spurious duplicate `code.locals` entry that
+        //   corrupts every by-name (`position`/`rposition`) writeback resolver
+        //   (`\($a)` write-through, rw-arg, undefine, …) reading the wrong slot.
         let in_current_scope = self
             .local_scopes
             .last()
@@ -477,24 +493,25 @@ impl Compiler {
                 .get(name)
                 .expect("current-scope declaration must be in local_map");
         }
+        let is_ancestor_shadow = {
+            let n = self.local_scopes.len();
+            n >= 2
+                && self.local_scopes[..n - 1]
+                    .iter()
+                    .any(|f| f.contains_key(name))
+        };
         let prev = self.local_map.get(name).copied();
-        let slot = if prev.is_some() {
-            let s = self.code.locals.len() as u32;
-            let is_simple = name.starts_with('$')
-                && !name.starts_with("$*")
-                && !name.contains("::")
-                && name != "_"
-                && !name.starts_with('.')
-                && !name.starts_with('!');
-            self.code.locals.push(name.to_string());
-            self.code.simple_locals.push(is_simple);
-            self.local_map.insert(name.to_string(), s);
-            s
+        let slot = if is_ancestor_shadow {
+            self.alloc_fresh_local(name)
         } else {
             self.alloc_local(name)
         };
         if let Some(frame) = self.local_scopes.last_mut() {
-            frame.insert(name.to_string(), prev);
+            // Only a genuine ancestor shadow needs the outer slot restored on exit.
+            frame.insert(
+                name.to_string(),
+                if is_ancestor_shadow { prev } else { None },
+            );
         }
         slot
     }
