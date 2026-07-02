@@ -490,7 +490,29 @@ fn parse_destructuring_with_rhs(
     let has_explicit_slurpy = vars.iter().any(|v| v.is_slurpy);
     let mut seen_slurpy = false;
     for (i, dvar) in vars.iter().enumerate() {
-        if dvar.literal_value.is_some() {
+        if let Some(lit) = &dvar.literal_value {
+            // A bare literal element (`my ("foo") = ...`) is a postconstraint: the
+            // i-th assigned value must smartmatch the literal, else
+            // X::TypeCheck::Assignment. Emit a throwaway declaration whose
+            // where-constraint IS the literal (identical to `$ where "foo"`, which
+            // already enforces this), reading the i-th temp element. (subtypes.t 90)
+            let read = Expr::Index {
+                target: Box::new(Expr::ArrayVar(array_bare.clone())),
+                index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                is_positional: true,
+            };
+            stmts.push(Stmt::VarDecl {
+                name: format!("__destructure_lit_{i}"),
+                expr: read,
+                type_constraint: None,
+                is_state,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: Some(Box::new(lit.clone())),
+            });
             continue;
         }
 
@@ -568,6 +590,13 @@ fn parse_destructuring_with_rhs(
             stmts.push(Stmt::MarkReadonly(dvar.name.clone()));
         }
     }
+    // Yield the assigned list as the block's value (`(my ($a,$b) = 1,2)` is `(1 2)`,
+    // not the last element). This also keeps the per-element check declarations off
+    // the block-final position, so a postconstraint (`where`/literal) on the LAST
+    // element still enforces in value context — e.g. an EVAL'd `my (\b, "foo") =
+    // ...` whose trailing `MarkSigillessReadonly` would otherwise leave a
+    // constrained decl block-final and skip its check. (subtypes.t 90)
+    stmts.push(Stmt::Expr(Expr::ArrayVar(array_bare)));
     Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
 
