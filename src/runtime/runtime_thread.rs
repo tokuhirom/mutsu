@@ -154,6 +154,7 @@ impl Interpreter {
             native_call_specs: self.native_call_specs.clone(),
             operator_assoc: self.operator_assoc.clone(),
             imported_operator_names: self.imported_operator_names.clone(),
+            user_declared_infix_ops: self.user_declared_infix_ops.clone(),
             lib_paths: self.lib_paths.clone(),
             io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {
                 map: cloned_handles,

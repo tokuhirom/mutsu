@@ -314,6 +314,47 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     return Ok((r, Expr::BareWord(full_name.resolve())));
                 }
             }
+            // infix:['OP'](args) / infix:«OP»(args) — operator reference via
+            // the square-bracket / French-quote adverb-value forms (compile-time
+            // string lookup), e.g. `infix:['+'](2,3)`. `parse_adverb_value_pub`
+            // canonicalizes both bracket forms to the same `<OP>` shape the
+            // `:<...>` branch above already understands.
+            if (rest.starts_with(":[") || rest.starts_with(":\u{00AB}"))
+                && let Some((canonical, r)) =
+                    crate::parser::primary::var::parse_adverb_value_pub(&rest[1..])
+            {
+                let op_name = canonical
+                    .strip_prefix('<')
+                    .and_then(|s| s.strip_suffix('>'))
+                    .unwrap_or(&canonical);
+                let full_name = Symbol::intern(&format!("{}:<{}>", name, op_name));
+                let (r, _) = ws(r)?;
+                if let Some(r) = r.strip_prefix('(') {
+                    let (r, _) = ws(r)?;
+                    if let Some(r) = r.strip_prefix(')') {
+                        return Ok((
+                            r,
+                            Expr::Call {
+                                name: full_name,
+                                args: vec![],
+                            },
+                        ));
+                    }
+                    let (r, args) = crate::parser::primary::parse_call_arg_list(r)?;
+                    let (r, _) = ws(r)?;
+                    let Some(r) = r.strip_prefix(')') else {
+                        return Err(PError::expected("')'"));
+                    };
+                    return Ok((
+                        r,
+                        Expr::Call {
+                            name: full_name,
+                            args,
+                        },
+                    ));
+                }
+                return Ok((r, Expr::BareWord(full_name.resolve())));
+            }
         }
         "try" => {
             let (r, _) = ws(rest)?;

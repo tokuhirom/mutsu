@@ -43,7 +43,7 @@ impl Interpreter {
         let saved_topic = self.env.get("_").cloned();
         let saved_dollar_topic = self.env.get("$_").cloned();
         let result = match &code_val {
-            Value::Sub(data) => self.eval_block_value(&data.body),
+            Value::Sub(data) => self.eval_test_block_value(&data.body),
             Value::Str(code) => {
                 let mut nested = Interpreter::new();
                 nested.strict_mode = self.strict_mode;

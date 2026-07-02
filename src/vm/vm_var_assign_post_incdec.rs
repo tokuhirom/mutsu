@@ -15,6 +15,19 @@ impl Interpreter {
         right: Value,
     ) -> Result<Value, RuntimeError> {
         use crate::opcode::CompoundBaseOp as B;
+        // A user-declared `infix:<OP=>` sub overrides the compound-assignment
+        // operator directly (checked before the fused native op below, mirroring
+        // the `infix:<OP>` override check each `exec_*_op` performs on its own
+        // slow path). `user_declared_infix_ops` keeps this a cheap no-op HashSet
+        // lookup on the (overwhelmingly common) no-override path.
+        let op_eq_name = op.user_infix_name();
+        if self.user_declared_infix_ops.contains(op_eq_name)
+            && let Some(def) =
+                self.resolve_function_with_types(op_eq_name, &[left.clone(), right.clone()])
+        {
+            let empty_fns = HashMap::new();
+            return self.compile_and_call_function_def(&def, vec![left, right], &empty_fns);
+        }
         self.stack.push(left);
         self.stack.push(right);
         match op {

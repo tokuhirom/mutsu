@@ -485,6 +485,9 @@ impl Interpreter {
         custom_traits: &[(String, Option<crate::ast::Expr>)],
         site_fingerprint: Option<u64>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
+        if name.starts_with("infix:<") {
+            self.user_declared_infix_ops.insert(name.to_string());
+        }
         let is_method_value_decl = custom_traits
             .iter()
             .any(|(t, _)| t == "__mutsu_method_decl");
@@ -1077,6 +1080,9 @@ impl Interpreter {
         is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
+        if name.starts_with("infix:<") {
+            self.user_declared_infix_ops.insert(name.to_string());
+        }
         Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)

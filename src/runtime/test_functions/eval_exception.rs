@@ -13,7 +13,7 @@ impl Interpreter {
                 // eval_block_value sets "_" via SetTopic and we must restore it.
                 let saved_topic_sigil = self.env.get("$_").cloned();
                 let saved_topic_bare = self.env.get("_").cloned();
-                let result = self.eval_block_value(&data.body).is_ok();
+                let result = self.eval_test_block_value(&data.body).is_ok();
                 match saved_topic_sigil {
                     Some(v) => {
                         self.env.insert("$_".to_string(), v);
@@ -49,7 +49,7 @@ impl Interpreter {
                 // Save both "$_" (sigiled) and "_" (bare) since eval_block_value sets "_".
                 let saved_topic_sigil = self.env.get("$_").cloned();
                 let saved_topic_bare = self.env.get("_").cloned();
-                let result = self.eval_block_value(&data.body);
+                let result = self.eval_test_block_value(&data.body);
                 let died = match &result {
                     Err(_) => true,
                     Ok(val) => {
@@ -329,7 +329,7 @@ impl Interpreter {
             Value::Sub(data) => {
                 let saved_warn = std::mem::take(&mut self.warn_output);
                 self.push_caller_env();
-                let _ = self.eval_block_value(&data.body);
+                let _ = self.eval_test_block_value(&data.body);
                 self.pop_caller_env();
                 let warn_message = self.warn_output.clone();
                 self.warn_output = saved_warn;
@@ -341,7 +341,7 @@ impl Interpreter {
                 };
                 let saved_warn = std::mem::take(&mut self.warn_output);
                 self.push_caller_env();
-                let _ = self.eval_block_value(&data.body);
+                let _ = self.eval_test_block_value(&data.body);
                 self.pop_caller_env();
                 let warn_message = self.warn_output.clone();
                 self.warn_output = saved_warn;

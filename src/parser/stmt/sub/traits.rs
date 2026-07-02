@@ -157,6 +157,18 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
                     let ref_op = paren_content.trim().to_string();
                     precedence_trait = Some((trait_name.to_string(), ref_op));
+                } else if trait_name == "assoc" {
+                    // `is assoc('non')` / `is assoc("left")` — parenthesized string form
+                    let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
+                    let value = paren_content.trim();
+                    let value = if (value.starts_with('\'') && value.ends_with('\''))
+                        || (value.starts_with('"') && value.ends_with('"'))
+                    {
+                        &value[1..value.len() - 1]
+                    } else {
+                        value
+                    };
+                    associativity = Some(value.to_string());
                 } else {
                     // For custom traits, parse the parenthesized content as an expression
                     let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];

@@ -4,8 +4,16 @@ impl Interpreter {
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // A user-declared `infix:<+>` sub can override even native Int/Num
+        // addition (roast S06-operator-overloading/infix.t), so the native
+        // fast paths below must be skipped whenever one is in scope. The
+        // `user_declared_infix_ops` set is empty in the overwhelming common
+        // case, keeping tight `Int + Int` loops free of any registry lookup.
+        let has_override = !self.user_declared_infix_ops.is_empty()
+            && self.user_declared_infix_ops.contains("infix:<+>");
         // Fast path: Int + Int (most common case in numeric loops)
-        if let Value::Int(a) = &left
+        if !has_override
+            && let Value::Int(a) = &left
             && let Value::Int(b) = &right
             && let Some(result) = a.checked_add(*b)
         {
@@ -13,7 +21,8 @@ impl Interpreter {
             return Ok(());
         }
         // Fast path: Num + Num
-        if let Value::Num(a) = &left
+        if !has_override
+            && let Value::Num(a) = &left
             && let Value::Num(b) = &right
         {
             self.stack.push(Value::Num(a + b));

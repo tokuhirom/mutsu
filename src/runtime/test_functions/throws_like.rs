@@ -15,7 +15,7 @@ impl Interpreter {
                 // into the caller, where a subsequent `EVAL` would surface it as
                 // its own result. Save and restore the outer last_value.
                 let saved_last_value = self.last_value.take();
-                let r = self.eval_block_value(&data.body);
+                let r = self.eval_test_block_value(&data.body);
                 self.last_value = saved_last_value;
                 r
             }
@@ -46,6 +46,8 @@ impl Interpreter {
                 nested.registry_mut().subsets = self.registry().subsets.clone();
                 nested.registry_mut().enum_types = self.registry().enum_types.clone();
                 nested.type_metadata = self.type_metadata.clone();
+                nested.operator_assoc = self.operator_assoc.clone();
+                nested.user_declared_infix_ops = self.user_declared_infix_ops.clone();
                 nested.set_current_package(self.current_package());
                 nested.suppressed_names = self.suppressed_names.clone();
                 nested.lexical_class_scopes = self.lexical_class_scopes.clone();
@@ -445,7 +447,7 @@ impl Interpreter {
         let result = match &code_val {
             Value::Sub(data) => {
                 let saved_last_value = self.last_value.take();
-                let r = self.eval_block_value(&data.body);
+                let r = self.eval_test_block_value(&data.body);
                 self.last_value = saved_last_value;
                 r
             }
@@ -464,6 +466,8 @@ impl Interpreter {
                 nested.registry_mut().subsets = self.registry().subsets.clone();
                 nested.registry_mut().enum_types = self.registry().enum_types.clone();
                 nested.type_metadata = self.type_metadata.clone();
+                nested.operator_assoc = self.operator_assoc.clone();
+                nested.user_declared_infix_ops = self.user_declared_infix_ops.clone();
                 for (k, v) in &self.env {
                     if !k.contains_str("::") {
                         nested.env.insert_sym(*k, v.clone());

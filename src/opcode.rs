@@ -81,6 +81,35 @@ impl CompoundBaseOp {
             _ => return None,
         })
     }
+
+    /// The `infix:<OP=>` sub name a user can declare to override this
+    /// compound-assignment operator directly (distinct from overriding the
+    /// base `infix:<OP>`, e.g. `multi sub infix:<+=> ($a is rw, $b) { ... }`
+    /// — roast S06-operator-overloading/infix.t).
+    pub(crate) fn user_infix_name(self) -> &'static str {
+        use CompoundBaseOp::*;
+        match self {
+            Add => "infix:<+=>",
+            Sub => "infix:<-=>",
+            Mul => "infix:<*=>",
+            Div => "infix:</=>",
+            Mod => "infix:<%=>",
+            Pow => "infix:<**=>",
+            Concat => "infix:<~=>",
+            BitAnd => "infix:<+&=>",
+            BitOr => "infix:<+|=>",
+            BitXor => "infix:<+^=>",
+            BitShiftLeft => "infix:<+<=>",
+            BitShiftRight => "infix:<+>=>",
+            IntDiv => "infix:<div=>",
+            IntMod => "infix:<mod=>",
+            Gcd => "infix:<gcd=>",
+            Lcm => "infix:<lcm=>",
+            InfixMin => "infix:<min=>",
+            InfixMax => "infix:<max=>",
+            StringRepeat => "infix:<x=>",
+        }
+    }
 }
 
 /// Bytecode operations for the VM.

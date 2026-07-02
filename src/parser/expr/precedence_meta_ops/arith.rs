@@ -245,6 +245,36 @@ pub(crate) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
         if block_newline_terminates(input, rest, r) {
             break;
         }
+        // Longest-token rule (Raku LTM): a user-declared *symbol* infix that is
+        // LONGER than the built-in multiplicative operator starting at this
+        // position wins — e.g. `sub infix:<*+>` makes `2 *+ 5` one operator,
+        // not `2 * (+5)`. Mirrors the additive-level fix below/above; see
+        // `additive_expr` for the full rationale.
+        if let Some((uname, ulen)) =
+            crate::parser::stmt::simple::match_user_declared_infix_symbol_op(r)
+        {
+            let builtin_len = parse_multiplicative_op(r).map(|(_, l)| l).unwrap_or(0);
+            let is_multiplicative_level =
+                match crate::parser::stmt::simple::lookup_custom_infix_precedence(&uname) {
+                    Some(level) => level == crate::parser::stmt::simple::PREC_MULTIPLICATIVE,
+                    None => true, // trait-less infix defaults to additive precedence, but see below
+                };
+            if builtin_len > 0 && ulen > builtin_len && is_multiplicative_level {
+                let r2 = &r[ulen..];
+                let (r2, _) = ws(r2)?;
+                let (r2, right) = prefix_expr_with_ws_dot(r2).map_err(|err| {
+                    enrich_expected_error(err, "expected expression after infix operator", r2.len())
+                })?;
+                left = Expr::InfixFunc {
+                    name: uname,
+                    left: Box::new(left),
+                    right: vec![right],
+                    modifier: None,
+                };
+                rest = r2;
+                continue;
+            }
+        }
         if let Some((op, len)) = parse_multiplicative_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
@@ -417,6 +447,12 @@ pub(crate) fn power_expr_tight(input: &str) -> PResult<'_, Expr> {
 
 fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> PResult<'_, Expr> {
     let (mut rest, mut base) = autoincrement_expr(input, base_parser)?;
+    // Tracks whether `base`'s top-level `**` shape (if any) was built by this
+    // loop's own "other" arm below, as opposed to e.g. a parenthesized `(a**b)`
+    // group returned by `base_parser`. Only in the former case is it correct to
+    // re-associate `base` for right-associativity; a parenthesized group must
+    // stay an opaque single operand for a following `** exp`.
+    let mut base_is_own_chain = false;
     // Check for custom infixes at power level (tighter than multiplicative)
     loop {
         let (r, _) = ws(rest)?;
@@ -435,6 +471,7 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
                 postfix_expr_tight_pub,
             )? {
                 rest = new_rest;
+                base_is_own_chain = false;
                 continue;
             }
         }
@@ -448,7 +485,7 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
                     left,
                     op: TokenKind::StarStar,
                     right,
-                } => Expr::Binary {
+                } if base_is_own_chain => Expr::Binary {
                     left,
                     op: TokenKind::StarStar,
                     right: Box::new(Expr::Binary {
@@ -463,6 +500,7 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
                     right: Box::new(exp),
                 },
             };
+            base_is_own_chain = true;
             rest = r;
             continue;
         }

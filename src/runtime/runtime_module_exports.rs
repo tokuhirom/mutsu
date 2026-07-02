@@ -200,6 +200,9 @@ impl Interpreter {
             ) {
                 self.imported_operator_names.insert(name.clone());
             }
+            if name.starts_with("infix:<") {
+                self.user_declared_infix_ops.insert(name.clone());
+            }
             let source_single = format!("{module}::{name}");
             let source_prefix = format!("{module}::{name}/");
             let target_single = format!("{target_pkg}::{name}");
