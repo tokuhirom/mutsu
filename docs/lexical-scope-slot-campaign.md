@@ -122,7 +122,15 @@ broadcast = touches every slot with the name.
       baked slot instead of `find_local_slot` / `locals_set_by_name` by name. These
       two helpers are the reusable slot-preferring primitives for the remaining leaf
       sites. Behavior-preserving today. *(done)*
-- [ ] S8+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
+- [x] **S8 — `$x does R` in-place mixin writeback.** The `DoesVar` opcode gains a
+      compile-time `Option<u32>` slot (baked from `local_map` at emit time, for the
+      `$x`/`@a`/`%h` target); `exec_does_var_op` mirrors the mixed-in value into the
+      baked slot via the S7 `write_local_slot_or_name` helper instead of
+      `update_local_if_exists` by name. Behavior-preserving today; verified
+      byte-identical across the whole `make test` suite via a temporary
+      `debug_assert_eq!` (never fired). (The pre-existing `@a does R` / `%h does R`
+      `.name`-doesn't-resolve gap is unrelated — identical on `main`.) *(done)*
+- [ ] S9+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
       for-loop *container* source writeback (`write_back_container_source`,
       `write_back_for_topic_item`, resolved by the runtime-derived
       `container_ref_var` name — a §1.3 concern); the `single_array_source`
