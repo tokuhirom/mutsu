@@ -114,7 +114,9 @@ impl Interpreter {
         // Plain env scalar: compute old OP rhs, store via the shared `++` tail so
         // METHOD captured-outer propagation is identical to `++` by construction.
         let new_val = self.apply_compound_base_op(op, raw_val, rhs)?;
-        let stored = self.store_named_scalar_rmw_result(code, name, new_val)?;
+        // `AtomicCompoundVar` is only emitted for a NON-local target (the compiler
+        // skips it when `local_map` has the name), so there is no baked slot here.
+        let stored = self.store_named_scalar_rmw_result(code, name, None, new_val)?;
         self.stack.push(stored);
         Ok(())
     }
@@ -123,11 +125,12 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         // Phase 3 Stage 2: scalar attribute increments read-modify-write the cell.
         let attr_name = Self::const_str(code, name_idx).to_string();
         self.sync_attr_local_from_cell_by_name(code, &attr_name);
-        let r = self.exec_post_increment_op_inner(code, name_idx);
+        let r = self.exec_post_increment_op_inner(code, name_idx, slot);
         if r.is_ok() {
             self.mirror_attr_local_to_cell_by_name(code, &attr_name);
         }
@@ -177,6 +180,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         // Lazily convert pending alias bind names into local_bind_pairs.
         self.resolve_pending_alias_binds(code);
@@ -254,7 +258,7 @@ impl Interpreter {
         }
         let val = self.normalize_incdec_source_with_type(name, raw_val);
         let new_val = self.increment_value_smart(&val)?;
-        self.store_named_scalar_rmw_result(code, name, new_val)?;
+        self.store_named_scalar_rmw_result(code, name, slot, new_val)?;
         self.stack.push(val);
         Ok(())
     }
@@ -263,11 +267,12 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         // Phase 3 Stage 2: scalar attribute decrements read-modify-write the cell.
         let attr_name = Self::const_str(code, name_idx).to_string();
         self.sync_attr_local_from_cell_by_name(code, &attr_name);
-        let r = self.exec_post_decrement_op_inner(code, name_idx);
+        let r = self.exec_post_decrement_op_inner(code, name_idx, slot);
         if r.is_ok() {
             self.mirror_attr_local_to_cell_by_name(code, &attr_name);
         }
@@ -278,6 +283,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         if let Some(r) = self.try_slotless_attr_incdec(code, name, false, false) {
@@ -332,7 +338,7 @@ impl Interpreter {
         }
         let val = self.normalize_incdec_source_with_type(name, raw_val);
         let new_val = self.decrement_value_smart(&val)?;
-        self.store_named_scalar_rmw_result(code, name, new_val)?;
+        self.store_named_scalar_rmw_result(code, name, slot, new_val)?;
         self.stack.push(val);
         Ok(())
     }

@@ -79,8 +79,14 @@ broadcast = touches every slot with the name.
       writeback writes `self.locals[slot]` directly, falling back to by-name only
       for a `None` slot (global LHS / EVAL-carrier outer lexical). Behavior-
       preserving today. *(done)*
-- [ ] S2 — RMW chokepoint: thread the compile-time slot into
-      `store_named_scalar_rmw_result` (opcode operand for the inc/dec/compound ops).
+- [x] **S2 — RMW chokepoint (postfix `$x++`/`$x--`).** `PostIncrement`/`PostDecrement`
+      carry a compile-time `Option<u32>` slot; it is threaded to
+      `store_named_scalar_rmw_result`, which mirrors the new value into the baked
+      slot and uses it as the `local_bind_pairs` source instead of the by-name
+      `code.locals` search. The env-by-name RMW *read* is left as-is (a §1.3
+      dual-store concern, not a name→slot ambiguity). `None` for non-local targets
+      (`our`/dynamic/temp-value/`AtomicCompoundVar`), which keep the by-name path.
+      Prefix `++`/`--` and compound-assign-on-local are still by-name — S2b. *(done)*
 - [ ] S3 — `:=` bind: bake source/target slots at emit time instead of
       `resolve_pending_alias_binds` name lookup.
 - [ ] S4 — param-slot precompute: use the scope-correct slot.

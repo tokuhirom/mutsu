@@ -780,8 +780,14 @@ pub(crate) enum OpCode {
     GetCodeVar(u32),
 
     // -- Postfix operators --
-    PostIncrement(u32),
-    PostDecrement(u32),
+    // The optional second field is the compile-time-resolved local slot for the
+    // named scalar (§1.5: bakes the scope-correct slot so the RMW writeback
+    // mirrors the exact slot instead of a by-name `code.locals` search, which is
+    // ambiguous once a name occupies several slots — docs/lexical-scope-slot-
+    // campaign.md). `None` for a non-local (global / `our` / dynamic / a temp
+    // value target), where the writeback stays env-by-name.
+    PostIncrement(u32, Option<u32>),
+    PostDecrement(u32, Option<u32>),
     PostIncrementIndex(u32),
     PostDecrementIndex(u32),
     /// Named index assignment: `var[idx] = value` where `var` is a known
@@ -1588,8 +1594,8 @@ impl CompiledCode {
                 OpCode::GetGlobal(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw(idx)
-                | OpCode::PostIncrement(idx)
-                | OpCode::PostDecrement(idx)
+                | OpCode::PostIncrement(idx, _)
+                | OpCode::PostDecrement(idx, _)
                 | OpCode::PreIncrement(idx)
                 | OpCode::PreDecrement(idx)
                 | OpCode::GetArrayVar(idx)
@@ -1687,8 +1693,8 @@ impl CompiledCode {
                 OpCode::GetGlobal(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw(idx)
-                | OpCode::PostIncrement(idx)
-                | OpCode::PostDecrement(idx)
+                | OpCode::PostIncrement(idx, _)
+                | OpCode::PostDecrement(idx, _)
                 | OpCode::PreIncrement(idx)
                 | OpCode::PreDecrement(idx)
                 | OpCode::GetArrayVar(idx)
@@ -1746,8 +1752,8 @@ impl CompiledCode {
             OpCode::GetGlobal(idx)
             | OpCode::SetGlobal(idx)
             | OpCode::SetGlobalRaw(idx)
-            | OpCode::PostIncrement(idx)
-            | OpCode::PostDecrement(idx)
+            | OpCode::PostIncrement(idx, _)
+            | OpCode::PostDecrement(idx, _)
             | OpCode::PreIncrement(idx)
             | OpCode::PreDecrement(idx)
             | OpCode::GetArrayVar(idx)
@@ -1815,8 +1821,8 @@ impl CompiledCode {
         match op {
             OpCode::SetGlobal(idx)
             | OpCode::SetGlobalRaw(idx)
-            | OpCode::PostIncrement(idx)
-            | OpCode::PostDecrement(idx)
+            | OpCode::PostIncrement(idx, _)
+            | OpCode::PostDecrement(idx, _)
             | OpCode::PreIncrement(idx)
             | OpCode::PreDecrement(idx)
             | OpCode::AssignExpr(idx)
@@ -2305,8 +2311,8 @@ impl CompiledCode {
                     | OpCode::IndexAssignDeepNested { .. }
                     | OpCode::IndexAssignGeneric
                     | OpCode::IndexAssignPseudoStashNamed { .. }
-                    | OpCode::PostIncrement(_)
-                    | OpCode::PostDecrement(_)
+                    | OpCode::PostIncrement(..)
+                    | OpCode::PostDecrement(..)
                     | OpCode::PostIncrementIndex(_)
                     | OpCode::PostDecrementIndex(_)
                     | OpCode::PreIncrement(_)
