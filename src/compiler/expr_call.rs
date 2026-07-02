@@ -2,6 +2,22 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Compiler {
+    /// Emit the store half of `undefine($scalar)` (`$scalar = Any`, value already
+    /// on the stack). Prefers the compile-time-baked `AssignExprLocal(slot)` when
+    /// the name resolves to a local — mirroring the general assignment path in
+    /// `compile_expr_assign` — so a shadowing inner-block `my $x` writes to its own
+    /// slot instead of the by-name `AssignExpr` resolving to the outer slot (§1.4
+    /// shadow-slot leaf, ANALYSIS.md §1.4; `roast/S32-scalar/defined.t` #31). With
+    /// shadow slots off this is byte-equivalent (the shadow shares the outer slot).
+    fn emit_undefine_scalar_store(&mut self, vname: &str) {
+        if let Some(&slot) = self.local_map.get(vname) {
+            self.code.emit(OpCode::AssignExprLocal(slot));
+        } else {
+            let name_idx = self.code.add_constant(Value::str(vname.to_string()));
+            self.code.emit(OpCode::AssignExpr(name_idx));
+        }
+    }
+
     pub(super) fn compile_expr_call(&mut self, name: &Symbol, args: &[Expr]) {
         // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
         // The parser emits __mutsu_assign_callable_lvalue(DoStmt(VarDecl{..}), [], rhs).
@@ -475,8 +491,7 @@ impl Compiler {
                             .code
                             .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
                         self.code.emit(OpCode::LoadConst(any_idx));
-                        let name_idx = self.code.add_constant(Value::str(vname));
-                        self.code.emit(OpCode::AssignExpr(name_idx));
+                        self.emit_undefine_scalar_store(&vname);
                     }
                     return;
                 }
@@ -509,8 +524,7 @@ impl Compiler {
                         .code
                         .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
                     self.code.emit(OpCode::LoadConst(any_idx));
-                    let name_idx = self.code.add_constant(Value::str(vname));
-                    self.code.emit(OpCode::AssignExpr(name_idx));
+                    self.emit_undefine_scalar_store(&vname);
                 }
             } else if matches!(&args[0], Expr::Index { target, .. } if matches!(**target, Expr::HashVar(_) | Expr::ArrayVar(_) | Expr::Var(_)))
             {

@@ -223,3 +223,37 @@ is flipped and the `exec_block_scope_op` whole-`locals` clone is removed.
 **Task split:** this branch owns the shadow-side compiler machinery (declare/pop);
 the env↔locals slot-indexing (§1.3) is the sibling half. Keep the gate OFF-default
 until both halves make the toggle-ON survey green.
+
+## §1.4 toggle-ON roast survey (2026-07-03, debug, full whitelist 1345)
+
+`MUTSU_SHADOW_SLOTS=1 MUTSU_BIN=target/debug/mutsu prove -e scripts/run-roast-test.sh
+$(cat roast-whitelist.txt)` → **102 files fail**; re-running only those 102 with the
+gate OFF, **19 also fail** (flaky / pre-existing) leaving **83 genuine toggle-ON
+regressions**. Every regression involves a variable actually shadowing an enclosing
+same-name binding (non-shadowed `my $x` is byte-identical even ON, since
+`declare_local` first-declaration → `alloc_local` and `pop` leaves `None` entries).
+By synopsis: S32 16, S17 14, S02 14, S04 12, S03 10, S06 5, S09 4, misc 8. Root-cause
+classes and the burndown owner:
+
+- **class-2 leaf writeback (this campaign, bakeable — prefer the compile-time slot):**
+  - `undefine($scalar)` → the rewrite hand-emitted `AssignExpr(name)`; **fixed** by
+    `emit_undefine_scalar_store` preferring `AssignExprLocal(slot)` like the general
+    assign path (`roast/S32-scalar/defined.t` #31 now green ON). *(done, this branch)*
+  - `let`/`temp` restore (`S04-.../let.t`, `temp.t`): the scope-exit restore resolves
+    the saved var by name → outer slot. Next leaf slice.
+  - rw-arg writeback (`S06-traits/is-rw.t`, `lvalue-subroutines.t`, `substr-rw.t`):
+    `pending_rw_writeback_sources` by name.
+  - hyper / metaop writeback (`S03-metaops/cross.t`, `zip.t`, `reverse.t`,
+    `eager-hyper.t`): `write_back` target resolved by name.
+  - for-loop rw / quanthash `.value`/`.kv` writeback (`S04-statements/for.t`,
+    `S32-array/delete-adverb*.t`).
+- **class-1 env↔locals dual store (§1.3, sibling half):** the name-keyed env cannot
+  hold two live `$x`. Dominates S17 concurrency (shared-var writeback across threads:
+  `S17-supply/*`, `S17-scheduler/*`, `Channel.t`, `lock.t`) and S02 aggregate
+  writeback (`hash.t`, `set.t`, `baghash.t`, `capture.t`, `pair.t`). Not bakeable by
+  a single compile-time slot; needs slot-indexed locals.
+
+**Plan:** burn down class-2 leaves one slot-bake PR at a time (each behavior-
+preserving with the gate off, verified by the toggle-ON roast file flipping green);
+class-1 is unblocked only by the §1.3 half. Flip the gate default and drop the
+`exec_block_scope_op` `locals.clone()` once the toggle-ON whitelist survey is green.
