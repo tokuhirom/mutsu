@@ -323,6 +323,37 @@ impl Compiler {
         }
     }
 
+    /// Hoist `my TYPE $var;` type constraints: emit `SetVarType` for every
+    /// top-level plain `my` declaration with a type constraint before executing
+    /// the rest of the block, so an earlier statement that reads/assigns the
+    /// variable by name (e.g. `EVAL '$x = "abc"'` running before the textual
+    /// `my Int $x;`) already sees its declared type. Mirrors Raku's block-scope
+    /// declaration visibility: within a block, a `my` name and its type are
+    /// known for the whole block, even though the value-initialization only
+    /// runs when execution reaches that statement (roast
+    /// S04-declarations/my-6e.t: "also a type error"). Only the type-constraint
+    /// side table is pre-registered here, never the value, so re-running the
+    /// real `VarDecl` later in sequence is an idempotent no-op for the type and
+    /// still performs the actual (re-)initialization.
+    pub(super) fn hoist_typed_var_decls(&mut self, stmts: &[Stmt]) {
+        for stmt in stmts {
+            if let Stmt::VarDecl {
+                name,
+                type_constraint: Some(tc),
+                is_state: false,
+                is_our: false,
+                custom_traits,
+                ..
+            } = stmt
+                && !custom_traits.iter().any(|(n, _)| n == "default")
+            {
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+            }
+        }
+    }
+
     /// Check if a class body is a stub (contains only `...`, `!!!`, or `???`).
     pub(super) fn is_stub_class_body(body: &[Stmt]) -> bool {
         let filtered: Vec<_> = body

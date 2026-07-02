@@ -1711,6 +1711,7 @@ impl Interpreter {
             native_call_specs: HashMap::new(),
             operator_assoc: HashMap::new(),
             imported_operator_names: HashSet::new(),
+            user_declared_infix_ops: HashSet::new(),
             lib_paths: Vec::new(),
             io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {
                 map: HashMap::new(),

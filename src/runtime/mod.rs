@@ -1021,6 +1021,14 @@ pub struct Interpreter {
     /// preseed the parser when EVAL is called so that imported operators
     /// remain visible, but non-exported operators from loaded modules do not.
     pub(crate) imported_operator_names: HashSet<String>,
+    /// Short-form infix operator sub names (`infix:<+>`, ...) that have ever
+    /// been user-declared, regardless of package/associativity. Consulted as a
+    /// cheap guard by the VM's native-arithmetic fast paths (`exec_add_op` and
+    /// friends) so they only pay for a full multi-dispatch resolution lookup
+    /// when a user override could plausibly exist, keeping the common
+    /// no-override hot path (e.g. tight `Int + Int` loops) free of registry
+    /// lookups.
+    pub(crate) user_declared_infix_ops: HashSet<String>,
     lib_paths: Vec<String>,
     /// Open IO handles (files/sockets/listeners) shared between the VM and the
     /// Interpreter behind transitional `Arc<RwLock>` scaffolding. Snapshot-cloned

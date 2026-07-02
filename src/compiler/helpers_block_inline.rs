@@ -97,6 +97,8 @@ impl Compiler {
             .collect();
         // Hoist sub declarations
         self.hoist_sub_decls(stmts, true);
+        // Hoist `my TYPE $var;` type constraints (see `hoist_typed_var_decls`).
+        self.hoist_typed_var_decls(stmts);
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {

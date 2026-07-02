@@ -124,10 +124,26 @@ impl Interpreter {
         let saved_proto_subs = self.registry().proto_subs.clone();
         let saved_proto_functions = self.registry().proto_functions.clone();
         let saved_operator_assoc = self.operator_assoc.clone();
+        let saved_user_declared_infix_ops = self.user_declared_infix_ops.clone();
+        // A `my TYPE $var;` inside this block is lexically scoped to it (like
+        // the sub/operator registries saved above): its type constraint must
+        // not leak into the caller's later, unrelated same-named variable once
+        // the block returns. Without this, `hoist_typed_var_decls` pre-registers
+        // the constraint at block entry (so an early-in-block EVAL sees it, per
+        // roast S04-declarations/my-6e.t "also a type error") but — since
+        // `var_type_constraints` is a flat name-keyed table, not a real scope
+        // stack — that constraint would otherwise survive this call's return
+        // and wrongly apply to any later code using the same variable name.
+        let saved_var_type_constraints = self.snapshot_var_type_constraints();
         let saved_code_env: std::collections::HashMap<Symbol, Value> = self
             .env
             .iter()
-            .filter(|(k, _)| k.starts_with("&") || k.starts_with("__mutsu_callable_id::"))
+            .filter(|(k, _)| {
+                k.starts_with("&")
+                    || k.starts_with("__mutsu_callable_id::")
+                    || k.starts_with("__mutsu_type::")
+                    || k.starts_with("__mutsu_hash_key_type::")
+            })
             .map(|(k, v)| (*k, v.clone()))
             .collect();
         let (code, compiled_fns) = self.compile_block_value(body);
@@ -163,8 +179,14 @@ impl Interpreter {
         self.registry_mut().proto_subs = saved_proto_subs;
         self.registry_mut().proto_functions = saved_proto_functions;
         self.operator_assoc = saved_operator_assoc;
-        self.env
-            .retain(|k, _| !(k.starts_with("&") || k.starts_with("__mutsu_callable_id::")));
+        self.user_declared_infix_ops = saved_user_declared_infix_ops;
+        self.restore_var_type_constraints(saved_var_type_constraints);
+        self.env.retain(|k, _| {
+            !(k.starts_with("&")
+                || k.starts_with("__mutsu_callable_id::")
+                || k.starts_with("__mutsu_type::")
+                || k.starts_with("__mutsu_hash_key_type::"))
+        });
         for (k, v) in saved_code_env {
             self.env.insert_sym(k, v);
         }
@@ -181,6 +203,42 @@ impl Interpreter {
             }
             value
         })
+    }
+
+    /// Like `eval_block_value`, but for a block passed as a *test-assertion
+    /// argument* (`dies-ok { ... }`, `lives-ok { ... }`, `throws-like { ... }`,
+    /// `fails-like { ... }`, `warns-like { ... }`): such a block is a genuine
+    /// lexical closure, so a `my $x` it declares must not leak into the
+    /// caller's shared `env` once it returns — mirroring how `EVAL 'my $x'`
+    /// already isolates its lexicals via `is_plain_user_lexical` in
+    /// `parse_and_eval_with_operators`. Without this, a `my TYPE $var;`
+    /// reached inside the block (e.g. `dies-ok { ...; my Int $x; }`) leaves
+    /// `$x`'s value in `env` after the call, which can silently overwrite an
+    /// unrelated same-named outer variable (roast S04-declarations/my-6e.t,
+    /// "Can access variable returned from a named closure ..." — the mainline
+    /// `my $x` must stay untouched by a `my $x` inside an unrelated,
+    /// previously-run test-assertion block).
+    pub(crate) fn eval_test_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
+        let pre_lexicals: std::collections::HashSet<Symbol> = self
+            .env
+            .keys()
+            .filter(|k| k.with_str(|s| crate::env::is_plain_user_lexical(s) && !s.starts_with('&')))
+            .copied()
+            .collect();
+        let result = self.eval_block_value(body);
+        let leaked: Vec<Symbol> = self
+            .env
+            .keys()
+            .filter(|k| {
+                !pre_lexicals.contains(k)
+                    && k.with_str(|s| crate::env::is_plain_user_lexical(s) && !s.starts_with('&'))
+            })
+            .copied()
+            .collect();
+        for key in leaked {
+            self.env.remove_sym(key);
+        }
+        result
     }
 
     /// Fast path for simple closures (e.g. sequence generators) that don't

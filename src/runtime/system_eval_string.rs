@@ -252,6 +252,7 @@ impl Interpreter {
         let class_direct_composed_roles_snapshot =
             self.registry().class_direct_composed_roles.clone();
         let class_role_param_bindings_snapshot = self.registry().class_role_param_bindings.clone();
+        let var_type_constraints_snapshot = self.snapshot_var_type_constraints();
         let env_snapshot = self.env.clone();
         let saved_topic = self.env.get("_").cloned();
         let trimmed = code.trim();
@@ -441,6 +442,30 @@ impl Interpreter {
             .map(|key| key.resolve())
             .collect();
         for key in callable_keys {
+            if let Some(value) = env_snapshot.get(&key).cloned() {
+                self.env.insert(key, value);
+            } else {
+                self.env.remove(&key);
+            }
+        }
+        // A `my TYPE $var;` declared or reached inside the EVAL'd string is
+        // lexically scoped to it, like `&name` above: its type constraint (the
+        // name-keyed `var_type_constraints` table and its `__mutsu_type::`/
+        // `__mutsu_hash_key_type::` env mirror) must not leak into the caller's
+        // later, unrelated same-named variable. Roast S04-declarations/my-6e.t
+        // exercises many `EVAL('my Int $x = ...')`-style type-check snippets in
+        // sequence; without this restore a later plain `my $x` elsewhere in the
+        // program could inherit a stale type from an earlier, unrelated EVAL.
+        self.restore_var_type_constraints(var_type_constraints_snapshot);
+        let type_meta_keys: std::collections::HashSet<String> = current_env
+            .keys()
+            .chain(env_snapshot.keys())
+            .filter(|key| {
+                key.starts_with("__mutsu_type::") || key.starts_with("__mutsu_hash_key_type::")
+            })
+            .map(|key| key.resolve())
+            .collect();
+        for key in type_meta_keys {
             if let Some(value) = env_snapshot.get(&key).cloned() {
                 self.env.insert(key, value);
             } else {

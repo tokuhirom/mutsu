@@ -265,12 +265,49 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
         // (rather than a `,`-`Binary`, which flattens both operands into a flat
         // list) matches the direct `@a = @a, (...)` structure.
         Expr::ArrayLiteral(vec![lhs, rhs])
+    } else if let Some(user_op_name) = compound_assign_user_infix_name(op)
+        && crate::parser::stmt::simple::is_user_declared_sub(&user_op_name)
+    {
+        // A user-declared `infix:<OP=>` sub overrides the compound-assignment
+        // operator directly (distinct from overriding the base `infix:<OP>`,
+        // e.g. `multi sub infix:<+=> ($a is rw, $b) { $a -= $b }` — roast
+        // S06-operator-overloading/infix.t). `$x OP= rhs` desugars to a plain
+        // `Binary` at parse time (see the `else` arm below) with no trace of
+        // the original `OP=` spelling left for the compiler to dispatch on, so
+        // the override must be recognized here, while parsing still knows
+        // this was compound-assignment syntax.
+        Expr::Call {
+            name: Symbol::intern(&user_op_name),
+            args: vec![autoviv_compound_lhs(lhs, op), rhs],
+        }
     } else {
         Expr::Binary {
             left: Box::new(autoviv_compound_lhs(lhs, op)),
             op: op.token_kind(),
             right: Box::new(rhs),
         }
+    }
+}
+
+/// The `infix:<OP=>` sub name a user could declare to override `lhs OP= rhs`
+/// directly, or `None` for compound-assign forms with no corresponding
+/// simple infix spelling (list/flow ops like `,=`, `//=`, `||=`, junctions).
+fn compound_assign_user_infix_name(op: CompoundAssignOp) -> Option<String> {
+    match op {
+        CompoundAssignOp::Comma
+        | CompoundAssignOp::DefinedOr
+        | CompoundAssignOp::LogicalOr
+        | CompoundAssignOp::LogicalAnd
+        | CompoundAssignOp::KeywordOr
+        | CompoundAssignOp::KeywordAnd
+        | CompoundAssignOp::KeywordXor
+        | CompoundAssignOp::Orelse
+        | CompoundAssignOp::Andthen
+        | CompoundAssignOp::Notandthen
+        | CompoundAssignOp::JuncAny
+        | CompoundAssignOp::JuncAll
+        | CompoundAssignOp::JuncOne => None,
+        other => Some(format!("infix:<{}>", other.symbol())),
     }
 }
 
