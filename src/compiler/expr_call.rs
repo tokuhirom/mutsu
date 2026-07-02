@@ -2,18 +2,32 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Compiler {
-    /// Emit the store half of `undefine($scalar)` (`$scalar = Any`, value already
-    /// on the stack). Prefers the compile-time-baked `AssignExprLocal(slot)` when
-    /// the name resolves to a local — mirroring the general assignment path in
-    /// `compile_expr_assign` — so a shadowing inner-block `my $x` writes to its own
-    /// slot instead of the by-name `AssignExpr` resolving to the outer slot (§1.4
-    /// shadow-slot leaf, ANALYSIS.md §1.4; `roast/S32-scalar/defined.t` #31). With
-    /// shadow slots off this is byte-equivalent (the shadow shares the outer slot).
-    fn emit_undefine_scalar_store(&mut self, vname: &str) {
-        if let Some(&slot) = self.local_map.get(vname) {
+    /// Emit an assignment store to a named lvalue (value already on the stack).
+    /// Under the §1.4 shadow-slot gate (`MUTSU_SHADOW_SLOTS`), prefers the
+    /// compile-time-baked `AssignExprLocal(slot)` when the name resolves to a local
+    /// — mirroring the general assignment path in `compile_expr_assign` — so a
+    /// shadowing inner-block `my $x` writes to its own slot instead of the by-name
+    /// `AssignExpr` resolving to the outer (first) `code.locals` slot (ANALYSIS.md
+    /// §1.4). Used by the `undefine($scalar)` rewrite (`roast/S32-scalar/defined.t`
+    /// #31) and the list-assignment / lvalue target stores (`($a, $b) = …`,
+    /// `roast/S03-operators/assign.t`). `name` is the full sigil'd local key (`$x`
+    /// stored bare as `x`, `@a`, `%h`).
+    ///
+    /// Gated: with shadow slots OFF (the default / CI build) it emits the original
+    /// by-name `AssignExpr(name)` verbatim, so the compiled bytecode is byte-
+    /// identical to before this campaign. This matters because `AssignExprLocal`
+    /// and `AssignExpr` are NOT fully interchangeable for `@`/`%` targets (the
+    /// name-based op runs an extra attribute-cell mirror and container-identity
+    /// path that a circular `.raku.EVAL` roundtrip relies on —
+    /// `roast/S32-array/perl.t` #7). Keeping the default path on `AssignExpr`
+    /// avoids that divergence; the baked slot is only needed when shadows are live.
+    fn emit_assign_local_or_name(&mut self, name: &str) {
+        if shadow_slots_active()
+            && let Some(&slot) = self.local_map.get(name)
+        {
             self.code.emit(OpCode::AssignExprLocal(slot));
         } else {
-            let name_idx = self.code.add_constant(Value::str(vname.to_string()));
+            let name_idx = self.code.add_constant(Value::str(name.to_string()));
             self.code.emit(OpCode::AssignExpr(name_idx));
         }
     }
@@ -34,9 +48,10 @@ impl Compiler {
             self.compile_expr(&args[2]);
             // 3. Dup so the assignment result is left on the stack
             self.code.emit(OpCode::Dup);
-            // 4. Assign to the variable
-            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::AssignExpr(name_idx));
+            // 4. Assign to the variable (prefer the baked slot so a `(my $a)`
+            //    that shadows an enclosing `$a` writes its own slot — §1.4).
+            let var_name = var_name.clone();
+            self.emit_assign_local_or_name(&var_name);
             return;
         } else if name == "__mutsu_assign_callable_lvalue"
             && args.len() == 3
@@ -54,8 +69,8 @@ impl Compiler {
             self.code.emit(OpCode::Pop);
             self.compile_expr(&args[2]);
             self.code.emit(OpCode::Dup);
-            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::AssignExpr(name_idx));
+            let var_name = var_name.clone();
+            self.emit_assign_local_or_name(&var_name);
             return;
         } else if name == "__mutsu_assign_callable_lvalue"
             && args.len() == 3
@@ -127,8 +142,7 @@ impl Compiler {
                                 is_positional: true,
                             });
                         }
-                        let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-                        self.code.emit(OpCode::AssignExpr(name_idx));
+                        self.emit_assign_local_or_name(var_name);
                         offset += 1;
                     }
                     Expr::ArrayVar(var_name) => {
@@ -146,8 +160,7 @@ impl Compiler {
                             Expr::Var(tmp_name.clone())
                         };
                         self.compile_expr(&rhs_expr);
-                        let name_idx = self.code.add_constant(Value::str(format!("@{}", var_name)));
-                        self.code.emit(OpCode::AssignExpr(name_idx));
+                        self.emit_assign_local_or_name(&format!("@{}", var_name));
                         seen_slurpy = true;
                     }
                     Expr::HashVar(var_name) => {
@@ -166,8 +179,7 @@ impl Compiler {
                             Expr::Var(tmp_name.clone())
                         };
                         self.compile_expr(&rhs_expr);
-                        let name_idx = self.code.add_constant(Value::str(format!("%{}", var_name)));
-                        self.code.emit(OpCode::AssignExpr(name_idx));
+                        self.emit_assign_local_or_name(&format!("%{}", var_name));
                         seen_slurpy = true;
                     }
                     Expr::Index {
@@ -491,7 +503,7 @@ impl Compiler {
                             .code
                             .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
                         self.code.emit(OpCode::LoadConst(any_idx));
-                        self.emit_undefine_scalar_store(&vname);
+                        self.emit_assign_local_or_name(&vname);
                     }
                     return;
                 }
@@ -524,7 +536,7 @@ impl Compiler {
                         .code
                         .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
                     self.code.emit(OpCode::LoadConst(any_idx));
-                    self.emit_undefine_scalar_store(&vname);
+                    self.emit_assign_local_or_name(&vname);
                 }
             } else if matches!(&args[0], Expr::Index { target, .. } if matches!(**target, Expr::HashVar(_) | Expr::ArrayVar(_) | Expr::Var(_)))
             {
