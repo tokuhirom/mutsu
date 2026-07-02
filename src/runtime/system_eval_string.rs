@@ -233,6 +233,19 @@ impl Interpreter {
             }
             names.push(short.to_string());
         }
+        // Also collect lexical `&name` code-variables (e.g. `my &b2 := ...`).
+        // These are subs held in the environment rather than the registry, so
+        // EVAL'd code that calls them in listop form (`b2 Num`) needs their bare
+        // names known at parse time to parse as a call rather than two terms.
+        for key in self.env.keys() {
+            let key_s = key.resolve();
+            if let Some(bare) = key_s.strip_prefix('&') {
+                if bare.is_empty() || bare.contains(':') {
+                    continue;
+                }
+                names.push(bare.to_string());
+            }
+        }
         names
     }
 

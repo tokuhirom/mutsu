@@ -265,10 +265,15 @@ impl Interpreter {
                             &val,
                         ));
                     }
-                    return Err(RuntimeError::new(format!(
-                        "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
-                        constraint
-                    )));
+                    // A subset (named or anon-from-`where`) whose base is `:D` does
+                    // not require an initializer — only an explicit `:D` smiley on
+                    // the declared type does. Skip when no initializer is required.
+                    if self.constraint_requires_initializer(&constraint) {
+                        return Err(RuntimeError::new(format!(
+                            "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                            constraint
+                        )));
+                    }
                 }
                 if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, &val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
@@ -866,10 +871,15 @@ impl Interpreter {
                         &val,
                     ));
                 }
-                return Err(RuntimeError::new(format!(
-                    "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
-                    constraint
-                )));
+                // A subset (named or anon-from-`where`) whose base is `:D` does not
+                // require an initializer — only an explicit `:D` smiley on the
+                // declared type does. Skip when no initializer is required.
+                if self.constraint_requires_initializer(&constraint) {
+                    return Err(RuntimeError::new(format!(
+                        "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                        constraint
+                    )));
+                }
             }
             if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, &val) {
                 return Err(runtime::utils::type_check_assignment_typed_error(

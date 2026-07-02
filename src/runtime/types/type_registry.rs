@@ -320,6 +320,61 @@ impl Interpreter {
             .is_some_and(|r| r.methods.contains_key(method_name))
     }
 
+    /// Whether declaring `my <constraint> $x;` without an initializer is a
+    /// compile error (`X::Syntax::Variable::MissingInitializer`). This differs
+    /// from `is_definite_constraint` in how it treats a subset base: definiteness
+    /// reached through a plain `:D` subset base is enforced only on assignment (so
+    /// `subset Foo of Int:D; my Foo $x;` needs NO initializer, matching rakudo),
+    /// whereas an explicit `:D` smiley on the declared type OR a coercion into a
+    /// definite target (`subset S of Str:D(Rat); my S $x;`) DOES require one.
+    pub(crate) fn constraint_requires_initializer(&self, constraint: &str) -> bool {
+        self.constraint_requires_initializer_impl(constraint, true)
+    }
+
+    /// `direct_smiley_counts` is true when an explicit `:D` smiley at this level
+    /// forces an initializer (the declaration site itself, or a coercion target).
+    /// It is false while descending a subset's `of` base, where a bare `:D` smiley
+    /// does NOT force one — only a coercion-to-definite in the base does.
+    fn constraint_requires_initializer_impl(
+        &self,
+        constraint: &str,
+        direct_smiley_counts: bool,
+    ) -> bool {
+        // Check coercion before stripping the smiley so `Str:D(Rat)` is recognised
+        // as a coercion whose target `Str:D` is definite (the smiley is not a
+        // trailing smiley here, it is part of the coercion target). A coercion into
+        // a definite target requires an initializer in every language version.
+        if let Some((target, _source)) = parse_coercion_type(constraint) {
+            return self.constraint_requires_initializer_impl(target, true);
+        }
+        let (base_constraint, smiley) = strip_type_smiley(constraint);
+        if smiley == Some(":D") && direct_smiley_counts {
+            return true;
+        }
+        if let Some(subset) = self.registry().subsets.get(base_constraint) {
+            // In 6.e+, a subset of a definite type — or one whose predicate requires
+            // a defined value — requires an initializer (subset's own declared
+            // language version decides this, not the using scope's).
+            if language_version_is_6e_or_newer(&subset.version) {
+                if self.is_definite_constraint(&subset.base) {
+                    return true;
+                }
+                if subset
+                    .predicate
+                    .as_ref()
+                    .is_some_and(predicate_requires_defined)
+                {
+                    return true;
+                }
+            }
+            // In 6.c/6.d a subset never requires an initializer on its own, but a
+            // coercion-to-definite in its base still does; a plain `:D` base does
+            // not (definiteness is enforced only on assignment).
+            return self.constraint_requires_initializer_impl(&subset.base, false);
+        }
+        false
+    }
+
     pub(crate) fn is_definite_constraint(&self, constraint: &str) -> bool {
         let (base_constraint, smiley) = strip_type_smiley(constraint);
         if smiley == Some(":D") {
