@@ -3031,6 +3031,7 @@ impl Interpreter {
                 loop_var_wraps_element,
                 values_mode,
                 single_array_source,
+                single_array_source_local,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
@@ -3053,6 +3054,7 @@ impl Interpreter {
                     loop_var_wraps_element: *loop_var_wraps_element,
                     values_mode: *values_mode,
                     single_array_source: single_array_source.clone(),
+                    single_array_source_local: *single_array_source_local,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }

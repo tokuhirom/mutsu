@@ -273,9 +273,10 @@ impl Interpreter {
             }
             // Re-read the live source array. In the single-store model `@a` is
             // authoritative in its local slot (the env copy can be stale), so try
-            // the local slot first (bare and `@`-sigiled names), then env.
+            // the local slot first (the compiler-baked slot §1.5, else by name —
+            // bare and `@`-sigiled), then env.
             let live = self
-                .find_local_slot(code, name)
+                .resolve_local_slot(code, spec.single_array_source_local, name)
                 .or_else(|| self.find_local_slot(code, &format!("@{name}")))
                 .map(|s| self.locals[s].clone())
                 .or_else(|| self.env().get(name).cloned());

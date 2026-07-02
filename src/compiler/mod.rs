@@ -866,6 +866,18 @@ impl Compiler {
         }
     }
 
+    /// Bake the local slot for a `for @a` live-array source (§1.5). Mirrors the
+    /// VM's runtime resolution order (bare name, then the `@`-sigiled name), which
+    /// — since `code.locals` is built from `local_map` — is exactly this lookup.
+    /// `None` when the source is not a local (keeps the VM's env fallback).
+    fn for_single_array_source_local(&self, source: &Option<String>) -> Option<u32> {
+        let name = source.as_ref()?;
+        self.local_map
+            .get(name)
+            .or_else(|| self.local_map.get(&format!("@{name}")))
+            .copied()
+    }
+
     /// Bake the local slot for each per-element writeback target of a
     /// `for ($a, $b, $c) { ... }` loop (§1.5). `None` for a name that has no
     /// local slot at this point (`our`/global/undeclared), which keeps the

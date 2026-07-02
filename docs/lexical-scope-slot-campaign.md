@@ -130,12 +130,19 @@ broadcast = touches every slot with the name.
       byte-identical across the whole `make test` suite via a temporary
       `debug_assert_eq!` (never fired). (The pre-existing `@a does R` / `%h does R`
       `.name`-doesn't-resolve gap is unrelated — identical on `main`.) *(done)*
-- [ ] S9+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
+- [x] **S9 — `for @a` live-array source re-read.** The `ForLoop` opcode / `ForLoopSpec`
+      gain a compile-time `single_array_source_local: Option<u32>` (baked from
+      `local_map`, mirroring the VM's bare-then-`@`-sigiled resolution order). The
+      live-array continuation re-read (`vm_for_loop_dispatch.rs`) resolves the source
+      via the S7 `resolve_local_slot` helper with the baked slot instead of
+      `find_local_slot` by name, keeping the `@`-name + env fallback for a `None`
+      slot. Behavior-preserving today; verified byte-identical across the whole
+      `make test` suite via a temporary `debug_assert_eq!` (never fired). *(done)*
+- [ ] S10+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
       for-loop *container* source writeback (`write_back_container_source`,
       `write_back_for_topic_item`, resolved by the runtime-derived
-      `container_ref_var` name — a §1.3 concern); the `single_array_source`
-      live-array re-read (`vm_for_loop_dispatch.rs`); element/index-assign,
-      computed-attr, mixin, hyper writeback, and the ~80 `update_local_if_exists`
+      `container_ref_var` name — a §1.3 concern); element/index-assign,
+      computed-attr twigil cells, hyper writeback, and the ~80 `update_local_if_exists`
       callers generally — migrated onto `resolve_local_slot`/`write_local_slot_or_name`.
 - [ ] §1.4 flip + `pop_local_scope` restore.
 - [ ] §1.3 slot-indexed locals + drop BlockScope clone.
