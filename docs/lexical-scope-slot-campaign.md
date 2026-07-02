@@ -95,8 +95,6 @@ broadcast = touches every slot with the name.
         (`my $b := $a; ++$a` leaves `$b` stale) — a **pre-existing** bug (the prefix
         path lacks the `local_bind_pairs` propagation that the postfix RMW chokepoint
         has). Out of scope for the slot-baking; noted for a later fix.
-- [ ] S4 — `:=` bind: bake source/target slots at emit time instead of
-      `resolve_pending_alias_binds` name lookup.
 - [x] **S4 — param-slot precompute.** The compiler bakes the positional-param →
       local-slot map into `CompiledCode::param_local_slots` at emit time (from
       `local_map`, right after the param `alloc_local` loops, before the body can
@@ -116,12 +114,20 @@ broadcast = touches every slot with the name.
       (an `our`/global/undeclared target). Verified byte-identical to the old
       by-name resolution across the whole `make test` suite via a temporary
       `debug_assert_eq!` (never fired). *(done)*
-- [ ] S6+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
+- [x] **S7 — `%h<k>:delete` / `@a[i]:delete` container writeback.** `DeleteIndexNamed`
+      gains a compile-time `Option<u32>` slot; the four container write-back sites in
+      `vm_var_delete_ops.rs` (the fast hash-delete slot check, the `:=`-cell restore,
+      and the two post-delete slot syncs) now go through the new shared helpers
+      `resolve_local_slot` / `write_local_slot_or_name` (`vm_env_helpers.rs`) with the
+      baked slot instead of `find_local_slot` / `locals_set_by_name` by name. These
+      two helpers are the reusable slot-preferring primitives for the remaining leaf
+      sites. Behavior-preserving today. *(done)*
+- [ ] S8+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
       for-loop *container* source writeback (`write_back_container_source`,
-      `write_back_for_topic_item`) still resolves its source by the runtime-derived
-      `container_ref_var` name (a §1.3 dual-store concern, not a compile-time slot);
-      the `single_array_source` live-array re-read (`vm_for_loop_dispatch.rs`);
-      element/index-assign, computed-attr, mixin, delete, and the ~80
-      `update_local_if_exists` callers generally.
+      `write_back_for_topic_item`, resolved by the runtime-derived
+      `container_ref_var` name — a §1.3 concern); the `single_array_source`
+      live-array re-read (`vm_for_loop_dispatch.rs`); element/index-assign,
+      computed-attr, mixin, hyper writeback, and the ~80 `update_local_if_exists`
+      callers generally — migrated onto `resolve_local_slot`/`write_local_slot_or_name`.
 - [ ] §1.4 flip + `pop_local_scope` restore.
 - [ ] §1.3 slot-indexed locals + drop BlockScope clone.

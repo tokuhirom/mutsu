@@ -82,6 +82,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         var_name: &str,
+        slot: Option<u32>,
         idx: &Value,
     ) -> Option<Result<Value, RuntimeError>> {
         if !var_name.starts_with('%') || var_name == "%*ENV" {
@@ -110,7 +111,7 @@ impl Interpreter {
                     return None;
                 }
                 let local_slot = if strong_count == 2 {
-                    match self.find_local_slot(code, var_name) {
+                    match self.resolve_local_slot(code, slot, var_name) {
                         Some(slot) => Some(slot),
                         None => return None,
                     }
@@ -149,6 +150,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         // A whole-container `:=` bound variable (`my %g := %h`) holds a shared
         // `ContainerRef` cell. The delete logic operates on plain Hash/Array
@@ -168,14 +170,14 @@ impl Interpreter {
             let inner = cell.lock().unwrap().clone();
             self.env_mut().insert(var_name.clone(), inner);
         }
-        let result = self.exec_delete_index_named_op_inner(code, name_idx);
+        let result = self.exec_delete_index_named_op_inner(code, name_idx, slot);
         if let Some(cell) = bound_cell {
             if let Some(mutated) = self.env().get(&var_name).cloned() {
                 *cell.lock().unwrap() = mutated;
             }
             let cell_val = Value::ContainerRef(cell);
             self.env_mut().insert(var_name.clone(), cell_val.clone());
-            self.locals_set_by_name(code, &var_name, cell_val);
+            self.write_local_slot_or_name(code, slot, &var_name, cell_val);
         }
         result
     }
@@ -184,6 +186,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
@@ -201,7 +204,7 @@ impl Interpreter {
             _ => idx,
         };
         // Fast path for simple hash delete
-        if let Some(result) = self.try_fast_hash_delete(code, &var_name, &idx) {
+        if let Some(result) = self.try_fast_hash_delete(code, &var_name, slot, &idx) {
             self.stack.push(result?);
             return Ok(());
         }
@@ -398,7 +401,7 @@ impl Interpreter {
             let container = container.clone();
             let tagged = self.tag_container_metadata(container, info);
             self.env_mut().insert(var_name.to_string(), tagged.clone());
-            self.update_local_if_exists(code, &var_name, &tagged);
+            self.write_local_slot_or_name(code, slot, &var_name, tagged);
         }
         // Re-register container default if it was lost due to Arc::make_mut.
         // Use the pointer-keyed container_default saved before delete so we
@@ -415,7 +418,7 @@ impl Interpreter {
         // updated container after delete (Arc::make_mut may have changed
         // the container pointer).
         if let Some(container) = self.env().get(&var_name).cloned() {
-            self.locals_set_by_name(code, &var_name, container);
+            self.write_local_slot_or_name(code, slot, &var_name, container);
         }
         self.stack.push(result);
         Ok(())

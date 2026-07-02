@@ -280,8 +280,9 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                 }
                 self.compile_expr(delete_index);
+                let slot = self.local_map.get(&var_name).copied();
                 let name_idx = self.code.add_constant(Value::str(var_name));
-                self.code.emit(OpCode::DeleteIndexNamed(name_idx));
+                self.code.emit(OpCode::DeleteIndexNamed(name_idx, slot));
             } else if let Expr::MethodCall {
                 target: method_target,
                 name: method_name,

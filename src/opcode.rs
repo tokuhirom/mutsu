@@ -703,7 +703,12 @@ pub(crate) enum OpCode {
     /// bind RHS. A container-valued (Array/Hash) leaf is promoted to a
     /// `ContainerRef` cell — not kept as a traversal back-reference.
     IndexAutovivifyLazyTerminal,
-    DeleteIndexNamed(u32),
+    /// `%h<k>:delete` / `@a[i]:delete`. First field is the container variable's
+    /// name (const-pool index); the optional second is its compile-time-resolved
+    /// local slot (§1.5: the mutated container is written back through this exact
+    /// slot instead of a by-name `code.locals` search — docs/lexical-scope-slot-
+    /// campaign.md). `None` for a non-local / EVAL-carrier container.
+    DeleteIndexNamed(u32, Option<u32>),
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]
     /// Stack: [target, dim0, dim1, ..., dimN] → [result]

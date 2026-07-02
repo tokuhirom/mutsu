@@ -2733,9 +2733,9 @@ impl Interpreter {
                 self.exec_index_autovivify_lazy_op(true)?;
                 *ip += 1;
             }
-            OpCode::DeleteIndexNamed(name_idx) => {
+            OpCode::DeleteIndexNamed(name_idx, slot) => {
                 let pre = self.array_hash_attr_env_snapshot(code, *name_idx);
-                self.exec_delete_index_named_op(code, *name_idx)?;
+                self.exec_delete_index_named_op(code, *name_idx, *slot)?;
                 self.mirror_array_hash_attr_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }

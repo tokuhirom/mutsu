@@ -1011,6 +1011,40 @@ impl Interpreter {
         }
     }
 
+    /// Resolve a local slot for `name`, preferring the compile-time-baked `slot`
+    /// (scope-correct even once a name occupies several `code.locals` slots) and
+    /// falling back to the by-name search when the caller has no baked slot.
+    /// §1.5 helper — see docs/lexical-scope-slot-campaign.md.
+    pub(super) fn resolve_local_slot(
+        &self,
+        code: &CompiledCode,
+        slot: Option<u32>,
+        name: &str,
+    ) -> Option<usize> {
+        match slot {
+            Some(s) if (s as usize) < self.locals.len() => Some(s as usize),
+            // A baked slot that is out of range for this frame is treated as
+            // "not a local here" (do not fall back to a by-name match, which
+            // could pick a different variable's slot).
+            Some(_) => None,
+            None => self.find_local_slot(code, name),
+        }
+    }
+
+    /// Write `val` into the slot resolved by [`Self::resolve_local_slot`] when it
+    /// exists (no-op otherwise). §1.5 slot-preferring mirror write.
+    pub(super) fn write_local_slot_or_name(
+        &mut self,
+        code: &CompiledCode,
+        slot: Option<u32>,
+        name: &str,
+        val: Value,
+    ) {
+        if let Some(s) = self.resolve_local_slot(code, slot, name) {
+            self.locals[s] = val;
+        }
+    }
+
     pub(super) fn locals_get_by_name(&self, code: &CompiledCode, name: &str) -> Option<Value> {
         self.find_local_slot(code, name)
             .map(|slot| self.locals[slot].clone())
