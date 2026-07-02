@@ -172,30 +172,32 @@ impl Interpreter {
             .map(|(i, _)| i)
             .collect();
         if tied.len() > 1 {
+            // "Narrowness" tie-break: among equally-typed candidates, prefer the
+            // one whose params carry more narrowing constraints — a `where` clause
+            // OR a subset type (a subset is narrower than its base, and its
+            // nominal distance was resolved to the base above, so the two tie).
+            let narrowness = |def: &MethodDef| -> usize {
+                def.param_defs
+                    .iter()
+                    .filter(|p| {
+                        p.where_constraint.is_some()
+                            || p.type_constraint.as_deref().is_some_and(|tc| {
+                                self.registry()
+                                    .subsets
+                                    .contains_key(Self::constraint_base_for_distance(tc))
+                            })
+                    })
+                    .count()
+            };
             let best_where = tied
                 .iter()
-                .map(|&i| {
-                    all_matches[i]
-                        .1
-                        .param_defs
-                        .iter()
-                        .filter(|p| p.where_constraint.is_some())
-                        .count()
-                })
+                .map(|&i| narrowness(&all_matches[i].1))
                 .max()
                 .unwrap_or(0);
             let narrowed: Vec<usize> = tied
                 .iter()
                 .copied()
-                .filter(|&i| {
-                    all_matches[i]
-                        .1
-                        .param_defs
-                        .iter()
-                        .filter(|p| p.where_constraint.is_some())
-                        .count()
-                        == best_where
-                })
+                .filter(|&i| narrowness(&all_matches[i].1) == best_where)
                 .collect();
             if let Some(&i) = narrowed.first() {
                 best_idx = i;
@@ -264,8 +266,17 @@ impl Interpreter {
             }
             if let Some(tc) = &pd.type_constraint {
                 let base = Self::constraint_base_for_distance(tc);
+                // A subset's nominal distance is that of its ultimate base type
+                // (`subset T of Any` ranks like `Any`, not as an unknown type at
+                // distance 500 — which would wrongly lose to a bare `Any`). The
+                // subset's extra narrowness is applied as a tie-break below.
+                let resolved = if self.registry().subsets.contains_key(base) {
+                    self.resolve_subset_base_type(base)
+                } else {
+                    base.to_string()
+                };
                 if arg_idx < args.len() {
-                    total += Self::builtin_type_distance(base, &args[arg_idx]);
+                    total += Self::builtin_type_distance(&resolved, &args[arg_idx]);
                 }
             } else {
                 total += 1000;
