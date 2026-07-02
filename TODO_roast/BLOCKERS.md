@@ -60,13 +60,6 @@
 
 ## 2. 局所修正で進む残り
 
-### 2.1 `S04-declarations/my-6e.t`
-
-- **現状**: 108/109（test 61 のみ失敗）。
-- **論点**: 直近の一斉修正（block-local scope leak 修正、our-sub block-lexical capture 等）で
-  99→106→108 まで前進。残る test 61 は個別に最小再現を取って調査する。
-- **Canary**: `roast/S04-declarations/my-6e.t`
-
 ### 2.2 `S02-types/generics.t`
 
 - **現状**: 0/1（変化なし）。
@@ -315,15 +308,14 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t —
 「次に何をやるか」を 1 本だけ選ぶなら、順番はこう見るのが妥当。
 
 1. **`S06-operator-overloading/infix.t` の残り 7 件**（§2.4）— 局所修正で閉じられる可能性が高い。
-2. **`S04-declarations/my-6e.t` の test 61**（§2.1）— 残り 1 件。
-3. **`S17-lowlevel/lock.t` の race condition**（§6.1）— semaphore.t で確立した
+2. **`S17-lowlevel/lock.t` の race condition**（§6.1）— semaphore.t で確立した
    reconcile/writeback パターンを `Lock` にも適用できれば早い。
-4. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
+3. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
    splice.t / attributes.t / multislice hash 側の slot identity を前に進める。
    これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
-5. **`S03-metaops/hyper.t`**（§5）— plan mismatch の原因を先に特定してから、
+4. **`S03-metaops/hyper.t`**（§5）— plan mismatch の原因を先に特定してから、
    残りの失敗を分類して潰す。
-6. **`S09-subscript/slice.t`**（§4）— 24 件を種類ごとに分類し、lazy array 基盤工事の
+5. **`S09-subscript/slice.t`**（§4）— 24 件を種類ごとに分類し、lazy array 基盤工事の
    一環として進める。
 
 whitelist を目標にしない §7 の項目は、mutsu 側の一般改善のついでに触れるのはよいが、

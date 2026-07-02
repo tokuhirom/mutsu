@@ -564,6 +564,56 @@ impl Compiler {
                     });
                     self.code.patch_block_pre_end(idx);
                     self.code.patch_block_enter_end(idx);
+                    // Raku's `my` declarations are visible for the entire
+                    // enclosing block, even though the value is only
+                    // (re-)initialized when execution reaches the declaration
+                    // statement. mutsu's per-routine local-slot storage
+                    // (`alloc_local` reuses the slot for a same-named
+                    // declaration) means a block's own `my $x` only shadows a
+                    // same-named outer local once its VarDecl statement
+                    // actually runs — so a hoisted nested `sub` invoked (via
+                    // forward reference) before that point would wrongly
+                    // observe the OUTER value instead of an undefined one.
+                    // Reset such shadowing slots to Nil right at block entry,
+                    // before hoisting nested subs, so the shadow is visible
+                    // from the very start of the block (roast
+                    // S04-declarations/my-6e.t: "declared below the calling
+                    // position"). Scoped narrowly to blocks that actually
+                    // declare a nested `sub` (the only way to observe the
+                    // early value) and to plain `$`-sigil scalars, to avoid
+                    // clobbering a lingering type constraint that a sibling
+                    // block left on a reused `@`/`%` slot (e.g. `my Int @a`
+                    // followed later by an untyped `my @a` sharing the slot —
+                    // an unconditional Nil reset there would fail the typed
+                    // slot's type check; a real initializer's value normally
+                    // satisfies it, so only the premature reset is unsafe).
+                    if stmts.iter().any(|s| matches!(s, Stmt::SubDecl { .. })) {
+                        for s in stmts.iter() {
+                            if let Stmt::VarDecl {
+                                name,
+                                is_state: false,
+                                is_our: false,
+                                custom_traits,
+                                ..
+                            } = s
+                                // Plain lexical scalars store a bare, sigil-stripped
+                                // name (`my $x` -> "x"); `@`/`%`/`&` sigils and
+                                // twigils (`.`/`!`/`*`) keep their marker prefix.
+                                && !name.starts_with('@')
+                                && !name.starts_with('%')
+                                && !name.starts_with('&')
+                                && !name.starts_with('.')
+                                && !name.starts_with('!')
+                                && !name.starts_with('*')
+                                && !name.contains("::")
+                                && let Some(&slot) = self.local_map.get(name.as_str())
+                                && !custom_traits.iter().any(|(t, _)| t == "__constant")
+                            {
+                                self.code.emit(OpCode::LoadNil);
+                                self.code.emit(OpCode::SetLocal(slot));
+                            }
+                        }
+                    }
                     // Hoist sub declarations: register subs first so forward
                     // references like `&fa` work before the sub is textually
                     // declared (Raku sub hoisting semantics).
