@@ -304,8 +304,15 @@ impl Compiler {
         // Sigilless variables (BareWord) are not itemized. A scalar bound
         // (`:=`) to a Positional is NOT a container, so use the var-aware
         // opcode which skips itemization for bound scalars.
+        // A parenthesized single scalar (`@a = ($x)`) reaches here as
+        // `Grouped(Var)` — unwrap it since `($x)` itemizes exactly like `$x`
+        // (parens alone don't flatten; see roast S02-types/assigning-refs.t).
+        let unwrapped = match expr {
+            Expr::Grouped(inner) => inner.as_ref(),
+            other => other,
+        };
         if name.starts_with('@')
-            && let Expr::Var(var_name) = expr
+            && let Expr::Var(var_name) = unwrapped
         {
             let name_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::ItemizeVar(name_idx));

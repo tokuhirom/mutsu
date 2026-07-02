@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 7;
 
 sub l () { 1, 2 }
 
@@ -30,4 +30,12 @@ sub l () { 1, 2 }
     my $count = 0;
     for ($ref) { $count++ }
     is $count, 1, 'for ($scalar-holding-arrayref) iterates once';
+}
+
+# `@array = ($scalar)` still itemizes like `@array = $scalar` (parens alone
+# don't flatten): the Grouped wrapper must not defeat itemization elsewhere.
+{
+    my $arrayitem = [<a b c>];
+    my @array = ($arrayitem);
+    is +@array, 1, '@array = ($arrayitem) does not flatten the arrayitem';
 }
