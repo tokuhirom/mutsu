@@ -202,6 +202,23 @@ impl Interpreter {
                 }
             }
 
+            // A WhateverCode whose body references `$_` (`*.new($_)`) compiles its
+            // `*` placeholder to a synthetic `__wc_N` param so the element binds
+            // there, NOT to `$_`; the body's `$_` must stay the caller's topic
+            // (S02 "no scoping issues when using topic variables":
+            // `do { $_ = 42; (Int).map(*.new($_)) }` -> `Int.new(42)`). So for such
+            // a WhateverCode, instead of topicalizing `$_`/`_` to the element, hold
+            // them at the caller's outer topic for every iteration (re-set so a
+            // prior iteration's tail value can't leak into the next one's `$_`).
+            // A plain `*.abs` (no `$_` in the body) keeps `_` AS its placeholder
+            // param, so it must still receive the element — hence the
+            // `_`-is-not-a-param guard.
+            let is_whatever_code = matches!(
+                data.env.get("__mutsu_callable_type"),
+                Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+            ) && !data.params.iter().any(|p| p == "_");
+            let outer_topic = self.env.get("_").cloned();
+
             // CP-3 collapse: run the map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM, reusing one
             // register scope across all iterations). The closure returns the
@@ -227,8 +244,21 @@ impl Interpreter {
                             if let Some(p) = data.params.get(assumed_count) {
                                 vm.env_mut().insert(p.clone(), item.clone());
                             }
-                            vm.env_mut().insert(underscore.clone(), item.clone());
-                            vm.env_mut().insert(dollar_topic.clone(), item);
+                            if is_whatever_code {
+                                match &outer_topic {
+                                    Some(t) => {
+                                        vm.env_mut().insert(underscore.clone(), t.clone());
+                                        vm.env_mut().insert(dollar_topic.clone(), t.clone());
+                                    }
+                                    None => {
+                                        vm.env_mut().remove(&underscore);
+                                        vm.env_mut().remove(&dollar_topic);
+                                    }
+                                }
+                            } else {
+                                vm.env_mut().insert(underscore.clone(), item.clone());
+                                vm.env_mut().insert(dollar_topic.clone(), item);
+                            }
                         } else {
                             for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                                 if i + idx < list_items.len() {
