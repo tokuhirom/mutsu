@@ -32,8 +32,8 @@
   1. **第一級コンテナ / container identity** — 配列・ハッシュ要素・属性 slot の書き戻し、
      BEGIN/EVAL 時の lexical 永続化。
   2. **真の lazy 配列 / 無限列** — 残りは `S09-subscript/slice.t` のみ。
-  3. **dispatch / 演算子 sugar の desugar surface** — 残りは `hyper.t` のみ
-     （`assign.t` は完了、詳細は `news/2026-07.md`）。
+  3. **dispatch / 演算子 sugar の desugar surface** — 完了（`hyper.t`・`assign.t`
+     とも whitelist 済み、詳細は `news/2026-07.md`）。
   4. **並行実行基盤（S17）** — `Lock.protect` の race condition は解決済み
      （§6 参照）。残るのは `S17-supply/syntax.t` のみ。
 
@@ -308,42 +308,24 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 
 ## 5. dispatch cluster
 
-`wrap.t` / `dispatching.t` / `qualified.t` / `assign.t` は完了済み（詳細は
-`news/2026-06.md` / `news/2026-07.md`）。残るのは演算子 sugar が dispatch へ落ちるまでの
-surface のうち 1 ファイル。
+`wrap.t` / `dispatching.t` / `qualified.t` / `assign.t` / `hyper.t` は完了済み（詳細は
+`news/2026-06.md` / `news/2026-07.md`）。演算子 sugar が dispatch へ落ちるまでの surface は
+すべて whitelist 済みで、このクラスタに残件はない。
 
-### 5.1 `S03-metaops/hyper.t`
+### 5.1 `S03-metaops/hyper.t` — **DONE・whitelist 済み（2026-07-03）**
 
-- **現状（2026-07-03 再検証）**: 418/420、**2 失敗（test 407-408）**。test 362（custom
-  `infix:<+-*/>` の字句解析）は解消済み（`5+-*/2` = `(7 3 10 2.5)`、raku 一致）。残る
-  407-408 は両方とも `».+`/`».*` の **builtin-MRO all-candidates dispatch gap** に blocked
-  （下記参照）。`»."{名前式}"()`（動的メソッド名の compute-once）等の非 `.+`/`.*` 部分は動作。
-- **今回の進捗**: plan mismatch の原因は `<<op>>` 系ハイパーメタ演算子の閉じ `>>` 探索が
-  演算子文字列自体と重なるケース（`<<=>>>` = `<<`+`=>`+`>>`）で誤って最短一致を採用し、
-  以降のファイル全体を静かに打ち切っていたパーサバグだった（`hyper_concat.rs`）。
-  副次的に `set_shared_var`（`@`/`%` への env 書き込み全経路を通る、hyper 専用ではない
-  一般関数）が非スレッド文脈でも List→Array を無条件正規化しており、`:=` で束縛した
-  List の kind を最初の env sync で破壊していた一般バグも発見・修正。さらに `is_listy()`
-  （hyper 分配の判定）に `Value::Slip` が抜けており `|<1 2> >>xx>> 2` が per-element
-  分配されない不具合、および `.i`（postfix imaginary）が dotted 呼び出し
-  （`4.i`/`@a».i`、本来 X::Method::NotFound）と bare 呼び出し
-  （`4\i`/`(expr)i`/`@a»i`、`&postfix:<i>` 演算子）を区別できていなかった不具合を修正。
-  詳細は `TODO_roast/S03.md` の hyper.t エントリと news 参照。
-- **残り 3 件**: (1) test 362 ユーザ定義 custom infix 演算子とビルトイン演算子文字の
-  字句衝突（`infix:<+-*/>` の `*` が Whatever と誤認）、(2)(3) test 407-408 `».+`/`».*` の
-  all-candidates MRO dispatch 未実装（非 hyper の `.+`/`.*` でも同じ欠落を確認済み —
-  mutsu のビルトイン型は List/Any/Cool のような多段クラス階層に渡る重複メソッド定義を
-  モデル化していない、根本的なアーキテクチャギャップ。個別メソッドの候補数を
-  ハードコードするのは禁止されているテスト特化ハックそのものなので不可）。
-  いずれも局所修正では閉じない、それぞれ独立した深掘りが必要な項目。
-- **変更レイヤ**: `src/parser/expr/precedence_meta_ops/hyper_concat.rs`,
-  `src/vm/vm_hyper_method_ops.rs`, `src/vm/vm_hyper_ops.rs`,
-  `src/runtime/runtime_shared_vars.rs`, `src/parser/expr/postfix/loop_.rs`,
-  `src/parser/primary/number.rs`, `src/runtime/builtins_operators_fallback.rs`
-- **Next slice**: 残り 3 件はいずれも大きめの独立作業（custom operator の longest-match
-  字句解析、MRO 多重候補 dispatch の新規実装）。次に着手するなら (2)(3) の
-  all-candidates dispatch が最も汎用的（他の `».+`/`».*` 系テストにも波及しうる）が、
-  スコープはこのファイル単体では収まらない見込み。
+420/420 PASS。最後まで残っていた 2 件を解消:
+- **test 407**（`».+&`/`».*&` の builtin-MRO all-candidates dispatch）: `.+`/`.*` が
+  List/Any/Cool のような多段クラス階層をまたぐ全候補を呼べるよう VM 側で対応
+  （`vm_call_helpers.rs` / `vm_hyper_method_ops.rs` / `methods_call_helpers.rs`）。
+- **test 408**（atomicint のクロージャ内リセット書き戻し）: `subtest {...}` のような
+  ネストしたクロージャフレーム内での `$r = 0`（`atomicint` へのプレーン代入）が共有
+  atomic セルをリセットせず、次の `⚛++` が古い値を読んでいた。真因は
+  `reset_atomic_var_key` が現フレームの `env` でしか name→value_key マッピングを探さず、
+  かつ SetGlobal 経路（自由変数書き込み）にリセット呼び出しが無かったこと。
+  SetGlobal store に SetLocal と同じ atomic リセットを追加し、`reset_atomic_var_key` に
+  shared_vars フォールバックを追加（`vm_exec_dispatch.rs` / `runtime_shared_vars.rs`）。
+  回帰テスト＝`t/atomicint-closure-reset-writeback.t`。
 
 ---
 
@@ -409,12 +391,10 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowl
 1. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
    splice.t / attributes.t / multislice hash 側の slot identity を前に進める。
    これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
-2. **`S03-metaops/hyper.t`**（§5）— plan mismatch の原因を先に特定してから、
-   残りの失敗を分類して潰す。
-3. **`S09-subscript/slice.t`**（§4）— lazy array 起因の失敗は解消済み（2026-07-02）。
-   残り 6 件は test 35（nested slice adverbs、§3 と同根の大仕事）以外は独立した
+2. **`S09-subscript/slice.t`**（§4）— lazy array 起因の失敗は解消済み（2026-07-02）。
+   残り 4 件は test 35（nested slice adverbs、§3 と同根の大仕事）以外は独立した
    小粒な機能ギャップ。
-4. **`S17-supply/syntax.t`**（§6.2）— test 75/90 は個別に深掘りが必要（hard case）。
+3. **`S17-supply/syntax.t`**（§6.2）— test 75/90 は個別に深掘りが必要（hard case）。
 
 `S06-operator-overloading/infix.t`（§2.4）は残り 2 件（カンマ演算子オーバーロード）が
 深いアーキテクチャ変更を要するため、上記優先順から外した。

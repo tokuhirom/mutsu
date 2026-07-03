@@ -456,8 +456,24 @@ impl Interpreter {
 
     pub(crate) fn reset_atomic_var_key(&mut self, name: &str) {
         let name_key = format!("__mutsu_atomic_name::{name}");
-        let Some(Value::Str(value_key)) = self.env.remove(&name_key) else {
-            return;
+        // The name -> value_key mapping is authoritative in `shared_vars`
+        // (it survives across frames), while `env` only mirrors it for the
+        // frame that first registered the atomic. A plain assignment
+        // (`$r = 0`) executed inside a *nested* closure frame therefore may
+        // not find the mapping in this frame's `env` even though the shared
+        // cell still holds the atomic value. Fall back to `shared_vars` so the
+        // reset clears the shared cell in that case too; otherwise a later
+        // `atomic-fetch-add` reads the stale shared value instead of the
+        // freshly-assigned one (roast S03-metaops/hyper.t test 408).
+        let value_key = match self.env.remove(&name_key) {
+            Some(Value::Str(vk)) => vk,
+            _ => {
+                let shared = self.shared_vars.read().unwrap();
+                match shared.get(&name_key) {
+                    Some(Value::Str(vk)) => vk.clone(),
+                    _ => return,
+                }
+            }
         };
         let mut shared = self.shared_vars.write().unwrap();
         shared.remove(value_key.as_str());
