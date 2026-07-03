@@ -81,6 +81,10 @@ pub(crate) struct Registry {
     /// ambiguous (Raku resolves a qualified role call against the immediate
     /// roles of the consumer).
     pub(crate) class_direct_composed_roles: HashMap<String, Vec<String>>,
+    /// Roles composed PURELY via `does` (not `is Role` puns): class -> [role names].
+    /// A `does`-composed role provides methods but is NOT an MRO entry in Rakudo's
+    /// `.^mro_unhidden`, so this set is filtered out of that introspection.
+    pub(crate) class_does_only_roles: HashMap<String, Vec<String>>,
     /// Roles implicitly composed by enums: enum -> [role names].
     pub(crate) class_enum_roles: HashMap<String, Vec<String>>,
     /// Subs declared inside a class body: class -> (sub name -> value).
@@ -199,6 +203,33 @@ impl Registry {
             vec!["Any".to_string()]
         } else {
             explicit_parents
+        };
+        // Reorder so a `is Role` parent's class-ancestor sits immediately after the
+        // role (`class C3 is R3a is R3b` where `role R3a is C2` -> C3, R3a, C2, C1,
+        // R3b, ...  matching Rakudo's C3 linearization). Registration appends the
+        // role's class-ancestor at the END of `parents`, which would otherwise let a
+        // sibling parent (`is R3b`) sort ahead of it.
+        let parents: Vec<String> = {
+            let mut ordered: Vec<String> = Vec::new();
+            for p in &parents {
+                if !ordered.contains(p) {
+                    ordered.push(p.clone());
+                }
+                if let Some(rps) = self.role_parents.get(p) {
+                    for rp in rps {
+                        let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp).to_string();
+                        if self.classes.contains_key(&rp_base) && !ordered.contains(&rp_base) {
+                            ordered.push(rp_base);
+                        }
+                    }
+                }
+            }
+            for p in &parents {
+                if !ordered.contains(p) {
+                    ordered.push(p.clone());
+                }
+            }
+            ordered
         };
         let mut seqs: Vec<Vec<String>> = Vec::new();
         for parent in &parents {

@@ -220,21 +220,28 @@ impl Interpreter {
 
     /// MRO without hidden classes (no roles)
     pub(super) fn classhow_mro_unhidden_names(&mut self, invocant: &Value) -> Vec<String> {
-        let class_name = match invocant {
-            Value::Package(name) => name.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
-            other => value_type_name(other).to_string(),
-        };
         let mro = self.classhow_mro_names(invocant);
-        let hidden_parents: HashSet<String> = self
-            .registry()
-            .hidden_defer_parents
-            .get(&class_name)
-            .cloned()
-            .unwrap_or_default();
         let mut hidden_set: HashSet<String> = HashSet::new();
-        for hp in &hidden_parents {
-            hidden_set.insert(hp.clone());
+        // `hides P` is recorded per-declaring-class in `hidden_defer_parents`, so a
+        // parent hidden by an ANCESTOR (`class C3 hides C2; class C4 is C3`) must
+        // still be filtered from `C4.^mro_unhidden`. Aggregate the hidden-parent
+        // sets of every class along the MRO, not just the invocant's.
+        for cls in &mro {
+            if let Some(hps) = self.registry().hidden_defer_parents.get(cls) {
+                for hp in hps {
+                    hidden_set.insert(hp.clone());
+                }
+            }
+            // A `does`-composed role contributes methods but is NOT an MRO entry in
+            // Rakudo's `.^mro_unhidden` (unlike an `is Role` pun, which stays). mutsu
+            // keeps composed roles in `parents` for introspection, so drop the
+            // pure-`does` ones (tracked in `class_does_only_roles`); `is Role` puns
+            // are not recorded there.
+            if let Some(roles) = self.registry().class_does_only_roles.get(cls) {
+                for r in roles {
+                    hidden_set.insert(r.clone());
+                }
+            }
         }
         for hc in &self.registry().hidden_classes {
             hidden_set.insert(hc.clone());
