@@ -122,15 +122,15 @@ impl Value {
         }
     }
     pub fn set(s: HashSet<String>) -> Self {
-        Value::Set(Arc::new(SetData::new(s)), false)
+        Value::Set(crate::gc::Gc::new(SetData::new(s)), false)
     }
     pub fn set_hash(s: HashSet<String>) -> Self {
-        Value::Set(Arc::new(SetData::new(s)), true)
+        Value::Set(crate::gc::Gc::new(SetData::new(s)), true)
     }
     /// Create a Set with preserved original key types.
     pub fn set_typed(elements: HashSet<String>, original_keys: HashMap<String, Value>) -> Self {
         Value::Set(
-            Arc::new(SetData::with_original_keys(elements, original_keys)),
+            crate::gc::Gc::new(SetData::with_original_keys(elements, original_keys)),
             false,
         )
     }
@@ -140,7 +140,7 @@ impl Value {
         original_keys: HashMap<String, Value>,
     ) -> Self {
         Value::Set(
-            Arc::new(SetData::with_original_keys(elements, original_keys)),
+            crate::gc::Gc::new(SetData::with_original_keys(elements, original_keys)),
             true,
         )
     }
@@ -151,23 +151,29 @@ impl Value {
             .collect()
     }
     pub fn bag(m: HashMap<String, i64>) -> Self {
-        Value::Bag(Arc::new(BagData::new(Self::bag_counts_from_i64(m))), false)
+        Value::Bag(
+            crate::gc::Gc::new(BagData::new(Self::bag_counts_from_i64(m))),
+            false,
+        )
     }
     pub fn bag_hash(m: HashMap<String, i64>) -> Self {
-        Value::Bag(Arc::new(BagData::new(Self::bag_counts_from_i64(m))), true)
+        Value::Bag(
+            crate::gc::Gc::new(BagData::new(Self::bag_counts_from_i64(m))),
+            true,
+        )
     }
     /// Create a Bag from an arbitrary-precision BigInt count map.
     pub fn bag_big(m: HashMap<String, NumBigInt>) -> Self {
-        Value::Bag(Arc::new(BagData::new(m)), false)
+        Value::Bag(crate::gc::Gc::new(BagData::new(m)), false)
     }
     /// Create a BagHash from an arbitrary-precision BigInt count map.
     pub fn bag_hash_big(m: HashMap<String, NumBigInt>) -> Self {
-        Value::Bag(Arc::new(BagData::new(m)), true)
+        Value::Bag(crate::gc::Gc::new(BagData::new(m)), true)
     }
     /// Create a Bag with preserved original key types.
     pub fn bag_typed(counts: HashMap<String, i64>, original_keys: HashMap<String, Value>) -> Self {
         Value::Bag(
-            Arc::new(BagData::with_original_keys(
+            crate::gc::Gc::new(BagData::with_original_keys(
                 Self::bag_counts_from_i64(counts),
                 original_keys,
             )),
@@ -180,7 +186,7 @@ impl Value {
         original_keys: HashMap<String, Value>,
     ) -> Self {
         Value::Bag(
-            Arc::new(BagData::with_original_keys(counts, original_keys)),
+            crate::gc::Gc::new(BagData::with_original_keys(counts, original_keys)),
             false,
         )
     }
@@ -190,7 +196,7 @@ impl Value {
         original_keys: HashMap<String, Value>,
     ) -> Self {
         Value::Bag(
-            Arc::new(BagData::with_original_keys(
+            crate::gc::Gc::new(BagData::with_original_keys(
                 Self::bag_counts_from_i64(counts),
                 original_keys,
             )),
@@ -203,17 +209,17 @@ impl Value {
         original_keys: HashMap<String, Value>,
     ) -> Self {
         Value::Bag(
-            Arc::new(BagData::with_original_keys(counts, original_keys)),
+            crate::gc::Gc::new(BagData::with_original_keys(counts, original_keys)),
             true,
         )
     }
     pub fn mix(mut m: HashMap<String, f64>) -> Self {
         m.retain(|_, weight| *weight != 0.0);
-        Value::Mix(Arc::new(MixData::new(m)), false)
+        Value::Mix(crate::gc::Gc::new(MixData::new(m)), false)
     }
     pub fn mix_hash(mut m: HashMap<String, f64>) -> Self {
         m.retain(|_, weight| *weight != 0.0);
-        Value::Mix(Arc::new(MixData::new(m)), true)
+        Value::Mix(crate::gc::Gc::new(MixData::new(m)), true)
     }
     pub fn mix_with_original_keys(
         mut weights: HashMap<String, f64>,
@@ -221,7 +227,7 @@ impl Value {
     ) -> Self {
         weights.retain(|_, weight| *weight != 0.0);
         Value::Mix(
-            Arc::new(MixData::with_original_keys(weights, original_keys)),
+            crate::gc::Gc::new(MixData::with_original_keys(weights, original_keys)),
             false,
         )
     }
@@ -231,7 +237,7 @@ impl Value {
     ) -> Self {
         weights.retain(|_, weight| *weight != 0.0);
         Value::Mix(
-            Arc::new(MixData::with_original_keys(weights, original_keys)),
+            crate::gc::Gc::new(MixData::with_original_keys(weights, original_keys)),
             true,
         )
     }

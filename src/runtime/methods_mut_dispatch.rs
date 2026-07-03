@@ -1497,7 +1497,10 @@ impl Interpreter {
                 }
             }
             let new_elements: std::collections::HashSet<String> = elements.into_iter().collect();
-            let new_set = Value::Set(Arc::new(crate::value::SetData::new(new_elements)), true);
+            let new_set = Value::Set(
+                crate::gc::Gc::new(crate::value::SetData::new(new_elements)),
+                true,
+            );
             self.env.insert(target_var.to_string(), new_set);
             return Ok(
                 if grabbed.len() == 1 && args.is_empty() && method == "grab" {
@@ -1613,7 +1616,10 @@ impl Interpreter {
                 }
             }
             // Update the original variable
-            let new_bag = Value::Bag(Arc::new(crate::value::BagData::new(remaining)), true);
+            let new_bag = Value::Bag(
+                crate::gc::Gc::new(crate::value::BagData::new(remaining)),
+                true,
+            );
             self.env.insert(target_var.to_string(), new_bag);
             return Ok(if grabbed.len() == 1 && args.is_empty() {
                 grabbed.into_iter().next().unwrap()
@@ -1695,7 +1701,7 @@ impl Interpreter {
                 }
             }
             // Update the original variable
-            let new_mix = Value::Mix(Arc::new(remaining), true);
+            let new_mix = Value::Mix(crate::gc::Gc::new(remaining), true);
             self.env.insert(target_var.to_string(), new_mix);
             return Ok(if grabbed.len() == 1 && args.is_empty() {
                 grabbed.into_iter().next().unwrap()

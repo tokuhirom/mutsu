@@ -940,11 +940,11 @@ pub enum Value {
     BigRat(Box<NumBigInt>, Box<NumBigInt>),
     Complex(f64, f64),
     /// Set (immutable) or SetHash (mutable). The bool is `true` for mutable (SetHash).
-    Set(Arc<SetData>, bool),
+    Set(crate::gc::Gc<SetData>, bool),
     /// Bag (immutable) or BagHash (mutable). The bool is `true` for mutable (BagHash).
-    Bag(Arc<BagData>, bool),
+    Bag(crate::gc::Gc<BagData>, bool),
     /// Mix (immutable) or MixHash (mutable). The bool is `true` for mutable (MixHash).
-    Mix(Arc<MixData>, bool),
+    Mix(crate::gc::Gc<MixData>, bool),
     CompUnitDepSpec {
         short_name: Symbol,
     },

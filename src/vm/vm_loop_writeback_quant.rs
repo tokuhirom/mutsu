@@ -25,7 +25,7 @@ impl Interpreter {
                 } else {
                     b.counts.insert(key, count);
                 }
-                Value::Bag(std::sync::Arc::new(b), true)
+                Value::Bag(crate::gc::Gc::new(b), true)
             }
             Some(Value::Mix(mix, true)) => {
                 let weight = Self::mix_assignment_weight(value)?;
@@ -35,7 +35,7 @@ impl Interpreter {
                 } else {
                     m.insert(key, weight);
                 }
-                Value::Mix(std::sync::Arc::new(m), true)
+                Value::Mix(crate::gc::Gc::new(m), true)
             }
             Some(Value::Set(set, true)) => {
                 let mut s = (*set).clone();
@@ -44,7 +44,7 @@ impl Interpreter {
                 } else {
                     s.elements.remove(&key);
                 }
-                Value::Set(std::sync::Arc::new(s), true)
+                Value::Set(crate::gc::Gc::new(s), true)
             }
             _ => return Ok(()),
         };
