@@ -174,14 +174,6 @@ impl<T: Trace + 'static> Gc<T> {
         unsafe { std::ptr::addr_of!((*box_ptr).value) }
     }
 
-    /// Clone this handle as a type-erased [`ErasedGc`] for a [`Trace`] visitor /
-    /// the candidate buffer. Does NOT bump the GC-visible strong count (this is
-    /// a collector-facing view, not a new user handle) — matching how the
-    /// candidate buffer already retains an erased `Arc` clone.
-    pub(crate) fn clone_erased(&self) -> ErasedGc {
-        self.inner.clone()
-    }
-
     /// This node's current [`Color`].
     pub(crate) fn color(&self) -> Color {
         Color::from_u8(self.inner.header.color.load(Ordering::Relaxed))
@@ -217,11 +209,10 @@ impl<T: Trace + 'static> Gc<T> {
         this.inner.header.strong.load(Ordering::Relaxed)
     }
 
-    /// `Arc::as_ptr` analog: a raw pointer to the *value* (past the node
-    /// header), matching what `Arc::as_ptr` yields for a plain `Arc<T>`.
-    pub(crate) fn as_ptr(this: &Gc<T>) -> *const T {
-        &this.inner.value as *const T
-    }
+    // (`as_ptr` is defined once above, in raw-`addr_of` form — the earlier
+    // reference-forming variant from the parallel #4113 branch was dropped in
+    // the #4113/#4114 merge-dedup so `gc_contents_mut`'s `*mut` write stays
+    // Stacked-Borrows clean.)
 
     /// Offer this node to the candidate buffer as a possible cycle root,
     /// bypassing the `MUTSU_GC` gate. Used by tests and (later) by an explicit
@@ -270,23 +261,10 @@ impl<T: Trace + 'static> std::ops::Deref for Gc<T> {
     }
 }
 
-// The following delegate to the pointee, mirroring `Arc<T>`'s blanket impls, so
-// `Gc<T>` is a drop-in for `Arc<T>` inside a `#[derive(...)]`d `Value`: the
-// container-migration swap changes only the field type, not every derive.
-impl<T: Trace + std::fmt::Debug + 'static> std::fmt::Debug for Gc<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.inner.value, f)
-    }
-}
-
-impl<T: Trace + PartialEq + 'static> PartialEq for Gc<T> {
-    fn eq(&self, other: &Self) -> bool {
-        // Value equality, matching `Arc<T>`'s `PartialEq` (`**a == **b`), not
-        // pointer identity — mutsu's `Value` equality compares contents.
-        self.inner.value == other.inner.value
-    }
-}
-
+// `Eq`/`Hash` delegate to the pointee, mirroring `Arc<T>`'s blanket impls, so
+// `Gc<T>` is a drop-in for `Arc<T>` inside a `#[derive(...)]`d `Value`. (`Debug`
+// and `PartialEq` are defined once below — the #4113/#4114 merge kept both
+// copies; the duplicate delegating versions were removed here.)
 impl<T: Trace + Eq + 'static> Eq for Gc<T> {}
 
 impl<T: Trace + std::hash::Hash + 'static> std::hash::Hash for Gc<T> {
@@ -728,14 +706,14 @@ mod tests {
     }
 
     #[test]
-    fn as_ptr_and_clone_erased_reference_the_same_node() {
+    fn as_ptr_and_erased_reference_the_same_node() {
         let gc = Gc::new(IntLeaf(9));
         // as_ptr points at the value inside the node.
         let p = Gc::as_ptr(&gc);
         assert_eq!(unsafe { (*p).0 }, 9);
-        // clone_erased shares the node without bumping the GC-visible count.
+        // erased shares the node without bumping the GC-visible count.
         let before = gc.strong_count();
-        let _erased = gc.clone_erased();
+        let _erased = gc.erased();
         assert_eq!(
             gc.strong_count(),
             before,
