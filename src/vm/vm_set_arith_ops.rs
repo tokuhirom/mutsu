@@ -61,8 +61,37 @@ impl Interpreter {
                 Value::bag(a)
             }
         };
-        self.stack
-            .push(runtime::with_set_mutability(result, result_mutable));
+        let result = runtime::with_set_mutability(result, result_mutable);
+        // A `(+)` of two instances of the SAME Bag subclass (`class Foo is Bag`)
+        // returns that subclass, not a plain Bag (roast S02-types/bag.t #252,
+        // rakudo#5190). Baggy subclass instances carry their real Bag in the
+        // `__baggy_data__` attribute (see `construct_baggy_instance`); rewrap the
+        // finished Bag-level union under the same class so both `isa-ok` and the
+        // delegated element access (`$u<k>`, `.elems`, `.keys`) keep working.
+        let result = match (&left, &right) {
+            (
+                Value::Instance {
+                    class_name: lc,
+                    attributes: la,
+                    ..
+                },
+                Value::Instance {
+                    class_name: rc,
+                    attributes: ra,
+                    ..
+                },
+            ) if result_level < 2
+                && lc == rc
+                && la.contains_key("__baggy_data__")
+                && ra.contains_key("__baggy_data__") =>
+            {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("__baggy_data__".to_string(), result);
+                Value::make_instance(*lc, attrs)
+            }
+            _ => result,
+        };
+        self.stack.push(result);
         Ok(())
     }
 
@@ -128,6 +157,15 @@ impl Interpreter {
     /// Coerce a value to a Bag (HashMap<String, i64>)
     fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
         match val {
+            // A Bag/Set/Mix subclass instance (`class Foo is Bag`) carries its real
+            // quantified collection in `__baggy_data__`; unwrap it so a set/baggy op
+            // sees the elements, not the opaque instance as a single element.
+            Value::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
+                match attributes.as_map().get("__baggy_data__") {
+                    Some(inner) => Self::coerce_to_bag(inner),
+                    None => HashMap::new(),
+                }
+            }
             Value::Bag(b, _) => crate::runtime::utils::bag_counts_as_i64(&b.counts),
             Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
             Value::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
@@ -168,6 +206,12 @@ impl Interpreter {
     /// Coerce a value to a Mix (HashMap<String, f64>)
     fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
         match val {
+            Value::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
+                match attributes.as_map().get("__baggy_data__") {
+                    Some(inner) => Self::coerce_to_mix(inner),
+                    None => HashMap::new(),
+                }
+            }
             Value::Mix(m, _) => m.weights.clone(),
             Value::Bag(b, _) => b
                 .iter()
