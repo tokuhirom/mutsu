@@ -176,6 +176,68 @@ fn log_modes_emit_expected_lines() {
     );
 }
 
+/// Mutual cycles through user-class `is rw` attributes — the motivating case for
+/// the object-graph collector (§11 / `WeakGc` layer 3a). Two `Instance`s point at
+/// each other through attribute containers; dropping both must reclaim the cycle,
+/// while a *live* object cycle held by a lexical must survive an aggressive collect
+/// and stay traversable (`.next.name` round-trips).
+#[test]
+fn object_attribute_cycles_reclaimed_and_live_ones_survive() {
+    let src = r#"
+        class Node { has $.name is rw; has $.next is rw; }
+        # A live cycle, reachable through $keeper-a/$keeper-b for the whole run.
+        my $keeper-a = Node.new(name => "A");
+        my $keeper-b = Node.new(name => "B");
+        $keeper-a.next = $keeper-b;
+        $keeper-b.next = $keeper-a;
+        # Dropped mutual cycles: collected mid-run under the safepoint stress mode.
+        for ^30 {
+            my $x = Node.new(name => "x");
+            my $y = Node.new(name => "y");
+            $x.next = $y;
+            $y.next = $x;
+        }
+        say $keeper-a.next.name;        # B
+        say $keeper-b.next.name;        # A
+        say $keeper-a.next.next.name;   # A (round-trip proves the live cycle intact)
+        say "done";
+    "#;
+
+    let (out, err, ok) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_EVERY_SAFEPOINT", "1"),
+            ("MUTSU_GC_VERIFY", "1"),
+            ("MUTSU_VM_STATS", "1"),
+        ],
+    );
+
+    assert!(ok, "object-cycle run must not crash; stderr:\n{err}");
+    assert_eq!(
+        out, "B\nA\nA\ndone\n",
+        "live object cycle was corrupted or over-collected; stderr:\n{err}"
+    );
+    assert!(
+        !err.contains("VERIFY FAIL"),
+        "collector verify reported a violation:\n{err}"
+    );
+
+    let reclaimed = err
+        .lines()
+        .find(|l| l.contains("[mutsu vm-stats] gc:"))
+        .and_then(|l| {
+            l.split_whitespace()
+                .find_map(|tok| tok.strip_prefix("reclaimed_nodes="))
+        })
+        .and_then(|n| n.parse::<u64>().ok())
+        .unwrap_or(0);
+    assert!(
+        reclaimed > 0,
+        "mutual object-attribute cycles must be reclaimed; reclaimed_nodes={reclaimed}\nstderr:\n{err}"
+    );
+}
+
 /// A program that repeatedly builds self-referential / mutual cycles and drops
 /// them must actually get those cycles reclaimed (not just leak), and survive.
 #[test]
