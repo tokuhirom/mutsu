@@ -644,7 +644,7 @@ impl Interpreter {
     /// caller falls back to the (non-atomic) smart path.
     pub(super) fn atomic_container_incdec(
         &mut self,
-        arc: &std::sync::Arc<std::sync::Mutex<Value>>,
+        arc: &crate::gc::Gc<std::sync::Mutex<Value>>,
         name: &str,
         increment: bool,
         post: bool,

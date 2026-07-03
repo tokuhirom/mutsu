@@ -16,6 +16,8 @@
 //! `Junction` is likewise not in the design doc's candidate list and is
 //! excluded.
 
+use std::sync::Mutex;
+
 use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
 use super::{
@@ -34,14 +36,14 @@ impl Value {
     /// edge that bypasses the Gc graph until it too migrates — acceptable while
     /// the collector is off (design doc §3.1's wave phasing).
     pub(crate) fn gc_trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
-        // Only migrated (`Gc<T>`) container variants yield a child; more arms
-        // land as further types migrate (§11 5d: `ContainerRef`, ...).
+        // Only migrated (`Gc<T>`) container variants yield a child.
         match self {
             Value::Hash(data) => visit(&data.erased()),
             Value::Array(data, _) => visit(&data.erased()),
             Value::Set(data, _) => visit(&data.erased()),
             Value::Bag(data, _) => visit(&data.erased()),
             Value::Mix(data, _) => visit(&data.erased()),
+            Value::ContainerRef(cell) => visit(&cell.erased()),
             _ => {}
         }
     }
@@ -76,6 +78,17 @@ impl Trace for MixData {
             for v in keys.values() {
                 v.gc_trace(visit);
             }
+        }
+    }
+}
+
+impl Trace for Mutex<Value> {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        // The bind cell's inner value is the single edge out of a `ContainerRef`
+        // node — this is what makes self-binding cycles (`%h<k> := %h`,
+        // `@a[0] := @a`) reachable through the Gc graph.
+        if let Ok(inner) = self.lock() {
+            inner.gc_trace(visit);
         }
     }
 }
@@ -280,7 +293,7 @@ mod tests {
 
     #[test]
     fn container_ref_visits_its_locked_value() {
-        let cell = Value::ContainerRef(Arc::new(std::sync::Mutex::new(Value::Int(7))));
+        let cell = Value::ContainerRef(crate::gc::Gc::new(std::sync::Mutex::new(Value::Int(7))));
         let mut visitor = CountingVisitor { count: 0 };
         cell.visit_gc_children(&mut visitor);
         assert_eq!(visitor.count, 1);

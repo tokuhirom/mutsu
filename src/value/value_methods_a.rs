@@ -243,7 +243,7 @@ impl Value {
 
     /// Create a new shared container holding this value.
     pub fn into_container_ref(self) -> Value {
-        Value::ContainerRef(Arc::new(Mutex::new(self)))
+        Value::ContainerRef(crate::gc::Gc::new(Mutex::new(self)))
     }
 
     /// Assign `val` into an array/hash element `slot`. When the slot already
@@ -340,7 +340,7 @@ impl Value {
                 Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
                 Some(elem @ (Value::Array(..) | Value::Hash(..))) => Some(elem.clone()),
                 Some(elem) => {
-                    let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+                    let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))
                 }
@@ -388,7 +388,7 @@ impl Value {
                     Some(elem.clone())
                 }
                 Some(elem) => {
-                    let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+                    let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))
                 }

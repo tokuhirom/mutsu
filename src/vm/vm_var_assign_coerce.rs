@@ -508,7 +508,7 @@ impl Interpreter {
             Value::ContainerRef(arc) => arc.clone(),
             _ => match self.env().get(&resolved_source) {
                 Some(Value::ContainerRef(arc)) => arc.clone(),
-                _ => std::sync::Arc::new(std::sync::Mutex::new(val.clone())),
+                _ => crate::gc::Gc::new(std::sync::Mutex::new(val.clone())),
             },
         };
         let container = Value::ContainerRef(cell);

@@ -1279,7 +1279,8 @@ impl Interpreter {
                             let cell = match self.env().get(&var_name) {
                                 Some(Value::ContainerRef(cell)) => cell.clone(),
                                 _ => {
-                                    let cell = Arc::new(std::sync::Mutex::new(value.clone()));
+                                    let cell =
+                                        crate::gc::Gc::new(std::sync::Mutex::new(value.clone()));
                                     bind_source_install =
                                         Some((var_name, Value::ContainerRef(cell.clone())));
                                     cell
@@ -1317,7 +1318,8 @@ impl Interpreter {
                             let cell = match self.env().get(&var_name) {
                                 Some(Value::ContainerRef(cell)) => cell.clone(),
                                 _ => {
-                                    let cell = Arc::new(std::sync::Mutex::new(value.clone()));
+                                    let cell =
+                                        crate::gc::Gc::new(std::sync::Mutex::new(value.clone()));
                                     bind_source_install =
                                         Some((var_name, Value::ContainerRef(cell.clone())));
                                     cell
@@ -1410,7 +1412,7 @@ impl Interpreter {
                     let cell = match self.env().get(&source_var) {
                         Some(Value::ContainerRef(cell)) => cell.clone(),
                         _ => {
-                            let cell = Arc::new(std::sync::Mutex::new(value.clone()));
+                            let cell = crate::gc::Gc::new(std::sync::Mutex::new(value.clone()));
                             bind_source_install =
                                 Some((source_var, Value::ContainerRef(cell.clone())));
                             cell

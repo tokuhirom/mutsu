@@ -311,7 +311,7 @@ impl PartialEq for Value {
             // ContainerRef: deref and compare inner values.
             // Check Arc pointer identity first to avoid deadlock on same-Arc comparison.
             (Value::ContainerRef(a), Value::ContainerRef(b)) => {
-                if Arc::ptr_eq(a, b) {
+                if crate::gc::Gc::ptr_eq(a, b) {
                     return true;
                 }
                 let a_val = a.lock().unwrap().clone();

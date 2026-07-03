@@ -294,7 +294,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
 /// fall back to the normal value identity rules.
 fn capture_elem_identical(a: &Value, b: &Value) -> bool {
     match (a, b) {
-        (Value::ContainerRef(x), Value::ContainerRef(y)) => std::sync::Arc::ptr_eq(x, y),
+        (Value::ContainerRef(x), Value::ContainerRef(y)) => crate::gc::Gc::ptr_eq(x, y),
         (Value::ContainerRef(_), _) | (_, Value::ContainerRef(_)) => false,
         _ => values_identical(a, b),
     }

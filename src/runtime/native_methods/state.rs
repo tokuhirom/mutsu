@@ -600,7 +600,7 @@ fn tcp_stream_map() -> &'static TcpStreamMap {
 
 pub(in crate::runtime) fn register_tcp_stream(conn_id: u64, stream: TcpStream) {
     if let Ok(mut map) = tcp_stream_map().lock() {
-        map.insert(conn_id, Arc::new(std::sync::Mutex::new(stream)));
+        map.insert(conn_id, std::sync::Arc::new(std::sync::Mutex::new(stream)));
     }
 }
 

@@ -132,7 +132,7 @@ impl Interpreter {
         if let (Some(Value::ContainerRef(l)), Some(Value::ContainerRef(r))) = (
             self.raw_element_at_encoded(left_source),
             self.raw_element_at_encoded(right_source),
-        ) && Arc::ptr_eq(&l, &r)
+        ) && crate::gc::Gc::ptr_eq(&l, &r)
         {
             self.stack.push(Value::Bool(true));
             return;
@@ -162,7 +162,7 @@ impl Interpreter {
         // checked here, not in `values_identical`, which `===` uses to compare
         // *values* and therefore must read through a cell.)
         match (a, b) {
-            (Value::ContainerRef(x), Value::ContainerRef(y)) => return Arc::ptr_eq(x, y),
+            (Value::ContainerRef(x), Value::ContainerRef(y)) => return crate::gc::Gc::ptr_eq(x, y),
             (Value::ContainerRef(cell), other) | (other, Value::ContainerRef(cell)) => {
                 // A `:=`-bound hash element is promoted to a `ContainerRef` cell
                 // (Phase 2 Stage 1). The OTHER side may still be a HashEntryRef
@@ -175,7 +175,7 @@ impl Interpreter {
                     if let Some(Value::ContainerRef(elem_cell)) =
                         unsafe { (*ptr).get(key.as_str()) }
                     {
-                        return Arc::ptr_eq(cell, elem_cell);
+                        return crate::gc::Gc::ptr_eq(cell, elem_cell);
                     }
                 }
                 return false;

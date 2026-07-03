@@ -941,7 +941,7 @@ impl Interpreter {
                                 })
                                 .filter(|s| s.starts_with('@') || s.starts_with('%'))
                         {
-                            bound_value = Value::ContainerRef(std::sync::Arc::new(
+                            bound_value = Value::ContainerRef(crate::gc::Gc::new(
                                 std::sync::Mutex::new(bound_value),
                             ));
                             rw_bindings.push((pd.name.clone(), source_name));
@@ -1679,9 +1679,9 @@ impl Interpreter {
                             && let Some(source_name) = &source_name
                             && (source_name.starts_with('@') || source_name.starts_with('%'))
                         {
-                            value = Value::ContainerRef(std::sync::Arc::new(
-                                std::sync::Mutex::new(value),
-                            ));
+                            value = Value::ContainerRef(crate::gc::Gc::new(std::sync::Mutex::new(
+                                value,
+                            )));
                             rw_bindings.push((pd.name.clone(), source_name.clone()));
                         }
                         self.bind_param_value(&pd.name, value);
