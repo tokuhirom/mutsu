@@ -97,6 +97,19 @@ struct GcHeader {
     buffered: AtomicBool,
 }
 
+impl GcHeader {
+    /// Header for a brand-new single-handle live node (strong 1, `Black`,
+    /// unbuffered). Shared by `Gc::new` and the copy-on-write clone in
+    /// `Gc::make_mut`.
+    fn fresh() -> GcHeader {
+        GcHeader {
+            strong: AtomicUsize::new(1),
+            color: AtomicU8::new(Color::Black as u8),
+            buffered: AtomicBool::new(false),
+        }
+    }
+}
+
 /// Heap allocation backing a [`Gc<T>`]: the node header plus the value. `T` is
 /// `?Sized` so `GcBox<dyn Trace>` (the erased form) is nameable.
 pub(crate) struct GcBox<T: ?Sized> {
@@ -122,14 +135,26 @@ impl<T: Trace + 'static> Gc<T> {
     pub(crate) fn new(value: T) -> Gc<T> {
         Gc {
             inner: Arc::new(GcBox {
-                header: GcHeader {
-                    strong: AtomicUsize::new(1),
-                    color: AtomicU8::new(Color::Black as u8),
-                    buffered: AtomicBool::new(false),
-                },
+                header: GcHeader::fresh(),
                 value,
             }),
         }
+    }
+
+    /// Two handles point at the same node (`Arc::ptr_eq`). The GC container
+    /// migration (§11 step 5) needs this to preserve mutsu's container identity
+    /// checks that currently use `Arc::ptr_eq` on the backing `Arc`.
+    pub(crate) fn ptr_eq(a: &Gc<T>, b: &Gc<T>) -> bool {
+        Arc::ptr_eq(&a.inner, &b.inner)
+    }
+
+    /// Mutable access to the pointee IFF this is the only live handle to the node
+    /// (no other `Gc` handle and — when GC is enabled — no retained candidate
+    /// buffer clone). Returns `None` when the node is shared. Mirrors
+    /// `Arc::get_mut`, the non-cloning half of the `Arc::make_mut` sites the
+    /// container migration replaces.
+    pub(crate) fn get_mut(&mut self) -> Option<&mut T> {
+        Arc::get_mut(&mut self.inner).map(|b| &mut b.value)
     }
 
     /// The GC-visible strong count (live `Gc` handles to this node).
@@ -154,6 +179,37 @@ impl<T: Trace + 'static> Gc<T> {
     #[cfg(test)]
     pub(crate) fn buffer_as_candidate(&self) {
         buffer_candidate(self.inner.clone());
+    }
+}
+
+impl<T: Trace + Clone + 'static> Gc<T> {
+    /// Copy-on-write mutable access, mirroring `Arc::make_mut` (which the
+    /// container migration, §11 step 5, replaces at every `Arc::make_mut`
+    /// site on `ArrayData`/`HashData`/...).
+    ///
+    /// If this is the only live handle, returns `&mut` to the existing value.
+    /// Otherwise the value is cloned into a *fresh single-handle node* and this
+    /// handle is retargeted to it — so the write is private to this handle and
+    /// the previously-shared node is untouched.
+    ///
+    /// GC-strong accounting: the fresh node starts at 1, and the old node loses
+    /// this handle's contribution (it stays alive for the other handles). This
+    /// keeps the GC-visible strong count consistent with the actual handle
+    /// distribution even though the retarget goes through the backing `Arc`
+    /// directly rather than `Gc::clone`/`Gc::drop`.
+    pub(crate) fn make_mut(&mut self) -> &mut T {
+        if Arc::get_mut(&mut self.inner).is_none() {
+            // Shared: this handle is moving off the old node onto a fresh copy.
+            self.inner.header.strong.fetch_sub(1, Ordering::Relaxed);
+            let cloned = self.inner.value.clone();
+            self.inner = Arc::new(GcBox {
+                header: GcHeader::fresh(),
+                value: cloned,
+            });
+        }
+        &mut Arc::get_mut(&mut self.inner)
+            .expect("unique after copy-on-write")
+            .value
     }
 }
 
@@ -359,5 +415,54 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Gc<Leaf>>();
         assert_send_sync::<ErasedGc>();
+    }
+
+    /// A `Clone` leaf carrying an integer payload, for the mutation-API tests.
+    #[derive(Clone)]
+    struct IntLeaf(i64);
+    impl Trace for IntLeaf {
+        fn trace(&self, _visit: &mut dyn FnMut(&ErasedGc)) {}
+    }
+
+    #[test]
+    fn get_mut_is_some_when_unique_none_when_shared() {
+        let mut gc = Gc::new(IntLeaf(1));
+        assert!(gc.get_mut().is_some(), "unique handle is mutable");
+        gc.get_mut().unwrap().0 = 42;
+        assert_eq!(gc.0, 42);
+
+        let shared = gc.clone();
+        assert!(gc.get_mut().is_none(), "shared handle is not mutable");
+        drop(shared);
+        assert!(gc.get_mut().is_some(), "unique again after the clone drops");
+    }
+
+    #[test]
+    fn make_mut_copies_on_write_and_leaves_sharers_untouched() {
+        let mut a = Gc::new(IntLeaf(10));
+        let b = a.clone(); // shared: a,b same node
+        assert!(Gc::ptr_eq(&a, &b));
+        *a.make_mut() = IntLeaf(20); // COW
+        assert!(!Gc::ptr_eq(&a, &b), "writer got a private copy");
+        assert_eq!(a.0, 20);
+        assert_eq!(b.0, 10, "the other sharer is unchanged");
+        // The fresh node is a single-handle live node.
+        assert_eq!(a.strong_count(), 1);
+        assert_eq!(a.color(), Color::Black);
+        // `b` retained its handle to the old node.
+        assert_eq!(b.strong_count(), 1);
+    }
+
+    #[test]
+    fn make_mut_is_in_place_for_a_truly_unique_handle() {
+        let mut a = Gc::new(IntLeaf(5));
+        let ptr_before = a.inner.as_ref() as *const GcBox<IntLeaf>;
+        *a.make_mut() = IntLeaf(6);
+        let ptr_after = a.inner.as_ref() as *const GcBox<IntLeaf>;
+        assert_eq!(
+            ptr_before, ptr_after,
+            "unique handle mutates in place, no COW"
+        );
+        assert_eq!(a.0, 6);
     }
 }

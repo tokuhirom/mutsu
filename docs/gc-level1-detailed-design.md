@@ -753,11 +753,19 @@ unit test / integration test では random 依存にせず、**明示 collect ho
 
 ## 11. 実装順序
 
-1. root visitor の導入
-2. child visitor の導入
-3. `MUTSU_VM_STATS` の GC カウンタ枠だけ先に追加
-4. `Gc<T>` / node header / candidate buffer の最小実装
-5. `Array` / `Hash` / `ContainerRef` を first wave として移行
+1. ✅ root visitor の導入
+2. ✅ child visitor の導入
+3. ✅ `MUTSU_VM_STATS` の GC カウンタ枠だけ先に追加
+4. ✅ `Gc<T>` / node header / candidate buffer の最小実装（`src/gc/gc_ptr.rs`・#4110）
+5. `Array` / `Hash` / `ContainerRef` を first wave として移行 ← **いまここ**
+   - **5a ✅ 前提: `Gc<T>` に COW mutation API を追加**（`get_mut` / `make_mut`〔`T: Clone`〕/
+     `ptr_eq`）。コンテナ移行は `Arc::make_mut`（COW）と `Arc::ptr_eq`（container identity）を
+     多用するため、`Gc` にこれらが無いと移行できない。`make_mut` は shared 時に fresh single-handle
+     node へ COW し、GC-visible strong count を正しく調整（旧 node から -1、新 node = 1）。
+     Miri（Stacked Borrows）検証済み。まだ `Value` variant は未移行（dead code）。
+   - 5b: `ArrayData` / `HashData` / `ContainerRef` cell に `Trace` を実装（`Gc` 子を列挙）。
+   - 5c〜: `Value::Array(Arc<ArrayData>)` → `Value::Array(Gc<ArrayData>)` を 1 型ずつ機械置換
+     （~79 の `arc_contents_mut` / `Arc::make_mut` サイト）。大きいので型ごとに分割 PR。
 6. `Promise` / `Channel` を first wave の async node として移行
 7. supply registry root visitor（`supplier_state_map` / `supplier_subscriptions_map` / `promise_combinator_map` / `supply_taps_map`）を first wave で導入
 8. safepoint で synchronous collect
