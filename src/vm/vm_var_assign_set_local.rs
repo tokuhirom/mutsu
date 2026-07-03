@@ -2,6 +2,16 @@ use super::*;
 use std::sync::Arc;
 
 impl Interpreter {
+    /// Env key marking a variable as a genuine bound array SLICE (`@slice :=
+    /// @array[1,2]`, §4 BLOCKERS.md test 15) — set only at the exact bind
+    /// moment that produces an array of per-element `ContainerRef` cells, and
+    /// cleared on every redeclaration of the same name. See the write-through
+    /// checks in `vm_var_assign_local.rs` and this file's non-bind path for
+    /// why "elements are cells" alone is not a safe trigger.
+    pub(super) fn bound_array_slice_marker_key(name: &str) -> String {
+        format!("__mutsu_bound_array_slice::{name}")
+    }
+
     pub(super) fn exec_set_local_op(
         &mut self,
         code: &CompiledCode,
@@ -183,6 +193,14 @@ impl Interpreter {
             if matches!(self.locals[idx], Value::ContainerRef(_)) {
                 self.locals[idx] = Value::Nil;
             }
+            // Clear a stale bound-array-slice marker (§4 BLOCKERS.md test 15)
+            // left over from an earlier same-named variable — a fresh
+            // declaration (bind or not) must not inherit "this array's
+            // elements are write-through cells" from a prior scope/iteration.
+            // Re-set below, in the `is_bind` arm, only if THIS declaration is
+            // genuinely a bound array slice.
+            self.env_mut()
+                .remove(&Self::bound_array_slice_marker_key(name));
         }
 
         // Lazily convert pending alias bind names into local_bind_pairs.
@@ -373,6 +391,39 @@ impl Interpreter {
         }
 
         let name = &code.locals[idx];
+        // Bound array SLICE write-through (`@slice := @array[1,2]; @slice =
+        // ...;` as a statement): the local's OWN elements are shared
+        // `ContainerRef` cells (from the bind-time slice promotion, §4
+        // BLOCKERS.md test 15). A whole-array assignment writes through each
+        // cell instead of replacing the slot, bounded by the slice's own
+        // (fixed) arity — extra RHS values are discarded, matching raku's
+        // bound-slice semantics. `@`-sigil locals are never `simple_locals`,
+        // so this must live here rather than in the fast path above. See the
+        // mirror-image handling in `vm_var_assign_local.rs`'s
+        // expression-context assignment.
+        if !is_bind
+            && !is_rebind
+            && name.starts_with('@')
+            && matches!(
+                self.env().get(&Self::bound_array_slice_marker_key(name)),
+                Some(Value::Bool(true))
+            )
+            && let Value::Array(items, ..) = &self.locals[idx]
+            && items.iter().any(Value::is_container_ref)
+        {
+            let cells: Vec<Value> = items.iter().cloned().collect();
+            let rhs_vals = self.assignment_rhs_values(&raw_popped)?;
+            for (i, cell_val) in cells.iter().enumerate() {
+                if let Value::ContainerRef(cell) = cell_val {
+                    let v = rhs_vals
+                        .get(i)
+                        .cloned()
+                        .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
+                    *cell.lock().unwrap() = v;
+                }
+            }
+            return Ok(());
+        }
         // Capture the old hash Arc before assignment for circular reference fixup.
         let old_hash_arc = if name.starts_with('%') {
             if let Value::Hash(arc) = &self.locals[idx] {
@@ -628,7 +679,13 @@ impl Interpreter {
             } else if is_bind {
                 // `:=` binding preserves the container type (e.g. List stays List).
                 // Type-check: only Positional values can be bound to @-sigiled vars.
-                let is_positional = match &raw_popped {
+                // A single-index terminal element bind (`@x := @array[2]`) may
+                // arrive here as a `ContainerRef` cell (promoted so a later
+                // whole-array assignment writes through the source element) —
+                // decont it first so the Positional check inspects the actual
+                // bound value, not the cell wrapper.
+                let decontained_popped = raw_popped.deref_container();
+                let is_positional = match &decontained_popped {
                     Value::Array(..)
                     | Value::LazyList(_)
                     | Value::LazyIoLines { .. }
@@ -752,6 +809,23 @@ impl Interpreter {
                     }
                 }
             };
+            // Mark a genuine bound array SLICE (`@slice := @array[1,2]`, §4
+            // BLOCKERS.md test 15): its OWN elements are shared `ContainerRef`
+            // cells from the bind-time slice promotion (`vm_var_index_ops.rs`).
+            // This marker is the ONLY safe trigger for the write-through
+            // behavior in `vm_var_assign_local.rs`/this file's non-bind path —
+            // "elements are cells" alone is NOT a safe signal, since unrelated
+            // machinery (e.g. `.grep`'s rw-topic element promotion) can also
+            // leave cell elements in a plain array that must NOT get the
+            // fixed-arity write-through treatment.
+            if is_bind
+                && name.starts_with('@')
+                && let Value::Array(items, ..) = &assigned
+                && items.iter().any(Value::is_container_ref)
+            {
+                self.env_mut()
+                    .insert(Self::bound_array_slice_marker_key(name), Value::Bool(true));
+            }
             // Preserve shaped array property on re-assignment, but only if the
             // new value is NOT already a shaped array (e.g. from Array.new(:shape(...)))
             let assigned_has_own_shape = crate::runtime::utils::shaped_array_shape(&assigned)

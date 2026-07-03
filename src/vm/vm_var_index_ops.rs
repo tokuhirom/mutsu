@@ -158,6 +158,18 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Normalize a bind-time array-slice index (`@array[1,2]`) to a list of
+    /// positions. Returns `None` for a single-index value (handled by the
+    /// existing `index_to_usize` path instead) or an unconvertible index.
+    fn slice_bind_indices(index: &Value) -> Option<Vec<usize>> {
+        let items: &[Value] = match index {
+            Value::Array(items, _) => items,
+            Value::Seq(items) | Value::Slip(items) => items,
+            _ => return None,
+        };
+        items.iter().map(Self::index_to_usize).collect()
+    }
+
     /// Lazy variant of IndexAutovivify: returns a HashEntryRef without creating
     /// the hash entry if it doesn't exist. Used for `:=` bind expressions
     /// so that `my $b := %h<a><b>` doesn't autovivify until assignment.
@@ -197,6 +209,19 @@ impl Interpreter {
                     } else {
                         self.stack.push(Value::Nil);
                     }
+                } else if let Some(indices) = Self::slice_bind_indices(&index) {
+                    // Bound array SLICE (`@slice := @array[1,2]`): promote each
+                    // indexed element to a shared cell (same mechanism as the
+                    // single-index case above) and hand back a plain Array
+                    // holding those cells. Its OWN fixed length becomes the
+                    // slice's arity — a later whole-array assignment writes
+                    // through each cell bounded by that length, discarding
+                    // extra RHS values (raku's bound-slice semantics).
+                    let cells = indices
+                        .into_iter()
+                        .map(|idx| resolved.array_slot_ref(idx, true).unwrap_or(Value::Nil))
+                        .collect();
+                    self.stack.push(Value::array(cells));
                 } else {
                     self.stack.push(resolved);
                     self.stack.push(index);

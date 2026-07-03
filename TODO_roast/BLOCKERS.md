@@ -225,7 +225,7 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 
 ### 4.1 `S09-subscript/slice.t`
 
-- **現状（2026-07-03 更新）**: 51/56。
+- **現状（2026-07-03 更新）**: 52/56。
 - **今回解決した根本原因**（詳細は `TODO_roast/S09.md` の該当エントリ）:
   1. `:=` bind が `sequence_spec`/`closure_seq`/`lazy_pipe` 系 `LazyList` を
      `coroutine` 以外は強制マテリアライズしていた（`vm_var_assign_set_local.rs`）。
@@ -257,13 +257,40 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
   スライス双方に対応、値は uint8 ネイティブ配列と同じ mod 256 マスク、
   範囲外は 0 埋めで自動延伸、immutable な Blob への書き込みは拒否。
   詳細・テストは `TODO_roast/S09.md` / `t/buf-index-slice-assign.t`。
-- **残り 5 件（laziness とは無関係、それぞれ別機能）**:
-  - test 15: `@slice := @array[1,2]; @slice = <A B C D>` で bound slice の
-    固定 arity（余った RHS を捨てる）が未実装。調査済み: 新しい `Value`
-    variant（配列+index list を束ねる slice-view セル）が要る、§3
-    container-identity と同格の本格作業。既存の `ContainerRef`/
-    `HashEntryRef` はどちらも「1 要素」用で、N-index のスライスを表現
-    できない。
+- **2026-07-03 解決**: test 15（bound slice の固定 arity
+  `@slice := @array[1,2]; @slice = <A B C D>` → "A B"）。当初は §3
+  container-identity 相当の新 `Value` variant が要ると見積もったが、
+  **既存の per-element `ContainerRef` cell 機構を再利用するだけで済んだ**
+  （新 variant 不要）:
+  1. コンパイラ（`stmt.rs`）: `@`-sigil の VarDecl bind の RHS が
+     `Expr::Index{is_positional:true,..}`（単一/スライス問わず）のときも
+     `scalar_bind_autovivify`+`bind_terminal` を立てて autovivify-lazy 経路
+     へ通す（従来は `$`-sigil の要素 bind のみ対象だった）。
+  2. VM（`vm_var_index_ops.rs`）: `exec_index_autovivify_lazy_op` の
+     `terminal` 分岐に、index が単一 int でなく Array/Seq/Slip（スライス）
+     の場合の枝を追加。各インデックスを既存の `array_slot_ref(idx, true)`
+     で個別に `ContainerRef` セルへ昇格し、それらセルを要素に持つだけの
+     **プレーンな** `Value::Array` を bind 結果として返す（セル自体は
+     1 要素用のままで、スライスは「セルを持つ配列」という組み合わせで表現）。
+  3. VM（`vm_var_assign_local.rs` / `vm_var_assign_set_local.rs`）:
+     `@`-sigil ローカルへの**丸ごと**代入（式/文の両方）で、現在値が
+     「要素に `ContainerRef` を含む配列」なら、コンテナを置き換えるのでなく
+     **自身の要素数に固定されたまま**各セルへ write-through する新分岐を追加
+     （余った RHS は破棄、不足分は `Any` 埋め）。`@`-sigil ローカルは
+     `code.simple_locals[idx]` が常に `false`（`$`-sigil 専用フラグ）なので、
+     この分岐は各関数の「fast path」でなく「slow path」側に置く必要がある
+     （最初 fast path に書いて到達しないバグを踏んだ — 教訓として記録）。
+  4. 副次修正（`vm_var_assign_set_local.rs`）: 上記 2 で単一 index の
+     container-valued leaf（例 `@x := @array[2]`、要素が Array/Hash 自体）
+     を bind すると `ContainerRef` セルが返るようになった結果、VarDecl bind
+     の既存 Positional 型チェックが `raw_popped` を decont せずに
+     `Value::ContainerRef` を弾いて `X::TypeCheck::Binding` を誤発生
+     （既存の別バグを誘発）。`raw_popped.deref_container()` してから
+     判定するよう修正——ついでに `@x := @array[2]; @x = 5,6;` が `@array`
+     へ書き戻らない**既存の**バグも解消（`docs/container-identity.md` の
+     Phase 2 系とは独立した bind-time 経路の穴だった）。
+  新規テスト: `t/bound-array-slice-arity.t`。
+- **残り 4 件（laziness とは無関係、それぞれ別機能）**:
   - test 35（62 assertion、18/62 で中断）: ネストインデックスへの slice adverb
     （`:p`/`:k`/`:v`/`:kv`/`:exists`/`:delete` の組み合わせ）— §3 の
     container-identity 領域に属する別の大きな機能。
@@ -273,10 +300,9 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
   - test 56: `@a[**]`（HyperWhatever hammer index）。ローカルの `raku` 自体が
     "not yet implemented. Sorry." を返すため、この環境では参照実装との
     突き合わせ自体ができない。
-- **Next slice**: 残り 5 件は互いに独立した別機能。test 15 は専用 `Value`
-  variant を要する§3 相当の作業として着手するなら本腰を入れる想定。test 35
-  （nested slice adverbs）も同根の大仕事。whitelist にはこの 5 件全ての
-  解決が必要。
+- **Next slice**: 残り 4 件は互いに独立した別機能。test 35（nested slice
+  adverbs）が最も汎用性が高いが §3 container-identity 相当の大仕事。
+  whitelist にはこの 4 件全ての解決が必要。
 
 ---
 
