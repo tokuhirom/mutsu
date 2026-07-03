@@ -129,7 +129,7 @@ pub(super) fn dispatch(
                         Value::Bool(true),
                     );
                     let cache = list.cache.lock().unwrap().clone();
-                    return Some(Some(Ok(Value::LazyList(std::sync::Arc::new(
+                    return Some(Some(Ok(Value::LazyList(crate::gc::Gc::new(
                         crate::value::LazyList {
                             body: list.body.clone(),
                             env,
@@ -194,7 +194,7 @@ pub(super) fn dispatch(
                 "__mutsu_preserve_lazy_on_array_assign".to_string(),
                 Value::Bool(true),
             );
-            Some(Some(Ok(Value::LazyList(std::sync::Arc::new(
+            Some(Some(Ok(Value::LazyList(crate::gc::Gc::new(
                 crate::value::LazyList {
                     body: vec![],
                     env,

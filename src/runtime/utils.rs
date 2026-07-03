@@ -1,6 +1,5 @@
 use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use crate::value::{ArrayKind, EnumValue, JunctionKind, RuntimeError, Value};
 use num_bigint::BigInt;
@@ -64,7 +63,7 @@ pub(crate) fn infinite_int_range_to_lazy_array(value: &Value) -> Option<Value> {
         },
     )
     .with_array_context();
-    Some(Value::LazyList(Arc::new(ll)))
+    Some(Value::LazyList(crate::gc::Gc::new(ll)))
 }
 
 /// Saturating conversion of an arbitrary-precision BigInt to i64.

@@ -180,7 +180,7 @@ impl Interpreter {
             computed_count: 0,
         };
         let ll = crate::value::LazyList::new_scan(spec);
-        let ll = std::sync::Arc::new(ll);
+        let ll = crate::gc::Gc::new(ll);
         // Pre-compute an initial batch so that eager consumers (e.g. .Slip,
         // .join) that read the cache directly get a useful prefix.
         const INITIAL_BATCH: usize = 1_000;

@@ -63,7 +63,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                             walk_pending: None,
                             cat_pull: None,
                         };
-                        return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
+                        return Some(Ok(Value::LazyList(crate::gc::Gc::new(ll))));
                     }
                     let items: Vec<Value> = (0..*n).map(Value::Int).collect();
                     return Some(Ok(Value::Seq(
@@ -90,7 +90,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     walk_pending: None,
                     cat_pull: None,
                 };
-                return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
+                return Some(Ok(Value::LazyList(crate::gc::Gc::new(ll))));
             }
             Some(Ok(Value::Seq(
                 crate::builtins::methods_0arg::collection::all_permutations(&items).into(),

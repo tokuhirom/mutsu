@@ -207,7 +207,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             // by distinct empty Slip allocations.
             (a.is_empty() && b.is_empty()) || std::sync::Arc::ptr_eq(a, b)
         }
-        (Value::LazyList(a), Value::LazyList(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::LazyList(a), Value::LazyList(b)) => crate::gc::Gc::ptr_eq(a, b),
         (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
         (Value::Sub(a), Value::Sub(b)) => {
             if crate::gc::Gc::ptr_eq(a, b) {

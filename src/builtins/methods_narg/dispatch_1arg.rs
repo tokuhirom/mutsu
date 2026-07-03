@@ -1299,7 +1299,7 @@ pub(crate) fn native_method_1arg(
                     }
                     cached.extend(cycle);
                 }
-                return Some(Ok(Value::LazyList(Arc::new(
+                return Some(Ok(Value::LazyList(crate::gc::Gc::new(
                     crate::value::LazyList::new_cached(cached),
                 ))));
             }
@@ -1465,7 +1465,7 @@ pub(crate) fn native_method_1arg(
                             out.push(v);
                         }
                     }
-                    return Some(Ok(Value::LazyList(Arc::new(
+                    return Some(Ok(Value::LazyList(crate::gc::Gc::new(
                         crate::value::LazyList::new_cached(out),
                     ))));
                 }
@@ -1490,7 +1490,7 @@ pub(crate) fn native_method_1arg(
                             out.push(v);
                         }
                     }
-                    return Some(Ok(Value::LazyList(Arc::new(
+                    return Some(Ok(Value::LazyList(crate::gc::Gc::new(
                         crate::value::LazyList::new_cached(out),
                     ))));
                 }
@@ -1522,7 +1522,7 @@ pub(crate) fn native_method_1arg(
                         }
                         out.push(Value::str(keys[idx].clone()));
                     }
-                    return Some(Ok(Value::LazyList(Arc::new(
+                    return Some(Ok(Value::LazyList(crate::gc::Gc::new(
                         crate::value::LazyList::new_cached(out),
                     ))));
                 }
@@ -1631,7 +1631,7 @@ pub(crate) fn native_method_1arg(
                             out.push(v);
                         }
                     }
-                    return Some(Ok(Value::LazyList(Arc::new(
+                    return Some(Ok(Value::LazyList(crate::gc::Gc::new(
                         crate::value::LazyList::new_cached(out),
                     ))));
                 }
@@ -1640,7 +1640,7 @@ pub(crate) fn native_method_1arg(
                 // sequence-spec lazy list (like `1...*`) instead of eagerly
                 // generating a fixed-size prefix. This renders Rakudo's
                 // `(...)` gist placeholder and can be pulled indefinitely.
-                return Some(Ok(Value::LazyList(Arc::new(
+                return Some(Ok(Value::LazyList(crate::gc::Gc::new(
                     crate::value::LazyList::new_sequence(
                         Vec::new(),
                         crate::value::SequenceSpec::RollPool(items),

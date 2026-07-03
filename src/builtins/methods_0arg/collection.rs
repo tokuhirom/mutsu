@@ -1101,7 +1101,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     walk_pending: None,
                     cat_pull: None,
                 };
-                return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
+                return Some(Ok(Value::LazyList(crate::gc::Gc::new(ll))));
             }
             Some(Ok(Value::Seq(all_permutations(&items).into())))
         }
@@ -1125,7 +1125,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             if let Value::LazyList(ll) = target
                 && ll.is_genuinely_lazy()
             {
-                return Some(Ok(Value::LazyList(std::sync::Arc::new(
+                return Some(Ok(Value::LazyList(crate::gc::Gc::new(
                     ll.with_cached_no_sink(),
                 ))));
             }

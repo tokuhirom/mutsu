@@ -441,7 +441,7 @@ impl Interpreter {
             result.push(combined);
         }
         if all_lazy {
-            Ok(Value::LazyList(std::sync::Arc::new(
+            Ok(Value::LazyList(crate::gc::Gc::new(
                 crate::value::LazyList::new_cached(result),
             )))
         } else {

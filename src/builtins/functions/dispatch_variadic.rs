@@ -120,7 +120,7 @@ pub(crate) fn native_function_variadic(
                 result.push(Value::array(row));
             }
             if all_lazy {
-                Some(Ok(Value::LazyList(std::sync::Arc::new(
+                Some(Ok(Value::LazyList(crate::gc::Gc::new(
                     crate::value::LazyList::new_cached(result),
                 ))))
             } else {

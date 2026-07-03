@@ -3035,7 +3035,7 @@ impl Interpreter {
                 "antipairs" => crate::value::IndexTransform::AntiPairs,
                 _ => crate::value::IndexTransform::Kv,
             };
-            return Ok(Value::LazyList(std::sync::Arc::new(
+            return Ok(Value::LazyList(crate::gc::Gc::new(
                 crate::value::LazyList::new_index_pipe(target.clone(), transform),
             )));
         }
@@ -3050,7 +3050,7 @@ impl Interpreter {
             && method == "cache"
             && ll.is_genuinely_lazy()
         {
-            return Ok(Value::LazyList(std::sync::Arc::new(
+            return Ok(Value::LazyList(crate::gc::Gc::new(
                 ll.with_cached_no_sink(),
             )));
         }

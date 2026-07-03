@@ -767,7 +767,7 @@ impl Interpreter {
                 };
                 let items: Vec<Value> = std::iter::repeat_n(left.clone(), repeat).collect();
                 if lazy {
-                    Ok(Value::LazyList(std::sync::Arc::new(
+                    Ok(Value::LazyList(crate::gc::Gc::new(
                         crate::value::LazyList::new_cached(items),
                     )))
                 } else {

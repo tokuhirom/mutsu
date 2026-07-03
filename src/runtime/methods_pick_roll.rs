@@ -120,7 +120,7 @@ impl Interpreter {
             // sequence-spec lazy list (like `1...*`) instead of eagerly
             // generating a fixed-size prefix, so it renders Rakudo's `(...)`
             // gist placeholder and can be pulled indefinitely.
-            return Ok(Value::LazyList(std::sync::Arc::new(
+            return Ok(Value::LazyList(crate::gc::Gc::new(
                 crate::value::LazyList::new_sequence(
                     Vec::new(),
                     crate::value::SequenceSpec::RollPool(pool),

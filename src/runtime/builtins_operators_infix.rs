@@ -221,7 +221,7 @@ impl Interpreter {
                             if !items.is_empty() {
                                 items.remove(0);
                             }
-                            result = Value::LazyList(std::sync::Arc::new(
+                            result = Value::LazyList(crate::gc::Gc::new(
                                 crate::value::LazyList::new_cached(items),
                             ));
                         }

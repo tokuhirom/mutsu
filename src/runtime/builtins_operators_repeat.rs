@@ -121,7 +121,7 @@ impl Interpreter {
     pub(crate) fn make_repeat_lazy_cache_counted(items: Vec<Value>, count: Value) -> Value {
         let mut ll = crate::value::LazyList::new_cached(items);
         ll.elems_count = Some(count);
-        Value::LazyList(std::sync::Arc::new(ll))
+        Value::LazyList(crate::gc::Gc::new(ll))
     }
 
     /// The logical element count of `LHS xx right` when the result is lazy

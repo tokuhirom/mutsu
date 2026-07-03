@@ -705,9 +705,9 @@ impl Interpreter {
                             .filter(|a| !matches!(a, Value::Pair(..)))
                             .collect();
                         match rest.as_slice() {
-                            [Value::LazyList(ll)] if ll.is_genuinely_lazy() => Some(
-                                Value::LazyList(std::sync::Arc::new(ll.with_array_context())),
-                            ),
+                            [Value::LazyList(ll)] if ll.is_genuinely_lazy() => {
+                                Some(Value::LazyList(crate::gc::Gc::new(ll.with_array_context())))
+                            }
                             // A bare infinite range (`f(1..Inf)` / `f(1..*)`) also
                             // stays lazy: convert it to the same reify-on-index lazy
                             // array `my @a = 1..*` produces.
