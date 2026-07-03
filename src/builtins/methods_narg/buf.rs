@@ -43,10 +43,7 @@ pub(crate) fn make_buf_from_int_items(class_name: &str, items: &[Value]) -> Valu
     Value::make_instance(Symbol::intern(class_name), attrs)
 }
 
-pub(crate) fn eval_whatever_code(
-    sub_data: &std::sync::Arc<crate::value::SubData>,
-    arg: i64,
-) -> i64 {
+pub(crate) fn eval_whatever_code(sub_data: &crate::gc::Gc<crate::value::SubData>, arg: i64) -> i64 {
     let param = sub_data
         .params
         .first()

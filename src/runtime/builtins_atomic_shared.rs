@@ -260,7 +260,7 @@ impl Interpreter {
     pub(super) fn self_attr_cell_target(
         &self,
         name: &str,
-    ) -> Option<(std::sync::Arc<crate::value::InstanceAttrs>, String)> {
+    ) -> Option<(crate::gc::Gc<crate::value::InstanceAttrs>, String)> {
         let bare = name.strip_prefix('!').or_else(|| name.strip_prefix('.'))?;
         if !bare
             .chars()

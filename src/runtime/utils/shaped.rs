@@ -210,7 +210,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         (Value::LazyList(a), Value::LazyList(b)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
         (Value::Sub(a), Value::Sub(b)) => {
-            if std::sync::Arc::ptr_eq(a, b) {
+            if crate::gc::Gc::ptr_eq(a, b) {
                 return true;
             }
             // Named subs with the same package and name are identical
@@ -219,7 +219,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             let b_name = b.name.resolve();
             !a_name.is_empty() && a_name == b_name && a.package == b.package
         }
-        (Value::WeakSub(a), Value::WeakSub(b)) => a.ptr_eq(b),
+        (Value::WeakSub(a), Value::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(a, b),
         (Value::Mixin(a_inner, a_mix), Value::Mixin(b_inner, b_mix)) => {
             a_inner.eqv(b_inner) && a_mix == b_mix
         }

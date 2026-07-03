@@ -833,7 +833,7 @@ fn format_temporal_num(f: f64) -> String {
 /// Render a `Backtrace::Frame` instance as its `.Str`/`.gist` text.
 /// Shared by the frame's `.Str` handler and by `Backtrace.concise`/`.summary`
 /// so the natively-computed strings stay byte-identical to a `.grep(...).join`.
-fn backtrace_frame_str(attributes: &std::sync::Arc<crate::value::InstanceAttrs>) -> String {
+fn backtrace_frame_str(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> String {
     let map = attributes.as_map();
     let subname = map
         .get("subname")
@@ -856,7 +856,7 @@ fn backtrace_frame_str(attributes: &std::sync::Arc<crate::value::InstanceAttrs>)
 
 /// A `Backtrace::Frame` is a "routine" frame when it has a real subname
 /// (not the synthetic `<unit>` bottom frame and not an anonymous block).
-fn backtrace_frame_is_routine(attributes: &std::sync::Arc<crate::value::InstanceAttrs>) -> bool {
+fn backtrace_frame_is_routine(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
     let subname = attributes
         .as_map()
         .get("subname")
@@ -900,12 +900,12 @@ pub(crate) fn unicode_foldcase(s: &str) -> String {
 }
 
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    fn has_date_attrs(attributes: &std::sync::Arc<crate::value::InstanceAttrs>) -> bool {
+    fn has_date_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
         attributes.contains_key("year")
             && attributes.contains_key("month")
             && attributes.contains_key("day")
     }
-    fn has_datetime_attrs(attributes: &std::sync::Arc<crate::value::InstanceAttrs>) -> bool {
+    fn has_datetime_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
         has_date_attrs(attributes)
             && attributes.contains_key("hour")
             && attributes.contains_key("minute")

@@ -1,7 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::InstanceAttrs;
-use std::sync::Arc;
 
 impl Interpreter {
     pub(crate) fn call_proxy_callback(
@@ -123,7 +122,7 @@ impl Interpreter {
         target_var: Option<&str>,
         class_name: Symbol,
         attributes: &HashMap<String, Value>,
-        attrs_cell: &Arc<InstanceAttrs>,
+        attrs_cell: &crate::gc::Gc<InstanceAttrs>,
         new_value: Value,
     ) -> Result<Value, RuntimeError> {
         let proxy_val = Value::Proxy {

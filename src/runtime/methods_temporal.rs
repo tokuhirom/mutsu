@@ -1,14 +1,13 @@
 use crate::builtins::methods_0arg::temporal;
 use crate::value::{RuntimeError, Value};
-use std::sync::Arc;
 
-fn has_date_attrs(attributes: &Arc<crate::value::InstanceAttrs>) -> bool {
+fn has_date_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
     attributes.contains_key("year")
         && attributes.contains_key("month")
         && attributes.contains_key("day")
 }
 
-fn has_datetime_attrs(attributes: &Arc<crate::value::InstanceAttrs>) -> bool {
+fn has_datetime_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
     has_date_attrs(attributes)
         && attributes.contains_key("hour")
         && attributes.contains_key("minute")
@@ -19,7 +18,7 @@ fn has_datetime_attrs(attributes: &Arc<crate::value::InstanceAttrs>) -> bool {
 fn rebless_datetime_result(
     result: Value,
     target_class_name: crate::symbol::Symbol,
-    original_attrs: &Arc<crate::value::InstanceAttrs>,
+    original_attrs: &crate::gc::Gc<crate::value::InstanceAttrs>,
 ) -> Value {
     if target_class_name == "DateTime" {
         return result;
@@ -46,7 +45,7 @@ fn rebless_datetime_result(
     }
     Value::Instance {
         class_name: target_class_name,
-        attributes: Arc::new(crate::value::InstanceAttrs::new(
+        attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
             target_class_name,
             (merged).to_map(),
             *id,
@@ -59,7 +58,7 @@ fn rebless_datetime_result(
 fn rebless_date_result(
     result: Value,
     target_class_name: crate::symbol::Symbol,
-    original_attrs: &Arc<crate::value::InstanceAttrs>,
+    original_attrs: &crate::gc::Gc<crate::value::InstanceAttrs>,
 ) -> Value {
     if target_class_name == "Date" {
         return result;
@@ -84,7 +83,7 @@ fn rebless_date_result(
     }
     Value::Instance {
         class_name: target_class_name,
-        attributes: Arc::new(crate::value::InstanceAttrs::new(
+        attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
             target_class_name,
             (merged).to_map(),
             *id,

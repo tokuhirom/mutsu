@@ -27,7 +27,8 @@ mod safepoint;
 pub(crate) use collect::{CollectStats, collect_cycles, collect_if_enabled, gc_debug_collect_now};
 #[allow(unused_imports)]
 pub(crate) use gc_ptr::{
-    Color, ContainerMakeMut, ErasedGc, Gc, Trace, drain_candidates, gc_contents_mut, gc_enabled,
+    Color, ContainerMakeMut, ErasedGc, Gc, Trace, WeakGc, drain_candidates, gc_contents_mut,
+    gc_enabled,
 };
 pub(crate) use root_visitor::{RootVisitor, visit_map_values, visit_opt, visit_slice};
 #[allow(unused_imports)]

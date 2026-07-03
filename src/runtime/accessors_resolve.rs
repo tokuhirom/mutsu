@@ -322,7 +322,7 @@ impl Interpreter {
             if empty_sig && let Value::Sub(ref data) = sub_val {
                 let mut new_data = (**data).clone();
                 new_data.empty_sig = true;
-                sub_val = Value::Sub(Arc::new(new_data));
+                sub_val = Value::Sub(crate::gc::Gc::new(new_data));
             }
             sub_val
         } else if Self::is_builtin_function(lookup_name) {

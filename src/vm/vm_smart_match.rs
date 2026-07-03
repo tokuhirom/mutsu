@@ -16,7 +16,7 @@ fn io_path_cleanup_absolute(path: &str, cwd: &str) -> String {
 }
 
 /// Extract path and CWD from IO::Path attributes.
-fn io_path_attrs(attrs: &std::sync::Arc<crate::value::InstanceAttrs>) -> (String, String) {
+fn io_path_attrs(attrs: &crate::gc::Gc<crate::value::InstanceAttrs>) -> (String, String) {
     let path = attrs
         .as_map()
         .get("path")

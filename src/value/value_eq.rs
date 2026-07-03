@@ -3,7 +3,7 @@ use super::*;
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         let match_equals_pair_array =
-            |attrs: &Arc<InstanceAttrs>, arr: &crate::gc::Gc<ArrayData>| {
+            |attrs: &crate::gc::Gc<InstanceAttrs>, arr: &crate::gc::Gc<ArrayData>| {
                 if arr.len() != 2 {
                     return false;
                 }

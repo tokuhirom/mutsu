@@ -142,7 +142,7 @@ pub(super) fn dispatch(
                     // Clone the sub with a new id so state variables are independent
                     let mut new_data = (**data).clone();
                     new_data.id = crate::value::next_instance_id();
-                    Some(Some(Ok(Value::Sub(Arc::new(new_data)))))
+                    Some(Some(Ok(Value::Sub(crate::gc::Gc::new(new_data)))))
                 }
                 Value::Pair(key, value) => {
                     Some(Some(Ok(Value::Pair(key.clone(), Box::new(*value.clone())))))

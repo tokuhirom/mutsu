@@ -417,7 +417,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             id,
         } => Value::Instance {
             class_name,
-            attributes: Arc::new(crate::value::InstanceAttrs::new(
+            attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
                 class_name,
                 attributes
                     .into_iter()

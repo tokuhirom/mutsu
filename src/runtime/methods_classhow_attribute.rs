@@ -167,7 +167,7 @@ impl Interpreter {
                 };
                 meta.insert(
                     "build".to_string(),
-                    Value::Sub(std::sync::Arc::new(sub_data)),
+                    Value::Sub(crate::gc::Gc::new(sub_data)),
                 );
             }
         }

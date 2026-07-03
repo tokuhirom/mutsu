@@ -368,7 +368,7 @@ impl Interpreter {
                 new_env.insert("$_".to_string(), caller_topic.clone());
             }
             // &?BLOCK: weak self-reference to break reference cycles
-            let block_arc = std::sync::Arc::new(crate::value::SubData {
+            let block_arc = crate::gc::Gc::new(crate::value::SubData {
                 package: data.package,
                 name: data.name,
                 params: data.params.clone(),
@@ -391,7 +391,7 @@ impl Interpreter {
             });
             new_env.insert(
                 "&?BLOCK".to_string(),
-                Value::WeakSub(std::sync::Arc::downgrade(&block_arc)),
+                Value::WeakSub(crate::gc::Gc::downgrade(&block_arc)),
             );
             let block_sub = Value::make_sub_with_id(
                 data.package,

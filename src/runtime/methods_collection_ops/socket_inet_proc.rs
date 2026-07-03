@@ -251,7 +251,7 @@ impl Interpreter {
     /// Called when a Proc result is retrieved via .result or await.
     pub(in crate::runtime) fn replay_proc_taps(
         &mut self,
-        attributes: &Arc<crate::value::InstanceAttrs>,
+        attributes: &crate::gc::Gc<crate::value::InstanceAttrs>,
     ) {
         let mut stdout_taps = match attributes.as_map().get("stdout_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),

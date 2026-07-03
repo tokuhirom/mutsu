@@ -98,7 +98,7 @@ impl Interpreter {
                 .and_then(|cc| cc.source_line)
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
-            let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
+            let val = Value::Sub(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(""),
                 params,
@@ -173,7 +173,7 @@ impl Interpreter {
                 .and_then(|cc| cc.source_line)
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
-            let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
+            let val = Value::Sub(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(""),
                 params: params.clone(),

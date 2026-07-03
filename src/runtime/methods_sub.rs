@@ -91,7 +91,7 @@ impl Interpreter {
                     sub_data.assumed_positional.push(arg.clone());
                 }
             }
-            return Some(Ok(Value::Sub(std::sync::Arc::new(sub_data))));
+            return Some(Ok(Value::Sub(crate::gc::Gc::new(sub_data))));
         }
         if method == "candidates" && args.is_empty() {
             return Some(Ok(Value::array(self.routine_candidate_subs(package, name))));
@@ -380,7 +380,7 @@ impl Interpreter {
                     let failure = Value::make_instance(Symbol::intern("Failure"), failure_attrs);
                     let mut mixins = std::collections::HashMap::new();
                     mixins.insert("Failure".to_string(), failure);
-                    Value::mixin(Value::Sub(std::sync::Arc::new(sub_data.clone())), mixins)
+                    Value::mixin(Value::Sub(crate::gc::Gc::new(sub_data.clone())), mixins)
                 };
             let mut incoming_named = std::collections::HashMap::new();
             for arg in args {
@@ -512,12 +512,12 @@ impl Interpreter {
                     let mut mixins = std::collections::HashMap::new();
                     mixins.insert("Failure".to_string(), failure);
                     return Some(Ok(Value::mixin(
-                        Value::Sub(std::sync::Arc::new(next)),
+                        Value::Sub(crate::gc::Gc::new(next)),
                         mixins,
                     )));
                 }
             }
-            return Some(Ok(Value::Sub(std::sync::Arc::new(next))));
+            return Some(Ok(Value::Sub(crate::gc::Gc::new(next))));
         }
         if method == "candidates" && args.is_empty() {
             // Multi-dispatch dispatcher: try name-based lookup first (preserves doc comments)

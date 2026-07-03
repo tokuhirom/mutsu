@@ -1942,7 +1942,7 @@ impl Interpreter {
             attrs.insert("ast".to_string(), value.clone());
             let updated = Value::Instance {
                 class_name: *class_name,
-                attributes: std::sync::Arc::new(crate::value::InstanceAttrs::new(
+                attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
                     *class_name,
                     (attrs).to_map(),
                     *id,
