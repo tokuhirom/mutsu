@@ -1045,6 +1045,34 @@ impl Interpreter {
         // like `A.^add_method(...)` inside the declaration can resolve `A`.
         // Clear stale method wrap chains from a previous class with the same name.
         self.method_wrap_chains.retain(|(cls, _, _), _| cls != name);
+        // `class C hides P` marks parent P hidden from C's (and descendants')
+        // `.^mro_unhidden`. Record it so the mro_unhidden filter can drop P.
+        if !hidden_parents.is_empty() {
+            self.registry_mut()
+                .hidden_defer_parents
+                .entry(name.to_string())
+                .or_default()
+                .extend(hidden_parents.iter().cloned());
+        }
+        // Roles composed via `does` (not `is Role` puns) are not MRO entries in
+        // Rakudo's `.^mro_unhidden`; record them so the filter can drop them.
+        if !does_parents.is_empty() {
+            let does_roles: Vec<String> = does_parents
+                .iter()
+                .filter(|p| {
+                    let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p);
+                    self.registry().roles.contains_key(base)
+                })
+                .cloned()
+                .collect();
+            if !does_roles.is_empty() {
+                self.registry_mut()
+                    .class_does_only_roles
+                    .entry(name.to_string())
+                    .or_default()
+                    .extend(does_roles);
+            }
+        }
         self.registry_mut()
             .classes
             .insert(name.to_string(), class_def.clone());
