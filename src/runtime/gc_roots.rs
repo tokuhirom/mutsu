@@ -7,12 +7,13 @@
 //! later steps of the design doc's implementation order) so root enumeration
 //! is never duplicated at a future collector call site.
 //!
+//! The process-global supply/async registries (`supplier_state_map`,
+//! `supplier_subscriptions_map`, `promise_combinator_map`, `supply_taps_map`,
+//! the whenever-done/zip state maps) are enumerated by
+//! [`Interpreter::visit_supply_registries`] — §11 step 7 first wave.
+//!
 //! Deliberately out of scope for this pass (see the design doc for why each is
 //! sequenced later):
-//! - The process-global supply/async registries (`supplier_state_map`,
-//!   `promise_combinator_map`, `supply_taps_map`, ...) — §11 step 7, a
-//!   separate root-visitor pass mirroring the first/second/third-wave split
-//!   for GC-managed node *types* themselves.
 //! - `LazyList` internals (`env`/`cache`/coroutine/lazy-pipe state) — §11 step
 //!   10 (third wave). A root that merely *points at* a `LazyList` (e.g.
 //!   `ForLoopResumeState::LazyGather`) is noted but not traced through yet.
@@ -36,6 +37,24 @@ impl Interpreter {
         self.visit_lexical_envs(visitor);
         self.visit_dispatch_state(visitor);
         self.visit_persistent_caches(visitor);
+        self.visit_supply_registries(visitor);
+    }
+
+    /// Process-global supply/async registries (design doc §3.4 / §11 step 7).
+    ///
+    /// Unlike the per-interpreter roots above, these registries live in
+    /// process-global statics (`state`/`state_supplier` modules) and are shared
+    /// across every thread's interpreter — the same reason §6.2 mandates a
+    /// global collect. They are root *containers*, never GC-managed nodes: the
+    /// collector must see the `Value`s / async nodes they keep reachable (tap
+    /// callbacks, done/quit/close phasers, emitted values, pending & combinator
+    /// promises, channel sinks) so a supply-held closure/`Promise`/`Channel`
+    /// isn't misjudged garbage. Enumerating them from any interpreter's
+    /// `visit_roots` is correct (visiting a root twice is harmless), mirroring
+    /// how `shared_vars` — also cross-thread `Arc`-shared — is already visited.
+    fn visit_supply_registries(&self, visitor: &mut dyn RootVisitor) {
+        crate::runtime::native_methods::state::visit_supply_state_roots(visitor);
+        crate::runtime::native_methods::state_supplier::visit_supplier_subscription_roots(visitor);
     }
 
     /// Former `VM` struct fields (CP-3 collapse) — the live bytecode
@@ -257,5 +276,23 @@ mod tests {
         interp.visit_roots(&mut visitor);
         // No assertion on the exact count — this just proves the traversal
         // is sound (no panics/deadlocks) against real post-execution state.
+    }
+
+    #[test]
+    fn visit_roots_does_not_deadlock_over_supply_registries() {
+        // Exercise the process-global supply/promise registries populated by a
+        // real supply/react program, proving `visit_supply_registries` neither
+        // panics nor deadlocks against live registry state.
+        let mut interp = Interpreter::new();
+        interp
+            .run(
+                "my $s = Supplier.new; my @got; \
+                 $s.Supply.tap(-> $v { @got.push($v) }); \
+                 $s.emit(1); $s.emit(2); $s.done; say @got.elems;",
+            )
+            .unwrap();
+
+        let mut visitor = CountingVisitor { count: 0 };
+        interp.visit_roots(&mut visitor);
     }
 }

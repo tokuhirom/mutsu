@@ -168,6 +168,51 @@ pub(crate) fn supplier_snapshot(supplier_id: u64) -> (Vec<Value>, bool, Option<V
     }
 }
 
+/// Enumerate every `Value` (and `Value`-wrapped async node) held live by the
+/// process-global supply/promise registries defined in *this* module, for GC
+/// root enumeration (`Interpreter::visit_roots`; design doc §3.4 / §11 step 7).
+///
+/// These registries are GC **root containers**, not GC-managed nodes: the
+/// collector never frees them, it only needs to see the `Value`s / async nodes
+/// they keep reachable so a supply-held `Promise`/`Channel`/callback closure is
+/// not misjudged as garbage. `Value::Promise` wrapping a `SharedPromise` (etc.)
+/// is created transiently just to feed the visitor — it is not retained.
+///
+/// The blocking `.lock()` matches `visit_roots`' `shared_vars` read: a
+/// root-enumeration pass runs at a re-entry boundary (design doc §1.2) where no
+/// thread holds these locks, and skipping a contended lock would be *unsound*
+/// (a live root could be missed), so we must not `try_lock`-and-skip.
+#[allow(dead_code)] // live once a collector consumes `visit_roots` (step 8)
+pub(in crate::runtime) fn visit_supply_state_roots(visitor: &mut dyn crate::gc::RootVisitor) {
+    if let Ok(map) = supply_taps_map().lock() {
+        for taps in map.values() {
+            for v in taps {
+                visitor.visit_value(v);
+            }
+        }
+    }
+    if let Ok(map) = promise_combinator_map().lock() {
+        for promises in map.values() {
+            for p in promises {
+                visitor.visit_value(&Value::Promise(p.clone()));
+            }
+        }
+    }
+    if let Ok(map) = supplier_state_map().lock() {
+        for state in map.values() {
+            for v in &state.emitted {
+                visitor.visit_value(v);
+            }
+            if let Some(reason) = &state.quit_reason {
+                visitor.visit_value(reason);
+            }
+            for p in &state.pending_promises {
+                visitor.visit_value(&Value::Promise(p.clone()));
+            }
+        }
+    }
+}
+
 pub(crate) fn split_supply_chunks_into_lines(chunks: &[Value], chomp: bool) -> Vec<Value> {
     let mut combined = String::new();
     for chunk in chunks {
@@ -637,5 +682,45 @@ pub(in crate::runtime) fn set_listener_closed(listener_id: u64) {
         && let Some(flag) = map.get(&listener_id)
     {
         flag.store(true, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+mod gc_root_tests {
+    use super::*;
+
+    struct Collector {
+        seen: Vec<String>,
+    }
+
+    impl crate::gc::RootVisitor for Collector {
+        fn visit_value(&mut self, value: &Value) {
+            if let Value::Str(s) = value {
+                self.seen.push(s.to_string());
+            }
+        }
+    }
+
+    #[test]
+    fn visit_supply_state_roots_sees_emitted_values() {
+        // A high, test-unique id avoids colliding with any other test that
+        // shares this process-global registry (tests run in parallel).
+        let supplier_id = 0xF00D_0001;
+        let sentinel = "__gc_supply_state_root_sentinel__";
+        supplier_emit(supplier_id, Value::str(sentinel.to_string()));
+
+        let mut collector = Collector { seen: Vec::new() };
+        visit_supply_state_roots(&mut collector);
+
+        assert!(
+            collector.seen.iter().any(|s| s == sentinel),
+            "visit_supply_state_roots should enumerate the emitted sentinel"
+        );
+
+        // Leave the registry as we found it (empty for this id).
+        supplier_reset(supplier_id);
+        if let Ok(mut map) = supplier_state_map().lock() {
+            map.remove(&supplier_id);
+        }
     }
 }

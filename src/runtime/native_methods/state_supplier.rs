@@ -1739,3 +1739,149 @@ pub(in crate::runtime) fn zip_latest_state_info(zip_latest_state_id: u64) -> (u6
     }
     (0, None)
 }
+
+// ── GC root enumeration ──────────────────────────────────────────────
+//
+// The subscription/whenever/zip registries above are the supply-side half of
+// the process-global supply graph (design doc §3.4). They are GC **root
+// containers**, not GC-managed nodes: `Interpreter::visit_roots` enumerates the
+// `Value`s (tap callbacks, done/quit/close phasers, channel sinks, unique/
+// classify/produce/start/batch/zip state) they keep reachable so a supply-held
+// closure/`Channel` is never misjudged garbage. See `visit_supply_state_roots`
+// in the sibling `state` module for the promise/emit half and the rationale for
+// the blocking `.lock()`.
+
+/// Visit every `Value` held live by one tap subscription's transform state.
+fn visit_tap_roots(tap: &SupplierTapSubscription, visitor: &mut dyn crate::gc::RootVisitor) {
+    visitor.visit_value(&tap.callback);
+    if let Some(channel) = &tap.channel_sink {
+        visitor.visit_value(&Value::Channel(channel.clone()));
+    }
+    if let Some(uf) = &tap.unique_filter {
+        if let Some(f) = &uf.as_fn {
+            visitor.visit_value(f);
+        }
+        if let Some(f) = &uf.with_fn {
+            visitor.visit_value(f);
+        }
+        for (v, _) in &uf.seen {
+            visitor.visit_value(v);
+        }
+    }
+    if let Some(cs) = &tap.classify_state {
+        visitor.visit_value(&cs.mapper);
+        for v in &cs.seen_keys {
+            visitor.visit_value(v);
+        }
+        for (v, _) in &cs.key_supplier_ids {
+            visitor.visit_value(v);
+        }
+    }
+    if let Some(ps) = &tap.produce_state {
+        visitor.visit_value(&ps.callable);
+        if let Some(acc) = &ps.accumulator {
+            visitor.visit_value(acc);
+        }
+    }
+    if let Some(ss) = &tap.start_state {
+        visitor.visit_value(&ss.callable);
+    }
+    if let Some(bs) = &tap.batch_state {
+        for v in &bs.buffer {
+            visitor.visit_value(v);
+        }
+    }
+}
+
+/// Enumerate every `Value` held live by the process-global supply subscription
+/// registries defined in *this* module (design doc §3.4 / §11 step 7).
+#[allow(dead_code)] // live once a collector consumes `visit_roots` (step 8)
+pub(in crate::runtime) fn visit_supplier_subscription_roots(
+    visitor: &mut dyn crate::gc::RootVisitor,
+) {
+    if let Ok(map) = supplier_subscriptions_map().lock() {
+        for subs in map.values() {
+            for tap in &subs.taps {
+                visit_tap_roots(tap, visitor);
+            }
+            for v in &subs.done_callbacks {
+                visitor.visit_value(v);
+            }
+            for v in &subs.quit_callbacks {
+                visitor.visit_value(v);
+            }
+            for v in &subs.whenever_quit_callbacks {
+                visitor.visit_value(v);
+            }
+            for v in &subs.close_callbacks {
+                visitor.visit_value(v);
+            }
+        }
+    }
+    if let Ok(map) = whenever_done_group_map().lock() {
+        for group in map.values() {
+            visitor.visit_value(&group.done_cb);
+        }
+    }
+    if let Ok(map) = zip_state_map().lock() {
+        for state in map.values() {
+            for buf in &state.buffers {
+                for v in buf {
+                    visitor.visit_value(v);
+                }
+            }
+            if let Some(f) = &state.with_fn {
+                visitor.visit_value(f);
+            }
+        }
+    }
+    if let Ok(map) = zip_latest_state_map().lock() {
+        for state in map.values() {
+            for v in state.latest.iter().flatten() {
+                visitor.visit_value(v);
+            }
+            if let Some(f) = &state.with_fn {
+                visitor.visit_value(f);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod gc_root_tests {
+    use super::*;
+
+    struct Collector {
+        seen: Vec<String>,
+    }
+
+    impl crate::gc::RootVisitor for Collector {
+        fn visit_value(&mut self, value: &Value) {
+            if let Value::Str(s) = value {
+                self.seen.push(s.to_string());
+            }
+        }
+    }
+
+    #[test]
+    fn visit_supplier_subscription_roots_sees_tap_callback() {
+        // A high, test-unique id avoids colliding with any other test that
+        // shares this process-global registry (tests run in parallel).
+        let supplier_id = 0xF00D_0002;
+        let sentinel = "__gc_supplier_subscription_root_sentinel__";
+        register_supplier_tap(supplier_id, Value::str(sentinel.to_string()), 0.0);
+
+        let mut collector = Collector { seen: Vec::new() };
+        visit_supplier_subscription_roots(&mut collector);
+
+        assert!(
+            collector.seen.iter().any(|s| s == sentinel),
+            "visit_supplier_subscription_roots should enumerate the tap callback"
+        );
+
+        // Leave the registry as we found it (no entry for this id).
+        if let Ok(mut map) = supplier_subscriptions_map().lock() {
+            map.remove(&supplier_id);
+        }
+    }
+}
