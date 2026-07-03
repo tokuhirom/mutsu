@@ -6,6 +6,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock, Weak};
 
 use crate::ast::{ParamDef, Stmt};
 use crate::env::Env;
+use crate::gc::Gc;
 use crate::opcode::{CompiledCode, CompiledFunction};
 use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
@@ -312,6 +313,7 @@ mod value_methods_a;
 mod value_methods_b;
 mod value_methods_c;
 mod value_setbagmix;
+pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::arc_contents_mut;
 pub(crate) use types::what_type_name;
 
@@ -931,7 +933,7 @@ pub enum Value {
     },
     /// Distinguishes Array, List, and their itemized (Scalar-wrapped) variants.
     Array(Arc<ArrayData>, ArrayKind),
-    Hash(Arc<HashData>),
+    Hash(Gc<HashData>),
     Rat(i64, i64),
     FatRat(i64, i64),
     BigRat(Box<NumBigInt>, Box<NumBigInt>),
@@ -1067,7 +1069,7 @@ pub enum Value {
     /// It also serves `is raw` reduce lvalue descent (`hash_autovivify`), where
     /// the entry is eagerly created first so the path is always length 1.
     HashEntryRef {
-        hash: Arc<HashData>,
+        hash: Gc<HashData>,
         path: Vec<String>,
     },
 }

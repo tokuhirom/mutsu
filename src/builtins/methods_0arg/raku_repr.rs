@@ -603,7 +603,7 @@ pub fn raku_value(v: &Value) -> String {
                 static SEEN_HASH_PTRS: std::cell::RefCell<Vec<(usize, String)>> = const { std::cell::RefCell::new(Vec::new()) };
                 static HASH_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
             }
-            let ptr = Arc::as_ptr(map) as usize;
+            let ptr = crate::gc::Gc::as_ptr(map) as usize;
             let var_name = format!("%hash_{}", ptr);
             let cycle_var = SEEN_HASH_PTRS.with(|seen| {
                 seen.borrow()

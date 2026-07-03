@@ -248,7 +248,7 @@ impl Interpreter {
         let env = self.env();
         match env.get(var_name) {
             Some(Value::Hash(hash_arc)) => {
-                let strong_count = Arc::strong_count(hash_arc);
+                let strong_count = crate::gc::Gc::strong_count_of(hash_arc);
                 // Reject if the hash Arc has more than 2 refs (e.g. HashEntryRef binding)
                 // strong_count == 1: only env holds it (no local slot)
                 // strong_count == 2: env + locals hold it (common case in for loops)
@@ -297,7 +297,7 @@ impl Interpreter {
                 }
                 if let Some(Value::Hash(hash)) = self.env_mut().get_mut(var_name) {
                     Value::hash_insert_through(
-                        &mut Arc::make_mut(hash).map,
+                        &mut crate::gc::Gc::make_mut(hash).map,
                         key.clone(),
                         val.clone(),
                     );

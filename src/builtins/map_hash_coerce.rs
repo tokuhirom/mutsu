@@ -15,7 +15,6 @@ use crate::runtime::utils::set_hash_original_keys;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Build an `X::Hash::Store::OddNumber` error for an odd element count.
 fn make_odd_number_error(items: &[Value]) -> RuntimeError {
@@ -189,7 +188,7 @@ pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
     // Embed the `Map` declared-type in the Hash Arc (pure; no side table).
     if let Value::Hash(mut arc) = result {
         if arc.declared_type.as_deref() != Some("Map") {
-            let data = Arc::make_mut(&mut arc);
+            let data = crate::gc::Gc::make_mut(&mut arc);
             data.declared_type = Some("Map".to_string());
         }
         Ok(Value::Hash(arc))

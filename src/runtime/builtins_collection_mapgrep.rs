@@ -404,7 +404,7 @@ impl Interpreter {
             Value::Hash(target_arc) => {
                 for (name, env_val) in self.env().iter() {
                     if let Value::Hash(env_arc) = env_val
-                        && std::sync::Arc::ptr_eq(target_arc, env_arc)
+                        && crate::gc::Gc::ptr_eq(target_arc, env_arc)
                     {
                         return Some(name.resolve());
                     }

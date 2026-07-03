@@ -907,12 +907,12 @@ impl Interpreter {
                 unreachable!()
             };
             // Check if we can mutate in-place (shared reference)
-            if Arc::strong_count(arc) > 1 {
+            if crate::gc::Gc::strong_count_of(arc) > 1 {
                 // SAFETY: aliased in-place mutation of a shared hash (guarded by
                 // strong_count > 1, the exact case that needs the shared write);
                 // see `arc_contents_mut`. No borrow into the map is live across
                 // each insert.
-                let data = unsafe { crate::value::arc_contents_mut(arc) };
+                let data = unsafe { crate::value::gc_contents_mut(arc) };
                 for arg in args {
                     match arg {
                         Value::Pair(k, v) => {

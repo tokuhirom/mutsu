@@ -344,7 +344,7 @@ impl Interpreter {
                                     // SAFETY: aliased in-place mutation of a shared
                                     // container; see `arc_contents_mut`.
                                     unsafe {
-                                        crate::value::arc_contents_mut(map)
+                                        crate::value::gc_contents_mut(map)
                                             .map
                                             .insert(k.clone(), new_src);
                                     }

@@ -1520,7 +1520,7 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
         (Value::Nil, Value::Nil) => true,
         (Value::Str(a), Value::Str(b)) => Arc::ptr_eq(a, b),
         (Value::Array(a, _), Value::Array(b, _)) => Arc::ptr_eq(a, b),
-        (Value::Hash(a), Value::Hash(b)) => Arc::ptr_eq(a, b),
+        (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
         // A `ContainerRef` cell is the shared-identity primitive of the
         // single-store design: `my @a := @b` installs the *same* cell into both
         // the env entry and the local slot for both names. Without this arm the

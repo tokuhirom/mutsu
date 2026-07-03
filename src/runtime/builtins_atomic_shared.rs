@@ -126,7 +126,7 @@ impl Interpreter {
                 },
             };
             Value::hash_insert_through(&mut map.map, elem_key, value.clone());
-            let new_hash = Value::Hash(std::sync::Arc::new(map));
+            let new_hash = Value::Hash(crate::gc::Gc::new(map));
             shared.insert(atomic_key, new_hash.clone());
             new_hash
         };

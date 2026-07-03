@@ -9,7 +9,7 @@ impl Interpreter {
         let mut guard = cell.lock().unwrap();
         match &mut *guard {
             Value::Array(arc, _) => std::sync::Arc::make_mut(arc).items.clear(),
-            Value::Hash(arc) => std::sync::Arc::make_mut(arc).map.clear(),
+            Value::Hash(arc) => crate::gc::Gc::make_mut(arc).map.clear(),
             other => *other = Value::Nil,
         }
     }

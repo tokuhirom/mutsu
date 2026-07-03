@@ -306,7 +306,7 @@ pub(super) fn dispatch(
                     format!("Array|{:p}", Arc::as_ptr(items))
                 }
                 Value::Hash(map) => {
-                    format!("Hash|{:p}", Arc::as_ptr(map))
+                    format!("Hash|{:p}", crate::gc::Gc::as_ptr(map))
                 }
                 Value::Promise(p) => {
                     format!("Promise|{:p}", p.arc_ptr())

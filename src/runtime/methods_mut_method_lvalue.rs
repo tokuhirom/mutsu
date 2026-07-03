@@ -337,7 +337,7 @@ impl Interpreter {
                     self.quanthash_set_weight(&code, &source, key, &value)?;
                     return Ok(value);
                 }
-                let mut selected_hash: Option<std::sync::Arc<crate::value::HashData>> = None;
+                let mut selected_hash: Option<crate::gc::Gc<crate::value::HashData>> = None;
                 let mut selected_array: Option<std::sync::Arc<crate::value::ArrayData>> = None;
 
                 if let Some(var_name) = target_var
@@ -367,7 +367,7 @@ impl Interpreter {
                         _ => None,
                     });
                     if let Some(first) = candidates.next()
-                        && candidates.all(|other| std::sync::Arc::ptr_eq(&first, &other))
+                        && candidates.all(|other| crate::gc::Gc::ptr_eq(&first, &other))
                     {
                         selected_hash = Some(first);
                     }

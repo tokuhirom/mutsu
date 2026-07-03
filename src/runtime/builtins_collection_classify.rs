@@ -92,14 +92,14 @@ impl Interpreter {
                     .or_insert_with(|| Value::hash(HashMap::new()));
                 match entry {
                     Value::Hash(map) => {
-                        let map = Arc::make_mut(map);
+                        let map = crate::gc::Gc::make_mut(map);
                         insert_nested_bucket(map, &path[1..], item, name)
                     }
                     Value::Array(..) => Err(mixed_level_error(name)),
                     _ => {
                         *entry = Value::hash(HashMap::new());
                         if let Value::Hash(map) = entry {
-                            let map = Arc::make_mut(map);
+                            let map = crate::gc::Gc::make_mut(map);
                             insert_nested_bucket(map, &path[1..], item, name)
                         } else {
                             Ok(())
@@ -368,7 +368,7 @@ impl Interpreter {
             return hash;
         }
         if let Value::Hash(mut arc) = hash {
-            let data = std::sync::Arc::make_mut(&mut arc);
+            let data = crate::gc::Gc::make_mut(&mut arc);
             data.key_type = Some("Any".to_string());
             data.original_keys = Some(object_keys);
             return Value::Hash(arc);

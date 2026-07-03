@@ -370,7 +370,7 @@ impl Interpreter {
             if let Some(container) = self.env.get_mut(var_name) {
                 match container {
                     Value::Hash(map) => {
-                        let h = std::sync::Arc::make_mut(map);
+                        let h = crate::gc::Gc::make_mut(map);
                         for idx in &indices {
                             h.remove(&idx.to_string_value());
                         }

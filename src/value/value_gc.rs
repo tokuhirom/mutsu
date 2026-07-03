@@ -16,9 +16,44 @@
 //! `Junction` is likewise not in the design doc's candidate list and is
 //! excluded.
 
-use crate::gc::{RootVisitor, visit_map_values};
+use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
 use super::{ArrayData, HashData, InstanceAttrs, SharedChannel, SharedPromise, SubData, Value};
+
+impl Value {
+    /// Hand each direct GC-managed (`Gc<T>`) child of this value to `visit`.
+    ///
+    /// Distinct from [`Value::visit_gc_children`], which visits `&Value` for
+    /// root enumeration: `gc_trace` yields the erased `Gc` node handles the
+    /// cycle collector walks between managed nodes. Only variants already
+    /// migrated to `Gc<T>` (§11 step 5+) yield a child; the rest are no-ops. A
+    /// not-yet-migrated container that transitively holds a `Gc` node is a graph
+    /// edge that bypasses the Gc graph until it too migrates — acceptable while
+    /// the collector is off (design doc §3.1's wave phasing).
+    pub(crate) fn gc_trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        // Only migrated (`Gc<T>`) container variants yield a child; more arms
+        // land as further types migrate (§11 step 5c: `Array`, 5d: `ContainerRef`).
+        if let Value::Hash(data) = self {
+            visit(&data.erased());
+        }
+    }
+}
+
+impl Trace for HashData {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        for v in self.map.values() {
+            v.gc_trace(visit);
+        }
+        if let Some(keys) = &self.original_keys {
+            for v in keys.values() {
+                v.gc_trace(visit);
+            }
+        }
+        if let Some(d) = &self.default {
+            d.gc_trace(visit);
+        }
+    }
+}
 
 impl Value {
     #[allow(dead_code)]
@@ -175,7 +210,7 @@ mod tests {
             map,
             ..Default::default()
         };
-        let value = Value::Hash(Arc::new(data));
+        let value = Value::Hash(crate::gc::Gc::new(data));
 
         let mut visitor = CountingVisitor { count: 0 };
         value.visit_gc_children(&mut visitor);

@@ -427,7 +427,7 @@ impl Interpreter {
         // Capture the old hash Arc before assignment for circular reference fixup.
         let old_hash_arc = if name.starts_with('%') {
             if let Value::Hash(arc) = &self.locals[idx] {
-                Some(Arc::as_ptr(arc) as usize)
+                Some(crate::gc::Gc::as_ptr(arc) as usize)
             } else {
                 None
             }

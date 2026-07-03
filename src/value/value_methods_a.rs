@@ -149,14 +149,14 @@ impl Value {
     /// or a `HashData` (a cloned/rebuilt hash whose container metadata is then
     /// preserved) via `Into<HashData>`.
     pub fn hash(map: impl Into<HashData>) -> Self {
-        Value::Hash(Arc::new(map.into()))
+        Value::Hash(Gc::new(map.into()))
     }
 
-    /// Build an `Arc<HashData>` from a map or `HashData`. Lets call sites that
-    /// constructed `Value::Hash(Arc::new(x))` keep their shape as
+    /// Build a `Gc<HashData>` from a map or `HashData`. Lets call sites that
+    /// constructed `Value::Hash(crate::gc::Gc::new(x))` keep their shape as
     /// `Value::Hash(Value::hash_arc(x))` while the variant moved to `HashData`.
-    pub fn hash_arc(map: impl Into<HashData>) -> Arc<HashData> {
-        Arc::new(map.into())
+    pub(crate) fn hash_arc(map: impl Into<HashData>) -> Gc<HashData> {
+        Gc::new(map.into())
     }
 
     /// Coerce a value into item context (`.item` method).
@@ -175,21 +175,21 @@ impl Value {
     /// only when the flag actually changes, so `.WHICH` identity is preserved
     /// for an already-itemized hash). Used by the `Itemize`/`ItemizeVar` opcodes
     /// and `.item` to mark a `$`-sourced hash as a single list-context element.
-    pub(crate) fn hash_arc_itemized(h: Arc<HashData>) -> Arc<HashData> {
+    pub(crate) fn hash_arc_itemized(h: Gc<HashData>) -> Gc<HashData> {
         if h.itemized {
             h
         } else {
             let mut data = (*h).clone();
             data.itemized = true;
-            Arc::new(data)
+            Gc::new(data)
         }
     }
 
-    pub(crate) fn hash_arc_deitemized(h: Arc<HashData>) -> Arc<HashData> {
+    pub(crate) fn hash_arc_deitemized(h: Gc<HashData>) -> Gc<HashData> {
         if h.itemized {
             let mut data = (*h).clone();
             data.itemized = false;
-            Arc::new(data)
+            Gc::new(data)
         } else {
             h
         }
@@ -306,7 +306,7 @@ impl Value {
         if let Value::Hash(arc) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
-            let data = unsafe { arc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(arc) };
             if !data.map.contains_key(key) {
                 let new_hash = Value::hash(HashMap::new());
                 data.map.insert(key.to_string(), new_hash);
@@ -335,7 +335,7 @@ impl Value {
         if let Value::Hash(arc) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
-            let data = unsafe { arc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(arc) };
             match data.map.get_mut(key) {
                 Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
                 Some(elem @ (Value::Array(..) | Value::Hash(..))) => Some(elem.clone()),
@@ -376,7 +376,7 @@ impl Value {
         if let Value::Hash(arc) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
-            let data = unsafe { arc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(arc) };
             match data.map.get_mut(key) {
                 Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
                 Some(elem @ (Value::Array(..) | Value::Hash(..))) if !terminal => {
@@ -410,7 +410,7 @@ impl Value {
         if let Value::Hash(arc) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
-            let data = unsafe { arc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(arc) };
             Value::hash_insert_through(&mut data.map, key.to_string(), val.clone());
             Some(val)
         } else {
@@ -429,14 +429,14 @@ impl Value {
         let any = || Value::Package(crate::symbol::Symbol::intern("Any"));
         let mut cur = hash.clone();
         for k in &path[..path.len() - 1] {
-            let ptr = Arc::as_ptr(&cur);
+            let ptr = crate::gc::Gc::as_ptr(&cur);
             match unsafe { (*ptr).get(k.as_str()) } {
                 Some(Value::Hash(inner)) => cur = inner.clone(),
                 _ => return any(),
             }
         }
         let last = path.last().unwrap();
-        let ptr = Arc::as_ptr(&cur);
+        let ptr = crate::gc::Gc::as_ptr(&cur);
         unsafe { (*ptr).get(last.as_str()).cloned().unwrap_or_else(any) }
     }
 
@@ -444,16 +444,16 @@ impl Value {
     /// return the `(terminal hash Arc, terminal key)` so the caller can insert.
     /// Missing/non-hash intermediate levels are replaced with fresh empty hashes
     /// (interior mutation, so all holders of the shared Arc observe them).
-    pub fn hash_entry_terminal(&self) -> Option<(Arc<HashData>, String)> {
+    pub(crate) fn hash_entry_terminal(&self) -> Option<(Gc<HashData>, String)> {
         let Value::HashEntryRef { hash, path } = self else {
             return None;
         };
         let mut cur = hash.clone();
         for k in &path[..path.len() - 1] {
             // SAFETY: aliased in-place mutation of a shared hash; see
-            // `arc_contents_mut`. No borrow into the map is live across the write.
+            // `gc_contents_mut`. No borrow into the map is live across the write.
             let next = {
-                let data = unsafe { arc_contents_mut(&cur) };
+                let data = unsafe { gc_contents_mut(&cur) };
                 match data.map.get(k) {
                     Some(Value::Hash(inner)) => inner.clone(),
                     _ => {

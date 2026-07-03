@@ -18,7 +18,7 @@ impl Interpreter {
                 let k = Value::hash_key_encode(key);
                 // SAFETY: aliased in-place mutation of a shared hash; see
                 // `arc_contents_mut`. No live borrow into the map.
-                let hd = unsafe { crate::value::arc_contents_mut(arc) };
+                let hd = unsafe { crate::value::gc_contents_mut(arc) };
                 Value::hash_insert_through(&mut hd.map, k, val);
             }
             Value::Array(arc, _) => {
@@ -64,7 +64,7 @@ impl Interpreter {
                 let cell = Arc::new(std::sync::Mutex::new(val));
                 // SAFETY: aliased in-place mutation of a shared hash; see
                 // `arc_contents_mut`. No live borrow into the map.
-                let hd = unsafe { crate::value::arc_contents_mut(&arc) };
+                let hd = unsafe { crate::value::gc_contents_mut(&arc) };
                 Value::hash_insert_through(&mut hd.map, key, Value::ContainerRef(cell.clone()));
                 cell
             }
@@ -331,7 +331,7 @@ impl Interpreter {
     pub(crate) fn same_container_arc(a: &Value, b: &Value) -> bool {
         match (a, b) {
             (Value::Array(x, _), Value::Array(y, _)) => Arc::ptr_eq(x, y),
-            (Value::Hash(x), Value::Hash(y)) => Arc::ptr_eq(x, y),
+            (Value::Hash(x), Value::Hash(y)) => crate::gc::Gc::ptr_eq(x, y),
             _ => false,
         }
     }

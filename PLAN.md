@@ -389,7 +389,14 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
          `Gc<T>` ＋ `GcHeader`(strong count/`Color`/buffered) ＋ `Trace` trait ＋ process-global
          candidate buffer(dedup)。`MUTSU_GC` 未設定なら drop で candidate 登録しない=inert。
          `record_gc_candidate_push`/`dedup_hit` を配線。`Value` variant は未置換=step 5 以降）。
-      5. `Array`/`Hash`/`ContainerRef` を first wave として `Arc→Gc` 置換 ← **次はここ（次セッション開始点）**。
+      5. first wave `Arc→Gc` 置換（型ごとにスライス）:
+         - 5a. ✅ `Gc<T>` を `Arc<T>` の drop-in 化（`make_mut`/`get_mut`/`ptr_eq`/`strong_count_of`/
+           `as_ptr`/`erased`/`From`/`Debug`/`AsRef`/`PartialEq` ＋ free `gc_contents_mut` ＋
+           `ContainerMakeMut` bridge trait）。移行を機械的 call-site rewrite に落とす前提工事。
+         - 5b. ✅ `Value::Hash` → `Gc<HashData>`（`impl Trace for HashData` ＋ `Value::gc_trace` Hash arm、
+           49 ファイルの `Arc::*`→`Gc::*` 置換。全 whitelisted hash roast green・container identity 保存）。
+         - 5c. `Value::Array` → `Gc<ArrayData>` ← **次はここ（次セッション開始点）**。5b と同型・約 1400 サイト。
+         - 5d. `Value::ContainerRef` → `Gc<CellValue>`（§3.3、`Arc<Mutex<Value>>` の cell 再設計）。
       6〜11. `Promise`/`Channel` → supply registry → safepoint collect（trial-deletion 本体）→
       `Sub`/`Instance` → `LazyList`（詳細は設計メモ参照）。
       **Track B（要素 cell 化）と GC は統合キャンペーン（層3a・`Arc → Gc<T>` 一斉置換）**。続いて NaN-boxing

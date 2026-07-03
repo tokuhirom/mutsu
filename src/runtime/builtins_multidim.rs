@@ -125,10 +125,10 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
     if let Value::Hash(map) = target {
         let key = head.to_string_value();
         if indices.len() == 1 {
-            let map_mut = std::sync::Arc::make_mut(map);
+            let map_mut = crate::gc::Gc::make_mut(map);
             return map_mut.remove(&key).unwrap_or_else(default);
         }
-        let map_mut = std::sync::Arc::make_mut(map);
+        let map_mut = crate::gc::Gc::make_mut(map);
         return match map_mut.get_mut(&key) {
             Some(inner) => multidim_delete(inner, &indices[1..]),
             None => default(),

@@ -81,7 +81,7 @@ impl Interpreter {
 
     pub(super) fn resolve_hash_entry(
         &self,
-        items: &Arc<crate::value::HashData>,
+        items: &crate::gc::Gc<crate::value::HashData>,
         key: &str,
     ) -> Value {
         match items.get(key) {
@@ -106,7 +106,10 @@ impl Interpreter {
 
     /// Resolve all sentinel entries in a hash, returning a new hash with
     /// bound variable references replaced by their current values.
-    pub(super) fn resolve_hash_for_iteration(&self, items: &Arc<crate::value::HashData>) -> Value {
+    pub(super) fn resolve_hash_for_iteration(
+        &self,
+        items: &crate::gc::Gc<crate::value::HashData>,
+    ) -> Value {
         let mut resolved = HashMap::new();
         for (key, value) in items.iter() {
             let resolved_value = match value {

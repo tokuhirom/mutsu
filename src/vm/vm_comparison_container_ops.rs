@@ -171,7 +171,7 @@ impl Interpreter {
                 // promoted when re-evaluated). They are the same container iff
                 // the element currently stored at that slot IS this cell.
                 if let Some((arc, key)) = Self::extract_hash_ref(other) {
-                    let ptr = Arc::as_ptr(&arc);
+                    let ptr = crate::gc::Gc::as_ptr(&arc);
                     if let Some(Value::ContainerRef(elem_cell)) =
                         unsafe { (*ptr).get(key.as_str()) }
                     {
@@ -186,7 +186,7 @@ impl Interpreter {
         let a_ref = Self::extract_hash_ref(a);
         let b_ref = Self::extract_hash_ref(b);
         if let (Some((a_arc, a_key)), Some((b_arc, b_key))) = (a_ref, b_ref) {
-            Arc::ptr_eq(&a_arc, &b_arc) && a_key == b_key
+            crate::gc::Gc::ptr_eq(&a_arc, &b_arc) && a_key == b_key
         } else {
             // Both are the same value identity (for non-hash-ref cases)
             crate::runtime::values_identical(a, b)
@@ -197,13 +197,13 @@ impl Interpreter {
     /// to, walking its `path` READ-ONLY. Returns `None` if any intermediate level
     /// is missing or not a hash (the deferred path is not yet materialized, so it
     /// has no stable container identity).
-    fn extract_hash_ref(val: &Value) -> Option<(Arc<crate::value::HashData>, String)> {
+    fn extract_hash_ref(val: &Value) -> Option<(crate::gc::Gc<crate::value::HashData>, String)> {
         let Value::HashEntryRef { hash, path } = val else {
             return None;
         };
         let mut cur = hash.clone();
         for k in &path[..path.len() - 1] {
-            let ptr = Arc::as_ptr(&cur);
+            let ptr = crate::gc::Gc::as_ptr(&cur);
             match unsafe { (*ptr).get(k.as_str()) } {
                 Some(Value::Hash(inner)) => cur = inner.clone(),
                 _ => return None,

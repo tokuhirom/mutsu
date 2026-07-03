@@ -225,7 +225,7 @@ impl Interpreter {
             }
             Value::Hash(mut map) => {
                 if map.default.as_deref() != Some(&default) {
-                    Arc::make_mut(&mut map).default = Some(Box::new(default));
+                    crate::gc::Gc::make_mut(&mut map).default = Some(Box::new(default));
                 }
                 Value::Hash(map)
             }

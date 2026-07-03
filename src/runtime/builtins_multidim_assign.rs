@@ -258,7 +258,7 @@ impl Interpreter {
                 let removed = new_hash
                     .remove(&key)
                     .unwrap_or_else(|| absent_default.clone().unwrap_or(Value::Nil));
-                (removed, Value::Hash(std::sync::Arc::new(new_hash)))
+                (removed, Value::Hash(crate::gc::Gc::new(new_hash)))
             }
             Value::Array(items, kind) => {
                 let idx = crate::runtime::to_int(&index);

@@ -16,20 +16,21 @@
 //! - the process-global candidate buffer — where a drop that leaves the node
 //!   with surviving handles records it as a possible cycle root (§4.2 / §5.2).
 //!
-//! Deliberately NOT in this step:
-//! - No `Value` variant is migrated to `Gc<T>` (that is the first wave, §11
-//!   step 5+). Nothing outside this module's tests constructs a `Gc<T>` yet, so
-//!   this is inert with respect to every production execution path.
+//! State of the migration (§11 step 5):
+//! - `Value::Hash` is the first variant migrated to `Gc<HashData>` (step 5b), so
+//!   `Gc`'s `Clone`/`Drop`/`make_mut`/... run in production now. Candidate
+//!   buffering still only happens under `MUTSU_GC=on` (default off), so ordinary
+//!   runs pay just an atomic refcount op per hash clone/drop and push nothing.
+//! - `Array`/`ContainerRef` (steps 5c/5d) remain `Arc`; the [`ContainerMakeMut`]
+//!   bridge lets shared container macros work across the mixed state meanwhile.
 //! - No trial-deletion reclaim runs. [`drain_candidates`] hands the buffered
 //!   nodes to a future synchronous collector (§11 step 8); until then the
 //!   `Color`/strong-count bookkeeping is maintained but never acted on.
 
-// Every item here is inert in a production build: nothing constructs a `Gc<T>`
-// until the first-wave `Arc → Gc` migration (§11 step 5), so `Gc`'s `Drop`/
-// `Clone` are never instantiated and the candidate-buffer path is unreachable
-// outside `#[cfg(test)]`. The machinery is deliberately compiled in ahead of
-// that (design doc §9.1: "compiled in, default off"), hence the module-wide
-// dead-code allow — removed when the first Value variant becomes `Gc`-managed.
+// The collector-facing surface (Color scan states, drain_candidates,
+// buffer_as_candidate, trace_children, ...) is not exercised until the
+// synchronous collector lands (§11 step 8), so keep a module-wide dead-code
+// allow rather than sprinkling per-item ones; drop it when step 8 wires them up.
 #![allow(dead_code)]
 
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
@@ -173,6 +174,36 @@ impl<T: Trace + 'static> Gc<T> {
         self.inner.value.trace(visit);
     }
 
+    /// A type-erased [`ErasedGc`] handle to this node (a fresh `Arc` clone
+    /// coerced to `dyn Trace`). This is how a parent node exposes a `Gc` child
+    /// to the collector's tracer, and how a candidate is retained in the
+    /// buffer. Bumps the backing `Arc`'s count but NOT the GC-visible
+    /// `header.strong`, so an erased handle held by the collector does not read
+    /// as a live program reference.
+    pub(crate) fn erased(&self) -> ErasedGc {
+        self.inner.clone()
+    }
+
+    // ---- `Arc<T>` drop-in API (supplements the `ptr_eq`/`get_mut`/`make_mut`
+    // added in #4112) --------------------------------------------------------
+    //
+    // The container migration (§11 step 5) rewrites the pre-GC `Arc::` calls on
+    // `ArrayData`/`HashData` to their `Gc` equivalents. #4112 landed
+    // `ptr_eq`/`get_mut`/`make_mut`; these two add the remaining `Arc::`
+    // associated fns the migration's call sites use.
+
+    /// `Arc::strong_count` analog in associated-fn form (the method
+    /// [`Gc::strong_count`] returns the same value). Live GC handles only.
+    pub(crate) fn strong_count_of(this: &Gc<T>) -> usize {
+        this.inner.header.strong.load(Ordering::Relaxed)
+    }
+
+    /// `Arc::as_ptr` analog: a raw pointer to the *value* (past the node
+    /// header), matching what `Arc::as_ptr` yields for a plain `Arc<T>`.
+    pub(crate) fn as_ptr(this: &Gc<T>) -> *const T {
+        &this.inner.value as *const T
+    }
+
     /// Offer this node to the candidate buffer as a possible cycle root,
     /// bypassing the `MUTSU_GC` gate. Used by tests and (later) by an explicit
     /// `gc_debug_collect_now`-style hook.
@@ -247,6 +278,77 @@ impl<T: Trace + 'static> Drop for Gc<T> {
             buffer_candidate(self.inner.clone());
         }
     }
+}
+
+impl<T: Trace + 'static> From<T> for Gc<T> {
+    fn from(value: T) -> Gc<T> {
+        Gc::new(value)
+    }
+}
+
+impl<T: Trace + 'static> AsRef<T> for Gc<T> {
+    fn as_ref(&self) -> &T {
+        &self.inner.value
+    }
+}
+
+impl<T: Trace + PartialEq + 'static> PartialEq for Gc<T> {
+    /// Value equality, matching `Arc<T>`'s `PartialEq` (compares pointees, with
+    /// a same-node fast path) — NOT pointer identity. Use [`Gc::ptr_eq`] for
+    /// identity.
+    fn eq(&self, other: &Self) -> bool {
+        Gc::ptr_eq(self, other) || self.inner.value == other.inner.value
+    }
+}
+
+impl<T: Trace + std::fmt::Debug + 'static> std::fmt::Debug for Gc<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Forward to the pointee so `Value`'s derived `Debug` prints a migrated
+        // `Gc<ArrayData>` exactly like the old `Arc<ArrayData>` did.
+        std::fmt::Debug::fmt(&self.inner.value, f)
+    }
+}
+
+/// Copy-on-write `make_mut` bridged over both `Arc<T>` and `Gc<T>`, so a shared
+/// macro/generic that mutates a container works while only *some* container
+/// variants have migrated from `Arc` to `Gc` (§11 step 5 lands one type at a
+/// time). Once every container variant is `Gc`, call sites can use `Gc::make_mut`
+/// directly and this bridge can be retired.
+pub(crate) trait ContainerMakeMut {
+    type Inner;
+    fn container_make_mut(&mut self) -> &mut Self::Inner;
+}
+
+impl<T: Clone> ContainerMakeMut for Arc<T> {
+    type Inner = T;
+    fn container_make_mut(&mut self) -> &mut T {
+        Arc::make_mut(self)
+    }
+}
+
+impl<T: Trace + Clone + 'static> ContainerMakeMut for Gc<T> {
+    type Inner = T;
+    fn container_make_mut(&mut self) -> &mut T {
+        Gc::make_mut(self)
+    }
+}
+
+/// `Gc<T>` analog of [`crate::value::aliased_mut::arc_contents_mut`]: a `&mut T`
+/// aliasing a shared node's value for a deliberate aliased in-place mutation of
+/// a container (Raku container identity — a push through one alias must be
+/// visible through every holder of the same node).
+///
+/// # Safety
+///
+/// Same contract as `arc_contents_mut`: the caller must ensure no other borrow
+/// into this value is live for the duration of the returned `&mut`, and no
+/// concurrent access from another thread. The candidate buffer's retained `Arc`
+/// adds no new hazard — a buffered node's value is read only at a collect
+/// safepoint, never concurrently with a live mutation.
+#[allow(clippy::mut_from_ref)]
+pub(crate) unsafe fn gc_contents_mut<T: Trace + 'static>(gc: &Gc<T>) -> &mut T {
+    // SAFETY: delegated to the caller per the contract above.
+    unsafe { &mut *(Gc::as_ptr(gc) as *mut T) }
 }
 
 /// Process-global cycle-candidate buffer (design doc §5.2: "buffer は
@@ -337,10 +439,16 @@ mod tests {
             if let Ok(guard) = self.child.lock()
                 && let Some(child) = guard.as_ref()
             {
-                let erased: ErasedGc = child.inner.clone();
-                visit(&erased);
+                visit(&child.erased());
             }
         }
+    }
+
+    /// Clonable leaf node carrying a payload, for COW / mutation tests.
+    #[derive(Clone, Debug, PartialEq)]
+    struct Cell(i64);
+    impl Trace for Cell {
+        fn trace(&self, _visit: &mut dyn FnMut(&ErasedGc)) {}
     }
 
     #[test]
@@ -376,6 +484,73 @@ mod tests {
         let mut seen = 0;
         gc.trace_children(&mut |_erased| seen += 1);
         assert_eq!(seen, 0);
+    }
+
+    #[test]
+    fn ptr_eq_distinguishes_shared_from_independent() {
+        let a = Gc::new(Cell(1));
+        let shared = a.clone();
+        let b = Gc::new(Cell(1));
+        assert!(Gc::ptr_eq(&a, &shared), "clones share the node");
+        assert!(!Gc::ptr_eq(&a, &b), "independent nodes differ");
+    }
+
+    #[test]
+    fn make_mut_shares_when_unique_and_cows_when_aliased() {
+        // Unique: make_mut writes in place, both this handle and any later
+        // clone observe it.
+        let mut a = Gc::new(Cell(1));
+        *Gc::make_mut(&mut a) = Cell(2);
+        assert_eq!(*a, Cell(2));
+
+        // Aliased: make_mut clones, so the write is NOT visible through the
+        // pre-existing alias (Arc::make_mut COW semantics).
+        let alias = a.clone();
+        assert_eq!(Gc::strong_count_of(&a), 2);
+        *Gc::make_mut(&mut a) = Cell(9);
+        assert_eq!(*a, Cell(9));
+        assert_eq!(
+            *alias,
+            Cell(2),
+            "the alias must not see the post-clone write"
+        );
+        assert_eq!(Gc::strong_count_of(&a), 1, "a is a fresh unique node");
+    }
+
+    #[test]
+    fn get_mut_is_some_only_when_unique() {
+        let mut a = Gc::new(Cell(1));
+        assert!(Gc::get_mut(&mut a).is_some());
+        let alias = a.clone();
+        assert!(Gc::get_mut(&mut a).is_none(), "aliased => no unique &mut");
+        drop(alias);
+        assert!(
+            Gc::get_mut(&mut a).is_some(),
+            "unique again after alias drops"
+        );
+    }
+
+    #[test]
+    fn gc_contents_mut_writes_through_a_shared_node() {
+        // Unlike make_mut, gc_contents_mut mutates the shared node in place, so
+        // an alias DOES observe the write (Raku shared-container identity).
+        let a = Gc::new(Cell(1));
+        let alias = a.clone();
+        // SAFETY: no other borrow into the value is live across this write.
+        unsafe { *gc_contents_mut(&a) = Cell(7) };
+        assert_eq!(*a, Cell(7));
+        assert_eq!(
+            *alias,
+            Cell(7),
+            "the shared write is visible through the alias"
+        );
+    }
+
+    #[test]
+    fn from_and_debug_forward_to_the_value() {
+        let gc: Gc<Cell> = Cell(5).into();
+        assert_eq!(*gc, Cell(5));
+        assert_eq!(format!("{gc:?}"), format!("{:?}", Cell(5)));
     }
 
     #[test]

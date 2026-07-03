@@ -1084,7 +1084,7 @@ impl Interpreter {
                             }
                         }
                         if let Some(Value::Hash(arc_hash)) = self.env.get_mut(&key) {
-                            let hash = Arc::make_mut(arc_hash);
+                            let hash = crate::gc::Gc::make_mut(arc_hash);
                             for (k, v) in kv_pairs {
                                 let wk = if is_object_hash {
                                     crate::runtime::utils::value_which_key(&k)
@@ -1098,7 +1098,7 @@ impl Interpreter {
                                 }
                                 Self::hash_push_insert(hash, wk, v, is_push);
                             }
-                            return Ok(Value::Hash(Arc::clone(arc_hash)));
+                            return Ok(Value::Hash(arc_hash.clone()));
                         }
                         // No existing hash in the variable: build a fresh typed
                         // hash from the pushed pairs (preserving the constraints).
@@ -1121,19 +1121,19 @@ impl Interpreter {
                             hd.key_type = key_constraint;
                         }
                         hd.value_type = value_constraint;
-                        let result = Value::Hash(Arc::new(hd));
+                        let result = Value::Hash(crate::gc::Gc::new(hd));
                         self.env.insert(key, result.clone());
                         return Ok(result);
                     }
 
                     // Fast path: COW via Arc::make_mut (O(1) when refcount=1)
                     if let Some(Value::Hash(arc_hash)) = self.env.get_mut(&key) {
-                        let hash = Arc::make_mut(arc_hash);
+                        let hash = crate::gc::Gc::make_mut(arc_hash);
                         let pairs = Self::hash_push_collect_pairs(args);
                         for (k, v) in pairs {
                             Self::hash_push_insert(hash, k, v, is_push);
                         }
-                        return Ok(Value::Hash(Arc::clone(arc_hash)));
+                        return Ok(Value::Hash(arc_hash.clone()));
                     }
 
                     // Fallback: create from target value
