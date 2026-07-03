@@ -1529,7 +1529,7 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
         // (and `merge_method_env` over-signalled env_dirty for a method that
         // returned the same cell). Same Arc => genuinely unchanged; distinct Arcs
         // stay "changed" (conservative).
-        (Value::ContainerRef(a), Value::ContainerRef(b)) => Arc::ptr_eq(a, b),
+        (Value::ContainerRef(a), Value::ContainerRef(b)) => crate::gc::Gc::ptr_eq(a, b),
         (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
         _ => false,
     }
@@ -1627,7 +1627,7 @@ mod cheaply_unchanged_tests {
         // (same Arc) must report "unchanged" so the reverse-sync survey does not
         // count a bound container as effective stale, and `merge_method_env` does
         // not over-signal env_dirty for a method returning the same cell.
-        let cell = Arc::new(Mutex::new(Value::array(vec![Value::Int(1)])));
+        let cell = crate::gc::Gc::new(Mutex::new(Value::array(vec![Value::Int(1)])));
         let a = Value::ContainerRef(cell.clone());
         let b = Value::ContainerRef(cell);
         assert!(cheaply_unchanged(&a, &b));
@@ -1637,8 +1637,12 @@ mod cheaply_unchanged_tests {
     fn container_ref_distinct_cells_are_changed() {
         // Distinct cells (even with equal contents) stay "changed" — the test is
         // conservative Arc identity, never deep value equality.
-        let a = Value::ContainerRef(Arc::new(Mutex::new(Value::array(vec![Value::Int(1)]))));
-        let b = Value::ContainerRef(Arc::new(Mutex::new(Value::array(vec![Value::Int(1)]))));
+        let a = Value::ContainerRef(crate::gc::Gc::new(Mutex::new(Value::array(vec![
+            Value::Int(1),
+        ]))));
+        let b = Value::ContainerRef(crate::gc::Gc::new(Mutex::new(Value::array(vec![
+            Value::Int(1),
+        ]))));
         assert!(!cheaply_unchanged(&a, &b));
     }
 }

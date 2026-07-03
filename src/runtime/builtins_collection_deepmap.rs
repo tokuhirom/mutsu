@@ -224,7 +224,7 @@ impl Interpreter {
         block: &Value,
         leaf: &Value,
     ) -> Result<(Value, Value), RuntimeError> {
-        let cell = std::sync::Arc::new(std::sync::Mutex::new(leaf.clone()));
+        let cell = crate::gc::Gc::new(std::sync::Mutex::new(leaf.clone()));
         let res = self.call_sub_value(
             block.clone(),
             vec![Value::ContainerRef(cell.clone())],

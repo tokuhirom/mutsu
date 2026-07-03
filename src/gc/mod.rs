@@ -8,10 +8,10 @@
 //!   `Interpreter::visit_roots` / `Env::visit_values` to enumerate every
 //!   `Value` reachable from execution state (§11 steps 1-2).
 //! - [`gc_ptr`] — [`Gc<T>`], its Bacon-Rajan node header, the [`Trace`] trait,
-//!   and the process-global cycle-candidate buffer (§11 step 4). `Value::Hash`
-//!   is migrated to `Gc<HashData>` (§11 step 5b, first wave); `Array`/
-//!   `ContainerRef` follow (§11 steps 5c/5d). No trial-deletion reclaim runs
-//!   yet (§11 step 8); candidate buffering is off unless `MUTSU_GC=on`.
+//!   and the process-global cycle-candidate buffer (§11 step 4). The first wave
+//!   is migrated to `Gc<_>`: `Value::Hash` (5b), `Value::Array` (5c),
+//!   `Value::ContainerRef` (5d). No trial-deletion reclaim runs yet (§11 step
+//!   8); candidate buffering is off unless `MUTSU_GC=on`.
 
 mod gc_ptr;
 mod root_visitor;

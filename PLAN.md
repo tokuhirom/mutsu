@@ -393,12 +393,15 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
          - 5a. ✅ `Gc<T>` を `Arc<T>` の drop-in 化（`make_mut`/`get_mut`/`ptr_eq`/`strong_count_of`/
            `as_ptr`/`erased`/`From`/`Debug`/`AsRef`/`PartialEq` ＋ free `gc_contents_mut` ＋
            `ContainerMakeMut` bridge trait）。移行を機械的 call-site rewrite に落とす前提工事。
-         - 5b. ✅ `Value::Hash` → `Gc<HashData>`（`impl Trace for HashData` ＋ `Value::gc_trace` Hash arm、
-           49 ファイルの `Arc::*`→`Gc::*` 置換。全 whitelisted hash roast green・container identity 保存）。
-         - 5c. `Value::Array` → `Gc<ArrayData>` ← **次はここ（次セッション開始点）**。5b と同型・約 1400 サイト。
-         - 5d. `Value::ContainerRef` → `Gc<CellValue>`（§3.3、`Arc<Mutex<Value>>` の cell 再設計）。
+         - 5b. ✅ `Value::Hash` → `Gc<HashData>`（`impl Trace for HashData`、49 ファイル。whitelisted hash roast green）。
+         - 5c. ✅ `Value::Array` → `Gc<ArrayData>`（~50 ファイル。**dead 化した `arc_contents_mut` 削除**＝
+           コンテナの生ポインタ書き込みは `gc_contents_mut` 一本に集約）。
+         - 5d. ✅ `Value::ContainerRef(Arc<Mutex<Value>>)` → `Gc<Mutex<Value>>`（`impl Trace for Mutex<Value>`＝
+           self-bind cycle が Gc graph で辿れる。§3.3 の typed-constraint `CellValue` は将来の Track B に延期）。
+         - **→ first wave（Array/Hash/ContainerRef）完了。** `Set`/`Bag`/`Mix` も移行済み（#4117）。
+           残る Arc コンテナは `Sub`/`Instance`/`LazyList`（後続 wave）。
       6〜11. `Promise`/`Channel` → supply registry → safepoint collect（trial-deletion 本体）→
-      `Sub`/`Instance` → `LazyList`（詳細は設計メモ参照）。
+      `Sub`/`Instance` → `LazyList` ← **次はここ**（詳細は設計メモ参照）。
       **Track B（要素 cell 化）と GC は統合キャンペーン（層3a・`Arc → Gc<T>` 一斉置換）**。続いて NaN-boxing
       （層3b・JIT 地ならし）→ JIT（層4）。未決は収集方式（同期/非同期）と A' 地ならしの範囲（ADR §4.2/§4.3）。
 - [ ] 制御フロー（`return`/`last`/`next`/`take`/`emit`）を `RuntimeError` god-struct から `enum Control` へ分離（ANALYSIS §2.4）。

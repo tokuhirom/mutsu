@@ -83,7 +83,7 @@ impl Interpreter {
                     _ => None,
                 });
             let cell = existing_cell.unwrap_or_else(|| {
-                let cell = std::sync::Arc::new(std::sync::Mutex::new(val.clone()));
+                let cell = crate::gc::Gc::new(std::sync::Mutex::new(val.clone()));
                 let cell_val = Value::ContainerRef(cell.clone());
                 self.set_env_with_main_alias(&src_name, cell_val.clone());
                 self.update_local_if_exists(code, &src_name, &cell_val);

@@ -17,12 +17,15 @@
 //!   with surviving handles records it as a possible cycle root (§4.2 / §5.2).
 //!
 //! State of the migration (§11 step 5):
-//! - `Value::Hash` is the first variant migrated to `Gc<HashData>` (step 5b), so
-//!   `Gc`'s `Clone`/`Drop`/`make_mut`/... run in production now. Candidate
-//!   buffering still only happens under `MUTSU_GC=on` (default off), so ordinary
-//!   runs pay just an atomic refcount op per hash clone/drop and push nothing.
-//! - `Array`/`ContainerRef` (steps 5c/5d) remain `Arc`; the [`ContainerMakeMut`]
-//!   bridge lets shared container macros work across the mixed state meanwhile.
+//! - The whole first wave is migrated to `Gc<_>`: `Value::Hash` → `Gc<HashData>`
+//!   (5b), `Value::Array` → `Gc<ArrayData>` (5c), `Value::ContainerRef` →
+//!   `Gc<Mutex<Value>>` (5d). So `Gc`'s `Clone`/`Drop`/`make_mut`/... run in
+//!   production. Candidate buffering still only happens under `MUTSU_GC=on`
+//!   (default off), so ordinary runs pay just an atomic refcount op per
+//!   container clone/drop and push nothing.
+//! - `Set`/`Bag`/`Mix` are also `Gc<_>` now (#4117). `Sub`/`Instance`/`LazyList`
+//!   remain `Arc` (later waves); the [`ContainerMakeMut`] bridge lets shared
+//!   container macros work across the still-mixed state meanwhile.
 //! - No trial-deletion reclaim runs. [`drain_candidates`] hands the buffered
 //!   nodes to a future synchronous collector (§11 step 8); until then the
 //!   `Color`/strong-count bookkeeping is maintained but never acted on.

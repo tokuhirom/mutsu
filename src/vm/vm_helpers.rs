@@ -5,7 +5,7 @@ impl Interpreter {
     /// (`undefine @ary` where `my $r = @ary` promoted `@ary` to a cell). Uses
     /// `Arc::make_mut` so a copy taken out of the cell (`my @copy = @ary`) is
     /// detached rather than emptied; every alias of the cell observes the clear.
-    pub(super) fn clear_aggregate_cell(cell: &std::sync::Arc<std::sync::Mutex<Value>>) {
+    pub(super) fn clear_aggregate_cell(cell: &crate::gc::Gc<std::sync::Mutex<Value>>) {
         let mut guard = cell.lock().unwrap();
         match &mut *guard {
             Value::Array(arc, _) => crate::gc::Gc::make_mut(arc).items.clear(),

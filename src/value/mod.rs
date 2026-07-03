@@ -441,8 +441,8 @@ fn typed_container_constraints() -> &'static Mutex<HashMap<usize, String>> {
 }
 
 /// Record that the `ContainerRef` cell `cell` has the `of`-type `type_name`.
-pub fn register_container_constraint(cell: &Arc<Mutex<Value>>, type_name: &str) {
-    let ptr = Arc::as_ptr(cell) as usize;
+pub fn register_container_constraint(cell: &crate::gc::Gc<Mutex<Value>>, type_name: &str) {
+    let ptr = crate::gc::Gc::as_ptr(cell) as usize;
     typed_container_constraints()
         .lock()
         .unwrap()
@@ -450,8 +450,8 @@ pub fn register_container_constraint(cell: &Arc<Mutex<Value>>, type_name: &str) 
 }
 
 /// Look up the `of`-type constraint of a `ContainerRef` cell, if any.
-pub fn lookup_container_constraint(cell: &Arc<Mutex<Value>>) -> Option<String> {
-    let ptr = Arc::as_ptr(cell) as usize;
+pub fn lookup_container_constraint(cell: &crate::gc::Gc<Mutex<Value>>) -> Option<String> {
+    let ptr = crate::gc::Gc::as_ptr(cell) as usize;
     typed_container_constraints()
         .lock()
         .unwrap()
@@ -1039,7 +1039,7 @@ pub enum Value {
     Scalar(Box<Value>),
     /// A shared mutable Scalar container for `:=` binding.
     /// Two variables bound together share the same `ContainerRef`.
-    ContainerRef(Arc<Mutex<Value>>),
+    ContainerRef(Gc<Mutex<Value>>),
     /// A lazy thunk: wraps a Sub that is evaluated on first access and cached.
     /// Used by `lazy { ... }` statement prefix.
     LazyThunk(Arc<LazyThunkData>),
@@ -1467,7 +1467,7 @@ mod hash_chokepoint_tests {
         // A `:=`-bound element holds a shared `ContainerRef` cell; a later
         // assignment to the key must write *through* the cell (preserving the
         // binding), not replace the entry with a bare value.
-        let cell = Arc::new(Mutex::new(Value::Int(1)));
+        let cell = crate::gc::Gc::new(Mutex::new(Value::Int(1)));
         let mut map = HashMap::new();
         map.insert("k".to_string(), Value::ContainerRef(cell.clone()));
         Value::hash_insert_through(&mut map, "k".to_string(), Value::Int(99));

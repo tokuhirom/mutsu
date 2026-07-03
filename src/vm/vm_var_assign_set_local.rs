@@ -1094,7 +1094,7 @@ impl Interpreter {
                     Value::ContainerRef(arc) => arc.clone(),
                     _ => match self.env().get(&effective_source) {
                         Some(Value::ContainerRef(arc)) => arc.clone(),
-                        _ => std::sync::Arc::new(std::sync::Mutex::new(val.clone())),
+                        _ => crate::gc::Gc::new(std::sync::Mutex::new(val.clone())),
                     },
                 };
                 // A bound `@`/`%` variable adopts the *source* container's

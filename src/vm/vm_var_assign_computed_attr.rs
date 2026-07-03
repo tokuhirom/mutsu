@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::Arc;
 
 impl Interpreter {
     /// Assign a single value into a stack-computed Hash/Array `target` at `key`
@@ -61,7 +60,7 @@ impl Interpreter {
                 let Some((arc, key)) = token.hash_entry_terminal() else {
                     return false;
                 };
-                let cell = Arc::new(std::sync::Mutex::new(val));
+                let cell = crate::gc::Gc::new(std::sync::Mutex::new(val));
                 // SAFETY: aliased in-place mutation of a shared hash; see
                 // `arc_contents_mut`. No live borrow into the map.
                 let hd = unsafe { crate::value::gc_contents_mut(&arc) };
