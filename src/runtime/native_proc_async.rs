@@ -14,6 +14,65 @@ fn make_buf_value(bytes: &[u8]) -> Value {
     Value::make_instance(Symbol::intern("Buf"), battrs)
 }
 
+/// Incrementally UTF-8-decode a Proc::Async output stream. Emits the decoded valid
+/// prefix through the supply channel, retains an INCOMPLETE trailing sequence in
+/// `pending` (so a multibyte character split across two reads is not mis-flagged),
+/// and returns `true` when a genuinely malformed byte is hit — the caller then
+/// quits the supply, matching Rakudo ("stdout/stderr Supply quit on encoding
+/// error", roast S17-procasync/encoding.t).
+fn feed_utf8_incremental(
+    pending: &mut Vec<u8>,
+    new: &[u8],
+    tx: &Option<mpsc::Sender<SupplyEvent>>,
+    collected: &mut String,
+) -> bool {
+    pending.extend_from_slice(new);
+    match std::str::from_utf8(pending) {
+        Ok(s) => {
+            if !s.is_empty() {
+                if let Some(tx) = tx {
+                    let _ = tx.send(SupplyEvent::Emit(Value::str(s.to_string())));
+                }
+                collected.push_str(s);
+            }
+            pending.clear();
+            false
+        }
+        Err(e) => {
+            let valid = e.valid_up_to();
+            if valid > 0 {
+                let s = std::str::from_utf8(&pending[..valid])
+                    .unwrap_or("")
+                    .to_string();
+                if let Some(tx) = tx {
+                    let _ = tx.send(SupplyEvent::Emit(Value::str(s.clone())));
+                }
+                collected.push_str(&s);
+            }
+            match e.error_len() {
+                // Incomplete trailing sequence: keep the tail for the next read.
+                None => {
+                    pending.drain(..valid);
+                    false
+                }
+                // A genuinely invalid byte: signal the encoding error.
+                Some(_) => true,
+            }
+        }
+    }
+}
+
+/// The exception value sent on a `SupplyEvent::Quit` when a Proc::Async output
+/// stream contains malformed UTF-8.
+fn malformed_utf8_quit_value() -> Value {
+    let mut attrs = HashMap::new();
+    attrs.insert(
+        "message".to_string(),
+        Value::str("Malformed UTF-8 in process output".to_string()),
+    );
+    Value::make_instance(Symbol::intern("X::Str::Decode::Malformed"), attrs)
+}
+
 impl Interpreter {
     pub(super) fn native_proc_async_mut(
         &mut self,
@@ -295,6 +354,8 @@ impl Interpreter {
                             let mut stdout = stdout;
                             let mut collected = String::new();
                             let mut buf = [0u8; 4096];
+                            let mut pending: Vec<u8> = Vec::new();
+                            let mut quit = false;
                             loop {
                                 match stdout.read(&mut buf) {
                                     Ok(0) => break,
@@ -304,21 +365,25 @@ impl Interpreter {
                                                 let buf_val = make_buf_value(&buf[..n]);
                                                 let _ = tx.send(SupplyEvent::Emit(buf_val));
                                             }
-                                        } else {
-                                            let chunk =
-                                                String::from_utf8_lossy(&buf[..n]).into_owned();
+                                        } else if feed_utf8_incremental(
+                                            &mut pending,
+                                            &buf[..n],
+                                            &tx,
+                                            &mut collected,
+                                        ) {
                                             if let Some(ref tx) = tx {
-                                                let _ = tx.send(SupplyEvent::Emit(Value::str(
-                                                    chunk.clone(),
-                                                )));
+                                                let _ = tx.send(SupplyEvent::Quit(
+                                                    malformed_utf8_quit_value(),
+                                                ));
                                             }
-                                            collected.push_str(&chunk);
+                                            quit = true;
+                                            break;
                                         }
                                     }
                                     Err(_) => break,
                                 }
                             }
-                            if let Some(ref tx) = tx {
+                            if !quit && let Some(ref tx) = tx {
                                 let _ = tx.send(SupplyEvent::Done);
                             }
                             collected
@@ -334,6 +399,8 @@ impl Interpreter {
                             let mut stderr = stderr;
                             let mut collected = String::new();
                             let mut buf = [0u8; 4096];
+                            let mut pending: Vec<u8> = Vec::new();
+                            let mut quit = false;
                             loop {
                                 match stderr.read(&mut buf) {
                                     Ok(0) => break,
@@ -343,21 +410,25 @@ impl Interpreter {
                                                 let buf_val = make_buf_value(&buf[..n]);
                                                 let _ = tx.send(SupplyEvent::Emit(buf_val));
                                             }
-                                        } else {
-                                            let chunk =
-                                                String::from_utf8_lossy(&buf[..n]).into_owned();
+                                        } else if feed_utf8_incremental(
+                                            &mut pending,
+                                            &buf[..n],
+                                            &tx,
+                                            &mut collected,
+                                        ) {
                                             if let Some(ref tx) = tx {
-                                                let _ = tx.send(SupplyEvent::Emit(Value::str(
-                                                    chunk.clone(),
-                                                )));
+                                                let _ = tx.send(SupplyEvent::Quit(
+                                                    malformed_utf8_quit_value(),
+                                                ));
                                             }
-                                            collected.push_str(&chunk);
+                                            quit = true;
+                                            break;
                                         }
                                     }
                                     Err(_) => break,
                                 }
                             }
-                            if let Some(ref tx) = tx {
+                            if !quit && let Some(ref tx) = tx {
                                 let _ = tx.send(SupplyEvent::Done);
                             }
                             collected
