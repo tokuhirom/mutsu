@@ -416,12 +416,22 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
            バグを検出→修正して健全性を実証）。
       6-7,10-11 (残): `Promise`/`Channel` → supply registry root visitor（async cycle）→ `LazyList`
       （third wave）← **次はここ**（設計メモ参照）。call/return/await 等の追加 safepoint 種別・cross-thread
-      STW・`MUTSU_GC_AT`/random stress も後続。
+      full STW・`MUTSU_GC_AT`/random stress も後続。
          - ✅ **weak reference（`WeakGc<T>`）仕上げ**: primitive は #4123 で `WeakSub` 用に追加済み
            （`Gc::downgrade`/`upgrade`/`ptr_eq`/`strong_count`/`as_ptr`）。dangling constructor `WeakGc::new()`
            ＋ `Gc::weak_count` を補完し、**循環参照ブレイクのセマンティクスを unit test で実証**（weak back-edge が
            strong cycle を refcount だけで解体＝collector 不要／collected cycle の weak observer は `upgrade()→None`）。
            weak 辺は `gc_trace`/root visitor で非トレース（strong count に載らないので proactive に cycle を断つ）。
+         - ✅ **cross-thread 安全化(minimal STW, #4130)**: safepoint collect を single-threaded 区間に限定
+           （worker interpreter は `shared_vars` を `Arc::clone` するので `strong_count > 1` の間は collect skip）。
+           これで `start`/`Promise`/`hyper`/`race` 中の並行 mutation とのデータレース/panic を回避（full STW は後続）。
+         - ✅ **`make_mut`/`get_mut` の uniqueness を `header.strong`(live handle)基準に修正**: candidate buffer の
+           Arc ref で Arc count が水増しされ、GC=on 時に spurious COW→container identity 破壊が起きていた（GC=off は
+           Arc count==strong で不変）。
+         - ✅ **CI `gc-stress` ジョブ**（`.github/workflows/ci.yml`）: `MUTSU_GC=on MUTSU_GC_EVERY_CANDIDATE=64
+           MUTSU_GC_VERIFY=1` で全 test+roast を実行。cargo test ＋ `VERIFY FAIL` 検出はブロッキング（heap 破壊を
+           gate）、prove t/・roast は advisory（`DESTROY`-on-reclaim 等の未実装 GC セマンティクスで一部落ちるが
+           破壊ではないため非ブロック）。**残: cross-thread full STW / `DESTROY`-on-reclaim**。
       **Track B（要素 cell 化）と GC は統合キャンペーン（層3a・`Arc → Gc<T>` 一斉置換）**。続いて NaN-boxing
       （層3b・JIT 地ならし）→ JIT（層4）。未決は収集方式（同期/非同期）と A' 地ならしの範囲（ADR §4.2/§4.3）。
 - [ ] 制御フロー（`return`/`last`/`next`/`take`/`emit`）を `RuntimeError` god-struct から `enum Control` へ分離（ANALYSIS §2.4）。

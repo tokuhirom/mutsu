@@ -116,8 +116,12 @@ impl Interpreter {
             // GC safepoint (design doc §1.2): the dispatch backward edge holds no
             // container borrow, so a cycle collect may run here. Off by default —
             // `gc_safepoints_armed()` is a single cached load unless `MUTSU_GC`
-            // enables an automatic trigger.
-            if crate::gc::gc_safepoints_armed() {
+            // enables an automatic trigger. Gated on single-threaded execution:
+            // worker interpreters (`start`/`Promise`/`hyper`/`race`) hold a clone
+            // of `shared_vars`, so `strong_count > 1` means another thread may be
+            // mutating a shared `Gc` container — collecting then would race
+            // (cross-thread cooperative STW is not implemented yet, design §6).
+            if crate::gc::gc_safepoints_armed() && self.gc_single_threaded() {
                 crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
             }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -363,8 +367,12 @@ impl Interpreter {
             // GC safepoint (design doc §1.2): the dispatch backward edge holds no
             // container borrow, so a cycle collect may run here. Off by default —
             // `gc_safepoints_armed()` is a single cached load unless `MUTSU_GC`
-            // enables an automatic trigger.
-            if crate::gc::gc_safepoints_armed() {
+            // enables an automatic trigger. Gated on single-threaded execution:
+            // worker interpreters (`start`/`Promise`/`hyper`/`race`) hold a clone
+            // of `shared_vars`, so `strong_count > 1` means another thread may be
+            // mutating a shared `Gc` container — collecting then would race
+            // (cross-thread cooperative STW is not implemented yet, design §6).
+            if crate::gc::gc_safepoints_armed() && self.gc_single_threaded() {
                 crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
             }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {

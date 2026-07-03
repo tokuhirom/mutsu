@@ -166,3 +166,112 @@ jobs:
 
       - name: Run E2E tests
         run: node wasm-demo/e2e.test.mjs
+
+  gc-stress:
+    # Runs the whole test + roast suite with the GC cycle collector ON
+    # (design doc §9.3's `GC=on` stress job). `MUTSU_GC_EVERY_CANDIDATE=64`
+    # collects a cycle every 64 candidate pushes at the next safepoint, and
+    # `MUTSU_GC_VERIFY=1` checks the collector's soundness invariants around each
+    # collect. The point: the collector, exercised against every program in the
+    # suite, must never corrupt live data. The collector self-gates to
+    # single-threaded regions (shared_vars strong count, design §6), so
+    # concurrency tests run with GC deferred — cross-thread cooperative STW is
+    # future work.
+    #
+    # BLOCKING gates: `cargo test` (the collector unit tests + the gc_stress
+    # integration tests, which assert no verify violations) and the final
+    # "No GC verify violations" step (any `VERIFY FAIL` in the suite = heap
+    # corruption). The `prove t/` and roast steps are `continue-on-error`: they
+    # RUN the whole suite under GC=on (their purpose is to feed real programs to
+    # the collector so the verify step can catch corruption), but they are not
+    # gated on pass/fail — a few tests fail under GC=on on *semantics* the
+    # collector does not yet implement (e.g. `DESTROY`-on-reclaim), which is a
+    # known gap, not corruption. Promote them to blocking once those close.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MUTSU_GC: "on"
+      MUTSU_GC_EVERY_CANDIDATE: "64"
+      MUTSU_GC_VERIFY: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-gcstress-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-gcstress-${{ runner.os }}-
+
+      - name: Install prove
+        run: sudo apt-get update && sudo apt-get install -y perl
+
+      - name: Unit + integration tests (GC on)
+        run: cargo test
+        env:
+          RUST_MIN_STACK: 8388608
+
+      - name: Build (debug, for TAP tests)
+        run: cargo build
+
+      - name: TAP tests (prove t/, GC on)
+        # Advisory: runs the whole t/ suite under GC on to feed the collector.
+        # Not gated on pass/fail (see job comment); the verify step below is the
+        # hard gate. `|| true` keeps the log tee from failing the step.
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p tmp
+          prove --merge -e 'timeout 60 target/debug/mutsu' t/ 2>&1 | tee tmp/gc-stress-t.log
+
+      - name: Build (release, for roast)
+        run: cargo build --release
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "false"
+
+      - name: Clean precomp cache and restore roast files
+        run: |
+          rm -rf ~/.cache/mutsu/precomp
+          git checkout -- roast/
+
+      - name: Roast tests (make roast, GC on)
+        # Advisory (see the prove-t/ step): runs the whitelist under GC on so the
+        # verify step can catch collector corruption on the roast programs.
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p tmp
+          prove -j4 --merge -e 'scripts/run-roast-test.sh' \
+            $(cat roast-whitelist.txt) 2>&1 | tee tmp/gc-stress-roast.log
+        env:
+          MUTSU_BIN: target/release/mutsu
+
+      - name: No GC verify violations
+        # `MUTSU_GC_VERIFY` logs `VERIFY FAIL` to stderr but does not by itself
+        # fail the process, so a heap-corruption bug could pass unnoticed. Fail
+        # the job if any collect reported a soundness violation.
+        run: |
+          if grep -q "VERIFY FAIL" tmp/gc-stress-t.log tmp/gc-stress-roast.log; then
+            echo "::error::GC collector reported VERIFY FAIL under stress"
+            grep -n "VERIFY FAIL" tmp/gc-stress-t.log tmp/gc-stress-roast.log | head -30
+            exit 1
+          fi
+          echo "No GC verify violations across the suite."
+
+      - name: Upload GC stress logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gc-stress-logs
+          path: |
+            tmp/gc-stress-t.log
+            tmp/gc-stress-roast.log
+          retention-days: 7
+          if-no-files-found: ignore

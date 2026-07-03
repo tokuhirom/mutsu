@@ -14,6 +14,18 @@ use std::process::Command;
 fn run(src: &str, gc: &[(&str, &str)]) -> (String, String, bool) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_mutsu"));
     cmd.arg("-e").arg(src);
+    // Start from a clean GC configuration regardless of the ambient environment
+    // (the `gc-stress` CI job runs `cargo test` with `MUTSU_GC=on`), so each test
+    // controls exactly the mode it exercises.
+    for k in [
+        "MUTSU_GC",
+        "MUTSU_GC_EVERY_SAFEPOINT",
+        "MUTSU_GC_EVERY_CANDIDATE",
+        "MUTSU_GC_VERIFY",
+        "MUTSU_GC_LOG",
+    ] {
+        cmd.env_remove(k);
+    }
     for (k, v) in gc {
         cmd.env(k, v);
     }
