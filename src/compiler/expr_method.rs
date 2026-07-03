@@ -146,6 +146,7 @@ impl Compiler {
         } = target
         {
             let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
+            let target_slot = self.local_map.get(&var_name).copied();
             let name_resolved = name.resolve();
             let arity = args.len() as u32;
             let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
@@ -184,6 +185,7 @@ impl Compiler {
                 self.code.emit(OpCode::IndexAssignExprNamed {
                     name_idx: var_name_idx,
                     is_positional: true,
+                    target_slot,
                 });
                 self.code.emit(OpCode::Pop);
                 self.code.emit(OpCode::GetGlobal(tmp_result_idx));
@@ -206,6 +208,7 @@ impl Compiler {
                 self.code.emit(OpCode::IndexAssignExprNamed {
                     name_idx: var_name_idx,
                     is_positional: true,
+                    target_slot,
                 });
             }
         } else {

@@ -24,7 +24,7 @@ static STATE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 /// substrate the campaign greens slice-by-slice before the default is flipped —
 /// the same env-var-gated pattern the env_dirty campaign used. See
 /// docs/lexical-scope-slot-campaign.md and ANALYSIS.md §1.4.
-fn shadow_slots_active() -> bool {
+pub(crate) fn shadow_slots_active() -> bool {
     use std::sync::OnceLock;
     static ACTIVE: OnceLock<bool> = OnceLock::new();
     *ACTIVE.get_or_init(|| std::env::var_os("MUTSU_SHADOW_SLOTS").is_some())

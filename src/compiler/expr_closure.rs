@@ -422,6 +422,7 @@ impl Compiler {
             return;
         }
         if let Some(name) = Self::index_assign_target_name(target) {
+            let target_slot = self.local_map.get(&name).copied();
             if Self::index_assign_target_requires_eval(target) {
                 self.compile_expr(target);
                 self.code.emit(OpCode::Pop);
@@ -439,6 +440,7 @@ impl Compiler {
             self.code.emit(OpCode::IndexAssignExprNamed {
                 name_idx,
                 is_positional: outer_positional,
+                target_slot,
             });
         } else if let Some((name, chain)) = Self::index_assign_deep_nested_target(target) {
             // Deep nested index assignment (3+ levels): @a[i][j][k]... = val
@@ -533,12 +535,14 @@ impl Compiler {
             // When map's closure has an `is rw` parameter and returns it unchanged,
             // the result is a list of containers bound to the original array elements.
             // Assignment through them writes back to the original array.
+            let target_slot = self.local_map.get(&arr_name).copied();
             self.compile_expr(value);
             self.compile_expr(index);
             let name_idx = self.code.add_constant(Value::str(arr_name));
             self.code.emit(OpCode::IndexAssignExprNamed {
                 name_idx,
                 is_positional: outer_positional,
+                target_slot,
             });
         } else if let Expr::ArrayLiteral(elements) = target {
             // List construction container assignment:

@@ -397,6 +397,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         is_positional: bool,
+        target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         // A lazy `@`-array must reify its prefix before an element assignment
         // (`@a[i] = v`) — the assign machinery needs a materialized backing. (L2)
@@ -458,7 +459,8 @@ impl Interpreter {
         } else {
             None
         };
-        let result = self.exec_index_assign_expr_named_op_inner(code, name_idx, is_positional);
+        let result =
+            self.exec_index_assign_expr_named_op_inner(code, name_idx, is_positional, target_slot);
         // Restore metadata on the post-assignment container when the
         // identity-keyed map lost it OR holds a stale entry. Copy-on-write
         // changes the hash's Arc pointer (the metadata key), and freed pointers

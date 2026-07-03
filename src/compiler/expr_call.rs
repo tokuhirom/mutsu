@@ -252,6 +252,7 @@ impl Compiler {
             } = &args[0]
             && let Some(var_name) = Self::postfix_index_name(index_target)
         {
+            let target_slot = self.local_map.get(&var_name).copied();
             let tmp_target_name = format!(
                 "__mutsu_tmp_assign_method_target_{}",
                 self.code.constants.len()
@@ -285,6 +286,7 @@ impl Compiler {
             self.code.emit(OpCode::IndexAssignExprNamed {
                 name_idx: var_name_idx,
                 is_positional: true,
+                target_slot,
             });
             self.code.emit(OpCode::Pop);
             self.code.emit(OpCode::GetGlobal(tmp_result_idx));

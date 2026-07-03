@@ -153,6 +153,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         is_positional: bool,
+        target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let original_var_name = Self::const_str(code, name_idx).to_string();
         // Resolve sigilless alias: if `h` is a sigilless alias for `%a`,
@@ -171,6 +172,31 @@ impl Interpreter {
             .as_deref()
             .unwrap_or(&original_var_name)
             .to_string();
+        // §1.4 shadow-slot: the compiler-baked slot is valid only for the
+        // target's own name (`original_var_name`). If a sigilless alias redirects
+        // to a DIFFERENT variable, the baked slot no longer applies — fall back to
+        // by-name resolution for the alias target. `eff_slot` is what the target-
+        // var writeback resolvers below should use (via `resolve_local_slot` /
+        // `write_local_slot_or_name`); the separate `source_name`/`src` `:=`-cell
+        // sites keep their own by-name resolution (a distinct variable).
+        //
+        // GATED on `shadow_slots_active()`: with the gate OFF (default / CI) we pass
+        // `None`, so every resolver falls back to the original `find_local_slot`
+        // by-name search — byte-identical to before. The baked slot is NOT a pure
+        // drop-in for `find_local_slot`: `resolve_local_slot` treats an out-of-range
+        // baked slot as "not local here" (returns `None` instead of searching by
+        // name), which diverges on chained slice-lvalue assignment
+        // (`(@b[*-3,…] = @a) = …`, `roast/S02-types/array.t` #62). Only the shadow
+        // build needs the baked slot (to disambiguate duplicate `code.locals` names).
+        let shadow_active = crate::compiler::shadow_slots_active();
+        let eff_slot = if shadow_active && sigilless_alias_target.is_none() {
+            target_slot
+        } else {
+            None
+        };
+        // The baked slot is for `original_var_name` (the pre-alias target name), so
+        // the sigilless-alias write-back below uses it directly — also gated OFF.
+        let orig_slot = if shadow_active { target_slot } else { None };
         // Pre-compute fill value for native typed arrays (e.g. int->0, num->0e0, str->"")
         // Must be done before mutable borrows to avoid borrow conflicts.
         let native_fill = {
@@ -558,7 +584,7 @@ impl Interpreter {
             }
         }
         if !self.env().contains_key(&var_name)
-            && let Some(slot) = self.find_local_slot(code, &var_name)
+            && let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
         {
             self.set_env_with_main_alias(&var_name, self.locals[slot].clone());
         }
@@ -644,7 +670,7 @@ impl Interpreter {
                     }
                     // Early return (like the `Value::Array` slice arm), so repeat
                     // the locals resync the shared tail would otherwise do.
-                    if let Some(slot) = self.find_local_slot(code, &var_name)
+                    if let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
                         && let Some(updated) = self.env().get(&var_name).cloned()
                     {
                         self.locals[slot] = updated;
@@ -795,7 +821,7 @@ impl Interpreter {
                     // assignment mutates only the `env` copy while a variable
                     // that also has a `locals` slot (the common case) keeps
                     // reading its stale pre-assignment value.
-                    if let Some(slot) = self.find_local_slot(code, &var_name)
+                    if let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
                         && let Some(updated) = self.env().get(&var_name).cloned()
                     {
                         self.locals[slot] = updated;
@@ -1320,7 +1346,7 @@ impl Interpreter {
                         self.stack.push(val);
                         // Update local slot
                         if let Some(new_val) = self.env().get(&var_name).cloned() {
-                            self.update_local_if_exists(code, &var_name, &new_val);
+                            self.write_local_slot_or_name(code, eff_slot, &var_name, new_val);
                         }
                         return Ok(());
                     }
@@ -1673,7 +1699,7 @@ impl Interpreter {
             }
         }
         if let Some(updated) = self.get_env_with_main_alias(&var_name) {
-            self.update_local_if_exists(code, &var_name, &updated);
+            self.write_local_slot_or_name(code, eff_slot, &var_name, updated.clone());
             // Write the whole topic back to its source variable only when the
             // source is a scalar (e.g. `for $x { $_[1] = ... }`). For array/hash
             // sources (`for @a { $_[1] = ... }`), the for-loop's own per-element
@@ -1701,7 +1727,7 @@ impl Interpreter {
             {
                 let tagged = self.tag_container_default(updated.clone(), def);
                 self.set_env_with_main_alias(&var_name, tagged.clone());
-                self.update_local_if_exists(code, &var_name, &tagged);
+                self.write_local_slot_or_name(code, eff_slot, &var_name, tagged);
             }
         }
         // When operating through a sigilless alias (e.g., `h` → `%a`),
@@ -1712,7 +1738,7 @@ impl Interpreter {
         {
             self.env_mut()
                 .insert(original_var_name.clone(), updated_container.clone());
-            self.update_local_if_exists(code, &original_var_name, &updated_container);
+            self.write_local_slot_or_name(code, orig_slot, &original_var_name, updated_container);
         }
         // After element assignment, Arc::make_mut may have created a new Arc
         // (COW). Sync HashEntryRef locals whose root `hash` Arc pointed to the
