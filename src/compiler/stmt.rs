@@ -3006,6 +3006,14 @@ impl Compiler {
                 // Emit LetSave: saves current value of the variable
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 let has_index = index.is_some();
+                // Bake the scalar's slot for the scope-exit restore (§1.4/§1.5).
+                // Index mode (`temp @a[$i]`) restores a container ELEMENT, not the
+                // named variable's slot, so keep the by-name path there.
+                let slot = if has_index {
+                    None
+                } else {
+                    self.local_map.get(name).copied()
+                };
                 if let Some(idx_expr) = index {
                     self.compile_expr(idx_expr);
                 }
@@ -3013,6 +3021,7 @@ impl Compiler {
                     name_idx,
                     index_mode: has_index,
                     is_temp: *is_temp,
+                    slot,
                 });
                 // Compile the assignment if value is provided
                 if let Some(val_expr) = value {
@@ -3046,11 +3055,13 @@ impl Compiler {
                 method_args,
                 value,
             } => {
+                let slot = self.local_map.get(var_name).copied();
                 let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                 self.code.emit(OpCode::LetSave {
                     name_idx,
                     index_mode: false,
                     is_temp: true,
+                    slot,
                 });
                 let assign_expr = Expr::Call {
                     name: Symbol::intern("__mutsu_assign_method_lvalue"),

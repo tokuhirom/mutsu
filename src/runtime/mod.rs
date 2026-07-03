@@ -1274,7 +1274,11 @@ pub struct Interpreter {
     /// so the lock never contends across threads. Collapses to a plain VM field
     /// once the Interpreter execution path is removed (PLAN.md ④/⑤).
     instance_type_metadata: Arc<RwLock<HashMap<u64, ContainerTypeInfo>>>,
-    let_saves: Vec<(String, Value, bool)>,
+    /// `let`/`temp` save stack: (name, saved value, is_temp, compiler-baked slot).
+    /// The baked slot (§1.4/§1.5) lets the scope-exit restore write `locals[slot]`
+    /// directly instead of resolving the name to the OUTER slot via
+    /// `find_local_slot`. `None` for a non-local target (by-name fallback).
+    let_saves: Vec<(String, Value, bool, Option<u32>)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, std::time::Instant)>>,
     /// Active streaming consumers for on-demand `supply { ... }` bodies driven by

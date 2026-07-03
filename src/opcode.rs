@@ -1363,6 +1363,11 @@ pub(crate) enum OpCode {
         name_idx: u32,
         index_mode: bool,
         is_temp: bool,
+        /// Compiler-baked local slot for the saved variable (§1.4/§1.5): the
+        /// scope-exit restore writes `locals[slot]` directly instead of resolving
+        /// the name via `find_local_slot` (position = OUTER slot, wrong for a live
+        /// inner shadow). `None` for a non-local target (falls back to by-name).
+        slot: Option<u32>,
     },
 
     /// Block with `let` scope management. Executes body, then checks
