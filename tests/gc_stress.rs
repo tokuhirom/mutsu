@@ -53,6 +53,60 @@ fn collect_every_instruction_preserves_live_data() {
     );
 }
 
+/// A `Gc` container reachable only through a non-node wrapper (`Pair`, itemized
+/// `Scalar`, ...) must still be traced — i.e. cycles *through* those wrappers
+/// get reclaimed, and the extra traced edges never over-collect live data.
+#[test]
+fn wrapper_nested_cycles_are_reclaimed_and_preserve_data() {
+    // Correctness: a Pair/wrapper-heavy computation is identical GC-on vs off.
+    let compute = r#"
+        my %m;
+        my @pairs;
+        for 1..25 -> $i { @pairs.push( $i => [$i, $i * $i] ); }
+        for @pairs -> $p { %m{$p.key} = $p.value.sum; }
+        say %m.keys.map(*.Int).sort.map({ $_ ~ ":" ~ %m{$_} }).join("|");
+        say @pairs.map({ .value.sum }).sum;
+    "#;
+    let (off, _, ok_off) = run(compute, &[]);
+    let (on, on_err, ok_on) = run(
+        compute,
+        &[("MUTSU_GC", "on"), ("MUTSU_GC_EVERY_SAFEPOINT", "1")],
+    );
+    assert!(ok_off && ok_on, "runs must succeed; stderr:\n{on_err}");
+    assert_eq!(off, on, "wrapper-heavy compute output diverged under GC");
+
+    // Reclaim: a cycle whose back-edge passes through a `Pair` must be collected.
+    let cyclic = r#"
+        for ^25 { my %h; %h<p> = ("k" => %h); }
+        say "done";
+    "#;
+    let (out, err, ok) = run(
+        cyclic,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_EVERY_SAFEPOINT", "1"),
+            ("MUTSU_VM_STATS", "1"),
+        ],
+    );
+    assert!(
+        ok && out.contains("done"),
+        "cyclic run failed; stderr:\n{err}"
+    );
+    let reclaimed = err
+        .lines()
+        .find(|l| l.contains("[mutsu vm-stats] gc:"))
+        .and_then(|l| {
+            l.split_whitespace()
+                .find_map(|t| t.strip_prefix("reclaimed_nodes="))
+        })
+        .and_then(|n| n.parse::<u64>().ok())
+        .unwrap_or(0);
+    assert!(
+        reclaimed > 0,
+        "cycle through a Pair wrapper must be reclaimed; reclaimed_nodes={reclaimed}\n{err}"
+    );
+}
+
 /// A program that repeatedly builds self-referential / mutual cycles and drops
 /// them must actually get those cycles reclaimed (not just leak), and survive.
 #[test]
