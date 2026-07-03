@@ -379,8 +379,9 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
 
 - [ ] **★大型ジャンプ: GC（cycle collector on Arc）→ JIT**（ADR-0001・Phase B/C）。**2026-07-03 着手（ADR-0002）**。
       進行中の実装順序は [docs/gc-level1-detailed-design.md](docs/gc-level1-detailed-design.md) §11:
-      1. root visitor 導入（`Interpreter::visit_roots()`）← **いまここ**
-      2. child visitor 導入
+      1. ✅ root visitor 導入（`Interpreter::visit_roots()` / `Env::visit_values()`、#4094）
+      2. ✅ child visitor 導入（`Value::visit_gc_children()` ＋ `ArrayData`/`HashData`/`SubData`/
+         `InstanceAttrs`/`SharedPromise`/`SharedChannel`）← **いまここ**
       3. `MUTSU_VM_STATS` の GC カウンタ枠
       4. `Gc<T>` / node header / candidate buffer の最小実装
       5〜11. `Array`/`Hash`/`ContainerRef` → `Promise`/`Channel` → supply registry → safepoint collect →
