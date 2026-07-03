@@ -1722,22 +1722,24 @@ impl Interpreter {
     /// helper reports the same caller line the interpreter path would (whatever
     /// the parser stamped on the call's caller-line marker).
     pub(super) fn def_is_otf_compilable_module_single(def: &crate::ast::FunctionDef) -> bool {
-        !def.is_rw && !def.is_raw
-            // A *coercion* return (`--> Foo:D()`, the parens) drives extra
-            // return-time COERCE dispatch that the standalone OTF compile does
-            // not reproduce identically when several such subs coexist
-            // (roast/S12-coercion/coercion-return.t), so it stays on the
-            // interpreter. A plain / definite / subset return (`--> Str:D`,
-            // `--> IO::Path:D`) is fine: the compiled binding re-checks it the
-            // same way the interpreter does. This lets Test::Util's
-            // `make-temp-file`/`make-rand-path` (`--> IO::Path:D`, calling a
-            // module-private sibling) OTF-compile (PR closure-env #3899/#3902
-            // made module-level lexical + private-sibling reads work under OTF;
-            // the chmod-IntStr allomorph fix unblocked S32-io/chdir.t).
-            && def
-                .return_type
-                .as_ref()
-                .is_none_or(|rt| !rt.contains('('))
+        // §2 (multi-dispatch VM-ization): `is rw`/`is raw` no longer force the
+        // interpreter fallback. The non-module gate (`def_is_otf_compilable`) already
+        // OTF-compiles rw subs, and the rw-arg writeback now carries a compile-time
+        // caller slot (#4091), so the compiled binding refreshes the caller variable
+        // identically to the interpreter — including across an EVAL call boundary.
+        //
+        // A *coercion* return (`--> Foo:D()`, the parens) drives extra
+        // return-time COERCE dispatch that the standalone OTF compile does
+        // not reproduce identically when several such subs coexist
+        // (roast/S12-coercion/coercion-return.t), so it stays on the
+        // interpreter. A plain / definite / subset return (`--> Str:D`,
+        // `--> IO::Path:D`) is fine: the compiled binding re-checks it the
+        // same way the interpreter does. This lets Test::Util's
+        // `make-temp-file`/`make-rand-path` (`--> IO::Path:D`, calling a
+        // module-private sibling) OTF-compile (PR closure-env #3899/#3902
+        // made module-level lexical + private-sibling reads work under OTF;
+        // the chmod-IntStr allomorph fix unblocked S32-io/chdir.t).
+        def.return_type.as_ref().is_none_or(|rt| !rt.contains('('))
             && def.param_defs.iter().all(|pd| {
                 // A capture parameter (`|c` / `|c($a, $b)`) is sigilless + slurpy and
                 // binds the argument list read-only (its sub-signature only
