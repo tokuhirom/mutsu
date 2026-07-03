@@ -1108,6 +1108,24 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
+                // A plain assignment to an atomic scalar de-registers its shared
+                // cell so the next atomic op re-seeds from the freshly-stored
+                // value. SetLocal does this at its own store site; SetGlobal is
+                // the path taken when the atomic is a captured free variable
+                // written from a nested closure frame (e.g. `$r = 0` inside a
+                // `subtest {...}` block), and must reset the shared cell too, or
+                // a later atomic-fetch-add reads the stale shared value instead
+                // of the freshly-assigned one (roast S03-metaops/hyper.t #408).
+                if !is_bind_ctx
+                    && !is_rebind
+                    && self.atomic_var_seen()
+                    && !name.starts_with('@')
+                    && !name.starts_with('%')
+                    && !name.starts_with('&')
+                {
+                    let atomic_name = name.strip_prefix('$').unwrap_or(&name).to_string();
+                    loan_env!(self, reset_atomic_var_key(&atomic_name));
+                }
                 if raw_mode && name.starts_with('@') {
                     // For `constant @x`, bypass set_shared_var's List→Array
                     // normalization so the container type (List) is preserved.
