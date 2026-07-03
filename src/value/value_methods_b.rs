@@ -475,7 +475,12 @@ impl Value {
 
     /// Create an Instant value from the current system time.
     pub(crate) fn make_instant_now() -> Self {
-        let posix = current_time_secs_f64();
+        Self::make_instant_from_posix(current_time_secs_f64())
+    }
+
+    /// Build an `Instant` from a POSIX timestamp (seconds). Used by IO::Path's
+    /// `.modified`/`.accessed`/`.changed`, which return an `Instant` in Raku.
+    pub(crate) fn make_instant_from_posix(posix: f64) -> Self {
         let tai = crate::builtins::methods_0arg::temporal::posix_to_instant(posix);
         let mut attrs = HashMap::new();
         attrs.insert("value".to_string(), Value::Num(tai));
