@@ -254,7 +254,11 @@ impl Interpreter {
             }
         }
 
-        Ok(vec![self.call_method_with_values(target, method, args)?])
+        // Builtin `.+`/`.*` all-candidates: repeat the single native result per MRO
+        // level that declares `method` (`List.elems` + `Any.elems` -> two results).
+        let level_count = self.builtin_method_mro_level_count(&target, method);
+        let result = self.call_method_with_values(target, method, args)?;
+        Ok(vec![result; level_count])
     }
 
     pub(crate) fn overwrite_array_items_by_identity_for_vm(

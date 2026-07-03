@@ -230,12 +230,41 @@ impl Interpreter {
             && let Some(native_result) =
                 self.try_native_method(target, Symbol::intern(method), args)
         {
-            return Ok(vec![native_result?]);
+            let result = native_result?;
+            // `.+`/`.*` all-candidates: a native method redeclared at several MRO
+            // levels of the receiver yields one result per level in Rakudo
+            // (`<a b>.+elems` -> (2, 2)). Repeat the single native result for each
+            // declaring level (data-driven count, no hardcoded per-method number).
+            let count = self.builtin_method_mro_level_count(target, method);
+            return Ok(vec![result; count]);
         }
         loan_env!(
             self,
             call_method_all_with_values(target.clone(), method, args.to_vec())
         )
+    }
+
+    /// Count the levels of a builtin receiver's MRO whose per-level native method
+    /// table declares `method`. Used by `.+`/`.*` to produce one result per
+    /// declaring level (e.g. `List.elems` + `Any.elems`). Always >= 1.
+    pub(crate) fn builtin_method_mro_level_count(&mut self, target: &Value, method: &str) -> usize {
+        use crate::builtins::builtin_type_methods::builtin_type_method_names;
+        let type_name = crate::runtime::value_type_name(target).to_string();
+        let mro = self.classhow_mro_names(&Value::Package(Symbol::intern(&type_name)));
+        // Count DISTINCT method tables along the MRO that declare `method`. Several
+        // MRO levels can share one table (e.g. Array and List both map to
+        // LIST_METHODS = one definition), so dedup by the table's contents to avoid
+        // counting an inherited method once per inheriting level.
+        let mut seen: std::collections::HashSet<Vec<&'static str>> =
+            std::collections::HashSet::new();
+        let mut count = 0;
+        for lvl in &mro {
+            let names = builtin_type_method_names(lvl);
+            if names.contains(&method) && seen.insert(names.clone()) {
+                count += 1;
+            }
+        }
+        count.max(1)
     }
 
     pub(super) fn call_method_mut_with_temp_target(

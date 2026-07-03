@@ -308,7 +308,11 @@ impl Interpreter {
                         if let Some(native_result) =
                             self.try_native_method(item, Symbol::intern(&method), &item_args)
                         {
-                            vec![native_result?]
+                            // `.+` yields one result per MRO level declaring the
+                            // method (`List.elems` + `Any.elems`), same as the
+                            // non-hyper native path in `call_method_all_with_fallback`.
+                            let n = self.builtin_method_mro_level_count(item, &method);
+                            vec![native_result?; n]
                         } else {
                             let (v, updated) = self
                                 .call_method_all_with_temp_target(item, &method, item_args, idx)?;
@@ -321,7 +325,7 @@ impl Interpreter {
                         *item = updated;
                         v
                     };
-                    results.push(Value::real_array(vals));
+                    results.push(Value::array(vals));
                 }
                 Some("*") => {
                     if !skip_native
@@ -329,16 +333,19 @@ impl Interpreter {
                             self.try_native_method(item, Symbol::intern(&method), &item_args)
                     {
                         match native_result {
-                            Ok(v) => results.push(Value::real_array(vec![v])),
-                            Err(_) => results.push(Value::real_array(vec![])),
+                            Ok(v) => {
+                                let n = self.builtin_method_mro_level_count(item, &method);
+                                results.push(Value::array(vec![v; n]))
+                            }
+                            Err(_) => results.push(Value::array(vec![])),
                         }
                     } else {
                         match self.call_method_all_with_temp_target(item, &method, item_args, idx) {
                             Ok((vals, updated)) => {
                                 *item = updated;
-                                results.push(Value::real_array(vals));
+                                results.push(Value::array(vals));
                             }
-                            Err(_) => results.push(Value::real_array(vec![])),
+                            Err(_) => results.push(Value::array(vec![])),
                         }
                     }
                 }
@@ -846,30 +853,34 @@ impl Interpreter {
                     let vals = if let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), &item_args)
                     {
-                        vec![native_result?]
+                        let n = self.builtin_method_mro_level_count(item, method);
+                        vec![native_result?; n]
                     } else {
                         let (v, updated) =
                             self.call_method_all_with_temp_target(item, method, item_args, idx)?;
                         *item = updated;
                         v
                     };
-                    results.push(Value::real_array(vals));
+                    results.push(Value::array(vals));
                 }
                 Some("*") => {
                     if let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), &item_args)
                     {
                         match native_result {
-                            Ok(v) => results.push(Value::real_array(vec![v])),
-                            Err(_) => results.push(Value::real_array(vec![])),
+                            Ok(v) => {
+                                let n = self.builtin_method_mro_level_count(item, method);
+                                results.push(Value::array(vec![v; n]))
+                            }
+                            Err(_) => results.push(Value::array(vec![])),
                         }
                     } else {
                         match self.call_method_all_with_temp_target(item, method, item_args, idx) {
                             Ok((vals, updated)) => {
                                 *item = updated;
-                                results.push(Value::real_array(vals));
+                                results.push(Value::array(vals));
                             }
-                            Err(_) => results.push(Value::real_array(vec![])),
+                            Err(_) => results.push(Value::array(vec![])),
                         }
                     }
                 }

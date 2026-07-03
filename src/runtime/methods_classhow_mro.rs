@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    pub(super) fn classhow_mro_names(&mut self, invocant: &Value) -> Vec<String> {
+    pub(crate) fn classhow_mro_names(&mut self, invocant: &Value) -> Vec<String> {
         let class_name = match invocant {
             Value::Package(name) => name.resolve(),
             Value::Instance { class_name, .. } => class_name.resolve(),
