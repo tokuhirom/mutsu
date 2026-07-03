@@ -753,11 +753,15 @@ unit test / integration test では random 依存にせず、**明示 collect ho
 
 ## 11. 実装順序
 
-1. root visitor の導入
-2. child visitor の導入
-3. `MUTSU_VM_STATS` の GC カウンタ枠だけ先に追加
-4. `Gc<T>` / node header / candidate buffer の最小実装
-5. `Array` / `Hash` / `ContainerRef` を first wave として移行
+1. ✅ root visitor の導入
+2. ✅ child visitor の導入
+3. ✅ `MUTSU_VM_STATS` の GC カウンタ枠だけ先に追加
+4. ✅ `Gc<T>` / node header / candidate buffer の最小実装（`src/gc/collect.rs`）。同期
+   Bacon–Rajan collector（`collect_cycles`）＋ `Gc<T>`（Arc 相当・GC header）＋ `Trace`/
+   `GcNode` ＋ thread-local ROOTS。`GC_FREEING` guard で free 中の reentrant drop を無効化。
+   Miri（Stacked Borrows）で cycle 回収テスト green。`Value` は未接続（default-off の dead
+   code。safepoint 配線は step 8）。
+5. `Array` / `Hash` / `ContainerRef` を first wave として移行 ← **次はここ**
 6. `Promise` / `Channel` を first wave の async node として移行
 7. supply registry root visitor（`supplier_state_map` / `supplier_subscriptions_map` / `promise_combinator_map` / `supply_taps_map`）を first wave で導入
 8. safepoint で synchronous collect

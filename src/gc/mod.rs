@@ -1,11 +1,19 @@
-//! GC Level 1a root-visitor infrastructure (ADR-0001 / ADR-0002,
+//! GC Level 1a infrastructure (ADR-0001 / ADR-0002,
 //! `docs/gc-level1-detailed-design.md`).
 //!
-//! This module holds only the `RootVisitor` trait so far. It has no
-//! knowledge of `Gc<T>`, candidate buffers, or collection — those land in
-//! later steps of the design doc's §11 implementation order. The trait exists
-//! now so root enumeration lives in exactly one place (`Interpreter::visit_roots`,
-//! `Env::visit_values`) instead of being duplicated per future call site.
+//! - The `RootVisitor` trait (below) is the single place root enumeration lives
+//!   (`Interpreter::visit_roots`, `Env::visit_values`, `Value::visit_gc_children`).
+//! - The [`collect`] submodule (§11 step 4) adds the `Gc<T>` smart pointer, the
+//!   node header, the candidate buffer, and a synchronous Bacon–Rajan cycle
+//!   collector. No `Value` variant is wired to `Gc<T>` yet (that is step 5), so
+//!   the collector is currently exercised only by its own unit tests.
+
+mod collect;
+
+// Re-exported for the step-5+ callers (Value migration, safepoint collect).
+// Unused until then, hence `allow(unused_imports)`.
+#[allow(unused_imports)]
+pub(crate) use collect::{Gc, Trace, collect_cycles};
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;
