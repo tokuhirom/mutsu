@@ -466,8 +466,16 @@ impl Interpreter {
     /// Check if a builtin type inherits from a given ancestor type.
     /// Covers the standard Raku type hierarchy for builtin types.
     pub(super) fn type_inherits(type_name: &str, ancestor: &str) -> bool {
-        // Standard hierarchy chains for builtin types
-        let chain: &[&str] = match type_name {
+        Self::builtin_type_mro_chain(type_name).contains(&ancestor)
+    }
+
+    /// The built-in type's MRO chain (self + ancestors), used by `type_inherits`
+    /// and by `.+`/`.*` all-candidates dispatch to count how many MRO levels
+    /// define a method. Roles (e.g. `Positional`) are intentionally omitted: they
+    /// carry no entry in `builtin_type_method_names`, so they never contribute a
+    /// candidate, and omitting them keeps this chain small.
+    pub(crate) fn builtin_type_mro_chain(type_name: &str) -> &'static [&'static str] {
+        match type_name {
             "Int" => &["Int", "Cool", "Any", "Mu"],
             "Num" => &["Num", "Cool", "Any", "Mu"],
             "Rat" | "FatRat" => &["Rat", "Cool", "Any", "Mu"],
@@ -486,7 +494,6 @@ impl Interpreter {
             "Sub" => &["Sub", "Routine", "Block", "Code", "Any", "Mu"],
             "Junction" => &["Junction", "Mu"],
             _ => &["Any", "Mu"],
-        };
-        chain.contains(&ancestor)
+        }
     }
 }
