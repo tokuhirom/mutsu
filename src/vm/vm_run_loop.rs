@@ -113,6 +113,13 @@ impl Interpreter {
         self.push_once_scope(root_once_scope);
         let mut ip = 0;
         while ip < code.ops.len() {
+            // GC safepoint (design doc §1.2): the dispatch backward edge holds no
+            // container borrow, so a cycle collect may run here. Off by default —
+            // `gc_safepoints_armed()` is a single cached load unless `MUTSU_GC`
+            // enables an automatic trigger.
+            if crate::gc::gc_safepoints_armed() {
+                crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
+            }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()
@@ -353,6 +360,13 @@ impl Interpreter {
         self.push_once_scope(root_once_scope);
         let mut ip = 0;
         while ip < code.ops.len() {
+            // GC safepoint (design doc §1.2): the dispatch backward edge holds no
+            // container borrow, so a cycle collect may run here. Off by default —
+            // `gc_safepoints_armed()` is a single cached load unless `MUTSU_GC`
+            // enables an automatic trigger.
+            if crate::gc::gc_safepoints_armed() {
+                crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
+            }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()

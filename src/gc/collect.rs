@@ -6,11 +6,11 @@
 //! (§11 steps 1-7) only built the `Gc` node graph and the candidate buffer.
 //!
 //! Scope of this cut:
-//! - **Manual / opt-in only.** Reclaim runs when [`collect_cycles`] is called
-//!   (via the `gc_debug_collect_now` hook / unit tests), never automatically —
-//!   safepoint wiring is a follow-up (§11 step 8's second half). With `MUTSU_GC`
-//!   unset (default) the candidate buffer stays empty, so a call reclaims
-//!   nothing and normal execution is unaffected.
+//! - **Opt-in.** Reclaim runs from [`collect_cycles`], invoked either manually
+//!   (`gc_debug_collect_now`) or automatically at VM safepoints when a
+//!   `MUTSU_GC` trigger is set (see [`super::safepoint`]). With `MUTSU_GC` unset
+//!   (default) the candidate buffer stays empty, so a call reclaims nothing and
+//!   normal execution is unaffected.
 //! - **Container cycles.** It walks whatever `Trace` exposes, so it already
 //!   handles the migrated container types (`Array`/`Hash`/`Set`/`Bag`/`Mix`/
 //!   `ContainerRef`). Async graphs (`Promise`/`Channel`/supply registries, §11

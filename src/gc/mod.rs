@@ -12,13 +12,16 @@
 //!   is migrated to `Gc<_>`: `Value::Hash` (5b), `Value::Array` (5c),
 //!   `Value::ContainerRef` (5d).
 //! - [`collect`] — the synchronous Bacon-Rajan trial-deletion collector (§11
-//!   step 8) that reclaims cycles from the candidate buffer. Manual/opt-in for
-//!   now (`gc_debug_collect_now`); with `MUTSU_GC` unset the buffer is empty so
-//!   a collect is a no-op.
+//!   step 8) that reclaims cycles from the candidate buffer.
+//! - [`safepoint`] — the trigger policy and the `gc_safepoint` entry point the
+//!   VM calls at re-entry boundaries (dispatch backedge) to run a collect under
+//!   a `MUTSU_GC` stress mode. With `MUTSU_GC` unset, safepoints are disarmed
+//!   (one cached load) and a collect is a no-op — normal execution is unaffected.
 
 mod collect;
 mod gc_ptr;
 mod root_visitor;
+mod safepoint;
 
 #[allow(unused_imports)]
 pub(crate) use collect::{CollectStats, collect_cycles, collect_if_enabled, gc_debug_collect_now};
@@ -27,3 +30,5 @@ pub(crate) use gc_ptr::{
     Color, ContainerMakeMut, ErasedGc, Gc, Trace, drain_candidates, gc_contents_mut, gc_enabled,
 };
 pub(crate) use root_visitor::{RootVisitor, visit_map_values, visit_opt, visit_slice};
+#[allow(unused_imports)]
+pub(crate) use safepoint::{SafepointKind, armed as gc_safepoints_armed, gc_safepoint};

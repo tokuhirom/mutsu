@@ -26,10 +26,11 @@
 //! - `Set`/`Bag`/`Mix` are also `Gc<_>` now (#4117). `Sub`/`Instance`/`LazyList`
 //!   remain `Arc` (later waves); the [`ContainerMakeMut`] bridge lets shared
 //!   container macros work across the still-mixed state meanwhile.
-//! - The synchronous trial-deletion collector (`gc::collect`, §11 step 8) now
-//!   reclaims cycles from the candidate buffer, but only when invoked manually
-//!   (`gc_debug_collect_now`) — safepoint wiring is the follow-up. With
-//!   `MUTSU_GC` unset the buffer stays empty, so a collect is a no-op.
+//! - The synchronous trial-deletion collector (`gc::collect`, §11 step 8)
+//!   reclaims cycles from the candidate buffer, run at VM safepoints
+//!   (`gc::safepoint`) under a `MUTSU_GC` trigger, or manually. With `MUTSU_GC`
+//!   unset the buffer stays empty and safepoints are disarmed, so a collect is a
+//!   no-op and normal execution is unaffected.
 
 // The collector-facing surface (Color scan states, drain_candidates,
 // buffer_as_candidate, trace_children, ...) is not exercised until the
@@ -419,6 +420,9 @@ fn buffer_candidate(node: ErasedGc) {
         buf.push(node);
     }
     record_gc_candidate_push();
+    // May arm a pending collect (MUTSU_GC_EVERY_CANDIDATE); never collects inline
+    // here — this runs from `Gc::drop`, which can hold a borrow (design §1.2).
+    super::safepoint::note_candidate_push();
 }
 
 /// Drain the candidate buffer, clearing each node's `buffered` flag, and return
