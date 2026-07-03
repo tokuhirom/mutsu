@@ -1392,7 +1392,7 @@ struct PromiseState {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SharedPromise {
-    inner: Arc<(Mutex<PromiseState>, Condvar)>,
+    inner: crate::gc::Gc<(Mutex<PromiseState>, Condvar)>,
 }
 
 // --- SharedChannel: thread-safe channel ---
@@ -1409,7 +1409,7 @@ struct ChannelState {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SharedChannel {
-    inner: Arc<(Mutex<ChannelState>, Condvar)>,
+    inner: crate::gc::Gc<(Mutex<ChannelState>, Condvar)>,
 }
 
 // Compile-time assertions that Value is Send + Sync

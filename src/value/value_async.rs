@@ -15,7 +15,7 @@ impl std::fmt::Debug for PromiseState {
 impl SharedPromise {
     /// Returns a raw pointer to the inner Arc data, for use in WHICH identity.
     pub fn arc_ptr(&self) -> *const () {
-        Arc::as_ptr(&self.inner) as *const ()
+        crate::gc::Gc::as_ptr(&self.inner) as *const ()
     }
 
     pub(crate) fn new() -> Self {
@@ -24,7 +24,7 @@ impl SharedPromise {
 
     pub(crate) fn new_with_class(class_name: Symbol) -> Self {
         Self {
-            inner: Arc::new((
+            inner: crate::gc::Gc::new((
                 Mutex::new(PromiseState {
                     status: "Planned".to_string(),
                     result: Value::Nil,
@@ -42,7 +42,7 @@ impl SharedPromise {
     #[allow(dead_code)]
     pub(crate) fn new_kept(result: Value) -> Self {
         Self {
-            inner: Arc::new((
+            inner: crate::gc::Gc::new((
                 Mutex::new(PromiseState {
                     status: "Kept".to_string(),
                     result,
@@ -63,7 +63,7 @@ impl SharedPromise {
     }
 
     pub(crate) fn id(&self) -> usize {
-        Arc::as_ptr(&self.inner) as usize
+        crate::gc::Gc::as_ptr(&self.inner) as usize
     }
 
     /// Store an opaque payload to be handed off to whoever awaits the
@@ -236,20 +236,20 @@ impl SharedPromise {
 
 impl PartialEq for SharedPromise {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
+        crate::gc::Gc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
 impl SharedChannel {
     /// Returns a raw pointer to the inner Arc data, for use in WHICH identity.
     pub fn arc_ptr(&self) -> *const () {
-        Arc::as_ptr(&self.inner) as *const ()
+        crate::gc::Gc::as_ptr(&self.inner) as *const ()
     }
 
     pub(crate) fn new() -> Self {
         let closed_promise = SharedPromise::new();
         Self {
-            inner: Arc::new((
+            inner: crate::gc::Gc::new((
                 Mutex::new(ChannelState {
                     queue: std::collections::VecDeque::new(),
                     send_closed: false,
@@ -357,6 +357,6 @@ impl SharedChannel {
 
 impl PartialEq for SharedChannel {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
+        crate::gc::Gc::ptr_eq(&self.inner, &other.inner)
     }
 }
