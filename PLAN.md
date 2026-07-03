@@ -409,6 +409,11 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
          collect を自動起動。`MUTSU_GC_EVERY_SAFEPOINT`/`MUTSU_GC_EVERY_CANDIDATE` トリガ。default off なら
          disarmed で 1 load）。**end-to-end 検証済み**: 実 Raku の self/mutual cycle が collect され、GC-on 出力が
          GC-off と byte 一致（live data 非破壊）。integration test `tests/gc_stress.rs`。
+         - ✅ **デバッグ運用**（§9.4/§9.5）: `MUTSU_GC_LOG=summary|detail|trace`（collect ごとの start/end 行、
+           reason=safepoint 種別、traced/revived/reclaimed/pause_ns。trace は node 単位 reclaim 行）＋
+           `MUTSU_GC_VERIFY=1`（soundness 検証: 回収ノードは strong=0＝生存ノードを解放しない／survivor は
+           black かつ strong 非増加）。実プログラムで VERIFY FAIL=0 を確認（verify が自分の検証ロジックの
+           バグを検出→修正して健全性を実証）。
       6-7,10-11 (残): `Promise`/`Channel` → supply registry root visitor（async cycle）→ `LazyList`
       （third wave）← **次はここ**（設計メモ参照）。call/return/await 等の追加 safepoint 種別・cross-thread
       STW・`MUTSU_GC_AT`/random stress も後続。

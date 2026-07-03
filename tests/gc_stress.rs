@@ -107,6 +107,75 @@ fn wrapper_nested_cycles_are_reclaimed_and_preserve_data() {
     );
 }
 
+/// `MUTSU_GC_VERIFY=1` runs the collector's soundness/heap-sanity checks around
+/// every collect; a correct collector must report zero violations on real
+/// programs, cyclic or not.
+#[test]
+fn verify_mode_reports_no_violations() {
+    let programs = [
+        // Heavy cycle churn.
+        r#"for ^40 { my %h; %h<self> := %h; my %x; my %y; %x<y> := %y; %y<x> := %x; }; say "ok";"#,
+        // Compute with live nested structures (nothing should be reclaimed wrongly).
+        r#"my %m; for 1..30 -> $i { %m{$i} = [$i, $i*$i].sum; }; say %m.values.sum;"#,
+    ];
+    for src in programs {
+        let (out, err, ok) = run(
+            src,
+            &[
+                ("MUTSU_GC", "on"),
+                ("MUTSU_GC_EVERY_SAFEPOINT", "1"),
+                ("MUTSU_GC_VERIFY", "1"),
+            ],
+        );
+        assert!(ok, "verify run must not crash; stderr:\n{err}");
+        assert!(!out.is_empty(), "program produced output");
+        assert!(
+            !err.contains("VERIFY FAIL"),
+            "collector verify reported a violation:\n{err}"
+        );
+    }
+}
+
+/// `MUTSU_GC_LOG=summary` emits a start/end line per non-empty collect, and
+/// `trace` emits a per-reclaimed-node line — the debug-log surface (§9.4).
+#[test]
+fn log_modes_emit_expected_lines() {
+    let cyclic = r#"for ^10 { my %h; %h<self> := %h; }; say "ok";"#;
+
+    let (_, summary_err, ok1) = run(
+        cyclic,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_EVERY_SAFEPOINT", "1"),
+            ("MUTSU_GC_LOG", "summary"),
+        ],
+    );
+    assert!(ok1);
+    assert!(
+        summary_err.contains("[mutsu gc] start cycle=")
+            && summary_err.contains("[mutsu gc] end cycle="),
+        "summary log missing start/end lines:\n{summary_err}"
+    );
+    assert!(
+        summary_err.contains("reason=backedge"),
+        "summary log missing the safepoint reason:\n{summary_err}"
+    );
+
+    let (_, trace_err, ok2) = run(
+        cyclic,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_EVERY_SAFEPOINT", "1"),
+            ("MUTSU_GC_LOG", "trace"),
+        ],
+    );
+    assert!(ok2);
+    assert!(
+        trace_err.contains("[mutsu gc] reclaim cycle="),
+        "trace log missing per-node reclaim lines:\n{trace_err}"
+    );
+}
+
 /// A program that repeatedly builds self-referential / mutual cycles and drops
 /// them must actually get those cycles reclaimed (not just leak), and survive.
 #[test]

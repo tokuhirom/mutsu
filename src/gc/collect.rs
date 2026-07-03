@@ -1,9 +1,14 @@
 //! GC Level 1a synchronous cycle collector (ADR-0001 §3-8,
-//! `docs/gc-level1-detailed-design.md` §5 / §9.5 / §11 step 8).
+//! `docs/gc-level1-detailed-design.md` §5 / §9.4 / §9.5 / §11 step 8).
 //!
 //! Bacon-Rajan trial-deletion over the process-global candidate buffer. This is
 //! the first slice that actually *reclaims* garbage: everything before it
 //! (§11 steps 1-7) only built the `Gc` node graph and the candidate buffer.
+//!
+//! Debug surface: `MUTSU_GC_LOG=summary|detail|trace` emits per-collect log
+//! lines (§9.4); `MUTSU_GC_VERIFY=1` checks the collector's soundness invariants
+//! around every collect (§9.5). Both are opt-in and cost nothing on the default
+//! (GC-off) path.
 //!
 //! Scope of this cut:
 //! - **Opt-in.** Reclaim runs from [`collect_cycles`], invoked either manually
@@ -39,7 +44,9 @@
 // `gc_ptr`; removed when a safepoint / builtin invokes `collect_cycles`.
 #![allow(dead_code)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use super::gc_ptr::{CollectGuard, Color, ErasedGc, drain_candidates, erased_id, gc_drop_edges};
@@ -66,38 +73,49 @@ fn children(node: &ErasedGc) -> Vec<ErasedGc> {
     kids
 }
 
-fn mark_gray(node: &ErasedGc) {
+/// Per-collect phase counters, for the `MUTSU_GC_LOG` summary/detail lines.
+#[derive(Default)]
+struct Metrics {
+    /// Nodes colored gray (the candidate subgraph size).
+    traced: usize,
+    /// Nodes `scan_black` restored (survivors kept alive by an external ref).
+    revived: usize,
+}
+
+fn mark_gray(node: &ErasedGc, m: &mut Metrics) {
     if node.gc_color() == Color::Gray {
         return;
     }
     node.gc_set_color(Color::Gray);
+    m.traced += 1;
     for child in children(node) {
         child.gc_strong_dec();
-        mark_gray(&child);
+        mark_gray(&child, m);
     }
 }
 
-fn scan(node: &ErasedGc) {
+fn scan(node: &ErasedGc, m: &mut Metrics) {
     if node.gc_color() != Color::Gray {
         return;
     }
     if node.gc_strong() > 0 {
         // Kept alive by an external reference — restore the subgraph.
-        scan_black(node);
+        scan_black(node, m);
     } else {
         node.gc_set_color(Color::White);
         for child in children(node) {
-            scan(&child);
+            scan(&child, m);
         }
     }
 }
 
-fn scan_black(node: &ErasedGc) {
+fn scan_black(node: &ErasedGc, m: &mut Metrics) {
     node.gc_set_color(Color::Black);
+    m.revived += 1;
     for child in children(node) {
         child.gc_strong_inc();
         if child.gc_color() != Color::Black {
-            scan_black(&child);
+            scan_black(&child, m);
         }
     }
 }
@@ -136,23 +154,156 @@ fn reclaim(white: Vec<ErasedGc>, roots: Vec<ErasedGc>) {
     drop(roots);
 }
 
-/// Run one synchronous cycle collection over the current candidate buffer.
+/// GC log verbosity (`MUTSU_GC_LOG`, design §9.4): `summary` = start/end lines
+/// per non-empty collect; `detail` adds the cycle count; `trace` adds a line per
+/// reclaimed node. Unset / `off` = silent. `1`/`on` alias `summary`.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum LogMode {
+    Off,
+    Summary,
+    Detail,
+    Trace,
+}
+
+pub(crate) fn log_mode() -> LogMode {
+    static M: OnceLock<LogMode> = OnceLock::new();
+    *M.get_or_init(|| match std::env::var("MUTSU_GC_LOG").ok().as_deref() {
+        None | Some("0") | Some("off") => LogMode::Off,
+        Some("summary") | Some("1") | Some("on") => LogMode::Summary,
+        Some("detail") => LogMode::Detail,
+        Some("trace") => LogMode::Trace,
+        Some(other) => {
+            eprintln!("[mutsu gc] warning: unrecognized MUTSU_GC_LOG={other:?}, using summary");
+            LogMode::Summary
+        }
+    })
+}
+
+/// `MUTSU_GC_VERIFY=1` (design §9.5): check the collector's invariants around
+/// every collect. Opt-in — it costs an extra pristine-strong snapshot walk.
+pub(crate) fn verify_enabled() -> bool {
+    static V: OnceLock<bool> = OnceLock::new();
+    *V.get_or_init(|| match std::env::var("MUTSU_GC_VERIFY").ok().as_deref() {
+        Some("1") => true,
+        None | Some("0") => false,
+        Some(other) => {
+            eprintln!("[mutsu gc] warning: unrecognized MUTSU_GC_VERIFY={other:?}, treating as 0");
+            false
+        }
+    })
+}
+
+fn next_cycle_id() -> u64 {
+    static N: AtomicU64 = AtomicU64::new(0);
+    N.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Snapshot every node reachable from `roots` with its *pristine* strong count
+/// (called before `mark_gray` mutates it), for `MUTSU_GC_VERIFY`. Holding an
+/// `ErasedGc` per node keeps it alive so survivors can be re-inspected after the
+/// collect; the caller drops the garbage entries before `reclaim` so the white
+/// nodes still free. Keyed by node id to dedup the graph.
+fn snapshot_reachable(roots: &[ErasedGc]) -> HashMap<usize, (ErasedGc, usize)> {
+    let mut snap: HashMap<usize, (ErasedGc, usize)> = HashMap::new();
+    let mut stack: Vec<ErasedGc> = roots.to_vec();
+    while let Some(node) = stack.pop() {
+        let id = erased_id(&node);
+        if snap.contains_key(&id) {
+            continue;
+        }
+        let strong = node.gc_strong();
+        for child in children(&node) {
+            stack.push(child);
+        }
+        snap.insert(id, (node, strong));
+    }
+    snap
+}
+
+/// Verify the collector's SOUNDNESS invariant (design §9.5): no node with a live
+/// external reference may be reclaimed. Every reclaimed (white) node must have
+/// GC strong count 0 at reclaim time — trial-deletion having removed all its
+/// internal cycle edges left nothing, i.e. it was genuine garbage. A white node
+/// with `strong > 0` means a still-referenced node is about to be freed
+/// (use-after-free). Runs BEFORE reclaim, while the nodes are still alive.
+fn verify_reclaimed_are_garbage(cycle: u64, white: &[ErasedGc]) -> usize {
+    let mut bad = 0;
+    for node in white {
+        let strong = node.gc_strong();
+        if strong != 0 {
+            bad += 1;
+            eprintln!(
+                "[mutsu gc] VERIFY FAIL cycle={cycle} id={} reclaimed with strong={strong} \
+                 (a still-referenced node is being freed)",
+                erased_id(node),
+            );
+        }
+    }
+    if bad > 0 {
+        eprintln!("[mutsu gc] VERIFY cycle={cycle}: {bad} live node(s) wrongly reclaimed");
+    }
+    bad
+}
+
+/// Verify the post-collect heap sanity of the survivors (design §9.5): each must
+/// end black (no node left stuck gray/white = incomplete scan) and must not have
+/// GAINED references during the collect (`strong_after <= strong_before` — a
+/// survivor only ever loses edges from reclaimed garbage; a larger count means an
+/// over-restore / underflow-wrap in `scan_black`). Runs AFTER reclaim.
+fn verify_survivors(cycle: u64, survivors: &[(ErasedGc, usize)]) -> usize {
+    let mut failures = 0;
+    for (node, strong_before) in survivors {
+        let strong_after = node.gc_strong();
+        let color = node.gc_color();
+        if color != Color::Black || strong_after > *strong_before {
+            failures += 1;
+            eprintln!(
+                "[mutsu gc] VERIFY FAIL cycle={cycle} id={} strong_before={strong_before} \
+                 strong_after={strong_after} color={color:?} (survivor left inconsistent)",
+                erased_id(node),
+            );
+        }
+    }
+    if failures > 0 {
+        eprintln!("[mutsu gc] VERIFY cycle={cycle}: {failures} survivor invariant violation(s)");
+    }
+    failures
+}
+
+/// Run one synchronous cycle collection over the current candidate buffer,
+/// attributing it to `reason` in the `MUTSU_GC_LOG` output (the safepoint kind,
+/// `manual`, or `program-end`).
 ///
 /// Safe to call at any time: with no candidates buffered it is a no-op. Returns
 /// what it reclaimed and records the same into `MUTSU_VM_STATS`.
-pub(crate) fn collect_cycles() -> CollectStats {
+pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
     let start = Instant::now();
     let roots = drain_candidates();
     if roots.is_empty() {
         return CollectStats::default();
     }
     let roots_scanned = roots.len();
+    let mode = log_mode();
+    let verify = verify_enabled();
+    let cycle = if mode != LogMode::Off || verify {
+        next_cycle_id()
+    } else {
+        0
+    };
 
+    if mode != LogMode::Off {
+        eprintln!("[mutsu gc] start cycle={cycle} reason={reason} candidates={roots_scanned}");
+    }
+
+    // Pristine snapshot for verify, before trial-deletion mutates strong counts.
+    let snapshot = verify.then(|| snapshot_reachable(&roots));
+
+    let mut m = Metrics::default();
     for root in &roots {
-        mark_gray(root);
+        mark_gray(root, &mut m);
     }
     for root in &roots {
-        scan(root);
+        scan(root, &mut m);
     }
     let mut white = Vec::new();
     let mut seen = HashSet::new();
@@ -162,9 +313,34 @@ pub(crate) fn collect_cycles() -> CollectStats {
             cycles += 1;
         }
     }
-
     let reclaimed_nodes = white.len();
+
+    // Keep only survivor snapshot handles across reclaim; dropping the garbage
+    // handles here lets `reclaim` actually free the white nodes.
+    let survivors = snapshot.map(|snap| {
+        let white_ids: HashSet<usize> = white.iter().map(erased_id).collect();
+        snap.into_iter()
+            .filter(|(id, _)| !white_ids.contains(id))
+            .map(|(_, entry)| entry)
+            .collect::<Vec<_>>()
+    });
+
+    if mode == LogMode::Trace {
+        for node in &white {
+            eprintln!("[mutsu gc] reclaim cycle={cycle} id={}", erased_id(node));
+        }
+    }
+
+    // Soundness check must run BEFORE reclaim frees the white nodes.
+    if verify {
+        verify_reclaimed_are_garbage(cycle, &white);
+    }
+
     reclaim(white, roots);
+
+    if let Some(survivors) = &survivors {
+        verify_survivors(cycle, survivors);
+    }
 
     let pause_ns = start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
     record_gc_collection(
@@ -173,6 +349,19 @@ pub(crate) fn collect_cycles() -> CollectStats {
         cycles as u64,
         pause_ns,
     );
+
+    if mode != LogMode::Off {
+        let cycles_field = if mode >= LogMode::Detail {
+            format!(" cycles={cycles}")
+        } else {
+            String::new()
+        };
+        eprintln!(
+            "[mutsu gc] end cycle={cycle} traced={} revived={} reclaimed={reclaimed_nodes}{cycles_field} roots={roots_scanned} pause_ns={pause_ns}",
+            m.traced, m.revived,
+        );
+    }
+
     CollectStats {
         roots_scanned,
         reclaimed_nodes,
@@ -180,36 +369,26 @@ pub(crate) fn collect_cycles() -> CollectStats {
     }
 }
 
+/// Run one collection attributed to `manual` (used by the debug hook / tests).
+pub(crate) fn collect_cycles() -> CollectStats {
+    collect_cycles_at("manual")
+}
+
 /// Debug hook (design doc §9.5): force a collect now, regardless of triggers.
 /// The entry point a future `gc_debug_collect_now` builtin / REPL command and
 /// the integration tests call.
 pub(crate) fn gc_debug_collect_now() -> CollectStats {
-    collect_cycles()
+    collect_cycles_at("manual")
 }
 
-/// Run a collection at a named safepoint if `MUTSU_GC=on`, logging the result
-/// when `MUTSU_GC_LOG=1` (design §9.4). No-op with GC off, so the wired call
-/// sites are free on the default path. This is the seam that turns the
-/// otherwise manual-only collector (`gc_debug_collect_now`) into one that runs
-/// automatically at program safepoints (§11 step 8).
+/// Run a collection at a named safepoint if `MUTSU_GC=on`. No-op with GC off, so
+/// the wired call sites are free on the default path. Logging/verify happen
+/// inside [`collect_cycles_at`] under `MUTSU_GC_LOG` / `MUTSU_GC_VERIFY`.
 pub(crate) fn collect_if_enabled(safepoint: &str) {
     if !super::gc_ptr::gc_enabled() {
         return;
     }
-    let stats = collect_cycles();
-    if gc_log_enabled() && (stats.reclaimed_nodes > 0 || stats.reclaimed_cycles > 0) {
-        eprintln!(
-            "[mutsu gc] collect@{safepoint}: reclaimed {} nodes in {} cycles ({} roots scanned)",
-            stats.reclaimed_nodes, stats.reclaimed_cycles, stats.roots_scanned,
-        );
-    }
-}
-
-/// `MUTSU_GC_LOG=1`/`on` — emit a line per non-empty collection (design §9.4).
-fn gc_log_enabled() -> bool {
-    use std::sync::OnceLock;
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| matches!(std::env::var("MUTSU_GC_LOG").as_deref(), Ok("1") | Ok("on")))
+    collect_cycles_at(safepoint);
 }
 
 #[cfg(test)]
