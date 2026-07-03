@@ -306,3 +306,56 @@ measured with the OLD `local_map`-presence shadow rule, which minted spurious
 sibling-shadow duplicates. This active-ancestor rule removes that whole spurious
 class, so the real toggle-ON roast regression set is expected to be far smaller —
 a fresh survey should be re-run on top of this fix before burning down class-2.
+
+## §1.4 toggle-ON roast survey #2 (2026-07-03, after #4085-4088, debug)
+
+Fresh full-whitelist survey on top of the active-ancestor fix (#4087), temp/let
+bake (#4088), undefine (#4085) and list-assign (#4086): **24 files fail ON; 14 also
+fail OFF (flaky — S17 concurrency, `state.t`, `catch.t`, `private.t`, atomic/cas,
+promise/stress), leaving 10 genuine toggle-ON regressions:**
+
+`6.d/S32-str/sprintf-{d,x}.t` (now TODO-only), `S02-types/hash.t`,
+`S02-types/whatever.t`, `S06-advanced/wrap.t`, `S09-typed-arrays/native-str.t`,
+`S13-overloading/metaoperators.t`, `S17-supply/Channel.t`, `S32-array/perl.t`,
+`S32-list/reverse.t`.
+
+**The clean, single-site dedicated leaves are exhausted** (undefine, list-assign
+done). Each remaining genuine regression is one of:
+
+- **element/index-assign on a shadowed target** — the highest-value NEXT leaf.
+  `$a<x> = 42` / `$a<a b c> »=» 42` on a `my $a` shadowing an outer `$a`
+  (`metaoperators.t` #14-16; a single-key `»=»` collapses to `IndexAssign`) writes
+  the auto-vivified hash back to the OUTER slot. Path: `IndexAssignExprNamed`
+  (opcode carries a compile-time `name_idx`) → `exec_index_assign_expr_named_op`
+  (`vm_var_assign_index_named.rs`, ~13 `find_local_slot(code, &var_name)` /
+  `update_local_if_exists(code, &var_name, …)` target-var sites). **Plan:** bake a
+  `target_slot: Option<u32>` onto `IndexAssignExprNamed` (**6 emit sites**:
+  `expr_method.rs` ×2, `expr_closure.rs` ×2, `expr_ops.rs`, `expr_call.rs`), thread
+  it through the 13 *target-var* resolvers via `resolve_local_slot` /
+  `write_local_slot_or_name`. **Alias nuance:** `var_name` is redirected to a
+  `__mutsu_sigilless_alias::` target near the top of the exec — compute
+  `eff_slot = if aliased { None } else { target_slot }` once and pass it everywhere,
+  so an aliased target falls back to by-name (the alias is a *different* variable).
+  Leave the `source_name`/`src` `:=`-cell sites by-name (distinct variable, future
+  slice). Byte-identical OFF (`local_map.get == position` with no duplicates; same
+  slot index, not a different op — unlike the #4086 `AssignExprLocal` divergence),
+  so no gate strictly needed — but **validate with `make roast`, not just
+  `prove t/`** (the perl.t lesson). Medium-large: 6 emit sites + opcode + 13 exec
+  sites — a focused single-slice PR of its own.
+- **hyper `»=»` multi-key** (`metaoperators.t`): genuine `HyperMethodCall` path →
+  `write_back_hyper_target_var` (`find_local_slot`/`locals_set_by_name` by name);
+  needs a baked `target_slot` on the hyper opcode. Same shape as above.
+- **`my @a := EVAL "my $t @"`** (`native-str.t` #8): `:=` bind + EVAL carrier —
+  ANALYSIS §1.4 追記 case (3), genuinely hard (EVAL is a separate scope).
+- **class-1 / §1.3 (roast:0's sibling half):** `hash.t`, `Channel.t`, `wrap.t`
+  (closure captures the wrong-slot lexical), `reverse.t` (`@a`/`$b`/`.=` aggregate
+  coherence) — the name-keyed env can't hold two live bindings.
+- **scope promotion** (`whatever.t` #45 "did not get promoted into its own scope") —
+  a declaration-model/scope question, not a writeback leaf.
+- **`perl.t` #7 under ON** — the list-assign `@`/`%` `AssignExprLocal` circular
+  `.raku.EVAL` divergence (gated OFF in #4086; the ON path still needs the
+  attribute-cell-mirror parity before the default flip).
+
+**Next concrete slice: bake `IndexAssignExprNamed.target_slot`** (element/index-assign
+on a shadowed target). It is the cleanest of the remaining dedicated-site leaves and
+does not touch the shared `apply_pending_rw_writeback` drain (roast:0's half).
