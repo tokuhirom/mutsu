@@ -246,9 +246,20 @@ impl Interpreter {
         })?;
         match target {
             IoHandleTarget::Stdout => {
-                // For stdout, convert bytes to lossy string and emit
-                let content = String::from_utf8_lossy(bytes).to_string();
-                self.emit_output(&content);
+                // `$*OUT.write($blob)` writes RAW bytes — a lossy UTF-8 round-trip
+                // corrupts non-UTF-8 binary (`Blob.new(0x65,0xD6,0xFF)` must emit
+                // `65 D6 FF`, not `65 EF BF BD EF BF BD`; roast S17-procasync/
+                // encoding.t needs the child to emit the real bytes). Mirror the
+                // Stderr branch: bytes straight through when stdout is immediate;
+                // only the TAP-capture buffer path decodes lossily.
+                if self.tap.subtest_depth() == 0 && self.output_sink().immediate_stdout {
+                    use std::io::Write;
+                    let _ = std::io::stdout().write_all(bytes);
+                    let _ = std::io::stdout().flush();
+                } else {
+                    let content = String::from_utf8_lossy(bytes).to_string();
+                    self.emit_output(&content);
+                }
                 Ok(())
             }
             IoHandleTarget::Stderr => {
