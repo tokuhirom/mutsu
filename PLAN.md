@@ -385,12 +385,12 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
       3. ✅ `MUTSU_VM_STATS` の GC カウンタ枠（`vm/vm_stats.rs`: collections/candidate_pushes/
          dedup_hits/reclaimed_nodes/reclaimed_cycles/pause_ns_total/pause_ns_max/roots_scanned。
          全て 0 固定 — 呼び出し元は §11 step 4 以降）
-      4. `Gc<T>` / node header / candidate buffer の最小実装 ← **次はここ（次セッション開始点）**。
-         設計メモ §5.1（node header: strong refcount 相当・color/state・buffered フラグ・
-         `trace(&mut Visitor)` vtable 相当）と §1（Level 1a=同期・協調 collector、safepoint は
-         再入境界に限定）を先に読むこと。まだ `Value` のどの variant も `Arc→Gc` に置換しない
-         （それは step 5 以降の first wave）。
-      5〜11. `Array`/`Hash`/`ContainerRef` → `Promise`/`Channel` → supply registry → safepoint collect →
+      4. ✅ `Gc<T>` / node header / candidate buffer の最小実装（`gc/gc_ptr.rs`: Arc-backed
+         `Gc<T>` ＋ `GcHeader`(strong count/`Color`/buffered) ＋ `Trace` trait ＋ process-global
+         candidate buffer(dedup)。`MUTSU_GC` 未設定なら drop で candidate 登録しない=inert。
+         `record_gc_candidate_push`/`dedup_hit` を配線。`Value` variant は未置換=step 5 以降）。
+      5. `Array`/`Hash`/`ContainerRef` を first wave として `Arc→Gc` 置換 ← **次はここ（次セッション開始点）**。
+      6〜11. `Promise`/`Channel` → supply registry → safepoint collect（trial-deletion 本体）→
       `Sub`/`Instance` → `LazyList`（詳細は設計メモ参照）。
       **Track B（要素 cell 化）と GC は統合キャンペーン（層3a・`Arc → Gc<T>` 一斉置換）**。続いて NaN-boxing
       （層3b・JIT 地ならし）→ JIT（層4）。未決は収集方式（同期/非同期）と A' 地ならしの範囲（ADR §4.2/§4.3）。

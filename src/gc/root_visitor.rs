@@ -1,11 +1,11 @@
 //! GC Level 1a root-visitor infrastructure (ADR-0001 / ADR-0002,
-//! `docs/gc-level1-detailed-design.md`).
+//! `docs/gc-level1-detailed-design.md` §2.2 / §11 steps 1-2).
 //!
-//! This module holds only the `RootVisitor` trait so far. It has no
-//! knowledge of `Gc<T>`, candidate buffers, or collection — those land in
-//! later steps of the design doc's §11 implementation order. The trait exists
-//! now so root enumeration lives in exactly one place (`Interpreter::visit_roots`,
-//! `Env::visit_values`) instead of being duplicated per future call site.
+//! This submodule holds the `RootVisitor` trait and its `visit_*` helpers. Root
+//! enumeration (`Interpreter::visit_roots`, `Env::visit_values`) lives in
+//! exactly one place through this trait instead of being duplicated per future
+//! call site. The managed-pointer machinery (`Gc<T>`, candidate buffer, the
+//! future collector) lives in the sibling `gc_ptr` submodule.
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;

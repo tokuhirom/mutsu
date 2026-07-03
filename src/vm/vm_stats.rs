@@ -68,12 +68,14 @@ static ENV_FLUSH: AtomicU64 = AtomicU64::new(0);
 static ENV_SLOTS_FLUSHED: AtomicU64 = AtomicU64::new(0);
 
 // GC Level 1a counters (ADR-0001/0002, docs/gc-level1-detailed-design.md
-// §8/§9.4a, §11 step 3). No candidate buffer or collector exists yet (§11
-// steps 4+), so these all read 0 today — the counter framework is laid down
-// ahead of the collector so instrumentation is never bolted on retroactively.
-// Success criterion once wired in (§8): `gc_candidate_pushes == 0` on the
-// `fib` benchmark, proving the scalar/container type filter keeps int-heavy
-// hot paths GC-cost-free.
+// §8/§9.4a). As of §11 step 4 the candidate buffer exists, so
+// `candidate_pushes`/`dedup_hits` are live (they increment when `MUTSU_GC` is
+// on and a `Gc` handle is dropped with survivors). The collection counters
+// still read 0 — the synchronous collector lands in §11 step 8. Note that no
+// `Value` variant is migrated to `Gc<T>` yet (§11 step 5+), so ordinary program
+// runs push nothing today. Success criterion once migration lands (§8):
+// `gc_candidate_pushes == 0` on the `fib` benchmark, proving the
+// scalar/container type filter keeps int-heavy hot paths GC-cost-free.
 static GC_CANDIDATE_PUSHES: AtomicU64 = AtomicU64::new(0);
 static GC_CANDIDATE_DEDUP_HITS: AtomicU64 = AtomicU64::new(0);
 static GC_COLLECTIONS: AtomicU64 = AtomicU64::new(0);
@@ -189,8 +191,9 @@ pub(crate) fn record_env_flush(slots: u64) {
 }
 
 /// Record a GC cycle-candidate buffer push: a mutation chokepoint flagged a
-/// GC-managed node as a possible cycle member (design doc §4.2). Not called
-/// anywhere yet — the candidate buffer itself lands in §11 step 4.
+/// GC-managed node as a possible cycle member (design doc §4.2). Wired from
+/// `gc::gc_ptr::buffer_candidate` (§11 step 4), but only reachable once a
+/// `Value` variant is `Gc`-managed (§11 step 5) — dead until then.
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn record_gc_candidate_push() {
@@ -200,7 +203,8 @@ pub(crate) fn record_gc_candidate_push() {
 }
 
 /// Record that a candidate push deduplicated against an already-buffered node
-/// instead of adding a new entry.
+/// instead of adding a new entry. Wired from `gc::gc_ptr::buffer_candidate`,
+/// reachable only once a `Value` variant is `Gc`-managed (§11 step 5).
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn record_gc_candidate_dedup_hit() {
@@ -271,8 +275,9 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] dual-store: clone_env={clone_env} (O(1) Arc bumps) env_deep_copies={deep_copy} (O(env) make_mut) env_flushes={env_flush} slots_flushed={slots}"
     );
-    // GC Level 1a (§11 step 3): all zero until the collector (§11 step 4+)
-    // starts calling record_gc_candidate_push/record_gc_collection.
+    // GC Level 1a: candidate_pushes/dedup_hits are live as of §11 step 4
+    // (nonzero only with MUTSU_GC=on once a Value variant is Gc-managed);
+    // the collection counters stay zero until the collector lands (§11 step 8).
     let gc_collections = GC_COLLECTIONS.load(Ordering::Relaxed);
     let gc_candidate_pushes = GC_CANDIDATE_PUSHES.load(Ordering::Relaxed);
     let gc_dedup_hits = GC_CANDIDATE_DEDUP_HITS.load(Ordering::Relaxed);
