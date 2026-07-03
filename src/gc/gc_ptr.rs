@@ -173,6 +173,75 @@ impl<T: Trace + 'static> Gc<T> {
         self.inner.value.trace(visit);
     }
 
+    /// A type-erased [`ErasedGc`] handle to this node (a fresh `Arc` clone
+    /// coerced to `dyn Trace`). This is how a parent node exposes a `Gc` child
+    /// to the collector's tracer, and how a candidate is retained in the
+    /// buffer. Bumps the backing `Arc`'s count but NOT the GC-visible
+    /// `header.strong`, so an erased handle held by the collector does not read
+    /// as a live program reference.
+    pub(crate) fn erased(&self) -> ErasedGc {
+        self.inner.clone()
+    }
+
+    // ---- `Arc<T>` drop-in API ----------------------------------------------
+    //
+    // These mirror the `Arc::` associated functions the pre-GC container code
+    // used on `Arc<ArrayData>` / `Arc<HashData>`, so migrating a `Value`
+    // variant from `Arc<T>` to `Gc<T>` (§11 step 5+) is a mechanical
+    // call-site rewrite (`Arc::foo(x)` -> `Gc::foo(x)`) rather than a
+    // behavioral change. Uniqueness is judged by `header.strong` (live GC
+    // handles, excluding the candidate buffer's retained `Arc`), which equals
+    // what `Arc::strong_count` reported before the buffer existed — so COW
+    // behavior is preserved whether or not `MUTSU_GC` is on.
+
+    /// `Arc::ptr_eq` analog: whether two handles designate the same node.
+    pub(crate) fn ptr_eq(a: &Gc<T>, b: &Gc<T>) -> bool {
+        Arc::ptr_eq(&a.inner, &b.inner)
+    }
+
+    /// `Arc::strong_count` analog in associated-fn form (the method
+    /// [`Gc::strong_count`] returns the same value). Live GC handles only.
+    pub(crate) fn strong_count_of(this: &Gc<T>) -> usize {
+        this.inner.header.strong.load(Ordering::Relaxed)
+    }
+
+    /// `Arc::as_ptr` analog: a raw pointer to the *value* (past the node
+    /// header), matching what `Arc::as_ptr` yields for a plain `Arc<T>`.
+    pub(crate) fn as_ptr(this: &Gc<T>) -> *const T {
+        &this.inner.value as *const T
+    }
+
+    /// `Arc::get_mut` analog. Returns `&mut T` only when this is the sole live
+    /// GC handle (`header.strong == 1`), ignoring the backing `Arc`'s weak/
+    /// buffer references. Sound because a buffered node's value is read only at
+    /// a collect safepoint, never concurrently with a live-handle mutation
+    /// (same contract as [`gc_contents_mut`]).
+    pub(crate) fn get_mut(this: &mut Gc<T>) -> Option<&mut T> {
+        if this.inner.header.strong.load(Ordering::Relaxed) == 1 {
+            // SAFETY: sole live handle => no other live-handle borrow into this
+            // value exists. See `gc_contents_mut`'s contract.
+            Some(unsafe { &mut *(Gc::as_ptr(this) as *mut T) })
+        } else {
+            None
+        }
+    }
+
+    /// `Arc::make_mut` analog (copy-on-write). If more than one live GC handle
+    /// exists, clone the value into a fresh node and rebind `this`; then return
+    /// `&mut` to the now-unique value. Matches the COW semantics the pre-GC
+    /// `Arc::make_mut(&mut Arc<ArrayData>)` sites relied on.
+    pub(crate) fn make_mut(this: &mut Gc<T>) -> &mut T
+    where
+        T: Clone,
+    {
+        if this.inner.header.strong.load(Ordering::Relaxed) != 1 {
+            let cloned = this.inner.value.clone();
+            *this = Gc::new(cloned);
+        }
+        // SAFETY: exactly one live handle after the check/clone above.
+        unsafe { &mut *(Gc::as_ptr(this) as *mut T) }
+    }
+
     /// Offer this node to the candidate buffer as a possible cycle root,
     /// bypassing the `MUTSU_GC` gate. Used by tests and (later) by an explicit
     /// `gc_debug_collect_now`-style hook.
@@ -247,6 +316,38 @@ impl<T: Trace + 'static> Drop for Gc<T> {
             buffer_candidate(self.inner.clone());
         }
     }
+}
+
+impl<T: Trace + 'static> From<T> for Gc<T> {
+    fn from(value: T) -> Gc<T> {
+        Gc::new(value)
+    }
+}
+
+impl<T: Trace + std::fmt::Debug + 'static> std::fmt::Debug for Gc<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Forward to the pointee so `Value`'s derived `Debug` prints a migrated
+        // `Gc<ArrayData>` exactly like the old `Arc<ArrayData>` did.
+        std::fmt::Debug::fmt(&self.inner.value, f)
+    }
+}
+
+/// `Gc<T>` analog of [`crate::value::aliased_mut::arc_contents_mut`]: a `&mut T`
+/// aliasing a shared node's value for a deliberate aliased in-place mutation of
+/// a container (Raku container identity — a push through one alias must be
+/// visible through every holder of the same node).
+///
+/// # Safety
+///
+/// Same contract as `arc_contents_mut`: the caller must ensure no other borrow
+/// into this value is live for the duration of the returned `&mut`, and no
+/// concurrent access from another thread. The candidate buffer's retained `Arc`
+/// adds no new hazard — a buffered node's value is read only at a collect
+/// safepoint, never concurrently with a live mutation.
+#[allow(clippy::mut_from_ref)]
+pub(crate) unsafe fn gc_contents_mut<T: Trace + 'static>(gc: &Gc<T>) -> &mut T {
+    // SAFETY: delegated to the caller per the contract above.
+    unsafe { &mut *(Gc::as_ptr(gc) as *mut T) }
 }
 
 /// Process-global cycle-candidate buffer (design doc §5.2: "buffer は
@@ -337,10 +438,16 @@ mod tests {
             if let Ok(guard) = self.child.lock()
                 && let Some(child) = guard.as_ref()
             {
-                let erased: ErasedGc = child.inner.clone();
-                visit(&erased);
+                visit(&child.erased());
             }
         }
+    }
+
+    /// Clonable leaf node carrying a payload, for COW / mutation tests.
+    #[derive(Clone, Debug, PartialEq)]
+    struct Cell(i64);
+    impl Trace for Cell {
+        fn trace(&self, _visit: &mut dyn FnMut(&ErasedGc)) {}
     }
 
     #[test]
@@ -376,6 +483,62 @@ mod tests {
         let mut seen = 0;
         gc.trace_children(&mut |_erased| seen += 1);
         assert_eq!(seen, 0);
+    }
+
+    #[test]
+    fn ptr_eq_distinguishes_shared_from_independent() {
+        let a = Gc::new(Cell(1));
+        let shared = a.clone();
+        let b = Gc::new(Cell(1));
+        assert!(Gc::ptr_eq(&a, &shared), "clones share the node");
+        assert!(!Gc::ptr_eq(&a, &b), "independent nodes differ");
+    }
+
+    #[test]
+    fn make_mut_shares_when_unique_and_cows_when_aliased() {
+        // Unique: make_mut writes in place, both this handle and any later
+        // clone observe it.
+        let mut a = Gc::new(Cell(1));
+        *Gc::make_mut(&mut a) = Cell(2);
+        assert_eq!(*a, Cell(2));
+
+        // Aliased: make_mut clones, so the write is NOT visible through the
+        // pre-existing alias (Arc::make_mut COW semantics).
+        let alias = a.clone();
+        assert_eq!(Gc::strong_count_of(&a), 2);
+        *Gc::make_mut(&mut a) = Cell(9);
+        assert_eq!(*a, Cell(9));
+        assert_eq!(*alias, Cell(2), "the alias must not see the post-clone write");
+        assert_eq!(Gc::strong_count_of(&a), 1, "a is a fresh unique node");
+    }
+
+    #[test]
+    fn get_mut_is_some_only_when_unique() {
+        let mut a = Gc::new(Cell(1));
+        assert!(Gc::get_mut(&mut a).is_some());
+        let alias = a.clone();
+        assert!(Gc::get_mut(&mut a).is_none(), "aliased => no unique &mut");
+        drop(alias);
+        assert!(Gc::get_mut(&mut a).is_some(), "unique again after alias drops");
+    }
+
+    #[test]
+    fn gc_contents_mut_writes_through_a_shared_node() {
+        // Unlike make_mut, gc_contents_mut mutates the shared node in place, so
+        // an alias DOES observe the write (Raku shared-container identity).
+        let a = Gc::new(Cell(1));
+        let alias = a.clone();
+        // SAFETY: no other borrow into the value is live across this write.
+        unsafe { *gc_contents_mut(&a) = Cell(7) };
+        assert_eq!(*a, Cell(7));
+        assert_eq!(*alias, Cell(7), "the shared write is visible through the alias");
+    }
+
+    #[test]
+    fn from_and_debug_forward_to_the_value() {
+        let gc: Gc<Cell> = Cell(5).into();
+        assert_eq!(*gc, Cell(5));
+        assert_eq!(format!("{gc:?}"), format!("{:?}", Cell(5)));
     }
 
     #[test]

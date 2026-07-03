@@ -17,5 +17,7 @@ mod gc_ptr;
 mod root_visitor;
 
 #[allow(unused_imports)]
-pub(crate) use gc_ptr::{Color, ErasedGc, Gc, Trace, drain_candidates, gc_enabled};
+pub(crate) use gc_ptr::{
+    Color, ErasedGc, Gc, Trace, drain_candidates, gc_contents_mut, gc_enabled,
+};
 pub(crate) use root_visitor::{RootVisitor, visit_map_values, visit_opt, visit_slice};
