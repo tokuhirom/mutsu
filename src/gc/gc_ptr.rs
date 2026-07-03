@@ -497,6 +497,42 @@ fn buffer_candidate(node: ErasedGc) {
     super::safepoint::note_candidate_push();
 }
 
+/// Number of user worker threads (`start`/`Promise`/`hyper`/`race`/Supply
+/// callbacks) that may be concurrently mutating the `Gc` graph.
+///
+/// The level-1a collector's trial deletion (`mark_gray` decrements each node's
+/// strong count, `scan_black` restores it) is **not** safe against concurrent
+/// mutation: a worker thread that clones/drops a `Gc` or CAS-swaps a pointer
+/// mid-collect races the collector's refcount bookkeeping, which manifests as
+/// strong-count underflow and freed-but-live nodes (design doc §13.3 — the
+/// cross-thread STW protocol is the deferred open question). Until a real
+/// stop-the-world lands, the collector simply declines to run while any worker
+/// thread is active (see `collect::collect_cycles_at`): candidates keep
+/// accumulating and are reclaimed at the next safepoint after the threads join.
+/// Reclaim is deferred, never unsound.
+static MUTATOR_WORKER_THREADS: AtomicUsize = AtomicUsize::new(0);
+
+/// Register that a user worker thread is about to start (or is running). Called
+/// on the *parent* thread before the worker is spawned so the count is raised
+/// the instant `spawn_user_thread` returns, closing the window in which the
+/// parent could reach a safepoint and collect while the worker comes up.
+pub(crate) fn enter_mutator_worker() {
+    MUTATOR_WORKER_THREADS.fetch_add(1, Ordering::AcqRel);
+}
+
+/// Register that a user worker thread has finished. Balanced against
+/// `enter_mutator_worker`; run from the worker via an RAII guard so a panic in
+/// user code still decrements.
+pub(crate) fn exit_mutator_worker() {
+    MUTATOR_WORKER_THREADS.fetch_sub(1, Ordering::AcqRel);
+}
+
+/// Whether any user worker thread may currently be mutating the `Gc` graph.
+/// The collector gates on this to preserve stop-the-world.
+pub(crate) fn mutator_workers_active() -> bool {
+    MUTATOR_WORKER_THREADS.load(Ordering::Acquire) > 0
+}
+
 /// Drain the candidate buffer, clearing each node's `buffered` flag, and return
 /// the nodes. The synchronous collector (§11 step 8) will consume this to run
 /// trial-deletion; exposed now as the seam between candidate registration and
