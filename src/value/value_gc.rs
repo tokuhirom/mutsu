@@ -16,13 +16,13 @@
 //! `Junction` is likewise not in the design doc's candidate list and is
 //! excluded.
 
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 
 use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
 use super::{
-    ArrayData, BagData, HashData, InstanceAttrs, LazyList, MixData, SetData, SharedChannel,
-    SharedPromise, SubData, Value,
+    ArrayData, BagData, ChannelState, HashData, InstanceAttrs, LazyList, MixData, PromiseState,
+    SetData, SharedChannel, SharedPromise, SubData, Value,
 };
 
 impl Value {
@@ -95,7 +95,52 @@ impl Value {
                 fetcher.gc_trace(visit);
                 storer.gc_trace(visit);
             }
+            // Migrated async `Gc<T>` node variants (§11 steps 6-7): yield the
+            // node; its `Trace` impl walks the held result / queue / callbacks.
+            Value::Promise(p) => visit(&p.erased()),
+            Value::Channel(c) => visit(&c.erased()),
             _ => {}
+        }
+    }
+}
+
+/// A promise node's single `Value` edge is its resolved `result`. Its queued
+/// `waiters` are boxed `FnOnce` closures — opaque to a visitor (they may capture
+/// `Value`s, but those are unreachable through this node until the callback runs
+/// and are dropped when the promise resolves), so they are not traced.
+/// Async node migration (§11 step 6).
+impl Trace for (Mutex<PromiseState>, Condvar) {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        if let Ok(state) = self.0.lock() {
+            state.result.gc_trace(visit);
+        }
+    }
+    fn drop_gc_edges(&mut self) {
+        if let Ok(state) = self.0.get_mut() {
+            state.result = Value::Nil;
+            state.waiters.clear();
+        }
+    }
+}
+
+/// A channel node's `Value` edges are its buffered `queue`, its `failure`, and
+/// its `closed_promise` node. Async node migration (§11 step 7).
+impl Trace for (Mutex<ChannelState>, Condvar) {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        if let Ok(state) = self.0.lock() {
+            for v in &state.queue {
+                v.gc_trace(visit);
+            }
+            if let Some(f) = &state.failure {
+                f.gc_trace(visit);
+            }
+            visit(&state.closed_promise.erased());
+        }
+    }
+    fn drop_gc_edges(&mut self) {
+        if let Ok(state) = self.0.get_mut() {
+            state.queue.clear();
+            state.failure = None;
         }
     }
 }
@@ -369,6 +414,12 @@ impl InstanceAttrs {
 }
 
 impl SharedPromise {
+    /// The type-erased GC node handle for this promise (its `Gc` inner), for the
+    /// collector's `Value::Promise` trace edge.
+    pub(crate) fn erased(&self) -> ErasedGc {
+        self.inner.erased()
+    }
+
     #[allow(dead_code)]
     pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
         if let Ok(state) = self.inner.0.lock() {
@@ -382,6 +433,12 @@ impl SharedPromise {
 }
 
 impl SharedChannel {
+    /// The type-erased GC node handle for this channel (its `Gc` inner), for the
+    /// collector's `Value::Channel` trace edge.
+    pub(crate) fn erased(&self) -> ErasedGc {
+        self.inner.erased()
+    }
+
     #[allow(dead_code)]
     pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
         if let Ok(state) = self.inner.0.lock() {
