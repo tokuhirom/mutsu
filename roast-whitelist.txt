@@ -121,6 +121,7 @@ roast/S02-types/array_ref.t
 roast/S02-types/assigning-refs.t
 roast/S02-types/autovivification.t
 roast/S02-types/bag-iterator.t
+roast/S02-types/bag.t
 roast/S02-types/baggy.t
 roast/S02-types/baghash.t
 roast/S02-types/bool.t
