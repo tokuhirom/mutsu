@@ -23,7 +23,7 @@
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use super::collect::collect_cycles;
+use super::collect::collect_cycles_at;
 use super::gc_ptr::gc_enabled;
 
 /// A re-entry boundary at which a collect may run (design doc §9.2a). Only
@@ -50,6 +50,24 @@ pub(crate) enum SafepointKind {
     ThreadJoin,
     /// Explicit debug / manual collect.
     Manual,
+}
+
+impl SafepointKind {
+    /// Short stable name, used as the collect `reason` in `MUTSU_GC_LOG` output
+    /// (and the string a future `MUTSU_GC_AT` would match).
+    fn name(self) -> &'static str {
+        match self {
+            SafepointKind::Backedge => "backedge",
+            SafepointKind::Call => "call",
+            SafepointKind::Return => "return",
+            SafepointKind::Await => "await",
+            SafepointKind::ReactPoll => "react_poll",
+            SafepointKind::LazyForce => "lazy_force",
+            SafepointKind::NestedRun => "nested_run",
+            SafepointKind::ThreadJoin => "thread_join",
+            SafepointKind::Manual => "manual",
+        }
+    }
 }
 
 /// Resolved trigger policy, read once from the environment.
@@ -141,7 +159,7 @@ pub(crate) fn note_candidate_push() {
 /// a no-op unless [`armed`]; safe to call anywhere the caller holds no borrow
 /// into a `Gc`-managed container (design doc §1.2).
 #[inline]
-pub(crate) fn gc_safepoint(_kind: SafepointKind) {
+pub(crate) fn gc_safepoint(kind: SafepointKind) {
     if !armed() {
         return;
     }
@@ -150,6 +168,6 @@ pub(crate) fn gc_safepoint(_kind: SafepointKind) {
     // arming from the candidate counter.
     let fire = t.every_safepoint || PENDING.swap(false, Ordering::Relaxed);
     if fire {
-        collect_cycles();
+        collect_cycles_at(kind.name());
     }
 }

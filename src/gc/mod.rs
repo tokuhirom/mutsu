@@ -24,7 +24,10 @@ mod root_visitor;
 mod safepoint;
 
 #[allow(unused_imports)]
-pub(crate) use collect::{CollectStats, collect_cycles, collect_if_enabled, gc_debug_collect_now};
+pub(crate) use collect::{
+    CollectStats, LogMode, collect_cycles, collect_cycles_at, collect_if_enabled,
+    gc_debug_collect_now, log_mode, verify_enabled,
+};
 #[allow(unused_imports)]
 pub(crate) use gc_ptr::{
     Color, ContainerMakeMut, ErasedGc, Gc, Trace, WeakGc, drain_candidates, gc_contents_mut,
