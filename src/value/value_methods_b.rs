@@ -61,7 +61,7 @@ impl Value {
             if !terminal && matches!(elem, Value::Array(..) | Value::Hash(..)) {
                 return Some(elem.clone());
             }
-            let cell = Arc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+            let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
             *elem = Value::ContainerRef(cell.clone());
             Some(Value::ContainerRef(cell))
         } else {

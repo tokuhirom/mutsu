@@ -1443,7 +1443,7 @@ impl Interpreter {
                 // value (e.g. into a Pair value) and is enforced on assignment.
                 let type_name = Self::const_str(code, *type_idx).to_string();
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                let cell = std::sync::Arc::new(std::sync::Mutex::new(val));
+                let cell = crate::gc::Gc::new(std::sync::Mutex::new(val));
                 crate::value::register_container_constraint(&cell, &type_name);
                 self.stack.push(Value::ContainerRef(cell));
                 *ip += 1;

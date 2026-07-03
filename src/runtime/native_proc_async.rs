@@ -261,7 +261,7 @@ impl Interpreter {
 
                 // Store stdin in global registry if piped
                 if let Some(stdin) = child.stdin.take() {
-                    let stdin_arc = Arc::new(std::sync::Mutex::new(Some(stdin)));
+                    let stdin_arc = std::sync::Arc::new(std::sync::Mutex::new(Some(stdin)));
                     if w_flag && let Ok(mut map) = proc_stdin_map().lock() {
                         map.insert(pid, stdin_arc.clone());
                     }

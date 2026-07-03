@@ -42,7 +42,21 @@ impl Value {
             Value::Set(data, _) => visit(&data.erased()),
             Value::Bag(data, _) => visit(&data.erased()),
             Value::Mix(data, _) => visit(&data.erased()),
+            Value::ContainerRef(cell) => visit(&cell.erased()),
             _ => {}
+        }
+    }
+}
+
+/// `ContainerRef` is a `Gc<Mutex<Value>>` scalar/element cell (§11 step 5e). Its
+/// single GC child is the `Value` it holds, reached by locking. (`Trace` for a
+/// std `Mutex` is allowed — `Trace` is a local trait — and only ever runs at a
+/// collect safepoint where no program thread holds the lock, so it cannot
+/// deadlock; the collector itself is still off until step 8.)
+impl Trace for std::sync::Mutex<Value> {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        if let Ok(guard) = self.lock() {
+            guard.gc_trace(visit);
         }
     }
 }
@@ -280,7 +294,7 @@ mod tests {
 
     #[test]
     fn container_ref_visits_its_locked_value() {
-        let cell = Value::ContainerRef(Arc::new(std::sync::Mutex::new(Value::Int(7))));
+        let cell = Value::ContainerRef(crate::gc::Gc::new(std::sync::Mutex::new(Value::Int(7))));
         let mut visitor = CountingVisitor { count: 0 };
         cell.visit_gc_children(&mut visitor);
         assert_eq!(visitor.count, 1);

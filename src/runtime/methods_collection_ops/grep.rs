@@ -315,7 +315,7 @@ impl Interpreter {
                 for &i in &indices {
                     let cell = match &promoted[i] {
                         v @ Value::ContainerRef(_) => v.clone(),
-                        other => Value::ContainerRef(std::sync::Arc::new(std::sync::Mutex::new(
+                        other => Value::ContainerRef(crate::gc::Gc::new(std::sync::Mutex::new(
                             other.clone(),
                         ))),
                     };

@@ -3,7 +3,7 @@ use crate::symbol::Symbol;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-type BindSourceCell = (Option<String>, Arc<std::sync::Mutex<Value>>);
+type BindSourceCell = (Option<String>, crate::gc::Gc<std::sync::Mutex<Value>>);
 
 /// A flat slice-assign key (`@a[1,(lazy 3,4,5)] = ...`), pre-resolved so the
 /// mutable-container recursion below never needs `&mut self` (a nested key's
@@ -944,7 +944,7 @@ impl Interpreter {
                                 Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
                                 _ => Some((
                                     Some(source_name.clone()),
-                                    Arc::new(std::sync::Mutex::new(v)),
+                                    crate::gc::Gc::new(std::sync::Mutex::new(v)),
                                 )),
                             }
                         } else {
@@ -953,8 +953,10 @@ impl Interpreter {
                         slice_bind_cells.push(entry);
                     }
                 }
-                let mut pending_source_cells: Vec<(String, Arc<std::sync::Mutex<Value>>)> =
-                    Vec::new();
+                let mut pending_source_cells: Vec<(
+                    String,
+                    crate::gc::Gc<std::sync::Mutex<Value>>,
+                )> = Vec::new();
                 if let Some(Value::Hash(hash)) = self.env_mut().get_mut(&var_name) {
                     let h = crate::gc::Gc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
@@ -1224,7 +1226,10 @@ impl Interpreter {
                 // Phase 2 Stage 2: a single-level element bind (`@a[i] := ...`,
                 // `%h<k> := ...`) stores a shared `ContainerRef` cell. The cell
                 // is written back to the source var after the write completes.
-                let mut pending_source_cell: Option<(String, Arc<std::sync::Mutex<Value>>)> = None;
+                let mut pending_source_cell: Option<(
+                    String,
+                    crate::gc::Gc<std::sync::Mutex<Value>>,
+                )> = None;
                 // Whether the bind stored a shared cell at the element (skips
                 // the bound-index side table — the cell IS the alias).
                 let mut stored_bind_cell = false;
@@ -1246,7 +1251,7 @@ impl Interpreter {
                             Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
                             _ => Some((
                                 Some(source_name.clone()),
-                                Arc::new(std::sync::Mutex::new(val.clone())),
+                                crate::gc::Gc::new(std::sync::Mutex::new(val.clone())),
                             )),
                         }
                     } else {
@@ -2326,9 +2331,9 @@ impl Interpreter {
         // the old `BOUND_ARRAY_REF_SENTINEL` by-name back-reference lost at depth.
         let (val, bind_source) = Self::unwrap_bind_index_value(val);
         let bind_source = bind_source.filter(|s| !s.contains("\x00idx\x00"));
-        let bind_cell: Option<Arc<std::sync::Mutex<Value>>> = bind_source
+        let bind_cell: Option<crate::gc::Gc<std::sync::Mutex<Value>>> = bind_source
             .as_ref()
-            .map(|_| Arc::new(std::sync::Mutex::new(val.clone())));
+            .map(|_| crate::gc::Gc::new(std::sync::Mutex::new(val.clone())));
 
         // Extract positional flags from constant
         let flags_val = code.constants[positional_flags_idx as usize].clone();
@@ -2597,7 +2602,7 @@ impl Interpreter {
                 Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
                 _ => Some((
                     Some(source_name.clone()),
-                    Arc::new(std::sync::Mutex::new(val.clone())),
+                    crate::gc::Gc::new(std::sync::Mutex::new(val.clone())),
                 )),
             }
         } else {
