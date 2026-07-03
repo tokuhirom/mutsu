@@ -7,7 +7,7 @@ use Test;
 # the runtime env restore; the compiler-slot rework is deferred — see the note in
 # ANALYSIS.md §1.4. These cases guard against regressing the observable behavior.)
 
-plan 10;
+plan 12;
 
 # --- shadow read correctness ---
 {
@@ -57,4 +57,17 @@ plan 10;
         { temp $t = 99; is $t, 99, 'temp assigns the inner shadow slot'; }
         is $t, 10, 'temp restore targets the inner (live) shadow slot';
     }
+}
+
+# --- rw-arg writeback through a shadow hits the INNER slot ---
+# (regression: the writeback resolved the source name -> outer slot)
+{
+    sub bump($x is rw) { $x = 99 }
+    my $r = 1;
+    {
+        my $r = 10;
+        bump($r);
+        is $r, 99, 'rw-arg writeback targets the inner (live) shadow slot';
+    }
+    is $r, 1, 'outer $r untouched by inner rw-arg writeback';
 }

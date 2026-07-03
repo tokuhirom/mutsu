@@ -667,7 +667,18 @@ impl Compiler {
             .iter()
             .map(|arg| {
                 if let Some(name) = Self::positional_arg_source_name(arg) {
-                    Value::str(name)
+                    // §1.4/§1.5: bake the caller's local slot for a plain source var
+                    // as `Pair(name, Int(slot))`, so the rw-arg writeback can target
+                    // the LIVE (inner shadow) slot instead of the by-name `position`
+                    // (outer) slot. A source with no local slot, or an encoded
+                    // `key=var` named form, stays a bare `Str(name)`. Decoders extract
+                    // the name from either shape, so existing consumers are unchanged.
+                    match self.local_map.get(&name) {
+                        Some(&slot) if !name.contains('=') => {
+                            Value::Pair(name, Box::new(Value::Int(slot as i64)))
+                        }
+                        _ => Value::str(name),
+                    }
                 } else {
                     Value::Nil
                 }

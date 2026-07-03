@@ -128,23 +128,40 @@ impl Interpreter {
     }
 
     pub(super) fn decode_arg_sources(
-        &self,
+        &mut self,
         code: &CompiledCode,
         arg_sources_idx: Option<u32>,
     ) -> Option<Vec<Option<String>>> {
+        // §1.4/§1.5: repopulate the companion `name -> slot` map for this call from
+        // the `Pair(name, Int(slot))` arg-source entries. Cleared first so a call
+        // with no slotted sources leaves it empty (no stale slot from a prior call).
+        self.pending_call_arg_source_slots.clear();
         let idx = arg_sources_idx?;
         let Value::Array(items, ..) = &code.constants[idx as usize] else {
             return None;
         };
-        Some(
-            items
-                .iter()
-                .map(|item| match item {
-                    Value::Str(name) => Some(name.to_string()),
-                    _ => None,
-                })
-                .collect(),
-        )
+        let mut slots: Vec<(String, u32)> = Vec::new();
+        let names: Vec<Option<String>> = items
+            .iter()
+            .map(|item| match item {
+                Value::Str(name) => Some(name.to_string()),
+                // A slotted source is `Pair(name, Int(slot))`; extract the name here
+                // (byte-identical for name-only consumers) and record the slot.
+                Value::Pair(name, val) => {
+                    if let Value::Int(slot) = val.as_ref()
+                        && *slot >= 0
+                    {
+                        slots.push((name.clone(), *slot as u32));
+                    }
+                    Some(name.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        for (name, slot) in slots {
+            self.pending_call_arg_source_slots.insert(name, slot);
+        }
+        Some(names)
     }
 
     pub(super) fn unwrap_var_ref_value(value: Value) -> Value {
