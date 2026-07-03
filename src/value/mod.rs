@@ -305,6 +305,7 @@ mod value_async;
 mod value_collections;
 mod value_enum;
 mod value_eq;
+mod value_gc;
 mod value_instance;
 mod value_lazy;
 mod value_methods_a;

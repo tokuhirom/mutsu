@@ -1,0 +1,210 @@
+//! GC Level 1a child visitor (ADR-0001/0002,
+//! `docs/gc-level1-detailed-design.md` §3 / §7 / §11 step 2).
+//!
+//! Traces the direct `Value` children of a GC-candidate node. This is the
+//! collector's "trace edges out of this node" primitive, distinct from
+//! `Interpreter::visit_roots` (which enumerates ROOTS — where execution state
+//! itself holds a `Value`). No `Gc<T>`/candidate buffer exists yet, so
+//! nothing outside this module's tests calls these.
+//!
+//! Scope matches the design doc's §3.1 type filter plus the "initial scope"
+//! async types: `Array`/`Hash`/`Set`/`Bag`/`Mix`/`Pair`/`ValuePair`/`Sub`/
+//! `Instance`/`ContainerRef`/`Promise`/`Channel`. Every other variant
+//! (`Int`/`Str`/`Bool`/`Nil`/`Range`/...) cannot form a cycle and is a no-op.
+//! `LazyList` is out of scope until the third wave (§11 step 10) — its wide
+//! trace surface (env/cache/coroutine/lazy-pipe state) is deferred there.
+//! `Junction` is likewise not in the design doc's candidate list and is
+//! excluded.
+
+use crate::gc::{RootVisitor, visit_map_values};
+
+use super::{ArrayData, HashData, InstanceAttrs, SharedChannel, SharedPromise, SubData, Value};
+
+impl Value {
+    #[allow(dead_code)]
+    pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
+        match self {
+            Value::Array(data, _) => data.visit_gc_children(visitor),
+            Value::Hash(data) => data.visit_gc_children(visitor),
+            Value::Set(data, _) => {
+                if let Some(keys) = &data.original_keys {
+                    visit_map_values(visitor, keys);
+                }
+            }
+            Value::Bag(data, _) => {
+                if let Some(keys) = &data.original_keys {
+                    visit_map_values(visitor, keys);
+                }
+            }
+            Value::Mix(data, _) => {
+                if let Some(keys) = &data.original_keys {
+                    visit_map_values(visitor, keys);
+                }
+            }
+            Value::Pair(_, v) => visitor.visit_value(v),
+            Value::ValuePair(k, v) => {
+                visitor.visit_value(k);
+                visitor.visit_value(v);
+            }
+            Value::Sub(data) => data.visit_gc_children(visitor),
+            Value::Instance { attributes, .. } => attributes.visit_gc_children(visitor),
+            Value::ContainerRef(cell) => {
+                if let Ok(guard) = cell.lock() {
+                    visitor.visit_value(&guard);
+                }
+            }
+            Value::Promise(p) => p.visit_gc_children(visitor),
+            Value::Channel(c) => c.visit_gc_children(visitor),
+            _ => {}
+        }
+    }
+}
+
+impl ArrayData {
+    #[allow(dead_code)]
+    pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
+        for v in &self.items {
+            visitor.visit_value(v);
+        }
+        if let Some(d) = &self.default {
+            visitor.visit_value(d);
+        }
+    }
+}
+
+impl HashData {
+    #[allow(dead_code)]
+    pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
+        visit_map_values(visitor, &self.map);
+        if let Some(keys) = &self.original_keys {
+            visit_map_values(visitor, keys);
+        }
+        if let Some(d) = &self.default {
+            visitor.visit_value(d);
+        }
+    }
+}
+
+impl SubData {
+    #[allow(dead_code)]
+    pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
+        self.env.visit_values(visitor);
+        for v in &self.assumed_positional {
+            visitor.visit_value(v);
+        }
+        visit_map_values(visitor, &self.assumed_named);
+    }
+}
+
+impl InstanceAttrs {
+    #[allow(dead_code)]
+    pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
+        // Go through the existing read-guard accessor rather than reaching
+        // into the private cell directly — respects the encapsulation
+        // boundary and same-thread read/write-deferral discipline
+        // `AttrReadGuard` already encodes (see the type's doc comment).
+        for v in self.as_map().values() {
+            visitor.visit_value(v);
+        }
+    }
+}
+
+impl SharedPromise {
+    #[allow(dead_code)]
+    pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
+        if let Ok(state) = self.inner.0.lock() {
+            visitor.visit_value(&state.result);
+        }
+        // `waiters` are boxed `FnOnce` closures — opaque to a visitor (design
+        // doc §2.2's PromiseState note). Any `Value` a callback captures is
+        // unreachable through this node until the promise resolves and the
+        // callback actually runs.
+    }
+}
+
+impl SharedChannel {
+    #[allow(dead_code)]
+    pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
+        if let Ok(state) = self.inner.0.lock() {
+            for v in &state.queue {
+                visitor.visit_value(v);
+            }
+            if let Some(f) = &state.failure {
+                visitor.visit_value(f);
+            }
+            state.closed_promise.visit_gc_children(visitor);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    struct CountingVisitor {
+        count: usize,
+    }
+
+    impl RootVisitor for CountingVisitor {
+        fn visit_value(&mut self, _value: &Value) {
+            self.count += 1;
+        }
+    }
+
+    #[test]
+    fn array_children_include_items_and_default() {
+        let mut data = ArrayData {
+            items: vec![Value::Int(1), Value::Int(2)],
+            ..Default::default()
+        };
+        data.default = Some(Box::new(Value::Int(0)));
+        let value = Value::Array(Arc::new(data), crate::value::ArrayKind::Array);
+
+        let mut visitor = CountingVisitor { count: 0 };
+        value.visit_gc_children(&mut visitor);
+        assert_eq!(visitor.count, 3);
+    }
+
+    #[test]
+    fn hash_children_include_map_values() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".to_string(), Value::Int(1));
+        map.insert("b".to_string(), Value::Int(2));
+        let data = HashData {
+            map,
+            ..Default::default()
+        };
+        let value = Value::Hash(Arc::new(data));
+
+        let mut visitor = CountingVisitor { count: 0 };
+        value.visit_gc_children(&mut visitor);
+        assert_eq!(visitor.count, 2);
+    }
+
+    #[test]
+    fn scalar_values_have_no_gc_children() {
+        let mut visitor = CountingVisitor { count: 0 };
+        Value::Int(42).visit_gc_children(&mut visitor);
+        Value::Str(Arc::new("hi".to_string())).visit_gc_children(&mut visitor);
+        Value::Nil.visit_gc_children(&mut visitor);
+        assert_eq!(visitor.count, 0);
+    }
+
+    #[test]
+    fn container_ref_visits_its_locked_value() {
+        let cell = Value::ContainerRef(Arc::new(std::sync::Mutex::new(Value::Int(7))));
+        let mut visitor = CountingVisitor { count: 0 };
+        cell.visit_gc_children(&mut visitor);
+        assert_eq!(visitor.count, 1);
+    }
+
+    #[test]
+    fn promise_visits_its_result() {
+        let promise = SharedPromise::new();
+        promise.keep(Value::Int(9), String::new(), String::new());
+        let mut visitor = CountingVisitor { count: 0 };
+        Value::Promise(promise).visit_gc_children(&mut visitor);
+        assert_eq!(visitor.count, 1);
+    }
+}
