@@ -1,6 +1,5 @@
 use super::*;
 use crate::symbol::Symbol;
-use std::sync::Arc;
 
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
 const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
@@ -56,7 +55,7 @@ impl Interpreter {
                     decontainerized: false,
                 };
                 if let Value::Sub(ref mut data) = new_storer {
-                    let data = Arc::make_mut(data);
+                    let data = crate::gc::Gc::make_mut(data);
                     data.env.insert(var_name.to_string(), proxy_for_env);
                 }
             }

@@ -146,6 +146,53 @@ pub(crate) struct Gc<T: Trace + 'static> {
     inner: Arc<GcBox<T>>,
 }
 
+/// A non-owning handle to a `Gc` node — the `Gc` analogue of `std::sync::Weak`,
+/// backing `Value::WeakSub`. Does not keep the node alive; `upgrade` returns a
+/// live [`Gc`] handle (a new strong reference) only while the node still exists.
+pub(crate) struct WeakGc<T: Trace + 'static> {
+    inner: std::sync::Weak<GcBox<T>>,
+}
+
+impl<T: Trace + 'static> WeakGc<T> {
+    /// Reconstitute a strong [`Gc`] handle if the node is still alive. Bumps the
+    /// GC-visible strong count and marks the node live (`Black`) — upgrading a
+    /// weak reference *is* taking a new temporary strong reference.
+    /// Whether two weak handles point at the same node (`Weak::ptr_eq`), for
+    /// `Value::WeakSub` identity comparison.
+    pub(crate) fn ptr_eq(a: &WeakGc<T>, b: &WeakGc<T>) -> bool {
+        std::sync::Weak::ptr_eq(&a.inner, &b.inner)
+    }
+
+    pub(crate) fn upgrade(&self) -> Option<Gc<T>> {
+        self.inner.upgrade().map(|arc| {
+            arc.header.strong.fetch_add(1, Ordering::Relaxed);
+            arc.header
+                .color
+                .store(Color::Black as u8, Ordering::Relaxed);
+            Gc { inner: arc }
+        })
+    }
+}
+
+impl<T: Trace + 'static> Clone for WeakGc<T> {
+    fn clone(&self) -> Self {
+        WeakGc {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<T: Trace + std::fmt::Debug + 'static> std::fmt::Debug for WeakGc<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "WeakGc(..)")
+    }
+}
+
+// A weak handle carries no `T` by value, so it is `Send + Sync` on the backing
+// `Weak`'s own guarantees (mirroring `Value::WeakSub`'s old `Weak<SubData>`).
+unsafe impl<T: Trace + 'static> Send for WeakGc<T> {}
+unsafe impl<T: Trace + 'static> Sync for WeakGc<T> {}
+
 impl<T: Trace + 'static> Gc<T> {
     /// Allocate a new managed node holding `value`, with one live handle.
     pub(crate) fn new(value: T) -> Gc<T> {
@@ -154,6 +201,14 @@ impl<T: Trace + 'static> Gc<T> {
                 header: GcHeader::fresh(),
                 value,
             }),
+        }
+    }
+
+    /// A non-owning [`WeakGc`] handle to this node (the `Gc` analogue of
+    /// `Arc::downgrade`), for `Value::WeakSub`.
+    pub(crate) fn downgrade(this: &Gc<T>) -> WeakGc<T> {
+        WeakGc {
+            inner: std::sync::Arc::downgrade(&this.inner),
         }
     }
 

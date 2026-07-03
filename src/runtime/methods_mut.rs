@@ -411,7 +411,7 @@ impl Interpreter {
                 if !closure_keys.is_empty()
                     && let Some(Value::Sub(data_arc)) = self.env.get_mut_sym(key)
                 {
-                    let data_mut = std::sync::Arc::make_mut(data_arc);
+                    let data_mut = crate::gc::Gc::make_mut(data_arc);
                     for closure_key in closure_keys {
                         data_mut.env.insert_sym(closure_key, new_mixin.clone());
                     }
@@ -448,7 +448,7 @@ impl Interpreter {
                 })
                 .collect();
             if !closure_keys.is_empty() {
-                let data_mut = std::sync::Arc::make_mut(data_arc);
+                let data_mut = crate::gc::Gc::make_mut(data_arc);
                 for key in closure_keys {
                     data_mut.env.insert_sym(key, new_mixin.clone());
                 }

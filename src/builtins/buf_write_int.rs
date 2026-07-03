@@ -7,7 +7,6 @@
 
 use crate::symbol::Symbol;
 use crate::value::{InstanceAttrs, RuntimeError, Value};
-use std::sync::Arc;
 
 /// Returns Some((byte_size, is_signed)) if the method is a write-int/uint method.
 pub(crate) fn write_int_info(method: &str) -> Option<(usize, bool)> {
@@ -129,7 +128,7 @@ pub(crate) fn apply_write_int(
 /// The shared attribute cell of a Buf *instance* receiver, captured so a write can be
 /// committed straight back into it (propagating to every binding sharing the same buf).
 struct BufWriteCell<'a> {
-    attributes: &'a Arc<InstanceAttrs>,
+    attributes: &'a crate::gc::Gc<InstanceAttrs>,
     class_sym: Symbol,
     id: u64,
 }

@@ -57,7 +57,7 @@ impl Drop for AttrReadGuard<'_> {
 impl Clone for InstanceAttrs {
     /// Deep, independent copy: a fresh cell with a snapshot of the map. Used for
     /// `.clone`-style independent copies and `temp`/`let` snapshots; it must NOT
-    /// share the cell — sharing flows through `Arc<InstanceAttrs>`. The copy does
+    /// share the cell — sharing flows through `crate::gc::Gc<InstanceAttrs>`. The copy does
     /// not participate in DESTROY refcounting (`queue_destroy = false`).
     fn clone(&self) -> Self {
         Self {
@@ -133,6 +133,14 @@ impl InstanceAttrs {
         write_attrs(&self.attributes).insert(key, value)
     }
 
+    /// Drop every attribute (breaking any `Gc` edge out of this object) — the
+    /// GC collector's cycle-sever for a proven-garbage `Instance` node (§11
+    /// step 8/9). The attribute cell is interior-mutable, so this is a plain
+    /// (Stacked-Borrows-sound) write.
+    pub(crate) fn clear_gc_edges(&self) {
+        write_attrs(&self.attributes).clear();
+    }
+
     /// Mutate one attribute in place under the write lock, returning the
     /// closure's result. Returns `None` if the key is absent. Replaces the old
     /// `get_mut` (which cannot hand out a `&mut` past the guard).
@@ -150,7 +158,7 @@ impl InstanceAttrs {
     /// Phase 3 registry-removal: replace the whole attribute map in place through
     /// this instance's shared cell, deadlock-safe with respect to a same-thread
     /// read guard (see [`write_cell_respecting_reads`]). Because every alias of the
-    /// instance shares this `Arc<InstanceAttrs>` cell, the new map is visible
+    /// instance shares this `crate::gc::Gc<InstanceAttrs>` cell, the new map is visible
     /// everywhere — in this frame, any caller frame, a `ContainerRef`-boxed
     /// capture, a role `Mixin`, or a nested attribute of another instance. This is
     /// the in-place replacement for the legacy id→cell registry writeback

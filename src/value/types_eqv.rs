@@ -168,7 +168,7 @@ impl Value {
             | (Value::RegexWithAdverbs { .. }, Value::RegexWithAdverbs { .. })
             | (Value::Routine { .. }, Value::Routine { .. }) => self == other,
             (Value::Sub(a), Value::Sub(b)) => {
-                if Arc::ptr_eq(a, b) {
+                if crate::gc::Gc::ptr_eq(a, b) {
                     return true;
                 }
                 let a_name = a.name.resolve();

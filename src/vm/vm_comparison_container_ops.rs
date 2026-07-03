@@ -90,8 +90,8 @@ impl Interpreter {
             // copies the reference but creates a new container, so =:= is False.
             match (&left, &right) {
                 (Value::Package(a), Value::Package(b)) => a == b,
-                (Value::Sub(a), Value::Sub(b)) => std::sync::Arc::ptr_eq(a, b),
-                (Value::WeakSub(a), Value::WeakSub(b)) => a.ptr_eq(b),
+                (Value::Sub(a), Value::Sub(b)) => crate::gc::Gc::ptr_eq(a, b),
+                (Value::WeakSub(a), Value::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(a, b),
                 _ => false,
             }
         };

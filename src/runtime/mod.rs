@@ -2068,7 +2068,7 @@ mod tests {
             OpCode::SetLocal(2),
         ];
 
-        let block = Arc::new(SubData {
+        let block = crate::gc::Gc::new(SubData {
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern("__protect_test__"),
             params: vec![],

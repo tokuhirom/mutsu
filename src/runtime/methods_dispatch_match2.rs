@@ -479,7 +479,7 @@ impl Interpreter {
     fn create_lazy_map_list(
         &self,
         items: Vec<Value>,
-        callback: &std::sync::Arc<crate::value::SubData>,
+        callback: &crate::gc::Gc<crate::value::SubData>,
     ) -> Value {
         let mut env = self.env.clone();
         env.insert(

@@ -55,7 +55,7 @@ pub(crate) fn seq_mark_lazy(arc_ptr: &Arc<Vec<Value>>) {
             return; // already tracked
         }
     }
-    list.push(Arc::downgrade(arc_ptr));
+    list.push(std::sync::Arc::downgrade(arc_ptr));
 }
 
 /// Check if a Seq has been marked as lazy.
@@ -112,7 +112,7 @@ pub(crate) fn lazylist_consume(arc_ptr: &Arc<LazyList>) -> bool {
             return false; // already consumed
         }
     }
-    list.push(Arc::downgrade(arc_ptr));
+    list.push(std::sync::Arc::downgrade(arc_ptr));
     true
 }
 
@@ -142,7 +142,7 @@ pub(crate) fn seq_mark_cached(arc_ptr: &Arc<Vec<Value>>) {
             return; // already tracked
         }
     }
-    list.push(Arc::downgrade(arc_ptr));
+    list.push(std::sync::Arc::downgrade(arc_ptr));
 }
 
 /// Check if a Seq has been marked as cached.
@@ -198,7 +198,7 @@ pub(crate) fn seq_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<(), RuntimeError>
             return Err(seq_consumed_error());
         }
     }
-    list.push(Arc::downgrade(arc_ptr));
+    list.push(std::sync::Arc::downgrade(arc_ptr));
     Ok(())
 }
 
@@ -417,7 +417,7 @@ pub(crate) struct InstanceAttrs {
     ///
     /// Cross-frame *sharing* (the Raku object-identity semantics that makes an
     /// in-place mutation visible to every alias) comes from cloning the
-    /// `Arc<InstanceAttrs>` held by `Value::Instance` — that aliases this same
+    /// `crate::gc::Gc<InstanceAttrs>` held by `Value::Instance` — that aliases this same
     /// struct and cell. An explicit `InstanceAttrs::clone` (see the manual
     /// `Clone` impl below) instead makes an *independent* deep copy with a fresh
     /// cell, preserving the long-standing semantics of the legacy writeback
@@ -967,13 +967,13 @@ pub enum Value {
     /// A regex literal carrying adverbs. Boxed payload to keep `Value` small
     /// (this variant has 13 fields).
     RegexWithAdverbs(Box<RegexAdverbs>),
-    Sub(Arc<SubData>),
+    Sub(crate::gc::Gc<SubData>),
     /// A weak reference to a Sub (used for &?BLOCK self-references to break cycles).
     /// Upgrade to the strong value when accessed; returns Nil if expired.
-    WeakSub(Weak<SubData>),
+    WeakSub(crate::gc::WeakGc<SubData>),
     Instance {
         class_name: Symbol,
-        attributes: Arc<InstanceAttrs>,
+        attributes: crate::gc::Gc<InstanceAttrs>,
         id: u64,
     },
     Junction {

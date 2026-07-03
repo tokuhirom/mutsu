@@ -1618,7 +1618,7 @@ fn merge_method_env(
 mod cheaply_unchanged_tests {
     use super::cheaply_unchanged;
     use crate::value::Value;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
 
     #[test]
     fn container_ref_same_cell_is_unchanged() {

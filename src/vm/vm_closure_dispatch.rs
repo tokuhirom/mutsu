@@ -283,7 +283,7 @@ impl Interpreter {
 
         // Push Sub value to block_stack for callframe().code
         // Also set &?BLOCK as a weak self-reference (mirrors resolution.rs)
-        let block_arc = std::sync::Arc::new(crate::value::SubData {
+        let block_arc = crate::gc::Gc::new(crate::value::SubData {
             package: data.package,
             name: data.name,
             params: data.params.clone(),
@@ -306,7 +306,7 @@ impl Interpreter {
         });
         self.env_mut().insert(
             "&?BLOCK".to_string(),
-            Value::WeakSub(std::sync::Arc::downgrade(&block_arc)),
+            Value::WeakSub(crate::gc::Gc::downgrade(&block_arc)),
         );
         self.push_block(Value::Sub(block_arc));
 

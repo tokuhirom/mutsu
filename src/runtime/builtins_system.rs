@@ -122,7 +122,7 @@ impl Interpreter {
             new_data.env.remove("!");
             new_data.env.remove("$/");
             new_data.env.remove("$!");
-            Value::Sub(std::sync::Arc::new(new_data))
+            Value::Sub(crate::gc::Gc::new(new_data))
         } else {
             block
         };

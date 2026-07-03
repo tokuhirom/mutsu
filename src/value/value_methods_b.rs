@@ -261,7 +261,7 @@ impl Value {
         is_rw: bool,
         env: Env,
     ) -> Self {
-        Value::Sub(Arc::new(SubData {
+        Value::Sub(crate::gc::Gc::new(SubData {
             package,
             name,
             params,
@@ -296,7 +296,7 @@ impl Value {
         env: Env,
         id: u64,
     ) -> Self {
-        Value::Sub(Arc::new(SubData {
+        Value::Sub(crate::gc::Gc::new(SubData {
             package,
             name,
             params,
@@ -388,7 +388,7 @@ impl Value {
     /// Build an instance with the given id and a fresh attribute cell. Used for
     /// constructing a value with an explicit id (genuinely new instances, or
     /// sentinel ids). Cross-frame sharing of mutations comes from cloning an
-    /// existing instance's `Arc<InstanceAttrs>` (see [`Value::instance_sharing_cell`]),
+    /// existing instance's `crate::gc::Gc<InstanceAttrs>` (see [`Value::instance_sharing_cell`]),
     /// not from this constructor — so this never reuses another holder's cell.
     pub(crate) fn make_instance_with_id(
         class_name: Symbol,
@@ -397,7 +397,7 @@ impl Value {
     ) -> Self {
         Value::Instance {
             class_name,
-            attributes: Arc::new(InstanceAttrs::new(class_name, attributes, id, true)),
+            attributes: crate::gc::Gc::new(InstanceAttrs::new(class_name, attributes, id, true)),
             id,
         }
     }
@@ -406,18 +406,18 @@ impl Value {
     /// live cell, optionally under a new `class_name` (rebless / role mixin). This
     /// replaces the `make_instance_with_id` rebuild branch, which reused the cell
     /// by looking it up in the global `instance_cells` registry. Sharing the
-    /// `Arc<InstanceAttrs>` directly keeps in-place mutations visible to every
+    /// `crate::gc::Gc<InstanceAttrs>` directly keeps in-place mutations visible to every
     /// existing alias and to the returned value, without the registry.
     pub(crate) fn instance_sharing_cell(
-        attrs: &Arc<InstanceAttrs>,
+        attrs: &crate::gc::Gc<InstanceAttrs>,
         class_name: Symbol,
         id: u64,
     ) -> Value {
         debug_assert_eq!(attrs.id, id, "instance_sharing_cell id mismatch");
         let attributes = if attrs.class_name == class_name {
-            Arc::clone(attrs)
+            crate::gc::Gc::clone(attrs)
         } else {
-            Arc::new(attrs.with_class(class_name))
+            crate::gc::Gc::new(attrs.with_class(class_name))
         };
         Value::Instance {
             class_name,
@@ -431,7 +431,7 @@ impl Value {
     /// for the common writeback-then-rebuild pattern: it replaces the paired
     /// `overwrite_instance_bindings_by_identity(..) + make_instance_with_id(..)`.
     pub(crate) fn write_back_sharing(
-        attrs: &Arc<InstanceAttrs>,
+        attrs: &crate::gc::Gc<InstanceAttrs>,
         class_name: Symbol,
         map: HashMap<String, Value>,
         id: u64,
@@ -454,7 +454,7 @@ impl Value {
                 id,
             } => Value::Instance {
                 class_name,
-                attributes: Arc::new((*attributes).clone()),
+                attributes: crate::gc::Gc::new((*attributes).clone()),
                 id,
             },
             other => other,
@@ -469,7 +469,7 @@ impl Value {
         let id = next_instance_id();
         Value::Instance {
             class_name,
-            attributes: Arc::new(InstanceAttrs::new(
+            attributes: crate::gc::Gc::new(InstanceAttrs::new(
                 class_name,
                 attributes,
                 id,

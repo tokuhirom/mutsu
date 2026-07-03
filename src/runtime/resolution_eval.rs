@@ -350,7 +350,7 @@ impl Interpreter {
 
     pub(crate) fn get_or_compile_protect_block_with_slots(
         &mut self,
-        data: &std::sync::Arc<crate::value::SubData>,
+        data: &crate::gc::Gc<crate::value::SubData>,
     ) -> (
         ProtectBlockCompiled,
         ProtectBlockCompiledFns,

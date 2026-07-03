@@ -72,7 +72,7 @@ impl Interpreter {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign_rw_indexed_attr(
         &mut self,
-        attributes: &std::sync::Arc<crate::value::InstanceAttrs>,
+        attributes: &crate::gc::Gc<crate::value::InstanceAttrs>,
         class_name: Symbol,
         target_id: u64,
         target_var: Option<&str>,

@@ -44,8 +44,49 @@ impl Value {
             Value::Bag(data, _) => visit(&data.erased()),
             Value::Mix(data, _) => visit(&data.erased()),
             Value::ContainerRef(cell) => visit(&cell.erased()),
+            Value::Sub(data) => visit(&data.erased()),
+            Value::Instance { attributes, .. } => visit(&attributes.erased()),
             _ => {}
         }
+    }
+}
+
+/// A closure's captured `env` and `.assume`d args hold `Value`s that can close
+/// a cycle (a recursive closure captures itself; two closures capture each
+/// other). Second-wave migration (§11 step 9).
+impl Trace for SubData {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        for v in self.env.values() {
+            v.gc_trace(visit);
+        }
+        for v in &self.assumed_positional {
+            v.gc_trace(visit);
+        }
+        for v in self.assumed_named.values() {
+            v.gc_trace(visit);
+        }
+    }
+    fn drop_gc_edges(&mut self) {
+        for v in self.env.values_mut() {
+            *v = Value::Nil;
+        }
+        self.assumed_positional.clear();
+        self.assumed_named.clear();
+    }
+}
+
+/// An object's per-attribute cell holds `Value`s that can close a cycle
+/// (`$obj.parent = $obj`, mutually-referential objects). The attribute cell is
+/// interior-mutable (`AttrCell = Arc<RwLock<..>>`), so severing is a plain cell
+/// write. Second-wave migration (§11 step 9).
+impl Trace for InstanceAttrs {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        for v in self.as_map().values() {
+            v.gc_trace(visit);
+        }
+    }
+    fn drop_gc_edges(&mut self) {
+        self.clear_gc_edges();
     }
 }
 

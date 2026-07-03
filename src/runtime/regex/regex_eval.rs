@@ -332,7 +332,7 @@ impl Interpreter {
                 id,
             } => Value::Instance {
                 class_name: *class_name,
-                attributes: Arc::new((**attributes).clone()),
+                attributes: crate::gc::Gc::new((**attributes).clone()),
                 id: *id,
             },
             other => other.clone(),

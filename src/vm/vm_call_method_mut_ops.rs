@@ -864,7 +864,7 @@ impl Interpreter {
                 attrs.insert("ast".to_string(), value.clone());
                 let updated = Value::Instance {
                     class_name,
-                    attributes: Arc::new(crate::value::InstanceAttrs::new(
+                    attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
                         class_name,
                         (attrs).to_map(),
                         id,
@@ -2064,7 +2064,7 @@ impl Interpreter {
         &mut self,
         target_name: &str,
         inst_class: &Symbol,
-        attributes: &Arc<crate::value::InstanceAttrs>,
+        attributes: &crate::gc::Gc<crate::value::InstanceAttrs>,
         inst_id: u64,
         storage: Value,
     ) {
@@ -2072,7 +2072,7 @@ impl Interpreter {
         new_attrs.insert("__mutsu_array_storage".to_string(), storage);
         let updated_instance = Value::Instance {
             class_name: *inst_class,
-            attributes: Arc::new(crate::value::InstanceAttrs::new(
+            attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
                 *inst_class,
                 new_attrs.to_map(),
                 inst_id,

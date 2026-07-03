@@ -5,7 +5,7 @@ use crate::value::signature::{extract_sig_info, signature_smartmatch};
 impl Interpreter {
     /// Extract path and CWD from IO::Path attributes for ACCEPTS comparison.
     fn io_path_attrs_for_accepts(
-        attrs: &std::sync::Arc<crate::value::InstanceAttrs>,
+        attrs: &crate::gc::Gc<crate::value::InstanceAttrs>,
     ) -> (String, String) {
         let path = attrs
             .as_map()
