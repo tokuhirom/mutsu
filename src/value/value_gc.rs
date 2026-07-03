@@ -21,8 +21,8 @@ use std::sync::Mutex;
 use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
 use super::{
-    ArrayData, BagData, HashData, InstanceAttrs, MixData, SetData, SharedChannel, SharedPromise,
-    SubData, Value,
+    ArrayData, BagData, HashData, InstanceAttrs, LazyList, MixData, SetData, SharedChannel,
+    SharedPromise, SubData, Value,
 };
 
 impl Value {
@@ -47,6 +47,7 @@ impl Value {
             Value::ContainerRef(cell) => visit(&cell.erased()),
             Value::Sub(data) => visit(&data.erased()),
             Value::Instance { attributes, .. } => visit(&attributes.erased()),
+            Value::LazyList(ll) => visit(&ll.erased()),
 
             // Non-node wrappers that own/share `Value`s: recurse. They cannot
             // themselves form a cycle without passing through a `Gc` node above
@@ -96,6 +97,42 @@ impl Value {
             }
             _ => {}
         }
+    }
+}
+
+/// A lazy list captures an `env` and a materialization `cache` of `Value`s, both
+/// of which can close a cycle (a gather/closure sequence that captures the very
+/// list it produces). Third-wave migration (§11 step 10).
+///
+/// First cut traces the `env` + `cache` + `elems_count` — the dominant
+/// env-capture cycle sources. The on-demand spec states (coroutine / lazy-pipe /
+/// closure-seq / scan / walk / cat) also hold `Value`s; leaving them untraced is
+/// *conservative* (a cycle routed only through them is not reclaimed, never
+/// wrongly freed) and is the documented step-10 follow-up.
+impl Trace for LazyList {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        for v in self.env.values() {
+            v.gc_trace(visit);
+        }
+        if let Ok(cache) = self.cache.lock()
+            && let Some(items) = cache.as_ref()
+        {
+            for v in items {
+                v.gc_trace(visit);
+            }
+        }
+        if let Some(n) = &self.elems_count {
+            n.gc_trace(visit);
+        }
+    }
+    fn drop_gc_edges(&mut self) {
+        for v in self.env.values_mut() {
+            *v = Value::Nil;
+        }
+        if let Ok(mut cache) = self.cache.lock() {
+            *cache = None;
+        }
+        self.elems_count = None;
     }
 }
 

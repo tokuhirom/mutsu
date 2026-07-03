@@ -497,11 +497,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // without materializing the (possibly infinite) generator.
                 Value::LazyList(ll) if ll.is_genuinely_lazy() => {
                     if want_array {
-                        Some(Ok(Value::LazyList(std::sync::Arc::new(
+                        Some(Ok(Value::LazyList(crate::gc::Gc::new(
                             ll.with_array_context(),
                         ))))
                     } else {
-                        Some(Ok(Value::LazyList(std::sync::Arc::new(
+                        Some(Ok(Value::LazyList(crate::gc::Gc::new(
                             ll.with_list_context(),
                         ))))
                     }

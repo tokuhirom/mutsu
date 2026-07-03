@@ -10,7 +10,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         spec: &ForLoopSpec,
-        ll: &crate::value::LazyList,
+        ll: &crate::gc::Gc<crate::value::LazyList>,
         body_start: usize,
         loop_end: usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
@@ -23,30 +23,16 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         spec: &ForLoopSpec,
-        ll: &crate::value::LazyList,
+        ll: &crate::gc::Gc<crate::value::LazyList>,
         start_idx: usize,
         body_start: usize,
         loop_end: usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        let ll_arc = {
-            // Get the Arc from somewhere. We need to find the LazyList Arc.
-            // Since we have a &LazyList reference, we reconstruct the Arc
-            // by looking at the cache pointer identity. The caller should
-            // have the Arc available. For now, we create a cheap wrapper
-            // that shares the same cache/coroutine via raw pointer.
-            // Actually, we need to find a way to get the Arc.
-            // Let's use std::sync::Arc::from_raw/into_raw trick.
-            // Since ll comes from Value::LazyList(Arc<LazyList>), we can
-            // reconstruct the Arc from the pointer.
-            // SAFETY: The caller holds an Arc<LazyList> on the stack,
-            // keeping the refcount >= 1 for the duration of this call.
-            unsafe {
-                let ptr = ll as *const crate::value::LazyList;
-                std::sync::Arc::increment_strong_count(ptr);
-                std::sync::Arc::from_raw(ptr)
-            }
-        };
+        // The caller holds the `Gc<LazyList>` handle; clone it directly. (Pre-GC
+        // this reconstructed an `Arc<LazyList>` from a `&LazyList` via
+        // `Arc::from_raw` — unsound now that the value lives inside a `GcBox`.)
+        let ll_arc = ll.clone();
         let param_name = spec
             .param_idx
             .map(|idx| match &code.constants[idx as usize] {

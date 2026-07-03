@@ -114,7 +114,7 @@ pub(crate) fn native_function_2arg(
                     }
                     out.push(items[idx].clone());
                 }
-                return Some(Ok(Value::LazyList(std::sync::Arc::new(
+                return Some(Ok(Value::LazyList(crate::gc::Gc::new(
                     crate::value::LazyList::new_cached(out),
                 ))));
             }

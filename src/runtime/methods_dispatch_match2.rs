@@ -514,7 +514,7 @@ impl Interpreter {
             walk_pending: None,
             cat_pull: None,
         };
-        Value::LazyList(std::sync::Arc::new(list))
+        Value::LazyList(crate::gc::Gc::new(list))
     }
 
     /// Dispatch "min" and "max" methods.

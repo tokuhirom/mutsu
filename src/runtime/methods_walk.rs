@@ -314,7 +314,7 @@ impl Interpreter {
             quiet,
             idx: 0,
         }));
-        Ok(Value::LazyList(std::sync::Arc::new(ll)))
+        Ok(Value::LazyList(crate::gc::Gc::new(ll)))
     }
 
     /// Pull up to `needed` elements of a lazy `WALK(method)()` list by invoking

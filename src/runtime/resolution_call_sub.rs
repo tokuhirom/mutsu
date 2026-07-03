@@ -615,7 +615,7 @@ impl Interpreter {
                         "__mutsu_preserve_lazy_on_array_assign".to_string(),
                         Value::Bool(true),
                     );
-                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
+                    Value::LazyList(crate::gc::Gc::new(crate::value::LazyList {
                         body: list.body.clone(),
                         env,
                         cache: std::sync::Mutex::new(list.cache.lock().unwrap().clone()),

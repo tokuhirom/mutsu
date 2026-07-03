@@ -155,15 +155,32 @@ pub(crate) struct WeakGc<T: Trace + 'static> {
 }
 
 impl<T: Trace + 'static> WeakGc<T> {
-    /// Reconstitute a strong [`Gc`] handle if the node is still alive. Bumps the
-    /// GC-visible strong count and marks the node live (`Black`) — upgrading a
-    /// weak reference *is* taking a new temporary strong reference.
     /// Whether two weak handles point at the same node (`Weak::ptr_eq`), for
     /// `Value::WeakSub` identity comparison.
     pub(crate) fn ptr_eq(a: &WeakGc<T>, b: &WeakGc<T>) -> bool {
         std::sync::Weak::ptr_eq(&a.inner, &b.inner)
     }
 
+    /// Backing-`Arc` strong count of the node (0 if it has been freed). Used by
+    /// the consumed-LazyList registry to prune dead weak entries.
+    pub(crate) fn strong_count(&self) -> usize {
+        self.inner.strong_count()
+    }
+
+    /// Raw `*const T` to the pointee for identity comparison, or null if the node
+    /// is gone. (`Weak::as_ptr` yields the `GcBox`; project the value.)
+    pub(crate) fn as_ptr(&self) -> *const T {
+        let box_ptr = self.inner.as_ptr();
+        if box_ptr.is_null() {
+            std::ptr::null()
+        } else {
+            unsafe { std::ptr::addr_of!((*box_ptr).value) }
+        }
+    }
+
+    /// Reconstitute a strong [`Gc`] handle if the node is still alive. Bumps the
+    /// GC-visible strong count and marks the node live (`Black`) — upgrading a
+    /// weak reference *is* taking a new temporary strong reference.
     pub(crate) fn upgrade(&self) -> Option<Gc<T>> {
         self.inner.upgrade().map(|arc| {
             arc.header.strong.fetch_add(1, Ordering::Relaxed);

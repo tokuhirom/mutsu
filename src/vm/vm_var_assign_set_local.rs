@@ -769,7 +769,7 @@ impl Interpreter {
                     Value::LazyList(ref list)
                         if list.coroutine.is_some() || list.is_genuinely_lazy() =>
                     {
-                        Value::LazyList(std::sync::Arc::new(list.with_array_context()))
+                        Value::LazyList(crate::gc::Gc::new(list.with_array_context()))
                     }
                     Value::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
                     Value::LazyIoLines { .. } => {
@@ -785,7 +785,7 @@ impl Interpreter {
                             // Preserved into an `@` array: keep it lazy but tag
                             // array context so gist/`.WHAT` render `[...]`/`Array`.
                             Some(Value::Bool(true)) => {
-                                Value::LazyList(std::sync::Arc::new(list.with_array_context()))
+                                Value::LazyList(crate::gc::Gc::new(list.with_array_context()))
                             }
                             _ => Value::real_array(self.force_lazy_list_vm(&list)?),
                         }

@@ -102,7 +102,7 @@ impl Interpreter {
                 return None;
             }
         }
-        Some(Value::LazyList(std::sync::Arc::new(
+        Some(Value::LazyList(crate::gc::Gc::new(
             crate::value::LazyList::new_pipe(target, func, is_grep),
         )))
     }

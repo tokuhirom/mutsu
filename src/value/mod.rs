@@ -73,9 +73,9 @@ pub(crate) fn seq_is_lazy(arc_ptr: &Arc<Vec<Value>>) -> bool {
 }
 
 /// Global set tracking consumed LazyList instances (gather-based Seqs).
-static CONSUMED_LAZYLISTS: OnceLock<Mutex<Vec<Weak<LazyList>>>> = OnceLock::new();
+static CONSUMED_LAZYLISTS: OnceLock<Mutex<Vec<crate::gc::WeakGc<LazyList>>>> = OnceLock::new();
 
-fn consumed_lazylists() -> &'static Mutex<Vec<Weak<LazyList>>> {
+fn consumed_lazylists() -> &'static Mutex<Vec<crate::gc::WeakGc<LazyList>>> {
     CONSUMED_LAZYLISTS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
@@ -101,33 +101,24 @@ pub(crate) fn seq_has_deferred_iter(arc_ptr: &Arc<Vec<Value>>) -> bool {
 }
 
 /// Mark a LazyList (from gather) as consumed.
-pub(crate) fn lazylist_consume(arc_ptr: &Arc<LazyList>) -> bool {
+pub(crate) fn lazylist_consume(gc_ptr: &crate::gc::Gc<LazyList>) -> bool {
     let mut list = consumed_lazylists().lock().unwrap();
-    let target_ptr = Arc::as_ptr(arc_ptr);
+    let target_ptr = crate::gc::Gc::as_ptr(gc_ptr);
     list.retain(|w| w.strong_count() > 0);
     for w in list.iter() {
-        if let Some(existing) = w.upgrade()
-            && Arc::as_ptr(&existing) == target_ptr
-        {
+        if w.as_ptr() == target_ptr {
             return false; // already consumed
         }
     }
-    list.push(std::sync::Arc::downgrade(arc_ptr));
+    list.push(crate::gc::Gc::downgrade(gc_ptr));
     true
 }
 
 /// Check if a LazyList has been consumed.
-pub(crate) fn lazylist_is_consumed(arc_ptr: &Arc<LazyList>) -> bool {
+pub(crate) fn lazylist_is_consumed(gc_ptr: &crate::gc::Gc<LazyList>) -> bool {
     let list = consumed_lazylists().lock().unwrap();
-    let target_ptr = Arc::as_ptr(arc_ptr);
-    for w in list.iter() {
-        if let Some(existing) = w.upgrade()
-            && Arc::as_ptr(&existing) == target_ptr
-        {
-            return true;
-        }
-    }
-    false
+    let target_ptr = crate::gc::Gc::as_ptr(gc_ptr);
+    list.iter().any(|w| w.as_ptr() == target_ptr)
 }
 
 /// Mark a Seq as cached (called .cache on it). Cached Seqs do not get consumed.
@@ -987,7 +978,7 @@ pub enum Value {
     /// RaceSeq: result of `.race` — unordered parallel map/grep (worker threads).
     RaceSeq(Arc<Vec<Value>>),
     Slip(Arc<Vec<Value>>),
-    LazyList(Arc<LazyList>),
+    LazyList(crate::gc::Gc<LazyList>),
     Version {
         parts: Vec<VersionPart>,
         plus: bool,
@@ -1245,7 +1236,7 @@ pub(crate) enum ForLoopResumeState {
     },
     /// Resume a lazy-gather for loop at the given element index.
     LazyGather {
-        lazy_list: Arc<LazyList>,
+        lazy_list: crate::gc::Gc<LazyList>,
         next_index: usize,
     },
     /// Resume a C-style / `loop` / `while` loop. These loops carry no iteration

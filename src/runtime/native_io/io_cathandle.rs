@@ -476,7 +476,7 @@ impl Interpreter {
             "handles" => crate::value::CatPullMode::Handles,
             _ => return None,
         };
-        Some(Value::LazyList(std::sync::Arc::new(
+        Some(Value::LazyList(crate::gc::Gc::new(
             crate::value::LazyList::new_cat_pull(cat.clone(), mode),
         )))
     }

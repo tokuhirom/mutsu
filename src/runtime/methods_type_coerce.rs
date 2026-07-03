@@ -109,7 +109,7 @@ impl Interpreter {
         if let Value::LazyList(ll) = &target
             && ll.is_genuinely_lazy()
         {
-            return Ok(Value::LazyList(std::sync::Arc::new(ll.with_list_context())));
+            return Ok(Value::LazyList(crate::gc::Gc::new(ll.with_list_context())));
         }
         let items = Self::value_to_list(&target);
         Ok(Value::Array(

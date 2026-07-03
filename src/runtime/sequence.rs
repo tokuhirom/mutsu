@@ -1390,7 +1390,7 @@ impl Interpreter {
                 SeqMode::Closure => None,
             };
             if let Some(spec) = seq_spec {
-                Ok(Value::LazyList(std::sync::Arc::new(
+                Ok(Value::LazyList(crate::gc::Gc::new(
                     crate::value::LazyList::new_sequence(result, spec),
                 )))
             } else if matches!(mode, SeqMode::Closure)
@@ -1407,11 +1407,11 @@ impl Interpreter {
                         .map(|(c, f)| (std::sync::Arc::new(c), std::sync::Arc::new(f))),
                     finished: false,
                 };
-                Ok(Value::LazyList(std::sync::Arc::new(
+                Ok(Value::LazyList(crate::gc::Gc::new(
                     crate::value::LazyList::new_closure_sequence(result, state),
                 )))
             } else {
-                Ok(Value::LazyList(std::sync::Arc::new(
+                Ok(Value::LazyList(crate::gc::Gc::new(
                     crate::value::LazyList::new_cached(result),
                 )))
             }

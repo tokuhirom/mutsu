@@ -56,7 +56,7 @@ impl Interpreter {
                 walk_pending: None,
                 cat_pull: None,
             };
-            let val = Value::LazyList(std::sync::Arc::new(list));
+            let val = Value::LazyList(crate::gc::Gc::new(list));
             self.stack.push(val);
             Ok(())
         } else {

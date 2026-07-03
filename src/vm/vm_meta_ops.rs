@@ -102,7 +102,7 @@ impl Interpreter {
                     }
                 }
                 if lazy_inputs {
-                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
+                    Value::LazyList(crate::gc::Gc::new(crate::value::LazyList::new_cached(
                         results,
                     )))
                 } else {
@@ -162,7 +162,7 @@ impl Interpreter {
                     }
                 }
                 if all_lazy {
-                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
+                    Value::LazyList(crate::gc::Gc::new(crate::value::LazyList::new_cached(
                         results,
                     )))
                 } else {
@@ -259,7 +259,7 @@ impl Interpreter {
                     }
                 }
                 if lazy_inputs {
-                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
+                    Value::LazyList(crate::gc::Gc::new(crate::value::LazyList::new_cached(
                         results,
                     )))
                 } else {
@@ -282,7 +282,7 @@ impl Interpreter {
                     results.push(self.combine_meta_tuple(&op, make_tuple, combo)?);
                 }
                 if all_lazy {
-                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
+                    Value::LazyList(crate::gc::Gc::new(crate::value::LazyList::new_cached(
                         results,
                     )))
                 } else {

@@ -240,7 +240,7 @@ impl PartialEq for Value {
                 },
             ) => ak == bk && av == bv,
             (Value::Sub(a), Value::Sub(b)) => a.id == b.id,
-            (Value::LazyList(a), Value::LazyList(b)) => Arc::ptr_eq(a, b),
+            (Value::LazyList(a), Value::LazyList(b)) => crate::gc::Gc::ptr_eq(a, b),
             (
                 Value::Version {
                     parts: ap,

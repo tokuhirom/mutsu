@@ -1610,7 +1610,7 @@ impl Interpreter {
             (Value::Array(a, _), Value::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
             (Value::Seq(a), Value::Seq(b)) => Arc::ptr_eq(a, b),
             (Value::Slip(a), Value::Slip(b)) => Arc::ptr_eq(a, b),
-            (Value::LazyList(a), Value::LazyList(b)) => Arc::ptr_eq(a, b),
+            (Value::LazyList(a), Value::LazyList(b)) => crate::gc::Gc::ptr_eq(a, b),
             _ => false,
         }
     }
