@@ -219,6 +219,37 @@ impl Interpreter {
         }
     }
 
+    /// How many levels of a *built-in* type's MRO define `method`, for `.+`/`.*`
+    /// all-candidates dispatch. mutsu implements a built-in method as one flat
+    /// native handler, but Raku models it as a method object at each MRO level
+    /// that defines it (e.g. `List.elems` AND `Any.elems`), so `<a b>.+elems`
+    /// yields `(2, 2)` — one result per defining level, all from the same handler.
+    /// Data-driven from the per-type method tables (`builtin_type_method_names`,
+    /// the same lists `.^methods`/`.^can` use) intersected with the type's MRO —
+    /// NOT a hard-coded per-method count. Returns 1 for a user `Instance` (its
+    /// candidates come from `resolve_all_methods_with_owner`) or when only one
+    /// level (or none — caller keeps the single native result) defines it.
+    pub(crate) fn builtin_mro_method_candidate_count(
+        &mut self,
+        target: &Value,
+        method: &str,
+    ) -> usize {
+        if matches!(target, Value::Instance { .. } | Value::Mixin(..)) {
+            return 1;
+        }
+        // Use the *introspective* type name (List vs Array distinguished by
+        // ArrayKind), so `<a b>` (List) walks the List MRO, not Array's.
+        let type_name = crate::runtime::value_type_name(target);
+        let count = Self::builtin_type_mro_chain(type_name)
+            .iter()
+            .filter(|cn| {
+                crate::builtins::builtin_type_methods::builtin_type_method_names(cn)
+                    .contains(&method)
+            })
+            .count();
+        count.max(1)
+    }
+
     pub(super) fn call_method_all_with_fallback(
         &mut self,
         target: &Value,
@@ -230,7 +261,12 @@ impl Interpreter {
             && let Some(native_result) =
                 self.try_native_method(target, Symbol::intern(method), args)
         {
-            return Ok(vec![native_result?]);
+            let result = native_result?;
+            // `.+`/`.*` on a built-in: emit one result per MRO level that defines
+            // the method (all identical — same native handler). §2 builtin-MRO
+            // all-candidates dispatch (roast S03-metaops/hyper.t 407-408).
+            let count = self.builtin_mro_method_candidate_count(target, method);
+            return Ok(vec![result; count]);
         }
         loan_env!(
             self,

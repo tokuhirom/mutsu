@@ -254,7 +254,14 @@ impl Interpreter {
             }
         }
 
-        Ok(vec![self.call_method_with_values(target, method, args)?])
+        // Built-in (non-Instance) target: one native handler, but `.+`/`.*`
+        // (and the hyper `».+`/`».*`, which reach this via
+        // `call_method_all_with_temp_target`) must yield one result per MRO level
+        // that defines the method (e.g. `List.elems` + `Any.elems`). §2 builtin-MRO
+        // all-candidates dispatch (roast S03-metaops/hyper.t 407-408).
+        let count = self.builtin_mro_method_candidate_count(&target, method);
+        let result = self.call_method_with_values(target, method, args)?;
+        Ok(vec![result; count])
     }
 
     pub(crate) fn overwrite_array_items_by_identity_for_vm(
