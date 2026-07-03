@@ -763,9 +763,21 @@ unit test / integration test では random 依存にせず、**明示 collect ho
      多用するため、`Gc` にこれらが無いと移行できない。`make_mut` は shared 時に fresh single-handle
      node へ COW し、GC-visible strong count を正しく調整（旧 node から -1、新 node = 1）。
      Miri（Stacked Borrows）検証済み。まだ `Value` variant は未移行（dead code）。
-   - 5b: `ArrayData` / `HashData` / `ContainerRef` cell に `Trace` を実装（`Gc` 子を列挙）。
+   - **5b ✅ 前提: `Gc<T>` を `Arc<T>` の drop-in に仕上げる**（`Debug`/`PartialEq`/`Eq`/`Hash`
+     を pointee 委譲で実装＝`#[derive]` 付き `Value` のフィールド差し替えだけで済む・`as_ptr`・
+     `clone_erased`〔ErasedGc 化・GC-strong 非加算〕・`gc_contents_mut`〔`arc_contents_mut` の Gc 版〕）。
+     UFCS で `Arc::make_mut/clone/strong_count/ptr_eq/get_mut(x)` → `Gc::…(x)` が機械置換で通ることを確認。
+     Miri 検証済み。dead code。
+     **★flip 規模の実測（2026-07-03）**: `Value::Array` を `Gc<ArrayData>` に試験 flip したところ
+     **コンパイルエラー 479 件**（大半は関数シグネチャの `Arc<ArrayData>` 波及＝E0308 407 / 型注釈 E0282 72）。
+     中間チェックポイントを作れず 1 セッションで安全完了は不可と判断し flip は revert。→ **5c は型ごとに
+     専用セッション必須**。判明した追加要件: (a) `Gc: Debug/PartialEq/Eq/Hash`（本 5b で対応済）
+     (b) object-hash で `Gc`-backed `Value` を key に使うと clippy `mutable_key_type`（header の atomic 由来・
+     Hash/Eq は値委譲で実害なし）→ 使用サイトで `#[allow]` 要。
    - 5c〜: `Value::Array(Arc<ArrayData>)` → `Value::Array(Gc<ArrayData>)` を 1 型ずつ機械置換
-     （~79 の `arc_contents_mut` / `Arc::make_mut` サイト）。大きいので型ごとに分割 PR。
+     （~479 サイト/型）。`ArrayData: Trace` ＋ `Value::trace_gc_edges`（Gc 子を ErasedGc で列挙し
+     未移行コンテナは再帰）ブリッジを同時に入れる（設計は本セッションで検証済・flip 完了時に復活）。
+     型ごとに分割 PR・専用セッション。
 6. `Promise` / `Channel` を first wave の async node として移行
 7. supply registry root visitor（`supplier_state_map` / `supplier_subscriptions_map` / `promise_combinator_map` / `supply_taps_map`）を first wave で導入
 8. safepoint で synchronous collect

@@ -163,6 +163,25 @@ impl<T: Trace + 'static> Gc<T> {
         self.inner.header.strong.load(Ordering::Relaxed)
     }
 
+    /// Raw `*const T` to the pointee, mirroring `Arc::as_ptr`. Used by
+    /// `gc_contents_mut` (the `Gc` analogue of `arc_contents_mut`) for the
+    /// deliberate aliased in-place container mutation the migration preserves.
+    pub(crate) fn as_ptr(this: &Gc<T>) -> *const T {
+        // Reach the value field through the backing Arc's stable address. Uses a
+        // raw offset (no intermediate reference) so it composes with the
+        // `*mut`-write in `gc_contents_mut` without a Stacked-Borrows conflict.
+        let box_ptr = Arc::as_ptr(&this.inner);
+        unsafe { std::ptr::addr_of!((*box_ptr).value) }
+    }
+
+    /// Clone this handle as a type-erased [`ErasedGc`] for a [`Trace`] visitor /
+    /// the candidate buffer. Does NOT bump the GC-visible strong count (this is
+    /// a collector-facing view, not a new user handle) — matching how the
+    /// candidate buffer already retains an erased `Arc` clone.
+    pub(crate) fn clone_erased(&self) -> ErasedGc {
+        self.inner.clone()
+    }
+
     /// This node's current [`Color`].
     pub(crate) fn color(&self) -> Color {
         Color::from_u8(self.inner.header.color.load(Ordering::Relaxed))
@@ -248,6 +267,31 @@ impl<T: Trace + 'static> std::ops::Deref for Gc<T> {
     type Target = T;
     fn deref(&self) -> &T {
         &self.inner.value
+    }
+}
+
+// The following delegate to the pointee, mirroring `Arc<T>`'s blanket impls, so
+// `Gc<T>` is a drop-in for `Arc<T>` inside a `#[derive(...)]`d `Value`: the
+// container-migration swap changes only the field type, not every derive.
+impl<T: Trace + std::fmt::Debug + 'static> std::fmt::Debug for Gc<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.inner.value, f)
+    }
+}
+
+impl<T: Trace + PartialEq + 'static> PartialEq for Gc<T> {
+    fn eq(&self, other: &Self) -> bool {
+        // Value equality, matching `Arc<T>`'s `PartialEq` (`**a == **b`), not
+        // pointer identity — mutsu's `Value` equality compares contents.
+        self.inner.value == other.inner.value
+    }
+}
+
+impl<T: Trace + Eq + 'static> Eq for Gc<T> {}
+
+impl<T: Trace + std::hash::Hash + 'static> std::hash::Hash for Gc<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.inner.value.hash(state);
     }
 }
 
@@ -639,5 +683,63 @@ mod tests {
             "unique handle mutates in place, no COW"
         );
         assert_eq!(a.0, 6);
+    }
+
+    // --- Arc-drop-in trait impls (needed for the container-variant flip, §11
+    //     step 5c). A `#[derive(Debug/PartialEq/Eq/Hash)]`d `Value` requires its
+    //     `Gc<_>` field to provide these, so they delegate to the pointee.
+
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    struct KeyLeaf(i64);
+    impl Trace for KeyLeaf {
+        fn trace(&self, _visit: &mut dyn FnMut(&ErasedGc)) {}
+    }
+
+    #[test]
+    fn debug_delegates_to_the_pointee() {
+        let gc = Gc::new(KeyLeaf(7));
+        assert_eq!(format!("{gc:?}"), format!("{:?}", KeyLeaf(7)));
+    }
+
+    #[test]
+    fn eq_compares_values_not_pointers() {
+        let a = Gc::new(KeyLeaf(1));
+        let b = Gc::new(KeyLeaf(1)); // distinct node, same value
+        let c = Gc::new(KeyLeaf(2));
+        assert!(!Gc::ptr_eq(&a, &b), "distinct nodes");
+        assert_eq!(a, b, "value equality, like Arc<T>");
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    // `Gc`'s header carries atomics (interior mutability), so clippy flags it as
+    // a "mutable key type"; that is a false positive here because `Hash`/`Eq`
+    // delegate to the immutable pointee value, not the header. (The eventual
+    // container flip will need the same allow wherever a `Gc`-backed `Value` is
+    // used as a hash key — an object hash, e.g. — since `Value` already is.)
+    #[allow(clippy::mutable_key_type)]
+    fn hash_uses_the_pointee_so_equal_values_collide_in_a_set() {
+        use std::collections::HashSet;
+        let mut set: HashSet<Gc<KeyLeaf>> = HashSet::new();
+        set.insert(Gc::new(KeyLeaf(1)));
+        set.insert(Gc::new(KeyLeaf(1))); // equal value -> dedup
+        set.insert(Gc::new(KeyLeaf(2)));
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn as_ptr_and_clone_erased_reference_the_same_node() {
+        let gc = Gc::new(IntLeaf(9));
+        // as_ptr points at the value inside the node.
+        let p = Gc::as_ptr(&gc);
+        assert_eq!(unsafe { (*p).0 }, 9);
+        // clone_erased shares the node without bumping the GC-visible count.
+        let before = gc.strong_count();
+        let _erased = gc.clone_erased();
+        assert_eq!(
+            gc.strong_count(),
+            before,
+            "erased view is not a user handle"
+        );
     }
 }

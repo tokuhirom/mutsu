@@ -66,3 +66,19 @@ pub(crate) unsafe fn arc_contents_mut<T>(arc: &Arc<T>) -> &mut T {
     // `Arc::as_ptr as *mut` cast in the codebase.
     unsafe { &mut *(Arc::as_ptr(arc) as *mut T) }
 }
+
+/// The [`Gc<T>`] analogue of [`arc_contents_mut`], for GC-migrated containers
+/// (§11 step 5). Same aliased-in-place-mutation contract and same safety
+/// obligations — see this module's docs and [`arc_contents_mut`]. `Gc::as_ptr`
+/// yields the pointee address inside the backing `Arc`, which this casts to
+/// `*mut` for the shared write.
+///
+/// Dead until the first `Value` container variant is `Gc`-managed (§11 step 5c);
+/// added now alongside the other `Gc` Arc-drop-in prerequisites.
+#[allow(clippy::mut_from_ref, dead_code)]
+pub(crate) unsafe fn gc_contents_mut<T: crate::gc::Trace + 'static>(
+    gc: &crate::gc::Gc<T>,
+) -> &mut T {
+    // SAFETY: delegated to the caller per the same contract as arc_contents_mut.
+    unsafe { &mut *(crate::gc::Gc::as_ptr(gc) as *mut T) }
+}
