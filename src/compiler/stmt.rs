@@ -1014,7 +1014,17 @@ impl Compiler {
                     self.code.emit(OpCode::GetOurVar(idx));
                 } else if self.bind_vardecl
                     && (!name.starts_with('@') && !name.starts_with('%')
-                        || Self::is_simple_var_expr(expr))
+                        || Self::is_simple_var_expr(expr)
+                        // `my @slice := @array[1,2]` (an `@`-sigil bind to an
+                        // array index/slice expression) must promote each
+                        // indexed element to a shared `ContainerRef` cell —
+                        // same autovivify-lazy + terminal machinery as a
+                        // scalar element bind (`$x := @a[1]`) — so that a
+                        // later whole-array assignment (`@slice = ...`)
+                        // writes through the source array at a FIXED arity
+                        // instead of snapshotting a disconnected copy.
+                        || (name.starts_with('@')
+                            && matches!(expr, Expr::Index { is_positional: true, .. })))
                 {
                     // `:=` binding for VarDecl: use compile_call_arg so WrapVarRef
                     // is emitted and the VM can set up aliases.  For @/% targets,

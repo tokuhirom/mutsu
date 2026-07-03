@@ -150,6 +150,38 @@ impl Interpreter {
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
         self.check_readonly_for_modify(name)?;
+        // Bound array SLICE write-through (`@slice := @array[1,2]; @slice =
+        // ...`): the local's OWN elements are shared `ContainerRef` cells
+        // (from the bind-time slice promotion, §4 BLOCKERS.md test 15). A
+        // whole-array assignment writes through each cell instead of
+        // replacing the slot, bounded by the slice's own (fixed) arity —
+        // extra RHS values are discarded, matching raku's bound-slice
+        // semantics. `@`-sigil locals are never `simple_locals`, so this
+        // must live here rather than in the fast path above.
+        if name.starts_with('@')
+            && matches!(
+                self.env().get(&Self::bound_array_slice_marker_key(name)),
+                Some(Value::Bool(true))
+            )
+            && let Value::Array(items, ..) = &self.locals[idx]
+            && items.iter().any(Value::is_container_ref)
+        {
+            let cells: Vec<Value> = items.iter().cloned().collect();
+            let rhs_vals = self.assignment_rhs_values(&raw_val)?;
+            let mut result = Vec::with_capacity(cells.len());
+            for (i, cell_val) in cells.iter().enumerate() {
+                let v = rhs_vals
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
+                if let Value::ContainerRef(cell) = cell_val {
+                    *cell.lock().unwrap() = v.clone();
+                }
+                result.push(v);
+            }
+            self.stack.push(Value::array(result));
+            return Ok(());
+        }
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
