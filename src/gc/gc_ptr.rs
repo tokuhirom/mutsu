@@ -260,13 +260,26 @@ impl<T: Trace + 'static> Gc<T> {
         Arc::ptr_eq(&a.inner, &b.inner)
     }
 
-    /// Mutable access to the pointee IFF this is the only live handle to the node
-    /// (no other `Gc` handle and — when GC is enabled — no retained candidate
-    /// buffer clone). Returns `None` when the node is shared. Mirrors
-    /// `Arc::get_mut`, the non-cloning half of the `Arc::make_mut` sites the
-    /// container migration replaces.
+    /// Mutable access to the pointee IFF this is the only *live* handle to the
+    /// node. Uniqueness is judged by the GC-visible strong count (live `Gc`
+    /// handles), NOT the backing `Arc`'s count: with `MUTSU_GC` on, the candidate
+    /// buffer retains an extra `Arc` clone of a possibly-cyclic node, which would
+    /// make an `Arc::get_mut` check return `None` spuriously and, via
+    /// [`Gc::make_mut`], sever container identity (Raku aliasing). Returns `None`
+    /// when genuinely shared.
     pub(crate) fn get_mut(&mut self) -> Option<&mut T> {
-        Arc::get_mut(&mut self.inner).map(|b| &mut b.value)
+        if self.inner.header.strong.load(Ordering::Relaxed) == 1 {
+            // SAFETY: sole live handle, so no other live-handle borrow into the
+            // value exists. A buffered node's retained `Arc` never dereferences
+            // the value except at a collect safepoint (same contract as
+            // `gc_contents_mut`), so this aliased `&mut` is sound. The pointer
+            // comes from `Arc::as_ptr` (not a `&`-to-`&mut` cast), dodging the
+            // `invalid_reference_casting` lint.
+            let boxed = Arc::as_ptr(&self.inner) as *mut GcBox<T>;
+            Some(unsafe { &mut (*boxed).value })
+        } else {
+            None
+        }
     }
 
     /// The GC-visible strong count (live `Gc` handles to this node).
@@ -350,7 +363,12 @@ impl<T: Trace + Clone + 'static> Gc<T> {
     /// distribution even though the retarget goes through the backing `Arc`
     /// directly rather than `Gc::clone`/`Gc::drop`.
     pub(crate) fn make_mut(&mut self) -> &mut T {
-        if Arc::get_mut(&mut self.inner).is_none() {
+        // Uniqueness by GC-visible strong count, NOT the `Arc` count: the
+        // candidate buffer (MUTSU_GC on) holds an extra `Arc` clone of a
+        // possibly-cyclic node, so an `Arc::get_mut` check would COW spuriously
+        // and sever container identity (Raku aliasing broke on e.g. slice-
+        // assignment lvalues). `header.strong` excludes the buffer's ref.
+        if self.inner.header.strong.load(Ordering::Relaxed) != 1 {
             // Shared: this handle is moving off the old node onto a fresh copy.
             self.inner.header.strong.fetch_sub(1, Ordering::Relaxed);
             let cloned = self.inner.value.clone();
@@ -359,9 +377,9 @@ impl<T: Trace + Clone + 'static> Gc<T> {
                 value: cloned,
             });
         }
-        &mut Arc::get_mut(&mut self.inner)
-            .expect("unique after copy-on-write")
-            .value
+        // Sole live handle. SAFETY / lint: see `Gc::get_mut`.
+        let boxed = Arc::as_ptr(&self.inner) as *mut GcBox<T>;
+        unsafe { &mut (*boxed).value }
     }
 }
 
@@ -837,9 +855,12 @@ mod tests {
     #[test]
     fn drop_does_not_buffer_when_gc_disabled() {
         // Default (MUTSU_GC unset) => gc_enabled() is false, so a
-        // drop-with-survivors must NOT push a candidate.
+        // drop-with-survivors must NOT push a candidate. Under the GC=on CI
+        // stress run the opposite is the point (it DOES buffer), so skip.
+        if gc_enabled() {
+            return;
+        }
         let _serial = lock_buffer_tests();
-        assert!(!gc_enabled(), "test assumes MUTSU_GC is unset");
         drain_candidates();
         let gc = Gc::new(Leaf);
         let clone = gc.clone();
