@@ -163,9 +163,9 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
   という深いコンテナ表現。mutsu の scalar 属性は値を直接保持し VAR は Any を返すため、
   属性 slot の cell 化（本項の Primary files 参照）待ち。`$my_ref := $obj.attr`
   （scalar accessor への `:=` 束縛）も同根の残課題。
-- `S12-subset/subtypes.t`（83/90、7 失敗: test 25, 68, 77, 83, 87-89）
-  — where-block placeholder、expr-position constraint persistence、capture where の一部。
-- `S02-types/whatever.t`（122/130、8 失敗: test 111, 119-124, 126）
+- ~~`S12-subset/subtypes.t`（83/90、7 失敗）~~ — **DONE・whitelist 済み（2026-07-03 再検証）**。
+  現状 92/92、唯一の `not ok 92` は `# TODO custom type checking on hashes NYI`（期待失敗）。
+- ~~`S02-types/whatever.t`（122/130、8 失敗: test 111, 119-124, 126）~~ — **DONE（#4067、131/131）**。
   — WhateverCode の over-currying（CallOn-arg branch で握りすぎる）。他ケースを壊さない
   narrow fix が必要。
 - `S32-array/splice.t`（357/392、35 失敗）
@@ -314,7 +314,10 @@ surface のうち 1 ファイル。
 
 ### 5.1 `S03-metaops/hyper.t`
 
-- **現状**: 420 planned 全実行、3 失敗（test 362, 407-408）。plan mismatch は解消。
+- **現状（2026-07-03 再検証）**: 418/420、**2 失敗（test 407-408）**。test 362（custom
+  `infix:<+-*/>` の字句解析）は解消済み（`5+-*/2` = `(7 3 10 2.5)`、raku 一致）。残る
+  407-408 は両方とも `».+`/`».*` の **builtin-MRO all-candidates dispatch gap** に blocked
+  （下記参照）。`»."{名前式}"()`（動的メソッド名の compute-once）等の非 `.+`/`.*` 部分は動作。
 - **今回の進捗**: plan mismatch の原因は `<<op>>` 系ハイパーメタ演算子の閉じ `>>` 探索が
   演算子文字列自体と重なるケース（`<<=>>>` = `<<`+`=>`+`>>`）で誤って最短一致を採用し、
   以降のファイル全体を静かに打ち切っていたパーサバグだった（`hyper_concat.rs`）。
