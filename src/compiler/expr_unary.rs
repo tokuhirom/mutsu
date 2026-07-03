@@ -174,11 +174,13 @@ impl Compiler {
     /// Emit a `temp` save for the named scalar variable: its current value is
     /// pushed onto the let-saves stack and restored at the enclosing scope's exit.
     fn emit_temp_save(&mut self, var: &str) {
+        let slot = self.local_map.get(var).copied();
         let name_idx = self.code.add_constant(Value::str(var.to_string()));
         self.code.emit(OpCode::LetSave {
             name_idx,
             index_mode: false,
             is_temp: true,
+            slot,
         });
     }
 }

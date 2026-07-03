@@ -3917,8 +3917,9 @@ impl Interpreter {
                 name_idx,
                 index_mode,
                 is_temp,
+                slot,
             } => {
-                self.exec_let_save_op(code, *name_idx, *index_mode, *is_temp);
+                self.exec_let_save_op(code, *name_idx, *index_mode, *is_temp, *slot);
                 *ip += 1;
             }
             OpCode::LetBlock { body_end } => {

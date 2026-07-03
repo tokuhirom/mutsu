@@ -223,19 +223,25 @@ impl Interpreter {
 
     /// Push a saved variable value for `let`/`temp` scope management.
     /// `is_temp`: true for `temp` (always restore), false for `let` (restore on failure only).
-    pub(crate) fn let_saves_push(&mut self, name: String, value: Value, is_temp: bool) {
+    pub(crate) fn let_saves_push(
+        &mut self,
+        name: String,
+        value: Value,
+        is_temp: bool,
+        slot: Option<u32>,
+    ) {
         // Take an independent snapshot: an instance value must be deep-copied so
         // a later in-place mutation through its shared cell does not corrupt the
         // saved-for-restore value (Phase 3, Stage 1).
         self.let_saves
-            .push((name, value.into_temp_snapshot(), is_temp));
+            .push((name, value.into_temp_snapshot(), is_temp, slot));
     }
 
     /// Restore one `let`/`temp` save. For an instance, write the saved
     /// attributes back into the *live* shared cell of the variable's current
     /// binding so every alias sees the restoration and object identity (id +
     /// cell) is preserved, rather than rebinding the name to a detached copy.
-    fn restore_let_value(&mut self, name: String, restored: Value) {
+    fn restore_let_value(&mut self, name: String, restored: Value, slot: Option<u32>) {
         // A boxed (shared-cell) binding: write the restored value THROUGH the live
         // cell so the owner's local slot (which holds the same Arc) sees the
         // restoration, rather than replacing the env entry with a detached plain
@@ -248,15 +254,28 @@ impl Interpreter {
             arc.lock().unwrap().clone_from(&restored);
             return;
         }
-        // Non-cell restore writes the saved value into `env` by name only; record
-        // it so the block-exit op refreshes the owning local slot precisely
-        // (`apply_pending_rw_writeback`) instead of relying on the blanket
-        // env→locals pull (env_dirty-removal substrate). The owner is usually this
-        // same frame (a bare `{ temp $x = … }` block), but a `temp`/`let` inside a
-        // nested callee owns the slot a frame up — record on both the drop-on-miss
-        // and retain-on-miss lists so either reaches it.
-        self.pending_rw_writeback_sources.push(name.clone());
-        self.record_caller_var_writeback(&name);
+        // §1.4/§1.5: when the compiler baked THIS frame's slot for `name`, write it
+        // directly so a live INNER shadow is restored — not the OUTER slot that a
+        // by-name `find_local_slot` (position) would pick. A baked slot means the
+        // name is a local of the current routine frame (its owner IS this frame),
+        // so the caller-frame writeback machinery is unnecessary. With the shadow
+        // gate OFF the baked slot equals the single (position) slot, so this is
+        // byte-identical to the old by-name drain, just applied at restore time.
+        //
+        // Non-cell restore also writes the saved value into `env` by name (below)
+        // for by-name readers. With NO baked slot (a non-local target, or a
+        // `temp`/`let` whose owner is a caller frame) fall back to the name-based
+        // `pending_rw_writeback` drain, recording both the drop-on-miss and
+        // retain-on-miss lists so either reaches the owning frame's slot.
+        match slot {
+            Some(s) if (s as usize) < self.locals.len() => {
+                self.locals[s as usize] = restored.clone();
+            }
+            _ => {
+                self.pending_rw_writeback_sources.push(name.clone());
+                self.record_caller_var_writeback(&name);
+            }
+        }
         if let Value::Instance {
             attributes: saved_attrs,
             ..
@@ -298,9 +317,9 @@ impl Interpreter {
     /// Restore all variables from let_saves starting at `mark`, then truncate.
     pub(crate) fn restore_let_saves(&mut self, mark: usize) {
         for i in (mark..self.let_saves.len()).rev() {
-            let (name, old_val, _is_temp) = self.let_saves[i].clone();
+            let (name, old_val, _is_temp, slot) = self.let_saves[i].clone();
             let restored = self.resolve_restore_value(&name, &old_val);
-            self.restore_let_value(name, restored);
+            self.restore_let_value(name, restored, slot);
         }
         self.let_saves.truncate(mark);
     }
@@ -309,20 +328,20 @@ impl Interpreter {
     /// For `let`, only restore if the block returned an unsuccessful value.
     pub(crate) fn resolve_let_saves_on_success(&mut self, mark: usize, success: bool) {
         // Collect restore actions first to avoid borrow conflicts.
-        let restores: Vec<(String, Value)> = (mark..self.let_saves.len())
+        let restores: Vec<(String, Value, Option<u32>)> = (mark..self.let_saves.len())
             .rev()
             .filter_map(|i| {
-                let (ref name, ref old_val, is_temp) = self.let_saves[i];
+                let (ref name, ref old_val, is_temp, slot) = self.let_saves[i];
                 if is_temp || !success {
-                    Some((name.clone(), old_val.clone()))
+                    Some((name.clone(), old_val.clone(), slot))
                 } else {
                     None
                 }
             })
             .collect();
-        for (name, old_val) in restores {
+        for (name, old_val, slot) in restores {
             let restored = self.resolve_restore_value(&name, &old_val);
-            self.restore_let_value(name, restored);
+            self.restore_let_value(name, restored, slot);
         }
         self.let_saves.truncate(mark);
     }

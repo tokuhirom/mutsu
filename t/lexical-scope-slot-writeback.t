@@ -7,7 +7,7 @@ use Test;
 # the runtime env restore; the compiler-slot rework is deferred — see the note in
 # ANALYSIS.md §1.4. These cases guard against regressing the observable behavior.)
 
-plan 8;
+plan 10;
 
 # --- shadow read correctness ---
 {
@@ -46,4 +46,15 @@ plan 8;
     my $n = 5;
     { my $n = 100; $n++; is $n, 101, 'post-increment hits inner shadow'; }
     is $n, 5, 'outer $n untouched by inner ++';
+}
+
+# --- temp restore through a shadow hits the INNER slot ---
+# (regression: the scope-exit restore resolved the name -> outer slot)
+{
+    my $t = 1;
+    {
+        my $t = 10;
+        { temp $t = 99; is $t, 99, 'temp assigns the inner shadow slot'; }
+        is $t, 10, 'temp restore targets the inner (live) shadow slot';
+    }
 }

@@ -262,6 +262,7 @@ impl Interpreter {
         name_idx: u32,
         index_mode: bool,
         is_temp: bool,
+        slot: Option<u32>,
     ) {
         let name = Self::const_str(code, name_idx).to_string();
         if index_mode {
@@ -294,7 +295,7 @@ impl Interpreter {
         } else {
             old_val
         };
-        self.let_saves_push(name, save_val, is_temp);
+        self.let_saves_push(name, save_val, is_temp, slot);
     }
 
     /// Recursively deep-copy a Value so that Array/Hash snapshots are
