@@ -509,7 +509,11 @@ mod tests {
         // and, crucially, the candidates stay buffered (not drained-and-lost).
         enter_mutator_worker();
         let stats = collect_cycles();
-        assert_eq!(stats, CollectStats::default(), "deferred: no-op while active");
+        assert_eq!(
+            stats,
+            CollectStats::default(),
+            "deferred: no-op while active"
+        );
         assert_eq!(
             DROPS.load(Ordering::Relaxed) - before,
             0,
@@ -519,7 +523,10 @@ mod tests {
         // Once the worker is gone, the still-buffered cycle is reclaimed.
         exit_mutator_worker();
         let stats = collect_cycles();
-        assert_eq!(stats.reclaimed_nodes, 2, "candidates survived to be collected");
+        assert_eq!(
+            stats.reclaimed_nodes, 2,
+            "candidates survived to be collected"
+        );
         assert_eq!(DROPS.load(Ordering::Relaxed) - before, 2);
     }
 
