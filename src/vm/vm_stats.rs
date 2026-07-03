@@ -215,6 +215,8 @@ pub(crate) fn record_gc_candidate_dedup_hit() {
 
 /// Record one completed collect cycle: `roots_scanned` nodes visited from the
 /// root set, `reclaimed_nodes`/`reclaimed_cycles` freed, taking `pause_ns`.
+/// Wired from `gc::collect::collect_cycles`, which has no production caller
+/// until safepoint wiring lands (§11 step 8), so this stays dead until then.
 #[inline]
 #[allow(dead_code)]
 pub(crate) fn record_gc_collection(

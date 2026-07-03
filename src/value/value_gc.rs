@@ -60,6 +60,11 @@ impl Trace for SetData {
             }
         }
     }
+
+    fn drop_gc_edges(&mut self) {
+        // The `original_keys` back-map is the QuantHash's only Value-holding field.
+        self.original_keys = None;
+    }
 }
 
 impl Trace for BagData {
@@ -70,6 +75,10 @@ impl Trace for BagData {
             }
         }
     }
+
+    fn drop_gc_edges(&mut self) {
+        self.original_keys = None;
+    }
 }
 
 impl Trace for MixData {
@@ -79,6 +88,10 @@ impl Trace for MixData {
                 v.gc_trace(visit);
             }
         }
+    }
+
+    fn drop_gc_edges(&mut self) {
+        self.original_keys = None;
     }
 }
 
@@ -91,6 +104,13 @@ impl Trace for Mutex<Value> {
             inner.gc_trace(visit);
         }
     }
+
+    fn drop_gc_edges(&mut self) {
+        // Break the cell's single edge (reclaim). `&mut self` => no lock needed.
+        if let Ok(inner) = self.get_mut() {
+            *inner = Value::Nil;
+        }
+    }
 }
 
 impl Trace for ArrayData {
@@ -101,6 +121,13 @@ impl Trace for ArrayData {
         if let Some(d) = &self.default {
             d.gc_trace(visit);
         }
+    }
+
+    fn drop_gc_edges(&mut self) {
+        // Clearing the elements drops every outgoing edge. `&mut self` is
+        // supplied by the collector via the backing `Arc` (gc::gc_drop_edges).
+        self.items.clear();
+        self.default = None;
     }
 }
 
@@ -117,6 +144,12 @@ impl Trace for HashData {
         if let Some(d) = &self.default {
             d.gc_trace(visit);
         }
+    }
+
+    fn drop_gc_edges(&mut self) {
+        self.map.clear();
+        self.original_keys = None;
+        self.default = None;
     }
 }
 

@@ -26,9 +26,10 @@
 //! - `Set`/`Bag`/`Mix` are also `Gc<_>` now (#4117). `Sub`/`Instance`/`LazyList`
 //!   remain `Arc` (later waves); the [`ContainerMakeMut`] bridge lets shared
 //!   container macros work across the still-mixed state meanwhile.
-//! - No trial-deletion reclaim runs. [`drain_candidates`] hands the buffered
-//!   nodes to a future synchronous collector (§11 step 8); until then the
-//!   `Color`/strong-count bookkeeping is maintained but never acted on.
+//! - The synchronous trial-deletion collector (`gc::collect`, §11 step 8) now
+//!   reclaims cycles from the candidate buffer, but only when invoked manually
+//!   (`gc_debug_collect_now`) — safepoint wiring is the follow-up. With
+//!   `MUTSU_GC` unset the buffer stays empty, so a collect is a no-op.
 
 // The collector-facing surface (Color scan states, drain_candidates,
 // buffer_as_candidate, trace_children, ...) is not exercised until the
@@ -83,6 +84,17 @@ impl Color {
 pub(crate) trait Trace: Send + Sync {
     /// Invoke `visit` once per direct `Gc` child of this node.
     fn trace(&self, visit: &mut dyn FnMut(&ErasedGc));
+
+    /// Drop this node's outgoing `Gc` edges, breaking any cycle it is part of.
+    ///
+    /// Called by the collector (`gc::collect`) ONLY on a node it has proven to
+    /// be unreachable garbage, and ONLY inside a `CollectGuard` window (so the
+    /// resulting `Gc::drop`s are inert — see `Gc`'s `Drop`). The `&mut self` is
+    /// obtained by the collector through the backing `Arc` (see
+    /// [`gc_drop_edges`]). The default clears nothing (scalar leaves and
+    /// not-yet-migrated nodes have no `Gc` edges); container nodes override it to
+    /// clear their `Value`-holding collections.
+    fn drop_gc_edges(&mut self) {}
 }
 
 /// Bacon-Rajan node header stored alongside the value inside a [`GcBox`].
@@ -294,6 +306,14 @@ impl<T: Trace + 'static> Clone for Gc<T> {
 
 impl<T: Trace + 'static> Drop for Gc<T> {
     fn drop(&mut self) {
+        // During a collect's reclaim phase, the collector is deliberately
+        // dropping a garbage node's internal `Gc` edges. Those drops must NOT
+        // touch `header.strong` or re-buffer (the collector owns that
+        // bookkeeping and the counts are mid-scan scratch) — just let the
+        // backing `Arc` drop. See `gc::collect`.
+        if collecting() {
+            return;
+        }
         let prev = self.inner.header.strong.fetch_sub(1, Ordering::Relaxed);
         // `prev > 1`: after this drop the node still has live handles, so it may
         // be reachable only through a cycle that outlives every stack root —
@@ -414,6 +434,89 @@ pub(crate) fn drain_candidates() -> Vec<ErasedGc> {
         node.header.buffered.store(false, Ordering::Relaxed);
     }
     drained
+}
+
+// ---- Collector-facing internals (used by `gc::collect`) --------------------
+
+/// Set while the collector is dropping a garbage node's edges, so `Gc::drop`
+/// stays inert (see `Gc`'s `Drop`). A plain relaxed flag: the level-1a
+/// collector is single-threaded / cooperative-STW, so no ordering is needed.
+static COLLECTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a collect's reclaim phase is currently in progress on this process.
+pub(crate) fn collecting() -> bool {
+    COLLECTING.load(Ordering::Relaxed)
+}
+
+/// RAII guard that marks the reclaim window: `Gc::drop`s inside it skip their
+/// refcount/candidate bookkeeping (the collector owns it). Held only around the
+/// edge-clearing in `gc::collect`, never across a re-entry into the VM.
+pub(crate) struct CollectGuard;
+
+impl CollectGuard {
+    pub(crate) fn new() -> CollectGuard {
+        COLLECTING.store(true, Ordering::Relaxed);
+        CollectGuard
+    }
+}
+
+impl Drop for CollectGuard {
+    fn drop(&mut self) {
+        COLLECTING.store(false, Ordering::Relaxed);
+    }
+}
+
+/// A stable per-node identity (the backing allocation's address), for the
+/// collector's visited-set / dedup. Two `ErasedGc`s designate the same node iff
+/// their ids are equal.
+pub(crate) fn erased_id(node: &ErasedGc) -> usize {
+    Arc::as_ptr(node) as *const () as usize
+}
+
+/// Header/edge accessors the collector needs on a type-erased node. Kept here
+/// (rather than in `gc::collect`) because `GcHeader`'s fields are private to
+/// this module.
+impl GcBox<dyn Trace> {
+    pub(crate) fn gc_color(&self) -> Color {
+        Color::from_u8(self.header.color.load(Ordering::Relaxed))
+    }
+    pub(crate) fn gc_set_color(&self, c: Color) {
+        self.header.color.store(c as u8, Ordering::Relaxed);
+    }
+    pub(crate) fn gc_strong(&self) -> usize {
+        self.header.strong.load(Ordering::Relaxed)
+    }
+    pub(crate) fn gc_strong_dec(&self) {
+        self.header.strong.fetch_sub(1, Ordering::Relaxed);
+    }
+    pub(crate) fn gc_strong_inc(&self) {
+        self.header.strong.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn gc_buffered(&self) -> bool {
+        self.header.buffered.load(Ordering::Relaxed)
+    }
+    pub(crate) fn gc_set_buffered(&self, b: bool) {
+        self.header.buffered.store(b, Ordering::Relaxed);
+    }
+    /// Visit each direct `Gc` child (delegates to the node's [`Trace`] impl).
+    pub(crate) fn gc_visit_children(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        self.value.trace(visit);
+    }
+}
+
+/// Drop `node`'s outgoing `Gc` edges (collector reclaim; delegates to
+/// [`Trace::drop_gc_edges`]).
+///
+/// # Safety
+///
+/// Collector-only. The `&mut` to the node's value is taken through the backing
+/// `Arc`'s pointer (not a `&`-to-`&mut` cast), so the caller must guarantee — as
+/// the collector does inside a [`CollectGuard`] on a proven-garbage node — that
+/// no other reference into the value is live for the duration.
+pub(crate) fn gc_drop_edges(node: &ErasedGc) {
+    // SAFETY: as above. `Arc::as_ptr` yields the box's genuine heap pointer.
+    let boxed = Arc::as_ptr(node) as *mut GcBox<dyn Trace>;
+    unsafe { (*boxed).value.drop_gc_edges() };
 }
 
 /// Whether GC candidate registration is active. `off`/unset (the default) makes

@@ -400,8 +400,12 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
            self-bind cycle が Gc graph で辿れる。§3.3 の typed-constraint `CellValue` は将来の Track B に延期）。
          - **→ first wave（Array/Hash/ContainerRef）完了。** `Set`/`Bag`/`Mix` も移行済み（#4117）。
            残る Arc コンテナは `Sub`/`Instance`/`LazyList`（後続 wave）。
-      6〜11. `Promise`/`Channel` → supply registry → safepoint collect（trial-deletion 本体）→
-      `Sub`/`Instance` → `LazyList` ← **次はここ**（詳細は設計メモ参照）。
+      8. ✅ **trial-deletion collector 本体**（`gc/collect.rs`: Bacon-Rajan mark_gray/scan/scan_black/
+         collect_white ＋ reclaim。`CollectGuard` で reclaim 中の `Gc::drop` を inert 化、`Trace::drop_gc_edges`
+         でコンテナの edge をクリアして循環を Arc 解放。unit test で self/2/3-node cycle 回収・外部参照 cycle 温存・
+         acyclic 非回収を検証）。**manual/opt-in のみ**（`gc_debug_collect_now`）— safepoint 配線が次。
+      6-7,9-11 (残): `Promise`/`Channel` → supply registry root visitor → **safepoint 配線**（collect を
+      再入境界で自動起動）→ `Sub`/`Instance`（second wave）→ `LazyList`（third wave）← **次はここ**（設計メモ参照）。
       **Track B（要素 cell 化）と GC は統合キャンペーン（層3a・`Arc → Gc<T>` 一斉置換）**。続いて NaN-boxing
       （層3b・JIT 地ならし）→ JIT（層4）。未決は収集方式（同期/非同期）と A' 地ならしの範囲（ADR §4.2/§4.3）。
 - [ ] 制御フロー（`return`/`last`/`next`/`take`/`emit`）を `RuntimeError` god-struct から `enum Control` へ分離（ANALYSIS §2.4）。
