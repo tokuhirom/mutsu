@@ -18,7 +18,10 @@
 
 use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
-use super::{ArrayData, HashData, InstanceAttrs, SharedChannel, SharedPromise, SubData, Value};
+use super::{
+    ArrayData, BagData, HashData, InstanceAttrs, MixData, SetData, SharedChannel, SharedPromise,
+    SubData, Value,
+};
 
 impl Value {
     /// Hand each direct GC-managed (`Gc<T>`) child of this value to `visit`.
@@ -36,7 +39,43 @@ impl Value {
         match self {
             Value::Hash(data) => visit(&data.erased()),
             Value::Array(data, _) => visit(&data.erased()),
+            Value::Set(data, _) => visit(&data.erased()),
+            Value::Bag(data, _) => visit(&data.erased()),
+            Value::Mix(data, _) => visit(&data.erased()),
             _ => {}
+        }
+    }
+}
+
+/// The QuantHash datas hold `Value`s only in their `original_keys` back-map
+/// (the primary `elements`/`counts`/`weights` maps are keyed by string and hold
+/// no `Value`s), so tracing that map covers every GC child.
+impl Trace for SetData {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        if let Some(keys) = &self.original_keys {
+            for v in keys.values() {
+                v.gc_trace(visit);
+            }
+        }
+    }
+}
+
+impl Trace for BagData {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        if let Some(keys) = &self.original_keys {
+            for v in keys.values() {
+                v.gc_trace(visit);
+            }
+        }
+    }
+}
+
+impl Trace for MixData {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        if let Some(keys) = &self.original_keys {
+            for v in keys.values() {
+                v.gc_trace(visit);
+            }
         }
     }
 }

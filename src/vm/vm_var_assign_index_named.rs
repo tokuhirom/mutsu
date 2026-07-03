@@ -1398,7 +1398,10 @@ impl Interpreter {
                                 if val.truthy() {
                                     items.insert(key.clone());
                                 }
-                                Value::Set(Arc::new(crate::value::SetData::new(items)), true)
+                                Value::Set(
+                                    crate::gc::Gc::new(crate::value::SetData::new(items)),
+                                    true,
+                                )
                             }
                             _ => unreachable!(),
                         };
@@ -1601,7 +1604,7 @@ impl Interpreter {
                             if !is_mutable {
                                 return Err(RuntimeError::assignment_ro(Some("Set")));
                             }
-                            let s = Arc::make_mut(set);
+                            let s = crate::gc::Gc::make_mut(set);
                             if val.truthy() {
                                 s.insert(key.clone());
                             } else {
@@ -1612,7 +1615,7 @@ impl Interpreter {
                             if !is_mutable {
                                 return Err(RuntimeError::assignment_ro(Some("Bag")));
                             }
-                            let b = Arc::make_mut(bag);
+                            let b = crate::gc::Gc::make_mut(bag);
                             let count = Self::bag_assignment_count(&val)?;
                             if count == num_bigint::BigInt::from(0) {
                                 b.remove(&key);
@@ -1624,7 +1627,7 @@ impl Interpreter {
                             if !is_mutable {
                                 return Err(RuntimeError::assignment_ro(Some("Mix")));
                             }
-                            let m = Arc::make_mut(mix);
+                            let m = crate::gc::Gc::make_mut(mix);
                             let weight = Self::mix_assignment_weight(&val)?;
                             if weight == 0.0 {
                                 m.remove(&key);
@@ -1663,7 +1666,7 @@ impl Interpreter {
                                         items.insert(key.clone());
                                     }
                                     *container = Value::Set(
-                                        Arc::new(crate::value::SetData::new(items)),
+                                        crate::gc::Gc::new(crate::value::SetData::new(items)),
                                         true,
                                     );
                                 }

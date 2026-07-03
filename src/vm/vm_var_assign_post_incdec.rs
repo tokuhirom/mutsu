@@ -1,6 +1,5 @@
 use super::*;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 impl Interpreter {
     /// Apply a fused compound-assignment base operator to `left OP right` by
@@ -651,7 +650,7 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro(Some("Mix")));
                     }
                     let weight = Self::mix_assignment_weight(&new_val)?;
-                    let m = Arc::make_mut(mix);
+                    let m = crate::gc::Gc::make_mut(mix);
                     if new_val.truthy() {
                         m.insert(key.clone(), weight);
                     } else {
@@ -663,7 +662,7 @@ impl Interpreter {
                     if !*is_mutable {
                         return Err(RuntimeError::assignment_ro(Some("Set")));
                     }
-                    let s = Arc::make_mut(set);
+                    let s = crate::gc::Gc::make_mut(set);
                     if new_val.truthy() {
                         s.insert(key.clone());
                     } else {
@@ -675,7 +674,7 @@ impl Interpreter {
                     if !*is_mutable {
                         return Err(RuntimeError::assignment_ro(Some("Bag")));
                     }
-                    let b = Arc::make_mut(bag);
+                    let b = crate::gc::Gc::make_mut(bag);
                     let n = match &new_val {
                         Value::Int(i) => num_bigint::BigInt::from(*i),
                         Value::BigInt(big) => (**big).clone(),
@@ -716,8 +715,10 @@ impl Interpreter {
                             if new_val.truthy() {
                                 items.insert(key.clone());
                             }
-                            *container_value =
-                                Value::Set(Arc::new(crate::value::SetData::new(items)), true);
+                            *container_value = Value::Set(
+                                crate::gc::Gc::new(crate::value::SetData::new(items)),
+                                true,
+                            );
                             true
                         }
                         _ => false,
@@ -768,7 +769,7 @@ impl Interpreter {
                         if new_val.truthy() {
                             items.insert(key.clone());
                         }
-                        Value::Set(Arc::new(crate::value::SetData::new(items)), true)
+                        Value::Set(crate::gc::Gc::new(crate::value::SetData::new(items)), true)
                     }
                     _ => unreachable!(),
                 };

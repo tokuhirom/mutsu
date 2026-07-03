@@ -414,7 +414,7 @@ impl Interpreter {
             Value::Bag(target_arc, _) => {
                 for (name, env_val) in self.env().iter() {
                     if let Value::Bag(env_arc, _) = env_val
-                        && std::sync::Arc::ptr_eq(target_arc, env_arc)
+                        && crate::gc::Gc::ptr_eq(target_arc, env_arc)
                     {
                         return Some(name.resolve());
                     }
@@ -424,7 +424,7 @@ impl Interpreter {
             Value::Mix(target_arc, _) => {
                 for (name, env_val) in self.env().iter() {
                     if let Value::Mix(env_arc, _) = env_val
-                        && std::sync::Arc::ptr_eq(target_arc, env_arc)
+                        && crate::gc::Gc::ptr_eq(target_arc, env_arc)
                     {
                         return Some(name.resolve());
                     }

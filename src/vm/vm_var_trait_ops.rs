@@ -294,21 +294,21 @@ impl Interpreter {
                                         data.weights.clone(),
                                         typed_keys,
                                     );
-                                    Value::Mix(std::sync::Arc::new(new_data), mutable)
+                                    Value::Mix(crate::gc::Gc::new(new_data), mutable)
                                 }
                                 Value::Bag(data, mutable) => {
                                     let new_data = crate::value::BagData::with_original_keys(
                                         data.counts.clone(),
                                         typed_keys,
                                     );
-                                    Value::Bag(std::sync::Arc::new(new_data), mutable)
+                                    Value::Bag(crate::gc::Gc::new(new_data), mutable)
                                 }
                                 Value::Set(data, mutable) => {
                                     let new_data = crate::value::SetData::with_original_keys(
                                         data.elements.clone(),
                                         typed_keys,
                                     );
-                                    Value::Set(std::sync::Arc::new(new_data), mutable)
+                                    Value::Set(crate::gc::Gc::new(new_data), mutable)
                                 }
                                 other => other,
                             };

@@ -707,7 +707,7 @@ pub(crate) fn to_mixhash(target: Value) -> Result<Value, RuntimeError> {
         // that ever changes, hand the value back unmodified rather than panic.
         return Ok(coerced);
     };
-    let data = std::sync::Arc::make_mut(&mut arc);
+    let data = crate::gc::Gc::make_mut(&mut arc);
     data.value_type = Some("Real".to_string());
     data.key_type = None;
     data.declared_type = Some("MixHash".to_string());

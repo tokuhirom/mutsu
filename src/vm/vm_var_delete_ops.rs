@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::Arc;
 
 impl Interpreter {
     /// Resolve WhateverCode indices for array deletion.
@@ -547,18 +546,18 @@ impl Interpreter {
             Value::Array(..) => Self::delete_from_array(container, idx, hole_type)?,
             Value::Set(set, _) => match idx {
                 Value::Array(keys, ..) => {
-                    let s = Arc::make_mut(set);
+                    let s = crate::gc::Gc::make_mut(set);
                     let removed = keys
                         .iter()
                         .map(|key| Value::Bool(s.remove(&key.to_string_value())))
                         .collect();
                     Value::array(removed)
                 }
-                _ => Value::Bool(Arc::make_mut(set).remove(&idx.to_string_value())),
+                _ => Value::Bool(crate::gc::Gc::make_mut(set).remove(&idx.to_string_value())),
             },
             Value::Bag(bag, _) => match idx {
                 Value::Array(keys, ..) => {
-                    let b = Arc::make_mut(bag);
+                    let b = crate::gc::Gc::make_mut(bag);
                     let removed = keys
                         .iter()
                         .map(|key| {
@@ -568,14 +567,14 @@ impl Interpreter {
                     Value::array(removed)
                 }
                 _ => Value::from_bigint(
-                    Arc::make_mut(bag)
+                    crate::gc::Gc::make_mut(bag)
                         .remove(&idx.to_string_value())
                         .unwrap_or_default(),
                 ),
             },
             Value::Mix(mix, _) => match idx {
                 Value::Array(keys, ..) => {
-                    let m = Arc::make_mut(mix);
+                    let m = crate::gc::Gc::make_mut(mix);
                     let removed = keys
                         .iter()
                         .map(|key| Value::Num(m.remove(&key.to_string_value()).unwrap_or(0.0)))
@@ -583,7 +582,7 @@ impl Interpreter {
                     Value::array(removed)
                 }
                 _ => Value::Num(
-                    Arc::make_mut(mix)
+                    crate::gc::Gc::make_mut(mix)
                         .remove(&idx.to_string_value())
                         .unwrap_or(0.0),
                 ),
