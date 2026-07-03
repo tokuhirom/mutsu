@@ -467,6 +467,26 @@ impl Env {
         self.cow_mut().values_mut()
     }
 
+    /// GC root enumeration (ADR-0001/0002, `docs/gc-level1-detailed-design.md`
+    /// §2.2/§11 step 1): visit every `Value` reachable from this env, including
+    /// the `parent` overlay chain. Unlike `iter`/`keys`/`values` (overlay-only,
+    /// by design — see the `flatten` doc comment above), a GC root scan must see
+    /// the whole chain: a scoped child env's parent tier can be the only
+    /// reference keeping a container alive.
+    ///
+    /// Only called from `Interpreter::visit_roots` tests for now (GC Level 1a
+    /// step 1); becomes a live production call once the collector (step 4)
+    /// lands.
+    #[allow(dead_code)]
+    pub(crate) fn visit_values(&self, visitor: &mut dyn crate::gc::RootVisitor) {
+        for v in self.inner.values() {
+            visitor.visit_value(v);
+        }
+        if let Some(parent) = &self.parent {
+            parent.visit_values(visitor);
+        }
+    }
+
     /// Full name->value snapshot, merging the immutable base tier under the
     /// overlay (overlay shadows base). Used where a complete view of every
     /// reachable name is required (serialization / cross-context copy), unlike
