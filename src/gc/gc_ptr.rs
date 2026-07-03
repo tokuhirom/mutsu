@@ -184,21 +184,13 @@ impl<T: Trace + 'static> Gc<T> {
         self.inner.clone()
     }
 
-    // ---- `Arc<T>` drop-in API ----------------------------------------------
+    // ---- `Arc<T>` drop-in API (supplements the `ptr_eq`/`get_mut`/`make_mut`
+    // added in #4112) --------------------------------------------------------
     //
-    // These mirror the `Arc::` associated functions the pre-GC container code
-    // used on `Arc<ArrayData>` / `Arc<HashData>`, so migrating a `Value`
-    // variant from `Arc<T>` to `Gc<T>` (§11 step 5+) is a mechanical
-    // call-site rewrite (`Arc::foo(x)` -> `Gc::foo(x)`) rather than a
-    // behavioral change. Uniqueness is judged by `header.strong` (live GC
-    // handles, excluding the candidate buffer's retained `Arc`), which equals
-    // what `Arc::strong_count` reported before the buffer existed — so COW
-    // behavior is preserved whether or not `MUTSU_GC` is on.
-
-    /// `Arc::ptr_eq` analog: whether two handles designate the same node.
-    pub(crate) fn ptr_eq(a: &Gc<T>, b: &Gc<T>) -> bool {
-        Arc::ptr_eq(&a.inner, &b.inner)
-    }
+    // The container migration (§11 step 5) rewrites the pre-GC `Arc::` calls on
+    // `ArrayData`/`HashData` to their `Gc` equivalents. #4112 landed
+    // `ptr_eq`/`get_mut`/`make_mut`; these two add the remaining `Arc::`
+    // associated fns the migration's call sites use.
 
     /// `Arc::strong_count` analog in associated-fn form (the method
     /// [`Gc::strong_count`] returns the same value). Live GC handles only.
@@ -210,37 +202,6 @@ impl<T: Trace + 'static> Gc<T> {
     /// header), matching what `Arc::as_ptr` yields for a plain `Arc<T>`.
     pub(crate) fn as_ptr(this: &Gc<T>) -> *const T {
         &this.inner.value as *const T
-    }
-
-    /// `Arc::get_mut` analog. Returns `&mut T` only when this is the sole live
-    /// GC handle (`header.strong == 1`), ignoring the backing `Arc`'s weak/
-    /// buffer references. Sound because a buffered node's value is read only at
-    /// a collect safepoint, never concurrently with a live-handle mutation
-    /// (same contract as [`gc_contents_mut`]).
-    pub(crate) fn get_mut(this: &mut Gc<T>) -> Option<&mut T> {
-        if this.inner.header.strong.load(Ordering::Relaxed) == 1 {
-            // SAFETY: sole live handle => no other live-handle borrow into this
-            // value exists. See `gc_contents_mut`'s contract.
-            Some(unsafe { &mut *(Gc::as_ptr(this) as *mut T) })
-        } else {
-            None
-        }
-    }
-
-    /// `Arc::make_mut` analog (copy-on-write). If more than one live GC handle
-    /// exists, clone the value into a fresh node and rebind `this`; then return
-    /// `&mut` to the now-unique value. Matches the COW semantics the pre-GC
-    /// `Arc::make_mut(&mut Arc<ArrayData>)` sites relied on.
-    pub(crate) fn make_mut(this: &mut Gc<T>) -> &mut T
-    where
-        T: Clone,
-    {
-        if this.inner.header.strong.load(Ordering::Relaxed) != 1 {
-            let cloned = this.inner.value.clone();
-            *this = Gc::new(cloned);
-        }
-        // SAFETY: exactly one live handle after the check/clone above.
-        unsafe { &mut *(Gc::as_ptr(this) as *mut T) }
     }
 
     /// Offer this node to the candidate buffer as a possible cycle root,
