@@ -155,6 +155,19 @@ pub(crate) struct WeakGc<T: Trace + 'static> {
 }
 
 impl<T: Trace + 'static> WeakGc<T> {
+    /// A permanently-dangling weak handle (`Weak::new()`) whose [`upgrade`]
+    /// always returns `None`. For initializing a weak slot that starts empty —
+    /// e.g. a not-yet-set back-reference in a cycle-breaking design, where the
+    /// forward link is a strong [`Gc`] and the back link is a `WeakGc` so the
+    /// cycle never keeps itself alive.
+    ///
+    /// [`upgrade`]: WeakGc::upgrade
+    pub(crate) fn new() -> WeakGc<T> {
+        WeakGc {
+            inner: std::sync::Weak::new(),
+        }
+    }
+
     /// Whether two weak handles point at the same node (`Weak::ptr_eq`), for
     /// `Value::WeakSub` identity comparison.
     pub(crate) fn ptr_eq(a: &WeakGc<T>, b: &WeakGc<T>) -> bool {
@@ -223,11 +236,21 @@ impl<T: Trace + 'static> Gc<T> {
     }
 
     /// A non-owning [`WeakGc`] handle to this node (the `Gc` analogue of
-    /// `Arc::downgrade`), for `Value::WeakSub`.
+    /// `Arc::downgrade`), for `Value::WeakSub`. A weak handle does not count
+    /// toward the node staying alive, so a reference made weak (rather than a
+    /// [`Gc`] clone) breaks any cycle it would otherwise close.
     pub(crate) fn downgrade(this: &Gc<T>) -> WeakGc<T> {
         WeakGc {
             inner: std::sync::Arc::downgrade(&this.inner),
         }
+    }
+
+    /// Number of live [`WeakGc`] handles observing this node. A node with weak
+    /// observers but no strong handle keeps only its *allocation* alive (its
+    /// value is dropped when the strong count hits 0), so an outstanding weak
+    /// reference never resurrects reclaimed data — `upgrade` returns `None`.
+    pub(crate) fn weak_count(this: &Gc<T>) -> usize {
+        Arc::weak_count(&this.inner)
     }
 
     /// Two handles point at the same node (`Arc::ptr_eq`). The GC container
@@ -936,6 +959,115 @@ mod tests {
             gc.strong_count(),
             before,
             "erased view is not a user handle"
+        );
+    }
+
+    // ---- Weak references (cycle breaking) ----------------------------------
+
+    static WEAK_DROPS: AtomicUsize = AtomicUsize::new(0);
+
+    /// A node with a strong forward link and a weak back link, so a two-node
+    /// cycle can be closed with the back edge made weak. `trace` yields ONLY the
+    /// strong child — a `WeakGc` is not a GC edge, which is exactly what lets it
+    /// break the cycle. Bumps `WEAK_DROPS` when freed.
+    struct WNode {
+        strong: Mutex<Option<Gc<WNode>>>,
+        weak: Mutex<Option<WeakGc<WNode>>>,
+    }
+    impl WNode {
+        fn new() -> Gc<WNode> {
+            Gc::new(WNode {
+                strong: Mutex::new(None),
+                weak: Mutex::new(None),
+            })
+        }
+    }
+    impl Trace for WNode {
+        fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+            if let Ok(g) = self.strong.lock()
+                && let Some(child) = g.as_ref()
+            {
+                visit(&child.erased());
+            }
+            // `self.weak` is deliberately NOT traced.
+        }
+        fn drop_gc_edges(&mut self) {
+            *self.strong.get_mut().unwrap() = None;
+            *self.weak.get_mut().unwrap() = None;
+        }
+    }
+    impl Drop for WNode {
+        fn drop(&mut self) {
+            WEAK_DROPS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn dangling_weak_upgrades_to_none() {
+        let w: WeakGc<Cell> = WeakGc::new();
+        assert!(w.upgrade().is_none());
+    }
+
+    #[test]
+    fn upgrade_is_some_while_alive_none_after_drop() {
+        let a = Gc::new(Cell(7));
+        let w = Gc::downgrade(&a);
+        assert_eq!(Gc::weak_count(&a), 1);
+        assert!(w.upgrade().is_some(), "alive => upgradeable");
+        drop(a);
+        assert!(w.upgrade().is_none(), "dropped => not upgradeable");
+    }
+
+    #[test]
+    fn weak_back_edge_breaks_a_cycle_without_the_collector() {
+        let _serial = lock_buffer_tests();
+        drain_candidates();
+        let before = WEAK_DROPS.load(Ordering::Relaxed);
+
+        // A --strong--> B --weak--> A : the back edge is weak, so the cycle
+        // never keeps itself alive; plain refcounting frees both.
+        let a = WNode::new();
+        let b = WNode::new();
+        *a.strong.lock().unwrap() = Some(b.clone());
+        *b.weak.lock().unwrap() = Some(Gc::downgrade(&a));
+        assert_eq!(a.strong_count(), 1, "the weak back-edge does not count");
+
+        drop(a);
+        drop(b);
+
+        assert_eq!(
+            WEAK_DROPS.load(Ordering::Relaxed) - before,
+            2,
+            "both nodes freed by refcounting alone — the weak edge broke the cycle"
+        );
+        // Nothing should have been buffered as a cycle candidate.
+        assert!(drain_candidates().is_empty());
+    }
+
+    #[test]
+    fn weak_observer_of_a_collected_strong_cycle_sees_none() {
+        let _serial = lock_buffer_tests();
+        drain_candidates();
+
+        // A <--strong--> B strong cycle, plus a weak observer of A.
+        let a = WNode::new();
+        let b = WNode::new();
+        *a.strong.lock().unwrap() = Some(b.clone());
+        *b.strong.lock().unwrap() = Some(a.clone());
+        let observer = Gc::downgrade(&a);
+        assert!(observer.upgrade().is_some());
+
+        // Make them collectable garbage: buffer, then drop the external handles.
+        a.buffer_as_candidate();
+        b.buffer_as_candidate();
+        drop(a);
+        drop(b);
+
+        let stats = super::super::collect::collect_cycles();
+        assert_eq!(stats.reclaimed_nodes, 2, "the strong cycle is reclaimed");
+        assert!(
+            observer.upgrade().is_none(),
+            "a weak observer never resurrects a reclaimed node"
         );
     }
 }
