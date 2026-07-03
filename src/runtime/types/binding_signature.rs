@@ -147,6 +147,25 @@ impl Interpreter {
         }
     }
 
+    /// §1.4/§1.5: record the compiler-baked caller slot for each rw-binding source
+    /// into `pending_rw_writeback_slots`, so the rw-arg writeback drain hits the
+    /// live inner-shadow slot. ONLY rw sources are recorded — a non-rw arg source
+    /// must not leave a stale slot that a later same-named writeback would misuse.
+    fn fold_rw_writeback_slots(
+        &mut self,
+        rw_bindings: &[(String, String)],
+        arg_source_slots: &std::collections::HashMap<String, u32>,
+    ) {
+        if arg_source_slots.is_empty() {
+            return;
+        }
+        for (_, source) in rw_bindings {
+            if let Some(&slot) = arg_source_slots.get(source) {
+                self.pending_rw_writeback_slots.insert(source.clone(), slot);
+            }
+        }
+    }
+
     pub(crate) fn bind_function_args_values(
         &mut self,
         param_defs: &[ParamDef],
@@ -236,6 +255,13 @@ impl Interpreter {
         };
         let args = filtered_args.as_slice();
         let arg_sources = self.take_pending_call_arg_sources();
+        // §1.4/§1.5: snapshot the compiler-baked arg-source slots NOW (before any
+        // default-expression evaluation makes a nested call that would clobber the
+        // shared field). Folded into `pending_rw_writeback_slots` at return time for
+        // ONLY the actual rw-binding sources (see `fold_rw_writeback_slots`) — a
+        // non-rw source must NOT be recorded, or its stale slot would be picked up
+        // by an unrelated later writeback of the same name in this frame.
+        let arg_source_slots = std::mem::take(&mut self.pending_call_arg_source_slots);
         let mut rw_bindings = Vec::new();
         let mut raw_nonlvalue_params: Vec<String> = Vec::new();
         if let Some(invocant_value) = self
@@ -262,6 +288,7 @@ impl Interpreter {
                 // No param_defs and no placeholder params -- nothing to bind.
                 // Argument rejection (for named subs with empty signature) is handled
                 // by callers that set `empty_sig` on FunctionDef / CompiledFunction.
+                self.fold_rw_writeback_slots(&rw_bindings, &arg_source_slots);
                 return Ok(rw_bindings);
             }
             // Legacy path: bind positional placeholders ($^a, $^b) by position,
@@ -385,6 +412,7 @@ impl Interpreter {
                 self.env
                     .insert("%_".to_string(), Value::hash(leftover_named));
             }
+            self.fold_rw_writeback_slots(&rw_bindings, &arg_source_slots);
             return Ok(rw_bindings);
         }
         // Pre-compute the set of explicit named parameter keys so that
@@ -1822,6 +1850,7 @@ impl Interpreter {
                 }
             }
         }
+        self.fold_rw_writeback_slots(&rw_bindings, &arg_source_slots);
         Ok(rw_bindings)
     }
 }

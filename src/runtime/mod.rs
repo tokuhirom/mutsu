@@ -1051,6 +1051,17 @@ pub struct Interpreter {
     /// class name resolves within its owning class (see `resolve_suppressed_type`).
     constructing_class: Option<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,
+    /// Companion to `pending_call_arg_sources` (§1.4/§1.5): the compiler-baked
+    /// `arg-source name -> caller local slot` for the current call, decoded from the
+    /// `Pair(name, Int(slot))` arg-source entries. Set alongside the names by
+    /// `decode_arg_sources`, taken with them by `bind_function_args_values`.
+    pub(crate) pending_call_arg_source_slots: std::collections::HashMap<String, u32>,
+    /// `rw-arg writeback source name -> caller local slot`, captured at arg-binding
+    /// time (clobber-safe: before the callee body runs) from
+    /// `pending_call_arg_source_slots`. The rw writeback drain
+    /// (`apply_pending_rw_writeback`) prefers this slot over the by-name `position`
+    /// resolution, so the write lands on the LIVE (inner shadow) caller slot.
+    pub(crate) pending_rw_writeback_slots: std::collections::HashMap<String, u32>,
     test_pending_callsite_line: Option<i64>,
     /// Number of active CONTROL handlers in the current VM stack. Tracked
     /// on the interpreter (rather than per-VM) so that nested VMs (e.g.

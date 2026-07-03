@@ -842,7 +842,21 @@ impl Interpreter {
         if !self.pending_rw_writeback_sources.is_empty() {
             let sources = std::mem::take(&mut self.pending_rw_writeback_sources);
             for source in sources {
-                if let Some(slot) = self.find_local_slot(code, &source) {
+                // §1.4/§1.5: prefer the compiler-baked caller slot for this source
+                // (folded in at arg-binding time) so the write lands on the LIVE
+                // (inner shadow) slot, not the by-name `position` (outer) slot. Fall
+                // back to the name search for sources with no baked slot (a
+                // captured-outer free-var write, undefine env-identity, …).
+                // Remove (not just read) this source's baked slot: it is consumed by
+                // this drain. A blanket clear would wrongly drop an OUTER call's
+                // still-pending slot when a NESTED call drains first (`f($a)` whose
+                // body calls `g($b)` — g's drain must not lose f's `a` slot).
+                let baked = self
+                    .pending_rw_writeback_slots
+                    .remove(&source)
+                    .map(|s| s as usize)
+                    .filter(|&s| s < self.locals.len());
+                if let Some(slot) = baked.or_else(|| self.find_local_slot(code, &source)) {
                     if !matches!(self.locals[slot], Value::HashEntryRef { .. })
                         && let Some(val) = self.env().get(&source).cloned()
                     {
