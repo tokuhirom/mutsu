@@ -1,8 +1,8 @@
 //! Expression-statement parsing: facade re-exporting themed submodules.
 mod core;
 mod let_temp;
-mod lvalue;
-mod predicates;
+pub(crate) mod lvalue;
+pub(crate) mod predicates;
 mod sig_info;
 
 pub(super) use core::expr_stmt;

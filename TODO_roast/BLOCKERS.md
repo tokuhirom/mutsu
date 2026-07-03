@@ -290,19 +290,25 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
      へ書き戻らない**既存の**バグも解消（`docs/container-identity.md` の
      Phase 2 系とは独立した bind-time 経路の穴だった）。
   新規テスト: `t/bound-array-slice-arity.t`。
-- **残り 4 件（laziness とは無関係、それぞれ別機能）**:
-  - test 35（62 assertion、18/62 で中断）: ネストインデックスへの slice adverb
-    （`:p`/`:k`/`:v`/`:kv`/`:exists`/`:delete` の組み合わせ）— §3 の
-    container-identity 領域に属する別の大きな機能。
-  - test 54-55: 重複インデックスを含むネスト lazy リストへの **bind**
-    （`@a[lazy 1,2,(4,5),4,5] := ...`）が `=` 代入と異なる挙動（境界での
-    打ち切りなし・返り値が書き込み時点の値）。狭いエッジケースで今回は深追いせず。
-  - test 56: `@a[**]`（HyperWhatever hammer index）。ローカルの `raku` 自体が
-    "not yet implemented. Sorry." を返すため、この環境では参照実装との
-    突き合わせ自体ができない。
-- **Next slice**: 残り 4 件は互いに独立した別機能。test 35（nested slice
-  adverbs）が最も汎用性が高いが §3 container-identity 相当の大仕事。
-  whitelist にはこの 4 件全ての解決が必要。
+- **2026-07-03 解決（test 54-56）**:
+  - test 56（`@a[**]` HyperWhatever hammer index）: index に `Value::HyperWhatever`
+    を受けたとき、ネスト配列を再帰的に降下して全 leaf を flat list として返す分岐を
+    追加（`vm_var_index_ops.rs` の `hyperwhatever_hammer_collect`）。ローカル raku は
+    未実装だが roast の期待値（`[^10].List`）は決定的なので実装可能。
+  - test 54-55（重複インデックスを含むネスト lazy リストへの **bind**
+    `(@a[lazy 1,2,(4,5),4,5] := ...)`）: 式コンテキストの indexed `:=` bind が
+    `__mutsu_bind_index_value` マーカー無しで parse され、VM が `=` 代入扱い
+    （境界打ち切り＋最終状態値）していた。真因は 2 つ:
+    ① `try_parse_assign_expr`（式/括弧経路）の index-target `:=` がマーカーを付けて
+    いなかった → statement 版と同じマーカー付与に修正（`try_assign.rs`）。
+    ② VM 側に bind 専用の分配関数が無く assign と同じ経路 → `bind_slice_key_tree`
+    （write-time 値・境界打ち切りなし）＋ `slice_key_tree_max_index_all` を新設し、
+    LazyList arm で `bind_mode` 分岐（`vm_var_assign_index_named.rs`）。
+    回帰テスト＝`t/hyperwhatever-and-lazy-slice-bind.t`。
+- **残り 1 件（test 35・nested slice adverbs）**: ネストインデックスへの slice adverb
+  （`:p`/`:k`/`:v`/`:kv`/`:exists`/`:delete` の組み合わせ、plan 62）が nested index list に
+  再帰しない（トップレベルのみ処理・`builtins_multidim_subscript.rs`）。§3 の
+  container-identity 領域に属する大きな機能。**whitelist にはこの 1 件の解決が必要。**
 
 ---
 

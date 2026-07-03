@@ -88,7 +88,7 @@ pub(super) fn is_literal_expr(expr: &Expr) -> bool {
 /// True when the LHS of an indexed `:=` bind targets an immutable container:
 /// a literal scalar (`10[0] := 1`, `"Hi"[0] := 1`) or an all-literal list
 /// (`(1,2)[0] := 3`). Binding into such a target is illegal → X::Bind.
-pub(super) fn index_bind_target_is_immutable(target: &Expr) -> bool {
+pub(crate) fn index_bind_target_is_immutable(target: &Expr) -> bool {
     match target {
         Expr::Literal(v) => matches!(
             v,
