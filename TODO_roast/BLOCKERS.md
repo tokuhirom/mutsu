@@ -29,6 +29,24 @@
 
 - whitelist は **1338**（2026-07-01 時点、`4c311c71`、`wc -l roast-whitelist.txt`）。
 - 安い 1 ファイル勝ちはほぼ枯渇している。残件の大半は少数の根本原因に集約される:
+
+> **全スイート fresh survey（2026-07-03、`roast-history.sh`、release）**: panic **0** /
+> timeout 4 / error **3** / fail **41** / pass **1248**。安い bounded target は
+> **実質枯渇**を実測で確認。error 3 は全て **raku 自身が parse 失敗**（非ターゲット）:
+> `S05-capture/hash.t`（2004 構文）/`S05-mass/rx.t`（raku SORRY line 38 `::` in regex）/
+> `S12-traits/basic.t`（raku line 18 `:` invocant marker）。fail 41 の内訳を精査した結果、
+> 低 failure-count のものも殆どが **①raku も fail（TODO/divergent, 例 `S02-types/bag.t`
+> #252 は raku も not ok）②`use v6.e.PREVIEW`（ローカル raku=6.d で検証不可、例
+> `S32-str/sprintf.t` の `zprintf`/6.e %g）③roast のタイポ/malformed（例
+> `S12-class/open_closed.t` #7 body `'called Qux.i'` vs expected `'called Qux.h'`＋
+> line 61-62 の余分な `)`）④深い機能待ち（`S12-attributes/class.t` #20 = `BEGIN EVAL
+> q[has $.x]` の compile-time 属性宣言＝BEGIN-timing／`S06-advanced/return_function.t`
+> #1 = `$x := |(f)` capture-splat 同名 named binding）**のいずれか。着手前に必ず
+> `raku roast/<file>` で raku が通ること＋`head -1` で `use v6.*.PREVIEW` でないことを確認。**
+> **∴ 残る genuine-open は全て深い multi-session campaign**（builtin-MRO all-candidates /
+> container-identity=§3 / strict-mode undeclared / BEGIN-timing declaration-model /
+> method-call fallback perf）。単発 bounded fix では roast 数を動かせない段階。
+
   1. **第一級コンテナ / container identity** — 配列・ハッシュ要素・属性 slot の書き戻し、
      BEGIN/EVAL 時の lexical 永続化。
   2. **真の lazy 配列 / 無限列** — 残りは `S09-subscript/slice.t` のみ。
