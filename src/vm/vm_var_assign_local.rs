@@ -247,7 +247,7 @@ impl Interpreter {
                     Self::autoviv_resize(&mut shaped_items, shape[0], default)?;
                 }
                 assigned = Value::Array(
-                    Arc::new(crate::value::ArrayData::new(shaped_items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(shaped_items)),
                     crate::value::ArrayKind::Shaped,
                 );
                 crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));

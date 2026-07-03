@@ -310,7 +310,7 @@ impl Interpreter {
             ),
             Value::LazyList(list) => match self.force_lazy_list(list) {
                 Ok(items) => Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     ArrayKind::List,
                 ),
                 Err(_) => v.clone(),
@@ -322,7 +322,7 @@ impl Interpreter {
                     Ok(forced) => {
                         let items = crate::runtime::utils::value_to_list(&forced);
                         Value::Array(
-                            std::sync::Arc::new(crate::value::ArrayData::new(items)),
+                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                             ArrayKind::List,
                         )
                     }

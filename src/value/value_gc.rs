@@ -32,9 +32,22 @@ impl Value {
     /// the collector is off (design doc §3.1's wave phasing).
     pub(crate) fn gc_trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
         // Only migrated (`Gc<T>`) container variants yield a child; more arms
-        // land as further types migrate (§11 step 5c: `Array`, 5d: `ContainerRef`).
-        if let Value::Hash(data) = self {
-            visit(&data.erased());
+        // land as further types migrate (§11 5d: `ContainerRef`, ...).
+        match self {
+            Value::Hash(data) => visit(&data.erased()),
+            Value::Array(data, _) => visit(&data.erased()),
+            _ => {}
+        }
+    }
+}
+
+impl Trace for ArrayData {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        for v in &self.items {
+            v.gc_trace(visit);
+        }
+        if let Some(d) = &self.default {
+            d.gc_trace(visit);
         }
     }
 }
@@ -194,7 +207,7 @@ mod tests {
             ..Default::default()
         };
         data.default = Some(Box::new(Value::Int(0)));
-        let value = Value::Array(Arc::new(data), crate::value::ArrayKind::Array);
+        let value = Value::Array(crate::gc::Gc::new(data), crate::value::ArrayKind::Array);
 
         let mut visitor = CountingVisitor { count: 0 };
         value.visit_gc_children(&mut visitor);

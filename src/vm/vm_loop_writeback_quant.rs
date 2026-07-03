@@ -277,7 +277,7 @@ impl Interpreter {
                     let mut updated = items.to_vec();
                     updated[idx] = val;
                     let updated_value = Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(updated)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                         kind,
                     );
                     self.write_back_container_source(code, source, &source_val, updated_value);
@@ -294,7 +294,7 @@ impl Interpreter {
                     }
                 }
                 let updated_value = Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(updated)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                     kind,
                 );
                 self.write_back_container_source(code, source, &source_val, updated_value);
@@ -316,7 +316,7 @@ impl Interpreter {
                 let mut updated = items.to_vec();
                 updated[idx] = current_val;
                 let updated_value = Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(updated)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                     kind,
                 );
                 self.write_back_container_source(code, source, &source_val, updated_value);

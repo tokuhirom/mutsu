@@ -1,6 +1,5 @@
 use crate::value::{ArrayKind, RuntimeError, Value};
 use num_traits::{Signed, Zero};
-use std::sync::Arc;
 
 use super::range_endpoint_display;
 
@@ -395,7 +394,7 @@ pub fn raku_value(v: &Value) -> String {
             if *kind == crate::value::ArrayKind::Lazy {
                 return "[...]".to_string();
             }
-            let ptr = Arc::as_ptr(items) as usize;
+            let ptr = crate::gc::Gc::as_ptr(items) as usize;
             let var_name = format!("@Array_{}", ptr);
             // Check for cycle
             let cycle_var = SEEN_PTRS.with(|seen| {

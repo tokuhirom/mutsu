@@ -308,7 +308,7 @@ impl Interpreter {
             }
             if let Some(Value::Slip(items) | Value::Seq(items)) = attrs.get(attr_name) {
                 let flattened = Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new((**items).clone())),
+                    crate::gc::Gc::new(crate::value::ArrayData::new((**items).clone())),
                     crate::value::ArrayKind::Array,
                 );
                 attrs.insert(attr_name.clone(), flattened);

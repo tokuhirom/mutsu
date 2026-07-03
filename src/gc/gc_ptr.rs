@@ -326,7 +326,7 @@ impl<T: Trace + PartialEq + 'static> PartialEq for Gc<T> {
 impl<T: Trace + std::fmt::Debug + 'static> std::fmt::Debug for Gc<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Forward to the pointee so `Value`'s derived `Debug` prints a migrated
-        // `Gc<ArrayData>` exactly like the old `Arc<ArrayData>` did.
+        // `Gc<ArrayData>` exactly like the old `crate::gc::Gc<ArrayData>` did.
         std::fmt::Debug::fmt(&self.inner.value, f)
     }
 }

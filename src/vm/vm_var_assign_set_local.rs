@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::Arc;
 
 impl Interpreter {
     /// Env key marking a variable as a genuine bound array SLICE (`@slice :=
@@ -437,7 +436,7 @@ impl Interpreter {
         // Capture the old array Arc before assignment for circular reference fixup.
         let old_array_arc = if name.starts_with('@') {
             if let Value::Array(arc, _) = &self.locals[idx] {
-                Some(Arc::as_ptr(arc) as usize)
+                Some(crate::gc::Gc::as_ptr(arc) as usize)
             } else {
                 None
             }
@@ -569,13 +568,13 @@ impl Interpreter {
                     Value::Array(items, kind) if kind.is_real_array() => Value::Array(items, kind),
                     Value::Array(items, _) => Value::Array(items, crate::value::ArrayKind::List),
                     Value::Seq(items) => Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(items.to_vec())),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
                         crate::value::ArrayKind::List,
                     ),
                     Value::LazyList(list) => {
                         let items = self.force_lazy_list_vm(&list)?;
                         Value::Array(
-                            std::sync::Arc::new(crate::value::ArrayData::new(items)),
+                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                             crate::value::ArrayKind::List,
                         )
                     }
@@ -583,7 +582,7 @@ impl Interpreter {
                         let forced = self.force_if_lazy_io_lines(raw_popped)?;
                         let items = runtime::value_to_list(&forced);
                         Value::Array(
-                            std::sync::Arc::new(crate::value::ArrayData::new(items)),
+                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                             crate::value::ArrayKind::List,
                         )
                     }
@@ -659,20 +658,20 @@ impl Interpreter {
                                     Value::Array(items, crate::value::ArrayKind::List)
                                 }
                                 Value::Seq(items) => Value::Array(
-                                    std::sync::Arc::new(crate::value::ArrayData::new(
+                                    crate::gc::Gc::new(crate::value::ArrayData::new(
                                         items.to_vec(),
                                     )),
                                     crate::value::ArrayKind::List,
                                 ),
                                 other => Value::Array(
-                                    std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
+                                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
                                     crate::value::ArrayKind::List,
                                 ),
                             }
                         }
                     }
                     other => Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
                         crate::value::ArrayKind::List,
                     ),
                 }
@@ -850,7 +849,7 @@ impl Interpreter {
                     Self::autoviv_resize(&mut shaped_items, shape[0], default)?;
                 }
                 assigned = Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(shaped_items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(shaped_items)),
                     crate::value::ArrayKind::Shaped,
                 );
                 crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
@@ -877,7 +876,7 @@ impl Interpreter {
                 let items = if items.shape.is_some() {
                     let mut data = (**items).clone();
                     data.shape = None;
-                    std::sync::Arc::new(data)
+                    crate::gc::Gc::new(data)
                 } else {
                     items.clone()
                 };
@@ -936,7 +935,10 @@ impl Interpreter {
                     .iter()
                     .map(|v| if is_hole(v) { def.clone() } else { v.clone() })
                     .collect();
-                val = Value::Array(Arc::new(crate::value::ArrayData::new(replaced)), kind);
+                val = Value::Array(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(replaced)),
+                    kind,
+                );
             }
         }
         // Skip typed container coercion for `:=` binding — it would create

@@ -218,7 +218,7 @@ impl Interpreter {
         // (Arc refcount > 1), mutate in-place so all references see the
         // change. This matches Raku's container semantics.
         if let Value::Array(ref arc, _) = target
-            && Arc::strong_count(arc) > 1
+            && crate::gc::Gc::strong_count(arc) > 1
             && matches!(method, "push" | "append" | "unshift" | "prepend")
         {
             let vals: Vec<Value> = match method {
@@ -231,7 +231,7 @@ impl Interpreter {
             // SAFETY: aliased in-place mutation of a shared array (guarded by
             // strong_count > 1, the exact case that needs the shared write); see
             // `arc_contents_mut`. No borrow into the items is live across this.
-            let data = unsafe { crate::value::arc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(arc) };
             if matches!(method, "unshift" | "prepend") {
                 let mut combined = vals;
                 combined.append(&mut data.items);
@@ -254,7 +254,7 @@ impl Interpreter {
                 let normalized = Self::normalize_push_args_for_copy(args);
                 items.extend(normalized);
                 Ok(Value::Array(
-                    Arc::new(crate::value::ArrayData::new(items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     kind,
                 ))
             }
@@ -262,7 +262,7 @@ impl Interpreter {
                 let flat = flatten_append_args(args);
                 items.extend(flat);
                 Ok(Value::Array(
-                    Arc::new(crate::value::ArrayData::new(items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     kind,
                 ))
             }
@@ -278,13 +278,13 @@ impl Interpreter {
                 }
                 if items.is_empty() {
                     Ok(Value::Array(
-                        Arc::new(crate::value::ArrayData::new(items)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                         kind,
                     ))
                 } else {
                     items.pop();
                     Ok(Value::Array(
-                        Arc::new(crate::value::ArrayData::new(items)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                         kind,
                     ))
                 }
@@ -298,13 +298,13 @@ impl Interpreter {
                 }
                 if items.is_empty() {
                     Ok(Value::Array(
-                        Arc::new(crate::value::ArrayData::new(items)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                         kind,
                     ))
                 } else {
                     items.remove(0);
                     Ok(Value::Array(
-                        Arc::new(crate::value::ArrayData::new(items)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                         kind,
                     ))
                 }
@@ -315,7 +315,7 @@ impl Interpreter {
                     items.insert(i, arg);
                 }
                 Ok(Value::Array(
-                    Arc::new(crate::value::ArrayData::new(items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     kind,
                 ))
             }

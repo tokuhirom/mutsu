@@ -483,7 +483,7 @@ impl Interpreter {
                     self.env.insert(
                         "/".to_string(),
                         Value::Array(
-                            std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
+                            crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                             crate::value::ArrayKind::List,
                         ),
                     );
@@ -494,7 +494,7 @@ impl Interpreter {
                         self.env.insert(
                             "/".to_string(),
                             Value::Array(
-                                std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
+                                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                                 crate::value::ArrayKind::List,
                             ),
                         );
@@ -1607,7 +1607,7 @@ impl Interpreter {
     /// Check if two values are the same object (pointer equality).
     fn same_object(a: &Value, b: &Value) -> bool {
         match (a, b) {
-            (Value::Array(a, _), Value::Array(b, _)) => Arc::ptr_eq(a, b),
+            (Value::Array(a, _), Value::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
             (Value::Seq(a), Value::Seq(b)) => Arc::ptr_eq(a, b),
             (Value::Slip(a), Value::Slip(b)) => Arc::ptr_eq(a, b),
             (Value::LazyList(a), Value::LazyList(b)) => Arc::ptr_eq(a, b),

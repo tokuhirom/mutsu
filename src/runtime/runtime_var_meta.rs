@@ -219,7 +219,7 @@ impl Interpreter {
         match value {
             Value::Array(mut arc, kind) => {
                 if arc.default.as_deref() != Some(&default) {
-                    Arc::make_mut(&mut arc).default = Some(Box::new(default));
+                    crate::gc::Gc::make_mut(&mut arc).default = Some(Box::new(default));
                 }
                 Value::Array(arc, kind)
             }

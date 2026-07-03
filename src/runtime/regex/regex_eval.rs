@@ -261,7 +261,7 @@ impl Interpreter {
                             .unwrap_or_else(|_| it.clone());
                         acc.push(m);
                     }
-                    Value::Array(Arc::new(crate::value::ArrayData::new(acc)), *meta)
+                    Value::Array(crate::gc::Gc::new(crate::value::ArrayData::new(acc)), *meta)
                 }
                 _ => {
                     let dn = Interpreter::get_action_name(child).unwrap_or_else(|| k.clone());

@@ -82,7 +82,7 @@ impl Interpreter {
                 })
             });
             if let Some(Value::Array(arc, _)) = current {
-                Some(Arc::as_ptr(&arc) as usize)
+                Some(crate::gc::Gc::as_ptr(&arc) as usize)
             } else {
                 None
             }
@@ -165,7 +165,7 @@ impl Interpreter {
                         shaped_items.resize(shape[0], Value::Nil);
                     }
                     assigned = Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(shaped_items)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(shaped_items)),
                         crate::value::ArrayKind::Shaped,
                     );
                     crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
@@ -367,7 +367,7 @@ impl Interpreter {
             {
                 let has_old_ref = stack_arc.iter().any(|v| {
                     if let Value::Array(inner_arc, _) = v {
-                        Arc::as_ptr(inner_arc) as usize == old_ptr
+                        crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr
                     } else {
                         false
                     }

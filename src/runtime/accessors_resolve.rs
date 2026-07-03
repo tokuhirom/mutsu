@@ -266,7 +266,7 @@ impl Interpreter {
             dispatcher_env.insert(
                 "__mutsu_multi_dispatch_candidates".to_string(),
                 Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(candidate_subs)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(candidate_subs)),
                     crate::value::ArrayKind::List,
                 ),
             );

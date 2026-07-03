@@ -1,7 +1,6 @@
 //! Bound-index / element-share / deleted-index bookkeeping helpers
 //! split from `vm_var_ops` (§7-8 file split).
 use super::*;
-use std::sync::Arc;
 
 impl Interpreter {
     pub(super) fn encode_bound_index(idx: &Value) -> String {
@@ -101,14 +100,14 @@ impl Interpreter {
         // the original would be lost (t/array-push-byref-coherence).
         let use_inplace = !var_name.starts_with('@');
         if let Some(Value::Array(items, _)) = self.env_root_descended_mut(var_name) {
-            let data: &mut crate::value::ArrayData = if use_inplace && Arc::strong_count(items) > 1
-            {
-                // SAFETY: aliased in-place mutation of a shared array; same
-                // contract as the assignment site's `arc_contents_mut` use.
-                unsafe { crate::value::arc_contents_mut(items) }
-            } else {
-                Arc::make_mut(items)
-            };
+            let data: &mut crate::value::ArrayData =
+                if use_inplace && crate::gc::Gc::strong_count(items) > 1 {
+                    // SAFETY: aliased in-place mutation of a shared array; same
+                    // contract as the assignment site's `arc_contents_mut` use.
+                    unsafe { crate::value::gc_contents_mut(items) }
+                } else {
+                    crate::gc::Gc::make_mut(items)
+                };
             data.initialized
                 .get_or_insert_with(std::collections::HashSet::new)
                 .insert(idx);
@@ -205,7 +204,7 @@ impl Interpreter {
             return;
         }
         if let Some(Value::Array(items, _)) = self.env_root_descended_mut(var_name)
-            && let Some(set) = Arc::make_mut(items).initialized.as_mut()
+            && let Some(set) = crate::gc::Gc::make_mut(items).initialized.as_mut()
         {
             for i in to_remove {
                 set.remove(&i);

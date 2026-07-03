@@ -93,8 +93,10 @@ impl Interpreter {
         } else {
             &var_name
         };
-        self.env_mut()
-            .insert(lookup_key.to_string(), Value::Array(Arc::new(items), kind));
+        self.env_mut().insert(
+            lookup_key.to_string(),
+            Value::Array(crate::gc::Gc::new(items), kind),
+        );
         Ok(Some(result.items))
     }
 

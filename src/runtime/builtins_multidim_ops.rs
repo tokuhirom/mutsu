@@ -67,12 +67,12 @@ impl Interpreter {
                 if exists {
                     let v = array_to_list(value);
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![key, v])),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![key, v])),
                         ArrayKind::List,
                     ))
                 } else {
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![])),
                         ArrayKind::List,
                     ))
                 }
@@ -97,12 +97,12 @@ impl Interpreter {
                 if !exists {
                     let v = array_to_list(value);
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![key, v])),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![key, v])),
                         ArrayKind::List,
                     ))
                 } else {
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![])),
                         ArrayKind::List,
                     ))
                 }
@@ -143,7 +143,7 @@ impl Interpreter {
                 Value::Int(path[0])
             } else {
                 Value::Array(
-                    std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                    crate::gc::Gc::new(path.into_iter().map(Value::Int).collect()),
                     ArrayKind::List,
                 )
             };
@@ -277,7 +277,7 @@ impl Interpreter {
             "kv" => {
                 if raw_exists {
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                             key,
                             Value::Bool(exists),
                         ])),
@@ -285,7 +285,7 @@ impl Interpreter {
                     ))
                 } else {
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![])),
                         ArrayKind::List,
                     ))
                 }
@@ -331,7 +331,7 @@ impl Interpreter {
                 Value::Int(path[0])
             } else {
                 Value::Array(
-                    std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                    crate::gc::Gc::new(path.into_iter().map(Value::Int).collect()),
                     ArrayKind::List,
                 )
             };
@@ -634,7 +634,7 @@ impl Interpreter {
                     Value::Int(path[0])
                 } else {
                     Value::Array(
-                        std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                        crate::gc::Gc::new(path.into_iter().map(Value::Int).collect()),
                         ArrayKind::List,
                     )
                 };
@@ -694,12 +694,12 @@ impl Interpreter {
                 if exists {
                     let v = array_to_list(value);
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![key, v])),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![key, v])),
                         ArrayKind::List,
                     ))
                 } else {
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![])),
                         ArrayKind::List,
                     ))
                 }
@@ -760,7 +760,7 @@ impl Interpreter {
                     Value::Int(path[0])
                 } else {
                     Value::Array(
-                        std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                        crate::gc::Gc::new(path.into_iter().map(Value::Int).collect()),
                         ArrayKind::List,
                     )
                 };
@@ -807,7 +807,7 @@ impl Interpreter {
             "kv" => {
                 if raw_exists {
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                             key,
                             Value::Bool(exists),
                         ])),
@@ -815,7 +815,7 @@ impl Interpreter {
                     ))
                 } else {
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![])),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![])),
                         ArrayKind::List,
                     ))
                 }

@@ -2,16 +2,17 @@ use super::*;
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        let match_equals_pair_array = |attrs: &Arc<InstanceAttrs>, arr: &Arc<ArrayData>| {
-            if arr.len() != 2 {
-                return false;
-            }
-            let map = attrs.as_map();
-            let (Some(from), Some(matched)) = (map.get("from"), map.get("str")) else {
-                return false;
+        let match_equals_pair_array =
+            |attrs: &Arc<InstanceAttrs>, arr: &crate::gc::Gc<ArrayData>| {
+                if arr.len() != 2 {
+                    return false;
+                }
+                let map = attrs.as_map();
+                let (Some(from), Some(matched)) = (map.get("from"), map.get("str")) else {
+                    return false;
+                };
+                arr[0] == *from && arr[1] == *matched
             };
-            arr[0] == *from && arr[1] == *matched
-        };
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::BigInt(a), Value::BigInt(b)) => a == b,

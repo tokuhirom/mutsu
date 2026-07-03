@@ -586,9 +586,9 @@ impl Interpreter {
                     let result = if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key)
                     {
                         let kind = *kind;
-                        let items = Arc::make_mut(arc_items);
+                        let items = crate::gc::Gc::make_mut(arc_items);
                         items.extend(flat_values);
-                        Value::Array(Arc::clone(arc_items), kind)
+                        Value::Array(crate::gc::Gc::clone(arc_items), kind)
                     } else {
                         let mut items = match target {
                             Value::Array(v, ..) => v.to_vec(),
@@ -608,11 +608,11 @@ impl Interpreter {
                     let result = if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key)
                     {
                         let kind = *kind;
-                        let items = Arc::make_mut(arc_items);
+                        let items = crate::gc::Gc::make_mut(arc_items);
                         for (i, arg) in normalized_args.iter().enumerate() {
                             items.insert(i, arg.clone());
                         }
-                        Value::Array(Arc::clone(arc_items), kind)
+                        Value::Array(crate::gc::Gc::clone(arc_items), kind)
                     } else {
                         let items = match target {
                             Value::Array(v, ..) => v.to_vec(),
@@ -633,11 +633,11 @@ impl Interpreter {
                     let result = if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key)
                     {
                         let kind = *kind;
-                        let items = Arc::make_mut(arc_items);
+                        let items = crate::gc::Gc::make_mut(arc_items);
                         for (i, arg) in flat_values.iter().enumerate() {
                             items.insert(i, arg.clone());
                         }
-                        Value::Array(Arc::clone(arc_items), kind)
+                        Value::Array(crate::gc::Gc::clone(arc_items), kind)
                     } else {
                         let items = match target {
                             Value::Array(v, ..) => v.to_vec(),
@@ -671,7 +671,7 @@ impl Interpreter {
                         if arc_items.is_empty() {
                             return Ok(make_empty_array_failure_what("pop", &empty_what));
                         }
-                        let items = Arc::make_mut(arc_items);
+                        let items = crate::gc::Gc::make_mut(arc_items);
                         items.pop().unwrap_or(Value::Nil)
                     } else {
                         let mut items = match target {
@@ -699,7 +699,7 @@ impl Interpreter {
                         if arc_items.is_empty() {
                             return Ok(make_empty_array_failure_what("shift", &empty_what));
                         }
-                        let items = Arc::make_mut(arc_items);
+                        let items = crate::gc::Gc::make_mut(arc_items);
                         items.remove(0)
                     } else {
                         let mut items = match target {
@@ -945,7 +945,7 @@ impl Interpreter {
                         ));
                     }
                     let removed = if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
-                        let items = Arc::make_mut(arc_items);
+                        let items = crate::gc::Gc::make_mut(arc_items);
                         do_splice(items, &resolved_args)
                     } else {
                         let mut items = match target {
@@ -1188,7 +1188,7 @@ impl Interpreter {
                         } else {
                             normalized_args
                         };
-                        if Arc::strong_count(arc_items) > 1 {
+                        if crate::gc::Gc::strong_count(arc_items) > 1 {
                             // Shared backing array: mutate the interior in place so
                             // every alias observes the push. `Arc::make_mut` would
                             // detach a private copy and lose the write for those
@@ -1199,18 +1199,18 @@ impl Interpreter {
                             // the caller's binding stale. SAFETY: same contract as
                             // `array_push_in_place` — no live borrow into the items,
                             // and we do not re-enter the VM while the borrow is held.
-                            let data = unsafe { crate::value::arc_contents_mut(arc_items) };
+                            let data = unsafe { crate::value::gc_contents_mut(arc_items) };
                             data.items.extend(vals);
                         } else {
-                            Arc::make_mut(arc_items).extend(vals);
+                            crate::gc::Gc::make_mut(arc_items).extend(vals);
                         }
-                        return Ok(Value::Array(Arc::clone(arc_items), kind));
+                        return Ok(Value::Array(crate::gc::Gc::clone(arc_items), kind));
                     }
                     // Interior mutation: if the target Array has shared references
                     // (Arc refcount > 1), mutate in-place so all references see the
                     // change. This matches Raku's container semantics.
                     if let Value::Array(ref arc_items, _) = target
-                        && Arc::strong_count(arc_items) > 1
+                        && crate::gc::Gc::strong_count(arc_items) > 1
                     {
                         let vals = if method == "append" {
                             flatten_append_args(normalized_args)
@@ -1231,8 +1231,10 @@ impl Interpreter {
                     } else {
                         items.extend(normalized_args);
                     }
-                    let result =
-                        Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag);
+                    let result = Value::Array(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                        array_flag,
+                    );
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
@@ -1250,11 +1252,11 @@ impl Interpreter {
                     }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         // Shared backing array: in-place interior mutation (see `push`).
-                        let items = if Arc::strong_count(arc_items) > 1 {
+                        let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                             // SAFETY: same contract as `array_push_in_place`.
-                            unsafe { &mut crate::value::arc_contents_mut(arc_items).items }
+                            unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
                         } else {
-                            Arc::make_mut(arc_items)
+                            crate::gc::Gc::make_mut(arc_items)
                         };
                         let out = if items.is_empty() {
                             make_empty_array_failure_what("pop", &empty_what)
@@ -1274,7 +1276,10 @@ impl Interpreter {
                     };
                     self.env.insert(
                         key,
-                        Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag),
+                        Value::Array(
+                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                            array_flag,
+                        ),
                     );
                     return Ok(out);
                 }
@@ -1285,16 +1290,16 @@ impl Interpreter {
                         // Shared backing array: mutate the interior in place so
                         // every alias (a by-ref param, a captured-outer slot)
                         // observes the change. See the `push` branch above.
-                        let items = if Arc::strong_count(arc_items) > 1 {
+                        let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                             // SAFETY: same contract as `array_push_in_place`.
-                            unsafe { &mut crate::value::arc_contents_mut(arc_items).items }
+                            unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
                         } else {
-                            Arc::make_mut(arc_items)
+                            crate::gc::Gc::make_mut(arc_items)
                         };
                         for (i, arg) in normalized_args.iter().enumerate() {
                             items.insert(i, arg.clone());
                         }
-                        return Ok(Value::Array(Arc::clone(arc_items), kind));
+                        return Ok(Value::Array(crate::gc::Gc::clone(arc_items), kind));
                     }
                     let mut items = match &target {
                         Value::Array(v, ..) => v.to_vec(),
@@ -1303,8 +1308,10 @@ impl Interpreter {
                     for (i, arg) in normalized_args.iter().enumerate() {
                         items.insert(i, arg.clone());
                     }
-                    let result =
-                        Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag);
+                    let result = Value::Array(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                        array_flag,
+                    );
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
@@ -1313,16 +1320,16 @@ impl Interpreter {
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
                         let kind = *kind;
                         // Shared backing array: in-place interior mutation (see `push`).
-                        let items = if Arc::strong_count(arc_items) > 1 {
+                        let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                             // SAFETY: same contract as `array_push_in_place`.
-                            unsafe { &mut crate::value::arc_contents_mut(arc_items).items }
+                            unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
                         } else {
-                            Arc::make_mut(arc_items)
+                            crate::gc::Gc::make_mut(arc_items)
                         };
                         for (i, arg) in flat_values.iter().enumerate() {
                             items.insert(i, arg.clone());
                         }
-                        return Ok(Value::Array(Arc::clone(arc_items), kind));
+                        return Ok(Value::Array(crate::gc::Gc::clone(arc_items), kind));
                     }
                     let items = match &target {
                         Value::Array(v, ..) => v.to_vec(),
@@ -1331,12 +1338,15 @@ impl Interpreter {
                     let mut pref: Vec<Value> = flat_values;
                     pref.extend(items);
                     let result = Value::Array(
-                        Arc::new(crate::value::ArrayData::new(pref.clone())),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(pref.clone())),
                         array_flag,
                     );
                     self.env.insert(
                         key,
-                        Value::Array(Arc::new(crate::value::ArrayData::new(pref)), array_flag),
+                        Value::Array(
+                            crate::gc::Gc::new(crate::value::ArrayData::new(pref)),
+                            array_flag,
+                        ),
                     );
                     return Ok(result);
                 }
@@ -1349,11 +1359,11 @@ impl Interpreter {
                     }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         // Shared backing array: in-place interior mutation (see `push`).
-                        let items = if Arc::strong_count(arc_items) > 1 {
+                        let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                             // SAFETY: same contract as `array_push_in_place`.
-                            unsafe { &mut crate::value::arc_contents_mut(arc_items).items }
+                            unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
                         } else {
-                            Arc::make_mut(arc_items)
+                            crate::gc::Gc::make_mut(arc_items)
                         };
                         let out = if items.is_empty() {
                             make_empty_array_failure_what("shift", &empty_what)
@@ -1373,7 +1383,10 @@ impl Interpreter {
                     };
                     self.env.insert(
                         key,
-                        Value::Array(Arc::new(crate::value::ArrayData::new(items)), array_flag),
+                        Value::Array(
+                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                            array_flag,
+                        ),
                     );
                     return Ok(out);
                 }
@@ -1836,7 +1849,7 @@ impl Interpreter {
                                 let mut next = existing.to_vec();
                                 next.extend(collected);
                                 let updated_array = Value::Array(
-                                    std::sync::Arc::new(crate::value::ArrayData::new(next)),
+                                    crate::gc::Gc::new(crate::value::ArrayData::new(next)),
                                     *arr_kind,
                                 );
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
@@ -1900,7 +1913,7 @@ impl Interpreter {
                                 let mut next = existing.to_vec();
                                 next.extend(collected.clone());
                                 let updated_array = Value::Array(
-                                    std::sync::Arc::new(crate::value::ArrayData::new(next)),
+                                    crate::gc::Gc::new(crate::value::ArrayData::new(next)),
                                     *arr_kind,
                                 );
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
@@ -1984,7 +1997,7 @@ impl Interpreter {
                         let mut next = existing.to_vec();
                         next.extend(vals.iter().cloned());
                         let updated_array = Value::Array(
-                            std::sync::Arc::new(crate::value::ArrayData::new(next)),
+                            crate::gc::Gc::new(crate::value::ArrayData::new(next)),
                             *arr_kind,
                         );
                         self.overwrite_array_bindings_by_identity(existing, updated_array);

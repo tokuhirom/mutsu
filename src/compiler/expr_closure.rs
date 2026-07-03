@@ -451,7 +451,7 @@ impl Compiler {
             let mut flags: Vec<Value> = chain.iter().map(|(_, p)| Value::Bool(*p)).collect();
             flags.push(Value::Bool(outer_positional));
             let positional_flags_idx = self.code.add_constant(Value::Array(
-                Arc::new(crate::value::ArrayData::new(flags)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(flags)),
                 crate::value::ArrayKind::Array,
             ));
             // Stack order: [value, idx_outermost, ..., idx_innermost]

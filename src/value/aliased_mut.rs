@@ -1,9 +1,9 @@
 //! The single audited choke point for *aliased, in-place* mutation of a
-//! shared `Arc<ArrayData>` / `Arc<HashData>` container.
+//! shared `crate::gc::Gc<ArrayData>` / `Arc<HashData>` container.
 //!
 //! # Why this exists
 //!
-//! mutsu represents `Value::Array`/`Value::Hash` as `Arc<ArrayData>` /
+//! mutsu represents `Value::Array`/`Value::Hash` as `crate::gc::Gc<ArrayData>` /
 //! `Arc<HashData>` copy-on-write containers that nonetheless carry a *shared
 //! identity*: when a container is bound (`:=`), pushed to through an alias, or
 //! grown through a `ContainerRef`, the mutation must be visible through **every**
@@ -60,7 +60,12 @@ use std::sync::Arc;
 ///
 /// This function does not, and cannot, check these obligations; it is the
 /// single place where the project's container-aliasing invariant is trusted.
-#[allow(clippy::mut_from_ref)]
+///
+/// Currently unused: `Value::Hash` and `Value::Array` — the only containers that
+/// took an aliased in-place write — are now `Gc`-managed and go through
+/// [`crate::gc::gc_contents_mut`]. Kept (allow dead_code) as the audited
+/// primitive for any future still-`Arc` container that needs the same write.
+#[allow(clippy::mut_from_ref, dead_code)]
 pub(crate) unsafe fn arc_contents_mut<T>(arc: &Arc<T>) -> &mut T {
     // SAFETY: delegated to the caller per the contract above. This is the only
     // `Arc::as_ptr as *mut` cast in the codebase.

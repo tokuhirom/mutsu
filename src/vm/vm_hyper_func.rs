@@ -180,7 +180,7 @@ impl Interpreter {
                 items.into_iter().next().unwrap()
             } else if !left_is_array && !right_is_array {
                 Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             } else {

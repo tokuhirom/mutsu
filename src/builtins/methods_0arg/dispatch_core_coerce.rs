@@ -122,7 +122,7 @@ pub(super) fn dispatch(
             match target {
                 Value::Package(_) | Value::Nil => Some(Some(Ok(target.clone()))),
                 Value::Array(items, kind) => Some(Some(Ok(Value::Array(
-                    Arc::new(crate::value::ArrayData::new(items.to_vec())),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
                     *kind,
                 )))),
                 Value::Hash(map) => Some(Some(Ok(Value::Hash(Value::hash_arc((**map).clone()))))),
@@ -303,7 +303,7 @@ pub(super) fn dispatch(
                     format!("Slip|{:p}", Arc::as_ptr(items))
                 }
                 Value::Array(items, ..) => {
-                    format!("Array|{:p}", Arc::as_ptr(items))
+                    format!("Array|{:p}", crate::gc::Gc::as_ptr(items))
                 }
                 Value::Hash(map) => {
                     format!("Hash|{:p}", crate::gc::Gc::as_ptr(map))

@@ -557,7 +557,7 @@ impl Interpreter {
             .filter(|shape| shape.len() > 1);
         if let Some(shape) = dims {
             let dims_val = Value::Array(
-                std::sync::Arc::new(shape.into_iter().map(|n| Value::Int(n as i64)).collect()),
+                crate::gc::Gc::new(shape.into_iter().map(|n| Value::Int(n as i64)).collect()),
                 ArrayKind::List,
             );
             self.env.insert(key, dims_val);

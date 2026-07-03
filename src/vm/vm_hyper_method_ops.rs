@@ -531,13 +531,13 @@ impl Interpreter {
                 // a copy `my @x = @a` keeps its own Arc and is NOT corrupted —
                 // unlike the Arc-identity scan, which over-reaches COW copies.
                 let new_arr = Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(items.clone())),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items.clone())),
                     *kind,
                 );
                 self.write_back_hyper_target_var(code, var, new_arr);
             } else {
                 // Non-variable target (`@b[0]>>++`, `(1,2,3)>>.uc`): write back
-                // in place through the target's `Arc<ArrayData>` so a hyper
+                // in place through the target's `crate::gc::Gc<ArrayData>` so a hyper
                 // mutation on a *nested* element reaches it (the read shares the
                 // inner Arc with the slot holding it), plus the by-identity scan
                 // for any top-level binding that COW-detached.
@@ -545,7 +545,7 @@ impl Interpreter {
                 // `arc_contents_mut`. No borrow into this ArrayData is live
                 // across the write.
                 unsafe {
-                    crate::value::arc_contents_mut(existing).items = items.clone();
+                    crate::value::gc_contents_mut(existing).items = items.clone();
                 }
                 loan_env!(
                     self,
@@ -666,7 +666,7 @@ impl Interpreter {
             _ => ArrayKind::List,
         };
         let result = Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(results)),
+            crate::gc::Gc::new(crate::value::ArrayData::new(results)),
             result_kind,
         );
         // A per-element native method raised a resumable warn: re-raise it once,
@@ -706,11 +706,11 @@ impl Interpreter {
                 }
                 Ok((
                     Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(results)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(results)),
                         *kind,
                     ),
                     Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(mutated)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(mutated)),
                         *kind,
                     ),
                 ))
@@ -726,11 +726,11 @@ impl Interpreter {
                 }
                 Ok((
                     Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(results)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(results)),
                         ArrayKind::List,
                     ),
                     Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(mutated)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(mutated)),
                         ArrayKind::List,
                     ),
                 ))
@@ -902,13 +902,13 @@ impl Interpreter {
             }
         }
         if let Value::Array(existing, kind) = &target {
-            // In-place write back through the target's `Arc<ArrayData>` so a
+            // In-place write back through the target's `crate::gc::Gc<ArrayData>` so a
             // nested-element hyper mutation reaches the element (see the twin
             // site in `exec_hyper_method_call_op`).
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`.
             unsafe {
-                crate::value::arc_contents_mut(existing).items = items.clone();
+                crate::value::gc_contents_mut(existing).items = items.clone();
             }
             loan_env!(
                 self,
@@ -990,7 +990,7 @@ impl Interpreter {
             _ => ArrayKind::List,
         };
         self.stack.push(Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(results)),
+            crate::gc::Gc::new(crate::value::ArrayData::new(results)),
             result_kind,
         ));
         Ok(())

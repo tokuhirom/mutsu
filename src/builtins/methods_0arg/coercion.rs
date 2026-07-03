@@ -263,7 +263,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     )))
                 } else {
                     Some(Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                         crate::value::ArrayKind::List,
                     )))
                 }

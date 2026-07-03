@@ -77,7 +77,7 @@ impl Interpreter {
                     .or_insert_with(|| Value::real_array(Vec::new()));
                 match entry {
                     Value::Array(values, ..) => {
-                        Arc::make_mut(values).push(item);
+                        crate::gc::Gc::make_mut(values).push(item);
                         Ok(())
                     }
                     Value::Hash(_) => Err(mixed_level_error(name)),

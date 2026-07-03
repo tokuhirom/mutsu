@@ -96,7 +96,7 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
         let Value::Array(items, ..) = target else {
             return default();
         };
-        let items = std::sync::Arc::make_mut(items);
+        let items = crate::gc::Gc::make_mut(items);
         let mut out = Vec::with_capacity(items.len());
         for item in items.iter_mut() {
             out.push(multidim_delete(item, &indices[1..]));
@@ -154,7 +154,7 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
         Value::Num(f) => *f as usize,
         _ => return default(),
     };
-    let items = std::sync::Arc::make_mut(items);
+    let items = crate::gc::Gc::make_mut(items);
     if i >= items.len() {
         return default();
     }
@@ -188,7 +188,7 @@ pub(super) fn make_key_tuple(indices: &[Value]) -> Value {
         return indices[0].clone();
     }
     Value::Array(
-        std::sync::Arc::new(crate::value::ArrayData::new(indices.to_vec())),
+        crate::gc::Gc::new(crate::value::ArrayData::new(indices.to_vec())),
         ArrayKind::List,
     )
 }

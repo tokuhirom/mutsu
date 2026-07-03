@@ -49,7 +49,7 @@ impl Interpreter {
         let Value::Array(items, ..) = container else {
             return;
         };
-        let arr = Arc::make_mut(items);
+        let arr = crate::gc::Gc::make_mut(items);
         // The explicitly-assigned indices travel with the array (embedded set).
         let initialized = arr.initialized.clone().unwrap_or_default();
         while let Some(last) = arr.last() {

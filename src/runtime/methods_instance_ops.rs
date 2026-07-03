@@ -1828,7 +1828,7 @@ impl Interpreter {
             .entry(attr_name.to_string())
             .or_insert_with(|| Value::real_array(Vec::new()));
         if let Value::Array(items, _) = arr {
-            let items = Arc::make_mut(items);
+            let items = crate::gc::Gc::make_mut(items);
             match method {
                 "push" => {
                     for arg in args {

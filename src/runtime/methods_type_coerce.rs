@@ -97,7 +97,7 @@ impl Interpreter {
                     return Ok(Value::Array(items.clone(), crate::value::ArrayKind::List));
                 }
                 return Ok(Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                     crate::value::ArrayKind::List,
                 ));
             }
@@ -113,7 +113,7 @@ impl Interpreter {
         }
         let items = Self::value_to_list(&target);
         Ok(Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(items)),
+            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
             crate::value::ArrayKind::List,
         ))
     }

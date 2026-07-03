@@ -184,7 +184,7 @@ pub(crate) fn multidim_assign_pos(
         updated[i] = new_child;
     }
     Ok(Value::Array(
-        std::sync::Arc::new(crate::value::ArrayData::new(updated)),
+        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
         *arr_kind,
     ))
 }
@@ -223,7 +223,7 @@ pub(crate) fn multidim_bind_pos(
         updated[i] = new_child;
     }
     Ok(Value::Array(
-        std::sync::Arc::new(crate::value::ArrayData::new(updated)),
+        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
         *arr_kind,
     ))
 }
@@ -268,7 +268,7 @@ pub(crate) fn multidim_delete_pos(
     Ok((
         deleted,
         Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(updated)),
+            crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
             *arr_kind,
         ),
     ))

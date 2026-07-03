@@ -377,7 +377,7 @@ impl Interpreter {
                     }
                     Value::Array(items, ..) => {
                         let hole_value = Value::Package(crate::symbol::Symbol::intern(&hole_type));
-                        let arr = std::sync::Arc::make_mut(items);
+                        let arr = crate::gc::Gc::make_mut(items);
                         for idx in &indices {
                             let i = match idx {
                                 Value::Int(i) => *i,

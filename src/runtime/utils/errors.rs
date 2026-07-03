@@ -192,7 +192,7 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         Value::Instance { id, .. } => {
             format!("{}|{}", value_type_name(value), id)
         }
-        Value::Array(items, ..) => format!("Array|{:p}", Arc::as_ptr(items)),
+        Value::Array(items, ..) => format!("Array|{:p}", crate::gc::Gc::as_ptr(items)),
         Value::Hash(map) => format!("Hash|{:p}", crate::gc::Gc::as_ptr(map)),
         Value::Pair(k, v) => format!("Pair|{}|{}", k, value_which_key(v)),
         Value::ValuePair(k, v) => format!("Pair|{}|{}", value_which_key(k), value_which_key(v)),

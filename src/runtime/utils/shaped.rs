@@ -96,7 +96,7 @@ pub(crate) fn mark_shaped_array(value: &Value, shape: Option<&[usize]>) {
 }
 
 pub(crate) fn mark_shaped_array_items(
-    items: &Arc<crate::value::ArrayData>,
+    items: &crate::gc::Gc<crate::value::ArrayData>,
     shape: Option<&[usize]>,
 ) {
     let Some(shape) = shape else {
@@ -113,7 +113,7 @@ pub(crate) fn mark_shaped_array_items(
     // SAFETY: aliased in-place mutation of a shared container; see
     // `arc_contents_mut`. No borrow into the array is live across this write.
     unsafe {
-        crate::value::arc_contents_mut(items).shape = Some(shape.to_vec());
+        crate::value::gc_contents_mut(items).shape = Some(shape.to_vec());
     }
 }
 
@@ -187,7 +187,7 @@ fn rebuild_with_leaves<'a, I: Iterator<Item = &'a Value>>(value: &Value, iter: &
         };
         let mut data = crate::value::ArrayData::new(new_items);
         data.shape = items.shape.clone();
-        Value::Array(Arc::new(data), *kind)
+        Value::Array(crate::gc::Gc::new(data), *kind)
     } else {
         iter.next().cloned().unwrap_or_else(|| value.clone())
     }
@@ -200,7 +200,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         {
             true
         }
-        (Value::Array(a, _), Value::Array(b, _)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Array(a, _), Value::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
         (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Slip(a), Value::Slip(b)) => {
             // Empty is a singleton semantic value in Raku even when represented

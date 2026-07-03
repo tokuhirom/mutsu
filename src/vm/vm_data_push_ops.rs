@@ -123,7 +123,7 @@ impl Interpreter {
                 let mut guard = cell.lock().unwrap();
                 if let Value::Array(arr, kind) = &mut *guard {
                     let kind = *kind;
-                    let items = Arc::make_mut(arr);
+                    let items = crate::gc::Gc::make_mut(arr);
                     match &val {
                         Value::Slip(slip_items) => items.extend(slip_items.iter().cloned()),
                         _ => items.push(val),
@@ -174,7 +174,7 @@ impl Interpreter {
         }
 
         let result = if let Some(Value::Array(arr, kind)) = self.env_mut().get_mut(target_name) {
-            let items = Arc::make_mut(arr);
+            let items = crate::gc::Gc::make_mut(arr);
             match &val {
                 Value::Slip(slip_items) => items.extend(slip_items.iter().cloned()),
                 _ => items.push(val),

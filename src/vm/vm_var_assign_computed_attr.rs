@@ -25,7 +25,7 @@ impl Interpreter {
                 if let Some(i) = Self::index_to_usize(key) {
                     // SAFETY: aliased in-place mutation of a shared array; see
                     // `arc_contents_mut`.
-                    let v = &mut unsafe { crate::value::arc_contents_mut(arc) }.items;
+                    let v = &mut unsafe { crate::value::gc_contents_mut(arc) }.items;
                     Self::autoviv_resize(v, i + 1, Value::Nil)?;
                     Value::assign_element_slot(&mut v[i], val);
                 }
@@ -330,7 +330,7 @@ impl Interpreter {
     /// Array/Hash Arc (a clone that has not been copy-on-write forked).
     pub(crate) fn same_container_arc(a: &Value, b: &Value) -> bool {
         match (a, b) {
-            (Value::Array(x, _), Value::Array(y, _)) => Arc::ptr_eq(x, y),
+            (Value::Array(x, _), Value::Array(y, _)) => crate::gc::Gc::ptr_eq(x, y),
             (Value::Hash(x), Value::Hash(y)) => crate::gc::Gc::ptr_eq(x, y),
             _ => false,
         }

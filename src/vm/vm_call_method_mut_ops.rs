@@ -1376,7 +1376,9 @@ impl Interpreter {
                 // the slow path, which raises that error.
                 let is_native_array = if let Value::Array(items, ..) = &target {
                     let native_var = self.env().iter().find_map(|(name, bound)| match bound {
-                        Value::Array(existing, ..) if Arc::ptr_eq(existing, items) => Some(*name),
+                        Value::Array(existing, ..) if crate::gc::Gc::ptr_eq(existing, items) => {
+                            Some(*name)
+                        }
                         _ => None,
                     });
                     native_var.is_some_and(|name| {
@@ -1419,8 +1421,10 @@ impl Interpreter {
                         updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
                     }
                     updated[i] = Value::ContainerRef(cell);
-                    let new_array =
-                        Value::Array(Arc::new(crate::value::ArrayData::new(updated)), *arr_kind);
+                    let new_array = Value::Array(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
+                        *arr_kind,
+                    );
                     self.env_mut().insert(target_name.to_string(), new_array);
                     if let Some((source_name, cell_val)) = bind_source_install {
                         self.set_env_with_main_alias(&source_name, cell_val.clone());
@@ -1882,12 +1886,15 @@ impl Interpreter {
                 // here as `CallMethodMut`. Mirror the `ArrayPush` opcode's env-bound
                 // branch (`normalize_push_unshift_args` then extend).
                 let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
-                Arc::make_mut(arc_items).extend(norm);
-                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+                crate::gc::Gc::make_mut(arc_items).extend(norm);
+                Value::Array(
+                    crate::gc::Gc::clone(arc_items),
+                    crate::value::ArrayKind::Array,
+                )
             }
             "append" | "prepend" => {
                 let flat = crate::runtime::flatten_append_args(args.to_vec());
-                let items = Arc::make_mut(arc_items);
+                let items = crate::gc::Gc::make_mut(arc_items);
                 if method == "append" {
                     items.extend(flat);
                 } else {
@@ -1895,28 +1902,36 @@ impl Interpreter {
                         items.insert(i, v);
                     }
                 }
-                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+                Value::Array(
+                    crate::gc::Gc::clone(arc_items),
+                    crate::value::ArrayKind::Array,
+                )
             }
             "unshift" => {
                 let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
-                let items = Arc::make_mut(arc_items);
+                let items = crate::gc::Gc::make_mut(arc_items);
                 for (i, v) in norm.into_iter().enumerate() {
                     items.insert(i, v);
                 }
-                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+                Value::Array(
+                    crate::gc::Gc::clone(arc_items),
+                    crate::value::ArrayKind::Array,
+                )
             }
             "pop" => {
                 if arc_items.is_empty() {
                     crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
                 } else {
-                    Arc::make_mut(arc_items).pop().unwrap_or(Value::Nil)
+                    crate::gc::Gc::make_mut(arc_items)
+                        .pop()
+                        .unwrap_or(Value::Nil)
                 }
             }
             "shift" => {
                 if arc_items.is_empty() {
                     crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
                 } else {
-                    Arc::make_mut(arc_items).remove(0)
+                    crate::gc::Gc::make_mut(arc_items).remove(0)
                 }
             }
             _ => unreachable!(),
@@ -1977,29 +1992,41 @@ impl Interpreter {
         let result = match method {
             "push" => {
                 let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
-                Arc::make_mut(arc_items).extend(norm);
-                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+                crate::gc::Gc::make_mut(arc_items).extend(norm);
+                Value::Array(
+                    crate::gc::Gc::clone(arc_items),
+                    crate::value::ArrayKind::Array,
+                )
             }
             "append" => {
                 let flat = crate::runtime::flatten_append_args(args.to_vec());
-                Arc::make_mut(arc_items).extend(flat);
-                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+                crate::gc::Gc::make_mut(arc_items).extend(flat);
+                Value::Array(
+                    crate::gc::Gc::clone(arc_items),
+                    crate::value::ArrayKind::Array,
+                )
             }
             "unshift" => {
                 let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
-                let items = Arc::make_mut(arc_items);
+                let items = crate::gc::Gc::make_mut(arc_items);
                 for (i, v) in norm.into_iter().enumerate() {
                     items.insert(i, v);
                 }
-                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+                Value::Array(
+                    crate::gc::Gc::clone(arc_items),
+                    crate::value::ArrayKind::Array,
+                )
             }
             "prepend" => {
                 let flat = crate::runtime::flatten_append_args(args.to_vec());
-                let items = Arc::make_mut(arc_items);
+                let items = crate::gc::Gc::make_mut(arc_items);
                 for (i, v) in flat.into_iter().enumerate() {
                     items.insert(i, v);
                 }
-                Value::Array(Arc::clone(arc_items), crate::value::ArrayKind::Array)
+                Value::Array(
+                    crate::gc::Gc::clone(arc_items),
+                    crate::value::ArrayKind::Array,
+                )
             }
             "pop" => {
                 if !args.is_empty() {
@@ -2008,7 +2035,9 @@ impl Interpreter {
                 if arc_items.is_empty() {
                     crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
                 } else {
-                    Arc::make_mut(arc_items).pop().unwrap_or(Value::Nil)
+                    crate::gc::Gc::make_mut(arc_items)
+                        .pop()
+                        .unwrap_or(Value::Nil)
                 }
             }
             "shift" => {
@@ -2018,7 +2047,7 @@ impl Interpreter {
                 if arc_items.is_empty() {
                     crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
                 } else {
-                    Arc::make_mut(arc_items).remove(0)
+                    crate::gc::Gc::make_mut(arc_items).remove(0)
                 }
             }
             _ => return None,
@@ -2145,7 +2174,7 @@ impl Interpreter {
         }
         let count = raw_count.unwrap_or(len - start);
         let end = (start + count).min(len);
-        let items = Arc::make_mut(arc_items);
+        let items = crate::gc::Gc::make_mut(arc_items);
         let removed: Vec<Value> = items.drain(start..end).collect();
         for (i, item) in replacement.into_iter().enumerate() {
             items.insert(start + i, item);

@@ -170,7 +170,7 @@ impl Interpreter {
                         );
                     }
                     new_items[idx] = effective_value.clone();
-                    Value::Array(std::sync::Arc::new(new_items), kind)
+                    Value::Array(crate::gc::Gc::new(new_items), kind)
                 }
                 _ => return Ok(effective_value),
             }
@@ -276,7 +276,7 @@ impl Interpreter {
                 } else {
                     absent_default.clone().unwrap_or(Value::Nil)
                 };
-                (removed, Value::Array(std::sync::Arc::new(new_items), *kind))
+                (removed, Value::Array(crate::gc::Gc::new(new_items), *kind))
             }
             _ => return Ok(absent_default.unwrap_or(Value::Nil)),
         };
@@ -405,7 +405,7 @@ impl Interpreter {
                     let inner = new_items[idx].clone();
                     new_items[idx] = Self::multidim_assign_nested(inner, &dims[1..], value)?;
                 }
-                let result = Value::Array(std::sync::Arc::new(new_items), kind);
+                let result = Value::Array(crate::gc::Gc::new(new_items), kind);
                 // Preserve the shape registration on the new Arc so subsequent
                 // bounds checks (via shaped_array_shape) still work.
                 if let Some(ref shape) = shape {

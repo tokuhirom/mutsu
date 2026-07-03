@@ -306,7 +306,7 @@ impl Interpreter {
             Value::Array(arc_vec, kind) => {
                 let copied: Vec<Value> = arc_vec.iter().map(Self::deep_copy_value).collect();
                 Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(copied)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(copied)),
                     *kind,
                 )
             }

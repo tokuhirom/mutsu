@@ -15,7 +15,7 @@ impl Interpreter {
             "emit" => {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
                 if let Some(Value::Array(items, ..)) = attrs.get_mut("values") {
-                    Arc::make_mut(items).push(value.clone());
+                    crate::gc::Gc::make_mut(items).push(value.clone());
                 } else {
                     attrs.insert("values".to_string(), Value::array(vec![value.clone()]));
                 }
@@ -410,7 +410,7 @@ impl Interpreter {
                 } else if has_unique {
                     if Self::supply_has_active_callback(&tap_cb) {
                         if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
-                            Arc::make_mut(items).push(tap_cb.clone());
+                            crate::gc::Gc::make_mut(items).push(tap_cb.clone());
                         } else {
                             attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
                         }
@@ -475,7 +475,7 @@ impl Interpreter {
                 } else {
                     if Self::supply_has_active_callback(&tap_cb) {
                         if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
-                            Arc::make_mut(items).push(tap_cb.clone());
+                            crate::gc::Gc::make_mut(items).push(tap_cb.clone());
                         } else {
                             attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
                         }

@@ -737,7 +737,7 @@ impl Interpreter {
             {
                 Self::ensure_array_size(target, i + 1);
                 if let Value::Array(items, ..) = target {
-                    let items = std::sync::Arc::make_mut(items);
+                    let items = crate::gc::Gc::make_mut(items);
                     self.multi_dim_assign_slice(&mut items[i], rest, values, vi)?;
                 }
             } else if let Value::Str(s) = &key {
@@ -780,7 +780,7 @@ impl Interpreter {
         {
             Self::ensure_array_size(target, i + 1);
             if let Value::Array(items, ..) = target {
-                let items = std::sync::Arc::make_mut(items);
+                let items = crate::gc::Gc::make_mut(items);
                 self.multi_dim_assign_scalar(&mut items[i], rest, value)?;
             }
         } else if let Value::Str(s) = &key {
@@ -884,7 +884,7 @@ impl Interpreter {
         match target {
             Value::Array(items, ..) => {
                 if items.len() < min_size {
-                    let items = std::sync::Arc::make_mut(items);
+                    let items = crate::gc::Gc::make_mut(items);
                     items.resize(
                         min_size,
                         Value::Package(crate::symbol::Symbol::intern("Any")),

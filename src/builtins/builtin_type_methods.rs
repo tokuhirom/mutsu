@@ -474,7 +474,7 @@ pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
         "Bool" => Value::Bool(true),
         "List" => Value::array(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
         "Array" => Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(vec![
+            crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                 Value::Int(1),
                 Value::Int(2),
             ])),

@@ -135,7 +135,7 @@ impl Interpreter {
         let Some(Value::Array(arc, kind)) = sv.get_mut(key) else {
             return None;
         };
-        let data = Arc::make_mut(arc);
+        let data = crate::gc::Gc::make_mut(arc);
         if idx >= data.items.len() {
             data.items.resize(idx + 1, Value::Nil);
         }
@@ -143,7 +143,7 @@ impl Interpreter {
         if *kind == ArrayKind::List {
             *kind = ArrayKind::Array;
         }
-        let result = Value::Array(Arc::clone(arc), *kind);
+        let result = Value::Array(crate::gc::Gc::clone(arc), *kind);
         drop(sv);
         if is_thread_clone {
             let dirty_marker = format!("__mutsu_shared_dirty::{key}");

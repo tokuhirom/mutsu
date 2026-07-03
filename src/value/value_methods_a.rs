@@ -45,7 +45,7 @@ impl Value {
         }
     }
     pub fn array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::List)
+        Value::Array(crate::gc::Gc::new(ArrayData::new(items)), ArrayKind::List)
     }
     /// Create a Capture value. Boxes the positional/named payloads (the variant
     /// stores them behind `Box` to keep `Value` small).
@@ -110,7 +110,7 @@ impl Value {
     }
     /// Create a true Array value (from [...] literals).
     pub fn real_array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::Array)
+        Value::Array(crate::gc::Gc::new(ArrayData::new(items)), ArrayKind::Array)
     }
     /// Create a true Array value with a single explicitly-assigned index
     /// recorded in the embedded `initialized` set (used when autovivifying a
@@ -121,21 +121,21 @@ impl Value {
         let mut set = std::collections::HashSet::new();
         set.insert(idx);
         data.initialized = Some(set);
-        Value::Array(Arc::new(data), ArrayKind::Array)
+        Value::Array(crate::gc::Gc::new(data), ArrayKind::Array)
     }
     /// Create a shaped (multidimensional) Array value.
     pub fn shaped_array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(ArrayData::new(items)), ArrayKind::Shaped)
+        Value::Array(crate::gc::Gc::new(ArrayData::new(items)), ArrayKind::Shaped)
     }
-    /// Build an `Arc<ArrayData>` from a plain element vector.
-    pub fn array_arc(items: Vec<Value>) -> Arc<ArrayData> {
-        Arc::new(ArrayData::new(items))
+    /// Build an `crate::gc::Gc<ArrayData>` from a plain element vector.
+    pub(crate) fn array_arc(items: Vec<Value>) -> crate::gc::Gc<ArrayData> {
+        crate::gc::Gc::new(ArrayData::new(items))
     }
     /// Rebuild an array's backing data with new elements, preserving the
     /// embedded container type metadata of `like` (used by mutators that
     /// reconstruct the vector, so a typed `Array[Int]` stays typed).
-    pub fn array_data_like(like: &ArrayData, items: Vec<Value>) -> Arc<ArrayData> {
-        Arc::new(ArrayData {
+    pub(crate) fn array_data_like(like: &ArrayData, items: Vec<Value>) -> crate::gc::Gc<ArrayData> {
+        crate::gc::Gc::new(ArrayData {
             items,
             value_type: like.value_type.clone(),
             key_type: like.key_type.clone(),

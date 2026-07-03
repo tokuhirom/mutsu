@@ -320,7 +320,7 @@ impl Interpreter {
             if !shared.contains_key(&atomic_key) {
                 drop(shared);
                 let arr = self.env.get(&arr_name).cloned().unwrap_or(Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                     crate::value::ArrayKind::Array,
                 ));
                 let mut shared = self.shared_vars.write().unwrap();
@@ -335,7 +335,7 @@ impl Interpreter {
         {
             let mut shared = self.shared_vars.write().unwrap();
             let arr = shared.get(&atomic_key).cloned().unwrap_or(Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
+                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                 crate::value::ArrayKind::Array,
             ));
             if let Value::Array(ref elements, kind) = arr {
@@ -353,7 +353,7 @@ impl Interpreter {
                     new_elements[idx] = new_val.clone();
                     shared.insert(
                         atomic_key.clone(),
-                        Value::Array(std::sync::Arc::new(new_elements), kind),
+                        Value::Array(crate::gc::Gc::new(new_elements), kind),
                     );
                     did_swap = true;
                 }

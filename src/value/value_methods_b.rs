@@ -21,7 +21,7 @@ impl Value {
         if let Value::Array(arc, _) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the items is live across the push.
-            let data = unsafe { arc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(arc) };
             data.items.push(val);
             true
         } else {
@@ -43,7 +43,7 @@ impl Value {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the items is live across the
             // growth/promotion below.
-            let data = unsafe { arc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(arc) };
             while data.len() <= idx {
                 data.push(Value::Nil);
             }

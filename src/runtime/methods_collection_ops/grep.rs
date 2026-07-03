@@ -335,7 +335,7 @@ impl Interpreter {
                     Value::Array(filtered_items, fkind) if !indices.is_empty() => {
                         let mut data = (*filtered_items).clone();
                         data.items = shared_cells;
-                        Value::Array(std::sync::Arc::new(data), fkind)
+                        Value::Array(crate::gc::Gc::new(data), fkind)
                     }
                     other => other,
                 };
