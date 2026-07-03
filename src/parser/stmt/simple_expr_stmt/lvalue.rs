@@ -106,7 +106,7 @@ pub(super) fn bind_source_name(expr: &Expr) -> Option<String> {
     }
 }
 
-pub(super) fn bind_source_metadata_expr(rhs: &Expr) -> Expr {
+pub(crate) fn bind_source_metadata_expr(rhs: &Expr) -> Expr {
     match rhs {
         Expr::ArrayLiteral(items) => Expr::ArrayLiteral(
             items

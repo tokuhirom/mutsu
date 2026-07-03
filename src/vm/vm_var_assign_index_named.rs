@@ -148,6 +148,53 @@ impl Interpreter {
         }
     }
 
+    /// Max index across ALL leaves of the key tree (unlike
+    /// `slice_key_tree_max_index`, a lazy-origin direct leaf is NOT skipped).
+    /// Used by the bind (`:=`) path, which writes every index (no boundary
+    /// truncation) and so must grow the array to cover the largest one.
+    fn slice_key_tree_max_index_all(key: &SliceKeyTree) -> Option<usize> {
+        match key {
+            SliceKeyTree::Leaf(v) => Self::index_to_usize(v),
+            SliceKeyTree::Nested(children, _) => children
+                .iter()
+                .filter_map(Self::slice_key_tree_max_index_all)
+                .max(),
+        }
+    }
+
+    /// Bind (`:=`) variant of `assign_slice_key_tree`: consume `vals` across the
+    /// (possibly nested) key tree in index-list order, write each leaf, and
+    /// build the returned rvalue directly from the *write-time* values rather
+    /// than a post-write re-read. Two differences from assignment:
+    ///   - a lazy-origin nested list is NOT truncated at the container boundary;
+    ///     every index in the tree is written (extending the array as needed);
+    ///   - the returned value at each position is the value bound there, so a
+    ///     later duplicate index (`@a[lazy 1,2,(4,5),4,5]`) overwrites the
+    ///     earlier write in the container while the return tree still shows each
+    ///     position's own write-time value (roast S09-subscript/slice.t #54-55).
+    fn bind_slice_key_tree(
+        container: &mut Value,
+        key: &SliceKeyTree,
+        vals: &mut std::vec::IntoIter<Value>,
+        marks: &mut Vec<String>,
+    ) -> Result<Value, RuntimeError> {
+        match key {
+            SliceKeyTree::Leaf(k) => {
+                let v = vals.next().unwrap_or(Value::Nil);
+                Self::assign_array_multidim(container, std::slice::from_ref(k), v.clone())?;
+                marks.push(Self::encode_bound_index(k));
+                Ok(v)
+            }
+            SliceKeyTree::Nested(children, _lazy_origin) => {
+                let mut out = Vec::with_capacity(children.len());
+                for child in children {
+                    out.push(Self::bind_slice_key_tree(container, child, vals, marks)?);
+                }
+                Ok(Value::array(out))
+            }
+        }
+    }
+
     pub(crate) fn exec_index_assign_expr_named_op_inner(
         &mut self,
         code: &CompiledCode,
@@ -649,7 +696,16 @@ impl Interpreter {
                     } else {
                         0
                     };
-                    if let Some(max_idx) = Self::slice_key_tree_max_index(&top_tree)
+                    // Bind (`:=`) writes every index with no boundary truncation
+                    // and returns write-time values, so grow to the largest index
+                    // across ALL leaves; assignment (`=`) uses the lazy-origin
+                    // boundary rule.
+                    let max_index = if bind_mode {
+                        Self::slice_key_tree_max_index_all(&top_tree)
+                    } else {
+                        Self::slice_key_tree_max_index(&top_tree)
+                    };
+                    if let Some(max_idx) = max_index
                         && let Value::Array(items, ..) = container
                     {
                         let arr = Arc::make_mut(items);
@@ -657,14 +713,18 @@ impl Interpreter {
                     }
                     let mut vals_iter = vals.into_iter();
                     let mut marks: Vec<String> = Vec::new();
-                    Self::assign_slice_key_tree(
-                        container,
-                        &top_tree,
-                        boundary_len,
-                        &mut vals_iter,
-                        &mut marks,
-                    )?;
-                    let result = Self::read_slice_key_tree(container, &top_tree, boundary_len);
+                    let result = if bind_mode {
+                        Self::bind_slice_key_tree(container, &top_tree, &mut vals_iter, &mut marks)?
+                    } else {
+                        Self::assign_slice_key_tree(
+                            container,
+                            &top_tree,
+                            boundary_len,
+                            &mut vals_iter,
+                            &mut marks,
+                        )?;
+                        Self::read_slice_key_tree(container, &top_tree, boundary_len)
+                    };
                     for encoded in marks {
                         self.mark_initialized_index(&var_name, encoded);
                     }

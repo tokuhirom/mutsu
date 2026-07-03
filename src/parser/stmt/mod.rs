@@ -7,7 +7,7 @@ mod idents;
 pub(super) mod modifier;
 mod pub_shims;
 pub(super) mod simple;
-mod simple_expr_stmt;
+pub(crate) mod simple_expr_stmt;
 mod stmtlist;
 mod sub;
 pub(crate) mod sub_param;

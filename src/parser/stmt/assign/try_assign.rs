@@ -77,12 +77,25 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 b'%' => Expr::HashVar(var.to_string()),
                 _ => Expr::Var(var.to_string()),
             };
+            // Wrap the RHS in the `__mutsu_bind_index_value` marker so the
+            // IndexAssign VM path takes *bind* semantics (write-time values, no
+            // boundary truncation) rather than plain assignment — matching the
+            // statement-level `:=` handler (`simple_expr_stmt::core`). Without
+            // this, an expression-context indexed bind such as
+            // `(@a[lazy 1,2,(4,5),4,5] := "a"...*)` (roast S09-subscript/slice.t
+            // #54-55) was silently treated as `=`.
+            let source_meta =
+                crate::parser::stmt::simple_expr_stmt::lvalue::bind_source_metadata_expr(&rhs);
+            let bind_value = Expr::Call {
+                name: crate::symbol::Symbol::intern("__mutsu_bind_index_value"),
+                args: vec![rhs, source_meta],
+            };
             return Ok((
                 rest,
                 Expr::IndexAssign {
                     target: Box::new(target),
                     index: Box::new(index_expr),
-                    value: Box::new(rhs),
+                    value: Box::new(bind_value),
                     is_positional: true,
                 },
             ));

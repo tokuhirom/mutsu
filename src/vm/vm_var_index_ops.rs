@@ -641,6 +641,14 @@ impl Interpreter {
             (Value::Array(items, _is_arr), Value::Whatever) => {
                 Value::Array(items, crate::value::ArrayKind::List)
             }
+            // HyperWhatever (**) hammer index on Array: @a[**] recursively
+            // descends through nested arrays and returns every leaf element as a
+            // flat List (e.g. `[0,[1,[2,3]]][**]` == `(0,1,2,3)`).
+            (Value::Array(items, _is_arr), Value::HyperWhatever) => {
+                let mut leaves = Vec::new();
+                Self::hyperwhatever_hammer_collect(&items.items, &mut leaves);
+                Value::array(leaves)
+            }
             (Value::Array(items, is_arr), Value::Int(i)) => {
                 if i < 0 {
                     // Return a Failure wrapping X::OutOfRange — `//` treats it as
@@ -1985,6 +1993,21 @@ fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
 }
 
 impl Interpreter {
+    /// Recursively collect every leaf element of a (possibly deeply nested)
+    /// array into `out`, in depth-first order. Used by the HyperWhatever (`**`)
+    /// hammer index `@a[**]`, which flattens all nested arrays to a single flat
+    /// list of leaves.
+    pub(super) fn hyperwhatever_hammer_collect(items: &[Value], out: &mut Vec<Value>) {
+        for item in items {
+            match item {
+                Value::Array(data, _) => {
+                    Self::hyperwhatever_hammer_collect(&data.items, out);
+                }
+                other => out.push(other.clone()),
+            }
+        }
+    }
+
     /// When indexing an array with a multi-index list (e.g. `@a[0..2, 0..2]`),
     /// check if an individual index element is a Range and, if so, resolve it
     /// to a sublist (slice). Returns `None` if the index is not a range.
