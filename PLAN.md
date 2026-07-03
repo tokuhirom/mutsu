@@ -399,16 +399,19 @@ MIME::Base64 1.2.5（#3427）/ IO::Blob（builtin 型サブクラスの user ove
          - 5d. ✅ `Value::ContainerRef(Arc<Mutex<Value>>)` → `Gc<Mutex<Value>>`（`impl Trace for Mutex<Value>`＝
            self-bind cycle が Gc graph で辿れる。§3.3 の typed-constraint `CellValue` は将来の Track B に延期）。
          - **→ first wave（Array/Hash/ContainerRef）完了。** `Set`/`Bag`/`Mix` も移行済み（#4117）。
-           残る Arc コンテナは `Sub`/`Instance`/`LazyList`（後続 wave）。
+         - 9. ✅ second wave: `Sub`→`Gc<SubData>`・`Instance` attributes→`Gc<InstanceAttrs>`（#4123、`WeakSub`=`WeakGc`）。
+         - ✅ `gc_trace` 完全性: 非ノード wrapper（`Pair`/`ValuePair`/`Scalar`/`Capture`/`Seq`/`Slip`/`Mixin`/
+           `Junction`/`GenericRange`/`Proxy`）を再帰し、wrapper 内にネストした `Gc` ノードを可視化（不可視辺=
+           取り逃し防止）。`WeakSub` は weak 辺なので非トレース。残る Arc コンテナは `LazyList`（third wave）。
       8. ✅ **trial-deletion collector 本体**（`gc/collect.rs`: Bacon-Rajan mark_gray/scan/scan_black/
          collect_white ＋ reclaim。`CollectGuard` で reclaim 中の `Gc::drop` を inert 化、`Trace::drop_gc_edges`
          でコンテナの edge をクリアして循環を Arc 解放）＋ **safepoint 配線**（`gc/safepoint.rs`: dispatch backedge で
          collect を自動起動。`MUTSU_GC_EVERY_SAFEPOINT`/`MUTSU_GC_EVERY_CANDIDATE` トリガ。default off なら
          disarmed で 1 load）。**end-to-end 検証済み**: 実 Raku の self/mutual cycle が collect され、GC-on 出力が
          GC-off と byte 一致（live data 非破壊）。integration test `tests/gc_stress.rs`。
-      6-7,9-11 (残): `Promise`/`Channel` → supply registry root visitor（async cycle）→ `Sub`/`Instance`
-      （second wave）→ `LazyList`（third wave）← **次はここ**（設計メモ参照）。call/return/await 等の追加
-      safepoint 種別・cross-thread STW・`MUTSU_GC_AT`/random stress も後続。
+      6-7,10-11 (残): `Promise`/`Channel` → supply registry root visitor（async cycle）→ `LazyList`
+      （third wave）← **次はここ**（設計メモ参照）。call/return/await 等の追加 safepoint 種別・cross-thread
+      STW・`MUTSU_GC_AT`/random stress も後続。
       **Track B（要素 cell 化）と GC は統合キャンペーン（層3a・`Arc → Gc<T>` 一斉置換）**。続いて NaN-boxing
       （層3b・JIT 地ならし）→ JIT（層4）。未決は収集方式（同期/非同期）と A' 地ならしの範囲（ADR §4.2/§4.3）。
 - [ ] 制御フロー（`return`/`last`/`next`/`take`/`emit`）を `RuntimeError` god-struct から `enum Control` へ分離（ANALYSIS §2.4）。

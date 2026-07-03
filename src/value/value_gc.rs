@@ -30,14 +30,15 @@ impl Value {
     ///
     /// Distinct from [`Value::visit_gc_children`], which visits `&Value` for
     /// root enumeration: `gc_trace` yields the erased `Gc` node handles the
-    /// cycle collector walks between managed nodes. Only variants already
-    /// migrated to `Gc<T>` (§11 step 5+) yield a child; the rest are no-ops. A
-    /// not-yet-migrated container that transitively holds a `Gc` node is a graph
-    /// edge that bypasses the Gc graph until it too migrates — acceptable while
-    /// the collector is off (design doc §3.1's wave phasing).
+    /// cycle collector walks between managed nodes. Migrated `Gc<T>` variants
+    /// yield the node; non-node wrappers that own/share `Value`s recurse so a
+    /// `Gc` node nested inside them is still reached (otherwise the wrapper is an
+    /// invisible edge and a cycle through it is missed — an under-collect).
     pub(crate) fn gc_trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
-        // Only migrated (`Gc<T>`) container variants yield a child.
         match self {
+            // Migrated `Gc<T>` node variants: yield the node itself. The
+            // collector traces the node's own children via its `Trace` impl, so
+            // we do NOT recurse into its contents here.
             Value::Hash(data) => visit(&data.erased()),
             Value::Array(data, _) => visit(&data.erased()),
             Value::Set(data, _) => visit(&data.erased()),
@@ -46,6 +47,53 @@ impl Value {
             Value::ContainerRef(cell) => visit(&cell.erased()),
             Value::Sub(data) => visit(&data.erased()),
             Value::Instance { attributes, .. } => visit(&attributes.erased()),
+
+            // Non-node wrappers that own/share `Value`s: recurse. They cannot
+            // themselves form a cycle without passing through a `Gc` node above
+            // (`Box` is uniquely owned; the `Arc<Vec>` sequences are immutable),
+            // so the recursion terminates. `WeakSub` is a WEAK edge — not traced.
+            Value::Pair(_, v) | Value::Scalar(v) => v.gc_trace(visit),
+            Value::ValuePair(k, v) => {
+                k.gc_trace(visit);
+                v.gc_trace(visit);
+            }
+            Value::Capture { positional, named } => {
+                for v in positional.iter() {
+                    v.gc_trace(visit);
+                }
+                for v in named.values() {
+                    v.gc_trace(visit);
+                }
+            }
+            Value::Seq(items)
+            | Value::HyperSeq(items)
+            | Value::RaceSeq(items)
+            | Value::Slip(items) => {
+                for v in items.iter() {
+                    v.gc_trace(visit);
+                }
+            }
+            Value::Mixin(inner, overrides) => {
+                inner.gc_trace(visit);
+                for v in overrides.values() {
+                    v.gc_trace(visit);
+                }
+            }
+            Value::Junction { values, .. } => {
+                for v in values.iter() {
+                    v.gc_trace(visit);
+                }
+            }
+            Value::GenericRange { start, end, .. } => {
+                start.gc_trace(visit);
+                end.gc_trace(visit);
+            }
+            Value::Proxy {
+                fetcher, storer, ..
+            } => {
+                fetcher.gc_trace(visit);
+                storer.gc_trace(visit);
+            }
             _ => {}
         }
     }
