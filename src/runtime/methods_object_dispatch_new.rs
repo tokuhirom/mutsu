@@ -1016,7 +1016,7 @@ impl Interpreter {
                                         new_items[i] = val;
                                     }
                                 }
-                                let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
+                                let result = Value::Array(crate::gc::Gc::new(new_items), is_arr);
                                 crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
                                 result
                             } else {
@@ -1503,7 +1503,7 @@ impl Interpreter {
                         && let Some(Value::Slip(items) | Value::Seq(items)) = attrs.get(attr_name)
                     {
                         let flattened = Value::Array(
-                            std::sync::Arc::new(crate::value::ArrayData::new((**items).clone())),
+                            crate::gc::Gc::new(crate::value::ArrayData::new((**items).clone())),
                             ArrayKind::Array,
                         );
                         attrs.insert(attr_name.clone(), flattened);
@@ -1523,7 +1523,7 @@ impl Interpreter {
                             Value::Array(items, _) => (**items).clone(),
                             _ => crate::value::ArrayData::new(vec![val.clone()]),
                         };
-                        let shaped = Value::Array(std::sync::Arc::new(items), ArrayKind::Shaped);
+                        let shaped = Value::Array(crate::gc::Gc::new(items), ArrayKind::Shaped);
                         crate::runtime::utils::mark_shaped_array(&shaped, Some(&dims));
                         attrs.insert(attr_name.clone(), shaped);
                     }

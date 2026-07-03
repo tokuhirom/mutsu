@@ -109,7 +109,7 @@ impl Interpreter {
                 data.items.resize(idx + 1, Value::Nil);
             }
             data.items[idx] = value.clone();
-            Value::Array(std::sync::Arc::new(data), kind)
+            Value::Array(crate::gc::Gc::new(data), kind)
         } else {
             let key = index_value.to_string_value();
             let mut data = match container {

@@ -485,7 +485,7 @@ impl Interpreter {
         env.insert(
             "__mutsu_lazy_map_items".to_string(),
             Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(items)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                 crate::value::ArrayKind::List,
             ),
         );
@@ -597,7 +597,7 @@ impl Interpreter {
         match target {
             Value::Array(_, kind) if kind.is_lazy() => Err(RuntimeError::cannot_lazy("pop")),
             Value::Array(mut items, ..) => {
-                let items_mut = Arc::make_mut(&mut items);
+                let items_mut = crate::gc::Gc::make_mut(&mut items);
                 Ok(if items_mut.is_empty() {
                     make_empty_array_failure("pop")
                 } else {

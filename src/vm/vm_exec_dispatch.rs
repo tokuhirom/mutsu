@@ -879,15 +879,13 @@ impl Interpreter {
                                 raw_val
                             } else {
                                 Value::Array(
-                                    std::sync::Arc::new(crate::value::ArrayData::new(vec![
-                                        raw_val,
-                                    ])),
+                                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![raw_val])),
                                     crate::value::ArrayKind::List,
                                 )
                             }
                         }
                         other => Value::Array(
-                            std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
+                            crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
                             crate::value::ArrayKind::List,
                         ),
                     }
@@ -2072,7 +2070,7 @@ impl Interpreter {
                     // Comma lists and other non-real arrays become Lists.
                     Value::Array(items, _) => Value::Array(items, crate::value::ArrayKind::List),
                     Value::Seq(items) => Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(items.to_vec())),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
                         crate::value::ArrayKind::List,
                     ),
                     // Hash values are flattened to pairs for constant @.
@@ -2082,7 +2080,7 @@ impl Interpreter {
                             .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                             .collect();
                         Value::Array(
-                            std::sync::Arc::new(crate::value::ArrayData::new(pairs)),
+                            crate::gc::Gc::new(crate::value::ArrayData::new(pairs)),
                             crate::value::ArrayKind::List,
                         )
                     }
@@ -2155,20 +2153,20 @@ impl Interpreter {
                                     Value::Array(items, crate::value::ArrayKind::List)
                                 }
                                 Value::Seq(items) => Value::Array(
-                                    std::sync::Arc::new(crate::value::ArrayData::new(
+                                    crate::gc::Gc::new(crate::value::ArrayData::new(
                                         items.to_vec(),
                                     )),
                                     crate::value::ArrayKind::List,
                                 ),
                                 other => Value::Array(
-                                    std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
+                                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
                                     crate::value::ArrayKind::List,
                                 ),
                             }
                         }
                     }
                     other => Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
                         crate::value::ArrayKind::List,
                     ),
                 };
@@ -2860,7 +2858,7 @@ impl Interpreter {
                         Value::Array(arc, _) => {
                             // SAFETY: aliased in-place clear of a shared container;
                             // see `arc_contents_mut`.
-                            unsafe { crate::value::arc_contents_mut(arc).items.clear() };
+                            unsafe { crate::value::gc_contents_mut(arc).items.clear() };
                         }
                         Value::Hash(arc) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
@@ -2878,7 +2876,7 @@ impl Interpreter {
                     match &self.locals[slot] {
                         Value::Array(arc, _) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
-                            unsafe { crate::value::arc_contents_mut(arc).items.clear() };
+                            unsafe { crate::value::gc_contents_mut(arc).items.clear() };
                         }
                         Value::Hash(arc) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.

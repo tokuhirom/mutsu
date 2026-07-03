@@ -261,7 +261,9 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
 const MAX_ARRAY_EXPAND: i64 = 100_000;
 
 pub(crate) fn coerce_to_array(value: Value) -> Value {
-    fn metadata_shape_for_items(items: &Arc<crate::value::ArrayData>) -> Option<Vec<usize>> {
+    fn metadata_shape_for_items(
+        items: &crate::gc::Gc<crate::value::ArrayData>,
+    ) -> Option<Vec<usize>> {
         items.shape.clone()
     }
 
@@ -274,7 +276,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             // Only rebuild when a cell is actually present (common path keeps
             // sharing the Arc, so there is no per-assignment cost).
             let items = if items.iter().any(|v| matches!(v, Value::ContainerRef(_))) {
-                Arc::new(items.iter().map(|v| v.deref_container()).collect())
+                crate::gc::Gc::new(items.iter().map(|v| v.deref_container()).collect())
             } else {
                 items
             };
@@ -298,7 +300,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
                 // Infinite range — mark as lazy
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
                 Value::Array(
-                    Arc::new((a..=end).map(Value::Int).collect()),
+                    crate::gc::Gc::new((a..=end).map(Value::Int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
@@ -310,7 +312,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             if b == i64::MAX {
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
                 Value::Array(
-                    Arc::new((a..end).map(Value::Int).collect()),
+                    crate::gc::Gc::new((a..end).map(Value::Int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
@@ -322,7 +324,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             if b == i64::MAX {
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
                 Value::Array(
-                    Arc::new((a + 1..=end).map(Value::Int).collect()),
+                    crate::gc::Gc::new((a + 1..=end).map(Value::Int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
@@ -334,7 +336,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             if b == i64::MAX {
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
                 Value::Array(
-                    Arc::new((a + 1..end).map(Value::Int).collect()),
+                    crate::gc::Gc::new((a + 1..end).map(Value::Int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
@@ -374,7 +376,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             let infinite = (!start_f.is_finite() || !end_f.is_finite()) && !empty;
             if infinite {
                 Value::Array(
-                    Arc::new(crate::value::ArrayData::new(value_to_list(&value))),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(value_to_list(&value))),
                     ArrayKind::Lazy,
                 )
             } else {

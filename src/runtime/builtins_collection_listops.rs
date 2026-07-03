@@ -23,7 +23,7 @@ impl Interpreter {
                 if items.is_empty() {
                     make_empty_array_failure("shift")
                 } else {
-                    Arc::make_mut(&mut items).remove(0)
+                    crate::gc::Gc::make_mut(&mut items).remove(0)
                 }
             }
             _ => make_empty_array_failure("shift"),
@@ -55,7 +55,7 @@ impl Interpreter {
         }
         Ok(match args.first().cloned() {
             Some(Value::Array(mut items, ..)) => {
-                let items_mut = Arc::make_mut(&mut items);
+                let items_mut = crate::gc::Gc::make_mut(&mut items);
                 if items_mut.is_empty() {
                     make_empty_array_failure("pop")
                 } else {
@@ -135,7 +135,7 @@ impl Interpreter {
             args.to_vec()
         };
         let list = Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(items)),
+            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
             crate::value::ArrayKind::List,
         );
         let mut result = Vec::new();

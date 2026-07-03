@@ -277,7 +277,7 @@ impl Interpreter {
             "send" => {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
                 match attrs.get_mut("queue") {
-                    Some(Value::Array(items, ..)) => Arc::make_mut(items).push(value),
+                    Some(Value::Array(items, ..)) => crate::gc::Gc::make_mut(items).push(value),
                     _ => {
                         attrs.insert("queue".to_string(), Value::array(vec![value]));
                     }
@@ -289,7 +289,7 @@ impl Interpreter {
                 if let Some(Value::Array(items, ..)) = attrs.get_mut("queue")
                     && !items.is_empty()
                 {
-                    value = Arc::make_mut(items).remove(0);
+                    value = crate::gc::Gc::make_mut(items).remove(0);
                 }
                 Ok((value, attrs))
             }

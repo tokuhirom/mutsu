@@ -173,7 +173,7 @@ impl Interpreter {
             }
         }
         Ok(Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(results)),
+            crate::gc::Gc::new(crate::value::ArrayData::new(results)),
             crate::value::ArrayKind::List,
         ))
     }

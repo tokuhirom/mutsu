@@ -1093,7 +1093,7 @@ pub(crate) fn native_method_1arg(
             };
             let (non_repeating, repeating) = rat_base_repeating(n, d, radix);
             Some(Ok(Value::Array(
-                Arc::new(crate::value::ArrayData::new(vec![
+                crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                     Value::str(non_repeating),
                     Value::str(repeating),
                 ])),

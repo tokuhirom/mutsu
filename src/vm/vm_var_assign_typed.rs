@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
 impl Interpreter {
@@ -57,7 +56,10 @@ impl Interpreter {
                     &|_| None,
                     false,
                 )?;
-                val = Value::Array(Arc::new(crate::value::ArrayData::new(coerced)), *kind);
+                val = Value::Array(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(coerced)),
+                    *kind,
+                );
             }
             val = self.tag_container_metadata(val, info);
         }
@@ -189,7 +191,7 @@ impl Interpreter {
                 explicit_initializer,
             )?;
             return Ok(Value::Array(
-                Arc::new(crate::value::ArrayData::new(coerced_items)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(coerced_items)),
                 kind,
             ));
         }
@@ -339,7 +341,7 @@ impl Interpreter {
                     explicit_initializer,
                 )?;
                 coerced_items.push(Value::Array(
-                    Arc::new(crate::value::ArrayData::new(sub_coerced)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(sub_coerced)),
                     *sub_kind,
                 ));
                 continue;

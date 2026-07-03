@@ -629,7 +629,7 @@ impl Interpreter {
             }
             // A plain scalar interprets itself as a single-element List.
             other => Ok(Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(vec![other])),
+                crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
                 crate::value::ArrayKind::List,
             )),
         }

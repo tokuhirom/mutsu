@@ -206,7 +206,7 @@ impl Interpreter {
         }
         if let Value::Array(mut arc, kind) = value {
             if arc.has_type_meta() {
-                let data = Arc::make_mut(&mut arc);
+                let data = crate::gc::Gc::make_mut(&mut arc);
                 data.value_type = None;
                 data.key_type = None;
                 data.declared_type = None;

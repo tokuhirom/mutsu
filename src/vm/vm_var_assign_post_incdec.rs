@@ -475,7 +475,7 @@ impl Interpreter {
                 }
                 Value::Array(arr, ..) => {
                     if let Ok(i) = key.parse::<usize>() {
-                        let a = Arc::make_mut(arr);
+                        let a = crate::gc::Gc::make_mut(arr);
                         Self::autoviv_resize(a, i + 1, Value::Nil)?;
                         a[i] = new_val.clone();
                     }
@@ -624,14 +624,15 @@ impl Interpreter {
                         // Use in-place mutation when the array is shared
                         // (strong_count > 1) to preserve identity semantics,
                         // matching the behavior of index assignment.
-                        let use_inplace = Arc::strong_count(arr) > 1 && !name.starts_with('@');
+                        let use_inplace =
+                            crate::gc::Gc::strong_count(arr) > 1 && !name.starts_with('@');
                         let a: &mut crate::value::ArrayData = if use_inplace {
                             // SAFETY: aliased in-place mutation of a shared array
                             // (strong_count > 1, the case that needs the shared
                             // write); see `arc_contents_mut`.
-                            unsafe { crate::value::arc_contents_mut(arr) }
+                            unsafe { crate::value::gc_contents_mut(arr) }
                         } else {
-                            Arc::make_mut(arr)
+                            crate::gc::Gc::make_mut(arr)
                         };
                         // Fill holes with the element type's type object for a
                         // typed array (e.g. `my Int @a; @a[4]++` leaves `(Int)`

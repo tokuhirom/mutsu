@@ -460,7 +460,7 @@ impl Interpreter {
                     }
                 }
                 Value::Array(
-                    Arc::new(crate::value::ArrayData::new(vec![Value::bag(map)])),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![Value::bag(map)])),
                     *kind,
                 )
             }

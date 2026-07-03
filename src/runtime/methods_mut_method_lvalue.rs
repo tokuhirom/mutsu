@@ -113,7 +113,7 @@ impl Interpreter {
                 if idx < updated.len() {
                     updated[idx] = value.clone();
                     let replacement = Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(updated)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                         *kind,
                     );
                     if let Some(var_name) = target_var {
@@ -133,7 +133,7 @@ impl Interpreter {
             let mut updated = items.to_vec();
             updated[idx] = value.clone();
             let replacement = Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(updated)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                 *kind,
             );
             if let Some(var_name) = target_var {
@@ -338,7 +338,7 @@ impl Interpreter {
                     return Ok(value);
                 }
                 let mut selected_hash: Option<crate::gc::Gc<crate::value::HashData>> = None;
-                let mut selected_array: Option<std::sync::Arc<crate::value::ArrayData>> = None;
+                let mut selected_array: Option<crate::gc::Gc<crate::value::ArrayData>> = None;
 
                 if let Some(var_name) = target_var
                     && let Some(Value::Hash(candidate)) = self.env.get(var_name)
@@ -382,7 +382,7 @@ impl Interpreter {
                         _ => None,
                     });
                     if let Some(first) = candidates.next()
-                        && candidates.all(|other| std::sync::Arc::ptr_eq(&first, &other))
+                        && candidates.all(|other| crate::gc::Gc::ptr_eq(&first, &other))
                     {
                         selected_array = Some(first);
                     }
@@ -402,7 +402,7 @@ impl Interpreter {
                     if i < updated.len() {
                         updated[i] = value.clone();
                         let replacement =
-                            Value::Array(std::sync::Arc::new(updated), ArrayKind::List);
+                            Value::Array(crate::gc::Gc::new(updated), ArrayKind::List);
                         self.overwrite_array_bindings_by_identity(&source_array, replacement);
                         return Ok(value);
                     }

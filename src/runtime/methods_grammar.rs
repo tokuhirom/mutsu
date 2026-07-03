@@ -463,7 +463,10 @@ impl Interpreter {
                     }
                     updated_named.insert(
                         child_name,
-                        Value::Array(Arc::new(crate::value::ArrayData::new(updated_items)), *meta),
+                        Value::Array(
+                            crate::gc::Gc::new(crate::value::ArrayData::new(updated_items)),
+                            *meta,
+                        ),
                     );
                 } else {
                     let dispatch_name =

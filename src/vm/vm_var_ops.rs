@@ -135,7 +135,7 @@ impl Interpreter {
 
     pub(super) fn resolve_array_entry(
         &self,
-        items: &Arc<crate::value::ArrayData>,
+        items: &crate::gc::Gc<crate::value::ArrayData>,
         kind: ArrayKind,
         idx: usize,
         default: Value,

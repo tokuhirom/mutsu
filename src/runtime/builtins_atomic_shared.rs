@@ -46,7 +46,7 @@ impl Interpreter {
                 elements.extend(items);
             }
             let new_arr = Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(elements)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(elements)),
                 crate::value::ArrayKind::Array,
             );
             shared.insert(atomic_key, new_arr.clone());
@@ -90,7 +90,7 @@ impl Interpreter {
             }
             elements[idx] = value.clone();
             let new_arr = Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(elements)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(elements)),
                 crate::value::ArrayKind::Array,
             );
             shared.insert(atomic_key, new_arr.clone());
@@ -170,7 +170,7 @@ impl Interpreter {
             if !shared.contains_key(&atomic_key) {
                 drop(shared);
                 let arr = self.env.get(&arr_name).cloned().unwrap_or(Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                     crate::value::ArrayKind::Array,
                 ));
                 let mut shared = self.shared_vars.write().unwrap();
@@ -185,7 +185,7 @@ impl Interpreter {
         {
             let mut shared = self.shared_vars.write().unwrap();
             let arr = shared.get(&atomic_key).cloned().unwrap_or(Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
+                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                 crate::value::ArrayKind::Array,
             ));
             // Navigate to the element using the dimension indices
@@ -242,7 +242,7 @@ impl Interpreter {
             } else {
                 new_elements[idx] = Self::multidim_set(&new_elements[idx], &dims[1..], value);
             }
-            Value::Array(std::sync::Arc::new(new_elements), *kind)
+            Value::Array(crate::gc::Gc::new(new_elements), *kind)
         } else {
             arr.clone()
         }

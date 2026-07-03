@@ -323,7 +323,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             excl_end,
         },
         SerValue::Array(items, kind) => Value::Array(
-            Arc::new(items.into_iter().map(ser_to_value).collect()),
+            crate::gc::Gc::new(items.into_iter().map(ser_to_value).collect()),
             kind,
         ),
         SerValue::Hash(map) => Value::hash(

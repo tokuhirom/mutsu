@@ -445,7 +445,8 @@ impl Interpreter {
                     supplier_emit(supplier_id, value.clone());
                 }
                 if let Some(Value::Array(items, ..)) = attrs.get_mut("emitted") {
-                    Arc::make_mut(items).push(args.first().cloned().unwrap_or(Value::Nil));
+                    crate::gc::Gc::make_mut(items)
+                        .push(args.first().cloned().unwrap_or(Value::Nil));
                 } else {
                     attrs.insert(
                         "emitted".to_string(),

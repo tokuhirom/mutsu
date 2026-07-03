@@ -213,7 +213,7 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "(.)" | "⊍" | "(+)" | "⊎" => Value::bag(HashMap::new()),
         // Comma: empty list
         "," => Value::Array(
-            std::sync::Arc::new(crate::value::ArrayData::new(Vec::new())),
+            crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
             ArrayKind::List,
         ),
         // Zip: empty Seq (Raku returns a Seq for arity-0 Z)

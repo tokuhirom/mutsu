@@ -438,7 +438,7 @@ impl Value {
                 thread_local! {
                     static SEEN_ARR_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
                 }
-                let ptr = std::sync::Arc::as_ptr(items) as usize;
+                let ptr = crate::gc::Gc::as_ptr(items) as usize;
                 let is_cycle = SEEN_ARR_PTRS.with(|seen| {
                     let s = seen.borrow();
                     s.contains(&ptr)

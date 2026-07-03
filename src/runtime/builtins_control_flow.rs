@@ -522,7 +522,7 @@ impl Interpreter {
                         mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
                     }
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(mapped)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(mapped)),
                         kind,
                     ))
                 }
@@ -569,7 +569,7 @@ impl Interpreter {
                 results.push(apply_hyper_prefix(self, &routine, item.clone())?);
             }
             let result = Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(results)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(results)),
                 *kind,
             );
             if mutating {

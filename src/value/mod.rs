@@ -314,7 +314,6 @@ mod value_methods_b;
 mod value_methods_c;
 mod value_setbagmix;
 pub(crate) use crate::gc::gc_contents_mut;
-pub(crate) use aliased_mut::arc_contents_mut;
 pub(crate) use types::what_type_name;
 
 /// Get current time as seconds since UNIX epoch (returns 0.0 on WASM).
@@ -932,7 +931,9 @@ pub enum Value {
         excl_end: bool,
     },
     /// Distinguishes Array, List, and their itemized (Scalar-wrapped) variants.
-    Array(Arc<ArrayData>, ArrayKind),
+    /// GC-migrated (§11 step 5c first wave): backed by a cycle-collectable
+    /// `Gc<ArrayData>` rather than a plain `crate::gc::Gc<ArrayData>`.
+    Array(crate::gc::Gc<ArrayData>, ArrayKind),
     Hash(Gc<HashData>),
     Rat(i64, i64),
     FatRat(i64, i64),

@@ -81,7 +81,7 @@ impl Interpreter {
     pub(super) fn loop_var_unchanged(current: &Value, source_elem: &Value) -> bool {
         use std::sync::Arc;
         match (current, source_elem) {
-            (Value::Array(a, _), Value::Array(b, _)) => Arc::ptr_eq(a, b),
+            (Value::Array(a, _), Value::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
             (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
             (Value::Str(a), Value::Str(b)) => Arc::ptr_eq(a, b) || a == b,
             (Value::Int(a), Value::Int(b)) => a == b,
@@ -222,7 +222,7 @@ impl Interpreter {
         // `.raku`, and shaped `:delete`-dies behaviour).
         let mut new_data = (*items).clone();
         new_data.items[actual_idx] = current_topic;
-        let updated_value = Value::Array(std::sync::Arc::new(new_data), kind);
+        let updated_value = Value::Array(crate::gc::Gc::new(new_data), kind);
         self.write_back_container_source(code, source, &raw_source, updated_value);
     }
 }

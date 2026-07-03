@@ -8,7 +8,7 @@ impl Interpreter {
     pub(super) fn clear_aggregate_cell(cell: &std::sync::Arc<std::sync::Mutex<Value>>) {
         let mut guard = cell.lock().unwrap();
         match &mut *guard {
-            Value::Array(arc, _) => std::sync::Arc::make_mut(arc).items.clear(),
+            Value::Array(arc, _) => crate::gc::Gc::make_mut(arc).items.clear(),
             Value::Hash(arc) => crate::gc::Gc::make_mut(arc).map.clear(),
             other => *other = Value::Nil,
         }

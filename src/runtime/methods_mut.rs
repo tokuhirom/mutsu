@@ -230,7 +230,7 @@ impl Interpreter {
 
     pub(crate) fn overwrite_array_bindings_by_identity(
         &mut self,
-        needle: &std::sync::Arc<crate::value::ArrayData>,
+        needle: &crate::gc::Gc<crate::value::ArrayData>,
         replacement: Value,
     ) {
         let mut keys: Vec<Symbol> = Vec::new();
@@ -242,12 +242,12 @@ impl Interpreter {
         let mut cells: Vec<std::sync::Arc<std::sync::Mutex<Value>>> = Vec::new();
         for (name, value) in self.env.iter() {
             match value {
-                Value::Array(existing, ..) if std::sync::Arc::ptr_eq(existing, needle) => {
+                Value::Array(existing, ..) if crate::gc::Gc::ptr_eq(existing, needle) => {
                     keys.push(*name);
                 }
                 Value::ContainerRef(cell) => {
                     if let Value::Array(existing, ..) = &*cell.lock().unwrap()
-                        && std::sync::Arc::ptr_eq(existing, needle)
+                        && crate::gc::Gc::ptr_eq(existing, needle)
                     {
                         cells.push(cell.clone());
                     }
@@ -310,7 +310,7 @@ impl Interpreter {
     /// share the same array container.
     pub(crate) fn propagate_shared_array_in_instances(
         &mut self,
-        needle: &std::sync::Arc<crate::value::ArrayData>,
+        needle: &crate::gc::Gc<crate::value::ArrayData>,
         replacement: &Value,
     ) {
         let mut updates: Vec<(Symbol, String)> = Vec::new();
@@ -318,7 +318,7 @@ impl Interpreter {
             if let Value::Instance { attributes, .. } = value {
                 for (attr_key, attr_val) in attributes.as_map().iter() {
                     if let Value::Array(arc, ..) = attr_val
-                        && std::sync::Arc::ptr_eq(arc, needle)
+                        && crate::gc::Gc::ptr_eq(arc, needle)
                     {
                         updates.push((*var_name, attr_key.clone()));
                     }

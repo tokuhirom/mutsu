@@ -216,7 +216,7 @@ impl Interpreter {
                                 data.items[i] = elem;
                                 target_env.insert(
                                     source_name.clone(),
-                                    Value::Array(std::sync::Arc::new(data), kind),
+                                    Value::Array(crate::gc::Gc::new(data), kind),
                                 );
                             }
                         }

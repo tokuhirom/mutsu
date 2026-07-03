@@ -403,12 +403,12 @@ impl Interpreter {
             let mut sv = self.shared_vars.write().unwrap();
             // Try in-place mutation via get_mut first (avoids remove+insert overhead)
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
-                let items = Arc::make_mut(arc_items);
+                let items = crate::gc::Gc::make_mut(arc_items);
                 items.extend(values);
                 if *kind == ArrayKind::List {
                     *kind = ArrayKind::Array;
                 }
-                let result = Value::Array(Arc::clone(arc_items), *kind);
+                let result = Value::Array(crate::gc::Gc::clone(arc_items), *kind);
                 drop(sv);
                 self.mark_shared_var_dirty(key);
                 if !is_thread_clone {
@@ -419,14 +419,14 @@ impl Interpreter {
             // Fallback: the value might exist but not be an Array yet
             if let Some(shared_value) = sv.remove(key) {
                 if let Value::Array(mut arc_items, kind) = shared_value {
-                    let items = Arc::make_mut(&mut arc_items);
+                    let items = crate::gc::Gc::make_mut(&mut arc_items);
                     items.extend(values);
                     let normalized_kind = if kind == ArrayKind::List {
                         ArrayKind::Array
                     } else {
                         kind
                     };
-                    let result = Value::Array(Arc::clone(&arc_items), normalized_kind);
+                    let result = Value::Array(crate::gc::Gc::clone(&arc_items), normalized_kind);
                     sv.insert(key.to_string(), Value::Array(arc_items, normalized_kind));
                     drop(sv);
                     self.mark_shared_var_dirty(key);
@@ -440,13 +440,13 @@ impl Interpreter {
         }
         // Fallback for non-shared arrays: use Arc::make_mut for COW
         if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(key) {
-            let items = Arc::make_mut(arc_items);
+            let items = crate::gc::Gc::make_mut(arc_items);
             items.extend(values);
             // Normalize @-variables only from List to Array while preserving Shaped.
             if key.starts_with('@') && *kind == ArrayKind::List {
                 *kind = ArrayKind::Array;
             }
-            return Value::Array(Arc::clone(arc_items), *kind);
+            return Value::Array(crate::gc::Gc::clone(arc_items), *kind);
         }
         let mut items = match target_fallback {
             Value::Array(v, ..) => v.to_vec(),
@@ -474,12 +474,12 @@ impl Interpreter {
         let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) else {
             return None;
         };
-        let items = Arc::make_mut(arc_items);
+        let items = crate::gc::Gc::make_mut(arc_items);
         items.extend(values);
         if *kind == ArrayKind::List {
             *kind = ArrayKind::Array;
         }
-        let result = Value::Array(Arc::clone(arc_items), *kind);
+        let result = Value::Array(crate::gc::Gc::clone(arc_items), *kind);
         drop(sv);
         if is_thread_clone {
             let dirty_marker = format!("__mutsu_shared_dirty::{key}");

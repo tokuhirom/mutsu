@@ -56,7 +56,7 @@ pub(crate) fn deitemize_flat_operand(v: &Value) -> Value {
                 crate::value::Value::hash_arc_deitemized(h.clone()),
             ));
             Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(pairs)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(pairs)),
                 crate::value::ArrayKind::List,
             )
         }

@@ -240,7 +240,7 @@ impl Interpreter {
         let right_is_array = matches!(right, Value::Array(_, crate::value::ArrayKind::Array));
         if !left_is_array && !right_is_array {
             Ok(Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(results)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(results)),
                 crate::value::ArrayKind::List,
             ))
         } else {

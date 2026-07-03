@@ -254,7 +254,7 @@ impl Interpreter {
                 })
                 .collect();
             Value::Array(
-                std::sync::Arc::new(crate::value::ArrayData::new(resolved)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(resolved)),
                 kind,
             )
         } else {

@@ -101,7 +101,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             crate::value::lazy_list_placeholder("gist", ll.in_array_context())
         }
         Value::Array(items, kind) => {
-            let ptr = std::sync::Arc::as_ptr(items) as usize;
+            let ptr = crate::gc::Gc::as_ptr(items) as usize;
             let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));
             if is_cycle {
                 return match kind {

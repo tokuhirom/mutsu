@@ -143,7 +143,7 @@ impl Interpreter {
                             new_items[i] = val;
                         }
                     }
-                    let mut result = Value::Array(std::sync::Arc::new(new_items), is_arr);
+                    let mut result = Value::Array(crate::gc::Gc::new(new_items), is_arr);
                     crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
                     // Register type metadata for typed shaped arrays (e.g. array[str].new(:shape(5), ...))
                     if let Some(ta) = type_args

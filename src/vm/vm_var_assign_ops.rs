@@ -1,7 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 impl Interpreter {
     /// Return the default fill value for a native type constraint.
@@ -100,7 +99,7 @@ impl Interpreter {
                 } else {
                     return Ok(false);
                 }
-                *attr_value = Value::Array(Arc::new(updated), *kind);
+                *attr_value = Value::Array(crate::gc::Gc::new(updated), *kind);
                 Ok(true)
             }
             Value::Hash(hash) if matches!(idx, Value::Str(_)) => {
@@ -213,7 +212,7 @@ impl Interpreter {
                     return Err(RuntimeError::assignment_ro(None));
                 };
                 if let Value::Array(items, ..) = container {
-                    let arr = Arc::make_mut(items);
+                    let arr = crate::gc::Gc::make_mut(items);
                     Self::autoviv_resize(arr, i + 1, Value::Package(Symbol::intern("Any")))?;
                     arr[i] = value;
                     return Ok(());
@@ -233,7 +232,7 @@ impl Interpreter {
             let Value::Array(items, ..) = container else {
                 return Err(RuntimeError::assignment_ro(None));
             };
-            let arr = Arc::make_mut(items);
+            let arr = crate::gc::Gc::make_mut(items);
             Self::autoviv_resize(arr, i + 1, Value::Package(Symbol::intern("Any")))?;
             arr[i] = value;
             return Ok(());
@@ -262,7 +261,7 @@ impl Interpreter {
         if matches!(idx, Value::Whatever) {
             let indices: Vec<Value> = (0..len).map(Value::Int).collect();
             return Value::Array(
-                Arc::new(crate::value::ArrayData::new(indices)),
+                crate::gc::Gc::new(crate::value::ArrayData::new(indices)),
                 crate::value::ArrayKind::List,
             );
         }
@@ -305,7 +304,10 @@ impl Interpreter {
                         resolved.push(item.clone());
                     }
                 }
-                return Value::Array(Arc::new(crate::value::ArrayData::new(resolved)), kind);
+                return Value::Array(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(resolved)),
+                    kind,
+                );
             }
         }
         idx
@@ -385,7 +387,7 @@ impl Interpreter {
         seen_hashes: &mut Vec<usize>,
     ) -> bool {
         match v {
-            Value::Array(inner_arc, _) => Arc::as_ptr(inner_arc) as usize == old_ptr,
+            Value::Array(inner_arc, _) => crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr,
             Value::Hash(map) => {
                 let hash_ptr = crate::gc::Gc::as_ptr(map) as usize;
                 if seen_hashes.contains(&hash_ptr) {
@@ -410,12 +412,12 @@ impl Interpreter {
     pub(crate) fn replace_array_refs_in_value(
         v: &mut Value,
         old_ptr: usize,
-        new_array: &Arc<crate::value::ArrayData>,
+        new_array: &crate::gc::Gc<crate::value::ArrayData>,
         kind: ArrayKind,
         seen_hashes: &mut Vec<usize>,
     ) {
         match v {
-            Value::Array(inner_arc, _) if Arc::as_ptr(inner_arc) as usize == old_ptr => {
+            Value::Array(inner_arc, _) if crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr => {
                 *v = Value::Array(new_array.clone(), kind);
             }
             Value::Hash(map) => {
@@ -494,7 +496,7 @@ impl Interpreter {
             let mut hash_fixup_indices = Vec::new();
             for (i, v) in new_arc.iter().enumerate() {
                 if let Value::Array(inner_arc, _) = v
-                    && Arc::as_ptr(inner_arc) as usize == *old_ptr
+                    && crate::gc::Gc::as_ptr(inner_arc) as usize == *old_ptr
                 {
                     circular_indices.push(i);
                     new_items.push(Value::Nil); // placeholder
@@ -512,7 +514,7 @@ impl Interpreter {
             // SAFETY: result_arc was just created here; building a
             // self-referential cycle and the in-place recursive fixup must alias
             // it. See `arc_contents_mut`.
-            let data = unsafe { crate::value::arc_contents_mut(&result_arc) };
+            let data = unsafe { crate::value::gc_contents_mut(&result_arc) };
             for idx in &circular_indices {
                 data.items[*idx] = Value::Array(result_arc.clone(), *kind);
             }

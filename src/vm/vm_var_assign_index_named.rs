@@ -255,7 +255,7 @@ impl Interpreter {
         let old_container_arc_ptr: Option<usize> =
             if let Some(container) = self.env().get(&var_name) {
                 match container {
-                    Value::Array(arc, _) => Some(Arc::as_ptr(arc) as usize),
+                    Value::Array(arc, _) => Some(crate::gc::Gc::as_ptr(arc) as usize),
                     Value::Hash(arc) => Some(crate::gc::Gc::as_ptr(arc) as usize),
                     _ => None,
                 }
@@ -349,28 +349,28 @@ impl Interpreter {
             Value::Range(a, b) if expand_range => {
                 let items: Vec<Value> = (a..=b).map(Value::Int).collect();
                 Value::Array(
-                    Arc::new(crate::value::ArrayData::new(items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
             Value::RangeExcl(a, b) if expand_range => {
                 let items: Vec<Value> = (a..b).map(Value::Int).collect();
                 Value::Array(
-                    Arc::new(crate::value::ArrayData::new(items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
             Value::RangeExclStart(a, b) if expand_range => {
                 let items: Vec<Value> = ((a + 1)..=b).map(Value::Int).collect();
                 Value::Array(
-                    Arc::new(crate::value::ArrayData::new(items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
             Value::RangeExclBoth(a, b) if expand_range => {
                 let items: Vec<Value> = ((a + 1)..b).map(Value::Int).collect();
                 Value::Array(
-                    Arc::new(crate::value::ArrayData::new(items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
@@ -380,7 +380,7 @@ impl Interpreter {
             gr @ Value::GenericRange { .. } if expand_range => {
                 let items = crate::runtime::utils::value_to_list(&gr);
                 Value::Array(
-                    Arc::new(crate::value::ArrayData::new(items)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
@@ -495,7 +495,7 @@ impl Interpreter {
                     // across the write. (The old code cast the `ArrayData` pointer
                     // straight to `*mut Vec<Value>`, assuming `items` sits at
                     // offset 0; this types it properly as `&mut ArrayData`.)
-                    let data = unsafe { crate::value::arc_contents_mut(&items) };
+                    let data = unsafe { crate::value::gc_contents_mut(&items) };
                     data.items[i] = Value::Scalar(Box::new(val.clone()));
                     self.stack.push(val);
                     return Ok(());
@@ -551,7 +551,7 @@ impl Interpreter {
                     let mut assigned = Vec::new();
                     attributes.with_attr_mut("bytes", |bytes_val| {
                         if let Value::Array(items, ..) = bytes_val {
-                            let arr = Arc::make_mut(items);
+                            let arr = crate::gc::Gc::make_mut(items);
                             if let Err(e) = Self::autoviv_resize(arr, max_idx + 1, Value::Int(0)) {
                                 resize_err = Some(e);
                                 return;
@@ -574,7 +574,7 @@ impl Interpreter {
                     let mut resize_err = None;
                     attributes.with_attr_mut("bytes", |bytes_val| {
                         if let Value::Array(items, ..) = bytes_val {
-                            let arr = Arc::make_mut(items);
+                            let arr = crate::gc::Gc::make_mut(items);
                             if let Err(e) = Self::autoviv_resize(arr, pos + 1, Value::Int(0)) {
                                 resize_err = Some(e);
                                 return;
@@ -669,7 +669,7 @@ impl Interpreter {
                     // For array variables with junction index, use numeric indices
                     // (descend through any `:=`-bound cell, same as the hash arm).
                     if let Some(Value::Array(items, ..)) = self.env_root_descended_mut(&var_name) {
-                        let arr = Arc::make_mut(items);
+                        let arr = crate::gc::Gc::make_mut(items);
                         Self::autoviv_resize(arr, idx_usize + 1, native_fill.clone())?;
                         arr[idx_usize] = v;
                     }
@@ -708,7 +708,7 @@ impl Interpreter {
                     if let Some(max_idx) = max_index
                         && let Value::Array(items, ..) = container
                     {
-                        let arr = Arc::make_mut(items);
+                        let arr = crate::gc::Gc::make_mut(items);
                         Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
                     }
                     let mut vals_iter = vals.into_iter();
@@ -826,7 +826,7 @@ impl Interpreter {
                         if let Some(max_idx) = Self::slice_key_tree_max_index(top_tree)
                             && let Value::Array(items, ..) = container
                         {
-                            let arr = Arc::make_mut(items);
+                            let arr = crate::gc::Gc::make_mut(items);
                             Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
                         }
                         let mut vals_iter = vals.into_iter();
@@ -848,7 +848,7 @@ impl Interpreter {
                             .max()
                             .unwrap_or(0);
                         if let Value::Array(items, ..) = container {
-                            let arr = Arc::make_mut(items);
+                            let arr = crate::gc::Gc::make_mut(items);
                             Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
                         }
                         // Assign each value to the corresponding index
@@ -1491,7 +1491,7 @@ impl Interpreter {
                                 )?;
                             } else if let Some((slice_indices, vals)) = &range_slice {
                                 if let Value::Array(items, ..) = container {
-                                    let arr = Arc::make_mut(items);
+                                    let arr = crate::gc::Gc::make_mut(items);
                                     if let Some(max_idx) = slice_indices.last().copied()
                                         && max_idx >= arr.len()
                                     {
@@ -1516,19 +1516,19 @@ impl Interpreter {
                                 if let Value::Array(items, ..) = container {
                                     let is_self_array_ref = matches!(
                                         &val,
-                                        Value::Array(source_items, ..) if Arc::ptr_eq(items, source_items)
+                                        Value::Array(source_items, ..) if crate::gc::Gc::ptr_eq(items, source_items)
                                     );
                                     // Use in-place mutation when the array is shared
                                     // (strong_count > 1) to preserve identity semantics
                                     // and support shared `ContainerRef` cell binding.
-                                    let use_inplace =
-                                        Arc::strong_count(items) > 1 && !var_name.starts_with('@');
+                                    let use_inplace = crate::gc::Gc::strong_count(items) > 1
+                                        && !var_name.starts_with('@');
                                     let arr: &mut crate::value::ArrayData = if use_inplace {
                                         // SAFETY: aliased in-place mutation of a
                                         // shared array; see `arc_contents_mut`.
-                                        unsafe { crate::value::arc_contents_mut(items) }
+                                        unsafe { crate::value::gc_contents_mut(items) }
                                     } else {
-                                        Arc::make_mut(items)
+                                        crate::gc::Gc::make_mut(items)
                                     };
                                     Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
                                     if bind_mode && let Some((source_install, cell)) = &bind_cell {
@@ -1811,7 +1811,7 @@ impl Interpreter {
                 .or_else(|| self.env().get(&original_var_name).cloned());
             if let Some(ref container) = current {
                 let new_arc_ptr = match container {
-                    Value::Array(arc, _) => Some(Arc::as_ptr(arc) as usize),
+                    Value::Array(arc, _) => Some(crate::gc::Gc::as_ptr(arc) as usize),
                     Value::Hash(arc) => Some(crate::gc::Gc::as_ptr(arc) as usize),
                     _ => None,
                 };
@@ -2056,7 +2056,7 @@ impl Interpreter {
         if let Some(Value::Array(outer_arr, _kind)) = self.env_root_descended_mut(&var_name)
             && let Ok(inner_i) = inner_key.parse::<usize>()
         {
-            let arr = Arc::make_mut(outer_arr);
+            let arr = crate::gc::Gc::make_mut(outer_arr);
             Self::autoviv_resize(arr, inner_i + 1, native_fill.clone())?;
             // Autovivify the slot if it's not already a container. A
             // `:=`-bound element is a shared `ContainerRef` cell holding a
@@ -2083,14 +2083,14 @@ impl Interpreter {
                     if let Ok(j) = outer_key.parse::<usize>() {
                         // Use interior mutation when the inner array is shared
                         // (e.g., by a `ContainerRef` cell from := binding).
-                        if Arc::strong_count(inner_arr) > 1 {
+                        if crate::gc::Gc::strong_count(inner_arr) > 1 {
                             // SAFETY: aliased in-place mutation of a shared array
                             // (strong_count > 1); see `arc_contents_mut`.
-                            let v = &mut unsafe { crate::value::arc_contents_mut(inner_arr) }.items;
+                            let v = &mut unsafe { crate::value::gc_contents_mut(inner_arr) }.items;
                             Self::autoviv_resize(v, j + 1, Value::Nil)?;
                             Value::assign_element_slot(&mut v[j], val.clone());
                         } else {
-                            let inner = Arc::make_mut(inner_arr);
+                            let inner = crate::gc::Gc::make_mut(inner_arr);
                             Self::autoviv_resize(inner, j + 1, native_fill.clone())?;
                             Value::assign_element_slot(&mut inner[j], val.clone());
                         }
@@ -2175,14 +2175,14 @@ impl Interpreter {
             }
             Value::Array(arr, _) => {
                 if let Ok(i) = outer_key.parse::<usize>() {
-                    if Arc::strong_count(arr) > 1 {
+                    if crate::gc::Gc::strong_count(arr) > 1 {
                         // SAFETY: aliased in-place mutation of a shared array
                         // (strong_count > 1); see `arc_contents_mut`.
-                        let v = &mut unsafe { crate::value::arc_contents_mut(arr) }.items;
+                        let v = &mut unsafe { crate::value::gc_contents_mut(arr) }.items;
                         Self::autoviv_resize(v, i + 1, Value::Nil)?;
                         Value::assign_element_slot(&mut v[i], val);
                     } else {
-                        let a = Arc::make_mut(arr);
+                        let a = crate::gc::Gc::make_mut(arr);
                         Self::autoviv_resize(a, i + 1, Value::Nil)?;
                         Value::assign_element_slot(&mut a[i], val);
                     }
@@ -2379,7 +2379,7 @@ impl Interpreter {
                     match &mut *current {
                         Value::Array(arr_arc, _) => {
                             if let Ok(i) = key.parse::<usize>() {
-                                let arr = Arc::make_mut(arr_arc);
+                                let arr = crate::gc::Gc::make_mut(arr_arc);
                                 Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
                                 // Autovivify if needed. A `ContainerRef` is a
                                 // `:=`-bound cell that holds (and is descended to)
@@ -2422,7 +2422,7 @@ impl Interpreter {
                             match &mut *current {
                                 Value::Array(arr_arc, _) => {
                                     if let Ok(i) = key.parse::<usize>() {
-                                        let arr = Arc::make_mut(arr_arc);
+                                        let arr = crate::gc::Gc::make_mut(arr_arc);
                                         Self::autoviv_resize(
                                             arr,
                                             i + 1,
@@ -2464,7 +2464,7 @@ impl Interpreter {
                     match &mut *current {
                         Value::Array(arr_arc, _) => {
                             if let Ok(i) = key.parse::<usize>() {
-                                let arr = Arc::make_mut(arr_arc);
+                                let arr = crate::gc::Gc::make_mut(arr_arc);
                                 Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
                                 if bind_cell.is_some() {
                                     arr[i] = leaf_val;
@@ -2696,7 +2696,7 @@ impl Interpreter {
                     // SAFETY: aliased in-place mutation of a shared array so the
                     // change is visible to all holders of the same Arc; see
                     // `arc_contents_mut`.
-                    let v = &mut unsafe { crate::value::arc_contents_mut(arc) }.items;
+                    let v = &mut unsafe { crate::value::gc_contents_mut(arc) }.items;
                     Self::autoviv_resize(v, i + 1, Value::Nil)?;
                     match &bind_cell {
                         // Bind mode installs the shared cell at the element;

@@ -166,7 +166,7 @@ impl Interpreter {
     pub(super) fn cas_retry_matches(expected_seen: &Value, latest_seen: &Value) -> bool {
         match (expected_seen, latest_seen) {
             (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
-            (Value::Array(a, ..), Value::Array(b, ..)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Array(a, ..), Value::Array(b, ..)) => crate::gc::Gc::ptr_eq(a, b),
             (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
             (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
             (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),

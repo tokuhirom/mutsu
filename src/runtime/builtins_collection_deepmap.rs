@@ -267,7 +267,7 @@ impl Interpreter {
                                     // SAFETY: aliased in-place mutation of a shared
                                     // container; see `arc_contents_mut`.
                                     unsafe {
-                                        crate::value::arc_contents_mut(items).items[idx] = new_src;
+                                        crate::value::gc_contents_mut(items).items[idx] = new_src;
                                     }
                                 }
                                 result.push(v);
@@ -304,7 +304,7 @@ impl Interpreter {
                     crate::value::ArrayKind::List
                 };
                 Ok(Value::Array(
-                    std::sync::Arc::new(crate::value::ArrayData::new(result)),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(result)),
                     arr_kind,
                 ))
             }
@@ -320,7 +320,7 @@ impl Interpreter {
                 if itemize_result {
                     // Itemize the result as a list
                     Ok(Value::Array(
-                        std::sync::Arc::new(crate::value::ArrayData::new(result)),
+                        crate::gc::Gc::new(crate::value::ArrayData::new(result)),
                         crate::value::ArrayKind::ItemList,
                     ))
                 } else {

@@ -26,7 +26,7 @@ pub(crate) enum ValueIterator {
     /// Already-materialized Array elements. Shares the source `Arc` (the
     /// `ArrayData` wrapper derefs to the element vector — no copy).
     ArraySlice {
-        items: Arc<crate::value::ArrayData>,
+        items: crate::gc::Gc<crate::value::ArrayData>,
         idx: usize,
     },
     /// Lazy integer counter. `end == i64::MAX` with `inclusive` represents an

@@ -544,7 +544,7 @@ pub(crate) fn sort_value_generic(
                 let Value::Array(mut items, ..) = target else {
                     unreachable!()
                 };
-                let items_mut = Arc::make_mut(&mut items);
+                let items_mut = crate::gc::Gc::make_mut(&mut items);
                 if return_indices {
                     Ok(Value::array(sort_indices_generic(
                         caller,

@@ -3,7 +3,6 @@
 use super::*;
 use crate::symbol::Symbol;
 use num_traits::Zero;
-use std::sync::Arc;
 
 impl Interpreter {
     pub(super) fn array_depth(value: &Value) -> usize {
@@ -130,7 +129,7 @@ impl Interpreter {
         if i >= items.len() {
             return Err(RuntimeError::new("Index out of bounds"));
         }
-        let arr = Arc::make_mut(items);
+        let arr = crate::gc::Gc::make_mut(items);
         if indices.len() == 1 {
             Value::assign_element_slot(&mut arr[i], val);
         } else {
@@ -169,7 +168,7 @@ impl Interpreter {
         if i >= items.len() {
             return Ok(hole_value());
         }
-        let arr = Arc::make_mut(items);
+        let arr = crate::gc::Gc::make_mut(items);
         if indices.len() == 1 {
             let prev = arr[i].clone();
             arr[i] = hole_value();
