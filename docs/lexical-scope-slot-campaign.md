@@ -138,12 +138,28 @@ broadcast = touches every slot with the name.
       `find_local_slot` by name, keeping the `@`-name + env fallback for a `None`
       slot. Behavior-preserving today; verified byte-identical across the whole
       `make test` suite via a temporary `debug_assert_eq!` (never fired). *(done)*
-- [ ] S10+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
+- [x] **S11 — element/index-assign target slot** (`$a<x> = 42` / `$a<a b c> »=» 42`
+      on a shadowed `$a`; also `@a[i] = v`). `IndexAssignExprNamed` gains a compile-
+      time `target_slot` (baked at its 6 emit sites: `expr_method.rs` ×2,
+      `expr_closure.rs` ×2, `expr_ops.rs`, `expr_call.rs`). `exec_index_assign_expr_
+      named_op_inner` computes `eff_slot`/`orig_slot` (gated on `shadow_slots_active()`,
+      cleared to `None` when a sigilless alias redirects to a different variable) and
+      routes its 7 *target-var* resolvers (3 `find_local_slot` → `resolve_local_slot`,
+      4 `update_local_if_exists`/`original_var_name` → `write_local_slot_or_name`)
+      through the baked slot; the `source_name`/`src` `:=`-cell sites keep by-name.
+      **GATED on `shadow_slots_active()`** because `resolve_local_slot` treats an
+      out-of-range baked slot as "not local" (returns `None` instead of a by-name
+      search), which diverged on chained slice-lvalue assignment; OFF stays
+      byte-identical. `roast/S13-overloading/metaoperators.t` #14-16 green ON.
+      Validated OFF with `make roast` (map.t/hash.t transient failures were CPU-
+      starvation flaky, not this change). *(#4090-pending)*
+- [ ] S12+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
       for-loop *container* source writeback (`write_back_container_source`,
       `write_back_for_topic_item`, resolved by the runtime-derived
-      `container_ref_var` name — a §1.3 concern); element/index-assign,
-      computed-attr twigil cells, hyper writeback, and the ~80 `update_local_if_exists`
-      callers generally — migrated onto `resolve_local_slot`/`write_local_slot_or_name`.
+      `container_ref_var` name — a §1.3 concern); the nested/deep/generic index-assign
+      variants (`IndexAssignExprNested`/`DeepNested`/`Generic`), computed-attr twigil
+      cells, hyper `»=»` multi-key writeback, and the remaining `update_local_if_exists`
+      callers — migrated onto `resolve_local_slot`/`write_local_slot_or_name`.
 - [~] §1.4 flip + `pop_local_scope` restore — **landed gated** behind
       `MUTSU_SHADOW_SLOTS` (default off = byte-identical). See the
       "shadow-slot activation, gated" section below. Default flip pends §1.3.

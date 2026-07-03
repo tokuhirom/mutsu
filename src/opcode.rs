@@ -808,6 +808,13 @@ pub(crate) enum OpCode {
     IndexAssignExprNamed {
         name_idx: u32,
         is_positional: bool,
+        /// §1.4 shadow-slot: the compiler-resolved local slot for the target var
+        /// (`local_map[name]` at emit time), or `None` for a non-local target
+        /// (global/dynamic/undeclared). The exec prefers this baked slot over the
+        /// by-name `find_local_slot` (position = outer) so a shadowing inner-block
+        /// `my $a` writes its own slot. Byte-identical with shadows off (baked ==
+        /// position). See docs/lexical-scope-slot-campaign.md.
+        target_slot: Option<u32>,
     },
     IndexAssignPseudoStashNamed {
         stash_name_idx: u32,

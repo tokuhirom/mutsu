@@ -2897,9 +2897,15 @@ impl Interpreter {
             OpCode::IndexAssignExprNamed {
                 name_idx,
                 is_positional,
+                target_slot,
             } => {
                 let pre = self.array_hash_attr_env_snapshot(code, *name_idx);
-                self.exec_index_assign_expr_named_op(code, *name_idx, *is_positional)?;
+                self.exec_index_assign_expr_named_op(
+                    code,
+                    *name_idx,
+                    *is_positional,
+                    *target_slot,
+                )?;
                 self.mirror_array_hash_attr_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
