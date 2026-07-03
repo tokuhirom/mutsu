@@ -67,6 +67,22 @@ static ENV_DEEP_COPY: AtomicU64 = AtomicU64::new(0);
 static ENV_FLUSH: AtomicU64 = AtomicU64::new(0);
 static ENV_SLOTS_FLUSHED: AtomicU64 = AtomicU64::new(0);
 
+// GC Level 1a counters (ADR-0001/0002, docs/gc-level1-detailed-design.md
+// §8/§9.4a, §11 step 3). No candidate buffer or collector exists yet (§11
+// steps 4+), so these all read 0 today — the counter framework is laid down
+// ahead of the collector so instrumentation is never bolted on retroactively.
+// Success criterion once wired in (§8): `gc_candidate_pushes == 0` on the
+// `fib` benchmark, proving the scalar/container type filter keeps int-heavy
+// hot paths GC-cost-free.
+static GC_CANDIDATE_PUSHES: AtomicU64 = AtomicU64::new(0);
+static GC_CANDIDATE_DEDUP_HITS: AtomicU64 = AtomicU64::new(0);
+static GC_COLLECTIONS: AtomicU64 = AtomicU64::new(0);
+static GC_RECLAIMED_NODES: AtomicU64 = AtomicU64::new(0);
+static GC_RECLAIMED_CYCLES: AtomicU64 = AtomicU64::new(0);
+static GC_PAUSE_NS_TOTAL: AtomicU64 = AtomicU64::new(0);
+static GC_PAUSE_NS_MAX: AtomicU64 = AtomicU64::new(0);
+static GC_ROOTS_SCANNED: AtomicU64 = AtomicU64::new(0);
+
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
 #[inline]
@@ -172,6 +188,47 @@ pub(crate) fn record_env_flush(slots: u64) {
     }
 }
 
+/// Record a GC cycle-candidate buffer push: a mutation chokepoint flagged a
+/// GC-managed node as a possible cycle member (design doc §4.2). Not called
+/// anywhere yet — the candidate buffer itself lands in §11 step 4.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn record_gc_candidate_push() {
+    if enabled() {
+        GC_CANDIDATE_PUSHES.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record that a candidate push deduplicated against an already-buffered node
+/// instead of adding a new entry.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn record_gc_candidate_dedup_hit() {
+    if enabled() {
+        GC_CANDIDATE_DEDUP_HITS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record one completed collect cycle: `roots_scanned` nodes visited from the
+/// root set, `reclaimed_nodes`/`reclaimed_cycles` freed, taking `pause_ns`.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn record_gc_collection(
+    roots_scanned: u64,
+    reclaimed_nodes: u64,
+    reclaimed_cycles: u64,
+    pause_ns: u64,
+) {
+    if enabled() {
+        GC_COLLECTIONS.fetch_add(1, Ordering::Relaxed);
+        GC_ROOTS_SCANNED.fetch_add(roots_scanned, Ordering::Relaxed);
+        GC_RECLAIMED_NODES.fetch_add(reclaimed_nodes, Ordering::Relaxed);
+        GC_RECLAIMED_CYCLES.fetch_add(reclaimed_cycles, Ordering::Relaxed);
+        GC_PAUSE_NS_TOTAL.fetch_add(pause_ns, Ordering::Relaxed);
+        GC_PAUSE_NS_MAX.fetch_max(pause_ns, Ordering::Relaxed);
+    }
+}
+
 /// Print a one-line summary of Interpreter fallback statistics to stderr.
 ///
 /// No-op unless `MUTSU_VM_STATS` is set. Counts aggregate across worker threads
@@ -213,6 +270,19 @@ pub(crate) fn dump() {
     let slots = ENV_SLOTS_FLUSHED.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] dual-store: clone_env={clone_env} (O(1) Arc bumps) env_deep_copies={deep_copy} (O(env) make_mut) env_flushes={env_flush} slots_flushed={slots}"
+    );
+    // GC Level 1a (§11 step 3): all zero until the collector (§11 step 4+)
+    // starts calling record_gc_candidate_push/record_gc_collection.
+    let gc_collections = GC_COLLECTIONS.load(Ordering::Relaxed);
+    let gc_candidate_pushes = GC_CANDIDATE_PUSHES.load(Ordering::Relaxed);
+    let gc_dedup_hits = GC_CANDIDATE_DEDUP_HITS.load(Ordering::Relaxed);
+    let gc_reclaimed_nodes = GC_RECLAIMED_NODES.load(Ordering::Relaxed);
+    let gc_reclaimed_cycles = GC_RECLAIMED_CYCLES.load(Ordering::Relaxed);
+    let gc_pause_ns_total = GC_PAUSE_NS_TOTAL.load(Ordering::Relaxed);
+    let gc_pause_ns_max = GC_PAUSE_NS_MAX.load(Ordering::Relaxed);
+    let gc_roots_scanned = GC_ROOTS_SCANNED.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] gc: collections={gc_collections} candidate_pushes={gc_candidate_pushes} dedup_hits={gc_dedup_hits} reclaimed_nodes={gc_reclaimed_nodes} reclaimed_cycles={gc_reclaimed_cycles} pause_ns_total={gc_pause_ns_total} pause_ns_max={gc_pause_ns_max} roots_scanned={gc_roots_scanned}"
     );
     if let Ok(map) = function_fallback_by_name().lock()
         && !map.is_empty()
