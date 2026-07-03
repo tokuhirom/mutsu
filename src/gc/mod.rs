@@ -21,7 +21,7 @@ mod gc_ptr;
 mod root_visitor;
 
 #[allow(unused_imports)]
-pub(crate) use collect::{CollectStats, collect_cycles, gc_debug_collect_now};
+pub(crate) use collect::{CollectStats, collect_cycles, collect_if_enabled, gc_debug_collect_now};
 #[allow(unused_imports)]
 pub(crate) use gc_ptr::{
     Color, ContainerMakeMut, ErasedGc, Gc, Trace, drain_candidates, gc_contents_mut, gc_enabled,

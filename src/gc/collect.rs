@@ -187,6 +187,31 @@ pub(crate) fn gc_debug_collect_now() -> CollectStats {
     collect_cycles()
 }
 
+/// Run a collection at a named safepoint if `MUTSU_GC=on`, logging the result
+/// when `MUTSU_GC_LOG=1` (design §9.4). No-op with GC off, so the wired call
+/// sites are free on the default path. This is the seam that turns the
+/// otherwise manual-only collector (`gc_debug_collect_now`) into one that runs
+/// automatically at program safepoints (§11 step 8).
+pub(crate) fn collect_if_enabled(safepoint: &str) {
+    if !super::gc_ptr::gc_enabled() {
+        return;
+    }
+    let stats = collect_cycles();
+    if gc_log_enabled() && (stats.reclaimed_nodes > 0 || stats.reclaimed_cycles > 0) {
+        eprintln!(
+            "[mutsu gc] collect@{safepoint}: reclaimed {} nodes in {} cycles ({} roots scanned)",
+            stats.reclaimed_nodes, stats.reclaimed_cycles, stats.roots_scanned,
+        );
+    }
+}
+
+/// `MUTSU_GC_LOG=1`/`on` — emit a line per non-empty collection (design §9.4).
+fn gc_log_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| matches!(std::env::var("MUTSU_GC_LOG").as_deref(), Ok("1") | Ok("on")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::gc_ptr::{Gc, Trace};
