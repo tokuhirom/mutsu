@@ -258,10 +258,28 @@ impl Interpreter {
     /// in a separate stats bucket (lever A). The remaining coupling — that the
     /// shared env/classes/roles registries are owned by the `Interpreter` struct
     /// — is a lever B (state ownership) concern, not a dispatch fallback.
+    ///
+    /// The re-dispatch primitives (`samewith`/`callsame`/`nextsame`/`callwith`/
+    /// `nextwith`/`nextcallee`/`lastcall`) are carriers too: each re-enters normal
+    /// dispatch (`call_function` / `call_sub_value` / `call_method_with_values`) to
+    /// run the *next / same* candidate, and that candidate body runs **compiled**
+    /// (function OTF and method-execution are both VM-native — ledger §D). So the
+    /// interpreter carries the re-dispatch primitive but does not tree-walk the
+    /// user code it redispatches to; counting them as tree-walk fallbacks overstated
+    /// the §2 function-fallback metric.
     pub(super) fn is_interpreter_carrier_function(name: &str) -> bool {
-        name == "EVAL"
-            || name == "EVALFILE"
-            || name.contains("SETTING::")
+        matches!(
+            name,
+            "EVAL"
+                | "EVALFILE"
+                | "samewith"
+                | "callsame"
+                | "nextsame"
+                | "callwith"
+                | "nextwith"
+                | "nextcallee"
+                | "lastcall"
+        ) || name.contains("SETTING::")
             || name.contains("OUTER::")
             || name.contains("CALLER::")
             || name.contains("DYNAMIC::")
