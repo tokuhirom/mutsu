@@ -375,3 +375,62 @@ done). Each remaining genuine regression is one of:
 **Next concrete slice: bake `IndexAssignExprNamed.target_slot`** (element/index-assign
 on a shadowed target). It is the cleanest of the remaining dedicated-site leaves and
 does not touch the shared `apply_pending_rw_writeback` drain (roast:0's half).
+
+## §1.4 toggle-ON survey #3 (2026-07-03, after #4091 rw-arg + IndexAssignExprNamed on main)
+
+Re-probed the survey #2 regression set on top of the rw-arg writeback drain bake
+(#4091, roast:0's `apply_pending_rw_writeback` slot half) and the
+`IndexAssignExprNamed.target_slot` bake now on `main` (roast:1's element-assign half).
+**The class-2 leaf regressions from survey #2 are gone:** `S03-metaops/cross.t`,
+`zip.t`, `S02-types/pair.t`, `S13-overloading/metaoperators.t` (#14-16 `»=»`), and
+`S17-supply/Channel.t` all pass **ON** now. `for.t`/`pair.t` residual failures are
+pre-existing (identical OFF), not shadow regressions.
+
+**Remaining genuine toggle-ON regressions are ALL class-1 §1.3** (the name-keyed env
+cannot hold two live same-name bindings; reads use `GetLocal(slot)` and every
+bakeable leaf writeback now carries a compile-time slot, so what's left is purely
+the env-coherence half):
+
+- `S32-list/reverse.t` #9-10 — `my @a="foo"; my @b=@a.reverse; my $b=@a.reverse;`
+  where `@a`/`@b`/`$b` shadow earlier same-name blocks. `$b` (scalar) / `@a` aggregate
+  coherence collapses because env keys `a`/`b` hold the wrong live binding.
+- `S02-types/hash.t` #80-81 — `$/`/`$0` as hash keys inside a `my %h` that shadows an
+  earlier `%h`; the smartmatch `$/` env sync collides with the shadowed `%h` slot.
+- `S06-advanced/wrap.t` (+2) — a closure captures the wrong-slot lexical (env capture
+  reads the outer name).
+- `S02-types/whatever.t` #45 — "did not get promoted into its own scope": a
+  declaration-model / scope-promotion question, not a writeback leaf.
+
+**Conclusion: §1.4 class-2 leaves are exhausted** (all bakeable single-site writebacks
+done; `substr-rw`/scalar-`given`-topic remain but are niche AND route through special
+lvalue/topic paths — see memory `leaf5-given-topic-rabbithole`). The gate default flip
+is now blocked ONLY on §1.3 (slot-indexed locals / eliminate the env-by-name mirror
+for locals) + removing the `exec_block_scope_op` whole-`locals` clone.
+
+## §1.3 plan (slot-indexed locals — the remaining load-bearing refactor)
+
+The class-1 root: `env` is a name-keyed `HashMap` that mirrors every local by name, so
+two live `$x` (outer + inner shadow) collapse to one `env["x"]`. Reads are already
+slot-indexed (`GetLocal`), and the shadow-slot machinery gives each shadow its own
+`locals` slot; the break is only the paths that still round-trip a local **through env
+by name**: closure capture (`box_captured_lexicals` / `closure_env_overrides`), regex
+interpolation sync (`sync_regex_interpolation_env_from_locals`), cross-thread env copy,
+and the `.=`/aggregate writeback env mirror.
+
+Concrete first slices (each behavior-preserving with the gate OFF; roast is the net):
+1. **Audit the env-mirror-for-locals write sites** (`set_env_with_main_alias` /
+   `env_mut().insert` for names that are also `code.locals`). Enumerate which are
+   load-bearing for closures/regex/threads vs. vestigial.
+2. **Make closure capture slot-addressed** for shadowed locals: capture the `locals`
+   slot (or its `ContainerRef` cell), not `env[name]`, so a wrapper/closure over an
+   inner shadow reads the inner cell (fixes `wrap.t`). This overlaps ADR-0001 layer-3a
+   (container cells) — coordinate with GC, do NOT box scalars eagerly.
+3. **Slot-key the regex-interp / smartmatch env sync** so `$/`/`$0` and a shadowed
+   `%h` don't collide (fixes `hash.t`).
+4. **Remove the `exec_block_scope_op` `locals.clone()`** once 1-3 hold, then flip the
+   `MUTSU_SHADOW_SLOTS` default and burn down the resulting roast set.
+
+**ADR note:** §1.3 slot-indexed locals is a large architectural call and its closure
+half overlaps ADR-0001 (Track B container cells fused with GC). Per CLAUDE.md, land it
+as coordinated slices with roast as the safety net, and do NOT eagerly box scalar
+locals (the flaky-capture trap, ANALYSIS §1.3). A dedicated session per slice.
