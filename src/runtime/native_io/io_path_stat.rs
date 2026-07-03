@@ -255,77 +255,71 @@ impl Interpreter {
                     ))
                 }
             },
-            "mode" => {
-                let metadata = fs::metadata(path_buf)
-                    .map_err(|err| RuntimeError::new(format!("Failed to stat '{}': {}", p, err)))?;
-                #[cfg(unix)]
-                {
-                    let mode = metadata.permissions().mode() & 0o777;
-                    Ok(Value::str(format!("{:04o}", mode)))
-                }
-                #[cfg(not(unix))]
-                {
-                    let mode = if metadata.permissions().readonly() {
-                        "0444"
-                    } else {
-                        "0666"
+            // `.mode` returns an `IntStr` allomorph (`.Int` = the octal mode value,
+            // `.Str` = the zero-padded octal string) and fails with
+            // `X::IO::DoesNotExist` on a missing path (roast S32-io/file-tests.t).
+            "mode" => match fs::metadata(path_buf) {
+                Ok(metadata) => {
+                    #[cfg(unix)]
+                    let (mode, s) = {
+                        let m = metadata.permissions().mode() & 0o777;
+                        (m as i64, format!("{:04o}", m))
                     };
-                    Ok(Value::str(mode.to_string()))
+                    #[cfg(not(unix))]
+                    let (mode, s) = if metadata.permissions().readonly() {
+                        (0o444, "0444".to_string())
+                    } else {
+                        (0o666, "0666".to_string())
+                    };
+                    Self::build_native_allomorph_value("IntStr", &[Value::Int(mode), Value::str(s)])
                 }
-            }
-            "s" => {
-                let size = io_path_metadata(path_buf, p, method)?.len();
-                Ok(Value::Int(size as i64))
-            }
-            "created" => {
-                let ts = fs::metadata(path_buf)
-                    .and_then(|meta| meta.created())
-                    .map(Self::system_time_to_int)
-                    .map_err(|err| {
-                        RuntimeError::new(format!("Failed to get created time '{}': {}", p, err))
-                    })?;
-                Ok(Value::Int(ts))
-            }
-            "modified" => {
-                let ts = fs::metadata(path_buf)
-                    .and_then(|meta| meta.modified())
-                    .map(Self::system_time_to_int)
-                    .map_err(|err| {
-                        RuntimeError::new(format!("Failed to get modified time '{}': {}", p, err))
-                    })?;
-                Ok(Value::Int(ts))
-            }
-            "accessed" => {
-                let ts = fs::metadata(path_buf)
-                    .and_then(|meta| meta.accessed())
-                    .map(Self::system_time_to_int)
-                    .map_err(|err| {
-                        RuntimeError::new(format!("Failed to get accessed time '{}': {}", p, err))
-                    })?;
-                Ok(Value::Int(ts))
-            }
+                Err(_) => Ok(io_path_missing_failure(p, "mode")),
+            },
+            "s" => match fs::metadata(path_buf) {
+                Ok(meta) => Ok(Value::Int(meta.len() as i64)),
+                // `.s` on a missing path fails with `X::IO::DoesNotExist` (a Failure),
+                // not a thrown generic error (roast S32-io/file-tests.t).
+                Err(_) => Ok(io_path_missing_failure(p, "s")),
+            },
+            // `.created`/`.modified`/`.accessed`/`.changed` return an `Instant` in
+            // Raku, and fail with `X::IO::DoesNotExist` (a Failure) on a missing
+            // path — not a plain Int / generic error (roast S32-io/file-tests.t).
+            "created" => match fs::metadata(path_buf).and_then(|meta| meta.created()) {
+                Ok(t) => Ok(Value::make_instant_from_posix(
+                    Self::system_time_to_int(t) as f64
+                )),
+                Err(_) => Ok(io_path_missing_failure(p, "created")),
+            },
+            "modified" => match fs::metadata(path_buf).and_then(|meta| meta.modified()) {
+                Ok(t) => Ok(Value::make_instant_from_posix(
+                    Self::system_time_to_int(t) as f64
+                )),
+                Err(_) => Ok(io_path_missing_failure(p, "modified")),
+            },
+            "accessed" => match fs::metadata(path_buf).and_then(|meta| meta.accessed()) {
+                Ok(t) => Ok(Value::make_instant_from_posix(
+                    Self::system_time_to_int(t) as f64
+                )),
+                Err(_) => Ok(io_path_missing_failure(p, "accessed")),
+            },
             "changed" => {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::MetadataExt;
-                    let meta = fs::metadata(path_buf).map_err(|err| {
-                        RuntimeError::new(format!("Failed to get changed time '{}': {}", p, err))
-                    })?;
-                    Ok(Value::Int(meta.ctime()))
+                    match fs::metadata(path_buf) {
+                        Ok(meta) => Ok(Value::make_instant_from_posix(meta.ctime() as f64)),
+                        Err(_) => Ok(io_path_missing_failure(p, "changed")),
+                    }
                 }
                 #[cfg(not(unix))]
                 {
-                    // On non-Unix platforms, fall back to modified time
-                    let ts = fs::metadata(path_buf)
-                        .and_then(|meta| meta.modified())
-                        .map(Self::system_time_to_int)
-                        .map_err(|err| {
-                            RuntimeError::new(format!(
-                                "Failed to get changed time '{}': {}",
-                                p, err
-                            ))
-                        })?;
-                    Ok(Value::Int(ts))
+                    // On non-Unix platforms, fall back to modified time.
+                    match fs::metadata(path_buf).and_then(|meta| meta.modified()) {
+                        Ok(t) => Ok(Value::make_instant_from_posix(
+                            Self::system_time_to_int(t) as f64
+                        )),
+                        Err(_) => Ok(io_path_missing_failure(p, "changed")),
+                    }
                 }
             }
             _ => unreachable!("io_path_stat_result called with non-stat method"),

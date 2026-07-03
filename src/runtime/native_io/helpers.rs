@@ -54,28 +54,6 @@ pub(crate) fn io_path_missing_failure(path: &str, method: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
-fn io_path_missing_error(path: &str, method: &str) -> RuntimeError {
-    let message = format!("Failed to find '{}' while trying to do '.{}'", path, method);
-    let mut attrs = HashMap::new();
-    attrs.insert("message".to_string(), Value::str(message.clone()));
-    attrs.insert("path".to_string(), Value::str(path.to_string()));
-    attrs.insert("trying".to_string(), Value::str(method.to_string()));
-    let mut err = RuntimeError::new(message);
-    err.exception = Some(Box::new(Value::make_instance(
-        Symbol::intern("X::IO::DoesNotExist"),
-        attrs,
-    )));
-    err
-}
-
-pub(crate) fn io_path_metadata(
-    path: &Path,
-    display_path: &str,
-    method: &str,
-) -> Result<fs::Metadata, RuntimeError> {
-    fs::metadata(path).map_err(|_| io_path_missing_error(display_path, method))
-}
-
 #[cfg(unix)]
 fn path_access(path: &Path, mode: libc::c_int) -> bool {
     use std::ffi::CString;
