@@ -743,7 +743,7 @@ impl Interpreter {
             } else if let Value::Str(s) = &key {
                 Self::ensure_hash(target);
                 if let Value::Hash(map, ..) = target {
-                    let map = std::sync::Arc::make_mut(map);
+                    let map = crate::gc::Gc::make_mut(map);
                     let entry = map
                         .entry(s.as_str().to_string())
                         .or_insert_with(|| Value::Package(crate::symbol::Symbol::intern("Any")));
@@ -786,7 +786,7 @@ impl Interpreter {
         } else if let Value::Str(s) = &key {
             Self::ensure_hash(target);
             if let Value::Hash(map, ..) = target {
-                let map = std::sync::Arc::make_mut(map);
+                let map = crate::gc::Gc::make_mut(map);
                 let entry = map
                     .entry(s.as_str().to_string())
                     .or_insert_with(|| Value::Package(crate::symbol::Symbol::intern("Any")));

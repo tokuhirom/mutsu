@@ -7,7 +7,7 @@ impl Value {
         if let Some((arc, key)) = self.hash_entry_terminal() {
             // SAFETY: aliased in-place mutation of a shared hash; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
-            let data = unsafe { arc_contents_mut(&arc) };
+            let data = unsafe { crate::value::gc_contents_mut(&arc) };
             Value::hash_insert_through(&mut data.map, key, val);
         }
     }

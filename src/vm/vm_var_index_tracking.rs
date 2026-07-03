@@ -27,7 +27,7 @@ impl Interpreter {
     pub(super) fn mark_bound_index(&mut self, var_name: &str, encoded: String) {
         let key = format!("__mutsu_bound_index::{}", var_name);
         if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            Arc::make_mut(map).insert(encoded, Value::Bool(true));
+            crate::gc::Gc::make_mut(map).insert(encoded, Value::Bool(true));
             return;
         }
         let mut map = std::collections::HashMap::new();
@@ -44,7 +44,7 @@ impl Interpreter {
     pub(super) fn mark_element_share(&mut self, var_name: &str, encoded: String) {
         let key = format!("__mutsu_elem_share::{}", var_name);
         if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            Arc::make_mut(map).insert(encoded, Value::Bool(true));
+            crate::gc::Gc::make_mut(map).insert(encoded, Value::Bool(true));
             return;
         }
         let mut map = std::collections::HashMap::new();
@@ -65,7 +65,7 @@ impl Interpreter {
     pub(super) fn clear_element_share(&mut self, var_name: &str, encoded: &str) {
         let key = format!("__mutsu_elem_share::{}", var_name);
         if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            Arc::make_mut(map).remove(encoded);
+            crate::gc::Gc::make_mut(map).remove(encoded);
         }
     }
 
@@ -73,7 +73,7 @@ impl Interpreter {
     pub(super) fn remove_bound_index(&mut self, var_name: &str, encoded: &str) {
         let key = format!("__mutsu_bound_index::{}", var_name);
         if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            Arc::make_mut(map).remove(encoded);
+            crate::gc::Gc::make_mut(map).remove(encoded);
         }
     }
 
@@ -83,7 +83,7 @@ impl Interpreter {
         {
             let deleted_key = format!("__mutsu_deleted_index::{}", var_name);
             if let Some(Value::Hash(map)) = self.env_mut().get_mut(&deleted_key) {
-                Arc::make_mut(map).remove(&encoded);
+                crate::gc::Gc::make_mut(map).remove(&encoded);
             }
         }
         // Record the assigned index in the array's *embedded* `initialized`
@@ -121,12 +121,12 @@ impl Interpreter {
     pub(super) fn mark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
         let key = format!("__mutsu_deleted_index::{}", var_name);
         let map = if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            Arc::make_mut(map)
+            crate::gc::Gc::make_mut(map)
         } else {
             let m = std::collections::HashMap::new();
             self.env_mut().insert(key.clone(), Value::hash(m));
             match self.env_mut().get_mut(&key) {
-                Some(Value::Hash(map)) => Arc::make_mut(map),
+                Some(Value::Hash(map)) => crate::gc::Gc::make_mut(map),
                 _ => return,
             }
         };
@@ -139,7 +139,7 @@ impl Interpreter {
         let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) else {
             return;
         };
-        let m = Arc::make_mut(map);
+        let m = crate::gc::Gc::make_mut(map);
         Self::unmark_index_entries(m, idx);
     }
 
@@ -187,7 +187,7 @@ impl Interpreter {
         let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) else {
             return;
         };
-        let m = Arc::make_mut(map);
+        let m = crate::gc::Gc::make_mut(map);
         Self::unmark_index_entries(m, idx);
     }
 

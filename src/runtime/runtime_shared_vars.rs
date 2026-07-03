@@ -59,8 +59,12 @@ impl Interpreter {
         let Some(Value::Hash(arc)) = sv.get_mut(key) else {
             return None;
         };
-        Value::hash_insert_through(&mut Arc::make_mut(arc).map, elem_key, value.clone());
-        let result = Value::Hash(Arc::clone(arc));
+        Value::hash_insert_through(
+            &mut crate::gc::Gc::make_mut(arc).map,
+            elem_key,
+            value.clone(),
+        );
+        let result = Value::Hash(arc.clone());
         drop(sv);
         if is_thread_clone {
             // Mark dirty once per key (a per-key env marker avoids re-locking the

@@ -705,7 +705,7 @@ impl Interpreter {
                     {
                         attributes.with_attr_mut("named", |named| {
                             if let Value::Hash(named_hash) = named {
-                                let named_hash = std::sync::Arc::make_mut(named_hash);
+                                let named_hash = crate::gc::Gc::make_mut(named_hash);
                                 for (hash_name, entries) in &captures.hash_captures {
                                     let mut hash_map: HashMap<String, Value> = HashMap::new();
                                     for (key, value) in entries {

@@ -182,7 +182,7 @@ pub(crate) fn set_hash_original_keys(value: Value, original_keys: HashMap<String
         return value;
     }
     if let Value::Hash(mut arc) = value {
-        Arc::make_mut(&mut arc).original_keys = Some(original_keys);
+        crate::gc::Gc::make_mut(&mut arc).original_keys = Some(original_keys);
         return Value::Hash(arc);
     }
     value

@@ -167,7 +167,7 @@ impl Interpreter {
         match (expected_seen, latest_seen) {
             (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
             (Value::Array(a, ..), Value::Array(b, ..)) => std::sync::Arc::ptr_eq(a, b),
-            (Value::Hash(a), Value::Hash(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
             (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
             (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
             _ => expected_seen == latest_seen,

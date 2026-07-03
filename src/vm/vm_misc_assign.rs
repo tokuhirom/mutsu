@@ -63,7 +63,7 @@ impl Interpreter {
                 })
             });
             if let Some(Value::Hash(arc)) = current {
-                Some(Arc::as_ptr(&arc) as usize)
+                Some(crate::gc::Gc::as_ptr(&arc) as usize)
             } else {
                 None
             }
@@ -348,7 +348,7 @@ impl Interpreter {
             {
                 let has_old_ref = stack_arc.values().any(|v| {
                     if let Value::Hash(inner_arc) = v {
-                        Arc::as_ptr(inner_arc) as usize == old_ptr
+                        crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr
                     } else {
                         false
                     }

@@ -256,7 +256,7 @@ impl Interpreter {
             if let Some(container) = self.env().get(&var_name) {
                 match container {
                     Value::Array(arc, _) => Some(Arc::as_ptr(arc) as usize),
-                    Value::Hash(arc) => Some(Arc::as_ptr(arc) as usize),
+                    Value::Hash(arc) => Some(crate::gc::Gc::as_ptr(arc) as usize),
                     _ => None,
                 }
             } else {
@@ -662,7 +662,7 @@ impl Interpreter {
                         );
                     }
                     if let Some(Value::Hash(hash)) = self.env_root_descended_mut(&var_name) {
-                        let h = Arc::make_mut(hash);
+                        let h = crate::gc::Gc::make_mut(hash);
                         h.insert(k, v);
                     }
                 } else if let Some(idx_usize) = Self::index_to_usize(key) {
@@ -956,7 +956,7 @@ impl Interpreter {
                 let mut pending_source_cells: Vec<(String, Arc<std::sync::Mutex<Value>>)> =
                     Vec::new();
                 if let Some(Value::Hash(hash)) = self.env_mut().get_mut(&var_name) {
-                    let h = Arc::make_mut(hash);
+                    let h = crate::gc::Gc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
                         let k = if slice_is_object_hash {
                             runtime::utils::value_which_key(key)
@@ -1416,7 +1416,7 @@ impl Interpreter {
                         Value::Hash(ref mut hash) => {
                             let is_self_hash_ref = matches!(
                                 &val,
-                                Value::Hash(source_hash) if Arc::ptr_eq(hash, source_hash)
+                                Value::Hash(source_hash) if crate::gc::Gc::ptr_eq(hash, source_hash)
                             );
                             // Use in-place mutation instead of Arc::make_mut when the
                             // hash is shared (strong_count > 1) AND the variable is a
@@ -1435,7 +1435,7 @@ impl Interpreter {
                             // modifications propagate to the bound source.
                             // %-sigiled vars have names like "%h", scalar vars
                             // have names without a sigil prefix (e.g. "bar").
-                            let use_inplace = Arc::strong_count(hash) > 1
+                            let use_inplace = crate::gc::Gc::strong_count_of(hash) > 1
                                 && (!var_name.starts_with('%') || is_bound_hash_var);
                             // Mutate the whole `HashData` (map + embedded
                             // object-hash original keys) so the original-key map
@@ -1443,9 +1443,9 @@ impl Interpreter {
                             let hd: &mut crate::value::HashData = if use_inplace {
                                 // SAFETY: aliased in-place mutation of a shared
                                 // hash; see `arc_contents_mut`.
-                                unsafe { crate::value::arc_contents_mut(hash) }
+                                unsafe { crate::value::gc_contents_mut(hash) }
                             } else {
-                                Arc::make_mut(hash)
+                                crate::gc::Gc::make_mut(hash)
                             };
                             if bind_mode && let Some((source_install, cell)) = &bind_cell {
                                 // Phase 2 Stage 2: a `:=`-bound entry holds a
@@ -1812,7 +1812,7 @@ impl Interpreter {
             if let Some(ref container) = current {
                 let new_arc_ptr = match container {
                     Value::Array(arc, _) => Some(Arc::as_ptr(arc) as usize),
-                    Value::Hash(arc) => Some(Arc::as_ptr(arc) as usize),
+                    Value::Hash(arc) => Some(crate::gc::Gc::as_ptr(arc) as usize),
                     _ => None,
                 };
                 if let Some(new_ptr) = new_arc_ptr {
@@ -1821,7 +1821,7 @@ impl Interpreter {
                         for local in self.locals.iter_mut() {
                             // Only update refs that pointed to the OLD container.
                             if let Value::HashEntryRef { hash, .. } = local
-                                && Arc::as_ptr(hash) as usize == old_ptr
+                                && crate::gc::Gc::as_ptr(hash) as usize == old_ptr
                                 && let Value::Hash(new_arc) = container
                             {
                                 *hash = new_arc.clone();
@@ -2097,13 +2097,13 @@ impl Interpreter {
                     }
                 }
                 Value::Hash(inner_hash) => {
-                    if Arc::strong_count(inner_hash) > 1 {
+                    if crate::gc::Gc::strong_count_of(inner_hash) > 1 {
                         // SAFETY: aliased in-place mutation of a shared hash
                         // (strong_count > 1); see `arc_contents_mut`.
-                        let hd = unsafe { crate::value::arc_contents_mut(inner_hash) };
+                        let hd = unsafe { crate::value::gc_contents_mut(inner_hash) };
                         Value::hash_insert_through(&mut hd.map, outer_key.clone(), val.clone());
                     } else {
-                        let h = Arc::make_mut(inner_hash);
+                        let h = crate::gc::Gc::make_mut(inner_hash);
                         Value::hash_insert_through(h, outer_key.clone(), val.clone());
                     }
                 }
@@ -2131,13 +2131,14 @@ impl Interpreter {
             // `.WHICH` pointer identity. When shared, keep the make_mut COW
             // detach. The cast MUST target `HashData` (not its inner map) —
             // see docs/hashdata-migration-plan.md "Latent UB found & fixed".
-            let oh: &mut crate::value::HashData = if Arc::strong_count(outer_hash) == 1 {
+            let oh: &mut crate::value::HashData = if crate::gc::Gc::strong_count_of(outer_hash) == 1
+            {
                 // SAFETY: single strong holder; in-place avoids the make_mut
                 // relocation that would break `.WHICH` identity. See
                 // `arc_contents_mut`.
-                unsafe { crate::value::arc_contents_mut(outer_hash) }
+                unsafe { crate::value::gc_contents_mut(outer_hash) }
             } else {
-                Arc::make_mut(outer_hash)
+                crate::gc::Gc::make_mut(outer_hash)
             };
             // Vivify the missing entry as Array if the OUTER (second) subscript
             // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
@@ -2188,7 +2189,11 @@ impl Interpreter {
                 }
             }
             Value::Hash(h) => {
-                Value::hash_insert_through(&mut Arc::make_mut(h).map, outer_key.to_string(), val);
+                Value::hash_insert_through(
+                    &mut crate::gc::Gc::make_mut(h).map,
+                    outer_key.to_string(),
+                    val,
+                );
             }
             _ => {}
         }
@@ -2395,7 +2400,7 @@ impl Interpreter {
                             }
                         }
                         Value::Hash(hash_arc) => {
-                            let hash = Arc::make_mut(hash_arc);
+                            let hash = crate::gc::Gc::make_mut(hash_arc);
                             if !hash.contains_key(key.as_str()) {
                                 let new_val = if next_positional {
                                     Value::real_array(Vec::new())
@@ -2432,7 +2437,7 @@ impl Interpreter {
                                     }
                                 }
                                 Value::Hash(hash_arc) => {
-                                    let hash = Arc::make_mut(hash_arc);
+                                    let hash = crate::gc::Gc::make_mut(hash_arc);
                                     let new_val = if next_positional {
                                         Value::real_array(Vec::new())
                                     } else {
@@ -2469,7 +2474,7 @@ impl Interpreter {
                             }
                         }
                         Value::Hash(hash_arc) => {
-                            let hash = Arc::make_mut(hash_arc);
+                            let hash = crate::gc::Gc::make_mut(hash_arc);
                             if bind_cell.is_some() {
                                 hash.insert(key.clone(), leaf_val);
                             } else {
@@ -2673,7 +2678,7 @@ impl Interpreter {
                 };
                 // SAFETY: aliased in-place mutation of a shared hash so the change
                 // is visible to all holders of the same Arc; see `arc_contents_mut`.
-                let hd = unsafe { crate::value::arc_contents_mut(arc) };
+                let hd = unsafe { crate::value::gc_contents_mut(arc) };
                 Value::hash_insert_through(&mut hd.map, key.clone(), stored);
                 // For a fresh-cell bind, write the cell back to the source var
                 // so both sides alias the same container.

@@ -2864,7 +2864,7 @@ impl Interpreter {
                         }
                         Value::Hash(arc) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
-                            unsafe { crate::value::arc_contents_mut(arc).map.clear() };
+                            unsafe { crate::value::gc_contents_mut(arc).map.clear() };
                         }
                         // Slice 2a: a `=`-array-shared source (`my $r = @ary`) holds
                         // the aggregate inside a shared `ContainerRef` cell; clear it
@@ -2882,7 +2882,7 @@ impl Interpreter {
                         }
                         Value::Hash(arc) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
-                            unsafe { crate::value::arc_contents_mut(arc).map.clear() };
+                            unsafe { crate::value::gc_contents_mut(arc).map.clear() };
                         }
                         Value::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
                         _ => {

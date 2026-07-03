@@ -167,7 +167,7 @@ impl Interpreter {
 
     fn extrema_from_hash(
         &mut self,
-        map: &std::sync::Arc<crate::value::HashData>,
+        map: &crate::gc::Gc<crate::value::HashData>,
         by: Option<Value>,
         want_max: bool,
     ) -> Result<Value, RuntimeError> {

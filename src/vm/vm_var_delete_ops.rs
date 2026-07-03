@@ -106,7 +106,7 @@ impl Interpreter {
         let env = self.env();
         match env.get(var_name) {
             Some(Value::Hash(hash_arc)) => {
-                let strong_count = Arc::strong_count(hash_arc);
+                let strong_count = crate::gc::Gc::strong_count_of(hash_arc);
                 if strong_count > 2 {
                     return None;
                 }
@@ -130,7 +130,7 @@ impl Interpreter {
                     self.locals[slot] = Value::Nil;
                 }
                 let removed = if let Some(Value::Hash(hash)) = self.env_mut().get_mut(var_name) {
-                    Arc::make_mut(hash).remove(&key)
+                    crate::gc::Gc::make_mut(hash).remove(&key)
                 } else {
                     None
                 };
@@ -515,26 +515,26 @@ impl Interpreter {
         Ok(match container {
             Value::Hash(hash) => match idx {
                 Value::Whatever => {
-                    let h = Arc::make_mut(hash);
+                    let h = crate::gc::Gc::make_mut(hash);
                     let removed: Vec<Value> = h.values().cloned().collect();
                     h.clear();
                     Value::array(removed)
                 }
                 Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
-                    let h = Arc::make_mut(hash);
+                    let h = crate::gc::Gc::make_mut(hash);
                     let removed: Vec<Value> = h.values().cloned().collect();
                     h.clear();
                     Value::array(removed)
                 }
                 Value::Array(keys, ..) => {
-                    let h = Arc::make_mut(hash);
+                    let h = crate::gc::Gc::make_mut(hash);
                     let removed = keys
                         .iter()
                         .map(|key| h.remove(&key.to_string_value()).unwrap_or(Value::Nil))
                         .collect();
                     Value::array(removed)
                 }
-                _ => Arc::make_mut(hash)
+                _ => crate::gc::Gc::make_mut(hash)
                     .remove(&idx.to_string_value())
                     .unwrap_or(Value::Nil),
             },

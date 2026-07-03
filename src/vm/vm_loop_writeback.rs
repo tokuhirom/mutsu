@@ -82,7 +82,7 @@ impl Interpreter {
         use std::sync::Arc;
         match (current, source_elem) {
             (Value::Array(a, _), Value::Array(b, _)) => Arc::ptr_eq(a, b),
-            (Value::Hash(a), Value::Hash(b)) => Arc::ptr_eq(a, b),
+            (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
             (Value::Str(a), Value::Str(b)) => Arc::ptr_eq(a, b) || a == b,
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Num(a), Value::Num(b)) => a == b,

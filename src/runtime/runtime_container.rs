@@ -91,7 +91,7 @@ impl Interpreter {
                     || $arc.key_type != $info.key_type
                     || $arc.declared_type != $info.declared_type
                 {
-                    let data = Arc::make_mut(&mut $arc);
+                    let data = crate::gc::ContainerMakeMut::container_make_mut(&mut $arc);
                     data.value_type = new_vt;
                     data.key_type = $info.key_type.clone();
                     data.declared_type = $info.declared_type.clone();
@@ -200,7 +200,7 @@ impl Interpreter {
     pub(crate) fn clear_hash_type_metadata(value: Value) -> Value {
         if let Value::Hash(mut arc) = value {
             if arc.has_type_meta() {
-                Arc::make_mut(&mut arc).clear_type_meta();
+                crate::gc::Gc::make_mut(&mut arc).clear_type_meta();
             }
             return Value::Hash(arc);
         }

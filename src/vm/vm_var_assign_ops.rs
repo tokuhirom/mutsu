@@ -220,7 +220,7 @@ impl Interpreter {
                 }
             }
             if let Some(Value::Hash(hash)) = self.env_mut().get_mut(source_name) {
-                let h = Arc::make_mut(hash);
+                let h = crate::gc::Gc::make_mut(hash);
                 h.insert(idx_str.to_string(), value);
                 return Ok(());
             }
@@ -335,7 +335,7 @@ impl Interpreter {
             // Check if any values in the hash reference the old Arc.
             let has_old_ref = new_arc.values().any(|v| {
                 if let Value::Hash(inner_arc) = v {
-                    Arc::as_ptr(inner_arc) as usize == *old_ptr
+                    crate::gc::Gc::as_ptr(inner_arc) as usize == *old_ptr
                 } else {
                     false
                 }
@@ -349,7 +349,7 @@ impl Interpreter {
             let mut circular_keys = Vec::new();
             for (k, v) in new_arc.iter() {
                 if let Value::Hash(inner_arc) = v
-                    && Arc::as_ptr(inner_arc) as usize == *old_ptr
+                    && crate::gc::Gc::as_ptr(inner_arc) as usize == *old_ptr
                 {
                     circular_keys.push(k.clone());
                     // Placeholder - will be replaced below
@@ -366,7 +366,7 @@ impl Interpreter {
             // self-referential cycle requires the in-place write (a freshly
             // created Arc cannot be made cyclic via `get_mut`). See
             // `arc_contents_mut`; no borrow into the map is live across the write.
-            let data = unsafe { crate::value::arc_contents_mut(&result_arc) };
+            let data = unsafe { crate::value::gc_contents_mut(&result_arc) };
             for key in &circular_keys {
                 data.map
                     .insert(key.clone(), Value::Hash(result_arc.clone()));
@@ -387,7 +387,7 @@ impl Interpreter {
         match v {
             Value::Array(inner_arc, _) => Arc::as_ptr(inner_arc) as usize == old_ptr,
             Value::Hash(map) => {
-                let hash_ptr = Arc::as_ptr(map) as usize;
+                let hash_ptr = crate::gc::Gc::as_ptr(map) as usize;
                 if seen_hashes.contains(&hash_ptr) {
                     return false;
                 }
@@ -419,7 +419,7 @@ impl Interpreter {
                 *v = Value::Array(new_array.clone(), kind);
             }
             Value::Hash(map) => {
-                let hash_ptr = Arc::as_ptr(map) as usize;
+                let hash_ptr = crate::gc::Gc::as_ptr(map) as usize;
                 if seen_hashes.contains(&hash_ptr) {
                     return;
                 }
@@ -435,7 +435,7 @@ impl Interpreter {
                     let mut self_ref_keys = Vec::new();
                     for (k, hv) in map.iter() {
                         if let Value::Hash(inner_arc) = hv
-                            && Arc::as_ptr(inner_arc) as usize == hash_ptr
+                            && crate::gc::Gc::as_ptr(inner_arc) as usize == hash_ptr
                         {
                             self_ref_keys.push(k.clone());
                             new_map.insert(k.clone(), Value::Nil);
@@ -444,14 +444,14 @@ impl Interpreter {
                         }
                     }
                     let new_hash_arc = Value::hash_arc(new_map);
-                    let new_hash_ptr = Arc::as_ptr(&new_hash_arc) as usize;
+                    let new_hash_ptr = crate::gc::Gc::as_ptr(&new_hash_arc) as usize;
                     // Mark the new hash as seen so recursive calls don't
                     // re-enter it via self-referencing values.
                     seen_hashes.push(new_hash_ptr);
                     // SAFETY: new_hash_arc was just created here; the
                     // self-reference insert and the in-place recursive fixup must
                     // alias it. See `arc_contents_mut`.
-                    let data = unsafe { crate::value::arc_contents_mut(&new_hash_arc) };
+                    let data = unsafe { crate::value::gc_contents_mut(&new_hash_arc) };
                     for key in &self_ref_keys {
                         data.map
                             .insert(key.clone(), Value::Hash(new_hash_arc.clone()));

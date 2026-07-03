@@ -468,7 +468,7 @@ impl Interpreter {
             match &mut updated {
                 Value::Hash(h) => {
                     Value::hash_insert_through(
-                        &mut Arc::make_mut(h).map,
+                        &mut crate::gc::Gc::make_mut(h).map,
                         key.clone(),
                         new_val.clone(),
                     );
@@ -602,16 +602,17 @@ impl Interpreter {
                     // in place so the caller observes the change. `Arc::make_mut`
                     // would COW-detach and silently drop the write (the array
                     // path already special-cased this; the hash path did not).
-                    let use_inplace = Arc::strong_count(h) > 1 && !name.starts_with('%');
+                    let use_inplace =
+                        crate::gc::Gc::strong_count_of(h) > 1 && !name.starts_with('%');
                     if use_inplace {
                         // SAFETY: aliased in-place mutation of a shared hash
                         // (strong_count > 1, the shared-cell case); mirrors the
                         // array arm's `arc_contents_mut` usage.
-                        let h = unsafe { crate::value::arc_contents_mut(h) };
+                        let h = unsafe { crate::value::gc_contents_mut(h) };
                         Value::hash_insert_through(&mut h.map, key.clone(), new_val.clone());
                     } else {
                         Value::hash_insert_through(
-                            &mut Arc::make_mut(h).map,
+                            &mut crate::gc::Gc::make_mut(h).map,
                             key.clone(),
                             new_val.clone(),
                         );

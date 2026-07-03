@@ -127,7 +127,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             }
         }
         Value::Hash(items) => {
-            let ptr = std::sync::Arc::as_ptr(items) as usize;
+            let ptr = crate::gc::Gc::as_ptr(items) as usize;
             let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));
             if is_cycle {
                 return "{...}".to_string();

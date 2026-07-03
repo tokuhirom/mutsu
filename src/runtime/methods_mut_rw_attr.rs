@@ -123,7 +123,7 @@ impl Interpreter {
                 }
             };
             data.map.insert(key, value.clone());
-            Value::Hash(std::sync::Arc::new(data))
+            Value::Hash(crate::gc::Gc::new(data))
         };
         updated.insert(attr_name.to_string(), new_container);
         if let Some(var_name) = target_var {
