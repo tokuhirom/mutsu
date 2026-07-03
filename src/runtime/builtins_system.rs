@@ -15,9 +15,24 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
+    // Mark a mutator worker as active so the GC collector declines to run while
+    // this thread may be touching the `Gc` graph (trial deletion needs
+    // stop-the-world; see `gc::mutator_workers_active`). Raised here on the
+    // parent — before the thread exists — so the count is up the instant this
+    // returns, then dropped by the worker's RAII guard (panic-safe).
+    crate::gc::enter_mutator_worker();
     std::thread::Builder::new()
         .stack_size(USER_THREAD_STACK_SIZE)
-        .spawn(f)
+        .spawn(move || {
+            struct WorkerGuard;
+            impl Drop for WorkerGuard {
+                fn drop(&mut self) {
+                    crate::gc::exit_mutator_worker();
+                }
+            }
+            let _guard = WorkerGuard;
+            f()
+        })
         .expect("failed to spawn worker thread")
 }
 

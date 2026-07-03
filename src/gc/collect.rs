@@ -277,6 +277,17 @@ fn verify_survivors(cycle: u64, survivors: &[(ErasedGc, usize)]) -> usize {
 /// Safe to call at any time: with no candidates buffered it is a no-op. Returns
 /// what it reclaimed and records the same into `MUTSU_VM_STATS`.
 pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
+    // Trial deletion is not safe against concurrent mutation: it decrements and
+    // restores strong counts, so a worker thread cloning/dropping a `Gc` (or
+    // CAS-swapping a pointer) mid-collect corrupts the bookkeeping and can free
+    // a still-live node (design doc §13.3 — cross-thread STW is deferred). Until
+    // that lands, decline to collect while any worker thread is active. The
+    // candidates stay buffered (we return before draining) and are reclaimed at
+    // the next safepoint once the threads have joined: reclaim is deferred,
+    // never unsound.
+    if crate::gc::mutator_workers_active() {
+        return CollectStats::default();
+    }
     let start = Instant::now();
     let roots = drain_candidates();
     if roots.is_empty() {
@@ -474,6 +485,49 @@ mod tests {
             2,
             "both TestNodes were actually freed"
         );
+    }
+
+    #[test]
+    fn collect_is_deferred_while_a_mutator_worker_is_active() {
+        use super::super::gc_ptr::{enter_mutator_worker, exit_mutator_worker};
+        let _g = lock();
+        drain_candidates();
+        let before = DROPS.load(Ordering::Relaxed);
+
+        // A reclaimable cycle sits in the candidate buffer.
+        let a = TestNode::new();
+        let b = TestNode::new();
+        TestNode::link(&a, &b);
+        TestNode::link(&b, &a);
+        a.buffer_as_candidate();
+        b.buffer_as_candidate();
+        drop(a);
+        drop(b);
+
+        // While a worker thread may be mutating the graph, the collector must
+        // decline (trial deletion needs stop-the-world): nothing is reclaimed
+        // and, crucially, the candidates stay buffered (not drained-and-lost).
+        enter_mutator_worker();
+        let stats = collect_cycles();
+        assert_eq!(
+            stats,
+            CollectStats::default(),
+            "deferred: no-op while active"
+        );
+        assert_eq!(
+            DROPS.load(Ordering::Relaxed) - before,
+            0,
+            "nothing freed while a worker is active"
+        );
+
+        // Once the worker is gone, the still-buffered cycle is reclaimed.
+        exit_mutator_worker();
+        let stats = collect_cycles();
+        assert_eq!(
+            stats.reclaimed_nodes, 2,
+            "candidates survived to be collected"
+        );
+        assert_eq!(DROPS.load(Ordering::Relaxed) - before, 2);
     }
 
     #[test]
