@@ -62,6 +62,12 @@ pub(crate) fn unicode_numeric_type(ch: char) -> String {
     if nl_re.is_match(s) {
         return "Numeric".to_string();
     }
+    // Ideographs and other letters that carry a numeric value (e.g. the CJK
+    // numerals 一 二 三 十 百 千 万) have Numeric_Type=Numeric even though their
+    // General_Category is Lo rather than a Number category.
+    if !matches!(unicode_numeric_value(ch), Value::Num(n) if n.is_nan()) {
+        return "Numeric".to_string();
+    }
     "None".to_string()
 }
 
