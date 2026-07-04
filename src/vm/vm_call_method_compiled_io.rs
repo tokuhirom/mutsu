@@ -879,7 +879,7 @@ impl Interpreter {
                 // One grapheme cluster (base + extending codepoints), matching
                 // `.chars`/`.comb`; empty -> Nil (as `getc`). `read_grapheme_native`
                 // itself keeps single-codepoint semantics for a `:bin` handle.
-                Some(state.read_grapheme_native().map(|s| {
+                Some(state.read_grapheme_native(1).map(|s| {
                     if s.is_empty() {
                         Value::Nil
                     } else {
@@ -906,7 +906,13 @@ impl Interpreter {
                         }
                     },
                 };
-                Some(state.read_chars_native(count).map(Value::str))
+                // Read graphemes for a bounded count (matching `.getc`/NFG);
+                // an unbounded read (whole file) is the same string either way.
+                let result = match count {
+                    Some(n) => state.read_grapheme_native(n),
+                    None => state.read_chars_native(None),
+                };
+                Some(result.map(Value::str))
             }
             _ => None,
         }

@@ -305,20 +305,21 @@ impl Interpreter {
         })
     }
 
-    /// Read one **grapheme cluster** from a seekable file handle for `.getc`:
-    /// a base codepoint plus any codepoints that extend the same grapheme
-    /// (combining marks, ZWJ sequences, ...), matching Rakudo's NFG `.getc` and
-    /// mutsu's own grapheme-based `.chars`/`.comb`. The one codepoint that
-    /// begins the *next* grapheme is over-read to find the boundary and then
-    /// seeked back, so no cross-read pushback state is needed and a subsequent
-    /// read sees the correct position.
+    /// Read up to `count` **grapheme clusters** from a seekable file handle for
+    /// `.getc`/`.readchars`: each is a base codepoint plus any codepoints that
+    /// extend the same grapheme (combining marks, ZWJ sequences, ...), matching
+    /// Rakudo's NFG semantics and mutsu's own grapheme-based `.chars`/`.comb`.
+    /// The one codepoint that begins the *next* grapheme is over-read to find
+    /// the boundary and then seeked back, so no cross-read pushback state is
+    /// needed and a subsequent read sees the correct position.
     ///
     /// Returns `Ok(None)` when this fast path does not apply (non-file target or
-    /// a non-default encoding); the caller then falls back to a single-codepoint
-    /// read. `Ok(Some(""))` signals EOF.
+    /// a non-default encoding); the caller then falls back to a codepoint read.
+    /// Fewer than `count` clusters (incl. `Ok(Some(""))`) means EOF.
     pub(super) fn read_grapheme_from_handle_value(
         &mut self,
         handle_value: &Value,
+        count: usize,
     ) -> Result<Option<String>, RuntimeError> {
         use std::io::Seek;
         use unicode_segmentation::UnicodeSegmentation;
@@ -329,7 +330,7 @@ impl Interpreter {
             let enc = state.encoding.to_lowercase();
             let is_default_utf8 = enc.is_empty() || enc == "utf-8" || enc == "utf8";
             if !is_default_utf8 || !matches!(state.target, IoHandleTarget::File) {
-                // Grapheme-aware getc only covers seekable default-utf8 files;
+                // Grapheme-aware read only covers seekable default-utf8 files;
                 // let the caller use the plain codepoint path otherwise.
                 return Ok(None);
             }
@@ -338,25 +339,29 @@ impl Interpreter {
                 .file
                 .as_mut()
                 .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-            let Some(mut cluster) = Self::read_utf8_char(file)? else {
-                return Ok(Some(String::new())); // EOF
-            };
-            loop {
-                let Some(ch) = Self::read_utf8_char(file)? else {
-                    break; // EOF: the cluster ends here
+            let mut out = String::new();
+            for _ in 0..count {
+                let Some(mut cluster) = Self::read_utf8_char(file)? else {
+                    break; // EOF
                 };
-                let combined = format!("{cluster}{ch}");
-                if combined.graphemes(true).count() == 1 {
-                    // `ch` extends the current grapheme.
-                    cluster = combined;
-                } else {
-                    // `ch` begins the next grapheme — put it back.
-                    file.seek(std::io::SeekFrom::Current(-(ch.len() as i64)))
-                        .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
-                    break;
+                loop {
+                    let Some(ch) = Self::read_utf8_char(file)? else {
+                        break; // EOF: the cluster ends here
+                    };
+                    let combined = format!("{cluster}{ch}");
+                    if combined.graphemes(true).count() == 1 {
+                        // `ch` extends the current grapheme.
+                        cluster = combined;
+                    } else {
+                        // `ch` begins the next grapheme — put it back.
+                        file.seek(std::io::SeekFrom::Current(-(ch.len() as i64)))
+                            .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                        break;
+                    }
                 }
+                out.push_str(&cluster);
             }
-            Ok(Some(cluster))
+            Ok(Some(out))
         })
     }
 }
