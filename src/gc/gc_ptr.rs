@@ -1031,11 +1031,21 @@ mod tests {
 
     #[test]
     fn upgrade_is_some_while_alive_none_after_drop() {
+        // Serialize + start clean: under `MUTSU_GC=on` the transient strong
+        // handle that `upgrade().is_some()` creates is a survivor-drop
+        // (prev-strong == 2), so `Gc::drop` conservatively buffers the node as a
+        // cycle candidate — the buffer then holds an `Arc` clone that keeps the
+        // allocation alive. Draining that buffer (what a safepoint collect does)
+        // restores the plain refcount semantics this test asserts.
+        let _serial = lock_buffer_tests();
+        drain_candidates();
+
         let a = Gc::new(Cell(7));
         let w = Gc::downgrade(&a);
         assert_eq!(Gc::weak_count(&a), 1);
         assert!(w.upgrade().is_some(), "alive => upgradeable");
         drop(a);
+        drain_candidates(); // release any conservatively-buffered `Arc` clone
         assert!(w.upgrade().is_none(), "dropped => not upgradeable");
     }
 
@@ -1056,12 +1066,21 @@ mod tests {
         drop(a);
         drop(b);
 
+        // Under `MUTSU_GC=on`, dropping `a`'s strong edge to `b` while `b` still
+        // has the local handle is a survivor-drop, so `b` is conservatively
+        // buffered as a cycle candidate — an `Arc` clone in the buffer keeps its
+        // allocation alive. Draining the buffer (NOT running the collector)
+        // releases that clone; the weak back-edge means plain refcounting then
+        // frees both nodes. With `MUTSU_GC=off` the buffer is empty and this is a
+        // no-op. Either way, no *collector* pass is needed — the point of the test.
+        drop(drain_candidates());
+
         assert_eq!(
             WEAK_DROPS.load(Ordering::Relaxed) - before,
             2,
             "both nodes freed by refcounting alone — the weak edge broke the cycle"
         );
-        // Nothing should have been buffered as a cycle candidate.
+        // Nothing remains buffered as a cycle candidate.
         assert!(drain_candidates().is_empty());
     }
 
