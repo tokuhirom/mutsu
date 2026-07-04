@@ -5,6 +5,10 @@ use crate::value::{RuntimeError, Value};
 use super::raku_repr::raku_value;
 use super::{format_temporal_num, gist_array_wrap, range_gist_string};
 
+/// Rakudo caps an aggregate's `.gist` at the first 100 elements, then appends
+/// ` ...`, so a huge array/list does not flood terminal output.
+const GIST_ELEM_CAP: usize = 100;
+
 /// Leaf-value gist for a list/array element: a WhateverCode (`*+1`) gists as
 /// `WhateverCode.new`; everything else uses its string value.
 fn leaf_gist(v: &Value) -> String {
@@ -519,7 +523,20 @@ pub(super) fn dispatch(
                 let inner = rows.join("\n ");
                 return Some(Some(Ok(Value::str(format!("[{}]", inner)))));
             }
-            let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+            // `.gist` shows at most the first 100 elements, then ` ...`
+            // (Rakudo caps aggregate gists so a huge array does not flood output).
+            // Only the first 100 are rendered when truncating.
+            let inner = if items.len() > GIST_ELEM_CAP {
+                let mut s = items[..GIST_ELEM_CAP]
+                    .iter()
+                    .map(gist_item)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                s.push_str(" ...");
+                s
+            } else {
+                items.iter().map(gist_item).collect::<Vec<_>>().join(" ")
+            };
             Some(Ok(Value::str(gist_array_wrap(&inner, *kind))))
         }
         Value::Seq(items) | Value::Slip(items) if method == "gist" => {
@@ -586,7 +603,19 @@ pub(super) fn dispatch(
                     other => leaf_gist(other),
                 }
             }
-            let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+            // Like the Array path: a Seq/List gist shows at most the first 100
+            // elements, then ` ...`.
+            let inner = if items.len() > GIST_ELEM_CAP {
+                let mut s = items[..GIST_ELEM_CAP]
+                    .iter()
+                    .map(gist_item)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                s.push_str(" ...");
+                s
+            } else {
+                items.iter().map(gist_item).collect::<Vec<_>>().join(" ")
+            };
             Some(Ok(Value::str(format!("({})", inner))))
         }
         Value::Slip(items) if method == "raku" || method == "perl" => {
