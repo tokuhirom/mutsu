@@ -218,6 +218,19 @@ impl Interpreter {
         let adverb = args[2].to_string_value();
         let raw_indices = &args[3..];
         let indices = self.resolve_multidim_indices(target, raw_indices)?;
+        // A nested single-dimension slice (`@a[(3, (30, (5,)))]:exists`) is a
+        // structure-preserving slice, NOT a multidim coordinate walk: recurse the
+        // index tree and report an existence Bool per leaf, keeping the nesting.
+        if indices.len() == 1
+            && let Some(inner) = Self::nested_index_elements(&indices[0])
+            && inner
+                .iter()
+                .any(|e| Self::nested_index_elements(e).is_some())
+            && let Some(items) = Self::positional_exists_items(target)
+        {
+            let out = Self::nested_exists_slice(&items, &inner, negated, &adverb);
+            return Ok(Value::array(out));
+        }
         if let Value::Instance {
             class_name,
             attributes,
@@ -310,6 +323,92 @@ impl Interpreter {
             "v" => Ok(Value::Bool(exists)),
             _ => Ok(Value::Bool(exists)),
         }
+    }
+
+    /// The positional element view (with unfilled-slot info folded into the
+    /// values) for a nested `:exists` slice, or `None` for a non-positional
+    /// target. A real array keeps its hole marks (`Package("Any")` in an
+    /// uninitialized slot); a Range/List is fully filled.
+    pub(crate) fn positional_exists_items(target: &Value) -> Option<Vec<Value>> {
+        match target {
+            Value::Array(items, ..) => Some(items.to_vec()),
+            t if t.is_range()
+                || matches!(
+                    t,
+                    Value::Seq(_) | Value::HyperSeq(_) | Value::RaceSeq(_) | Value::LazyList(_)
+                ) =>
+            {
+                Some(crate::runtime::utils::value_to_list(t))
+            }
+            _ => None,
+        }
+    }
+
+    /// One level of a nested `:exists`/`:!exists` slice: a sub-list index recurses
+    /// into ONE nested list element; a scalar index reports whether that slot
+    /// exists (negated by `:!exists`), formatted by the companion adverb
+    /// (`none`/`k`/`v`/`kv`/`p`).
+    pub(crate) fn nested_exists_slice(
+        items: &[Value],
+        indices: &[Value],
+        negated: bool,
+        adverb: &str,
+    ) -> Vec<Value> {
+        let mut out = Vec::new();
+        for idx in indices {
+            if let Some(sub) = Self::nested_index_elements(idx) {
+                out.push(Value::array(Self::nested_exists_slice(
+                    items, &sub, negated, adverb,
+                )));
+                continue;
+            }
+            let i = match idx {
+                Value::Int(i) => *i,
+                Value::Num(f) => *f as i64,
+                _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
+            };
+            let raw_exists = i >= 0
+                && (i as usize) < items.len()
+                && !matches!(&items[i as usize], Value::Package(name) if name == "Any");
+            let exists = if negated { !raw_exists } else { raw_exists };
+            let key = Value::Int(i);
+            match adverb {
+                // `:k` / `:kv` / `:p` keep only actually-existing keys.
+                "k" => {
+                    if raw_exists {
+                        out.push(key);
+                    }
+                }
+                "kv" => {
+                    if raw_exists {
+                        out.push(key);
+                        out.push(Value::Bool(exists));
+                    }
+                }
+                "p" => {
+                    if raw_exists {
+                        out.push(Value::ValuePair(
+                            Box::new(key),
+                            Box::new(Value::Bool(exists)),
+                        ));
+                    }
+                }
+                // `:!kv` / `:!p` keep every attempted key.
+                "not-kv" => {
+                    out.push(key);
+                    out.push(Value::Bool(exists));
+                }
+                "not-p" => {
+                    out.push(Value::ValuePair(
+                        Box::new(key),
+                        Box::new(Value::Bool(exists)),
+                    ));
+                }
+                // `none` and `v` report a Bool for every index.
+                _ => out.push(Value::Bool(exists)),
+            }
+        }
+        out
     }
 
     /// Multi-result :exists adverb handler for Whatever/list indices.

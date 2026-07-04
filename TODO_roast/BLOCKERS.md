@@ -221,11 +221,13 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 
 `eqv` の both-lazy ガードと `+a`/`+@a` の Seq single-pass consumption は完了済み
 （詳細は `news/2026-06.md`）。lazy 配列そのものの基盤（L1-L2b、`docs/lazy-arrays.md`
-参照）も完了済み。残るのは 1 ファイルのみ、かつ根本原因の大半は解決済み。
+参照）も完了済み。**`S09-subscript/slice.t` は 2026-07-04 に 56/56 で whitelist 済み**
+（残っていた test 35 = nested slice adverbs を解決。詳細は `news/2026-07.md` /
+`TODO_roast/S09.md`）。このセクションに開いている残件はない。
 
-### 4.1 `S09-subscript/slice.t`
+### 4.1 `S09-subscript/slice.t` — **DONE・whitelist 済み（2026-07-04）**
 
-- **現状（2026-07-03 更新）**: 52/56。
+- **現状**: 56/56 PASS。
 - **今回解決した根本原因**（詳細は `TODO_roast/S09.md` の該当エントリ）:
   1. `:=` bind が `sequence_spec`/`closure_seq`/`lazy_pipe` 系 `LazyList` を
      `coroutine` 以外は強制マテリアライズしていた（`vm_var_assign_set_local.rs`）。
@@ -305,10 +307,12 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
     （write-time 値・境界打ち切りなし）＋ `slice_key_tree_max_index_all` を新設し、
     LazyList arm で `bind_mode` 分岐（`vm_var_assign_index_named.rs`）。
     回帰テスト＝`t/hyperwhatever-and-lazy-slice-bind.t`。
-- **残り 1 件（test 35・nested slice adverbs）**: ネストインデックスへの slice adverb
-  （`:p`/`:k`/`:v`/`:kv`/`:exists`/`:delete` の組み合わせ、plan 62）が nested index list に
-  再帰しない（トップレベルのみ処理・`builtins_multidim_subscript.rs`）。§3 の
-  container-identity 領域に属する大きな機能。**whitelist にはこの 1 件の解決が必要。**
+- **test 35（nested slice adverbs）解決済み（2026-07-04）**: ネストインデックスへの
+  slice adverb（`:p`/`:k`/`:v`/`:kv`/`:exists`/`:delete` の組み合わせ、plan 62）が
+  nested index list に再帰するよう、4 経路（`builtin_subscript_adverb` /
+  `ExistsIndexAdv` / `DeleteIndexNamed` / `DELETE-KEY`+adverb compiler routing）を
+  additive に再帰化。Range/Seq/List target の coerce（`("a".."z")[3,5]:k`）も追加。
+  container-identity §3 とは独立した read/format 再帰＋leaf delete で完結した。
 
 ---
 
@@ -397,10 +401,12 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowl
 1. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
    splice.t / attributes.t / multislice hash 側の slot identity を前に進める。
    これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
-2. **`S09-subscript/slice.t`**（§4）— lazy array 起因の失敗は解消済み（2026-07-02）。
-   残り 4 件は test 35（nested slice adverbs、§3 と同根の大仕事）以外は独立した
-   小粒な機能ギャップ。
-3. **`S17-supply/syntax.t`**（§6.2）— test 75/90 は個別に深掘りが必要（hard case）。
+   **注（2026-07-04 調査）**: `splice.t` の 35 失敗は全て self-splice（`@a.splice(*,0,@a)`）
+   の 1 原因＝リストリテラル `(10,0,@a)` が @a を live コンテナ参照で保持するが、
+   `@a = ^10`（whole-array 代入）が既存コンテナを in-place 更新せず**再束縛**するため、
+   リストの参照が旧空コンテナを指す。whole-array 代入の container-identity（要素 cell の
+   一段上＝コンテナ cell）が本丸で、blast radius 大。
+2. **`S17-supply/syntax.t`**（§6.2）— test 75/90 は個別に深掘りが必要（hard case）。
 
 `S06-operator-overloading/infix.t`（§2.4）は残り 2 件（カンマ演算子オーバーロード）が
 深いアーキテクチャ変更を要するため、上記優先順から外した。

@@ -335,6 +335,51 @@ impl Compiler {
             });
             return;
         }
+        // `@a[...]:delete:kv` (delete listed first) reaches the compiler as
+        // `DELETE-KEY` on an `Index` carrying a single `:k`/`:v`/`:p`/`:kv` adverb
+        // pair (`"kv" => True`, `:!kv` => `"kv" => False`). Route it to the same
+        // `__mutsu_subscript_adverb` slice path with the `delete` flag set, so the
+        // key/value slice is computed *and* the addressed slots are removed.
+        if name == "DELETE-KEY"
+            && modifier.is_none()
+            && let Expr::Index {
+                target: idx_target,
+                index: idx_index,
+                ..
+            } = target
+            && args.len() == 1
+            && let Expr::Binary {
+                left,
+                op: crate::token_kind::TokenKind::FatArrow,
+                right,
+            } = &args[0]
+            && let Expr::Literal(Value::Str(mode)) = left.as_ref()
+            && matches!(mode.as_ref().as_str(), "k" | "v" | "p" | "kv")
+            && let Expr::Literal(Value::Bool(positive)) = right.as_ref()
+        {
+            let mode_str = if *positive {
+                mode.to_string()
+            } else {
+                format!("not-{mode}")
+            };
+            let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
+            let call_args = vec![
+                (**idx_target).clone(),
+                (**idx_index).clone(),
+                Expr::Literal(Value::str(mode_str)),
+                Expr::Literal(Value::str(var_name)),
+                Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::str_from("delete"))),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(Expr::Literal(Value::Bool(true))),
+                },
+            ];
+            self.compile_expr(&Expr::Call {
+                name: Symbol::intern("__mutsu_subscript_adverb"),
+                args: call_args,
+            });
+            return;
+        }
         self.compile_expr(target);
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);

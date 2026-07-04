@@ -307,6 +307,16 @@ impl Interpreter {
         } else {
             idx
         };
+        // A nested single-dim slice delete (`@a[(3, (30, (5,)))]:delete`) returns
+        // the deleted values in the index tree's shape and removes every leaf slot.
+        if let Some(inner) = Self::nested_index_elements(&idx)
+            && inner
+                .iter()
+                .any(|e| Self::nested_index_elements(e).is_some())
+            && matches!(self.env().get(&var_name), Some(Value::Array(..)))
+        {
+            return self.exec_nested_slice_delete(code, &var_name, slot, &inner);
+        }
         // For typed arrays (e.g. `my Int @a`), deleted elements become
         // the type object (e.g. `Int`) instead of `Any`.
         let hole_type =
@@ -418,6 +428,51 @@ impl Interpreter {
         // the container pointer).
         if let Some(container) = self.env().get(&var_name).cloned() {
             self.write_local_slot_or_name(code, slot, &var_name, container);
+        }
+        self.stack.push(result);
+        Ok(())
+    }
+
+    /// Plain `:delete` on a nested single-dim slice (`@a[(3, (30, (5,)))]:delete`):
+    /// return the deleted values in the index tree's shape (missing slots read as
+    /// the array's hole type) and remove every addressed leaf slot.
+    fn exec_nested_slice_delete(
+        &mut self,
+        code: &CompiledCode,
+        var_name: &str,
+        slot: Option<u32>,
+        inner: &[Value],
+    ) -> Result<(), RuntimeError> {
+        let hole_type =
+            loan_env!(self, var_type_constraint(var_name)).unwrap_or_else(|| "Any".to_string());
+        // Snapshot the pre-delete contents for the returned (value) tree.
+        let items_snap: Vec<Value> = match self.env().get(var_name) {
+            Some(Value::Array(items, ..)) => items.to_vec(),
+            _ => Vec::new(),
+        };
+        let missing = Value::Package(crate::symbol::Symbol::intern(&hole_type));
+        // Plain `:delete` returns the values, keeping missing slots (as the hole).
+        let result = Value::array(Self::format_positional_slice_level(
+            &items_snap,
+            None,
+            &missing,
+            inner,
+            "v",
+            true,
+        ));
+        // Remove every leaf index through the shared flat-delete machinery.
+        let mut leaves = Vec::new();
+        Self::collect_slice_leaf_indices(inner, &mut leaves);
+        let flat_idx = Value::array(leaves.iter().map(|i| Value::Int(*i)).collect::<Vec<_>>());
+        if let Some(container) = self.env_mut().get_mut(var_name) {
+            let _ = Self::delete_from_container(container, flat_idx.clone(), &hole_type)?;
+        }
+        self.unmark_initialized_indices(var_name, &flat_idx);
+        self.mark_deleted_indices(var_name, &flat_idx);
+        self.unmark_bound_indices(var_name, &flat_idx);
+        self.trim_trailing_array_holes(var_name);
+        if let Some(container) = self.env().get(var_name).cloned() {
+            self.write_local_slot_or_name(code, slot, var_name, container);
         }
         self.stack.push(result);
         Ok(())
