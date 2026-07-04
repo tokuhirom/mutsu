@@ -1,6 +1,36 @@
 use super::*;
 
 impl Interpreter {
+    /// The container-type coercion calls `Array(...)` / `List(...)` / `Hash(...)`.
+    /// Each argument becomes one element (Raku does not deep-flatten these:
+    /// `Array((1,2), 3).elems` is 2), so the args list is materialized directly.
+    /// A single type-object argument (`Array(Int)`) is a parametric type request
+    /// rather than a value coercion, so it passes through as a `Type(Type)`
+    /// package rendering, mirroring [`builtin_coerce`].
+    pub(super) fn builtin_container_coerce(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // `Array(Int)` etc.: a lone type-object argument is a parametric type,
+        // not a value list. Render it like the scalar coercions do.
+        if args.len() == 1
+            && let Value::Package(sym) = &args[0]
+        {
+            return Ok(Value::Package(Symbol::intern(&format!(
+                "{name}({})",
+                sym.resolve()
+            ))));
+        }
+        let items: Vec<Value> = args.to_vec();
+        Ok(match name {
+            "Array" => Value::real_array(items),
+            "List" => Value::array(items),
+            "Hash" => crate::runtime::utils::build_hash_from_items(items)?,
+            _ => Value::real_array(items),
+        })
+    }
+
     pub(super) fn builtin_coerce(
         &mut self,
         name: &str,
