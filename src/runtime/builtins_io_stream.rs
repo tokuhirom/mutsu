@@ -112,6 +112,16 @@ impl Interpreter {
             .cloned()
             .or_else(|| self.default_input_handle());
         if let Some(handle) = handle {
+            // Read one grapheme cluster (base + extending codepoints), matching
+            // `.chars`/`.comb`; seekable files use the grapheme path, other
+            // targets fall back to a single codepoint.
+            if let Some(g) = self.read_grapheme_from_handle_value(&handle)? {
+                return Ok(if g.is_empty() {
+                    Value::Nil
+                } else {
+                    Value::str(g)
+                });
+            }
             let s = self.read_chars_from_handle_value(&handle, Some(1))?;
             if s.is_empty() {
                 return Ok(Value::Nil);
