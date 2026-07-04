@@ -181,7 +181,9 @@ fn utf8_line_col(prefix: &[u8]) -> (usize, usize) {
 
 fn decode_utf16_bytes(bytes: &[u8], big_endian: bool) -> Result<String, RuntimeError> {
     if !bytes.len().is_multiple_of(2) {
-        return Err(RuntimeError::new("Invalid utf-16 byte length"));
+        return Err(RuntimeError::new(
+            "Malformed UTF-16 stream: odd byte length (terminated mid-code-unit)",
+        ));
     }
     let units: Vec<u16> = bytes
         .chunks_exact(2)
@@ -193,7 +195,12 @@ fn decode_utf16_bytes(bytes: &[u8], big_endian: bool) -> Result<String, RuntimeE
             }
         })
         .collect();
-    Ok(String::from_utf16_lossy(&units))
+    // Strict decode: an unpaired surrogate is malformed and throws (Rakudo
+    // rejects invalid UTF-16 rather than substituting U+FFFD).
+    char::decode_utf16(units.iter().copied())
+        .map(|r| r.map_err(|_| ()))
+        .collect::<Result<String, ()>>()
+        .map_err(|()| RuntimeError::new("Malformed UTF-16 string: unpaired surrogate (line 1)"))
 }
 
 fn decode_bytes_with_builtin_encoding(
