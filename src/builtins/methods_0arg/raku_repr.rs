@@ -263,7 +263,14 @@ fn raku_hash_value(v: &Value) -> String {
     if base.starts_with(['$', '@', '%']) {
         return base;
     }
-    match v {
+    // A `:=`-bound hash element holds a `ContainerRef` cell; itemize based on the
+    // aggregate it *holds* so it renders like a plain hash value — `{:a($[1, 2])}`,
+    // not `{:a([1, 2])}` (Phase 5 leak hardening, `docs/element-element-bind-plan.md`).
+    let effective = match v {
+        Value::ContainerRef(cell) => cell.lock().unwrap().clone(),
+        other => other.clone(),
+    };
+    match &effective {
         Value::Array(..) | Value::Hash(_) => format!("${base}"),
         Value::Seq(_) => format!("$({base})"),
         _ => base,

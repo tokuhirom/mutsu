@@ -267,13 +267,23 @@ trusting the change.
 
 ## Phase 5 — container-cell leak hardening
 
+> **Status (2026-07-04):** Phases 1–4 landed; nested.t is 43/43 and repros A–D
+> match rakudo. Audited the leak paths below — the scalar-cell and most
+> container-cell paths already decont correctly. The one remaining divergence
+> found and fixed: **`.raku`/`.gist` of a hash containing a *container-valued*
+> bound element did not itemize the held aggregate** (`{:a([1, 2])}` instead of
+> rakudo's `{:a($[1, 2])}`). `raku_hash_value` now derefs a `ContainerRef` and
+> itemizes on the *held* type (`src/builtins/methods_0arg/raku_repr.rs`); pinned
+> by `t/container-cell-raku-render.t`. The behavioral itemization (`.VAR`,
+> list-context non-flatten) was already correct — this was rendering-only.
+
 Container cells now flow into more paths. Like the Stage-1 `.values` leak (#2908)
 and the Stage-2 array-copy leak (#2914), AUDIT + decont `ContainerRef` in:
-- `.kv`, `.pairs`, `.antipairs`, `.invert`, `.list`, `.Hash`/`.Array` coercions
-- `.raku`/`.gist` rendering of a hash/array containing a bound element
-- positional/associative **slices** (`@a[1,2]`, `%h<a b>`)
-- `for`/iteration over a hash/array with a bound element
-- sort/compare (the original `.values.sort` leak shape)
+- `.kv`, `.pairs`, `.antipairs`, `.invert`, `.list`, `.Hash`/`.Array` coercions — audited OK
+- `.raku`/`.gist` rendering of a hash/array containing a bound element — **fixed (2026-07-04)**
+- positional/associative **slices** (`@a[1,2]`, `%h<a b>`) — audited OK
+- `for`/iteration over a hash/array with a bound element — audited OK
+- sort/compare (the original `.values.sort` leak shape) — audited OK
 
 Each only matters when a bound cell is present, so guard with
 `iter().any(is ContainerRef)` to keep the common path zero-cost (the #2914 pattern).
