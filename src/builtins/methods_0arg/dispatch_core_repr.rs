@@ -672,12 +672,17 @@ pub(super) fn dispatch(
             Some(Ok(Value::str(i.to_string())))
         }
         Value::Int(i) => Some(Ok(Value::str(format!("{}", i)))),
-        Value::Num(f) => {
+        Value::Num(_f) => {
             if method == "raku" || method == "perl" {
                 Some(Ok(Value::str(raku_value(target))))
             } else {
-                // gist
-                Some(Ok(Value::str(format!("{}", f))))
+                // gist == Str for a Num: use the canonical Num→Str formatter,
+                // which renders Inf/-Inf/NaN with their proper casing and applies
+                // scientific notation for very large / small magnitudes. The raw
+                // `format!("{}", f)` produced Rust's lowercase `inf`/`-inf` and
+                // never switched to scientific (e.g. `1e20.gist` was the full
+                // 21-digit integer instead of `1e+20`).
+                Some(Ok(Value::str(target.to_string_value())))
             }
         }
         Value::Complex(r, i) => {

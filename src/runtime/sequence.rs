@@ -611,6 +611,24 @@ impl Interpreter {
             SeqMode::Closure
         };
 
+        // Carry the arithmetic step as an EXACT rational when the sequence is
+        // arithmetic, every seed is Int/Rat, and the step is a genuine fraction
+        // (`den != 1`). The generation step then adds the fraction exactly
+        // (`0, 1/10 … 1` yields `0.1 0.2 0.3 …`, not float `0.30000000000000004`).
+        // A whole-number step keeps the existing `seq_add` path so an integer
+        // sequence (`1, 2 … 10`) stays `Int` rather than becoming `Rat`.
+        let rat_step: Option<(i64, i64)> = if matches!(mode, SeqMode::Arithmetic(_))
+            && seeds.len() >= 2
+            && seeds.iter().all(|v| Self::seq_value_to_rat(v).is_some())
+        {
+            match Self::seq_rat_diff(&seeds[seeds.len() - 2], &seeds[seeds.len() - 1]) {
+                Some((n, d)) if d != 1 => Some((n, d)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
         // Check for "wrong side" sequences: arithmetic with endpoint on wrong side
         if let SeqMode::Arithmetic(step) = &mode
             && let Some(ref ep) = endpoint
@@ -1148,6 +1166,8 @@ impl Interpreter {
                             self.env = saved;
                             self.var_bindings = saved_vb;
                             v
+                        } else if let Some((sn, sd)) = rat_step {
+                            Self::seq_add_rat(last, sn, sd)
                         } else {
                             Self::seq_add(last, *step)
                         }
