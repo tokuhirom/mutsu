@@ -4,25 +4,27 @@
 //! Traces the direct `Value` children of a GC-candidate node. This is the
 //! collector's "trace edges out of this node" primitive, distinct from
 //! `Interpreter::visit_roots` (which enumerates ROOTS — where execution state
-//! itself holds a `Value`). No `Gc<T>`/candidate buffer exists yet, so
-//! nothing outside this module's tests calls these.
+//! itself holds a `Value`).
 //!
-//! Scope matches the design doc's §3.1 type filter plus the "initial scope"
-//! async types: `Array`/`Hash`/`Set`/`Bag`/`Mix`/`Pair`/`ValuePair`/`Sub`/
-//! `Instance`/`ContainerRef`/`Promise`/`Channel`. Every other variant
-//! (`Int`/`Str`/`Bool`/`Nil`/`Range`/...) cannot form a cycle and is a no-op.
-//! `LazyList` is out of scope until the third wave (§11 step 10) — its wide
-//! trace surface (env/cache/coroutine/lazy-pipe state) is deferred there.
-//! `Junction` is likewise not in the design doc's candidate list and is
-//! excluded.
+//! `gc_trace` yields the erased `Gc` node handle for every migrated `Gc<T>`
+//! node variant (`Array`/`Hash`/`Set`/`Bag`/`Mix`/`ContainerRef`/`Sub`/
+//! `Instance`/`LazyList`/`Promise`/`Channel`, plus the `Gc<HashData>` inside a
+//! `HashEntryRef`), and recurses through every *non-node* wrapper that owns or
+//! shares `Value`s (`Pair`/`ValuePair`/`Scalar`/`Capture`/`Seq`/`HyperSeq`/
+//! `RaceSeq`/`Slip`/`Mixin`/`Junction`/`GenericRange`/`Proxy`/`Enum`/
+//! `ParametricRole`/`CustomType`/`CustomTypeInstance`/`LazyThunk`/`LazyIoLines`)
+//! so a `Gc` node nested inside one is still reached — otherwise the wrapper is
+//! an invisible edge and a cycle through it is under-collected. Every remaining
+//! variant (`Int`/`Str`/`Bool`/`Nil`/`Range`/`Version`/`Routine`/... and
+//! `WeakSub`, a WEAK edge) cannot reach a live `Gc` node and is a no-op.
 
 use std::sync::{Condvar, Mutex};
 
 use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
 use super::{
-    ArrayData, BagData, ChannelState, HashData, InstanceAttrs, LazyList, MixData, PromiseState,
-    SetData, SharedChannel, SharedPromise, SubData, Value,
+    ArrayData, BagData, ChannelState, EnumValue, HashData, InstanceAttrs, LazyList, MixData,
+    PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value,
 };
 
 impl Value {
@@ -48,6 +50,10 @@ impl Value {
             Value::Sub(data) => visit(&data.erased()),
             Value::Instance { attributes, .. } => visit(&attributes.erased()),
             Value::LazyList(ll) => visit(&ll.erased()),
+            // A hash-entry lvalue reference holds a strong `Gc<HashData>` node
+            // (the hash it indexes into); yield it so a cycle routed through a
+            // stored entry-ref is still reached.
+            Value::HashEntryRef { hash, .. } => visit(&hash.erased()),
 
             // Non-node wrappers that own/share `Value`s: recurse. They cannot
             // themselves form a cycle without passing through a `Gc` node above
@@ -94,6 +100,36 @@ impl Value {
             } => {
                 fetcher.gc_trace(visit);
                 storer.gc_trace(visit);
+            }
+            // Uniquely-owned `Box<Value>` wrappers: recurse (no sharing, so the
+            // recursion visits each edge exactly once).
+            Value::LazyIoLines { handle, .. } => handle.gc_trace(visit),
+            // An enum value can carry an arbitrary `Value` payload.
+            Value::Enum {
+                value: EnumValue::Generic(v),
+                ..
+            } => v.gc_trace(visit),
+            Value::ParametricRole { type_args, .. } => {
+                for v in type_args.iter() {
+                    v.gc_trace(visit);
+                }
+            }
+            Value::CustomType(data) => data.how.gc_trace(visit),
+            Value::CustomTypeInstance(data) => {
+                data.how.gc_trace(visit);
+                for v in data.attributes.values() {
+                    v.gc_trace(visit);
+                }
+            }
+            // A lazy thunk holds its (possibly closure-capturing) block and any
+            // cached forced result — both can close a cycle.
+            Value::LazyThunk(data) => {
+                data.thunk.gc_trace(visit);
+                if let Ok(cache) = data.cache.lock()
+                    && let Some(v) = cache.as_ref()
+                {
+                    v.gc_trace(visit);
+                }
             }
             // Migrated async `Gc<T>` node variants (§11 steps 6-7): yield the
             // node; its `Trace` impl walks the held result / queue / callbacks.
@@ -522,5 +558,51 @@ mod tests {
         let mut visitor = CountingVisitor { count: 0 };
         Value::Promise(promise).visit_gc_children(&mut visitor);
         assert_eq!(visitor.count, 1);
+    }
+
+    /// Count the `Gc` node handles `gc_trace` yields for `value`.
+    fn gc_trace_node_count(value: &Value) -> usize {
+        let mut n = 0;
+        value.gc_trace(&mut |_| n += 1);
+        n
+    }
+
+    fn fresh_hash_node() -> Value {
+        Value::Hash(crate::gc::Gc::new(HashData::default()))
+    }
+
+    #[test]
+    fn hash_entry_ref_traces_its_hash_node() {
+        // A HashEntryRef holds a strong `Gc<HashData>`; gc_trace must yield it
+        // so a cycle routed through a stored entry-ref is reachable.
+        let hash = crate::gc::Gc::new(HashData::default());
+        let value = Value::HashEntryRef {
+            hash,
+            path: vec!["k".to_string()],
+        };
+        assert_eq!(gc_trace_node_count(&value), 1);
+    }
+
+    #[test]
+    fn lazy_thunk_traces_thunk_and_cached_result() {
+        use crate::value::LazyThunkData;
+        // thunk holds one node, cache holds another once populated.
+        let data = LazyThunkData {
+            thunk: fresh_hash_node(),
+            cache: std::sync::Mutex::new(Some(fresh_hash_node())),
+        };
+        let value = Value::LazyThunk(Arc::new(data));
+        assert_eq!(gc_trace_node_count(&value), 2);
+    }
+
+    #[test]
+    fn enum_generic_payload_is_traced() {
+        let value = Value::Enum {
+            enum_type: crate::symbol::Symbol::intern("E"),
+            key: crate::symbol::Symbol::intern("A"),
+            value: crate::value::EnumValue::Generic(Box::new(fresh_hash_node())),
+            index: 0,
+        };
+        assert_eq!(gc_trace_node_count(&value), 1);
     }
 }
