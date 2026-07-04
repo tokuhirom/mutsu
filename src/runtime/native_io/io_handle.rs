@@ -1,5 +1,18 @@
 use super::*;
 
+/// Decode bytes as strict UTF-8, mirroring `IO::Path.slurp`: an invalid byte
+/// sequence is an error (surfaced as an `X::AdHoc`), not a lossy U+FFFD
+/// substitution. Used by the default-encoding text reads on an open handle so
+/// they match path-level slurp and Rakudo.
+fn decode_utf8_strict(bytes: Vec<u8>) -> Result<String, RuntimeError> {
+    String::from_utf8(bytes).map_err(|e| {
+        RuntimeError::new(format!(
+            "Malformed UTF-8 at byte offset {}",
+            e.utf8_error().valid_up_to()
+        ))
+    })
+}
+
 impl Interpreter {
     /// Mutable dispatch for `IO::Handle` methods that mutate the receiver in
     /// place. Currently only `.open`: in Raku `$fh.open(...)` opens the handle
@@ -686,7 +699,11 @@ impl Interpreter {
                     let decoded = self.decode_with_encoding(&all_bytes, &handle_encoding)?;
                     Ok(Value::str(decoded))
                 } else {
-                    Ok(Value::str(String::from_utf8_lossy(&all_bytes).to_string()))
+                    // Strict UTF-8, matching `IO::Path.slurp` (`read_to_string`)
+                    // and Rakudo: a malformed byte throws rather than silently
+                    // becoming U+FFFD. Non-utf8 encodings (incl. the lenient
+                    // `utf8-c8`) took the `decode_with_encoding` branch above.
+                    Ok(Value::str(decode_utf8_strict(all_bytes)?))
                 }
             }
             "split" => {
