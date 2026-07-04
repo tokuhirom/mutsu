@@ -58,7 +58,8 @@ pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
         return Some(apply_sign(v, sign));
     }
 
-    // Try fraction `N/D` (with optional decimal parts and signed denominators)
+    // Try fraction `N/D` (a plain-integer numerator over an unsigned
+    // plain-integer denominator; the leading sign is already in `sign`).
     if let Some(v) = try_parse_fraction(body, sign) {
         return Some(v);
     }
@@ -490,6 +491,19 @@ fn try_parse_fraction(body: &str, sign: i32) -> Option<Value> {
     let slash_pos = body.find('/')?;
     let num_str = &body[..slash_pos];
     let den_str = &body[slash_pos + 1..];
+
+    // A numeric fraction string is only `[sign]INT/INT`: a plain-integer
+    // numerator over an *unsigned* plain-integer denominator. A decimal part in
+    // either, or a signed denominator, is not a numeric literal and must fail
+    // numification (roast S32-str/numeric.t: `+"3/-2"`, `+"+3/-2"`, `+"3.0/2"`,
+    // `+"3/2.0"` all fail; `"3/2"`, `"-3/2"` are the accepted forms). The leading
+    // sign of the whole fraction was already stripped into `sign`.
+    if num_str.contains('.') || den_str.contains('.') {
+        return None;
+    }
+    if den_str.starts_with('-') || den_str.starts_with('+') {
+        return None;
+    }
 
     // Parse numerator (can be integer or decimal with underscores)
     let (num_n, num_d) = parse_fraction_part(num_str, false)?;
