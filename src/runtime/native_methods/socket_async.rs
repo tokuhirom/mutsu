@@ -419,12 +419,37 @@ impl Interpreter {
                 supply_attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
                 let supply_val = Value::make_instance(Symbol::intern("Supply"), supply_attrs);
 
-                // If we are inside a react block, register the subscription
+                // If we are inside a react block, register the subscription so the
+                // react event loop drains the accept channel. Otherwise this is a
+                // BARE `.tap()`: react/whenever has an event loop that drains the
+                // channel, a bare tap does not, so drive the callback ourselves on
+                // a worker thread (like `start {}` — a cloned interpreter runs the
+                // callback per accepted connection; the callback writes to the real
+                // TcpStream, so a client on the main thread sees the data over the
+                // OS socket).
                 if !self.supply_emit_buffer.is_empty() {
                     let sub = Value::array(vec![supply_val, callback]);
                     if let Some(last) = self.supply_emit_buffer.last_mut() {
                         last.push(sub);
                     }
+                } else if !matches!(callback, Value::Nil) {
+                    let cb = callback.clone();
+                    let mut driver = self.clone_for_thread();
+                    crate::runtime::builtins_system::spawn_user_thread(move || {
+                        let Some(rx) = take_supply_channel(supply_id) else {
+                            return;
+                        };
+                        while let Ok(event) = rx.recv() {
+                            match event {
+                                SupplyEvent::Emit(conn) => {
+                                    let _ = crate::vm::guard_worker_panic(|| {
+                                        driver.call_sub_value(cb.clone(), vec![conn], true)
+                                    });
+                                }
+                                SupplyEvent::Done | SupplyEvent::Quit(_) => break,
+                            }
+                        }
+                    });
                 }
 
                 let socket_port = SharedPromise::new();
