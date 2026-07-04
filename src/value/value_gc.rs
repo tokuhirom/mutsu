@@ -18,7 +18,7 @@
 //! variant (`Int`/`Str`/`Bool`/`Nil`/`Range`/`Version`/`Routine`/... and
 //! `WeakSub`, a WEAK edge) cannot reach a live `Gc` node and is a no-op.
 
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
@@ -26,6 +26,38 @@ use super::{
     ArrayData, BagData, ChannelState, EnumValue, HashData, InstanceAttrs, LazyList, MixData,
     PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value,
 };
+
+/// Whether an `Arc`-shared wrapper is *uniquely owned* — its only holder is the
+/// `Value` currently being traced.
+///
+/// The collector inlines a non-node wrapper into every holder's child list (it
+/// has no node identity of its own). For a wrapper shared by N holders that is
+/// correct only if N == 1: otherwise the wrapper's single `Arc`-held reference
+/// to a `Gc` node is reported as N phantom edges, over-decrementing that node's
+/// strong count during trial deletion (a single-threaded soundness bug —
+/// `strong_after` underflow, seen as `MUTSU_GC_VERIFY` "survivor invariant
+/// violation"; roles' `does` mixins share a `Mixin` this way). When shared we
+/// therefore stop and treat the wrapper as an external root holder: its
+/// contents stay conservatively alive. That can *under*-collect a cycle routed
+/// solely through a shared immutable wrapper — a leak, never corruption or
+/// use-after-free — which the proper (larger) fix of promoting these wrappers
+/// to real `Gc` nodes would recover. A collect is stop-the-world (no mutator
+/// runs), so `strong_count` is frozen and every phase reads the same value.
+#[inline]
+fn uniquely_owned<T>(arc: &Arc<T>) -> bool {
+    Arc::strong_count(arc) == 1
+}
+
+/// Recurse into a shared `Arc<Vec<Value>>` sequence only when uniquely owned.
+/// See [`uniquely_owned`].
+#[inline]
+fn trace_shared_slice(items: &Arc<Vec<Value>>, visit: &mut dyn FnMut(&ErasedGc)) {
+    if uniquely_owned(items) {
+        for v in items.iter() {
+            v.gc_trace(visit);
+        }
+    }
+}
 
 impl Value {
     /// Hand each direct GC-managed (`Gc<T>`) child of this value to `visit`.
@@ -55,10 +87,12 @@ impl Value {
             // stored entry-ref is still reached.
             Value::HashEntryRef { hash, .. } => visit(&hash.erased()),
 
-            // Non-node wrappers that own/share `Value`s: recurse. They cannot
-            // themselves form a cycle without passing through a `Gc` node above
-            // (`Box` is uniquely owned; the `Arc<Vec>` sequences are immutable),
-            // so the recursion terminates. `WeakSub` is a WEAK edge — not traced.
+            // Non-node wrappers that own/share `Value`s: recurse so a `Gc` node
+            // nested inside is reached. `Box`-owned wrappers recurse
+            // unconditionally (single holder); `Arc`-shared wrappers recurse
+            // only when uniquely owned (see `uniquely_owned` for why a shared
+            // wrapper would over-decrement). `WeakSub` is a WEAK edge — not
+            // traced.
             Value::Pair(_, v) | Value::Scalar(v) => v.gc_trace(visit),
             Value::ValuePair(k, v) => {
                 k.gc_trace(visit);
@@ -75,22 +109,18 @@ impl Value {
             Value::Seq(items)
             | Value::HyperSeq(items)
             | Value::RaceSeq(items)
-            | Value::Slip(items) => {
-                for v in items.iter() {
-                    v.gc_trace(visit);
-                }
-            }
+            | Value::Slip(items) => trace_shared_slice(items, visit),
             Value::Mixin(inner, overrides) => {
-                inner.gc_trace(visit);
-                for v in overrides.values() {
-                    v.gc_trace(visit);
+                if uniquely_owned(inner) {
+                    inner.gc_trace(visit);
+                }
+                if uniquely_owned(overrides) {
+                    for v in overrides.values() {
+                        v.gc_trace(visit);
+                    }
                 }
             }
-            Value::Junction { values, .. } => {
-                for v in values.iter() {
-                    v.gc_trace(visit);
-                }
-            }
+            Value::Junction { values, .. } => trace_shared_slice(values, visit),
             Value::GenericRange { start, end, .. } => {
                 start.gc_trace(visit);
                 end.gc_trace(visit);
@@ -117,18 +147,22 @@ impl Value {
             Value::CustomType(data) => data.how.gc_trace(visit),
             Value::CustomTypeInstance(data) => {
                 data.how.gc_trace(visit);
-                for v in data.attributes.values() {
-                    v.gc_trace(visit);
+                if uniquely_owned(&data.attributes) {
+                    for v in data.attributes.values() {
+                        v.gc_trace(visit);
+                    }
                 }
             }
             // A lazy thunk holds its (possibly closure-capturing) block and any
             // cached forced result — both can close a cycle.
             Value::LazyThunk(data) => {
-                data.thunk.gc_trace(visit);
-                if let Ok(cache) = data.cache.lock()
-                    && let Some(v) = cache.as_ref()
-                {
-                    v.gc_trace(visit);
+                if uniquely_owned(data) {
+                    data.thunk.gc_trace(visit);
+                    if let Ok(cache) = data.cache.lock()
+                        && let Some(v) = cache.as_ref()
+                    {
+                        v.gc_trace(visit);
+                    }
                 }
             }
             // Migrated async `Gc<T>` node variants (§11 steps 6-7): yield the
@@ -569,6 +603,39 @@ mod tests {
 
     fn fresh_hash_node() -> Value {
         Value::Hash(crate::gc::Gc::new(HashData::default()))
+    }
+
+    #[test]
+    fn shared_arc_wrapper_is_not_traced_only_unique_is() {
+        // A uniquely-owned Seq yields its nested `Gc` node...
+        let seq = Value::Seq(Arc::new(vec![fresh_hash_node()]));
+        assert_eq!(gc_trace_node_count(&seq), 1);
+
+        // ...but once the backing `Arc<Vec>` is shared (strong_count > 1),
+        // gc_trace must NOT recurse: inlining a shared wrapper into every
+        // holder's child list would report phantom edges that over-decrement
+        // the nested node's strong count during trial deletion.
+        let shared = seq.clone();
+        assert_eq!(gc_trace_node_count(&seq), 0);
+        assert_eq!(gc_trace_node_count(&shared), 0);
+
+        // Dropping the alias makes it uniquely owned again → traced again.
+        drop(shared);
+        assert_eq!(gc_trace_node_count(&seq), 1);
+    }
+
+    #[test]
+    fn shared_lazy_thunk_is_not_traced() {
+        use crate::value::LazyThunkData;
+        let thunk = Value::LazyThunk(Arc::new(LazyThunkData {
+            thunk: fresh_hash_node(),
+            cache: std::sync::Mutex::new(None),
+        }));
+        assert_eq!(gc_trace_node_count(&thunk), 1);
+        let shared = thunk.clone();
+        assert_eq!(gc_trace_node_count(&thunk), 0);
+        drop(shared);
+        assert_eq!(gc_trace_node_count(&thunk), 1);
     }
 
     #[test]
