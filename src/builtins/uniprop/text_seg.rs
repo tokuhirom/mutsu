@@ -104,38 +104,76 @@ pub(crate) fn unicode_sentence_break(ch: char) -> String {
     }
 }
 
-/// Word_Break property.
+/// Is `cp` in the UAX #29 Word_Break=Katakana set (includes Common-script
+/// katakana-related marks alongside the Katakana script proper).
+fn is_wb_katakana(cp: u32) -> bool {
+    matches!(cp,
+        0x3031..=0x3035 | 0x309B | 0x309C | 0x30A0..=0x30FA | 0x30FC..=0x30FF
+        | 0x31F0..=0x31FF | 0x32D0..=0x32FE | 0x3300..=0x3357
+        | 0xFF66..=0xFF9D | 0x1B000 | 0x1B164..=0x1B167)
+}
+
+/// Word_Break property (UAX #29 WordBreakProperty).
 pub(crate) fn unicode_word_break(ch: char) -> String {
     let cp = ch as u32;
+    // Line separators, joiners, and explicit punctuation classes.
     match cp {
-        0x000D => "CR".to_string(),
-        0x000A | 0x000B | 0x000C | 0x0085 | 0x2028 | 0x2029 => "LF".to_string(),
-        0x200D => "ZWJ".to_string(),
-        _ => {
-            let gc = crate::builtins::unicode::unicode_general_category(ch);
+        0x000D => return "CR".to_string(),
+        0x000A => return "LF".to_string(),
+        0x000B | 0x000C | 0x0085 | 0x2028 | 0x2029 => return "Newline".to_string(),
+        0x200D => return "ZWJ".to_string(),
+        0x0022 => return "Double_Quote".to_string(),
+        0x0027 => return "Single_Quote".to_string(),
+        // MidNumLet
+        0x002E | 0x2018 | 0x2019 | 0x2024 | 0xFE52 | 0xFF07 | 0xFF0E => {
+            return "MidNumLet".to_string();
+        }
+        // MidLetter
+        0x003A | 0x00B7 | 0x0387 | 0x05F4 | 0x2027 | 0xFE13 | 0xFE55 | 0xFF1A => {
+            return "MidLetter".to_string();
+        }
+        // MidNum
+        0x002C | 0x003B | 0x037E | 0x0589 | 0x060C | 0x060D | 0x066C | 0x07F8 | 0x2044 | 0xFE10
+        | 0xFE14 | 0xFE50 | 0xFE54 | 0xFF0C | 0xFF1B => {
+            return "MidNum".to_string();
+        }
+        _ => {}
+    }
+    if is_wb_katakana(cp) {
+        return "Katakana".to_string();
+    }
+    let gc = crate::builtins::unicode::unicode_general_category(ch);
+    // Connector_Punctuation is exactly the ExtendNumLet base set.
+    if gc == "Pc" {
+        return "ExtendNumLet".to_string();
+    }
+    // Extend: grapheme-extending marks and ZWNJ.
+    if super::binary_props::check_binary_property(ch, r"^\p{Grapheme_Extend}$") {
+        return "Extend".to_string();
+    }
+    // Format controls (joiners and ZWSP already handled above).
+    if gc == "Cf" && cp != 0x200B {
+        return "Format".to_string();
+    }
+    match gc.as_str() {
+        "Nd" => "Numeric".to_string(),
+        "Lu" | "Ll" | "Lt" | "Lm" | "Lo" => {
             let script = crate::builtins::unicode::unicode_script_name(ch);
             if script == "Hebrew" && (gc == "Lo" || gc == "Lm") {
                 return "Hebrew_Letter".to_string();
             }
-            match gc.as_str() {
-                "Lu" | "Ll" | "Lt" | "Lm" | "Lo" => "ALetter".to_string(),
-                "Nd" => "Numeric".to_string(),
-                "Mn" | "Me" | "Mc" => {
-                    if super::binary_props::check_binary_property(ch, r"^\p{Grapheme_Extend}$") {
-                        "Extend".to_string()
-                    } else {
-                        "Other".to_string()
-                    }
-                }
-                _ => {
-                    if super::binary_props::check_binary_property(ch, r"^\p{Extender}$") {
-                        "ExtendNumLet".to_string()
-                    } else {
-                        "Other".to_string()
-                    }
-                }
+            // ALetter excludes ideographs, Hiragana, and Complex_Context
+            // (Line_Break=SA: Thai/Lao/Myanmar/Khmer/...) letters.
+            if super::binary_props::check_binary_property(ch, r"^\p{Ideographic}$")
+                || script == "Hiragana"
+                || unicode_line_break(ch) == "SA"
+            {
+                "Other".to_string()
+            } else {
+                "ALetter".to_string()
             }
         }
+        _ => "Other".to_string(),
     }
 }
 
