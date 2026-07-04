@@ -410,8 +410,15 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                             prefix, formatted_mantissa, e_char, exp_sign, exp_digits
                         )
                     } else {
-                        // Fixed notation: same as %f with p decimal places
-                        format!("{}{:.*}", prefix, p, abs)
+                        // Fixed notation: p decimal places, then strip trailing
+                        // zeros (and a bare trailing decimal point) like standard
+                        // `%g` — so 0 renders as "0", not "0.000000". The `#`
+                        // (alternate) flag keeps the trailing zeros.
+                        let mut body = format!("{:.*}", p, abs);
+                        if !hash_flag && body.contains('.') {
+                            body.truncate(body.trim_end_matches('0').trim_end_matches('.').len());
+                        }
+                        format!("{prefix}{body}")
                     }
                 } else {
                     let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
