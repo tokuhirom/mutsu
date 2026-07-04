@@ -1,53 +1,39 @@
 use crate::value::Value;
 use std::sync::OnceLock;
 
-/// NFC_Quick_Check property.
-fn unicode_nfc_quick_check(ch: char) -> String {
-    use unicode_normalization::UnicodeNormalization;
-    let s = ch.to_string();
-    let nfc: String = s.nfc().collect();
-    if nfc == s {
-        // Could be Yes or Maybe
-        // Check if it's a combining character that might compose with a preceding char
-        if unicode_normalization::char::is_combining_mark(ch) {
-            // Check canonical combining class — characters with CCC > 0
-            // that can compose are "Maybe"
-            let nfd: String = s.nfd().collect();
-            if nfd == s {
-                "Maybe".to_string()
-            } else {
-                "No".to_string()
-            }
-        } else {
-            "Yes".to_string()
-        }
-    } else {
-        "No".to_string()
+/// Render a `*_Quick_Check` result as Raku's full property-value name. Unlike
+/// MoarVM (which returns the short `Y`/`N`/`M` codes — a `#?rakudo.moar todo` in
+/// roast S15-unicode-information/uniprop.t), mutsu returns the full names.
+fn quick_check_name(result: unicode_normalization::IsNormalized) -> String {
+    use unicode_normalization::IsNormalized;
+    match result {
+        IsNormalized::Yes => "Yes",
+        IsNormalized::No => "No",
+        IsNormalized::Maybe => "Maybe",
     }
+    .to_string()
+}
+
+/// NFC_Quick_Check property. Uses the crate's authoritative `NFC_QC` data, so a
+/// character that can compose with a following one (e.g. a Hangul trailing
+/// consonant) is correctly `Maybe`, not `Yes`.
+fn unicode_nfc_quick_check(ch: char) -> String {
+    quick_check_name(unicode_normalization::is_nfc_quick(std::iter::once(ch)))
 }
 
 /// NFD_Quick_Check property.
 fn unicode_nfd_quick_check(ch: char) -> String {
-    use unicode_normalization::UnicodeNormalization;
-    let s = ch.to_string();
-    let nfd: String = s.nfd().collect();
-    if nfd == s { "Yes" } else { "No" }.to_string()
+    quick_check_name(unicode_normalization::is_nfd_quick(std::iter::once(ch)))
 }
 
 /// NFKC_Quick_Check property.
 fn unicode_nfkc_quick_check(ch: char) -> String {
-    use unicode_normalization::UnicodeNormalization;
-    let s = ch.to_string();
-    let nfkc: String = s.nfkc().collect();
-    if nfkc == s { "Yes" } else { "No" }.to_string()
+    quick_check_name(unicode_normalization::is_nfkc_quick(std::iter::once(ch)))
 }
 
 /// NFKD_Quick_Check property.
 fn unicode_nfkd_quick_check(ch: char) -> String {
-    use unicode_normalization::UnicodeNormalization;
-    let s = ch.to_string();
-    let nfkd: String = s.nfkd().collect();
-    if nfkd == s { "Yes" } else { "No" }.to_string()
+    quick_check_name(unicode_normalization::is_nfkd_quick(std::iter::once(ch)))
 }
 
 /// Canonical_Combining_Class property.
