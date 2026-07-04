@@ -120,6 +120,23 @@ pub(crate) fn unicode_bidi_class(ch: char) -> String {
         0x2067 => "RLI",
         0x2068 => "FSI",
         0x2069 => "PDI",
+        // Bidi_Class of a numeric character depends on the specific digit set,
+        // not just its General_Category: European-style digits are EN and
+        // Arabic-Indic digits are AN (both would be `L` under the plain
+        // General_Category heuristic below).
+        0x0030..=0x0039              // ASCII digits
+        | 0x00B2..=0x00B3            // superscript 2, 3
+        | 0x00B9                     // superscript 1
+        | 0x06F0..=0x06F9            // extended Arabic-Indic digits
+        | 0x2070                     // superscript 0
+        | 0x2074..=0x2079            // superscript 4-9
+        | 0x2080..=0x2089            // subscript 0-9
+        | 0xFF10..=0xFF19 => "EN",   // fullwidth digits
+        0x0600..=0x0605             // Arabic number signs
+        | 0x0660..=0x0669            // Arabic-Indic digits
+        | 0x066B..=0x066C            // Arabic decimal/thousands separator
+        | 0x06DD                     // Arabic end of ayah
+        | 0x08E2 => "AN",            // Arabic disputed end of ayah
         _ => {
             // Use General Category heuristics
             let gc = crate::builtins::unicode::unicode_general_category(ch);
