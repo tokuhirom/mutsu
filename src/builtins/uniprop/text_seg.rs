@@ -183,6 +183,16 @@ pub(crate) fn unicode_line_break(ch: char) -> String {
                     match script.as_str() {
                         "Thai" | "Lao" | "Myanmar" | "Khmer" | "Javanese" | "Tai_Tham"
                         | "New_Tai_Lue" | "Tai_Le" => "SA".to_string(),
+                        // Ideographic scripts have Line_Break=ID (not AL), e.g. a
+                        // CJK ideograph or a Hiragana/Katakana letter.
+                        "Han"
+                        | "Hiragana"
+                        | "Katakana"
+                        | "Bopomofo"
+                        | "Yi"
+                        | "Tangut"
+                        | "Nushu"
+                        | "Khitan_Small_Script" => "ID".to_string(),
                         _ => "AL".to_string(),
                     }
                 }
