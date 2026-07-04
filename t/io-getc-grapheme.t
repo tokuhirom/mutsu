@@ -1,10 +1,11 @@
 use Test;
 
-plan 6;
+plan 9;
 
 # `.getc` returns a full grapheme cluster (base codepoint + extending
 # codepoints), matching `.chars`/`.comb` and Rakudo's NFG semantics — not a
 # single codepoint. Covers both the direct IO::Handle path and IO::CatHandle.
+# `.readchars($n)` reads $n graphemes for the same reason.
 
 sub graphemes-of($handle) {
     my @res;
@@ -48,4 +49,14 @@ my $h = $r.open;
 $h.getc for ^3;
 is-deeply [$h.getc xx 3], [Nil xx 3], 'getc past EOF yields Nil';
 
-$p.unlink; $q.unlink; $f1.unlink; $f2.unlink; $r.unlink;
+# `.readchars($n)` reads $n GRAPHEMES, not codepoints.
+my $g = $*TMPDIR.add("mutsu-getc-readchars-{$*PID}");
+$g.spurt("a\x[308]\x[308]b\x[308]c");   # graphemes: a¨¨, b¨, c
+is $g.open.readchars(2), "a\x[308]\x[308]" ~ "b\x[308]",
+    'readchars(2) reads 2 whole graphemes';
+is $g.open.readchars(1), "a\x[308]\x[308]",
+    'readchars(1) reads 1 whole grapheme';
+is $g.open.readchars(100), "a\x[308]\x[308]" ~ "b\x[308]" ~ "c",
+    'readchars past EOF returns all graphemes';
+
+$p.unlink; $q.unlink; $f1.unlink; $f2.unlink; $r.unlink; $g.unlink;

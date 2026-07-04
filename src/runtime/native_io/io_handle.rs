@@ -345,7 +345,7 @@ impl Interpreter {
                     // codepoints), matching `.chars`/`.comb`. Seekable files use
                     // the grapheme path; other targets fall back to a single
                     // codepoint.
-                    match self.read_grapheme_from_handle_value(&target_val)? {
+                    match self.read_grapheme_from_handle_value(&target_val, 1)? {
                         Some(s) if s.is_empty() => Ok(Value::Nil), // EOF
                         Some(s) => Ok(Value::str(s)),
                         None => {
@@ -372,6 +372,14 @@ impl Interpreter {
                 } else {
                     None
                 };
+                // A bounded readchars reads that many GRAPHEMES (matching
+                // `.getc`/NFG); an unbounded read (whole file) is the same string
+                // either way. Non-file / non-utf8 handles fall back to codepoints.
+                if let Some(n) = count
+                    && let Some(s) = self.read_grapheme_from_handle_value(&target_val, n)?
+                {
+                    return Ok(Value::str(s));
+                }
                 Ok(Value::str(
                     self.read_chars_from_handle_value(&target_val, count)?,
                 ))

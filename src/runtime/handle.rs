@@ -239,14 +239,15 @@ impl IoHandleState {
         }
     }
 
-    /// VM-native single-grapheme read for `.getc` on a seekable File+UTF8
-    /// handle: a base codepoint plus any codepoints that extend the same
-    /// grapheme cluster (combining marks, ZWJ sequences, ...), matching
-    /// `.chars`/`.comb` and Rakudo's NFG `.getc`. The one codepoint that begins
-    /// the next grapheme is over-read to find the boundary and seeked back, so a
-    /// subsequent read sees the correct position. Empty string = EOF. Caller
-    /// guarantees [`can_native_text_write`].
-    pub(crate) fn read_grapheme_native(&mut self) -> Result<String, RuntimeError> {
+    /// VM-native grapheme read for `.getc`/`.readchars` on a seekable File+UTF8
+    /// handle: up to `count` grapheme clusters, each a base codepoint plus any
+    /// codepoints that extend the same cluster (combining marks, ZWJ sequences,
+    /// ...), matching `.chars`/`.comb` and Rakudo's NFG semantics. The one
+    /// codepoint that begins the next cluster is over-read to find the boundary
+    /// and seeked back, so a subsequent read sees the correct position. Fewer
+    /// than `count` (incl. empty) means EOF was reached. Caller guarantees
+    /// [`can_native_text_write`].
+    pub(crate) fn read_grapheme_native(&mut self, count: usize) -> Result<String, RuntimeError> {
         use std::io::Seek;
         use unicode_segmentation::UnicodeSegmentation;
         if self.closed {
@@ -258,29 +259,34 @@ impl IoHandleState {
             .file
             .as_mut()
             .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-        let Some(mut cluster) = Interpreter::read_utf8_char(file)? else {
-            return Ok(String::new()); // EOF
-        };
-        // A binary handle keeps single-codepoint semantics (no grapheme
-        // clustering over raw bytes).
-        if is_bin {
-            return Ok(cluster);
-        }
-        loop {
-            let Some(ch) = Interpreter::read_utf8_char(file)? else {
-                break; // EOF: cluster ends here
+        let mut out = String::new();
+        for _ in 0..count {
+            let Some(mut cluster) = Interpreter::read_utf8_char(file)? else {
+                break; // EOF
             };
-            let combined = format!("{cluster}{ch}");
-            if combined.graphemes(true).count() == 1 {
-                cluster = combined; // `ch` extends the grapheme
-            } else {
-                // `ch` begins the next grapheme — put it back.
-                file.seek(std::io::SeekFrom::Current(-(ch.len() as i64)))
-                    .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
-                break;
+            // A binary handle keeps single-codepoint semantics (no grapheme
+            // clustering over raw bytes).
+            if is_bin {
+                out.push_str(&cluster);
+                continue;
             }
+            loop {
+                let Some(ch) = Interpreter::read_utf8_char(file)? else {
+                    break; // EOF: cluster ends here
+                };
+                let combined = format!("{cluster}{ch}");
+                if combined.graphemes(true).count() == 1 {
+                    cluster = combined; // `ch` extends the grapheme
+                } else {
+                    // `ch` begins the next grapheme — put it back.
+                    file.seek(std::io::SeekFrom::Current(-(ch.len() as i64)))
+                        .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                    break;
+                }
+            }
+            out.push_str(&cluster);
         }
-        Ok(cluster)
+        Ok(out)
     }
 
     /// Add to this handle's `bytes_written` counter. Used by the VM's Stdout
