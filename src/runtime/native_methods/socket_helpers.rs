@@ -78,43 +78,19 @@ impl Interpreter {
         // Text mode
         match max_chars {
             Some(n) => {
-                // Read N characters (UTF-8 aware)
-                let mut result = String::new();
-                let mut byte_buf = [0u8; 4];
-                let mut remaining = n;
-                while remaining > 0 {
-                    let bytes_read = stream
-                        .read(&mut byte_buf[..1])
-                        .map_err(|e| RuntimeError::new(format!("recv failed: {}", e)))?;
-                    if bytes_read == 0 {
-                        break;
-                    }
-                    // Determine UTF-8 char length from first byte
-                    let first = byte_buf[0];
-                    let char_len = if first < 0x80 {
-                        1
-                    } else if first < 0xE0 {
-                        2
-                    } else if first < 0xF0 {
-                        3
-                    } else {
-                        4
-                    };
-                    // Read remaining bytes for this character
-                    if char_len > 1 {
-                        let more = stream
-                            .read(&mut byte_buf[1..char_len])
-                            .map_err(|e| RuntimeError::new(format!("recv failed: {}", e)))?;
-                        if more < char_len - 1 {
-                            break;
-                        }
-                    }
-                    if let Ok(s) = std::str::from_utf8(&byte_buf[..char_len]) {
-                        result.push_str(s);
-                    }
-                    remaining -= 1;
-                }
-                Ok(Value::str(result))
+                // `recv($limit)` is an UPPER limit, not a lower one (roast
+                // S32-io/socket-recv-vs-read.t): it must not block waiting for
+                // the full `$limit`. Do a single OS read of up to `n` bytes
+                // (blocking only until the first data arrives) and decode it.
+                // `n` bytes decode to at most `n` characters, so the character
+                // limit is respected, and any further bytes stay buffered in the
+                // OS socket for the next `recv`/`read` (no over-read).
+                let mut buf = vec![0u8; n];
+                let read = stream
+                    .read(&mut buf)
+                    .map_err(|e| RuntimeError::new(format!("recv failed: {}", e)))?;
+                buf.truncate(read);
+                Ok(Value::str(String::from_utf8_lossy(&buf).to_string()))
             }
             None => {
                 // Read all available data
