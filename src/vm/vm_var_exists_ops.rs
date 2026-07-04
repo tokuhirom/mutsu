@@ -70,6 +70,26 @@ impl Interpreter {
             }
             let target = self.stack.pop().unwrap_or(Value::Nil);
             Self::throw_if_failure(&target)?;
+            // A nested single-dim slice (`@a[(3, (30, (5,)))]:exists`) preserves
+            // its index-tree shape in the result, so it recurses rather than
+            // walking a flat pair list. Distinct from a multidim `@a[1;2]` walk.
+            if let Some(inner) = Self::nested_index_elements(&idx)
+                && inner
+                    .iter()
+                    .any(|e| Self::nested_index_elements(e).is_some())
+                && let Some(items) = Self::positional_exists_items(&target)
+            {
+                let adverb = match adverb_bits {
+                    1 => "kv",
+                    2 => "not-kv",
+                    3 => "p",
+                    4 => "not-p",
+                    _ => "none",
+                };
+                let out = Self::nested_exists_slice(&items, &inner, effective_negated, adverb);
+                self.stack.push(Value::array(out));
+                return Ok(());
+            }
             if let Some(map) = match &target {
                 Value::Hash(map) => Some(map.clone()),
                 Value::Instance {

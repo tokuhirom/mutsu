@@ -144,7 +144,26 @@ impl Interpreter {
                 "__mutsu_subscript_adverb expects target, index, and mode",
             ));
         }
-        let target = args[0].clone();
+        // A positional slice adverb can target any Positional, not just a stored
+        // `@`-array: `("a".."z")[3,5]:k` indexes a Range, `(1,2,3)[*]:v` a List.
+        // Coerce those to a plain array view up-front so the Array arm below owns
+        // the value/key/exists logic (a Hash target keeps its own path).
+        let mut target_is_coerced_list = false;
+        let target = {
+            let t = args[0].clone();
+            if !matches!(&t, Value::Array(..) | Value::Hash(_))
+                && (t.is_range()
+                    || matches!(
+                        &t,
+                        Value::Seq(_) | Value::HyperSeq(_) | Value::RaceSeq(_) | Value::LazyList(_)
+                    ))
+            {
+                target_is_coerced_list = true;
+                Value::real_array(crate::runtime::utils::value_to_list(&t))
+            } else {
+                t
+            }
+        };
         let index = args[1].clone();
         let mode = args[2].to_string_value();
         let var_name = args
@@ -266,59 +285,119 @@ impl Interpreter {
         }
         let is_multi = indices.len() != 1 || force_list;
 
-        let mut rows: Vec<(Value, Value, bool)> = Vec::with_capacity(indices.len());
-        match &target {
-            Value::Array(items, ..) => {
-                // The set of explicitly element-assigned indices travels with
-                // the array value (embedded `ArrayData::initialized`), so a slot
-                // holding a `Package("Any")` hole is distinguished from a real
-                // `Any` value even after the array crosses scopes/closures.
-                let bound_map = items.initialized.as_ref();
-                // The missing-element default comes from the array's *element
-                // type*. Read it from the container value itself (embedded
-                // metadata / `is default`) FIRST so it survives rebinding — e.g.
-                // `for $@s, Str -> @a { @a[11]:!v }` where the loop variable has
-                // no type constraint but the bound array still carries `.of=Str`.
-                // Fall back to the declared variable's default/type, then Any.
-                let container_default = self.container_default(&target).cloned().or_else(|| {
+        // Positional targets (real arrays, plus Ranges/Seqs/Lists coerced above)
+        // own a recursive path so a *nested* sub-list index preserves its nesting
+        // in the result — `@a[(3, (30, (5,)))]:k` yields `(3, ((5,),))`, not a
+        // flattened list. A Hash target keeps the original flat path below.
+        if let Value::Array(items, ..) = &target {
+            // The set of explicitly element-assigned indices travels with the
+            // array value (embedded `ArrayData::initialized`), so a slot holding a
+            // `Package("Any")` hole is distinguished from a real `Any` value even
+            // after the array crosses scopes/closures.
+            let bound_map: Option<std::collections::HashSet<usize>> = items.initialized.clone();
+            let items_snap: Vec<Value> = items.to_vec();
+            // The missing-element default comes from the array's *element type*.
+            // Read it from the container value itself (embedded metadata /
+            // `is default`) FIRST so it survives rebinding — e.g.
+            // `for $@s, Str -> @a { @a[11]:!v }` where the loop variable has no
+            // type constraint but the bound array still carries `.of=Str`. Fall
+            // back to the declared variable's default/type, then Any.
+            let container_default = self.container_default(&target).cloned().or_else(|| {
+                var_name
+                    .as_ref()
+                    .and_then(|name| self.var_default(name).cloned())
+            });
+            let type_constraint_default = self
+                .container_type_metadata(&target)
+                .map(|info| info.value_type)
+                .filter(|t| !t.is_empty())
+                .or_else(|| {
                     var_name
                         .as_ref()
-                        .and_then(|name| self.var_default(name).cloned())
-                });
-                let type_constraint_default = self
-                    .container_type_metadata(&target)
-                    .map(|info| info.value_type)
-                    .filter(|t| !t.is_empty())
-                    .or_else(|| {
-                        var_name
-                            .as_ref()
-                            .and_then(|name| self.var_type_constraint(name))
-                    })
-                    .map(|t| Value::Package(Symbol::intern(&t)));
-                let missing_value = container_default
-                    .or(type_constraint_default)
-                    .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
-                for idx in &indices {
-                    let i = match idx {
-                        Value::Int(i) => *i,
-                        Value::Num(f) => *f as i64,
-                        _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
-                    };
-                    let key = Value::Int(i);
-                    if i < 0 || i as usize >= items.len() {
-                        rows.push((key, missing_value.clone(), false));
-                        continue;
-                    }
-                    let ui = i as usize;
-                    let exists = if let Some(set) = bound_map {
-                        set.contains(&ui)
-                            || !matches!(&items[ui], Value::Package(name) if name == "Any")
+                        .and_then(|name| self.var_type_constraint(name))
+                })
+                .map(|t| Value::Package(Symbol::intern(&t)));
+            // A Range/List coerced to an array view has no container element
+            // type, so a missing element reads back as `Nil` (matching
+            // `("a".."z")[30]:!v`), not the `Any` a real `@`-array reports.
+            let missing_value = container_default
+                .or(type_constraint_default)
+                .unwrap_or_else(|| {
+                    if target_is_coerced_list {
+                        Value::Nil
                     } else {
-                        true
-                    };
-                    rows.push((key, items[ui].clone(), exists));
+                        Value::Package(Symbol::intern("Any"))
+                    }
+                });
+
+            // `:delete` companion (`:delete:kv` etc): remove every *leaf* index of
+            // the (possibly nested) index tree from the live binding, then format
+            // the pre-delete snapshot. The value/key/exists reported are the
+            // pre-deletion state (captured in `items_snap`).
+            if delete_after && let Some(var_name) = var_name.as_ref() {
+                let hole_type = self
+                    .var_type_constraint(var_name)
+                    .unwrap_or_else(|| "Any".to_string());
+                let mut leaves: Vec<i64> = Vec::new();
+                Self::collect_slice_leaf_indices(&indices, &mut leaves);
+                if let Some(Value::Array(live, ..)) = self.env.get_mut(var_name) {
+                    let hole_value = Value::Package(crate::symbol::Symbol::intern(&hole_type));
+                    let arr = crate::gc::Gc::make_mut(live);
+                    for i in &leaves {
+                        if *i >= 0 && (*i as usize) < arr.len() {
+                            arr[*i as usize] = hole_value.clone();
+                        }
+                    }
+                    // Trim trailing holes.
+                    while let Some(last) = arr.last() {
+                        let is_hole = match last {
+                            Value::Nil => true,
+                            Value::Package(name) => name == "Any" || name == hole_type.as_str(),
+                            _ => false,
+                        };
+                        if is_hole {
+                            arr.pop();
+                        } else {
+                            break;
+                        }
+                    }
+                    // Sync the env mutation back to the local slot (dual store) so
+                    // a later read of the array observes the deletion.
+                    self.writeback_multidim_var_to_local(var_name);
                 }
             }
+
+            if !is_multi {
+                let (key, value, exists) = Self::resolve_positional_scalar(
+                    &items_snap,
+                    bound_map.as_ref(),
+                    &missing_value,
+                    &indices[0],
+                );
+                if !keep_missing && !exists {
+                    return Ok(Value::array(Vec::new()));
+                }
+                return Ok(match kind {
+                    "kv" => Value::array(vec![key, value]),
+                    "p" => Value::ValuePair(Box::new(key), Box::new(value)),
+                    "k" => key,
+                    "v" => value,
+                    _ => Value::Nil,
+                });
+            }
+            let out = Self::format_positional_slice_level(
+                &items_snap,
+                bound_map.as_ref(),
+                &missing_value,
+                &indices,
+                kind,
+                keep_missing,
+            );
+            return Ok(Value::array(out));
+        }
+
+        let mut rows: Vec<(Value, Value, bool)> = Vec::with_capacity(indices.len());
+        match &target {
             Value::Hash(map) => {
                 // The missing-key default comes from the Hash's *value type* — read
                 // it from the container value itself (via container metadata /
@@ -362,48 +441,14 @@ impl Interpreter {
             _ => return Ok(Value::Nil),
         }
 
-        if delete_after && let Some(var_name) = var_name.as_ref() {
-            // Get hole type before mutable borrow
-            let hole_type = self
-                .var_type_constraint(var_name)
-                .unwrap_or_else(|| "Any".to_string());
-            if let Some(container) = self.env.get_mut(var_name) {
-                match container {
-                    Value::Hash(map) => {
-                        let h = crate::gc::Gc::make_mut(map);
-                        for idx in &indices {
-                            h.remove(&idx.to_string_value());
-                        }
-                    }
-                    Value::Array(items, ..) => {
-                        let hole_value = Value::Package(crate::symbol::Symbol::intern(&hole_type));
-                        let arr = crate::gc::Gc::make_mut(items);
-                        for idx in &indices {
-                            let i = match idx {
-                                Value::Int(i) => *i,
-                                Value::Num(f) => *f as i64,
-                                _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
-                            };
-                            if i >= 0 && (i as usize) < arr.len() {
-                                arr[i as usize] = hole_value.clone();
-                            }
-                        }
-                        // Trim trailing holes
-                        while let Some(last) = arr.last() {
-                            let is_hole = match last {
-                                Value::Nil => true,
-                                Value::Package(name) => name == "Any" || name == hole_type.as_str(),
-                                _ => false,
-                            };
-                            if is_hole {
-                                arr.pop();
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+        // Hash `:delete` companion (arrays handled in the positional path above).
+        if delete_after
+            && let Some(var_name) = var_name.as_ref()
+            && let Some(Value::Hash(map)) = self.env.get_mut(var_name)
+        {
+            let h = crate::gc::Gc::make_mut(map);
+            for idx in &indices {
+                h.remove(&idx.to_string_value());
             }
         }
 
@@ -440,5 +485,109 @@ impl Interpreter {
             }
         }
         Ok(Value::array(out))
+    }
+
+    /// One level of a positional slice adverb (`:k`/`:v`/`:p`/`:kv`) applied to
+    /// `items`. A *nested* index element (a sub-list/Range) recurses and becomes
+    /// ONE nested list element in the output, preserving the index tree's shape;
+    /// a scalar index contributes its formatted key/value entries in place.
+    pub(crate) fn format_positional_slice_level(
+        items: &[Value],
+        bound_map: Option<&std::collections::HashSet<usize>>,
+        missing_value: &Value,
+        indices: &[Value],
+        kind: &str,
+        keep_missing: bool,
+    ) -> Vec<Value> {
+        let mut out = Vec::new();
+        for idx in indices {
+            if let Some(sub) = Self::nested_index_elements(idx) {
+                let sub_out = Self::format_positional_slice_level(
+                    items,
+                    bound_map,
+                    missing_value,
+                    &sub,
+                    kind,
+                    keep_missing,
+                );
+                out.push(Value::array(sub_out));
+                continue;
+            }
+            let (key, value, exists) =
+                Self::resolve_positional_scalar(items, bound_map, missing_value, idx);
+            if !keep_missing && !exists {
+                continue;
+            }
+            match kind {
+                "kv" => {
+                    out.push(key);
+                    out.push(value);
+                }
+                "p" => out.push(Value::ValuePair(Box::new(key), Box::new(value))),
+                "k" => out.push(key),
+                "v" => out.push(value),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// If `idx` is a nested sub-slice (a non-itemized list / Seq / Range used as
+    /// an index element), return its direct elements for recursion; else `None`
+    /// (it is a scalar leaf index).
+    pub(crate) fn nested_index_elements(idx: &Value) -> Option<Vec<Value>> {
+        match idx {
+            Value::Array(items, kind) if !kind.is_itemized() => Some(items.to_vec()),
+            Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                Some(items.to_vec())
+            }
+            r if r.is_range() => Some(crate::runtime::utils::value_to_list(r)),
+            _ => None,
+        }
+    }
+
+    /// Resolve one scalar index against `items`, returning `(key, value, exists)`.
+    /// Out-of-range or unfilled slots report the container's `missing_value` with
+    /// `exists = false`.
+    fn resolve_positional_scalar(
+        items: &[Value],
+        bound_map: Option<&std::collections::HashSet<usize>>,
+        missing_value: &Value,
+        idx: &Value,
+    ) -> (Value, Value, bool) {
+        let i = match idx {
+            Value::Int(i) => *i,
+            Value::Num(f) => *f as i64,
+            _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
+        };
+        let key = Value::Int(i);
+        if i < 0 || i as usize >= items.len() {
+            return (key, missing_value.clone(), false);
+        }
+        let ui = i as usize;
+        let exists = match bound_map {
+            Some(set) => {
+                set.contains(&ui) || !matches!(&items[ui], Value::Package(name) if name == "Any")
+            }
+            None => true,
+        };
+        (key, items[ui].clone(), exists)
+    }
+
+    /// Collect every *leaf* integer index of a (possibly nested) slice index tree,
+    /// for `:delete` to remove each addressed slot.
+    pub(crate) fn collect_slice_leaf_indices(indices: &[Value], out: &mut Vec<i64>) {
+        for idx in indices {
+            if let Some(sub) = Self::nested_index_elements(idx) {
+                Self::collect_slice_leaf_indices(&sub, out);
+                continue;
+            }
+            let i = match idx {
+                Value::Int(i) => *i,
+                Value::Num(f) => *f as i64,
+                _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
+            };
+            out.push(i);
+        }
     }
 }
