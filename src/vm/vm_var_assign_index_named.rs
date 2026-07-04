@@ -2095,7 +2095,7 @@ impl Interpreter {
                             // SAFETY: aliased in-place mutation of a shared array
                             // (strong_count > 1); see `arc_contents_mut`.
                             let v = &mut unsafe { crate::value::gc_contents_mut(inner_arr) }.items;
-                            Self::autoviv_resize(v, j + 1, Value::Nil)?;
+                            Self::autoviv_resize(v, j + 1, native_fill.clone())?;
                             Value::assign_element_slot(&mut v[j], val.clone());
                         } else {
                             let inner = crate::gc::Gc::make_mut(inner_arr);
@@ -2183,15 +2183,19 @@ impl Interpreter {
             }
             Value::Array(arr, _) => {
                 if let Ok(i) = outer_key.parse::<usize>() {
+                    // Autovivified gaps fill with the `Any` type object (matching
+                    // a direct `@a[i] = v`), not `Nil`. A nested hash/array element
+                    // container is untyped here, so `Any` is the correct hole.
+                    let fill = Value::Package(crate::symbol::Symbol::intern("Any"));
                     if crate::gc::Gc::strong_count(arr) > 1 {
                         // SAFETY: aliased in-place mutation of a shared array
                         // (strong_count > 1); see `arc_contents_mut`.
                         let v = &mut unsafe { crate::value::gc_contents_mut(arr) }.items;
-                        Self::autoviv_resize(v, i + 1, Value::Nil)?;
+                        Self::autoviv_resize(v, i + 1, fill)?;
                         Value::assign_element_slot(&mut v[i], val);
                     } else {
                         let a = crate::gc::Gc::make_mut(arr);
-                        Self::autoviv_resize(a, i + 1, Value::Nil)?;
+                        Self::autoviv_resize(a, i + 1, fill)?;
                         Value::assign_element_slot(&mut a[i], val);
                     }
                 }
@@ -2705,7 +2709,11 @@ impl Interpreter {
                     // change is visible to all holders of the same Arc; see
                     // `arc_contents_mut`.
                     let v = &mut unsafe { crate::value::gc_contents_mut(arc) }.items;
-                    Self::autoviv_resize(v, i + 1, Value::Nil)?;
+                    Self::autoviv_resize(
+                        v,
+                        i + 1,
+                        Value::Package(crate::symbol::Symbol::intern("Any")),
+                    )?;
                     match &bind_cell {
                         // Bind mode installs the shared cell at the element;
                         // the same cell is written back to the source var
