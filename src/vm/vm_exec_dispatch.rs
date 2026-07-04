@@ -981,7 +981,7 @@ impl Interpreter {
                 {
                     return Err(RuntimeError::assignment_ro(None));
                 }
-                if let Some(source_name) = bind_source {
+                if let Some(source_name) = bind_source.as_ref() {
                     let mut resolved_source = source_name.clone();
                     let mut seen = std::collections::HashSet::new();
                     while seen.insert(resolved_source.clone()) {
@@ -996,7 +996,7 @@ impl Interpreter {
                     // Propagate readonly status from the source variable.
                     // Binding to a readonly parameter should make the target
                     // readonly as well (persisted in env for cross-scope survival).
-                    let source_readonly = self.is_readonly(&source_name);
+                    let source_readonly = self.is_readonly(source_name);
                     self.env_mut()
                         .insert(readonly_key.clone(), Value::Bool(source_readonly));
                     if source_readonly {
@@ -1123,6 +1123,50 @@ impl Interpreter {
                 {
                     let atomic_name = name.strip_prefix('$').unwrap_or(&name).to_string();
                     loan_env!(self, reset_atomic_var_key(&atomic_name));
+                }
+                // Container identity (§3, splice.t): a plain whole-container
+                // *reassignment* of a free/outer `@`/`%` variable reached through
+                // SetGlobal (e.g. `@a = ...` inside a nested sub where `@a` is a
+                // top-level lexical) must mutate the EXISTING backing container in
+                // place, so any by-value holder of the same `Gc` (an `@a` captured
+                // into a list `(0, @a)` / a `\param`) observes the update — Raku's
+                // stable container identity. Gate on the env already holding a
+                // matching container (so a fresh declaration, whose env slot is
+                // absent/Nil, keeps fresh identity) and on a plain assignment.
+                if !is_bind_ctx
+                    && !is_rebind
+                    && !raw_mode
+                    && bind_source.is_none()
+                    && !name.contains("__ANON")
+                    && (name.starts_with('@') || name.starts_with('%'))
+                {
+                    match (self.env().get(&name), &val) {
+                        (Some(Value::Array(old_gc, _)), Value::Array(new_gc, kind))
+                            if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+                        {
+                            let (old_gc, new_gc, kind) = (old_gc.clone(), new_gc.clone(), *kind);
+                            val = Self::array_inplace_reassign(&old_gc, &new_gc, kind);
+                        }
+                        (Some(Value::Hash(old_gc)), Value::Hash(new_gc))
+                            if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+                        {
+                            let (old_gc, new_gc) = (old_gc.clone(), new_gc.clone());
+                            val = Self::hash_inplace_reassign(&old_gc, &new_gc);
+                        }
+                        // No reusable same-typed container already stored under this
+                        // name (a first assignment): the `@`/`%` var must own a
+                        // DISTINCT container per Raku `=` copy semantics, so detach
+                        // from any shared backing `Gc`.
+                        (existing, Value::Array(..) | Value::Hash(..))
+                            if !matches!(
+                                existing,
+                                Some(Value::Array(..)) | Some(Value::Hash(..))
+                            ) =>
+                        {
+                            val = Self::detach_shared_container(val);
+                        }
+                        _ => {}
+                    }
                 }
                 if raw_mode && name.starts_with('@') {
                     // For `constant @x`, bypass set_shared_var's List→Array

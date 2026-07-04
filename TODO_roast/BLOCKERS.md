@@ -168,9 +168,30 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 - ~~`S02-types/whatever.t`（122/130、8 失敗: test 111, 119-124, 126）~~ — **DONE（#4067、131/131）**。
   — WhateverCode の over-currying（CallOn-arg branch で握りすぎる）。他ケースを壊さない
   narrow fix が必要。
-- `S32-array/splice.t`（357/392、35 失敗）
-  — self-splice / push-replace-self が true first-class element container を要求する
-  container identity の canary。
+- ~~`S32-array/splice.t`（357/392、35 失敗）~~ — **DONE・whitelist 済み（2026-07-05）**。
+  全 35 失敗は 1 原因＝whole-container 代入（`@a = ...`）がコンテナを**再束縛**していたこと。
+  raku は `@a = ...` を**既存コンテナの in-place 更新**として扱うため、`(5,0,@a)` の
+  ように list へ by-value で捕捉された `@a` 参照が後の再代入を観測できる。mutsu は
+  `Value::Array` の backing `Gc` を置換していたので、捕捉側は旧 `Gc` を見続け self-splice
+  で余分な要素が入った。修正（`vm_var_assign_set_local.rs` / `vm_exec_dispatch.rs` の
+  SetLocal・SetGlobal 両経路）:
+  1. plain な whole-container 代入（`=`、`my`/`:=` 以外）は既存 `Gc` の中身を
+     `gc_contents_mut` で in-place 更新し、pointer identity を保つ
+     （`array_inplace_reassign` / `hash_inplace_reassign`、自己参照は `new_gc`→`old_gc`
+     へ張り替え）。
+  2. raku の `=` コピー意味論を保つため、`my @b = @a` 等の**新規宣言/非in-place経路**で
+     backing `Gc` が共有（strong_count>1）なら fresh `Gc` の shallow-copy へ detach
+     （`detach_shared_container`）。これで `@b !=:= @a` になり、in-place 化しても
+     コピー独立性が壊れない（従来は COW で偶然独立に見えていた既存の非互換も是正）。
+  3. 匿名コンテナ（`my %`/`my @` は単一スロット名 `%__ANON_HASH__` を再利用）は
+     in-place 対象から除外（各宣言は別 logical 変数）。pointy-block（`given @c -> @p`）
+     退出時に `@p` のスロット値もクリア（alias 残留コンテナの in-place 破壊を防止）。
+  回帰テスト＝`t/container-identity-whole-assign.t`。
+  **残る深いサブケース（本項の対象外・別スライス）**: `@a` が compilation-unit 内で
+  closure に capture されると shared-cell（`ContainerRef`）表現に切り替わり、その状態で
+  list へ by-value 捕捉した参照は cell 更新を追えない（＝ sub の外で捕捉参照を読む
+  `ident4` 系）。これは return-writeback / cell スナップショット問題で、[[project_declaration_model_hoisted_cell_clobber]]
+  と同族。splice.t は sub 内で捕捉参照を読むため影響を受けず PASS。
 - `S26-documentation/12-non-breaking-space.t`（1/2、test 2 が失敗）
   — 2026-07-02 に root-cause 確定＝**BEGIN が compile-time でなく source 順 runtime 実行**される問題。
   test は末尾 `BEGIN { @nbchars = [...]; @bchars = [...] }` で配列を設定し、冒頭 line 8
@@ -399,13 +420,12 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowl
 「次に何をやるか」を 1 本だけ選ぶなら、順番はこう見るのが妥当。
 
 1. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
-   splice.t / attributes.t / multislice hash 側の slot identity を前に進める。
+   attributes.t / multislice hash 側の slot identity を前に進める。
    これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
-   **注（2026-07-04 調査）**: `splice.t` の 35 失敗は全て self-splice（`@a.splice(*,0,@a)`）
-   の 1 原因＝リストリテラル `(10,0,@a)` が @a を live コンテナ参照で保持するが、
-   `@a = ^10`（whole-array 代入）が既存コンテナを in-place 更新せず**再束縛**するため、
-   リストの参照が旧空コンテナを指す。whole-array 代入の container-identity（要素 cell の
-   一段上＝コンテナ cell）が本丸で、blast radius 大。
+   **進捗（2026-07-05）**: whole-container 代入の container-identity（`@a = ...` の
+   in-place 化＋`=` コピーの fresh-`Gc` detach）は完了し `splice.t` は whitelist 済み
+   （§3.1 参照）。残るは closure-captured shared-cell を list へ by-value 捕捉したときの
+   スナップショット追従（return-writeback 系）と、attribute slot の cell 化。
 2. **`S17-supply/syntax.t`**（§6.2）— test 75/90 は個別に深掘りが必要（hard case）。
 
 `S06-operator-overloading/infix.t`（§2.4）は残り 2 件（カンマ演算子オーバーロード）が
