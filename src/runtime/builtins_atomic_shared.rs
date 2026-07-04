@@ -16,9 +16,17 @@ impl Interpreter {
     /// `__mutsu_atomic_arr::` shared store the CAS array ops use: a single
     /// lock-protected read-modify-write under the `shared_vars` write lock
     /// serializes all threads, and `set_shared_var` already refuses to
-    /// overwrite a key that has an active atomic entry. `prepend` inserts the
-    /// items at the front (preserving order) for `unshift`. Returns the new
-    /// array.
+    /// overwrite a key that has an active atomic entry. (Mutating the *base*
+    /// key instead is unsound: a parent thread's env write of its stale
+    /// snapshot lands via `set_shared_var` on the base key and wipes every
+    /// push a worker committed there — the t/lock.t "Lock::Async protects
+    /// shared array pushes" lost-update race.) `prepend` inserts the items at
+    /// the front (preserving order) for `unshift`. Returns the new array.
+    ///
+    /// Only plain lexical `@name`s may funnel in here: the store is keyed by
+    /// name, so per-instance identities (attribute `@!x`/`@.x`, twigil'd
+    /// `@*dyn`) would wrongly accumulate across every object. Callers gate on
+    /// `is_plain_lexical_array_name`.
     pub(crate) fn shared_array_extend(
         &mut self,
         arr_name: &str,
@@ -26,18 +34,33 @@ impl Interpreter {
         prepend: bool,
     ) -> Value {
         let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+        let is_thread_clone = self.is_thread_clone();
+        if is_thread_clone {
+            // Drop this thread's env copy so the atomic entry's Gc stays
+            // uniquely referenced and `make_mut` below mutates in place
+            // (O(1) amortized) instead of a full-array COW per push.
+            self.env.remove(arr_name);
+        }
         let updated = {
             let mut shared = self.shared_vars.write().unwrap();
-            // Seed from the authoritative source: the atomic entry if present
-            // (another thread already pushed), else the shared base key, else
-            // this thread's local snapshot, else an empty array.
-            let mut elements: Vec<Value> = match shared.get(&atomic_key) {
-                Some(Value::Array(elems, _)) => elems.to_vec(),
-                _ => match shared.get(arr_name).or_else(|| self.env.get(arr_name)) {
-                    Some(Value::Array(elems, _)) => elems.to_vec(),
-                    _ => Vec::new(),
-                },
+            // Seed the atomic entry once from the base key (or this thread's
+            // local snapshot), preserving ArrayData metadata (default/
+            // initialized/type). Afterwards the atomic entry is authoritative
+            // and is mutated in place under the write lock.
+            if !matches!(shared.get(&atomic_key), Some(Value::Array(..))) {
+                let seed = match shared.get(arr_name).or_else(|| self.env.get(arr_name)) {
+                    Some(Value::Array(elems, _)) => elems.as_ref().clone(),
+                    _ => crate::value::ArrayData::default(),
+                };
+                shared.insert(
+                    atomic_key.clone(),
+                    Value::Array(crate::gc::Gc::new(seed), crate::value::ArrayKind::Array),
+                );
+            }
+            let Some(Value::Array(arc_items, kind)) = shared.get_mut(&atomic_key) else {
+                unreachable!("atomic array entry seeded just above");
             };
+            let elements = crate::gc::Gc::make_mut(arc_items);
             if prepend {
                 for (i, it) in items.into_iter().enumerate() {
                     elements.insert(i, it);
@@ -45,20 +68,27 @@ impl Interpreter {
             } else {
                 elements.extend(items);
             }
-            let new_arr = Value::Array(
-                crate::gc::Gc::new(crate::value::ArrayData::new(elements)),
-                crate::value::ArrayKind::Array,
-            );
-            shared.insert(atomic_key, new_arr.clone());
-            new_arr
+            if *kind == crate::value::ArrayKind::List {
+                *kind = crate::value::ArrayKind::Array;
+            }
+            Value::Array(crate::gc::Gc::clone(arc_items), *kind)
         };
         // Mark the user-visible name dirty so `sync_shared_vars_to_env`
         // propagates the merged array back to the parent thread.
-        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
-            dirty.insert(arr_name.to_string());
+        if is_thread_clone {
+            // Per-key env marker: mark dirty once, and keep env free of a
+            // competing Gc handle (reads prefer the atomic entry anyway).
+            let dirty_marker = format!("__mutsu_shared_dirty::{arr_name}");
+            if !self.env.contains_key(&dirty_marker) {
+                self.mark_shared_var_dirty(arr_name);
+                self.env.insert(dirty_marker, Value::Bool(true));
+            }
+        } else {
+            self.mark_shared_var_dirty(arr_name);
+            // Update the local env so this thread observes its own push
+            // immediately even on direct env reads.
+            self.env.insert(arr_name.to_string(), updated.clone());
         }
-        // Update the local env so this thread observes its own push immediately.
-        self.env.insert(arr_name.to_string(), updated.clone());
         updated
     }
 
