@@ -2,7 +2,33 @@ use super::*;
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 
+/// A value that `<=>` coerces to its *element count* (`.Numeric` = `.elems`)
+/// rather than comparing structurally: aggregates and ranges. `compare_values`
+/// (structural, used by `cmp`) would order these element-by-element, so the
+/// inline `{ $^a <=> $^b }` fast path must coerce them to a number first —
+/// matching the real spaceship operator (`exec_spaceship_op`'s numeric bridge).
+fn coerces_to_numeric_length(v: &Value) -> bool {
+    matches!(
+        v,
+        Value::Array(..)
+            | Value::Seq(_)
+            | Value::HyperSeq(_)
+            | Value::RaceSeq(_)
+            | Value::LazyList(_)
+            | Value::Hash(_)
+            | Value::Set(..)
+            | Value::Bag(..)
+            | Value::Mix(..)
+            | Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. }
+    )
+}
+
 pub(crate) fn inline_numeric_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
+    use crate::runtime::utils::to_float_value;
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => x.cmp(y),
         (Value::Num(x), Value::Num(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
@@ -12,6 +38,17 @@ pub(crate) fn inline_numeric_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
         (Value::Num(x), Value::Int(y)) => x
             .partial_cmp(&(*y as f64))
             .unwrap_or(std::cmp::Ordering::Equal),
+        // `<=>` is numeric: an Array/List/Set/…/Range operand is coerced to its
+        // element count (`.Numeric`), not compared structurally. Coerce and
+        // compare numerically so `sort({ $^a <=> $^b })` orders by `.elems`,
+        // exactly like a standalone `$x <=> $y` (which `cmp` — structural — does
+        // NOT). Scalars (Rat/BigInt/Str/…) keep the exact `compare_values` path.
+        _ if coerces_to_numeric_length(a) || coerces_to_numeric_length(b) => {
+            match (to_float_value(a), to_float_value(b)) {
+                (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
+                _ => compare_values(a, b).cmp(&0),
+            }
+        }
         _ => compare_values(a, b).cmp(&0),
     }
 }
