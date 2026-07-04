@@ -735,8 +735,10 @@ fn try_parse_complex(s: &str) -> Option<Value> {
         // Parse imaginary part (strip leading sign)
         let (imag_sign, imag_body) = strip_sign(imag_str);
         let imag_val = if imag_body.is_empty() {
-            // bare +i or -i: not handled here (rakudo skips these too)
-            return None;
+            // Bare "+i"/"-i" as the imaginary part: the coefficient is 1, e.g.
+            // "3+i" => 3+1i, "10-i" => 10-1i. (Rakudo skips these — "cannot
+            // handle lone i yet"; mutsu handles them.)
+            1.0
         } else if imag_body == "Inf" || imag_body == "NaN" {
             // Inf/NaN as imaginary component requires `\i` suffix
             if !has_backslash_i {
@@ -753,9 +755,13 @@ fn try_parse_complex(s: &str) -> Option<Value> {
         let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
         Some(Value::Complex(real_val, imag_val))
     } else {
-        // Pure imaginary: "42i", "-3.5i", "4_2i", "Inf\i", etc.
+        // Pure imaginary: "42i", "-3.5i", "4_2i", "Inf\i", "i", "-i", etc.
         let (imag_sign, imag_body) = strip_sign(without_i);
-        let imag_val = if imag_body == "Inf" {
+        let imag_val = if imag_body.is_empty() {
+            // Lone "i"/"+i"/"-i": the coefficient is 1 (0+1i / 0-1i). (Rakudo
+            // skips these — "cannot handle lone i yet"; mutsu handles them.)
+            1.0
+        } else if imag_body == "Inf" {
             if has_backslash_i {
                 f64::INFINITY
             } else {
