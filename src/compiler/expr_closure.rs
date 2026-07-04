@@ -381,6 +381,34 @@ impl Compiler {
         value: &Expr,
         outer_positional: bool,
     ) {
+        // Binding (`:=`) to a WhateverCode subscript (`@a[*-1] := 42`) is illegal:
+        // the index is a computed slice, not a fixed container slot, so rakudo
+        // throws X::Bind::Slice ("Cannot bind to Array slice"). A slice bind
+        // (`@a[0,1] := ...`) and a plain variable-index bind (`@a[$i] := ...`)
+        // stay valid. Emit a runtime throw so `throws-like { ... }` catches it
+        // (a parse-time error would abort the whole enclosing file).
+        if matches!(
+            value,
+            Expr::Call { name, .. } if *name == "__mutsu_bind_index_value"
+        ) && matches!(
+            index,
+            Expr::Lambda {
+                is_whatever_code: true,
+                ..
+            }
+        ) {
+            self.compile_expr(&Expr::Call {
+                name: Symbol::intern("die"),
+                args: vec![Expr::MethodCall {
+                    target: Box::new(Expr::BareWord("X::Bind::Slice".to_string())),
+                    name: Symbol::intern("new"),
+                    args: vec![],
+                    modifier: None,
+                    quoted: false,
+                }],
+            });
+            return;
+        }
         if let Expr::BareWord(name) = target
             && name == "s"
             && let Some(pattern) = Self::topic_subst_pattern_from_index(index)
