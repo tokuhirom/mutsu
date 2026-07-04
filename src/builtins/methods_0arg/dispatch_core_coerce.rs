@@ -121,8 +121,14 @@ pub(super) fn dispatch(
         "clone" => {
             match target {
                 Value::Package(_) | Value::Nil => Some(Some(Ok(target.clone()))),
+                // Clone the whole `ArrayData`, not just its elements, so
+                // per-slot metadata (`initialized` deletion holes, `default`,
+                // `shape`, element type) survives the copy — e.g.
+                // `@a[3]:delete; my @b := @a.clone` keeps `@b[3]:exists` False
+                // (S02-types/array.t test 108). Elements are `Value`-cloned
+                // (shared handles), matching a shallow `.clone`.
                 Value::Array(items, kind) => Some(Some(Ok(Value::Array(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
+                    crate::gc::Gc::new((**items).clone()),
                     *kind,
                 )))),
                 Value::Hash(map) => Some(Some(Ok(Value::Hash(Value::hash_arc((**map).clone()))))),

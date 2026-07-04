@@ -203,9 +203,16 @@ impl Interpreter {
         if to_remove.is_empty() {
             return;
         }
-        if let Some(Value::Array(items, _)) = self.env_root_descended_mut(var_name)
-            && let Some(set) = crate::gc::Gc::make_mut(items).initialized.as_mut()
-        {
+        if let Some(Value::Array(items, _)) = self.env_root_descended_mut(var_name) {
+            let data = crate::gc::Gc::make_mut(items);
+            // A freshly-built array tracks "all present" as `initialized = None`.
+            // Materialize the set (0..len) before removing the deleted indices so
+            // the hole is recorded IN the ArrayData — not only in the name-keyed
+            // `__mutsu_deleted_index::` side table, which a `.clone` (bound to a
+            // new name) would not inherit. This makes `@b := @a.clone` preserve a
+            // deleted slot's `:exists` == False (S02-types/array.t test 108).
+            let len = data.len();
+            let set = data.initialized.get_or_insert_with(|| (0..len).collect());
             for i in to_remove {
                 set.remove(&i);
             }
