@@ -79,15 +79,36 @@ impl Interpreter {
         Ok(Value::Nil)
     }
 
+    /// Apply a Unicode normalization form before encoding. Accepts the short
+    /// names (`C`/`D`/`KC`/`KD`) and the full `NF*` names; an unrecognized value
+    /// is left as-is (encode as written), so a non-form second positional never
+    /// changes the bytes.
+    fn normalize_for_encode(s: &str, form: &str) -> String {
+        use unicode_normalization::UnicodeNormalization;
+        match form {
+            "C" | "NFC" => s.nfc().collect(),
+            "D" | "NFD" => s.nfd().collect(),
+            "KC" | "NFKC" => s.nfkc().collect(),
+            "KD" | "NFKD" => s.nfkd().collect(),
+            _ => s.to_string(),
+        }
+    }
+
     pub(super) fn dispatch_encode(
         &mut self,
         target: &Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        // Extract the first positional (non-Pair) argument as the encoding name
-        let encoding = args
+        // Positional args: [0] = encoding name, [1] = Unicode normalization form
+        // (`C`/`D`/`KC`/`KD` i.e. NFC/NFD/NFKC/NFKD). Rakudo `#?rakudo skip`s the
+        // normalization-form parameter ("We do not handle NDF yet"); mutsu
+        // applies it (roast S32-str/encode.t "encoding to UTF-8, with NFD").
+        let positionals: Vec<&Value> = args
             .iter()
-            .find(|v| !matches!(v, Value::Pair(..)))
+            .filter(|v| !matches!(v, Value::Pair(..)))
+            .collect();
+        let encoding = positionals
+            .first()
             .map(|v| v.to_string_value())
             .unwrap_or_else(|| "utf-8".to_string());
         let replacement = Self::named_value(args, "replacement").map(|v| {
@@ -101,7 +122,11 @@ impl Interpreter {
             .find_encoding(&encoding)
             .map(|e| e.name.as_str().to_lowercase())
             .unwrap_or_else(|| encoding.to_lowercase());
-        let input = target.to_string_value();
+        let raw_input = target.to_string_value();
+        let input = match positionals.get(1).map(|v| v.to_string_value()) {
+            Some(nf) => Self::normalize_for_encode(&raw_input, &nf),
+            None => raw_input,
+        };
         let translated = self.translate_newlines_for_encode(&input);
         let mut attrs = HashMap::new();
         let type_name = match normalized_encoding.as_str() {
