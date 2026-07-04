@@ -443,6 +443,46 @@ impl Interpreter {
         } else {
             None
         };
+        // Container identity (§3, BLOCKERS.md splice.t): a plain whole-array/hash
+        // *assignment* (`@a = ...`, not `my @a = ...` and not `:=`) mutates the
+        // EXISTING container in place, so any other holder of the same backing
+        // `Gc` (e.g. `@a` captured by value into a list `(0, @a)` / a `\param`
+        // capture) observes the update — matching Raku's stable container
+        // identity. We snapshot the live backing `Gc` here and, after all the
+        // value-shaping/metadata logic has produced the final container, copy
+        // its contents back into this original `Gc` rather than swapping the
+        // slot to a fresh pointer. Only for real reassignment: a `my` decl
+        // creates a fresh container each time (a captured reference from a
+        // prior iteration must NOT see the new declaration's value).
+        // Anonymous containers (`my %`, `my @`) all compile to the single reused
+        // slot name `%__ANON_HASH__` / `@__ANON_ARRAY__`, so each successive
+        // declaration is a DISTINCT logical variable that merely shares a slot.
+        // In-place reassignment there would alias two unrelated anonymous
+        // containers (e.g. `(my % = ...), (my % = ...)` in a list), so exclude
+        // anon names and let them take the fresh-container (replace) path.
+        let is_anon_container = name.contains("__ANON");
+        let inplace_old_array: Option<crate::gc::Gc<crate::value::ArrayData>> =
+            if name.starts_with('@') && !is_bind && !is_rebind && !is_vardecl && !is_anon_container
+            {
+                if let Value::Array(gc, _) = &self.locals[idx] {
+                    Some(gc.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+        let inplace_old_hash: Option<crate::gc::Gc<crate::value::HashData>> =
+            if name.starts_with('%') && !is_bind && !is_rebind && !is_vardecl && !is_anon_container
+            {
+                if let Value::Hash(gc) = &self.locals[idx] {
+                    Some(gc.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
         let mut val = if name.starts_with('%') {
             if has_explicit_initializer
                 && !is_constant
@@ -1389,6 +1429,38 @@ impl Interpreter {
             };
             let stored = std::mem::replace(&mut self.locals[idx], Value::Nil);
             self.locals[idx] = self.tag_container_metadata(stored, info);
+        }
+        // Container identity (§3, splice.t): copy the final container's contents
+        // back into the ORIGINAL backing `Gc` so aliases (a by-value `@a` capture
+        // in a list / a `\param`) observe this reassignment. The slot already
+        // holds the fully-shaped, metadata-tagged value; we reuse that shape but
+        // keep the original pointer. Skip when the pointer is already the same
+        // (e.g. a self-referential `@a = @a`), which needs no copy.
+        if let Some(old_gc) = &inplace_old_array
+            && let Value::Array(new_gc, kind) = &self.locals[idx]
+            && !crate::gc::Gc::ptr_eq(old_gc, new_gc)
+        {
+            let (new_gc, kind) = (new_gc.clone(), *kind);
+            self.locals[idx] = Self::array_inplace_reassign(old_gc, &new_gc, kind);
+        } else if let Some(old_gc) = &inplace_old_hash
+            && let Value::Hash(new_gc) = &self.locals[idx]
+            && !crate::gc::Gc::ptr_eq(old_gc, new_gc)
+        {
+            let new_gc = new_gc.clone();
+            self.locals[idx] = Self::hash_inplace_reassign(old_gc, &new_gc);
+        } else if inplace_old_array.is_none()
+            && inplace_old_hash.is_none()
+            && !is_bind
+            && (name.starts_with('@') || name.starts_with('%'))
+        {
+            // No reusable same-typed container in the slot (a fresh `my @b = @a`
+            // declaration, or a slot that did not hold an array/hash): the `@`/`%`
+            // var must own a DISTINCT container per Raku `=` copy semantics, so
+            // detach from any shared backing `Gc`. (A reassignment whose slot
+            // already holds an array/hash goes through the in-place branches above
+            // and keeps its identity.)
+            let cur = std::mem::replace(&mut self.locals[idx], Value::Nil);
+            self.locals[idx] = Self::detach_shared_container(cur);
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();

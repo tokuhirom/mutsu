@@ -531,4 +531,73 @@ impl Interpreter {
             *new_arc = result_arc;
         }
     }
+
+    /// Container identity (§3, splice.t): copy `new_gc`'s array contents into the
+    /// original backing `old_gc` in place — preserving the pointer identity every
+    /// by-value holder of `old_gc` shares (an `@a` captured into a list `(0, @a)` /
+    /// a `\param`) — and redirect any self-reference that (after circular-ref
+    /// fixup) pointed at the about-to-be-dropped `new_gc` back to `old_gc`. Returns
+    /// the `Value::Array` that should be stored in the slot (backed by `old_gc`).
+    pub(super) fn array_inplace_reassign(
+        old_gc: &crate::gc::Gc<crate::value::ArrayData>,
+        new_gc: &crate::gc::Gc<crate::value::ArrayData>,
+        kind: ArrayKind,
+    ) -> Value {
+        let new_ptr = crate::gc::Gc::as_ptr(new_gc) as usize;
+        let mut new_data = (**new_gc).clone();
+        let mut seen = Vec::new();
+        for item in new_data.items.iter_mut() {
+            Self::replace_array_refs_in_value(item, new_ptr, old_gc, kind, &mut seen);
+        }
+        // SAFETY: single audited aliased in-place write; `new_data` is a fresh
+        // clone and no borrow into `old_gc`'s contents is live across the write.
+        unsafe {
+            *crate::value::gc_contents_mut(old_gc) = new_data;
+        }
+        Value::Array(old_gc.clone(), kind)
+    }
+
+    /// Ensure a `@`/`%`-var value-assignment owns a DISTINCT container, matching
+    /// Raku `=` copy semantics (`my @b = @a` yields `@b !=:= @a`). If the
+    /// array/hash's backing `Gc` is *shared* with another holder, return a fresh-
+    /// `Gc` shallow copy (elements/values stay shared references — only the outer
+    /// container is duplicated). A singly-owned `Gc` is already exclusive and
+    /// returned unchanged; non-container values pass through. Without this, mutsu's
+    /// historical copy-on-write masking (a shared `Gc` that only *appears*
+    /// independent because the next mutation reallocated) breaks once whole-
+    /// container reassignment writes in place (§3): the in-place write would reach
+    /// the aliased source.
+    pub(super) fn detach_shared_container(val: Value) -> Value {
+        match val {
+            Value::Array(gc, kind) if gc.strong_count() > 1 => {
+                Value::Array(crate::gc::Gc::new((*gc).clone()), kind)
+            }
+            Value::Hash(gc) if gc.strong_count() > 1 => {
+                Value::Hash(crate::gc::Gc::new((*gc).clone()))
+            }
+            other => other,
+        }
+    }
+
+    /// The `Value::Hash` analogue of [`array_inplace_reassign`]. Redirects any
+    /// self-referencing hash value that pointed at `new_gc` back to `old_gc`.
+    pub(super) fn hash_inplace_reassign(
+        old_gc: &crate::gc::Gc<crate::value::HashData>,
+        new_gc: &crate::gc::Gc<crate::value::HashData>,
+    ) -> Value {
+        let new_ptr = crate::gc::Gc::as_ptr(new_gc) as usize;
+        let mut new_data = (**new_gc).clone();
+        for v in new_data.map.values_mut() {
+            if let Value::Hash(inner) = v
+                && crate::gc::Gc::as_ptr(inner) as usize == new_ptr
+            {
+                *v = Value::Hash(old_gc.clone());
+            }
+        }
+        // SAFETY: as above — single audited aliased in-place write.
+        unsafe {
+            *crate::value::gc_contents_mut(old_gc) = new_data;
+        }
+        Value::Hash(old_gc.clone())
+    }
 }

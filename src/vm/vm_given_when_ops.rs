@@ -98,6 +98,19 @@ impl Interpreter {
                 this.env_mut()
                     .remove(&format!("__mutsu_bound_decont::{}", p));
                 this.unmark_readonly(p);
+                // A pointy param (`-> @p`) is block-scoped: its aliased container
+                // value must NOT linger in `@p`'s env/local slot past the block.
+                // If it does, a later block reusing the name — especially an
+                // `is copy` copy-assign (`given @c -> @p is copy {...}`) — would
+                // find the previous block's source container still sitting in the
+                // slot and, under whole-container in-place reassignment (§3),
+                // clobber that unrelated source. Clearing the value (the alias
+                // markers alone are not enough) keeps the next reuse clean. Done
+                // after the writeback above, which already read `@p`'s final value.
+                if p.starts_with('@') || p.starts_with('%') {
+                    this.env_mut().remove(p.as_str());
+                    this.update_local_if_exists(code, p, &Value::Nil);
+                }
             }
             this.topic_source_var = saved_topic_source.clone();
             this.topic_container_source = saved_container_source.clone();
