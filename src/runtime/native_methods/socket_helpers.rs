@@ -78,19 +78,78 @@ impl Interpreter {
         // Text mode
         match max_chars {
             Some(n) => {
-                // `recv($limit)` is an UPPER limit, not a lower one (roast
-                // S32-io/socket-recv-vs-read.t): it must not block waiting for
-                // the full `$limit`. Do a single OS read of up to `n` bytes
-                // (blocking only until the first data arrives) and decode it.
-                // `n` bytes decode to at most `n` characters, so the character
-                // limit is respected, and any further bytes stay buffered in the
-                // OS socket for the next `recv`/`read` (no over-read).
-                let mut buf = vec![0u8; n];
-                let read = stream
-                    .read(&mut buf)
-                    .map_err(|e| RuntimeError::new(format!("recv failed: {}", e)))?;
-                buf.truncate(read);
-                Ok(Value::str(String::from_utf8_lossy(&buf).to_string()))
+                // Read up to `n` complete CHARACTERS. `recv($limit)` is an UPPER
+                // limit, not a lower one (roast S32-io/socket-recv-vs-read.t):
+                // block only for the first character (until some data arrives),
+                // then read further characters only while they are immediately
+                // available (non-blocking), leaving any excess buffered in the OS
+                // socket for the next recv/read. Continuation bytes of a
+                // multibyte character that has started are read blocking (roast
+                // S32-io/IO-Socket-INET.t recv of a 3-byte char).
+                use std::io::ErrorKind;
+                let mut result = String::new();
+                let mut count = 0usize;
+                let mut fatal: Option<std::io::Error> = None;
+                while count < n {
+                    // First character blocks; later ones must not.
+                    if stream.set_nonblocking(count > 0).is_err() {
+                        break;
+                    }
+                    let mut lead = [0u8; 1];
+                    match stream.read(&mut lead) {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {}
+                        Err(ref e) if e.kind() == ErrorKind::WouldBlock => break,
+                        Err(e) => {
+                            fatal = Some(e);
+                            break;
+                        }
+                    }
+                    let first = lead[0];
+                    let char_len = if first < 0x80 {
+                        1
+                    } else if first < 0xE0 {
+                        2
+                    } else if first < 0xF0 {
+                        3
+                    } else {
+                        4
+                    };
+                    let mut bytes = vec![first];
+                    if char_len > 1 {
+                        // Block for the continuation bytes of this character.
+                        let _ = stream.set_nonblocking(false);
+                        let mut rest = vec![0u8; char_len - 1];
+                        let mut total = 0usize;
+                        while total < rest.len() {
+                            match stream.read(&mut rest[total..]) {
+                                Ok(0) => break,
+                                Ok(k) => total += k,
+                                Err(e) => {
+                                    fatal = Some(e);
+                                    break;
+                                }
+                            }
+                        }
+                        bytes.extend_from_slice(&rest[..total]);
+                    }
+                    if fatal.is_some() {
+                        break;
+                    }
+                    match std::str::from_utf8(&bytes) {
+                        Ok(s) => {
+                            result.push_str(s);
+                            count += 1;
+                        }
+                        Err(_) => break,
+                    }
+                }
+                // Restore blocking mode for subsequent socket operations.
+                let _ = stream.set_nonblocking(false);
+                if let Some(e) = fatal {
+                    return Err(RuntimeError::new(format!("recv failed: {}", e)));
+                }
+                Ok(Value::str(result))
             }
             None => {
                 // Read all available data

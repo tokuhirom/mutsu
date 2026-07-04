@@ -608,6 +608,14 @@ impl SocketStream {
         }
     }
 
+    pub(crate) fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
+        match self {
+            SocketStream::Tcp(s) => s.set_nonblocking(nonblocking),
+            #[cfg(unix)]
+            SocketStream::Unix(s) => s.set_nonblocking(nonblocking),
+        }
+    }
+
     fn peer_addr(&self) -> std::io::Result<String> {
         match self {
             SocketStream::Tcp(s) => s.peer_addr().map(|a| a.to_string()),
