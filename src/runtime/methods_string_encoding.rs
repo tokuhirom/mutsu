@@ -155,6 +155,26 @@ impl Interpreter {
         Ok(bytes.iter().map(|b| *b as char).collect())
     }
 
+    /// Decode UTF-16 code units. Without a `replacement`, an unpaired surrogate
+    /// is malformed and throws (matching Rakudo, which strictly rejects invalid
+    /// UTF-16); with one, each invalid unit becomes the replacement string.
+    fn decode_utf16_units(
+        units: &[u16],
+        replacement: Option<&str>,
+    ) -> Result<String, RuntimeError> {
+        match replacement {
+            Some(repl) => Ok(char::decode_utf16(units.iter().copied())
+                .map(|r| r.map(String::from).unwrap_or_else(|_| repl.to_string()))
+                .collect()),
+            None => char::decode_utf16(units.iter().copied())
+                .map(|r| r.map_err(|_| ()))
+                .collect::<Result<String, ()>>()
+                .map_err(|()| {
+                    RuntimeError::new("Malformed UTF-16 string: unpaired surrogate (line 1)")
+                }),
+        }
+    }
+
     pub(super) fn decode_with_encoding(
         &self,
         bytes: &[u8],
@@ -179,7 +199,9 @@ impl Interpreter {
                     (bytes, false)
                 };
                 if !data.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new("Invalid utf-16 byte length"));
+                    return Err(RuntimeError::new(
+                        "Malformed UTF-16 stream: odd byte length (terminated mid-code-unit)",
+                    ));
                 }
                 let units: Vec<u16> = data
                     .chunks_exact(2)
@@ -191,27 +213,31 @@ impl Interpreter {
                         }
                     })
                     .collect();
-                Ok(String::from_utf16_lossy(&units))
+                Self::decode_utf16_units(&units, None)
             }
             "utf-16le" | "utf16le" => {
                 if !bytes.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new("Invalid utf-16 byte length"));
+                    return Err(RuntimeError::new(
+                        "Malformed UTF-16 stream: odd byte length (terminated mid-code-unit)",
+                    ));
                 }
                 let units: Vec<u16> = bytes
                     .chunks_exact(2)
                     .map(|c| u16::from_le_bytes([c[0], c[1]]))
                     .collect();
-                Ok(String::from_utf16_lossy(&units))
+                Self::decode_utf16_units(&units, None)
             }
             "utf-16be" | "utf16be" => {
                 if !bytes.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new("Invalid utf-16be byte length"));
+                    return Err(RuntimeError::new(
+                        "Malformed UTF-16BE stream: odd byte length (terminated mid-code-unit)",
+                    ));
                 }
                 let units: Vec<u16> = bytes
                     .chunks_exact(2)
                     .map(|c| u16::from_be_bytes([c[0], c[1]]))
                     .collect();
-                Ok(String::from_utf16_lossy(&units))
+                Self::decode_utf16_units(&units, None)
             }
             "utf-8" | "utf8" => match std::str::from_utf8(bytes) {
                 Ok(s) => Ok(s.strip_prefix('\u{FEFF}').unwrap_or(s).to_string()),
@@ -296,7 +322,9 @@ impl Interpreter {
                     (bytes, false)
                 };
                 if !data.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new("Invalid utf-16 byte length"));
+                    return Err(RuntimeError::new(
+                        "Malformed UTF-16 stream: odd byte length (terminated mid-code-unit)",
+                    ));
                 }
                 let units: Vec<u16> = data
                     .chunks_exact(2)
@@ -308,27 +336,31 @@ impl Interpreter {
                         }
                     })
                     .collect();
-                Ok(String::from_utf16_lossy(&units))
+                Self::decode_utf16_units(&units, replacement)
             }
             "utf-16le" | "utf16le" => {
                 if !bytes.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new("Invalid utf-16 byte length"));
+                    return Err(RuntimeError::new(
+                        "Malformed UTF-16 stream: odd byte length (terminated mid-code-unit)",
+                    ));
                 }
                 let units: Vec<u16> = bytes
                     .chunks_exact(2)
                     .map(|c| u16::from_le_bytes([c[0], c[1]]))
                     .collect();
-                Ok(String::from_utf16_lossy(&units))
+                Self::decode_utf16_units(&units, replacement)
             }
             "utf-16be" | "utf16be" => {
                 if !bytes.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new("Invalid utf-16be byte length"));
+                    return Err(RuntimeError::new(
+                        "Malformed UTF-16BE stream: odd byte length (terminated mid-code-unit)",
+                    ));
                 }
                 let units: Vec<u16> = bytes
                     .chunks_exact(2)
                     .map(|c| u16::from_be_bytes([c[0], c[1]]))
                     .collect();
-                Ok(String::from_utf16_lossy(&units))
+                Self::decode_utf16_units(&units, replacement)
             }
             "utf-8" | "utf8" => match std::str::from_utf8(bytes) {
                 Ok(s) => Ok(s.strip_prefix('\u{FEFF}').unwrap_or(s).to_string()),
