@@ -72,36 +72,86 @@ pub(crate) fn unicode_joining_group(ch: char) -> String {
     }
 }
 
-/// Sentence_Break property.
+/// UAX #29 Sentence_Break=SContinue set.
+fn is_sb_scontinue(cp: u32) -> bool {
+    matches!(
+        cp,
+        0x002C
+            | 0x002D
+            | 0x003A
+            | 0x055D
+            | 0x060C
+            | 0x060D
+            | 0x07F8
+            | 0x1802
+            | 0x1808
+            | 0x2013
+            | 0x2014
+            | 0x3001
+            | 0xFE10
+            | 0xFE11
+            | 0xFE13
+            | 0xFE31
+            | 0xFE32
+            | 0xFE50
+            | 0xFE51
+            | 0xFE55
+            | 0xFF0C
+            | 0xFF0D
+            | 0xFF1A
+            | 0xFF64
+    )
+}
+
+/// Sentence_Break property (UAX #29 SentenceBreakProperty).
 pub(crate) fn unicode_sentence_break(ch: char) -> String {
     let cp = ch as u32;
     match cp {
-        0x000D => "CR".to_string(),
-        0x000A => "LF".to_string(),
-        0x0009 | 0x000B | 0x000C => "Sp".to_string(),
-        _ => {
-            let gc = crate::builtins::unicode::unicode_general_category(ch);
-            match gc.as_str() {
-                "Lu" => "Upper".to_string(),
-                "Ll" => "Lower".to_string(),
-                "Nd" => "Numeric".to_string(),
-                "Zs" => "Sp".to_string(),
-                _ => {
-                    // Check for ATerm (. and similar)
-                    if cp == 0x002E || cp == 0x2024 {
-                        "ATerm".to_string()
-                    } else if super::binary_props::check_binary_property(
-                        ch,
-                        r"^\p{Sentence_Terminal}$",
-                    ) {
-                        "STerm".to_string()
-                    } else {
-                        "Other".to_string()
-                    }
-                }
-            }
-        }
+        0x000D => return "CR".to_string(),
+        0x000A => return "LF".to_string(),
+        0x0085 | 0x2028 | 0x2029 => return "Sep".to_string(),
+        _ => {}
     }
+    let gc = crate::builtins::unicode::unicode_general_category(ch);
+    // Extend: grapheme-extending marks, spacing marks, and ZWJ.
+    if gc == "Mc"
+        || cp == 0x200D
+        || super::binary_props::check_binary_property(ch, r"^\p{Grapheme_Extend}$")
+    {
+        return "Extend".to_string();
+    }
+    if gc == "Cf" {
+        return "Format".to_string();
+    }
+    if super::binary_props::check_binary_property(ch, r"^\p{White_Space}$") {
+        return "Sp".to_string();
+    }
+    if gc == "Nd" {
+        return "Numeric".to_string();
+    }
+    if cp == 0x002E || cp == 0x2024 || cp == 0xFF0E {
+        return "ATerm".to_string();
+    }
+    if super::binary_props::check_binary_property(ch, r"^\p{Sentence_Terminal}$") {
+        return "STerm".to_string();
+    }
+    // Close: open/close/quotation punctuation plus straight quotes.
+    if matches!(gc.as_str(), "Ps" | "Pe" | "Pi" | "Pf") || cp == 0x0022 || cp == 0x0027 {
+        return "Close".to_string();
+    }
+    if is_sb_scontinue(cp) {
+        return "SContinue".to_string();
+    }
+    if gc == "Lt" || super::binary_props::check_binary_property(ch, r"^\p{Uppercase}$") {
+        return "Upper".to_string();
+    }
+    if super::binary_props::check_binary_property(ch, r"^\p{Lowercase}$") {
+        return "Lower".to_string();
+    }
+    if super::binary_props::check_binary_property(ch, r"^\p{Alphabetic}$") {
+        return "OLetter".to_string();
+    }
+    "Other".to_string()
 }
 
 /// Is `cp` in the UAX #29 Word_Break=Katakana set (includes Common-script
