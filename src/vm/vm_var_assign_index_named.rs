@@ -2016,6 +2016,25 @@ impl Interpreter {
         }
 
         let inner_key = inner_idx.to_string_value();
+        // A WhateverCode array index (`%h<k>[*-0] = v` / `@a[0][*-1] = v`) must be
+        // resolved against the inner container's current length before it becomes
+        // a key — a freshly-vivified inner array is length 0, so `*-0` is 0.
+        // (`to_string_value` on the unresolved WhateverCode yields a non-numeric
+        // key, so the assignment was silently dropped.) `outer_idx` is the trailing
+        // `[...]` subscript; `inner_key` is the container it indexes into.
+        let outer_idx = if matches!(outer_idx, Value::Sub(_)) {
+            let inner_container: Option<Value> = match self.env().get(&var_name) {
+                Some(Value::Hash(map)) => map.get(&inner_key).cloned(),
+                Some(Value::Array(arr, ..)) => inner_key
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|i| arr.items.get(i).cloned()),
+                _ => None,
+            };
+            self.resolve_whatever_index_for_target(outer_idx, inner_container.as_ref())
+        } else {
+            outer_idx
+        };
         let outer_key = outer_idx.to_string_value();
 
         // If the outer hash has a value type constraint, nested autovivification
