@@ -239,6 +239,50 @@ impl IoHandleState {
         }
     }
 
+    /// VM-native single-grapheme read for `.getc` on a seekable File+UTF8
+    /// handle: a base codepoint plus any codepoints that extend the same
+    /// grapheme cluster (combining marks, ZWJ sequences, ...), matching
+    /// `.chars`/`.comb` and Rakudo's NFG `.getc`. The one codepoint that begins
+    /// the next grapheme is over-read to find the boundary and seeked back, so a
+    /// subsequent read sees the correct position. Empty string = EOF. Caller
+    /// guarantees [`can_native_text_write`].
+    pub(crate) fn read_grapheme_native(&mut self) -> Result<String, RuntimeError> {
+        use std::io::Seek;
+        use unicode_segmentation::UnicodeSegmentation;
+        if self.closed {
+            return Err(RuntimeError::io_closed("handle operation"));
+        }
+        self.read_attempted = true;
+        let is_bin = self.bin;
+        let file = self
+            .file
+            .as_mut()
+            .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+        let Some(mut cluster) = Interpreter::read_utf8_char(file)? else {
+            return Ok(String::new()); // EOF
+        };
+        // A binary handle keeps single-codepoint semantics (no grapheme
+        // clustering over raw bytes).
+        if is_bin {
+            return Ok(cluster);
+        }
+        loop {
+            let Some(ch) = Interpreter::read_utf8_char(file)? else {
+                break; // EOF: cluster ends here
+            };
+            let combined = format!("{cluster}{ch}");
+            if combined.graphemes(true).count() == 1 {
+                cluster = combined; // `ch` extends the grapheme
+            } else {
+                // `ch` begins the next grapheme — put it back.
+                file.seek(std::io::SeekFrom::Current(-(ch.len() as i64)))
+                    .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                break;
+            }
+        }
+        Ok(cluster)
+    }
+
     /// Add to this handle's `bytes_written` counter. Used by the VM's Stdout
     /// emit to mirror `emit_output`'s Stdout-handle accounting (③後段 PR-C).
     pub(crate) fn add_bytes_written(&mut self, n: i64) {

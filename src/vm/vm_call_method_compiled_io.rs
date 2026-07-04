@@ -876,8 +876,10 @@ impl Interpreter {
                 if !state.can_native_text_write() {
                     return None;
                 }
-                // One character, possibly multi-byte; empty -> Nil (as `getc`).
-                Some(state.read_chars_native(Some(1)).map(|s| {
+                // One grapheme cluster (base + extending codepoints), matching
+                // `.chars`/`.comb`; empty -> Nil (as `getc`). `read_grapheme_native`
+                // itself keeps single-codepoint semantics for a `:bin` handle.
+                Some(state.read_grapheme_native().map(|s| {
                     if s.is_empty() {
                         Value::Nil
                     } else {

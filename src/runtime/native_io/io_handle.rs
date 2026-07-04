@@ -341,12 +341,21 @@ impl Interpreter {
                         Ok(Value::str(decoded))
                     }
                 } else {
-                    // UTF-8: read one character, possibly multi-byte.
-                    let s = self.read_chars_from_handle_value(&target_val, Some(1))?;
-                    if s.is_empty() {
-                        Ok(Value::Nil)
-                    } else {
-                        Ok(Value::str(s))
+                    // UTF-8: read one grapheme cluster (base + extending
+                    // codepoints), matching `.chars`/`.comb`. Seekable files use
+                    // the grapheme path; other targets fall back to a single
+                    // codepoint.
+                    match self.read_grapheme_from_handle_value(&target_val)? {
+                        Some(s) if s.is_empty() => Ok(Value::Nil), // EOF
+                        Some(s) => Ok(Value::str(s)),
+                        None => {
+                            let s = self.read_chars_from_handle_value(&target_val, Some(1))?;
+                            if s.is_empty() {
+                                Ok(Value::Nil)
+                            } else {
+                                Ok(Value::str(s))
+                            }
+                        }
                     }
                 }
             }
