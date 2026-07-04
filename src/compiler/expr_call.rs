@@ -74,6 +74,32 @@ impl Compiler {
             return;
         } else if name == "__mutsu_assign_callable_lvalue"
             && args.len() == 3
+            && let Expr::IndexAssign {
+                target,
+                index,
+                is_positional,
+                ..
+            } = &args[0]
+        {
+            // `(@a[i] = v) = w` / `(@a[i,j] = @x) = @y` (the S02-types/array.t
+            // "hat trick"): an index/slice assignment yields the assigned
+            // element(s) as an lvalue, so the outer assignment writes through to
+            // the SAME subscript. Run the inner assignment for its side effect,
+            // then assign the RHS to `@a[i]` again — mirroring the scalar
+            // `($c = 3) = 4` case above. The re-assignment's own result stays on
+            // the stack (assignment is an expression).
+            self.compile_expr(&args[0]);
+            self.code.emit(OpCode::Pop);
+            let outer = Expr::IndexAssign {
+                target: target.clone(),
+                index: index.clone(),
+                value: Box::new(args[2].clone()),
+                is_positional: *is_positional,
+            };
+            self.compile_expr(&outer);
+            return;
+        } else if name == "__mutsu_assign_callable_lvalue"
+            && args.len() == 3
             && let Expr::Ternary {
                 cond,
                 then_expr,
