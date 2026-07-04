@@ -646,6 +646,20 @@ impl Interpreter {
             // capture folding that preserves the Match structure.
             let atom_has_capture =
                 Self::atom_contains_capture(atom) || Self::atom_contains_named_capture(atom);
+            // The separator form `**N..M %sep` was previously always string-
+            // expanded, which renumbers a capturing atom's group into one
+            // spurious positional slot per repetition (`(\d)**4 % '.'` yielded
+            // `0,1,2,3` instead of folding all four into group `0`). The native
+            // `match_separated_quantifier` path now folds separated captures
+            // correctly, so when the atom or the separator carries a capture
+            // (and sigspace is off — the spaced expansion still inserts `<ws>`
+            // the native path lacks), defer to it. Mirrors the bare-`%` path.
+            let sep_has_capture = sep.is_some_and(|s| {
+                Self::atom_contains_capture(s) || Self::atom_contains_named_capture(s)
+            });
+            if sep_mode.is_some() && !sigspace && (atom_has_capture || sep_has_capture) {
+                return pattern.to_string();
+            }
             if is_single_atom && (sep_mode.is_some() || !atom_has_capture) {
                 // Detect empty range (e.g. 2..1) before LTM expansion
                 let (parsed_min, parsed_max) = Self::parse_quantifier_range(count_spec);
