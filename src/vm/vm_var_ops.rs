@@ -312,7 +312,7 @@ impl Interpreter {
         Ok(Some(result))
     }
 
-    pub(super) fn typed_container_default(&mut self, target: &Value) -> Value {
+    pub(crate) fn typed_container_default(&mut self, target: &Value) -> Value {
         // Check for explicit `is default(...)` on the container first.
         if let Some(def) = self.container_default(target) {
             return def.clone();
