@@ -614,7 +614,8 @@ fn try_parse_scientific(body: &str, sign: i32) -> Option<Value> {
     Some(Value::Num(result))
 }
 
-/// Parse mantissa for scientific notation (e.g., `123`, `123.01`, `1_2_3.0_1`).
+/// Parse mantissa for scientific notation (e.g., `123`, `123.01`, `1_2_3.0_1`,
+/// `.5` — a leading dot is valid, matching `try_parse_decimal_rat`).
 fn parse_mantissa(s: &str) -> Option<f64> {
     if let Some(dot_pos) = s.find('.') {
         let int_str = &s[..dot_pos];
@@ -624,7 +625,12 @@ fn parse_mantissa(s: &str) -> Option<f64> {
         }
         let int_clean = strip_underscores(int_str)?;
         let frac_clean = strip_underscores(frac_str)?;
-        if int_clean.is_empty() || !int_clean.chars().all(|c| c.is_ascii_digit()) {
+        let int_clean = if int_clean.is_empty() {
+            "0".to_string()
+        } else {
+            int_clean
+        };
+        if !int_clean.chars().all(|c| c.is_ascii_digit()) {
             return None;
         }
         if frac_clean.is_empty() || !frac_clean.chars().all(|c| c.is_ascii_digit()) {

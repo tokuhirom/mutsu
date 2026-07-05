@@ -42,23 +42,6 @@ fn str_numeric_exception_attrs(s: &str) -> std::collections::HashMap<String, Val
 /// Build a lazy `Failure` wrapping an `X::Str::Numeric` exception for a string
 /// that cannot be numified — the shape raku's `.Int`/`.Num` produce on a bad
 /// string (the exception only fires when the Failure is sunk/used).
-/// Parse a string to `f64` the strict Raku way. Rust's `f64::parse` accepts the
-/// keywords `inf`/`infinity`/`nan` (case-insensitive, optionally signed), but
-/// Raku only accepts the exact tokens `Inf`/`+Inf`/`-Inf`/`NaN` for non-finite
-/// values. Finite overflow (`1e999` -> `Inf`) is still accepted.
-pub(crate) fn parse_raku_str_f64(normalized: &str) -> Option<f64> {
-    let body = normalized
-        .strip_prefix(['+', '-'])
-        .unwrap_or(normalized)
-        .to_ascii_lowercase();
-    if matches!(body.as_str(), "inf" | "infinity" | "nan")
-        && !matches!(normalized, "Inf" | "+Inf" | "-Inf" | "NaN")
-    {
-        return None;
-    }
-    normalized.parse::<f64>().ok()
-}
-
 pub(crate) fn str_numeric_failure(s: &str) -> Value {
     let ex = Value::make_instance(
         Symbol::intern("X::Str::Numeric"),
@@ -629,9 +612,29 @@ pub(super) fn dispatch(
                         // `"".Numeric`.
                         Value::Num(0.0)
                     } else {
-                        // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus
+                        // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus, then use
+                        // the canonical Raku numeric parser (radix prefixes,
+                        // underscores, rationals, strict Inf/NaN) so `.Num` agrees
+                        // with `.Numeric`/`.Int`/prefix `+`. `.Num` always yields a Num.
                         let normalized = trimmed.replace('\u{2212}', "-");
-                        if let Some(f) = parse_raku_str_f64(&normalized) {
+                        if let Some(v) =
+                            crate::runtime::str_numeric::parse_raku_str_to_numeric(&normalized)
+                        {
+                            let f = v.to_f64();
+                            // "-0"/"-0.0" parse as Int/Rat zero, which has no
+                            // sign — but `.Num` must yield the IEEE negative
+                            // zero (roast S32-num/negative-zero.t). Restore the
+                            // sign from the source string when the magnitude is
+                            // zero. (The scientific path, e.g. "-0e0", already
+                            // returns a signed Num.)
+                            let f = if f == 0.0
+                                && f.is_sign_positive()
+                                && normalized.starts_with('-')
+                            {
+                                -0.0
+                            } else {
+                                f
+                            };
                             Value::Num(f)
                         } else {
                             // An invalid string yields a lazy X::Str::Numeric Failure,
@@ -696,10 +699,13 @@ pub(super) fn dispatch(
                     }
                 }
                 Value::Str(s) => {
-                    if let Ok(i) = s.trim().parse::<i64>() {
-                        Value::Int(i)
-                    } else if let Some(f) = parse_raku_str_f64(s.trim()) {
-                        Value::Num(f)
+                    // `.Real` yields the natural numeric type (Int/Rat/Num); use the
+                    // canonical parser so radix prefixes and underscores work and the
+                    // result agrees with `.Numeric`.
+                    if let Some(v) =
+                        crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
+                    {
+                        v
                     } else {
                         // Same X::Str::Numeric Failure (typed, with the `⏏` marker)
                         // as `.Int`/`.Numeric`.
