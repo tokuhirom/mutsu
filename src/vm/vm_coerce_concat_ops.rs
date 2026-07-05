@@ -37,7 +37,7 @@ impl Interpreter {
         pulled
     }
 
-    pub(super) fn exec_make_slip_op(&mut self) {
+    pub(super) fn exec_make_slip_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         // Slipping (`|EXPR`) always flattens through containers/itemization, e.g.
         // `|$_` where the topic is an itemized Seq element must expand the Seq's
@@ -51,7 +51,27 @@ impl Interpreter {
         {
             let pulled = self.materialize_deferred_seq(items_arc);
             self.stack.push(Value::slip(pulled));
-            return;
+            return Ok(());
+        }
+        // A `gather`-sourced `LazyList` slipped with `|` must run its body: a
+        // plain `gather` is FORCED now (side effects included) and yields its
+        // taken values; the `match` arm below only read the still-empty cache, so
+        // `|(gather { $x++; take … })` slipped nothing and never ran `$x++`. An
+        // explicitly-`lazy` gather (`|(lazy gather …)`) stays lazy so its side
+        // effects fire only on later reification (`@a.eager`) — pushing the
+        // `LazyList` value itself preserves that deferred tail. Non-gather lazy
+        // lists (infinite `scan_spec`/`sequence_spec` reductions like
+        // `|[\+] 1..*`) fall through to the `match` arm's bounded force.
+        if let Value::LazyList(ll) = &val
+            && ll.is_from_gather()
+        {
+            if ll.is_genuinely_lazy() {
+                self.stack.push(Value::slip(vec![val.clone()]));
+            } else {
+                let pulled = self.force_lazy_list_vm(ll)?;
+                self.stack.push(Value::slip(pulled));
+            }
+            return Ok(());
         }
         let items = match &val {
             Value::Array(items, ..) => (*items).to_vec(),
@@ -87,6 +107,7 @@ impl Interpreter {
             _ => vec![val],
         };
         self.stack.push(Value::slip(items));
+        Ok(())
     }
 
     pub(super) fn exec_not_op(&mut self) {

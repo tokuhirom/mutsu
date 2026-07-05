@@ -619,6 +619,26 @@ impl Interpreter {
     fn dispatch_eager_method(&mut self, target: Value) -> Result<Value, RuntimeError> {
         match target {
             Value::LazyList(list) => Ok(Value::array(self.force_lazy_list_bridge(&list)?)),
+            Value::Array(ref items, kind)
+                if items.iter().any(|v| matches!(v, Value::LazyList(_))) =>
+            {
+                // `.eager` reifies a lazy TAIL preserved inside the array (a
+                // `|(lazy gather …)` slipped into `@a` sits as a `LazyList`
+                // element). Force each such element so its deferred body/side
+                // effects run now, flattening the produced values in place.
+                let mut out = Vec::with_capacity(items.len());
+                for it in items.iter() {
+                    if let Value::LazyList(ll) = it {
+                        out.extend(self.force_lazy_list_bridge(ll)?);
+                    } else {
+                        out.push(it.clone());
+                    }
+                }
+                Ok(Value::Array(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(out)),
+                    kind,
+                ))
+            }
             Value::Array(..) | Value::Seq(..) | Value::Slip(..) => Ok(target),
             Value::Range(..)
             | Value::RangeExcl(..)
