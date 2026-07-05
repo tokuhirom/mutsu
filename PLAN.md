@@ -190,7 +190,16 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 - **post-3a ロードマップ**: 層3a hardening（H1 継続計測〜H5 background collect の着手トリガ）・
   層3b NaN-boxing のスライス計画（3b-0 API 壁 → 3b-1 表現スイッチ → 3b-2 交通量刈り）・
   層3c 凍結条件は [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) 参照。
-  続いて JIT（層4）= [ADR-0004（Proposed）](docs/adr/0004-jit-strategy.md)。
+  続いて JIT（層4）= [ADR-0004（Accepted 2026-07-06）](docs/adr/0004-jit-strategy.md)。
+- [ ] **層3a 監査性 sweep（ANALYSIS rev8 §2.1・低コスト・1 PR で済む）**:
+      ① `gc/mod.rs`/`gc_ptr.rs`/`collect.rs` の stale な「default off / no production caller yet」
+      ヘッダを default-on 後の実態に是正 ② `gc_ptr.rs`/`collect.rs` のモジュール全体
+      `#![allow(dead_code)]` 撤去（「step 8 で外す」と書かれたまま・step 8 は完了済みで真の dead
+      surface を隠しうる） ③ `get_mut`/`make_mut` の uniqueness（`header.strong == 1`）と candidate
+      バッファのカウント外 `Arc` clone が共存できる不変条件（buffered clone は collect safepoint
+      でのみ deref・`Gc::drop` は `collecting()` 中 early-return）を散文でなく debug assert に
+      ④ `Gc::make_mut` の `header.strong` 手動付け替え（全 `Relaxed`）の並行 clone/drop 競合時
+      ordering を検討。
 
 ---
 
@@ -201,8 +210,11 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 残るのは multi-dispatch の fallback 除去のみ:
 
 - [ ] default-param OTF の builtin-shadow 単一候補（name-cache 汚染リスクがあるため意図的に除外を維持中）。
-- [ ] モジュール sub OTF に残る interpreter 結合構文: `state` / `EVAL` / `CATCH` / sigilless scalar
-      （`\x`）/ `rw` / `raw` / 戻り型 coercion。現在は保守ゲートで除外しており、本筋は `compiled_fns` の拡充。
+- [ ] モジュール sub OTF に残る interpreter 結合構文: `state` / `EVAL` / `EVALFILE` / `start` /
+      `CATCH` / `CONTROL` / phaser / ネスト宣言 / subtest / sigilless scalar（`\x`）/ 戻り型 coercion
+      （ゲート実体 = `def_is_otf_compilable_module_single`、`vm/vm_call_func_ops.rs`）。
+      `is rw`/`is raw` は #4091（rw-arg のコンパイル時 caller slot 化）でゲートから外れた。
+      本筋は `compiled_fns` の拡充。
 - [ ] `@_` slurpy recursive sub（別カテゴリ）。`@a[1..*]` 再帰の immutable-List bug は §4 扱い。
 - 完了済み（計測で確認）: bare multi OTF / `state` 候補・caching-proto body（#4047）/ `code_signature`
   param（#3883）/ capture param。signature alternates の `state` 共有のみ interpreter 境界として
@@ -265,6 +277,12 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       着手条件 = 層3b（Lever 2）のゲート達成。
 - [ ] **Lever 6: biased reference counting = ADR-0001 層3c（GC 後の独立 perf）**。凍結 — 着手トリガは
       「JIT J4 完了後の profile で atomic inc/dec が上位に残る」のみ（gc-post-3a-roadmap §4）。
+- [ ] **opcode 残件（[docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6・#4279 の続き）**:
+      ラベル等の inline `Option<String>` payload（`Last`/`Next`/`Redo`/loop 系/`SmartMatchExpr.lhs_var`）
+      の定数プール `Option<u32>` 化（`OpCode` を 48B 未満へ） / per-instruction 定数コスト
+      （`current_code` 生ポインタ store・`trace_log!` チェック）の計測付き削減 / `Jump(i32)` が
+      絶対 index を運ぶ encoding の是正 / per-opcode ヒストグラム駆動での特化 op 統合
+      （`ContainerEq`×4・`IndexAssign*`×6 — 美学でなくデータで駆動）。
 - [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
 - 目標: method-call <1.5x、bench-class <1.5x、bench-fib（型制約付き）<2x。
 
@@ -280,11 +298,22 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       言語保証外。mutsu は不壊で優位 — 仕様外のまま維持）と、非 state の escaped aggregate
       probe（gc-post-3a-roadmap §2 T6）。
 - [ ] Semaphore / nonblocking await / lock 競合（S17・hard・別軸）。
-- [ ] `unsafe` の single-thread 前提コメント是正（`Arc::as_ptr as *mut` を strong_count ガード前提に・
-      最終的に要素も cell 化）。
-- [ ] 制御フロー（`return`/`last`/`next`/`take`/`emit`）を `RuntimeError` god-struct から `enum Control` へ
-      分離（ANALYSIS §2.4）。
+- [ ] 生ポインタ aliased write の撤廃: 旧 `arc_contents_mut` は dead 化済みで、本番経路は
+      `gc::gc_contents_mut` / `Gc::{get,make}_mut` に移動（unsoundness は解消でなく移動 —
+      ANALYSIS rev8 §2.1）。完全解消 = §2 Track B 残スライス T4-T6 に統合済み（重複着手しない）。
+- [ ] **レキシカルスコープ slot キャンペーン完遂（ANALYSIS §1.4・
+      [docs/lexical-scope-slot-campaign.md](docs/lexical-scope-slot-campaign.md)）**: writeback IR への
+      slot 焼き込みは部分着手済み（`SmartMatchExpr.lhs_slot`・RMW slot 引数・rw-arg `Pair(name, slot)`）。
+      残り = by-name フォールバック（`find_local_slot`）の撤廃 → `MUTSU_SHADOW_SLOTS` 既定 ON
+      （シャドウ衝突の実修正） → `BlockScope` の locals 全 clone/restore 撤去。
+- [ ] エラー/制御のチャネル分離: bool 群の `enum Control` 統合と `RuntimeError` 縮小
+      （cold Box 化・`result_large_err` 23→0）は完了。残る「制御を `Result::Err` で運ぶ」構造自体の
+      分離は実害が消えたため優先度低（ANALYSIS rev8 §2.2）。
+- [ ] Supply detached worker の panic を QUIT へ伝播（現状は握り潰し・ANALYSIS §5）。
 - [ ] `.^methods`/`.can` を実ディスパッチ表から導出 / roast fudge ロジック分離 / 500 行超ファイル分割。
+- [ ] **衛生トレンドの棚卸し（ANALYSIS rev8 §5/§6）**: `runtime/mod.rs` の再肥大（1932→2118 行）の
+      再スリム化 / GC・Track B churn で増えた `.clone()` 9022（+1322）・`unwrap` 系 1643（+167）・
+      `#[allow(` 157（+19）の増加分レビュー。
 - [ ] エラーメッセージ品質向上 / エッジケースの panic・crash を 0 に。
 
 ---
