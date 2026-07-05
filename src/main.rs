@@ -245,6 +245,10 @@ fn main() {
 }
 
 fn run_main() {
+    // GC STW accounting: this big-stack thread is the interpreter's main
+    // mutator; register it so a worker-side collector can count its
+    // quiescence (blocked in await/.finish/sleep) toward the rendezvous.
+    mutsu::gc_register_main_thread();
     let args: Vec<String> = env::args().collect();
 
     let mut dump_ast = false;

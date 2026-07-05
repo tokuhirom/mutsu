@@ -27,10 +27,14 @@ where
             struct WorkerGuard;
             impl Drop for WorkerGuard {
                 fn drop(&mut self) {
+                    crate::gc::mark_thread_registered(false);
                     crate::gc::exit_mutator_worker();
                 }
             }
             let _guard = WorkerGuard;
+            // Registered-mutator flag: this thread's quiescence now counts
+            // toward (and is required by) the STW rendezvous (gc::stw).
+            crate::gc::mark_thread_registered(true);
             f()
         })
         .expect("failed to spawn worker thread")

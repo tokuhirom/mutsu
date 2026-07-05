@@ -350,7 +350,7 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
     // reached in time (an unwrapped blocking site), fall back to the previous
     // behavior: re-queue the suspects and defer the scan. Deferred, never
     // unsound.
-    let _stw: Option<crate::gc::stw::StwGuard> = if crate::gc::mutator_workers_active() {
+    let _stw: Option<crate::gc::stw::StwGuard> = if crate::gc::stw::other_mutators_active() {
         let stw = if suspects.is_empty() || crate::gc::stw::stw_cooldown_active() {
             None
         } else {
@@ -643,10 +643,12 @@ mod tests {
         let stop = std::sync::Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
         let worker = std::thread::spawn(move || {
+            super::super::stw::mark_thread_registered(true);
             while !stop2.load(Ordering::Relaxed) {
                 super::super::stw::park_at_safepoint();
                 std::thread::yield_now();
             }
+            super::super::stw::mark_thread_registered(false);
         });
 
         let a = TestNode::new();

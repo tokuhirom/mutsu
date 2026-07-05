@@ -29,6 +29,18 @@ pub fn dump_vm_stats() {
     vm::vm_stats::dump();
 }
 
+/// Register the calling thread as the interpreter's main mutator thread for
+/// the GC's cooperative stop-the-world accounting (`gc::stw`). The CLI entry
+/// point calls this once on its big-stack main thread; its quiescence
+/// (blocked in `await`/`.finish`/`sleep`) then counts toward — and is
+/// required by — a collector's rendezvous, exactly like a `spawn_user_thread`
+/// worker's. Embedders that drive `Interpreter` from a long-lived thread and
+/// enable `MUTSU_GC` should call this on that thread too.
+pub fn gc_register_main_thread() {
+    gc::enter_mutator_worker();
+    gc::mark_thread_registered(true);
+}
+
 /// Parse source code and return a pretty-printed AST string.
 pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
     let (stmts, _) = parse_dispatch::parse_source(input)?;

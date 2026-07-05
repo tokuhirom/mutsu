@@ -28,14 +28,17 @@
 //!   behavior. Timeout is a *liveness* fallback only; it never trades away
 //!   soundness.
 //!
-//! Thread accounting: user worker threads register via
-//! `enter_mutator_worker`/`exit_mutator_worker` (`spawn_user_thread`). With
-//! exactly one additional mutator (the main thread), the number of *other*
-//! mutators the collector must see quiescent is simply the current worker
-//! count — whether the collector runs on main (all workers must be quiescent)
-//! or on a worker (workers-1 + main). A worker that is mid-exit (dropping its
-//! interpreter's `Value`s) is neither quiescent nor unregistered, so the
-//! collector keeps waiting until those drops are done.
+//! Thread accounting: every mutator thread REGISTERS — workers via
+//! `spawn_user_thread` (counter raised parent-side to close the spawn window,
+//! per-thread flag set in the worker) and the CLI main thread via
+//! `mutsu::gc_register_main_thread`. Only registered threads count toward the
+//! quiescence target (`needed = registered_total - self`) and increment the
+//! quiescent counter, so the equation stays self-consistent under arbitrary
+//! extra threads (e.g. `cargo test` harness threads running in-process
+//! interpreters — those obey a stop but are invisible to the accounting). A
+//! worker that is mid-exit (dropping its interpreter's `Value`s) is neither
+//! quiescent nor unregistered, so the collector keeps waiting until those
+//! drops are done.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock};
@@ -63,6 +66,40 @@ fn now_ms() -> u64 {
 fn rendezvous() -> &'static (Mutex<()>, Condvar) {
     static R: OnceLock<(Mutex<()>, Condvar)> = OnceLock::new();
     R.get_or_init(|| (Mutex::new(()), Condvar::new()))
+}
+
+thread_local! {
+    /// Whether the current thread is a REGISTERED mutator (the CLI main thread
+    /// and every `spawn_user_thread` worker). Only registered threads count
+    /// toward the quiescence target and increment [`QUIESCENT`] — an
+    /// unregistered thread (e.g. a `cargo test` harness thread running an
+    /// in-process interpreter) obeys a stop (it blocks at park points and on
+    /// leaving safe regions) but is invisible to the accounting, so it can
+    /// neither satisfy nor starve another collector's rendezvous. This keeps
+    /// the equation self-consistent under arbitrary thread populations:
+    /// `needed = registered_total - (self if registered)`, and every counted
+    /// quiescent thread is also counted in the target.
+    static REGISTERED_MUTATOR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Mark the calling thread as a registered mutator (see [`REGISTERED_MUTATOR`]).
+/// Called by `spawn_user_thread` on each worker and by `main` on startup; the
+/// `enter_mutator_worker`/`exit_mutator_worker` counter is maintained
+/// separately (parent-side, to close the spawn window).
+pub(crate) fn mark_thread_registered(on: bool) {
+    REGISTERED_MUTATOR.with(|r| r.set(on));
+}
+
+fn thread_is_registered() -> bool {
+    REGISTERED_MUTATOR.with(|r| r.get())
+}
+
+/// Whether any *other* registered mutator thread exists (the collector uses
+/// this to decide if a stop-the-world is needed at all).
+pub(crate) fn other_mutators_active() -> bool {
+    let total = super::gc_ptr::mutator_worker_count();
+    let self_counted = usize::from(thread_is_registered());
+    total > self_counted
 }
 
 /// Whether a stop-the-world is currently requested. One relaxed load — the
@@ -128,9 +165,16 @@ pub(crate) fn park_at_safepoint() {
 
 #[cold]
 fn park_slow() {
-    quiescent_enter();
-    wait_until_released();
-    quiescent_exit_checked();
+    if thread_is_registered() {
+        quiescent_enter();
+        wait_until_released();
+        quiescent_exit_checked();
+    } else {
+        // Unregistered threads still obey the stop (they may be running an
+        // in-process interpreter, e.g. under `cargo test`), they just do not
+        // count toward the rendezvous.
+        wait_until_released();
+    }
 }
 
 /// Run a blocking operation `f` that provably does not touch the `Gc` graph
@@ -140,6 +184,14 @@ fn park_slow() {
 pub(crate) fn block_quiescent<R>(f: impl FnOnce() -> R) -> R {
     if !super::gc_ptr::gc_enabled() {
         return f();
+    }
+    if !thread_is_registered() {
+        // Not part of the accounting; still refuse to resume mid-scan.
+        let r = f();
+        if stw_requested() {
+            wait_until_released();
+        }
+        return r;
     }
     quiescent_enter();
     let r = f();
@@ -181,6 +233,16 @@ pub(crate) fn stw_aware_wait<'a, T>(
         }
         return guard;
     }
+    if !thread_is_registered() {
+        // Uncounted, but still refuses to leave the wait mid-scan.
+        loop {
+            if ready(&guard) && !stw_requested() {
+                return guard;
+            }
+            let (g, _) = cvar.wait_timeout(guard, Duration::from_millis(10)).unwrap();
+            guard = g;
+        }
+    }
     quiescent_enter();
     loop {
         if ready(&guard) && !stw_requested() {
@@ -220,11 +282,13 @@ pub(crate) fn try_stop_the_world(timeout: Duration) -> Option<StwGuard> {
     let deadline = Instant::now() + timeout;
     let (lock, cvar) = rendezvous();
     let mut guard = lock.lock().unwrap();
+    let self_counted = usize::from(thread_is_registered());
     loop {
         // Re-read the target every iteration: a worker finishing mid-wait
         // unregisters itself (after its `Value` drops are done), lowering the
-        // number of threads that must park.
-        let needed = super::gc_ptr::mutator_worker_count();
+        // number of threads that must park. The collector's own thread, if
+        // registered, is running this very function — exclude it.
+        let needed = super::gc_ptr::mutator_worker_count().saturating_sub(self_counted);
         if QUIESCENT.load(Ordering::Acquire) >= needed {
             drop(guard);
             return Some(StwGuard { _private: () });
@@ -266,10 +330,12 @@ mod tests {
         let stop = std::sync::Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
         let handle = std::thread::spawn(move || {
+            mark_thread_registered(true);
             while !stop2.load(Ordering::Relaxed) {
                 park_at_safepoint();
                 std::thread::yield_now();
             }
+            mark_thread_registered(false);
         });
 
         let guard = try_stop_the_world(Duration::from_secs(5));
@@ -306,6 +372,8 @@ mod tests {
         // behavior is only observable under `MUTSU_GC=on` (the CI gc-stress
         // job runs this same test with it set).
         let gc_on = super::super::gc_ptr::gc_enabled();
+        // Counting applies to REGISTERED mutator threads only.
+        mark_thread_registered(true);
         let before = QUIESCENT.load(Ordering::Acquire);
         let r = block_quiescent(|| {
             if gc_on {
@@ -315,6 +383,7 @@ mod tests {
         });
         assert_eq!(r, 42);
         assert_eq!(QUIESCENT.load(Ordering::Acquire), before);
+        mark_thread_registered(false);
     }
 
     #[test]
