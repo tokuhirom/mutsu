@@ -6,6 +6,7 @@
 - feat(parser): leading-:: and symbolic package variable lookup for @ / % by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4184
 - feat(gc): cooperative cross-thread stop-the-world for the cycle scan by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4186
 - fix(str): uniprop Decomposition_Type Circle/Square/Wide/Vertical sets by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4187
+- fix(hash): a slice :delete fills absent keys with the container's `is default` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4188
 
 ## [v0.2.4](https://github.com/tokuhirom/mutsu/compare/v0.2.3...v0.2.4) - 2026-07-05
 
