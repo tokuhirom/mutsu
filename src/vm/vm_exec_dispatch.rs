@@ -1133,9 +1133,29 @@ impl Interpreter {
                 // stable container identity. Gate on the env already holding a
                 // matching container (so a fresh declaration, whose env slot is
                 // absent/Nil, keeps fresh identity) and on a plain assignment.
+                // A `my @a = …` *declaration* reaching SetGlobal in expression
+                // position (`push @a2, my @o = $_`) must NOT reuse the previous
+                // iteration's container — each `my` is a fresh array, so a value
+                // captured by an earlier iteration keeps its own contents.
+                let sg_is_vardecl = self.vardecl_context;
+                self.vardecl_context = false;
+                if sg_is_vardecl
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && bind_source.is_none()
+                    && (name.starts_with('@') || name.starts_with('%'))
+                    && matches!(val, Value::Array(..) | Value::Hash(..))
+                {
+                    // Fresh `my @a`/`my %h` declaration: own a DISTINCT container
+                    // (Raku `=` copy semantics), never reuse the prior iteration's
+                    // backing `Gc`. Detaching a shared source (`my @o = @b`) also
+                    // preserves copy independence.
+                    val = Self::detach_shared_container(val);
+                }
                 if !is_bind_ctx
                     && !is_rebind
                     && !raw_mode
+                    && !sg_is_vardecl
                     && bind_source.is_none()
                     && !name.contains("__ANON")
                     && (name.starts_with('@') || name.starts_with('%'))
