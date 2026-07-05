@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.2.13](https://github.com/tokuhirom/mutsu/compare/v0.2.12...v0.2.13) - 2026-07-05
+
+- fix(regex): value-typed properties in <+:...>/<-:...> character classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4212
+- fix(gc): shared captured-env maps were multiply-traced, falsely reclaiming live nodes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4213
+
 ## [v0.2.12](https://github.com/tokuhirom/mutsu/compare/v0.2.11...v0.2.12) - 2026-07-05
 
 - fix(regex): match value-typed Unicode properties the regex crate can't by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4209
