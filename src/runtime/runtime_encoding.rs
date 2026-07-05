@@ -20,7 +20,13 @@ impl Interpreter {
             },
             EncodingEntry {
                 name: "iso-8859-1".to_string(),
-                alternative_names: vec!["latin-1".to_string()],
+                alternative_names: vec![
+                    "latin-1".to_string(),
+                    "latin1".to_string(),
+                    "iso88591".to_string(),
+                    "iso-88591".to_string(),
+                    "iso_8859_1".to_string(),
+                ],
                 user_type: None,
             },
             EncodingEntry {
