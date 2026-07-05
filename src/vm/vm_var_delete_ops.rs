@@ -391,11 +391,31 @@ impl Interpreter {
         self.trim_trailing_array_holes(&var_name);
         // If the deleted value is a hole (Nil or type object like Package("Any")),
         // substitute the container's default value if one was set via `is default(...)`.
-        let result = if matches!(&result, Value::Nil | Value::Package(_)) {
-            if let Some(def) = &saved_default {
-                def.clone()
-            } else {
-                result
+        // For a SLICE delete (`%h<a b c>:delete`) the result is a list whose
+        // absent-key entries are holes — replace each of them with the default,
+        // so `my %h is default(42); %h<a b c>:delete` yields `(1, 2, 42)`.
+        let is_hole = |v: &Value| matches!(v, Value::Nil | Value::Package(_));
+        let result = if let Some(def) = &saved_default {
+            match result {
+                ref r if is_hole(r) => def.clone(),
+                Value::Array(items, kind) => {
+                    let replaced: Vec<Value> = items
+                        .iter()
+                        .map(|v| if is_hole(v) { def.clone() } else { v.clone() })
+                        .collect();
+                    Value::Array(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(replaced)),
+                        kind,
+                    )
+                }
+                Value::Seq(items) | Value::Slip(items) => {
+                    let replaced: Vec<Value> = items
+                        .iter()
+                        .map(|v| if is_hole(v) { def.clone() } else { v.clone() })
+                        .collect();
+                    Value::Seq(std::sync::Arc::new(replaced))
+                }
+                other => other,
             }
         } else {
             result
