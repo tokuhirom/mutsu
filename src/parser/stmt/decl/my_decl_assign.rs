@@ -82,6 +82,58 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         return handle_method_call_assign(stripped, s);
     }
 
+    // Dotted postcircumfix on the just-declared variable:
+    // `my @a.[2] = 42` / `my @a.{k} = v` is `(my @a).[2] = 42` — it just calls
+    // `postcircumfix:<[ ]>`, no shaped array is created. Declare the variable and
+    // apply the subscript (assignment) in a scopeless SyntheticBlock so the
+    // declaration lands in the enclosing scope. Handles the unspace form too
+    // (`my @a\  .[2]`).
+    {
+        let after_unspace = rest.strip_prefix('\\').map(str::trim_start).unwrap_or(rest);
+        if after_unspace.starts_with(".[")
+            || after_unspace.starts_with(".{")
+            || after_unspace.starts_with(".<")
+        {
+            let base = Expr::Var(s.name.clone());
+            let (r2, lhs) = super::super::super::expr::postfix_expr_continue(rest, base)?;
+            let (r2, _) = ws(r2)?;
+            let decl_expr = default_decl_expr(
+                s.is_array,
+                s.is_hash,
+                s.shape_dims.as_deref(),
+                s.type_constraint.as_deref(),
+            );
+            let decl = Stmt::VarDecl {
+                name: s.name.clone(),
+                expr: decl_expr,
+                type_constraint: s.type_constraint.clone(),
+                is_state: s.is_state,
+                is_our: s.is_our,
+                is_dynamic: s.has_dynamic_trait,
+                is_export: s.has_export_trait,
+                export_tags: s.export_tags.clone(),
+                custom_traits: s.custom_traits.clone(),
+                where_constraint: s.where_constraint.clone(),
+            };
+            let (r3, tail_expr) =
+                if r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>") {
+                    let (r, _) = ws(&r2[1..])?;
+                    let (r, rhs) = parse_assign_expr_or_comma(r)?;
+                    (
+                        r,
+                        crate::parser::expr::precedence::assign_to_target_expr(lhs, rhs),
+                    )
+                } else {
+                    (r2, lhs)
+                };
+            let block = Stmt::SyntheticBlock(vec![decl, Stmt::Expr(tail_expr)]);
+            if s.apply_modifier {
+                return parse_statement_modifier(r3, block);
+            }
+            return Ok((r3, block));
+        }
+    }
+
     // Binding := or ::=
     if let Some(stripped) = rest.strip_prefix("::=").or_else(|| rest.strip_prefix(":=")) {
         return handle_binding(stripped, s);
