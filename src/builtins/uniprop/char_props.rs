@@ -308,6 +308,7 @@ fn compatibility_decomposition_type(ch: char) -> String {
         // Final / Initial / Medial) is encoded in the character name.
         0xFB50..=0xFDFF | 0xFE70..=0xFEFF => arabic_presentation_form_type(ch),
         0xFE30..=0xFE4F => "Vertical".to_string(), // CJK compat forms
+        0xFE50..=0xFE6F => "Small".to_string(),    // Small Form Variants
         0xFF01..=0xFF5E => "Wide".to_string(),     // Fullwidth
         0xFF61..=0xFFDC => "Narrow".to_string(),   // Halfwidth
         0xFFE0..=0xFFE6 => "Wide".to_string(),
