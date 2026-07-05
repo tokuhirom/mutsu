@@ -1,6 +1,11 @@
 use super::*;
 
-fn compound_index_assign_expr<F>(target: Expr, index: Expr, build_assigned_value: F) -> Expr
+fn compound_index_assign_expr<F>(
+    target: Expr,
+    index: Expr,
+    is_positional: bool,
+    build_assigned_value: F,
+) -> Expr
 where
     F: FnOnce(Expr) -> Expr,
 {
@@ -9,6 +14,11 @@ where
         TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
     );
     let tmp_idx_expr = Expr::Var(tmp_idx.clone());
+    // The read of the current value stays associative-lenient (`is_positional:
+    // false`): a missing nested element reads as the type object either way, and
+    // a positional read of a not-yet-autovivified intermediate (`@a[0][1] += 1`)
+    // would otherwise error. Only the write-back below needs the true subscript
+    // kind, to autovivify the correct container (Hash vs Array).
     let lhs_expr = Expr::Index {
         target: Box::new(target.clone()),
         index: Box::new(tmp_idx_expr.clone()),
@@ -29,11 +39,15 @@ where
                 custom_traits: Vec::new(),
                 where_constraint: None,
             },
+            // Preserve the subscript's positional/associative kind so an
+            // autovivified intermediate is a Hash for `%h<a><b> += 1`
+            // (associative) and an Array for `@a[0][1] += 1` (positional) —
+            // a hardcoded `true` here wrongly made `%h<a><b> += 1` an Array.
             Stmt::Expr(Expr::IndexAssign {
                 target: Box::new(target),
                 index: Box::new(tmp_idx_expr.clone()),
                 value: Box::new(assigned_value),
-                is_positional: true,
+                is_positional,
             }),
         ],
         label: None,
@@ -97,10 +111,17 @@ pub(crate) fn build_compound_assign_expr(
             expr: Box::new(compound_assigned_value_expr(Expr::HashVar(name), op, rhs)),
             is_bind: false,
         },
-        Expr::Index { target, index, .. } => {
-            return Ok(compound_index_assign_expr(*target, *index, |lhs_expr| {
-                compound_assigned_value_expr(lhs_expr, op, rhs)
-            }));
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => {
+            return Ok(compound_index_assign_expr(
+                *target,
+                *index,
+                is_positional,
+                |lhs_expr| compound_assigned_value_expr(lhs_expr, op, rhs),
+            ));
         }
         Expr::MethodCall {
             target,
@@ -110,9 +131,12 @@ pub(crate) fn build_compound_assign_expr(
             quoted: _,
         } if name == "AT-POS" && args.len() == 1 => {
             let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::Nil));
-            return Ok(compound_index_assign_expr(*target, index, |lhs_expr| {
-                compound_assigned_value_expr(lhs_expr, op, rhs)
-            }));
+            return Ok(compound_index_assign_expr(
+                *target,
+                index,
+                true,
+                |lhs_expr| compound_assigned_value_expr(lhs_expr, op, rhs),
+            ));
         }
         Expr::MethodCall {
             target,
@@ -242,15 +266,22 @@ pub(crate) fn build_custom_compound_assign_expr(
             }),
             is_bind: false,
         },
-        Expr::Index { target, index, .. } => {
-            return Ok(compound_index_assign_expr(*target, *index, |lhs_expr| {
-                Expr::InfixFunc {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => {
+            return Ok(compound_index_assign_expr(
+                *target,
+                *index,
+                is_positional,
+                |lhs_expr| Expr::InfixFunc {
                     name: op_name,
                     left: Box::new(lhs_expr),
                     right: vec![rhs],
                     modifier: None,
-                }
-            }));
+                },
+            ));
         }
         _ => return Err(PError::expected("assignment expression")),
     })
@@ -319,7 +350,7 @@ pub(crate) fn build_meta_assign_expr(
                     left: Box::new(lhs_expr),
                     right: Box::new(rhs),
                 }),
-                is_positional: true,
+                is_positional,
             }
         }
         _ => return Err(PError::expected("assignment expression")),
