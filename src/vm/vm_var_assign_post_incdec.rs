@@ -401,8 +401,16 @@ impl Interpreter {
             .as_deref()
             .is_some_and(|t| t == "SetHash");
         let idx_val = self.stack.pop().unwrap_or(Value::Nil);
-        let key = idx_val.to_string_value();
         let container = self.get_env_with_main_alias(&name);
+        // Resolve a WhateverCode / Whatever index (`@a[*-1]++`, `@a[*-2]--`)
+        // against the container's length before using it as the key — otherwise
+        // the raw closure stringifies to a bogus key and the increment is lost.
+        let idx_val = if matches!(idx_val, Value::Sub(_) | Value::Whatever) {
+            self.resolve_whatever_index_for_target(idx_val, container.as_ref())
+        } else {
+            idx_val
+        };
+        let key = idx_val.to_string_value();
         // `$c[0]++` / `$c<a>++` on a Capture: when the element is a shared
         // `ContainerRef` cell (built from `\($a)` / `\(:$a)`), increment *through*
         // the cell so the original variable observes the change. The generic
