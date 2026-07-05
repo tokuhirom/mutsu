@@ -186,18 +186,46 @@ pub(crate) fn unicode_bidi_class(ch: char) -> String {
         | 0x0660..=0x0669            // Arabic-Indic digits
         | 0x066B..=0x066C            // Arabic decimal/thousands separator
         | 0x06DD                     // Arabic end of ayah
-        | 0x08E2 => "AN",            // Arabic disputed end of ayah
-        // Arabic tatweel is script=Common (not Arabic) but Bidi_Class=AL.
-        0x0640 => "AL",
+        | 0x08E2                     // Arabic disputed end of ayah
+        | 0x10D30..=0x10D39          // Hanifi Rohingya digits
+        | 0x10E60..=0x10E7E => "AN", // Rumi numeral symbols
+        // Arabic tatweel, letter marks, and the Common-script Arabic
+        // punctuation (semicolon, question mark) have Bidi_Class=AL even though
+        // their script is Common rather than Arabic.
+        0x0640 | 0x061C | 0x070F | 0x061B | 0x061F => "AL",
+        // Segment_Separator
+        0x0009 | 0x000B | 0x001F => "S",
+        // Form feed and line separator are Whitespace.
+        0x000C => "WS",
+        // European_Separator (plus/minus signs)
+        0x002B | 0x002D | 0x207A..=0x207B | 0x208A..=0x208B | 0x2212 | 0xFB29 | 0xFE62..=0xFE63
+        | 0xFF0B | 0xFF0D => "ES",
+        // Common_Separator (comma, dot, slash, colon, NBSP, ...)
+        0x002C | 0x002E..=0x002F | 0x003A | 0x00A0 | 0x060C | 0x202F | 0x2044 | 0xFE50 | 0xFE52
+        | 0xFE55 | 0xFF0C | 0xFF0E..=0xFF0F | 0xFF1A => "CS",
+        // European_Terminator (currency, percent, degree, ...)
+        0x0023..=0x0025 | 0x00A2..=0x00A5 | 0x00B0..=0x00B1 | 0x058F | 0x0609..=0x060A | 0x066A
+        | 0x09F2..=0x09F3 | 0x09FB | 0x0AF1 | 0x0BF9 | 0x0E3F | 0x17DB | 0x2030..=0x2034
+        | 0x20A0..=0x20BF | 0x212E | 0x2213 | 0xA838..=0xA839 | 0xFE5F | 0xFE69..=0xFE6A
+        | 0xFF03..=0xFF05 | 0xFFE0..=0xFFE1 | 0xFFE5..=0xFFE6 | 0x11FDD..=0x11FE0
+        | 0x1E2FF => "ET",
         _ => {
             // Use General Category heuristics
             let gc = crate::builtins::unicode::unicode_general_category(ch);
             match gc.as_str() {
                 "Lu" | "Ll" | "Lt" | "Lm" | "Lo" => bidi_letter_class(ch),
                 "Nd" | "Nl" | "No" => "L",
-                "Mn" | "Me" | "Cf" => "NSM",
+                "Mn" | "Me" => "NSM",
+                "Cf" => "BN",
+                // Punctuation in a right-to-left script (e.g. Arabic/Hebrew
+                // punctuation) inherits the script direction (AL / R). Other
+                // punctuation and symbols follow the general default below —
+                // Bidi_Class=ON for neutral symbols is per-codepoint in the UCD
+                // and is not derivable from General_Category alone.
+                "Ps" | "Pe" | "Pi" | "Pf" | "Po" | "Pc" | "Pd" => bidi_letter_class(ch),
                 "Zs" => "WS",
-                "Zl" | "Zp" => "B",
+                "Zl" => "WS",
+                "Zp" => "B",
                 "Cc" => {
                     if cp <= 0x001F || (0x007F..=0x009F).contains(&cp) {
                         if cp == 0x000A
