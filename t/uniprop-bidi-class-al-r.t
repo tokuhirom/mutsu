@@ -14,7 +14,7 @@ is "\x0660".uniprop('Bidi_Class'), 'AN', 'Arabic-Indic digit is AN (not AL)';
 is "\x0608".uniprop('Bidi_Class'), 'AL', 'Arabic ray (Sm) is AL';
 is "\x060B".uniprop('Bidi_Class'), 'AL', 'Afghani sign (Sc) is AL';
 is "\x06FD".uniprop('Bidi_Class'), 'AL', 'Arabic sign sindhi ampersand (So) is AL';
-is "\x064B".uniprop('Bidi_Class'), 'AL', 'Arabic fathatan (mark) is AL';
+is "\x064B".uniprop('Bidi_Class'), 'NSM', 'Arabic fathatan (mark) is NSM';
 is "\x1EE00".uniprop('Bidi_Class'), 'AL', 'Arabic math alef is AL';
 
 # Right_to_Left (R): Hebrew and other RTL scripts
