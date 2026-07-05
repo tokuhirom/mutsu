@@ -644,13 +644,28 @@ fn parse_named_destructuring(
         } else {
             &dvar.name
         };
+        let mut value_expr = Expr::Index {
+            target: Box::new(Expr::HashVar(hash_bare.clone())),
+            index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
+            is_positional: false,
+        };
+        // A named `@`-sigil destructure target binds (`:=`) the hash value, which
+        // spreads an itemized array (e.g. a `.classify` bucket `$[2,4]`) into the
+        // array. mutsu's destructure lowers to assignment, so de-itemize the value
+        // via `.list` for `@`-targets — a no-op for a plain list, but it unwraps a
+        // single itemized array so `my (:@even) := classify(...)` yields `[2,4]`.
+        if dvar.name.starts_with('@') {
+            value_expr = Expr::MethodCall {
+                target: Box::new(value_expr),
+                name: crate::symbol::Symbol::intern("list"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            };
+        }
         stmts.push(Stmt::VarDecl {
             name: dvar.name.clone(),
-            expr: Expr::Index {
-                target: Box::new(Expr::HashVar(hash_bare.clone())),
-                index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
-                is_positional: false,
-            },
+            expr: value_expr,
             type_constraint: type_constraint.clone(),
             is_state,
             is_our: false,
