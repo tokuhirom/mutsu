@@ -128,37 +128,151 @@ fn is_jt_r(cp: u32) -> bool {
         | 0x10FB9..=0x10FBA | 0x10FBD | 0x10FC2..=0x10FC3 | 0x10FC9)
 }
 
-/// Joining_Group property — derive from character name for Arabic/Syriac.
+/// Joining_Group property (ArabicShaping.txt): letters that share a shaping
+/// shape are grouped; everything else is No_Joining_Group.
 pub(crate) fn unicode_joining_group(ch: char) -> String {
-    let script = crate::builtins::unicode::unicode_script_name(ch);
-    let name = crate::builtins::unicode::unicode_char_name(ch);
-    match script.as_str() {
-        "Syriac" => {
-            // "SYRIAC LETTER WAW" → "SYRIAC WAW"
-            // "SYRIAC LETTER ALAPH" → "SYRIAC WAW"
-            if let Some(rest) = name.strip_prefix("SYRIAC LETTER ") {
-                format!("SYRIAC {}", rest)
-            } else {
-                "No_Joining_Group".to_string()
-            }
+    let g = match ch as u32 {
+        0x0620
+        | 0x0626
+        | 0x0649..=0x064A
+        | 0x0678
+        | 0x06D0..=0x06D1
+        | 0x0777
+        | 0x08A8..=0x08A9
+        | 0x08BA => "YEH",
+        0x0622..=0x0623 | 0x0625 | 0x0627 | 0x0671..=0x0673 | 0x0675 | 0x0773..=0x0774 => "ALEF",
+        0x0624 | 0x0648 | 0x0676..=0x0677 | 0x06C4..=0x06CB | 0x06CF | 0x0778..=0x0779 | 0x08AB => {
+            "WAW"
         }
-        "Arabic" => {
-            // Arabic joining groups: extract the letter name
-            // "ARABIC LETTER BEH" → "BEH"
-            if let Some(rest) = name.strip_prefix("ARABIC LETTER ") {
-                // Remove final form/isolated form suffixes
-                let base = rest
-                    .trim_end_matches(" FINAL FORM")
-                    .trim_end_matches(" INITIAL FORM")
-                    .trim_end_matches(" MEDIAL FORM")
-                    .trim_end_matches(" ISOLATED FORM");
-                base.to_string()
-            } else {
-                "No_Joining_Group".to_string()
-            }
+        0x0628
+        | 0x062A..=0x062B
+        | 0x066E
+        | 0x0679..=0x0680
+        | 0x0750..=0x0756
+        | 0x08A0..=0x08A1
+        | 0x08B6..=0x08B8
+        | 0x08BE..=0x08C0 => "BEH",
+        0x0629 | 0x06C0 | 0x06D5 => "TEH MARBUTA",
+        0x062C..=0x062E
+        | 0x0681..=0x0687
+        | 0x06BF
+        | 0x0757..=0x0758
+        | 0x076E..=0x076F
+        | 0x0772
+        | 0x077C
+        | 0x08A2
+        | 0x08C1
+        | 0x08C5..=0x08C6 => "HAH",
+        0x062F..=0x0630 | 0x0688..=0x0690 | 0x06EE | 0x0759..=0x075A | 0x08AE => "DAL",
+        0x0631..=0x0632
+        | 0x0691..=0x0699
+        | 0x06EF
+        | 0x075B
+        | 0x076B..=0x076C
+        | 0x0771
+        | 0x08AA
+        | 0x08B2
+        | 0x08B9 => "REH",
+        0x0633..=0x0634 | 0x069A..=0x069C | 0x06FA | 0x075C | 0x076D | 0x0770 | 0x077D..=0x077E => {
+            "SEEN"
         }
-        _ => "No_Joining_Group".to_string(),
-    }
+        0x0635..=0x0636 | 0x069D..=0x069E | 0x06FB | 0x08AF => "SAD",
+        0x0637..=0x0638 | 0x069F | 0x08A3 => "TAH",
+        0x0639..=0x063A | 0x06A0 | 0x06FC | 0x075D..=0x075F | 0x08B3 | 0x08C3 => "AIN",
+        0x063B..=0x063C | 0x06A9 | 0x06AB | 0x06AF..=0x06B4 | 0x0762..=0x0764 | 0x08B0 | 0x08C2 => {
+            "GAF"
+        }
+        0x063D..=0x063F | 0x06CC | 0x06CE | 0x0775..=0x0776 => "FARSI YEH",
+        0x0641 | 0x06A1..=0x06A6 | 0x0760..=0x0761 | 0x08A4 => "FEH",
+        0x0642 | 0x066F | 0x06A7..=0x06A8 | 0x08A5 => "QAF",
+        0x0643 | 0x06AC..=0x06AE | 0x077F | 0x08B4 => "KAF",
+        0x0644 | 0x06B5..=0x06B8 | 0x076A | 0x08A6 | 0x08C7 => "LAM",
+        0x0645 | 0x0765..=0x0766 | 0x08A7 => "MEEM",
+        0x0646 | 0x06B9..=0x06BC | 0x0767..=0x0769 => "NOON",
+        0x0647 => "HEH",
+        0x06AA => "SWASH KAF",
+        0x06BD => "NYA",
+        0x06BE | 0x06FF => "KNOTTED HEH",
+        0x06C1..=0x06C2 => "HEH GOAL",
+        0x06C3 => "TEH MARBUTA GOAL",
+        0x06CD => "YEH WITH TAIL",
+        0x06D2..=0x06D3 => "YEH BARREE",
+        0x0710 => "ALAPH",
+        0x0712 | 0x072D => "BETH",
+        0x0713..=0x0714 | 0x072E => "GAMAL",
+        0x0715..=0x0716 | 0x072A | 0x072F => "DALATH RISH",
+        0x0717 => "HE",
+        0x0718 => "SYRIAC WAW",
+        0x0719 => "ZAIN",
+        0x071A => "HETH",
+        0x071B..=0x071C => "TETH",
+        0x071D => "YUDH",
+        0x071E => "YUDH HE",
+        0x071F => "KAPH",
+        0x0720 => "LAMADH",
+        0x0721 => "MIM",
+        0x0722 => "NUN",
+        0x0723 => "SEMKATH",
+        0x0724 => "FINAL SEMKATH",
+        0x0725 => "E",
+        0x0726 => "PE",
+        0x0727 => "REVERSED PE",
+        0x0728 => "SADHE",
+        0x0729 => "QAPH",
+        0x072B => "SHIN",
+        0x072C => "TAW",
+        0x074D => "ZHAIN",
+        0x074E => "KHAPH",
+        0x074F => "FE",
+        0x077A..=0x077B => "BURUSHASKI YEH BARREE",
+        0x0860 => "MALAYALAM NGA",
+        0x0861 => "MALAYALAM JA",
+        0x0862 => "MALAYALAM NYA",
+        0x0863 => "MALAYALAM TTA",
+        0x0864 => "MALAYALAM NNA",
+        0x0865 => "MALAYALAM NNNA",
+        0x0866 => "MALAYALAM BHA",
+        0x0867 => "MALAYALAM RA",
+        0x0868 => "MALAYALAM LLA",
+        0x0869 => "MALAYALAM LLLA",
+        0x086A => "MALAYALAM SSA",
+        0x08AC => "ROHINGYA YEH",
+        0x08B1 => "STRAIGHT WAW",
+        0x08BB => "AFRICAN FEH",
+        0x08BC | 0x08C4 => "AFRICAN QAF",
+        0x08BD => "AFRICAN NOON",
+        0x10AC0 => "MANICHAEAN ALEPH",
+        0x10AC1..=0x10AC2 => "MANICHAEAN BETH",
+        0x10AC3..=0x10AC4 => "MANICHAEAN GIMEL",
+        0x10AC5 => "MANICHAEAN DALETH",
+        0x10AC7 => "MANICHAEAN WAW",
+        0x10AC9..=0x10ACA => "MANICHAEAN ZAYIN",
+        0x10ACD => "MANICHAEAN HETH",
+        0x10ACE => "MANICHAEAN TETH",
+        0x10ACF => "MANICHAEAN YODH",
+        0x10AD0..=0x10AD2 => "MANICHAEAN KAPH",
+        0x10AD3 => "MANICHAEAN LAMEDH",
+        0x10AD4 => "MANICHAEAN DHAMEDH",
+        0x10AD5 => "MANICHAEAN THAMEDH",
+        0x10AD6 => "MANICHAEAN MEM",
+        0x10AD7 => "MANICHAEAN NUN",
+        0x10AD8 => "MANICHAEAN SAMEKH",
+        0x10AD9..=0x10ADA => "MANICHAEAN AYIN",
+        0x10ADB..=0x10ADC => "MANICHAEAN PE",
+        0x10ADD => "MANICHAEAN SADHE",
+        0x10ADE..=0x10AE0 => "MANICHAEAN QOPH",
+        0x10AE1 => "MANICHAEAN RESH",
+        0x10AE4 => "MANICHAEAN TAW",
+        0x10AEB => "MANICHAEAN ONE",
+        0x10AEC => "MANICHAEAN FIVE",
+        0x10AED => "MANICHAEAN TEN",
+        0x10AEE => "MANICHAEAN TWENTY",
+        0x10AEF => "MANICHAEAN HUNDRED",
+        0x10D02 | 0x10D09 | 0x10D1C => "HANIFI ROHINGYA PA",
+        0x10D19 | 0x10D1E | 0x10D20 | 0x10D23 => "HANIFI ROHINGYA KINNA YA",
+        _ => "No_Joining_Group",
+    };
+    g.to_string()
 }
 
 /// UAX #29 Sentence_Break=SContinue set.
