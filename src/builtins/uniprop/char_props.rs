@@ -284,16 +284,54 @@ fn arabic_presentation_form_type(ch: char) -> String {
     }
 }
 
+/// UAX #44 Decomposition_Type=Super set.
+fn is_dt_super(cp: u32) -> bool {
+    matches!(cp,
+        0x00AA | 0x00B2..=0x00B3 | 0x00B9..=0x00BA | 0x02B0..=0x02B8 | 0x02E0..=0x02E4 | 0x10FC
+        | 0x1D2C..=0x1D2E | 0x1D30..=0x1D3A | 0x1D3C..=0x1D4D | 0x1D4F..=0x1D61 | 0x1D78
+        | 0x1D9B..=0x1DBF | 0x2070..=0x2071 | 0x2074..=0x207F | 0x2120 | 0x2122 | 0x2C7D
+        | 0x2D6F | 0x3192..=0x319F | 0xA69C..=0xA69D | 0xA770 | 0xA7F8..=0xA7F9
+        | 0xAB5C..=0xAB5F | 0xAB69 | 0x1F16A..=0x1F16C)
+}
+
+/// UAX #44 Decomposition_Type=Sub set.
+fn is_dt_sub(cp: u32) -> bool {
+    matches!(cp, 0x1D62..=0x1D6A | 0x2080..=0x208E | 0x2090..=0x209C | 0x2C7C)
+}
+
+/// UAX #44 Decomposition_Type=Font set (math/letterlike/Arabic-math symbols).
+fn is_dt_font(cp: u32) -> bool {
+    matches!(cp,
+        0x2102 | 0x210A..=0x2113 | 0x2115 | 0x2119..=0x211D | 0x2124 | 0x2128 | 0x212C..=0x212D
+        | 0x212F..=0x2131 | 0x2133..=0x2134 | 0x2139 | 0x213C..=0x2140 | 0x2145..=0x2149
+        | 0xFB20..=0xFB29 | 0x1D400..=0x1D7FF | 0x1EE00..=0x1EEBB | 0x1FBF0..=0x1FBF9)
+}
+
+/// UAX #44 Decomposition_Type=Nobreak set.
+fn is_dt_nobreak(cp: u32) -> bool {
+    matches!(cp, 0x00A0 | 0x0F0C | 0x2007 | 0x2011 | 0x202F)
+}
+
 fn compatibility_decomposition_type(ch: char) -> String {
     let cp = ch as u32;
+    // Exact UAX #44 compatibility-type sets take precedence over the
+    // block-range heuristic below.
+    if is_dt_nobreak(cp) {
+        return "Nobreak".to_string();
+    }
+    if is_dt_super(cp) {
+        return "Super".to_string();
+    }
+    if is_dt_sub(cp) {
+        return "Sub".to_string();
+    }
+    if is_dt_font(cp) {
+        return "Font".to_string();
+    }
     // Heuristic mapping based on common compatibility decomposition types
     match cp {
-        0x00A0 => "Nobreak".to_string(),                 // NO-BREAK SPACE
-        0x00B2 | 0x00B3 | 0x00B9 => "Super".to_string(), // Superscripts
-        0x00BC..=0x00BE => "Fraction".to_string(),       // vulgar fractions
-        0x2070..=0x207E => "Super".to_string(),
-        0x2080..=0x209C => "Sub".to_string(), // subscripts + Latin subscript letters
-        0x2100..=0x214F => "Compat".to_string(), // Letterlike symbols
+        0x00BC..=0x00BE => "Fraction".to_string(), // vulgar fractions
+        0x2100..=0x214F => "Compat".to_string(),   // Letterlike symbols
         // Number Forms: vulgar fractions, then Roman numerals (Compat).
         0x2150..=0x215F => "Fraction".to_string(),
         0x2160..=0x2188 => "Compat".to_string(), // Roman numerals
@@ -301,9 +339,6 @@ fn compatibility_decomposition_type(ch: char) -> String {
         0x2460..=0x24FF => "Circle".to_string(), // Enclosed alphanumerics
         0x3300..=0x33FF => "Square".to_string(), // CJK compat
         0xFB00..=0xFB06 => "Compat".to_string(), // Latin ligatures
-        // Mathematical Alphanumeric Symbols and the segmented (seven-segment)
-        // digits decompose to their ASCII base with a <font> tag.
-        0x1D400..=0x1D7FF | 0x1FBF0..=0x1FBF9 => "Font".to_string(),
         // Arabic presentation forms: the specific positional form (Isolated /
         // Final / Initial / Medial) is encoded in the character name.
         0xFB50..=0xFDFF | 0xFE70..=0xFEFF => arabic_presentation_form_type(ch),
