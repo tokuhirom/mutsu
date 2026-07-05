@@ -175,6 +175,8 @@ impl Interpreter {
         &mut self,
         list: &LazyList,
     ) -> Result<Vec<Value>, RuntimeError> {
+        // GC safepoint (§9.2a `lazy_force`): the strict-force entry boundary.
+        crate::gc::gc_safepoint(crate::gc::SafepointKind::LazyForce);
         let caller_code = self.current_code;
         let r = self.force_lazy_list_vm_inner(list);
         self.reconcile_caller_after_lazy_force(caller_code);
@@ -384,6 +386,8 @@ impl Interpreter {
         list: &LazyList,
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
+        // GC safepoint (§9.2a `lazy_force`): the bounded pull/resume boundary.
+        crate::gc::gc_safepoint(crate::gc::SafepointKind::LazyForce);
         let caller_code = self.current_code;
         let r = self.force_lazy_list_vm_n_inner(list, needed);
         self.reconcile_caller_after_lazy_force(caller_code);

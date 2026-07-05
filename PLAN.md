@@ -182,7 +182,6 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
       直近 4 main run 中 1 回 `S17-lowlevel/lock.t` で赤（GC=on 負荷）— STW-aware wait 化後の
       観察を 1 サイクル継続してから昇格（本 branch では 6/6 clean）。
 - [ ] §11 step 11: OS resource 主体 async registry の `Value` edge 追従（必要に応じて）。
-- [ ] call/return/await 等の追加 safepoint 種別・`MUTSU_GC_AT`/random stress。
 - [ ] デフォルト GC=on のトリガ方針（現状 automatic trigger 無指定だと program-end collect のみ）と
       収集方式（同期/非同期）・A' 地ならしの範囲（ADR-0001 §4.2/§4.3）。
 - **Track B（要素 cell 化）と GC は統合キャンペーン（層3a）**。続いて NaN-boxing（層3b・JIT 地ならし）

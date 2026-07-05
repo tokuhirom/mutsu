@@ -55,7 +55,9 @@ pub(crate) use gc_ptr::{
 };
 pub(crate) use root_visitor::{RootVisitor, visit_map_values, visit_opt, visit_slice};
 #[allow(unused_imports)]
-pub(crate) use safepoint::{SafepointKind, armed as gc_safepoints_armed, gc_safepoint};
+pub(crate) use safepoint::{
+    SafepointKind, armed as gc_safepoints_armed, gc_safepoint, startup_collect_if_requested,
+};
 #[allow(unused_imports)]
 pub(crate) use stw::{
     block_quiescent, mark_thread_registered, park_at_safepoint as gc_park_point,

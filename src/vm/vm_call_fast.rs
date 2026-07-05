@@ -15,6 +15,9 @@ impl Interpreter {
         cf: &CompiledFunction,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
+        // GC safepoint (§9.2a `call`): this fast path skips push_call_frame,
+        // so it emits the call safepoint itself.
+        crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
         self.record_cf_deprecation(cf);
         // A routine declared directly in this body is lexical; snapshot the
         // registry so it is removed on return unless it escaped (see

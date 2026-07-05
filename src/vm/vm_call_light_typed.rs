@@ -12,6 +12,9 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
+        // GC safepoint (§9.2a `call`): the light-call boundary skips
+        // push_call_frame, so it emits the call safepoint itself.
+        crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
         self.record_cf_deprecation(cf);
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);

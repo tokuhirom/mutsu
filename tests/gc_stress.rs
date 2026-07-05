@@ -21,6 +21,10 @@ fn run(src: &str, gc: &[(&str, &str)]) -> (String, String, bool) {
         "MUTSU_GC",
         "MUTSU_GC_EVERY_SAFEPOINT",
         "MUTSU_GC_EVERY_CANDIDATE",
+        "MUTSU_GC_AT",
+        "MUTSU_GC_COLLECT_NOW",
+        "MUTSU_GC_RANDOM_RATE",
+        "MUTSU_GC_RANDOM_SEED",
         "MUTSU_GC_VERIFY",
         "MUTSU_GC_LOG",
     ] {
@@ -424,6 +428,129 @@ fn dead_sweep_bounds_threaded_mutation_memory() {
     assert!(
         pause_max_ns < 500_000_000,
         "expected bounded collect pauses with the dead sweep, got pause_ns_max={pause_max_ns}\nstderr:\n{on_err}"
+    );
+}
+
+/// `MUTSU_GC_AT=call,return` collects only at the call/return safepoint kinds
+/// (§9.2): the run must stay correct, actually reclaim the per-call cycles, and
+/// every logged collect reason must be one of the listed kinds.
+#[test]
+fn at_kind_filter_collects_only_at_listed_safepoints() {
+    let src = r#"
+        sub leak-cycle($n) { my %h; %h<self> := %h; %h<n> = $n; $n * 2 }
+        my $sum = 0;
+        for ^30 { $sum += leak-cycle($_) }
+        say $sum;
+    "#;
+
+    let (off, _, ok_off) = run(src, &[]);
+    let (on, err, ok_on) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_AT", "call,return"),
+            ("MUTSU_GC_LOG", "summary"),
+            ("MUTSU_VM_STATS", "1"),
+        ],
+    );
+
+    assert!(ok_off && ok_on, "runs must succeed; stderr:\n{err}");
+    assert_eq!(off, on, "MUTSU_GC_AT run changed program output");
+    let reasons: Vec<&str> = err
+        .lines()
+        .filter(|l| l.contains("[mutsu gc] start cycle="))
+        .filter_map(|l| {
+            l.split_whitespace()
+                .find_map(|tok| tok.strip_prefix("reason="))
+        })
+        .collect();
+    assert!(
+        !reasons.is_empty(),
+        "expected at least one collect at a call/return safepoint:\n{err}"
+    );
+    // `program-end` is the unconditional final collect (`collect_if_enabled`),
+    // not a safepoint fire — only the *safepoint* reasons must obey the filter.
+    assert!(
+        reasons
+            .iter()
+            .all(|r| *r == "call" || *r == "return" || *r == "program-end"),
+        "collect fired at a kind outside MUTSU_GC_AT=call,return: {reasons:?}\n{err}"
+    );
+    assert!(
+        reasons.iter().any(|r| *r == "call" || *r == "return"),
+        "expected at least one call/return-safepoint collect: {reasons:?}\n{err}"
+    );
+    let reclaimed = err
+        .lines()
+        .find(|l| l.contains("[mutsu vm-stats] gc:"))
+        .and_then(|l| {
+            l.split_whitespace()
+                .find_map(|tok| tok.strip_prefix("reclaimed_nodes="))
+        })
+        .and_then(|n| n.parse::<u64>().ok())
+        .unwrap_or(0);
+    assert!(
+        reclaimed > 0,
+        "per-call cycles must be reclaimed under MUTSU_GC_AT; stderr:\n{err}"
+    );
+}
+
+/// Seeded random stress (§9.2): `MUTSU_GC_RANDOM_RATE` collects probabilistically
+/// but deterministically for a fixed `MUTSU_GC_RANDOM_SEED` — output must match
+/// GC-off, and the seed must be logged so a failing run can be replayed.
+#[test]
+fn random_stress_is_seeded_and_preserves_output() {
+    let src = r#"
+        my %m;
+        for 1..40 -> $i { my %h; %h<self> := %h; %m{$i % 7} = (%m{$i % 7} // 0) + $i; }
+        say %m.sort.map({ .key ~ "=" ~ .value }).join(",");
+    "#;
+
+    let (off, _, ok_off) = run(src, &[]);
+    let (on, err, ok_on) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_RANDOM_RATE", "0.5"),
+            ("MUTSU_GC_RANDOM_SEED", "42"),
+            ("MUTSU_GC_VERIFY", "1"),
+        ],
+    );
+
+    assert!(ok_off && ok_on, "runs must succeed; stderr:\n{err}");
+    assert_eq!(off, on, "random-stress run changed program output");
+    assert!(
+        err.contains("random stress: rate=0.5 seed=42"),
+        "the random seed must be logged for replay:\n{err}"
+    );
+    assert!(
+        !err.contains("VERIFY FAIL"),
+        "no soundness violations under random stress:\n{err}"
+    );
+}
+
+/// `MUTSU_GC_COLLECT_NOW=1` (§9.2): one collect fires at program start (before
+/// any user code) and the program still runs normally.
+#[test]
+fn collect_now_runs_one_startup_collect() {
+    let src = r#"say "started";"#;
+
+    let (out, err, ok) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_COLLECT_NOW", "1"),
+            ("MUTSU_GC_LOG", "summary"),
+        ],
+    );
+
+    assert!(ok, "collect-now run must succeed; stderr:\n{err}");
+    assert_eq!(out.trim(), "started");
+    // A startup collect on an empty heap is a silent no-op, so the trigger
+    // logs its own firing under MUTSU_GC_LOG.
+    assert!(
+        err.contains("[mutsu gc] collect-now at startup"),
+        "expected the startup collect trigger to fire; stderr:\n{err}"
     );
 }
 

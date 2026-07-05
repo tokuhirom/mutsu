@@ -223,6 +223,8 @@ impl Interpreter {
     /// (single compiled block) and by the map/sort `run_reuse` loops (many
     /// iterations sharing one fresh-register scope).
     pub(crate) fn with_nested_registers<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        // GC safepoint (§9.2a `nested_run`): the nested-VM entry boundary.
+        crate::gc::gc_safepoint(crate::gc::SafepointKind::NestedRun);
         // Save the per-execution registers (the fields `Interpreter::new` initializes
         // fresh) and reset them to their fresh-Interpreter defaults for the nested run.
         let saved_stack = std::mem::take(&mut self.stack);
