@@ -1,6 +1,6 @@
 # ADR-0003: デフォルト GC=on のトリガ方針（level-1a の production トリガ）
 
-- **Status**: Proposed
+- **Status**: Accepted（2026-07-05 ユーザー承認）
 - **Date**: 2026-07-05
 - **Relates to**: [ADR-0001](0001-gc-strategy-and-phasing.md)（§4.2 起動方式 / §4.3 A' 範囲）,
   [ADR-0002](0002-phase-a-gate-reassessment.md), `docs/gc-level1-detailed-design.md` §9
@@ -74,4 +74,4 @@ gc-stress の全ステップ blocking 化（#4219）。しかし GC は**依然 
 
 ---
 
-*Status が Proposed の間は実装に着手しない。Accepted への昇格はユーザー承認による。*
+*2026-07-05 ユーザー承認により Accepted。実装は §2 の Decision に従い、§2-3 のゲートを満たして default-on を切り替える。*
