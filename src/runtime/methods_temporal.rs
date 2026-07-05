@@ -112,6 +112,17 @@ pub(super) fn dispatch_temporal_method(
                     date_later_earlier(year, month, day, args, method)
                         .map(|v| rebless_date_result(v, *class_name, attributes)),
                 ),
+                // `.yyyy-mm-dd($sep)` / `.mm-dd-yyyy($sep)` / `.dd-mm-yyyy($sep)`
+                // with an optional separator string (default `-`).
+                "yyyy-mm-dd" | "mm-dd-yyyy" | "dd-mm-yyyy" => {
+                    let sep = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "-".to_string());
+                    Some(Ok(Value::str(temporal::format_date_ordered(
+                        method, year, month, day, &sep,
+                    ))))
+                }
                 "clone" => {
                     let existing_formatter = attributes.as_map().get("formatter").cloned();
                     Some(

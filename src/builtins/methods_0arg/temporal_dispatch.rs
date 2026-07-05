@@ -63,7 +63,9 @@ pub fn date_method_0arg(
             Some(Ok(Value::str(format_date(year, month, day))))
         }
         "Date" => Some(Ok(make_date(year, month, day))),
-        "yyyy-mm-dd" => Some(Ok(Value::str(format_date(year, month, day)))),
+        "yyyy-mm-dd" | "mm-dd-yyyy" | "dd-mm-yyyy" => Some(Ok(Value::str(format_date_ordered(
+            method, year, month, day, "-",
+        )))),
         "succ" => {
             let new_days = days + 1;
             let (ny, nm, nd) = epoch_days_to_civil(new_days);
