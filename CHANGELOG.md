@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.2.4](https://github.com/tokuhirom/mutsu/compare/v0.2.3...v0.2.4) - 2026-07-05
+
+- fix(str): uniprop Decomposition_Type=Small for CJK Small Form Variants by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4180
+- fix(decl): an inline `my @a = expr` re-assigns a fresh container each evaluation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4181
+
 ## [v0.2.3](https://github.com/tokuhirom/mutsu/compare/v0.2.2...v0.2.3) - 2026-07-05
 
 - fix(gather): slipping a gather runs its body; lazy gather stays lazy until eager by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4176
