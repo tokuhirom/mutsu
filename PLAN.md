@@ -178,10 +178,12 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 
 残:
 
-- [ ] デフォルト GC=on のトリガ方針 → **[ADR-0003](docs/adr/0003-default-on-gc-trigger.md)（Proposed）
-      で起票済み**（同期 + candidate バッファサイズ閾値 + adaptive backoff。ADR-0001 §4.2/§4.3 の
-      未決を解決する提案）。Accepted 後に実装 → 受け入れ計測（出力一致・pause 有界・オーバーヘッド
-      予算）→ 既定値 on 切替、の順。
+- [ ] **既定値 `MUTSU_GC` off → on の切替**（GC キャンペーン最終手）。production トリガは
+      [ADR-0003](docs/adr/0003-default-on-gc-trigger.md)（Accepted）どおり**実装済み**
+      （`MUTSU_GC_THRESHOLD`・adaptive backoff。GC=on なら default で有効）。残る切替ゲート =
+      受け入れ計測: fib で `gc_candidate_pushes==0`（ADR-0001 の型フィルタゲート）／
+      method-call・bench-class の GC-on オーバーヘッド < 5%／churn 系 wall-clock ≤ GC-off 比 ~1.2x。
+      計測が通ったら `gc_enabled()` の既定を反転する切替 PR。
 - **Track B（要素 cell 化）と GC は統合キャンペーン（層3a）**。続いて NaN-boxing（層3b・JIT 地ならし）
   → JIT（層4）。`state @`/`%`・lexical aggregate の真共有（Track C 残）も Track B=層3a に依存。
 

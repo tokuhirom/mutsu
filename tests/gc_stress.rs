@@ -25,6 +25,7 @@ fn run(src: &str, gc: &[(&str, &str)]) -> (String, String, bool) {
         "MUTSU_GC_COLLECT_NOW",
         "MUTSU_GC_RANDOM_RATE",
         "MUTSU_GC_RANDOM_SEED",
+        "MUTSU_GC_THRESHOLD",
         "MUTSU_GC_VERIFY",
         "MUTSU_GC_LOG",
     ] {
@@ -659,5 +660,99 @@ fn spawn_churn_does_not_starve_stop_the_world() {
     assert!(
         pause_total_ns < 2_000_000_000,
         "STW must not repeatedly time out under spawn churn; pause_ns_total={pause_total_ns}\nstderr:\n{err}"
+    );
+}
+
+/// Pull the `key=N` counter out of the `[mutsu vm-stats] gc:` summary line.
+fn gc_stat(err: &str, key: &str) -> u64 {
+    let prefix = format!("{key}=");
+    err.lines()
+        .find(|l| l.contains("[mutsu vm-stats] gc:"))
+        .and_then(|l| {
+            l.split_whitespace()
+                .find_map(|tok| tok.strip_prefix(prefix.as_str()))
+        })
+        .and_then(|n| n.parse::<u64>().ok())
+        .unwrap_or(u64::MAX)
+}
+
+/// ADR-0003 production trigger: with ONLY `MUTSU_GC=on` (no stress vars), the
+/// candidate-buffer size threshold must fire collects mid-run — garbage
+/// cycles get reclaimed before program end, and the output is identical to
+/// GC-off. (Pre-ADR-0003, plain GC=on meant program-end collect only.)
+#[test]
+fn size_threshold_trigger_collects_without_stress_vars() {
+    let src = r#"for ^400 { my %h; %h<self> := %h; }; say "done";"#;
+
+    let (off, _, ok_off) = run(src, &[]);
+    let (on, err, ok_on) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_THRESHOLD", "256"),
+            ("MUTSU_GC_VERIFY", "1"),
+            ("MUTSU_VM_STATS", "1"),
+        ],
+    );
+
+    assert!(ok_off && ok_on, "runs must succeed; stderr:\n{err}");
+    assert_eq!(off, on, "size-threshold run changed program output");
+    assert!(
+        !err.contains("VERIFY FAIL"),
+        "no soundness violations under the size trigger:\n{err}"
+    );
+    // Mid-run collects (threshold crossings) plus the program-end one.
+    let collections = gc_stat(&err, "collections");
+    assert!(
+        collections >= 2,
+        "size threshold must fire before program end; collections={collections}\n{err}"
+    );
+    assert!(
+        gc_stat(&err, "reclaimed_nodes") > 0,
+        "cycle garbage must be reclaimed; stderr:\n{err}"
+    );
+}
+
+/// ADR-0003 adaptive backoff: a workload whose candidates are mostly a GROWING
+/// LIVE structure (the cas-loop.t shape — every scan re-proves liveness) must
+/// raise the effective threshold (`2 × survivors`) instead of re-scanning the
+/// live graph on a fixed period, keeping the collect count logarithmic-ish
+/// rather than pushes/BASE.
+#[test]
+fn adaptive_threshold_backs_off_on_live_suspects() {
+    let src = r#"
+        class Node { has $.v; has $.next }
+        my $head = Node;
+        for ^800 { $head = Node.new(v => $_, next => $head); }
+        say $head.v;
+    "#;
+
+    let (out, err, ok) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_THRESHOLD", "64"),
+            ("MUTSU_GC_VERIFY", "1"),
+            ("MUTSU_VM_STATS", "1"),
+        ],
+    );
+
+    assert!(ok, "live-chain run must succeed; stderr:\n{err}");
+    assert_eq!(out.trim(), "799", "live chain must stay intact");
+    assert!(
+        !err.contains("VERIFY FAIL"),
+        "no soundness violations on a live suspect graph:\n{err}"
+    );
+    let threshold = gc_stat(&err, "gc_threshold");
+    assert!(
+        threshold > 64,
+        "unproductive scans must raise the threshold (2 x survivors); gc_threshold={threshold}\n{err}"
+    );
+    // ~830 candidate pushes at BASE=64 would be ~13 fixed-period scans of the
+    // growing chain; the geometric backoff needs only a handful (4 measured).
+    let collections = gc_stat(&err, "collections");
+    assert!(
+        collections <= 8,
+        "adaptive backoff must bound rescans of a growing live graph; collections={collections}\n{err}"
     );
 }

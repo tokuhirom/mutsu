@@ -288,8 +288,12 @@ pub(crate) fn dump() {
     let gc_pause_ns_total = GC_PAUSE_NS_TOTAL.load(Ordering::Relaxed);
     let gc_pause_ns_max = GC_PAUSE_NS_MAX.load(Ordering::Relaxed);
     let gc_roots_scanned = GC_ROOTS_SCANNED.load(Ordering::Relaxed);
+    // The ADR-0003 size trigger's effective threshold at exit (BASE unless a
+    // collect adapted it; 0 = size trigger disabled). Observable proof of the
+    // adaptive backoff for tests/operators.
+    let gc_threshold = crate::gc::gc_current_size_threshold();
     eprintln!(
-        "[mutsu vm-stats] gc: collections={gc_collections} candidate_pushes={gc_candidate_pushes} dedup_hits={gc_dedup_hits} reclaimed_nodes={gc_reclaimed_nodes} reclaimed_cycles={gc_reclaimed_cycles} pause_ns_total={gc_pause_ns_total} pause_ns_max={gc_pause_ns_max} roots_scanned={gc_roots_scanned}"
+        "[mutsu vm-stats] gc: collections={gc_collections} candidate_pushes={gc_candidate_pushes} dedup_hits={gc_dedup_hits} reclaimed_nodes={gc_reclaimed_nodes} reclaimed_cycles={gc_reclaimed_cycles} pause_ns_total={gc_pause_ns_total} pause_ns_max={gc_pause_ns_max} roots_scanned={gc_roots_scanned} gc_threshold={gc_threshold}"
     );
     if let Ok(map) = function_fallback_by_name().lock()
         && !map.is_empty()

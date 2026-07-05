@@ -558,13 +558,18 @@ fn buffer_candidate(node: ErasedGc) {
     node.header
         .color
         .store(Color::Purple as u8, Ordering::Relaxed);
-    if let Ok(mut buf) = candidate_buffer().lock() {
+    let len = if let Ok(mut buf) = candidate_buffer().lock() {
         buf.push(node);
-    }
+        buf.len()
+    } else {
+        0
+    };
     record_gc_candidate_push();
-    // May arm a pending collect (MUTSU_GC_EVERY_CANDIDATE); never collects inline
-    // here — this runs from `Gc::drop`, which can hold a borrow (design §1.2).
+    // May arm a pending collect (the MUTSU_GC_EVERY_CANDIDATE stress period,
+    // or the ADR-0003 production size threshold); never collects inline here —
+    // this runs from `Gc::drop`, which can hold a borrow (design §1.2).
     super::safepoint::note_candidate_push();
+    super::safepoint::note_buffer_len(len);
 }
 
 /// Number of user worker threads (`start`/`Promise`/`hyper`/`race`/Supply
