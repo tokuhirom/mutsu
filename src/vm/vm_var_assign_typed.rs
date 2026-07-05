@@ -570,6 +570,25 @@ impl Interpreter {
                 result.push_str(&crate::runtime::utils::coerce_to_str(&v));
                 continue;
             }
+            // A type object (`Value::Package`) whose class defines a user
+            // `.Stringy`/`.Str` must dispatch it too: `class A { method Str {"foo"} }`
+            // then `"$x"` / `"{A}"` renders "foo" (mirrors `coerce_stringy_operand`
+            // used by infix `~`). Plain type objects fall through to the default
+            // (empty) stringification.
+            if let Value::Package(name) = &v {
+                let cn = name.resolve().to_string();
+                if self.has_user_method(&cn, "Stringy") {
+                    let r =
+                        self.try_compiled_method_or_interpret(v.clone(), "Stringy", Vec::new())?;
+                    result.push_str(&r.to_string_value());
+                    continue;
+                }
+                if self.has_user_method(&cn, "Str") {
+                    let r = self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new())?;
+                    result.push_str(&r.to_string_value());
+                    continue;
+                }
+            }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.reconcile_caller_after_internal_dispatch(caller_code);
