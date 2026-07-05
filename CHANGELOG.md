@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.17](https://github.com/tokuhirom/mutsu/compare/v0.2.16...v0.2.17) - 2026-07-05
+
+- fix(array): shaped-array rows stored as Arrays, not Lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4265
+
 ## [v0.2.16](https://github.com/tokuhirom/mutsu/compare/v0.2.15...v0.2.16) - 2026-07-05
 
 - fix(setbagmix): SetHash element ++/--/assign use Bool existence semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4262
