@@ -169,14 +169,23 @@ jobs:
 
   gc-stress:
     # Runs the whole test + roast suite with the GC cycle collector ON
-    # (design doc §9.3's `GC=on` stress job). `MUTSU_GC_EVERY_CANDIDATE=64`
-    # collects a cycle every 64 candidate pushes at the next safepoint, and
+    # (design doc §9.3's `GC=on` stress job). `MUTSU_GC_EVERY_CANDIDATE=N`
+    # collects a cycle every N candidate pushes at the next safepoint, and
     # `MUTSU_GC_VERIFY=1` checks the collector's soundness invariants around each
     # collect. The point: the collector, exercised against every program in the
-    # suite, must never corrupt live data. The collector self-gates to
-    # single-threaded regions (shared_vars strong count, design §6), so
-    # concurrency tests run with GC deferred — cross-thread cooperative STW is
-    # future work.
+    # suite, must never corrupt live data. Cross-thread scans run under the
+    # cooperative stop-the-world (design §6.1).
+    #
+    # N=1024, not 64: the trigger fires a FULL trial-deletion scan whose cost
+    # is O(live suspect graph), so a small period is quadratic on workloads
+    # that grow a large live structure while churning candidates —
+    # S17-lowlevel/cas-loop.t (4x1000 cas ops building a linked list) ran
+    # >180s at N=64 (8500+ collects x ~4300 traced nodes each) vs 3.3s at
+    # N=1024, blowing the 30s per-file roast budget. 1024 still drives
+    # thousands of collects across the suite (the soundness/VERIFY coverage
+    # the job exists for) without turning the stress knob into a de facto
+    # different asymptotic class. The production default-on trigger will use
+    # a buffer-size threshold with adaptive backoff instead (ADR-0003).
     #
     # BLOCKING gates: `cargo test` (the collector unit tests + the gc_stress
     # integration tests, which assert no verify violations), the `prove t/`
@@ -184,14 +193,14 @@ jobs:
     # DESTROY-on-reclaim / dead-sweep slice — a failure is a real GC
     # regression), and the final "No GC verify violations" step (any
     # `VERIFY FAIL` in the suite = heap corruption). The roast step remains
-    # `continue-on-error` for one observation cycle (S17 timing tests under
-    # the ~2x GC=on slowdown may be load-sensitive); promote it once it has
-    # stayed green.
+    # `continue-on-error` for one observation cycle after the 2026-07-05
+    # fixes (STW spawn-churn starvation #4205, shared-env phantom edges
+    # #4213, this knob change); promote it once a main run is green.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       MUTSU_GC: "on"
-      MUTSU_GC_EVERY_CANDIDATE: "64"
+      MUTSU_GC_EVERY_CANDIDATE: "1024"
       MUTSU_GC_VERIFY: "1"
     steps:
       - uses: actions/checkout@v4

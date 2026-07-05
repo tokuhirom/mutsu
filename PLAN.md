@@ -178,12 +178,15 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 
 残:
 
-- [ ] **CI gc-stress roast ステップの blocking 昇格**: `prove t/` は blocking 済み。roast advisory は
-      直近 4 main run 中 1 回 `S17-lowlevel/lock.t` で赤（GC=on 負荷）— STW-aware wait 化後の
-      観察を 1 サイクル継続してから昇格（本 branch では 6/6 clean）。
-- [ ] §11 step 11: OS resource 主体 async registry の `Value` edge 追従（必要に応じて）。
-- [ ] デフォルト GC=on のトリガ方針（現状 automatic trigger 無指定だと program-end collect のみ）と
-      収集方式（同期/非同期）・A' 地ならしの範囲（ADR-0001 §4.2/§4.3）。
+- [ ] **CI gc-stress roast ステップの blocking 昇格**: `prove t/` は blocking 済み。advisory roast の
+      失敗 3 クラスは 2026-07-05 に全て解消（STW spawn-churn 飢餓 #4205・共有 env phantom edge
+      #4213・`EVERY_CANDIDATE=64` の quadratic → 1024 へ）— **knob 変更後の main run が green を
+      1 回示したら `continue-on-error` を外す**（news/2026-07.md 参照）。
+- [ ] デフォルト GC=on のトリガ方針（現状 automatic trigger 無指定だと program-end collect のみ）。
+      方式は同期 + candidate バッファ**サイズ**閾値 + adaptive backoff を Proposed ADR-0003 として
+      起票予定（`EVERY_CANDIDATE` 型の push 周期トリガは大きな live graph で quadratic になることを
+      cas-loop.t で実測済み）。A' は step 11 調査により **1a の前提から外れた**（collector は
+      refcount 駆動で root 列挙を消費しない — ADR-0001 §4.3 の狭い解決）。
 - **Track B（要素 cell 化）と GC は統合キャンペーン（層3a）**。続いて NaN-boxing（層3b・JIT 地ならし）
   → JIT（層4）。`state @`/`%`・lexical aggregate の真共有（Track C 残）も Track B=層3a に依存。
 
