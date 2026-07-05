@@ -187,15 +187,12 @@ jobs:
     # different asymptotic class. The production default-on trigger will use
     # a buffer-size threshold with adaptive backoff instead (ADR-0003).
     #
-    # BLOCKING gates: `cargo test` (the collector unit tests + the gc_stress
-    # integration tests, which assert no verify violations), the `prove t/`
-    # step (the whole t/ suite passes under GC=on since the
-    # DESTROY-on-reclaim / dead-sweep slice — a failure is a real GC
-    # regression), and the final "No GC verify violations" step (any
-    # `VERIFY FAIL` in the suite = heap corruption). The roast step remains
-    # `continue-on-error` for one observation cycle after the 2026-07-05
-    # fixes (STW spawn-churn starvation #4205, shared-env phantom edges
-    # #4213, this knob change); promote it once a main run is green.
+    # EVERY step is a BLOCKING gate (roast promoted 2026-07-05 after the
+    # advisory-era failure classes were fixed — #4205/#4213/#4215): `cargo
+    # test` (collector unit tests + gc_stress integration tests), `prove t/`,
+    # the roast whitelist, and the final "No GC verify violations" step (any
+    # `VERIFY FAIL` in the suite = heap corruption). A failure anywhere here
+    # is a real GC regression.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -261,11 +258,14 @@ jobs:
           git checkout -- roast/
 
       - name: Roast tests (make roast, GC on)
-        # Advisory (see the prove-t/ step): runs the whitelist under GC on so the
-        # verify step can catch collector corruption on the roast programs.
-        continue-on-error: true
+        # BLOCKING (promoted 2026-07-05): the whole whitelist passes under
+        # GC=on since the three advisory-era failure classes were fixed — STW
+        # spawn-churn starvation (#4205), shared-env phantom edges (#4213),
+        # and the EVERY_CANDIDATE=64 quadratic (#4215, knob now 1024). A
+        # failure here is a real GC regression, same as the prove-t/ step.
+        # Keep `set -o pipefail` so prove's exit status survives the tee.
         run: |
-          set +e
+          set -o pipefail
           mkdir -p tmp
           prove -j4 --merge -e 'scripts/run-roast-test.sh' \
             $(cat roast-whitelist.txt) 2>&1 | tee tmp/gc-stress-roast.log
