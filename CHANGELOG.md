@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.2.18](https://github.com/tokuhirom/mutsu/compare/v0.2.17...v0.2.18) - 2026-07-05
+
+- fix(delete): :delete on a nested subscript writes the deletion back by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4267
+- fix(parser): untyped `my @a .= new(...)` invokes .new on the variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4268
+
 ## [v0.2.17](https://github.com/tokuhirom/mutsu/compare/v0.2.16...v0.2.17) - 2026-07-05
 
 - fix(array): shaped-array rows stored as Arrays, not Lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4265
