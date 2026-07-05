@@ -49,7 +49,9 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use super::gc_ptr::{CollectGuard, Color, ErasedGc, drain_candidates, erased_id, gc_drop_edges};
+use super::gc_ptr::{
+    CollectGuard, Color, ErasedGc, drain_candidates, erased_id, gc_drop_edges, gc_finalize,
+};
 use crate::vm::vm_stats::record_gc_collection;
 
 /// Outcome of one [`collect_cycles`] run.
@@ -143,6 +145,21 @@ fn collect_white(node: &ErasedGc, out: &mut Vec<ErasedGc>, seen: &mut HashSet<us
 /// counts / re-buffer — see `Gc`'s `Drop`). The `white` handles are dropped
 /// while the guard is still held, so any value-drop cascade is inert too.
 fn reclaim(white: Vec<ErasedGc>, roots: Vec<ErasedGc>) {
+    // Value-level finalizers (Raku DESTROY queueing) run FIRST, while every
+    // node's attributes/edges are still intact — `drop_gc_edges` below would
+    // hand a DESTROY submethod a cleared object. Deliberately OUTSIDE the
+    // CollectGuard: an Instance finalizer snapshots its attribute map, and the
+    // `Value` clones in that snapshot take real strong references that keep the
+    // DESTROY handler's arguments alive past this reclaim (a fellow cycle
+    // member referenced from the snapshot survives — possibly with its own
+    // edges cleared, which matches Raku's "destruction order within a cycle is
+    // unspecified"). Runs after `verify_reclaimed_are_garbage` (the caller's
+    // ordering), since these snapshot clones legitimately raise child strong
+    // counts. Safepoint collects run on the interpreter thread, so the queued
+    // DESTROYs drain at this thread's next drain point.
+    for node in &white {
+        gc_finalize(node);
+    }
     let _guard = CollectGuard::new();
     for node in &white {
         gc_drop_edges(node);
@@ -277,22 +294,68 @@ fn verify_survivors(cycle: u64, survivors: &[(ErasedGc, usize)]) -> usize {
 /// Safe to call at any time: with no candidates buffered it is a no-op. Returns
 /// what it reclaimed and records the same into `MUTSU_VM_STATS`.
 pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
+    let start = Instant::now();
+    let drained = drain_candidates();
+    if drained.is_empty() {
+        return CollectStats::default();
+    }
+    // Partition off nodes whose GC-visible strong count already hit 0: they
+    // died a plain refcount death after being buffered, and only the buffer's
+    // retained handle keeps their allocation alive. They are not cycle
+    // suspects — trial deletion needs live handles to trial-decrement — so run
+    // their value-level finalizer (Raku DESTROY, attributes still intact) and
+    // drop them directly. Skipping mark/scan for these is the difference
+    // between O(live suspects) and O(every dead container snapshot) per
+    // collect: a mutation-heavy loop (e.g. a `cas %h{..}` loop COWing the hash
+    // per iteration) buffers thousands of soon-dead snapshots, which made a
+    // single collect pause for seconds (S17-lowlevel/thread.t under GC=on).
+    // Dropping them here cascades normally (children decrement / buffer /
+    // finalize through `Gc::drop` — no CollectGuard is active).
+    //
+    // This dead sweep is safe even while worker threads mutate the graph: it
+    // only performs ordinary atomic refcount operations (`Arc` drop cascades),
+    // never the trial-deletion bookkeeping. Without it, a threaded
+    // mutation-heavy program deferred EVERY release to one giant post-join
+    // collect and grew memory unboundedly in the meantime (page-fault churn
+    // dominated the profile).
+    let (dead, suspects): (Vec<ErasedGc>, Vec<ErasedGc>) =
+        drained.into_iter().partition(|n| n.gc_strong() == 0);
+    let dead_count = dead.len();
+    if log_mode() == LogMode::Trace {
+        for node in &dead {
+            eprintln!("[mutsu gc] reclaim dead id={}", erased_id(node));
+        }
+    }
+    for node in &dead {
+        gc_finalize(node);
+    }
+    drop(dead);
+
     // Trial deletion is not safe against concurrent mutation: it decrements and
     // restores strong counts, so a worker thread cloning/dropping a `Gc` (or
     // CAS-swapping a pointer) mid-collect corrupts the bookkeeping and can free
     // a still-live node (design doc §13.3 — cross-thread STW is deferred). Until
-    // that lands, decline to collect while any worker thread is active. The
-    // candidates stay buffered (we return before draining) and are reclaimed at
-    // the next safepoint once the threads have joined: reclaim is deferred,
-    // never unsound.
+    // that lands, decline the cycle scan while any worker thread is active: the
+    // suspects go back into the buffer and are scanned at the next safepoint
+    // once the threads have joined. Reclaim is deferred, never unsound.
     if crate::gc::mutator_workers_active() {
-        return CollectStats::default();
+        crate::gc::gc_ptr::requeue_candidates(suspects);
+        if dead_count > 0 {
+            let pause_ns = start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+            record_gc_collection(0, dead_count as u64, 0, pause_ns);
+            if log_mode() != LogMode::Off {
+                eprintln!(
+                    "[mutsu gc] dead-sweep reason={reason} dead={dead_count} (cycle scan deferred: workers active)"
+                );
+            }
+        }
+        return CollectStats {
+            roots_scanned: 0,
+            reclaimed_nodes: dead_count,
+            reclaimed_cycles: 0,
+        };
     }
-    let start = Instant::now();
-    let roots = drain_candidates();
-    if roots.is_empty() {
-        return CollectStats::default();
-    }
+    let roots = suspects;
     let roots_scanned = roots.len();
     let mode = log_mode();
     let verify = verify_enabled();
@@ -303,7 +366,10 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
     };
 
     if mode != LogMode::Off {
-        eprintln!("[mutsu gc] start cycle={cycle} reason={reason} candidates={roots_scanned}");
+        eprintln!(
+            "[mutsu gc] start cycle={cycle} reason={reason} candidates={} dead={dead_count} suspects={roots_scanned}",
+            roots_scanned + dead_count
+        );
     }
 
     // Pristine snapshot for verify, before trial-deletion mutates strong counts.
@@ -324,7 +390,9 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
             cycles += 1;
         }
     }
-    let reclaimed_nodes = white.len();
+    // Reclaimed = cycle garbage plus the already-dead candidates dropped above
+    // (both are memory the GC pass released; only the former counts as cycles).
+    let reclaimed_nodes = white.len() + dead_count;
 
     // Keep only survivor snapshot handles across reclaim; dropping the garbage
     // handles here lets `reclaim` actually free the white nodes.

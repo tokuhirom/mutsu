@@ -154,23 +154,26 @@ HTTP::Parser / MIME::Base64 / HTTP::Server::Tiny（end-to-end HTTP 配信）/ Tu
 実装順序は [docs/gc-level1-detailed-design.md](docs/gc-level1-detailed-design.md) §11。
 **完了分**（詳細は news/2026-07.md）: §11 step 1〜4（root/child visitor・`MUTSU_VM_STATS` GC カウンタ・
 `Gc<T>`/node header/candidate buffer）/ step 5 first wave（`Hash`/`Array`/`ContainerRef` の `Arc→Gc`、
-`Set`/`Bag`/`Mix` #4117、dead 化した `arc_contents_mut` 削除）/ step 9 second wave（`Sub`/`Instance`
-attributes #4123、`WeakSub`=`WeakGc`）/ step 8 trial-deletion collector 本体＋safepoint 配線
-（GC-on 出力が GC-off と byte 一致・`tests/gc_stress.rs`）/ `gc_trace` wrapper 完全性 /
-`WeakGc<T>` 仕上げ（循環ブレイクを unit test で実証）/ cross-thread 安全化（minimal STW #4130）/
+`Set`/`Bag`/`Mix` #4117、dead 化した `arc_contents_mut` 削除）/ **step 6-7（`Promise`/`Channel` の Gc 化＋
+supply registry root visitor #4127）** / step 8 trial-deletion collector 本体＋safepoint 配線
+（GC-on 出力が GC-off と byte 一致・`tests/gc_stress.rs`）/ step 9 second wave（`Sub`/`Instance`
+attributes #4123、`WeakSub`=`WeakGc`）/ **step 10（`LazyList` third wave #4125）** / `gc_trace` wrapper
+完全性（#4124/#4134/#4135）/ `WeakGc<T>` 仕上げ / cross-thread 安全化（minimal STW #4130）/
 `make_mut`/`get_mut` uniqueness の `header.strong` 基準化 / デバッグ運用（`MUTSU_GC_LOG`/`MUTSU_GC_VERIFY`）/
-CI `gc-stress` ジョブ。
+CI `gc-stress` ジョブ / **`DESTROY`-on-reclaim（`Trace::finalize` フック＝refcount 死・cycle reclaim の
+両方で発火、Rust `Drop` から分離）＋ dead sweep（strong=0 candidate は trial deletion を経ずに
+worker 稼働中でも解放＝threaded 変異ループの unbounded 蓄積と数秒 pause を解消、pause_max 2.8s→16ms）＋
+inner dispatch（`run_range`）backedge safepoint**。
 
 残:
 
-- [ ] **§11 step 6-7: `Promise`/`Channel` → supply registry root visitor（async cycle）← 次はここ**
-      （設計メモ参照）。
-- [ ] §11 step 10-11: `LazyList`（third wave・最後の Arc コンテナ）。
-- [ ] cross-thread **full STW**（現状は single-threaded 区間限定の collect）。
-- [ ] `DESTROY`-on-reclaim（CI gc-stress の advisory 落ちの主因）。
+- [ ] **CI gc-stress の advisory → blocking 昇格**: `prove t/` は本スライスで全 green（昇格済み）。
+      roast は 1 サイクル advisory で観察後に昇格。
+- [ ] cross-thread **full STW**（現状: dead sweep は並行安全・trial deletion のみ worker join 後に遅延）。
+- [ ] §11 step 11: OS resource 主体 async registry の `Value` edge 追従（必要に応じて）。
 - [ ] call/return/await 等の追加 safepoint 種別・`MUTSU_GC_AT`/random stress。
-- [ ] 未決: 収集方式（同期/非同期）と A' 地ならし（レキシカルスコープ／upvalue index 化）の範囲
-      （ADR-0001 §4.2/§4.3）。
+- [ ] デフォルト GC=on のトリガ方針（現状 automatic trigger 無指定だと program-end collect のみ）と
+      収集方式（同期/非同期）・A' 地ならしの範囲（ADR-0001 §4.2/§4.3）。
 - **Track B（要素 cell 化）と GC は統合キャンペーン（層3a）**。続いて NaN-boxing（層3b・JIT 地ならし）
   → JIT（層4）。`state @`/`%`・lexical aggregate の真共有（Track C 残）も Track B=層3a に依存。
 

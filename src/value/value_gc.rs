@@ -288,6 +288,12 @@ impl Trace for InstanceAttrs {
     fn drop_gc_edges(&mut self) {
         self.clear_gc_edges();
     }
+    /// Queue the Raku `DESTROY` at node death (last-live-handle drop or cycle
+    /// reclaim) instead of waiting for the memory drop, which the candidate
+    /// buffer can defer indefinitely (t/destroy.t under `MUTSU_GC=on`).
+    fn finalize(&self) {
+        self.finalize_destroy();
+    }
 }
 
 /// The QuantHash datas hold `Value`s only in their `original_keys` back-map
