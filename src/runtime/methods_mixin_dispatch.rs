@@ -120,6 +120,36 @@ impl Interpreter {
                         method_attrs.insert(attr.to_string(), value.clone());
                     }
                 }
+                // Set up a method-dispatch frame so `nextsame`/`callsame` inside
+                // the role method falls through to the mixed-in base object's
+                // method of the same name: `A.new but Role` where the role's
+                // method calls `nextsame` must reach the class's original method.
+                let base_class = match inner.as_ref() {
+                    Value::Instance { class_name, .. } => Some(class_name.resolve().to_string()),
+                    _ => None,
+                };
+                let base_remaining: Vec<(String, MethodDef)> = if let Some(bc) = &base_class {
+                    self.resolve_all_methods_with_owner(bc, lookup_name, &args)
+                        .into_iter()
+                        .filter(|(_, d)| d.is_private == is_private_call)
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let pushed_base_dispatch = !base_remaining.is_empty();
+                if pushed_base_dispatch {
+                    let rw_params =
+                        super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
+                    self.samewith_context_stack
+                        .push((lookup_name.to_string(), Some(target.clone())));
+                    self.method_dispatch_stack.push(super::MethodDispatchFrame {
+                        receiver_class: base_class.clone().unwrap_or_default(),
+                        invocant: target.clone(),
+                        args: args.clone(),
+                        remaining: base_remaining,
+                        rw_params,
+                    });
+                }
                 let method_result = self.run_resolved_method_compiled_or_treewalk(
                     &role_name,
                     &role_name,
@@ -129,6 +159,10 @@ impl Interpreter {
                     args,
                     Some(target.clone()),
                 );
+                if pushed_base_dispatch {
+                    self.method_dispatch_stack.pop();
+                    self.samewith_context_stack.pop();
+                }
                 for (name, previous) in &saved_role_params {
                     if let Some(prev) = previous {
                         self.env.insert(name.clone(), prev.clone());
