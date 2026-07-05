@@ -1210,6 +1210,7 @@ roast/S32-str/Collation.t
 roast/S32-str/CollationTest_NON_IGNORABLE-0.t
 roast/S32-str/CollationTest_NON_IGNORABLE-1.t
 roast/S32-str/CollationTest_NON_IGNORABLE-2.t
+roast/S32-str/CollationTest_NON_IGNORABLE-3.t
 roast/S32-str/append.t
 roast/S32-str/bool.t
 roast/S32-str/capitalize.t

@@ -896,7 +896,7 @@ pub(crate) fn unicode_decimal_digit_value(c: char) -> Option<u32> {
 }
 
 /// Check if a codepoint is a Unicode noncharacter.
-fn is_noncharacter(cp: u32) -> bool {
+pub(crate) fn is_noncharacter(cp: u32) -> bool {
     // U+FDD0..U+FDEF
     if (0xFDD0..=0xFDEF).contains(&cp) {
         return true;

@@ -116,22 +116,66 @@ pub fn coll_compare(left: &str, right: &str, settings: &CollationSettings) -> Va
 /// - Tertiary: case (ICU Tertiary)
 /// - Quaternary: codepoint comparison (NOT ICU Quaternary; uses raw codepoint order)
 pub fn coll_ordering(left: &str, right: &str, settings: &CollationSettings) -> std::cmp::Ordering {
-    // Compare at each ICU strength level to isolate per-level differences.
-    let at_primary = icu_compare_at_strength(left, right, Strength::Primary);
-    let at_secondary = icu_compare_at_strength(left, right, Strength::Secondary);
-    let at_tertiary = icu_compare_at_strength(left, right, Strength::Tertiary);
-
-    // Extract per-level deltas
-    let delta_primary = at_primary;
-    let delta_secondary = if at_primary == std::cmp::Ordering::Equal {
-        at_secondary
-    } else {
-        std::cmp::Ordering::Equal
+    // ICU4X special-cases Unicode noncharacters in its UCA weighting: U+FFFE and
+    // the other `*FFFE` codepoints are treated as merge separators (a minimal,
+    // near-ignorable primary weight) and U+FFFF as a high sentinel. Raku's
+    // reference collation (MoarVM) instead assigns every "implicit weight"
+    // codepoint (noncharacters and unassigned/private-use, i.e. those with no
+    // DUCET entry) a plain implicit primary weight ordered by codepoint, so they
+    // sort among themselves in codepoint order.
+    //
+    // ICU only mis-orders such codepoints *relative to each other* (e.g.
+    // <reserved-FFF0> vs <noncharacter-FFFE>); it orders an implicit codepoint
+    // against an assigned one (e.g. <noncharacter-10FFFF> vs U+FFFD REPLACEMENT
+    // CHARACTER, which has a real DUCET weight) correctly. So we only override
+    // ICU when the first differing codepoint pair between the two strings is
+    // implicit-weighted on *both* sides; otherwise we defer to ICU.
+    // (See roast/S32-str/CollationTest_NON_IGNORABLE-3.t.)
+    use crate::builtins::unicode::{is_noncharacter, unicode_general_category};
+    let is_implicit_weight = |c: char| -> bool {
+        // General_Category Cn (unassigned, which also covers noncharacters) and
+        // Co (private use) get UCA implicit weights rather than DUCET entries.
+        matches!(unicode_general_category(c).as_str(), "Cn" | "Co")
     };
-    let delta_tertiary = if at_secondary == std::cmp::Ordering::Equal {
-        at_tertiary
+    let has_noncharacter = |s: &str| s.chars().any(|c| is_noncharacter(c as u32));
+    let first_diff_both_implicit =
+        left != right && (has_noncharacter(left) || has_noncharacter(right)) && {
+            let mut lc = left.chars();
+            let mut rc = right.chars();
+            loop {
+                match (lc.next(), rc.next()) {
+                    (Some(l), Some(r)) if l == r => continue,
+                    (Some(l), Some(r)) => break is_implicit_weight(l) && is_implicit_weight(r),
+                    // One string is a prefix of the other: let ICU decide.
+                    _ => break false,
+                }
+            }
+        };
+    let (delta_primary, delta_secondary, delta_tertiary) = if first_diff_both_implicit {
+        (
+            left.cmp(right),
+            std::cmp::Ordering::Equal,
+            std::cmp::Ordering::Equal,
+        )
     } else {
-        std::cmp::Ordering::Equal
+        // Compare at each ICU strength level to isolate per-level differences.
+        let at_primary = icu_compare_at_strength(left, right, Strength::Primary);
+        let at_secondary = icu_compare_at_strength(left, right, Strength::Secondary);
+        let at_tertiary = icu_compare_at_strength(left, right, Strength::Tertiary);
+
+        // Extract per-level deltas
+        let delta_primary = at_primary;
+        let delta_secondary = if at_primary == std::cmp::Ordering::Equal {
+            at_secondary
+        } else {
+            std::cmp::Ordering::Equal
+        };
+        let delta_tertiary = if at_secondary == std::cmp::Ordering::Equal {
+            at_tertiary
+        } else {
+            std::cmp::Ordering::Equal
+        };
+        (delta_primary, delta_secondary, delta_tertiary)
     };
     // Raku's quaternary level uses codepoint comparison
     let delta_quaternary = left.cmp(right);
