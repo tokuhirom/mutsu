@@ -123,8 +123,31 @@ struct BatchState {
     buffer: Vec<Value>,
     /// The downstream supplier_id to emit batched lists into
     downstream_supplier_id: u64,
-    /// Timestamp of last flush (for timer-based batching)
-    last_flush: std::time::Instant,
+    /// Absolute wall-clock period (`time div :seconds`, rakudo semantics) of
+    /// the most recent emit. A value arriving in a *different* period flushes
+    /// the pending buffer first. Anchoring to absolute periods (not "elapsed
+    /// since last flush / tap registration") matters: the old
+    /// registration-anchored `Instant` fired a spurious 1-element time-flush
+    /// on the second emit whenever the tap was registered just after a period
+    /// boundary (S17-supply/batch.t "batch by time and elems" flake —
+    /// deterministic repro in that shape, raku emits 7,3,7,3, mutsu emitted
+    /// 1,7,2,7,3).
+    last_period: i64,
+}
+
+/// Absolute wall-clock period index for `batch(:seconds)`: `floor(epoch /
+/// seconds)`, matching rakudo's `time div $seconds` bucketing for integer
+/// seconds.
+fn batch_time_period(seconds: f64) -> i64 {
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    if seconds > 0.0 {
+        (epoch / seconds).floor() as i64
+    } else {
+        0
+    }
 }
 
 #[derive(Clone, Default)]
@@ -760,18 +783,21 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                     ));
                 }
             } else if let Some(ref mut bs) = tap.batch_state {
-                // Check if we should flush the existing buffer based on time
-                if let Some(seconds) = bs.seconds
-                    && bs.last_flush.elapsed().as_secs_f64() >= seconds
-                    && !bs.buffer.is_empty()
-                {
-                    let batch = std::mem::take(&mut bs.buffer);
-                    let dsid = bs.downstream_supplier_id;
-                    bs.last_flush = std::time::Instant::now();
-                    actions.push(SupplierEmitAction::BatchEmit {
-                        downstream_supplier_id: dsid,
-                        batch,
-                    });
+                // A value arriving in a new absolute time period flushes the
+                // previous period's pending buffer first (rakudo `time div
+                // $seconds` semantics; see BatchState::last_period).
+                if let Some(seconds) = bs.seconds {
+                    let this_period = batch_time_period(seconds);
+                    if this_period != bs.last_period {
+                        if !bs.buffer.is_empty() {
+                            let batch = std::mem::take(&mut bs.buffer);
+                            actions.push(SupplierEmitAction::BatchEmit {
+                                downstream_supplier_id: bs.downstream_supplier_id,
+                                batch,
+                            });
+                        }
+                        bs.last_period = this_period;
+                    }
                 }
                 bs.buffer.push(emitted_value.clone());
                 // Check if we should flush based on elems count
@@ -780,7 +806,6 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                 {
                     let batch = std::mem::take(&mut bs.buffer);
                     let dsid = bs.downstream_supplier_id;
-                    bs.last_flush = std::time::Instant::now();
                     actions.push(SupplierEmitAction::BatchEmit {
                         downstream_supplier_id: dsid,
                         batch,
@@ -1370,7 +1395,7 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
                     seconds,
                     buffer: Vec::new(),
                     downstream_supplier_id,
-                    last_flush: std::time::Instant::now(),
+                    last_period: seconds.map(batch_time_period).unwrap_or(0),
                 }),
                 words_mode: false,
                 words_buffer: String::new(),

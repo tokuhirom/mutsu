@@ -127,7 +127,7 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
   8. **Watch the new PR's CI in the background, never foreground-block on it.** Use a `run_in_background` bash poll loop on `gh pr checks <pr-number>` that exits when no check is `pending` (the harness notifies you on completion). Do NOT use foreground `gh pr checks --watch` — it blocks ~13 min and wastes the session. The background watch surfaces a red CI within minutes so you can fix-forward instead of leaving it unnoticed; auto-merge still lands the PR on its own once CI is green. If you have genuinely-independent, non-conflicting work, do it in parallel; in the final stretch there usually isn't any, so the watch itself is the productive thing.
   9. **Before going idle, decide the next slice.** Don't wait on the merge with nothing queued. Re-read the relevant ledger/PLAN (`PLAN.md`, `TODO_roast/BLOCKERS.md`) and pick the next concrete unit of work — start it on a fresh branch off `main` if it's independent of the open PR, or lay out options and confirm with the user when the next step is a strategic fork.
 - If CI fails, fix on the same branch and push again (the background watch notifies you; re-watch after pushing).
-  - **Known flaky:** `roast/S02-names-vars/perl.t` intermittently exits 255 with `Failed: 0` (plan incomplete) — the typed-container alloc/hash-order flaky documented in PLAN.md. Passes ~80% of runs. If CI fails *only* on this with `Failed: 0`, re-trigger CI (push an empty commit) rather than treating it as a regression; confirm locally with a release build a few times first.
+  - **Flaky-looking CI failures:** consult the "Known flaky tests" section below before re-triggering. (`roast/S02-names-vars/perl.t`'s historical `Failed: 0` abort no longer reproduces as of 2026-07-05 and was re-whitelisted — treat a new failure there as real first, per the triage protocol.)
 - **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
 - Write all documents, code comments, and commit messages in English.
 - Do not use `echo`, `cat`, `printf`, or heredoc via Bash to create files. Always use the Write tool.
@@ -298,9 +298,14 @@ The strategy is fixed in [docs/adr/0001-gc-strategy-and-phasing.md](docs/adr/000
 
 Some tests are genuinely non-deterministic (concurrency/timing/CI-load sensitive) and fail intermittently. When a `make roast` / `make test` failure is **only** in the list below and your change is unrelated (e.g. an operator/parser fix), treat it as flaky: re-run the single file a few times before assuming a regression. Do **not** remove it from the whitelist.
 
-- `roast/S17-supply/batch.t` and other `S17-supply/*` / `S17-*` concurrency tests — fail occasionally, pass on retry.
-- `t/lock.t` — lock contention / occasional `exit 255` timeout.
-- `roast/S02-types/hash.t`, `roast/S09-typed-arrays/hashes.t` — CI-load-sensitive **timeouts** (bad plan / `exit 255` with `Failed: 0`); pass reliably locally. A *concrete subtest* failure here is NOT load-related — see triage below.
+- `S17-*` concurrency tests — may fail occasionally under heavy parallel load, pass on retry. (A 2026-07-05 audit ran all 97 whitelisted S17 files ×7 `-j4` release sweeps: the only repeat offender was `batch.t`, root-caused and fixed — see below.)
+
+**De-flaked (do NOT treat a failure here as flaky — it's a regression):**
+
+- `t/lock.t` "Lock::Async protects shared array pushes" — was a real lost-update race (listop `push` inside `protect` wrote the base shared_vars key, which a parent-thread stale env sync clobbered wholesale). Fixed in #4167 by routing all plain-lexical shared-array pushes through the `__mutsu_atomic_arr::` store.
+- `roast/S17-supply/batch.t` "we can batch by time and elems" — was a deterministic logic bug, not load flakiness: `batch(:seconds)` anchored its time window to tap-registration `Instant` instead of absolute `time div $seconds` periods, firing a spurious 1-element flush when the tap was registered just after a period boundary. Pin: `t/supply-batch-period.t` (forces the boundary alignment).
+- `roast/S02-names-vars/perl.t` — the historical "typed-container alloc/hash-order" mid-run abort no longer reproduces (2026-07-05: 72 clean runs, debug+release, under 12× CPU contention); re-whitelisted.
+- `roast/S02-types/hash.t`, `roast/S09-typed-arrays/hashes.t` — the "CI-load-sensitive timeout" label is stale: both complete in ~0.3s on a release build now. A failure here is real — see triage below.
 
 Also: before a local `make roast`, `rm -f temp-file-RT-126006-test` — a stale temp file left by an interrupted `roast/S32-io/spurt.t` makes that test abort with "cannot run test while file ... exists".
 
