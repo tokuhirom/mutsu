@@ -38,9 +38,21 @@ fn check_io_func_followed_by_loop<'a>(name: &str, rest_after_ws: &'a str) -> PRe
     Ok((rest_after_ws, ()))
 }
 
+/// A user-declared `sub` named like an IO builtin (`say`/`print`/`put`/`note`)
+/// shadows the builtin listop form in its lexical scope: `sub say(...) {...}; say
+/// $x` must call the user sub, not the builtin. Bail out of the builtin-statement
+/// parse so statement dispatch falls through to the general listop-call parser.
+fn shadowed_by_user_sub(name: &str) -> PResult<'_, ()> {
+    if is_user_declared_sub(name) {
+        return Err(PError::expected("io builtin shadowed by user sub"));
+    }
+    Ok(("", ()))
+}
+
 /// Parse a `say` statement.
 pub(crate) fn say_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("say", input).ok_or_else(|| PError::expected("say statement"))?;
+    shadowed_by_user_sub("say")?;
     check_bare_io_func("say", rest)?;
     let (rest, _) = ws1(rest)?;
     check_io_func_followed_by_loop("say", rest)?;
@@ -55,6 +67,7 @@ pub(crate) fn say_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Parse a `print` statement.
 pub(crate) fn print_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("print", input).ok_or_else(|| PError::expected("print statement"))?;
+    shadowed_by_user_sub("print")?;
     check_bare_io_func("print", rest)?;
     let (rest, _) = ws1(rest)?;
     check_io_func_followed_by_loop("print", rest)?;
@@ -69,6 +82,7 @@ pub(crate) fn print_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Parse a `put` statement.
 pub(crate) fn put_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("put", input).ok_or_else(|| PError::expected("put statement"))?;
+    shadowed_by_user_sub("put")?;
     check_bare_io_func("put", rest)?;
     let (rest, _) = ws1(rest)?;
     check_io_func_followed_by_loop("put", rest)?;
@@ -83,6 +97,7 @@ pub(crate) fn put_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Parse a `note` statement.
 pub(crate) fn note_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("note", input).ok_or_else(|| PError::expected("note statement"))?;
+    shadowed_by_user_sub("note")?;
     // `note` with no arguments is valid (prints "Noted\n")
     if let Ok((rest2, _)) = ws1(rest) {
         // Check for colon invocant syntax: `note EXPR:` or `note EXPR: arg1, arg2`
