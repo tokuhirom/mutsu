@@ -29,6 +29,16 @@ pub(crate) fn unicode_numeric_value(ch: char) -> Value {
 }
 
 /// Look up Numeric_Type for uniprop.
+/// UAX #44 Numeric_Type=Digit set: single-digit presentation forms that are
+/// not decimal digits (gc=Nd).
+fn is_numeric_type_digit(cp: u32) -> bool {
+    matches!(cp,
+        0x00B2..=0x00B3 | 0x00B9 | 0x1369..=0x1371 | 0x19DA | 0x2070 | 0x2074..=0x2079
+        | 0x2080..=0x2089 | 0x2460..=0x2468 | 0x2474..=0x247C | 0x2488..=0x2490 | 0x24EA
+        | 0x24F5..=0x24FD | 0x24FF | 0x2776..=0x277E | 0x2780..=0x2788 | 0x278A..=0x2792
+        | 0x10A40..=0x10A43 | 0x10E60..=0x10E68 | 0x11052..=0x1105A | 0x1F100..=0x1F10A)
+}
+
 pub(crate) fn unicode_numeric_type(ch: char) -> String {
     // Check Nd (Decimal)
     static ND_RE: OnceLock<regex::Regex> = OnceLock::new();
@@ -38,16 +48,11 @@ pub(crate) fn unicode_numeric_type(ch: char) -> String {
     if nd_re.is_match(s) {
         return "Decimal".to_string();
     }
-    // Digit type: superscripts/subscripts that are No but behave as Digit
-    // U+00B2 SUPERSCRIPT TWO, U+00B3 SUPERSCRIPT THREE, U+00B9 SUPERSCRIPT ONE
-    // U+2070-U+2079, U+2080-U+2089
+    // Digit type: single-digit (0..9) presentation forms that are not Nd —
+    // superscripts/subscripts and circled/parenthesized/dingbat digits, etc.
+    // (UAX #44 Numeric_Type=Digit set).
     let cp = ch as u32;
-    if cp == 0x00B2
-        || cp == 0x00B3
-        || cp == 0x00B9
-        || (0x2070..=0x2079).contains(&cp)
-        || (0x2080..=0x2089).contains(&cp)
-    {
+    if is_numeric_type_digit(cp) {
         return "Digit".to_string();
     }
     // Check No (Numeric — includes fractions and other numeric chars)
