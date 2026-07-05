@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.7](https://github.com/tokuhirom/mutsu/compare/v0.2.6...v0.2.7) - 2026-07-05
+
+- fix(str): uniprop Joining_Group follows ArabicShaping.txt exactly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4193
+
 ## [v0.2.6](https://github.com/tokuhirom/mutsu/compare/v0.2.5...v0.2.6) - 2026-07-05
 
 - fix(gc): registered-only STW quiescence accounting (fixes main gc-stress) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4189
