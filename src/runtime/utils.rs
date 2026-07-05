@@ -111,19 +111,22 @@ pub(crate) fn strip_utf8_bom(s: String) -> String {
     }
 }
 
-/// Check if a class name represents a Buf-like type (Buf, Buf[uint8], buf8, etc.)
+/// Check if a class name represents a (mutable) Buf-like type (Buf, Buf[uint8],
+/// buf8, etc.). The encoding types (utf8/utf16/...) are immutable Blobs, not
+/// Bufs, so they are excluded here (see `is_blob_like_class`).
 pub(crate) fn is_buf_like_class(cn: &str) -> bool {
-    matches!(
-        cn,
-        "Buf" | "buf8" | "buf16" | "buf32" | "buf64" | "utf8" | "utf16"
-    ) || cn.starts_with("Buf[")
+    matches!(cn, "Buf" | "buf8" | "buf16" | "buf32" | "buf64")
+        || cn.starts_with("Buf[")
         || cn.starts_with("buf")
 }
 
-/// Check if a class name represents a Blob-like type (Blob, Blob[uint8], blob8, etc.)
+/// Check if a class name represents a Blob-like type (Blob, Blob[uint8], blob8,
+/// and the immutable encoding buffers utf8/utf16/utf32).
 pub(crate) fn is_blob_like_class(cn: &str) -> bool {
-    matches!(cn, "Blob" | "blob8" | "blob16" | "blob32" | "blob64")
-        || cn.starts_with("Blob[")
+    matches!(
+        cn,
+        "Blob" | "blob8" | "blob16" | "blob32" | "blob64" | "utf8" | "utf16" | "utf32"
+    ) || cn.starts_with("Blob[")
         || cn.starts_with("blob")
 }
 
