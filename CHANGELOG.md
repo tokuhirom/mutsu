@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.2.10](https://github.com/tokuhirom/mutsu/compare/v0.2.9...v0.2.10) - 2026-07-05
+
+- fix(cli): parse-error snippet no longer panics on multi-byte source lines by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4202
+- fix(regex): honour separator quantifiers with a captured atom in the find-all matcher by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4203
+- fix(gc): two STW-starvation liveness holes under rapid worker spawn churn by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4205
+
 ## [v0.2.9](https://github.com/tokuhirom/mutsu/compare/v0.2.8...v0.2.9) - 2026-07-05
 
 - fix(str): uniprop Bidi_Class=ON for neutral punctuation and symbols by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4197
