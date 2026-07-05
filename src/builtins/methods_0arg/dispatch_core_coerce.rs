@@ -42,6 +42,23 @@ fn str_numeric_exception_attrs(s: &str) -> std::collections::HashMap<String, Val
 /// Build a lazy `Failure` wrapping an `X::Str::Numeric` exception for a string
 /// that cannot be numified — the shape raku's `.Int`/`.Num` produce on a bad
 /// string (the exception only fires when the Failure is sunk/used).
+/// Parse a string to `f64` the strict Raku way. Rust's `f64::parse` accepts the
+/// keywords `inf`/`infinity`/`nan` (case-insensitive, optionally signed), but
+/// Raku only accepts the exact tokens `Inf`/`+Inf`/`-Inf`/`NaN` for non-finite
+/// values. Finite overflow (`1e999` -> `Inf`) is still accepted.
+pub(crate) fn parse_raku_str_f64(normalized: &str) -> Option<f64> {
+    let body = normalized
+        .strip_prefix(['+', '-'])
+        .unwrap_or(normalized)
+        .to_ascii_lowercase();
+    if matches!(body.as_str(), "inf" | "infinity" | "nan")
+        && !matches!(normalized, "Inf" | "+Inf" | "-Inf" | "NaN")
+    {
+        return None;
+    }
+    normalized.parse::<f64>().ok()
+}
+
 pub(crate) fn str_numeric_failure(s: &str) -> Value {
     let ex = Value::make_instance(
         Symbol::intern("X::Str::Numeric"),
@@ -614,7 +631,7 @@ pub(super) fn dispatch(
                     } else {
                         // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus
                         let normalized = trimmed.replace('\u{2212}', "-");
-                        if let Ok(f) = normalized.parse::<f64>() {
+                        if let Some(f) = parse_raku_str_f64(&normalized) {
                             Value::Num(f)
                         } else {
                             // An invalid string yields a lazy X::Str::Numeric Failure,
@@ -681,7 +698,7 @@ pub(super) fn dispatch(
                 Value::Str(s) => {
                     if let Ok(i) = s.trim().parse::<i64>() {
                         Value::Int(i)
-                    } else if let Ok(f) = s.trim().parse::<f64>() {
+                    } else if let Some(f) = parse_raku_str_f64(s.trim()) {
                         Value::Num(f)
                     } else {
                         // Same X::Str::Numeric Failure (typed, with the `⏏` marker)
