@@ -284,12 +284,14 @@ impl Interpreter {
                 self.dispatch_join_method(target, args)
             }
             "grep" => {
-                // In Raku, .grep returns a Seq. However, when called on an Array,
-                // the result carries rw view bindings that must be preserved (Array kind).
-                let is_real_array = matches!(&target, Value::Array(_, k) if k.is_real_array());
+                // In Raku, `.grep` always returns a `Seq` — including over an
+                // Array. `dispatch_grep` builds a `List`-kind array whose elements
+                // are the matched source slots as shared `ContainerRef` cells (so a
+                // writeback loop `for @a.grep(...) { $_++ }` still mutates `@a`
+                // through them); wrapping those same cells in a `Seq` preserves the
+                // writeback while giving the correct `Seq` type.
                 Some(self.dispatch_grep(target, &args).map(|v| {
-                    if !is_real_array && let Value::Array(items, crate::value::ArrayKind::List) = v
-                    {
+                    if let Value::Array(items, crate::value::ArrayKind::List) = v {
                         return Value::Seq(std::sync::Arc::new(items.to_vec()));
                     }
                     v
