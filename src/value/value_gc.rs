@@ -226,8 +226,12 @@ impl Trace for (Mutex<ChannelState>, Condvar) {
 /// wrongly freed) and is the documented step-10 follow-up.
 impl Trace for LazyList {
     fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
-        for v in self.env.values() {
-            v.gc_trace(visit);
+        // Same shared-overlay rule as `SubData::trace`: claim the captured
+        // env map's edges only as its sole holder.
+        if self.env.gc_overlay_uniquely_owned() {
+            for v in self.env.values() {
+                v.gc_trace(visit);
+            }
         }
         if let Ok(cache) = self.cache.lock()
             && let Some(items) = cache.as_ref()
@@ -241,8 +245,11 @@ impl Trace for LazyList {
         }
     }
     fn drop_gc_edges(&mut self) {
-        for v in self.env.values_mut() {
-            *v = Value::Nil;
+        // Sever only a uniquely-owned overlay — see `SubData::drop_gc_edges`.
+        if self.env.gc_overlay_uniquely_owned() {
+            for v in self.env.values_mut() {
+                *v = Value::Nil;
+            }
         }
         if let Ok(mut cache) = self.cache.lock() {
             *cache = None;
@@ -256,8 +263,20 @@ impl Trace for LazyList {
 /// other). Second-wave migration (§11 step 9).
 impl Trace for SubData {
     fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
-        for v in self.env.values() {
-            v.gc_trace(visit);
+        // The captured env's overlay map is `Arc`-shared across every closure
+        // captured from the same frame (an env clone is an Arc bump). The map
+        // owns its `Gc` handles ONCE, so trace them from this node only when
+        // it is the map's sole holder — otherwise N sharers would each claim
+        // the same edges and over-decrement live nodes during trial deletion
+        // (false reclaim: `$*PROGRAM`'s attrs wiped in S11-modules/require.t).
+        // A shared map acts as an external root holder instead: conservative —
+        // a cycle routed solely through it defers (never corrupts). Flattened
+        // captures (`clone_env` at Sub creation) build a fresh map, so the
+        // common closure-capture cycles stay uniquely owned and collectable.
+        if self.env.gc_overlay_uniquely_owned() {
+            for v in self.env.values() {
+                v.gc_trace(visit);
+            }
         }
         for v in &self.assumed_positional {
             v.gc_trace(visit);
@@ -267,8 +286,14 @@ impl Trace for SubData {
         }
     }
     fn drop_gc_edges(&mut self) {
-        for v in self.env.values_mut() {
-            *v = Value::Nil;
+        // Sever only a uniquely-owned overlay, mirroring `trace`: a shared map
+        // is still in use by its other holders — and `values_mut` on it would
+        // COW-clone the whole map mid-reclaim, running `Gc::clone`s that
+        // corrupt the collector's scratch counts.
+        if self.env.gc_overlay_uniquely_owned() {
+            for v in self.env.values_mut() {
+                *v = Value::Nil;
+            }
         }
         self.assumed_positional.clear();
         self.assumed_named.clear();
@@ -609,6 +634,114 @@ mod tests {
 
     fn fresh_hash_node() -> Value {
         Value::Hash(crate::gc::Gc::new(HashData::default()))
+    }
+
+    /// Build a minimal `SubData` capturing `env`, for the shared-env trace tests.
+    fn sub_capturing(env: crate::env::Env, id: u64) -> SubData {
+        SubData {
+            package: crate::symbol::Symbol::intern("GLOBAL"),
+            name: crate::symbol::Symbol::intern("__gc_test__"),
+            params: vec![],
+            param_defs: vec![],
+            body: vec![],
+            is_rw: false,
+            is_raw: false,
+            env,
+            assumed_positional: vec![],
+            assumed_named: std::collections::HashMap::new(),
+            id,
+            empty_sig: false,
+            is_bare_block: false,
+            compiled_code: None,
+            deprecated_message: None,
+            source_line: None,
+            source_file: None,
+            owned_captures: Vec::new(),
+            upvalues: Vec::new(),
+        }
+    }
+
+    /// Pin for the shared-captured-env phantom-edge bug: closures cloned from
+    /// the same frame share one `Arc<SymMap>` overlay, which owns each of its
+    /// `Gc` handles ONCE — but `SubData::trace` used to inline the map's edges
+    /// into EVERY sharer's child list. Two garbage closures sharing a map that
+    /// held a live hash then claimed two phantom edges, drove the hash's
+    /// GC-strong count (map +1, external local +1 = 2) to 0, and trial
+    /// deletion falsely reclaimed it — wiping live data (observed as
+    /// `$*PROGRAM`'s IO::Path attrs emptied in roast/S11-modules/require.t
+    /// under `MUTSU_GC=on`, VERIFY silent because the counts were consistently
+    /// wrong). With the uniqueness rule a shared map's edges belong to no
+    /// single node: the hash keeps its external count and must survive, while
+    /// the genuinely-garbage sub/cell cycle is still reclaimed.
+    #[test]
+    fn shared_captured_env_edges_are_not_claimed_per_sharer() {
+        let _serial = crate::gc::test_support::serial_lock();
+        drop(crate::gc::drain_candidates());
+
+        // A live hash node: one handle held here (external), one inside the
+        // shared env map below.
+        let hash = crate::gc::Gc::new(HashData {
+            map: {
+                let mut m = std::collections::HashMap::new();
+                m.insert("alive".to_string(), Value::Int(42));
+                m
+            },
+            ..Default::default()
+        });
+
+        // One env map holding the hash, shared by TWO closures (and kept
+        // shared through the collect by `env` itself — 3 Arc holders).
+        let mut env = crate::env::Env::new();
+        env.insert("%h".to_string(), Value::Hash(hash.clone()));
+
+        // The closures form a genuine garbage cycle through `ContainerRef`
+        // cells in their (owned, always-traced) assumed args:
+        //   sub1 -> cellA -> sub2 -> cellB -> sub1
+        let cell_a = crate::gc::Gc::new(std::sync::Mutex::new(Value::Nil));
+        let cell_b = crate::gc::Gc::new(std::sync::Mutex::new(Value::Nil));
+        let mut sd1 = sub_capturing(env.clone(), 1);
+        sd1.assumed_positional
+            .push(Value::ContainerRef(cell_a.clone()));
+        let sub1 = crate::gc::Gc::new(sd1);
+        let mut sd2 = sub_capturing(env.clone(), 2);
+        sd2.assumed_positional
+            .push(Value::ContainerRef(cell_b.clone()));
+        let sub2 = crate::gc::Gc::new(sd2);
+        *cell_a.lock().unwrap() = Value::Sub(sub2.clone());
+        *cell_b.lock().unwrap() = Value::Sub(sub1.clone());
+
+        // Make the closures cycle suspects and drop every local handle into
+        // the cycle. Counts at the collect: sub1/sub2 = 1 (their cell),
+        // cellA/cellB = 1 (their sub), hash = 2 (local + shared map).
+        sub1.buffer_as_candidate();
+        sub2.buffer_as_candidate();
+        drop(sub1);
+        drop(sub2);
+        drop(cell_a);
+        drop(cell_b);
+
+        let stats = crate::gc::collect_cycles();
+
+        // Pre-fix, BOTH subs traced the shared map: two phantom decrements
+        // took the hash from 2 to 0 and the "cycle" swallowed it — the node
+        // was reclaimed and drop_gc_edges emptied the live map. Post-fix the
+        // hash is untouched while the 4-node sub/cell cycle is still garbage.
+        assert_eq!(
+            hash.strong_count(),
+            2,
+            "live hash GC-strong must stay (external local + shared env map)"
+        );
+        assert_eq!(
+            hash.map.get("alive"),
+            Some(&Value::Int(42)),
+            "live hash contents must survive a collect over env-sharing closures"
+        );
+        assert!(
+            stats.reclaimed_nodes >= 4,
+            "the genuine sub/cell cycle must still be reclaimed, got {}",
+            stats.reclaimed_nodes
+        );
+        drop(env);
     }
 
     #[test]
