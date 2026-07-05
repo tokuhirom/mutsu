@@ -502,6 +502,29 @@ pub(crate) fn collect_if_enabled(safepoint: &str) {
     collect_cycles_at(safepoint);
 }
 
+/// The program-end collect. Its only *observable* effect is delivering Raku
+/// `DESTROY` for cycle members that survived to exit — process teardown frees
+/// the memory either way. So when no user class/role defines a `DESTROY`
+/// submethod (`has_destroy_methods`, the overwhelmingly common case) and no
+/// observability surface is on (`MUTSU_GC_LOG` / `MUTSU_GC_VERIFY` /
+/// `MUTSU_VM_STATS`, whose outputs tests and operators read), skip it: the
+/// exit scan trial-deletes every live buffered suspect — re-enumerating big
+/// captured envs — which measured 160-220ms on bench-class for zero
+/// observable effect.
+pub(crate) fn collect_at_program_end(has_destroy_methods: bool) {
+    if !super::gc_ptr::gc_enabled() {
+        return;
+    }
+    if !has_destroy_methods
+        && log_mode() == LogMode::Off
+        && !verify_enabled()
+        && !crate::vm::vm_stats::enabled()
+    {
+        return;
+    }
+    collect_cycles_at("program-end");
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::gc_ptr::{Gc, Trace};

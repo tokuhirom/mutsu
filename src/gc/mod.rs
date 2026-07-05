@@ -52,8 +52,8 @@ pub(crate) mod test_support {
 
 #[allow(unused_imports)]
 pub(crate) use collect::{
-    CollectStats, LogMode, collect_cycles, collect_cycles_at, collect_if_enabled,
-    gc_debug_collect_now, log_mode, verify_enabled,
+    CollectStats, LogMode, collect_at_program_end, collect_cycles, collect_cycles_at,
+    collect_if_enabled, gc_debug_collect_now, log_mode, verify_enabled,
 };
 #[allow(unused_imports)]
 pub(crate) use gc_ptr::{

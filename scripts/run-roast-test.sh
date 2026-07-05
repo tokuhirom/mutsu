@@ -24,6 +24,14 @@ per_file_timeout() {
       # This test intentionally uses multiple sleep 1 calls and needs >30s.
       echo 60
       ;;
+    roast/S17-lowlevel/thread.t)
+      # Thread-churn workload: under the default-on GC the dead sweep frees
+      # worker-allocated containers cross-thread (glibc arena contention), so
+      # the file measures ~22s release vs ~12s GC-off — inside the default 30s
+      # but with no headroom for CI load. Allocator-level follow-up tracked in
+      # PLAN.md §5.
+      echo 60
+      ;;
     roast/S17-promise/allof.t)
       # This test uses sleep 2*$_ with $_ up to 9, parallel start blocks take ~18s.
       echo 60

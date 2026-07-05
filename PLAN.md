@@ -178,12 +178,9 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 
 残:
 
-- [ ] **既定値 `MUTSU_GC` off → on の切替**（GC キャンペーン最終手）。production トリガは
-      [ADR-0003](docs/adr/0003-default-on-gc-trigger.md)（Accepted）どおり**実装済み**
-      （`MUTSU_GC_THRESHOLD`・adaptive backoff。GC=on なら default で有効）。残る切替ゲート =
-      受け入れ計測: fib で `gc_candidate_pushes==0`（ADR-0001 の型フィルタゲート）／
-      method-call・bench-class の GC-on オーバーヘッド < 5%／churn 系 wall-clock ≤ GC-off 比 ~1.2x。
-      計測が通ったら `gc_enabled()` の既定を反転する切替 PR。
+- ✅ **既定値 `MUTSU_GC` は on**（2026-07-05 切替済み — ADR-0003 §5 に受け入れ実測とゲート改訂を記録。
+      bench-class ~+8% はユーザー判断で許容、根本削減は層 3b=NaN-boxing）。GC キャンペーン（層 3a）完了。
+      残る GC 関連 perf は NaN-boxing（3b）に統合。
 - **Track B（要素 cell 化）と GC は統合キャンペーン（層3a）**。続いて NaN-boxing（層3b・JIT 地ならし）
   → JIT（層4）。`state @`/`%`・lexical aggregate の真共有（Track C 残）も Track B=層3a に依存。
 
@@ -255,6 +252,11 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       emit するだけ。intループのネイティブ化で hot path は GC/refcount コストゼロ（ADR-0001 §3-8）。
 - [ ] **Lever 6: biased reference counting = ADR-0001 層3c（GC 後の独立 perf）**。JIT が intループを
       ネイティブ化すれば hot path から refcount が消えるため優先度は低め。
+- [ ] GC dead sweep のクロススレッド free コスト: collector が worker 確保ノードを一括 drop すると
+      glibc の他スレッド arena ロックと競合（S17-lowlevel/thread.t で collect あたり数秒・
+      ~250µs/drop を実測。refcount map / candidate バッファのシャーディングでは解消せず＝
+      アロケータ層）。候補: 解放の逐次化/バッチ戦略・jemalloc/mimalloc 検討。当面は
+      run-roast-test.sh の per-file 60s で吸収。
 - [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
 - 目標: method-call <1.5x、bench-class <1.5x、bench-fib（型制約付き）<2x。
 
@@ -281,7 +283,7 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 | mzef | CLI 起動＋dispatch ✅／install→use 橋 ✅ | 実 zef バイナリでの実 install（残 2 バグ＋network fetch） |
 | バイナリ配布 | なし | mise / GitHub Releases で単一コマンド導入 |
 | Whitelist | **1350**（全 .t 1463 中） | 1300+ ✅ 達成済み・現状維持以上 |
-| GC | collector 本体＋first/second wave 完了（default off） | 全 Value コンテナ Gc 化・default on |
+| GC | **default on ✅**（2026-07-05・ADR-0003） | 達成（残 perf は層 3b へ） |
 | fib(25) vs raku | **1.0x** | <10x ✅ |
 | method-call vs raku | **2.7x** | <1.5x |
 | bench-class vs raku | **2.3x** | <1.5x |

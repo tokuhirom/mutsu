@@ -77,7 +77,7 @@ impl InstanceAttrs {
         id: u64,
         queue_destroy: bool,
     ) -> Self {
-        if queue_destroy && let Ok(mut counts) = live_instance_refcounts().lock() {
+        if queue_destroy && let Ok(mut counts) = live_instance_refcounts(id).lock() {
             *counts.entry(id).or_insert(0) += 1;
         }
         let cell: AttrCell = Arc::new(RwLock::new(attributes));
@@ -93,7 +93,7 @@ impl InstanceAttrs {
     /// Build an `InstanceAttrs` that shares an existing cell (used by the cell
     /// reuse path in `make_instance_with_id`).
     fn from_cell(class_name: Symbol, cell: AttrCell, id: u64, queue_destroy: bool) -> Self {
-        if queue_destroy && let Ok(mut counts) = live_instance_refcounts().lock() {
+        if queue_destroy && let Ok(mut counts) = live_instance_refcounts(id).lock() {
             *counts.entry(id).or_insert(0) += 1;
         }
         Self {
@@ -250,7 +250,7 @@ impl InstanceAttrs {
         if is_in_destroy_handler() {
             return;
         }
-        let should_queue = if let Ok(mut counts) = live_instance_refcounts().lock() {
+        let should_queue = if let Ok(mut counts) = live_instance_refcounts(self.id).lock() {
             match counts.get_mut(&self.id) {
                 Some(count) if *count > 1 => {
                     *count -= 1;
