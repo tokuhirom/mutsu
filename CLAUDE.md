@@ -47,7 +47,7 @@ This is a **bytecode VM** architecture. The VM handles ALL operations natively v
 - **AST** (`ast.rs`): `Expr` (~50 variants) and `Stmt` (~30 variants)
 - **TokenKind** (`token_kind.rs`): Shared operator/token enum used by parser/AST/compiler/runtime expression handling
 - **RuntimeError** (`value.rs`): Runtime/parse error carrier; parse failures now use structured metadata (`code`, `line`, `column`) in addition to `message`
-- **OpCode** (`opcode.rs`): ~100 bytecode instructions, including compound loop ops
+- **OpCode** (`opcode.rs`): ~340 bytecode instructions, including compound loop ops. Keep `size_of::<OpCode>()` <= 48 bytes (pinned by the `opcode_size_guard` test) — box any fat variant payload (see `docs/opcode-design-review.md`)
 
 ### Method dispatch (two-tier)
 

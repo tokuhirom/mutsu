@@ -1755,38 +1755,41 @@ impl Compiler {
                     // No param_def means default (Mu) — no autothreading
                     None => false,
                 };
-                let loop_idx = self.code.emit(OpCode::ForLoop {
-                    param_idx,
-                    param_local,
-                    body_end: 0,
-                    label: label.clone(),
-                    arity,
-                    collect: false,
-                    restore_topic,
-                    threaded: matches!(
-                        *mode,
-                        crate::ast::ForMode::Race | crate::ast::ForMode::Hyper
-                    ),
-                    // is_rw: param is writable (don't mark readonly)
-                    is_rw: has_rw || has_copy,
-                    // do_writeback: actually write back modifications to source container
-                    do_writeback: has_rw && !has_copy,
-                    rw_param_names,
-                    kv_mode,
-                    source_var_names,
-                    source_var_locals,
-                    autothread_junctions,
-                    explicit_zero_params: *explicit_zero_params,
-                    multi_param_names: params
-                        .iter()
-                        .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
-                        .collect(),
-                    loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
-                    values_mode: Self::for_iterable_is_values_alias(iterable),
-                    single_array_source: Self::for_single_array_source(iterable),
-                    single_array_source_local: self
-                        .for_single_array_source_local(&Self::for_single_array_source(iterable)),
-                });
+                let loop_idx =
+                    self.code
+                        .emit(OpCode::ForLoop(Box::new(crate::opcode::ForLoopSpec {
+                            param_idx,
+                            param_local,
+                            body_end: 0,
+                            label: label.clone(),
+                            arity,
+                            collect: false,
+                            restore_topic,
+                            threaded: matches!(
+                                *mode,
+                                crate::ast::ForMode::Race | crate::ast::ForMode::Hyper
+                            ),
+                            // is_rw: param is writable (don't mark readonly)
+                            is_rw: has_rw || has_copy,
+                            // do_writeback: actually write back modifications to source container
+                            do_writeback: has_rw && !has_copy,
+                            rw_param_names,
+                            kv_mode,
+                            source_var_names,
+                            source_var_locals,
+                            autothread_junctions,
+                            explicit_zero_params: *explicit_zero_params,
+                            multi_param_names: params
+                                .iter()
+                                .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
+                                .collect(),
+                            loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
+                            values_mode: Self::for_iterable_is_values_alias(iterable),
+                            single_array_source: Self::for_single_array_source(iterable),
+                            single_array_source_local: self.for_single_array_source_local(
+                                &Self::for_single_array_source(iterable),
+                            ),
+                        })));
                 // Register sigilless for-params (`-> \v`, `-> \k, \v`) as
                 // sigilless locals while compiling the body so postfix/prefix
                 // `++`/`--` on the bare word (`v--`, `++v`) resolve to an

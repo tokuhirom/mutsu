@@ -1,41 +1,9 @@
 use super::*;
 use crate::symbol::Symbol;
 
-pub(super) struct ForLoopSpec {
-    pub(super) param_idx: Option<u32>,
-    pub(super) param_local: Option<u32>,
-    pub(super) body_end: u32,
-    pub(super) label: Option<String>,
-    pub(super) arity: u32,
-    pub(super) collect: bool,
-    pub(super) restore_topic: bool,
-    pub(super) threaded: bool,
-    pub(super) is_rw: bool,
-    pub(super) do_writeback: bool,
-    pub(super) rw_param_names: Vec<String>,
-    pub(super) kv_mode: bool,
-    pub(super) source_var_names: Vec<String>,
-    /// Compiler-baked local slot for each `source_var_names` entry (§1.5).
-    pub(super) source_var_locals: Vec<Option<u32>>,
-    pub(super) autothread_junctions: bool,
-    /// When true, `-> {}` was used — throw on any items.
-    pub(super) explicit_zero_params: bool,
-    /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
-    /// Used to temporarily clear sigilless readonly flags before binding.
-    pub(super) multi_param_names: Vec<String>,
-    /// When true (`.pairs`/`.antipairs`), the loop variable is a `Pair` wrapping
-    /// the element, so the plain per-element source writeback is suppressed.
-    pub(super) loop_var_wraps_element: bool,
-    /// When true (`%h.values` / `$b.values`), the loop variable aliases the
-    /// container's value, so a `$_ = ...` topic writeback updates the source
-    /// (plain Hash or mutable MixHash/BagHash) by key order.
-    pub(super) values_mode: bool,
-    /// Bare source array name for `for @a` (live-array iteration). See the
-    /// `OpCode::ForLoop` field of the same name.
-    pub(super) single_array_source: Option<String>,
-    /// Compiler-baked local slot for `single_array_source` (§1.5).
-    pub(super) single_array_source_local: Option<u32>,
-}
+// The for-loop spec now lives in `opcode.rs` (the `OpCode::ForLoop` payload is
+// `Box<ForLoopSpec>`, so the VM borrows it directly instead of cloning fields).
+pub(super) use crate::opcode::ForLoopSpec;
 
 pub(super) struct WhileLoopSpec {
     pub(super) cond_end: u32,

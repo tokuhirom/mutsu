@@ -115,6 +115,9 @@ impl Interpreter {
             ip,
             std::mem::discriminant(&code.ops[*ip])
         );
+        // Per-opcode execution histogram (MUTSU_VM_STATS=1 only; a single
+        // cached bool load when off). Feeds instruction-set tuning decisions.
+        crate::vm::vm_stats::record_opcode(&code.ops[*ip]);
         // Track the currently-executing frame's code so the lazy-force machinery
         // can reconcile this (caller) frame's local slots from env after a reify
         // that mutated a captured-outer lexical (Slice F). See `current_code`.
@@ -1956,13 +1959,6 @@ impl Interpreter {
                 *ip += 1;
             }
 
-            // -- Nil check --
-            OpCode::IsNil => {
-                let val = self.stack.pop().unwrap();
-                self.stack.push(Value::Bool(matches!(val, Value::Nil)));
-                *ip += 1;
-            }
-
             // -- Control flow --
             OpCode::Label(_) => {
                 *ip += 1;
@@ -1994,15 +1990,6 @@ impl Interpreter {
                 Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.last().unwrap().clone();
                 if self.eval_truthy(&val) {
-                    *ip = *target as usize;
-                } else {
-                    *ip += 1;
-                }
-            }
-            OpCode::JumpIfNil(target) => {
-                Self::mark_failure_handled_on_stack(&mut self.stack);
-                let val = self.stack.last().unwrap();
-                if !runtime::types::value_is_defined(val) {
                     *ip = *target as usize;
                 } else {
                     *ip += 1;
@@ -2801,10 +2788,6 @@ impl Interpreter {
                 self.exec_index_op_with_positional(*is_positional)?;
                 *ip += 1;
             }
-            OpCode::IndexAutovivify => {
-                self.exec_index_autovivify_op()?;
-                *ip += 1;
-            }
             OpCode::IndexAutovivifyLazy => {
                 self.exec_index_autovivify_lazy_op(false)?;
                 *ip += 1;
@@ -3096,53 +3079,8 @@ impl Interpreter {
                 };
                 self.exec_while_loop_op(code, &spec, ip, compiled_fns)?;
             }
-            OpCode::ForLoop {
-                param_idx,
-                param_local,
-                body_end,
-                label,
-                arity,
-                collect,
-                restore_topic,
-                threaded,
-                is_rw,
-                do_writeback,
-                rw_param_names,
-                kv_mode,
-                source_var_names,
-                source_var_locals,
-                autothread_junctions,
-                explicit_zero_params,
-                multi_param_names,
-                loop_var_wraps_element,
-                values_mode,
-                single_array_source,
-                single_array_source_local,
-            } => {
-                let spec = vm_control_ops::ForLoopSpec {
-                    param_idx: *param_idx,
-                    param_local: *param_local,
-                    body_end: *body_end,
-                    label: label.clone(),
-                    arity: *arity,
-                    collect: *collect,
-                    restore_topic: *restore_topic,
-                    threaded: *threaded,
-                    is_rw: *is_rw,
-                    do_writeback: *do_writeback,
-                    rw_param_names: rw_param_names.clone(),
-                    kv_mode: *kv_mode,
-                    source_var_names: source_var_names.clone(),
-                    source_var_locals: source_var_locals.clone(),
-                    autothread_junctions: *autothread_junctions,
-                    explicit_zero_params: *explicit_zero_params,
-                    multi_param_names: multi_param_names.clone(),
-                    loop_var_wraps_element: *loop_var_wraps_element,
-                    values_mode: *values_mode,
-                    single_array_source: single_array_source.clone(),
-                    single_array_source_local: *single_array_source_local,
-                };
-                self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
+            OpCode::ForLoop(spec) => {
+                self.exec_for_loop_op(code, spec, ip, compiled_fns)?;
             }
             OpCode::RestoreForParam => {
                 // Restore the single named for-loop param's prior binding now
