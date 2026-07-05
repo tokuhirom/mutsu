@@ -102,9 +102,12 @@ fn format_parse_error(err: &RuntimeError, source: &str, program_name: &str) -> S
         if line >= 1 && line <= source_lines.len() {
             let src_line = source_lines[line - 1];
             let col = err.column().unwrap_or(1);
-            let col_idx = col.saturating_sub(1).min(src_line.len());
-            let before = &src_line[..col_idx];
-            let after = &src_line[col_idx..];
+            // `col` is a 1-based character column, so split the line by
+            // character position (not byte offset) to avoid slicing inside a
+            // multi-byte UTF-8 character.
+            let col_idx = col.saturating_sub(1).min(src_line.chars().count());
+            let before: String = src_line.chars().take(col_idx).collect();
+            let after: String = src_line.chars().skip(col_idx).collect();
             out.push_str(&format!("------>{}{}\n", before, after));
             let padding = " ".repeat(7 + col_idx);
             out.push_str(&format!("{}^", padding));
