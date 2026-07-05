@@ -84,13 +84,24 @@ pub fn tclc_str(s: &str) -> String {
 /// Apply wordcase to a string: find words matching <ident>+ % <[ - ' ]>
 /// and apply tclc to each word. Non-word characters pass through unchanged.
 pub fn wordcase_str(s: &str) -> String {
+    wordcase_with(s, tclc_str)
+}
+
+/// Split `s` into (segment, is_word) runs the way Raku's `wordcase` does: a
+/// "word" starts with an alphabetic/underscore character and may join further
+/// identifiers via `-`/`'`. Non-word characters are returned as their own
+/// (segment, false) runs so callers can rebuild the string verbatim.
+pub fn wordcase_segments(s: &str) -> Vec<(String, bool)> {
     let chars: Vec<char> = s.chars().collect();
     let len = chars.len();
-    let mut result = String::new();
+    let mut segments = Vec::new();
     let mut i = 0;
-
+    let mut gap_start = 0;
     while i < len {
         if chars[i].is_alphabetic() || chars[i] == '_' {
+            if gap_start < i {
+                segments.push((chars[gap_start..i].iter().collect(), false));
+            }
             let word_start = i;
             // Consume first ident: [alpha|_] \w*
             i += 1;
@@ -113,11 +124,26 @@ pub fn wordcase_str(s: &str) -> String {
                     break;
                 }
             }
-            let word: String = chars[word_start..i].iter().collect();
-            result.push_str(&tclc_str(&word));
+            segments.push((chars[word_start..i].iter().collect(), true));
+            gap_start = i;
         } else {
-            result.push(chars[i]);
             i += 1;
+        }
+    }
+    if gap_start < len {
+        segments.push((chars[gap_start..len].iter().collect(), false));
+    }
+    segments
+}
+
+/// `wordcase_str` with a custom per-word transform.
+pub fn wordcase_with(s: &str, mut transform: impl FnMut(&str) -> String) -> String {
+    let mut result = String::new();
+    for (segment, is_word) in wordcase_segments(s) {
+        if is_word {
+            result.push_str(&transform(&segment));
+        } else {
+            result.push_str(&segment);
         }
     }
     result
