@@ -31,7 +31,7 @@ impl Interpreter {
         if let Some(raw) = nth_spec {
             // :nth may carry a comma-separated list of 1-based indices, e.g.
             // `:nth(1,3)`. Indices must be >= 1 and monotonically increasing.
-            let nth_list = Self::parse_subst_nth_spec(raw)?;
+            let nth_list = Self::parse_subst_nth_spec(raw, all_matches.len())?;
             let mut selected: Vec<(usize, usize)> = Vec::new();
             for &n in &nth_list {
                 if n <= all_matches.len() {
@@ -99,7 +99,7 @@ impl Interpreter {
     /// Parse an `:nth` spec into a list of 1-based indices. Accepts a single
     /// integer or a comma-separated list (e.g. `1,3`). Validates that every
     /// index is >= 1 and that the list is monotonically increasing.
-    fn parse_subst_nth_spec(raw: &str) -> Result<Vec<usize>, RuntimeError> {
+    fn parse_subst_nth_spec(raw: &str, total: usize) -> Result<Vec<usize>, RuntimeError> {
         let token = raw.trim();
         if token.eq_ignore_ascii_case("-Inf") {
             return Err(RuntimeError::new("Invalid :nth index (-Inf)"));
@@ -111,9 +111,26 @@ impl Interpreter {
             if part.is_empty() {
                 continue;
             }
-            let n = part
-                .parse::<i64>()
-                .map_err(|_| RuntimeError::new(format!("Invalid :nth index ({part})")))?;
+            // `*` is the last match and `*-N` counts back from it, resolved
+            // against the match count. A Whatever-derived index that falls out
+            // of range selects nothing (rather than erroring like a literal).
+            let (n, from_whatever) = if part == "*" {
+                (total as i64, true)
+            } else if let Some(rest) = part.strip_prefix("*-") {
+                let sub = rest
+                    .trim()
+                    .parse::<i64>()
+                    .map_err(|_| RuntimeError::new(format!("Invalid :nth index ({part})")))?;
+                (total as i64 - sub, true)
+            } else {
+                let n = part
+                    .parse::<i64>()
+                    .map_err(|_| RuntimeError::new(format!("Invalid :nth index ({part})")))?;
+                (n, false)
+            };
+            if from_whatever && (n < 1 || n as usize > total) {
+                continue;
+            }
             if n < 1 {
                 return Err(RuntimeError::new(format!(
                     "Attempt to retrieve before :1st match -- :nth({n})"

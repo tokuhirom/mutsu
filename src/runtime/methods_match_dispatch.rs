@@ -211,7 +211,7 @@ impl Interpreter {
 
     /// Resolve :nth argument (Value) into a list of 1-based indices.
     /// Validates that values are positive and monotonically increasing.
-    fn resolve_nth_value_indices(
+    pub(in crate::runtime) fn resolve_nth_value_indices(
         &mut self,
         val: &Value,
         total_matches: usize,
@@ -412,6 +412,26 @@ impl Interpreter {
             Value::LazyList(ll) => {
                 let forced = self.force_lazy_list_bridge(ll)?;
                 Self::collect_nth_list_indices(&forced, total_matches, &mut indices)?;
+            }
+            // Bare `*` selects the last match.
+            Value::Whatever => {
+                if total_matches >= 1 {
+                    indices.push(total_matches);
+                }
+            }
+            // A WhateverCode (`*-1`, `*-2`, …) is applied to the match count, so
+            // `:nth(*-1)` is the second-to-last match. An out-of-range result
+            // selects nothing (rather than erroring like a literal `:nth(0)`).
+            Value::Sub(_) => {
+                let result = self.call_sub_value(
+                    val.clone(),
+                    vec![Value::Int(total_matches as i64)],
+                    false,
+                )?;
+                let i = Self::value_to_nth_int(&result)?;
+                if i >= 1 && (i as usize) <= total_matches {
+                    indices.push(i as usize);
+                }
             }
             _ => {
                 let i = Self::value_to_nth_int(val)?;
