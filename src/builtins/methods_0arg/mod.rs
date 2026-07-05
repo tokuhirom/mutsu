@@ -554,15 +554,31 @@ pub(crate) fn native_method_0arg(
                     .chars()
                     .map(|c| format!("0x{:04X}", c as u32))
                     .collect();
+                // A normalization form appends the form, e.g. Uni.new(...).NFKC
+                let suffix = if u.form.is_empty() {
+                    String::new()
+                } else {
+                    format!(".{}", u.form)
+                };
                 return Some(Ok(Value::str(format!(
-                    "Uni.new({})",
-                    codepoints.join(", ")
+                    "Uni.new({}){}",
+                    codepoints.join(", "),
+                    suffix
                 ))));
             }
             "gist" => {
                 let codepoints: Vec<String> =
                     text.chars().map(|c| format!("{:04X}", c as u32)).collect();
-                return Some(Ok(Value::str(format!("Uni:0x<{}>", codepoints.join(" ")))));
+                let form = if u.form.is_empty() {
+                    "Uni"
+                } else {
+                    u.form.as_str()
+                };
+                return Some(Ok(Value::str(format!(
+                    "{}:0x<{}>",
+                    form,
+                    codepoints.join(" ")
+                ))));
             }
             "NFC" | "NFD" | "NFKC" | "NFKD" => {
                 let normalized: String = match method {
