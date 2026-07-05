@@ -312,6 +312,30 @@ fn is_dt_nobreak(cp: u32) -> bool {
     matches!(cp, 0x00A0 | 0x0F0C | 0x2007 | 0x2011 | 0x202F)
 }
 
+/// UAX #44 Decomposition_Type=Circle set (enclosed alphanumerics/ideographs).
+fn is_dt_circle(cp: u32) -> bool {
+    matches!(cp,
+        0x2460..=0x2473 | 0x24B6..=0x24EA | 0x3244..=0x3247 | 0x3251..=0x327E | 0x3280..=0x32BF
+        | 0x32D0..=0x32FE | 0x1F12B..=0x1F12E | 0x1F250..=0x1F251)
+}
+
+/// UAX #44 Decomposition_Type=Square set (squared CJK/Latin abbreviations).
+fn is_dt_square(cp: u32) -> bool {
+    matches!(cp,
+        0x3250 | 0x32CC..=0x32CF | 0x32FF..=0x3357 | 0x3371..=0x33DF | 0x33FF | 0x1F130..=0x1F14F
+        | 0x1F190 | 0x1F200..=0x1F202 | 0x1F210..=0x1F23B)
+}
+
+/// UAX #44 Decomposition_Type=Wide set (fullwidth forms).
+fn is_dt_wide(cp: u32) -> bool {
+    matches!(cp, 0x3000 | 0xFF01..=0xFF60 | 0xFFE0..=0xFFE6)
+}
+
+/// UAX #44 Decomposition_Type=Vertical set (vertical CJK compatibility forms).
+fn is_dt_vertical(cp: u32) -> bool {
+    matches!(cp, 0x309F | 0x30FF | 0xFE10..=0xFE19 | 0xFE30..=0xFE44 | 0xFE47..=0xFE48)
+}
+
 fn compatibility_decomposition_type(ch: char) -> String {
     let cp = ch as u32;
     // Exact UAX #44 compatibility-type sets take precedence over the
@@ -328,6 +352,18 @@ fn compatibility_decomposition_type(ch: char) -> String {
     if is_dt_font(cp) {
         return "Font".to_string();
     }
+    if is_dt_circle(cp) {
+        return "Circle".to_string();
+    }
+    if is_dt_square(cp) {
+        return "Square".to_string();
+    }
+    if is_dt_wide(cp) {
+        return "Wide".to_string();
+    }
+    if is_dt_vertical(cp) {
+        return "Vertical".to_string();
+    }
     // Heuristic mapping based on common compatibility decomposition types
     match cp {
         0x00BC..=0x00BE => "Fraction".to_string(), // vulgar fractions
@@ -336,17 +372,12 @@ fn compatibility_decomposition_type(ch: char) -> String {
         0x2150..=0x215F => "Fraction".to_string(),
         0x2160..=0x2188 => "Compat".to_string(), // Roman numerals
         0x2189 => "Fraction".to_string(),
-        0x2460..=0x24FF => "Circle".to_string(), // Enclosed alphanumerics
-        0x3300..=0x33FF => "Square".to_string(), // CJK compat
         0xFB00..=0xFB06 => "Compat".to_string(), // Latin ligatures
         // Arabic presentation forms: the specific positional form (Isolated /
         // Final / Initial / Medial) is encoded in the character name.
         0xFB50..=0xFDFF | 0xFE70..=0xFEFF => arabic_presentation_form_type(ch),
-        0xFE30..=0xFE4F => "Vertical".to_string(), // CJK compat forms
-        0xFE50..=0xFE6F => "Small".to_string(),    // Small Form Variants
-        0xFF01..=0xFF5E => "Wide".to_string(),     // Fullwidth
-        0xFF61..=0xFFDC => "Narrow".to_string(),   // Halfwidth
-        0xFFE0..=0xFFE6 => "Wide".to_string(),
+        0xFE50..=0xFE6F => "Small".to_string(), // Small Form Variants
+        0xFF61..=0xFFDC => "Narrow".to_string(), // Halfwidth
         0xFFE8..=0xFFEE => "Narrow".to_string(),
         _ => "Compat".to_string(),
     }
