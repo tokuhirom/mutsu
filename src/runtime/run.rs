@@ -162,9 +162,10 @@ impl Interpreter {
         // Auto-call MAIN sub if defined, with CLI argument parsing
         self.dispatch_main(&compiled_fns)?;
         self.finish()?;
-        // GC Level 1a safepoint (§11 step 8): at program end, reclaim any
-        // reference cycles the run leaked. No-op unless `MUTSU_GC=on`.
-        crate::gc::collect_if_enabled("program-end");
+        // GC program-end collect: deliver DESTROY for leaked cycles. Skipped
+        // when nothing can observe it (no DESTROY classes, no gc log/verify/
+        // stats) — see `gc::collect_at_program_end`.
+        crate::gc::collect_at_program_end(self.registry_has_destroy_methods());
         Ok(self.output_sink().output.clone())
     }
 

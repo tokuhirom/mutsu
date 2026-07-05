@@ -31,6 +31,10 @@ fn run(src: &str, gc: &[(&str, &str)]) -> (String, String, bool) {
     ] {
         cmd.env_remove(k);
     }
+    // GC is default-ON since the ADR-0003 flip, so the no-vars baseline must
+    // opt out explicitly — these tests compare "GC off" against the exact
+    // stress mode they set (which overrides this below).
+    cmd.env("MUTSU_GC", "off");
     for (k, v) in gc {
         cmd.env(k, v);
     }

@@ -454,7 +454,25 @@ impl<T: Trace + 'static> Drop for Gc<T> {
         // `Arc` frees the allocation once its own count reaches zero.
         if gc_enabled() {
             if prev > 1 {
-                buffer_candidate(self.inner.clone());
+                // Already-buffered fast path (Bacon-Rajan's Decrement does this
+                // same test): a hot loop cloning and dropping the same handle —
+                // a recursive sub's `Sub` node, a reused instance — hits this on
+                // every call, so it must cost one relaxed load, not the Arc
+                // round-trip (clone + unsize + swap + drop) that
+                // `buffer_candidate`'s authoritative dedup would spend. The swap
+                // inside `buffer_candidate` still decides races (two threads
+                // both loading `false` here is fine); a load that reads `true`
+                // just as a concurrent drain clears the flag skips one
+                // re-buffering, which the next survivor-drop (or the program-end
+                // collect) re-offers — deferral, never unsoundness. This load
+                // was the bulk of the measured GC-on overhead on bench-fib
+                // (+30%) / bench-class (+61%): 0.4M-16.5M dedup hits each
+                // paying the round-trip.
+                if self.inner.header.buffered.load(Ordering::Relaxed) {
+                    record_gc_candidate_dedup_hit();
+                } else {
+                    buffer_candidate(self.inner.clone());
+                }
             } else {
                 // Last live handle. The allocation may outlive this drop in the
                 // candidate buffer, deferring the value's Rust `Drop` (and with
@@ -540,12 +558,35 @@ pub(crate) unsafe fn gc_contents_mut<T: Trace + 'static>(gc: &Gc<T>) -> &mut T {
 }
 
 /// Process-global cycle-candidate buffer (design doc §5.2: "buffer は
-/// `Vec<GcId>` でよい"). Holds an `Arc` clone of each candidate so the future
-/// collector can trace it; `Mutex` because candidates are pushed from any
-/// thread (`start`/`Promise`/`hyper`/`race`).
-fn candidate_buffer() -> &'static Mutex<Vec<ErasedGc>> {
-    static BUF: OnceLock<Mutex<Vec<ErasedGc>>> = OnceLock::new();
-    BUF.get_or_init(|| Mutex::new(Vec::new()))
+/// `Vec<GcId>` でよい"). Holds an `Arc` clone of each candidate so the
+/// collector can trace it. SHARDED by node address: candidates are pushed
+/// from every thread (`start`/`Promise`/`hyper`/`race` *and* the collector's
+/// own dead-sweep drop cascade), and one global `Mutex` measured ~250µs per
+/// push under thread churn (S17-lowlevel/thread.t: 16k-node dead sweeps went
+/// from 40ms to 3.5-4.7s purely on lock ping-pong). Dedup correctness does
+/// not live here — the per-node `buffered` bit is the authority — so a drain
+/// simply concatenates the shards.
+const CANDIDATE_SHARDS: usize = 64;
+
+/// Approximate total buffered count, maintained alongside the shards so the
+/// ADR-0003 size-threshold check needs no locks. Push/drain/requeue keep it
+/// paired; transient over/undershoot only skews the *trigger point* by a few
+/// entries, never correctness.
+static APPROX_BUFFERED: AtomicUsize = AtomicUsize::new(0);
+
+fn candidate_shards() -> &'static Vec<Mutex<Vec<ErasedGc>>> {
+    static BUF: OnceLock<Vec<Mutex<Vec<ErasedGc>>>> = OnceLock::new();
+    BUF.get_or_init(|| {
+        (0..CANDIDATE_SHARDS)
+            .map(|_| Mutex::new(Vec::new()))
+            .collect()
+    })
+}
+
+fn candidate_shard_for(node: &ErasedGc) -> &'static Mutex<Vec<ErasedGc>> {
+    // Node addresses are allocator-aligned; drop the low bits before sharding.
+    let id = erased_id(node) >> 6;
+    &candidate_shards()[id & (CANDIDATE_SHARDS - 1)]
 }
 
 /// Record `node` as a possible cycle root: mark it `Purple` and push it, unless
@@ -558,12 +599,10 @@ fn buffer_candidate(node: ErasedGc) {
     node.header
         .color
         .store(Color::Purple as u8, Ordering::Relaxed);
-    let len = if let Ok(mut buf) = candidate_buffer().lock() {
+    if let Ok(mut buf) = candidate_shard_for(&node).lock() {
         buf.push(node);
-        buf.len()
-    } else {
-        0
-    };
+    }
+    let len = APPROX_BUFFERED.fetch_add(1, Ordering::Relaxed) + 1;
     record_gc_candidate_push();
     // May arm a pending collect (the MUTSU_GC_EVERY_CANDIDATE stress period,
     // or the ADR-0003 production size threshold); never collects inline here —
@@ -624,10 +663,13 @@ pub(crate) fn mutator_worker_count() -> usize {
 /// trial-deletion; exposed now as the seam between candidate registration and
 /// collection so the two land in separate slices.
 pub(crate) fn drain_candidates() -> Vec<ErasedGc> {
-    let drained = match candidate_buffer().lock() {
-        Ok(mut buf) => std::mem::take(&mut *buf),
-        Err(_) => Vec::new(),
-    };
+    let mut drained = Vec::new();
+    for shard in candidate_shards() {
+        if let Ok(mut buf) = shard.lock() {
+            drained.append(&mut buf);
+        }
+    }
+    APPROX_BUFFERED.fetch_sub(drained.len(), Ordering::Relaxed);
     for node in &drained {
         node.header.buffered.store(false, Ordering::Relaxed);
     }
@@ -639,16 +681,14 @@ pub(crate) fn drain_candidates() -> Vec<ErasedGc> {
 /// any node a concurrent `Gc::drop` re-buffered since the drain (its `buffered`
 /// flag is already set), so the buffer never holds duplicates.
 pub(crate) fn requeue_candidates(nodes: Vec<ErasedGc>) {
-    if nodes.is_empty() {
-        return;
-    }
-    if let Ok(mut buf) = candidate_buffer().lock() {
-        for node in nodes {
-            if node.header.buffered.swap(true, Ordering::Relaxed) {
-                continue;
-            }
+    for node in nodes {
+        if node.header.buffered.swap(true, Ordering::Relaxed) {
+            continue;
+        }
+        if let Ok(mut buf) = candidate_shard_for(&node).lock() {
             buf.push(node);
         }
+        APPROX_BUFFERED.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -741,20 +781,54 @@ pub(crate) fn gc_finalize(node: &ErasedGc) {
     node.value.finalize();
 }
 
-/// Whether GC candidate registration is active. `off`/unset (the default) makes
-/// [`Gc`]'s drop skip candidate buffering entirely, so the `Gc` machinery is
-/// inert until explicitly enabled (design doc §9.1: "compiled in, default off").
+/// Whether GC candidate registration is active. **Default ON** since the
+/// ADR-0003 acceptance gates passed (2026-07-05): a Raku interpreter that
+/// leaks reference cycles is defective (ADR-0001 "GC is table stakes"), so
+/// cycle collection is part of normal execution — `MUTSU_GC=off` is the
+/// explicit opt-out (perf comparisons, debugging the collector itself).
 ///
-/// Resolved once from `MUTSU_GC` (`on`/`1` = on; `off`/`0`/unset = off; an
-/// unrecognized value warns once and falls back to off, per §9.1a).
+/// Resolved once from `MUTSU_GC` (`off`/`0` = off; `on`/`1` = on; an
+/// unrecognized value warns once and keeps the default). Unset = the default:
+/// ON in production builds, OFF in the crate's own unit-test build
+/// (`cfg!(test)`) — `cargo test` runs tests on parallel threads that share
+/// the process-global collector state, so in-process safepoint collects
+/// cross-talk between tests (see `gc::test_support`); the CI gc-stress job
+/// still exercises GC-on unit tests by setting `MUTSU_GC=on` explicitly and
+/// running single-threaded. Subprocess-based integration tests
+/// (`tests/gc_stress.rs`) spawn the real (default-on) binary.
+///
+/// Cached in a tri-state atomic rather than the `OnceLock` alone: this sits on
+/// `Gc::drop`'s survivor path (once per handle drop, millions of times on
+/// class-heavy programs), where the `OnceLock` fast path's state-check +
+/// cell-read double load is measurable; the cache makes it one relaxed load.
 pub(crate) fn gc_enabled() -> bool {
+    // 0 = uninitialized, 1 = off, 2 = on.
+    static CACHE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+    match CACHE.load(Ordering::Relaxed) {
+        2 => true,
+        1 => false,
+        _ => {
+            let on = gc_enabled_slow();
+            CACHE.store(if on { 2 } else { 1 }, Ordering::Relaxed);
+            on
+        }
+    }
+}
+
+#[cold]
+fn gc_enabled_slow() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| match std::env::var("MUTSU_GC").ok().as_deref() {
+        Some("off") | Some("0") => false,
         Some("on") | Some("1") => true,
-        None | Some("off") | Some("0") => false,
+        None => !cfg!(test),
         Some(other) => {
-            eprintln!("[mutsu gc] warning: unrecognized MUTSU_GC={other:?}, defaulting to off");
-            false
+            let default = !cfg!(test);
+            eprintln!(
+                "[mutsu gc] warning: unrecognized MUTSU_GC={other:?}, defaulting to {}",
+                if default { "on" } else { "off" }
+            );
+            default
         }
     })
 }

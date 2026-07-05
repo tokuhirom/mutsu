@@ -352,9 +352,23 @@ fn is_in_destroy_handler() -> bool {
     IN_DESTROY_HANDLER.with(|flag| *flag.borrow())
 }
 
-fn live_instance_refcounts() -> &'static Mutex<HashMap<u64, usize>> {
-    static LIVE_INSTANCE_REFCOUNTS: OnceLock<Mutex<HashMap<u64, usize>>> = OnceLock::new();
-    LIVE_INSTANCE_REFCOUNTS.get_or_init(|| Mutex::new(HashMap::new()))
+/// DESTROY-dedup refcounts (instance id -> live `queue_destroy` holders),
+/// SHARDED by id so the per-instance bookkeeping never funnels every thread
+/// through one global mutex: `InstanceAttrs::new` locks it on every user
+/// instance construction and `finalize_destroy` on every instance death, and
+/// under GC=on the dead sweep drops candidates in 16k-node batches while
+/// worker threads keep constructing — one global lock measured 3.5-4.2s of
+/// ping-pong per collect on S17-lowlevel/thread.t (vs ~40ms uncontended).
+const LIVE_REFCOUNT_SHARDS: usize = 64;
+
+fn live_instance_refcounts(id: u64) -> &'static Mutex<HashMap<u64, usize>> {
+    static SHARDS: OnceLock<Vec<Mutex<HashMap<u64, usize>>>> = OnceLock::new();
+    let shards = SHARDS.get_or_init(|| {
+        (0..LIVE_REFCOUNT_SHARDS)
+            .map(|_| Mutex::new(HashMap::new()))
+            .collect()
+    });
+    &shards[(id as usize) & (LIVE_REFCOUNT_SHARDS - 1)]
 }
 
 /// The shared mutable attribute cell of an instance (Phase 3, Stage 1).

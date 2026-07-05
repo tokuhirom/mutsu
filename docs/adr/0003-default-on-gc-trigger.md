@@ -75,3 +75,25 @@ gc-stress の全ステップ blocking 化（#4219）。しかし GC は**依然 
 ---
 
 *2026-07-05 ユーザー承認により Accepted。実装は §2 の Decision に従い、§2-3 のゲートを満たして default-on を切り替える。*
+
+## 5. Update（2026-07-05・切替時の受け入れ実測とゲート改訂）
+
+§2-3c の実測（release・9 反復 best・load < 1.5）:
+
+| bench | GC-on overhead | 判定 |
+|---|---|---|
+| fib25 / bench-fib / int-arith | +0.5% / +3.0% / +2.0% | ✓（型フィルタで scalar/関数 hot path はほぼ無料 — ADR-0001 の本来の狙いを達成） |
+| method-call | +0.7〜6.4%（測定ノイズ帯） | ✓/△ |
+| **bench-class** | **+7.5〜8.3%** | ✗（< 5% に対し） |
+| churn 系 | ≤ +10% | ✓（≤ 1.2x） |
+
+bench-class の残差は「28k インスタンスに対して 16.5M 回の `Value` clone/drop」という既存の
+クローン交通量に per-drop の buffered-bit 分岐 1 個が乗る構造的コストで、GC 側の安価な改善
+（drop fast path で +61%→+8%・program-end collect skip・`gc_enabled` キャッシュ）は投入済み。
+交通量自体の削減は ADR-0001 が層 3b（NaN-boxing）に割り当てる領域である。
+
+**ユーザー判断（2026-07-05）: bench-class ~8% を許容してこのまま default-on に切り替える。**
+リークしない既定の価値が class 密度の高いコードの 8% に優先し、根本削減は 3b で回収する。
+`cfg!(test)`（crate 自身の unit-test ビルド）のみ既定 off — 並列 `cargo test` のテスト分離のため
+（GC-on unit test は CI gc-stress ジョブが担保）。
+

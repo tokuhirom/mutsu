@@ -338,7 +338,26 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
     for node in &dead {
         gc_finalize(node);
     }
-    drop(dead);
+    // Release the dead batch's memory OFF the collector thread when it is
+    // large. Dropping refcount-dead nodes is pure memory work, but its volume
+    // is O(garbage): a thread-churn program (S17-lowlevel/thread.t) produces
+    // 16k-node batches of env-sized hashes whose serial release measured
+    // 3.5-5.5s per collect INSIDE the pause — work that under GC-off happened
+    // spread across the worker threads themselves. Finalizers (Raku DESTROY
+    // queueing) already ran above, on this interpreter thread, with the
+    // attributes intact; what remains is `Arc` teardown. The reclamation
+    // thread is a REGISTERED mutator (its drop cascade decrements child
+    // counts and can re-buffer survivors), so a later collect's cooperative
+    // STW correctly waits for it — or times out into the usual sound
+    // requeue+cooldown deferral while it churns. Small batches drop inline:
+    // a thread spawn per tiny sweep would cost more than it saves.
+    if dead_count >= 1024 {
+        drop(crate::runtime::builtins_system::spawn_user_thread(
+            move || drop(dead),
+        ));
+    } else {
+        drop(dead);
+    }
 
     // Trial deletion is not safe against concurrent mutation: it decrements and
     // restores strong counts, so a worker thread cloning/dropping a `Gc` (or
@@ -500,6 +519,29 @@ pub(crate) fn collect_if_enabled(safepoint: &str) {
         return;
     }
     collect_cycles_at(safepoint);
+}
+
+/// The program-end collect. Its only *observable* effect is delivering Raku
+/// `DESTROY` for cycle members that survived to exit — process teardown frees
+/// the memory either way. So when no user class/role defines a `DESTROY`
+/// submethod (`has_destroy_methods`, the overwhelmingly common case) and no
+/// observability surface is on (`MUTSU_GC_LOG` / `MUTSU_GC_VERIFY` /
+/// `MUTSU_VM_STATS`, whose outputs tests and operators read), skip it: the
+/// exit scan trial-deletes every live buffered suspect — re-enumerating big
+/// captured envs — which measured 160-220ms on bench-class for zero
+/// observable effect.
+pub(crate) fn collect_at_program_end(has_destroy_methods: bool) {
+    if !super::gc_ptr::gc_enabled() {
+        return;
+    }
+    if !has_destroy_methods
+        && log_mode() == LogMode::Off
+        && !verify_enabled()
+        && !crate::vm::vm_stats::enabled()
+    {
+        return;
+    }
+    collect_cycles_at("program-end");
 }
 
 #[cfg(test)]

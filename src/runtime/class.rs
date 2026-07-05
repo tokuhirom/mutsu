@@ -19,6 +19,25 @@ impl Interpreter {
         result
     }
 
+    /// Whether ANY registered user class or role defines a `DESTROY`
+    /// submethod. This is exactly the predicate `run_pending_instance_destroys`
+    /// dispatches on (`class_def.methods.get("DESTROY")` / role submethods) —
+    /// builtin native-method DESTROYs (IO::Handle etc.) live in
+    /// `native_methods` and are not queued through the GC finalize path, so
+    /// they do not count. Used to skip the program-end cycle collect when no
+    /// DESTROY could possibly fire (`gc::collect_at_program_end`). O(types),
+    /// called once at exit.
+    pub(crate) fn registry_has_destroy_methods(&self) -> bool {
+        let reg = self.registry();
+        reg.classes
+            .values()
+            .any(|cd| cd.methods.contains_key("DESTROY"))
+            || reg
+                .roles
+                .values()
+                .any(|rd| rd.methods.contains_key("DESTROY"))
+    }
+
     /// Whether a type was declared under Raku 6.e+ semantics, keyed on the
     /// type's *declaration* revision (captured as type metadata). DESTROY/BUILD
     /// run long after parsing, when the globally-current language version may
