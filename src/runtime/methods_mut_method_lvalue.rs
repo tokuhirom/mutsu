@@ -338,7 +338,13 @@ impl Interpreter {
                     return Ok(value);
                 }
                 let mut selected_hash: Option<crate::gc::Gc<crate::value::HashData>> = None;
-                let mut selected_array: Option<crate::gc::Gc<crate::value::ArrayData>> = None;
+                // Track the source array's `ArrayKind` so the rebuilt array keeps
+                // its Array/Shaped identity (`for @a.pairs { .value = X }` must not
+                // demote `@a` to a bare List).
+                let mut selected_array: Option<(
+                    crate::gc::Gc<crate::value::ArrayData>,
+                    ArrayKind,
+                )> = None;
 
                 if let Some(var_name) = target_var
                     && let Some(Value::Hash(candidate)) = self.env.get(var_name)
@@ -349,10 +355,10 @@ impl Interpreter {
                 if selected_hash.is_none()
                     && let Ok(i) = key.parse::<usize>()
                     && let Some(var_name) = target_var
-                    && let Some(Value::Array(candidate, ..)) = self.env.get(var_name)
+                    && let Some(Value::Array(candidate, kind)) = self.env.get(var_name)
                     && candidate.get(i) == Some(current_value.as_ref())
                 {
-                    selected_array = Some(candidate.clone());
+                    selected_array = Some((candidate.clone(), *kind));
                 }
 
                 if selected_hash.is_none() {
@@ -376,13 +382,13 @@ impl Interpreter {
                     && let Ok(i) = key.parse::<usize>()
                 {
                     let mut candidates = self.env.values().filter_map(|bound| match bound {
-                        Value::Array(arr, ..) if arr.get(i) == Some(current_value.as_ref()) => {
-                            Some(arr.clone())
+                        Value::Array(arr, kind) if arr.get(i) == Some(current_value.as_ref()) => {
+                            Some((arr.clone(), *kind))
                         }
                         _ => None,
                     });
                     if let Some(first) = candidates.next()
-                        && candidates.all(|other| crate::gc::Gc::ptr_eq(&first, &other))
+                        && candidates.all(|(other, _)| crate::gc::Gc::ptr_eq(&first.0, &other))
                     {
                         selected_array = Some(first);
                     }
@@ -395,14 +401,15 @@ impl Interpreter {
                     self.overwrite_hash_bindings_by_identity(&source_hash, replacement);
                     return Ok(value);
                 }
-                if let Some(source_array) = selected_array
+                if let Some((source_array, source_kind)) = selected_array
                     && let Ok(i) = key.parse::<usize>()
                 {
                     let mut updated = (*source_array).clone();
                     if i < updated.len() {
                         updated[i] = value.clone();
-                        let replacement =
-                            Value::Array(crate::gc::Gc::new(updated), ArrayKind::List);
+                        // Preserve the source array's kind (Array/Shaped/…) so the
+                        // writeback does not demote it to a List.
+                        let replacement = Value::Array(crate::gc::Gc::new(updated), source_kind);
                         self.overwrite_array_bindings_by_identity(&source_array, replacement);
                         return Ok(value);
                     }
