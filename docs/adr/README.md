@@ -22,4 +22,4 @@
 | [0001](0001-gc-strategy-and-phasing.md) | GC 導入の方式選定とフェーズ計画 | Accepted |
 | [0002](0002-phase-a-gate-reassessment.md) | Phase A ゲート再評価 — GC 着手条件の充足確認 | Accepted |
 | [0003](0003-default-on-gc-trigger.md) | デフォルト GC=on のトリガ方針（同期 + バッファサイズ閾値 + adaptive backoff） | Accepted |
-| [0004](0004-jit-strategy.md) | JIT の方式選定とフェーズ計画（Cranelift method JIT・deopt なし） | Proposed |
+| [0004](0004-jit-strategy.md) | JIT の方式選定とフェーズ計画（Cranelift method JIT・deopt なし） | Accepted |

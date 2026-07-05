@@ -255,13 +255,14 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       int-arith 2x・fib ~30% 狙い。`value_size_guard` テストでサイズ監視中。スライス計画
       （3b-0 API 壁 → 3b-1 表現スイッチ → 3b-2 交通量刈り）とゲートは
       [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §3。
-- [ ] **Lever 3: threaded dispatch — 凍結提案**（[ADR-0004](docs/adr/0004-jit-strategy.md) §2.5 J0）:
+- **Lever 3: threaded dispatch — 凍結**（2026-07-06 ユーザー承認・[ADR-0004](docs/adr/0004-jit-strategy.md) §2.5 J0）:
       JIT Tier A が dispatch ループ除去で同じ利得をより大きく取るため二重投資を避ける。
       JIT が頓挫した場合のみ復活。
 - [ ] **Lever 4: JIT（Cranelift）= ADR-0001 層4（GC の後）/ Lever 5: 型制約チェックの tight-loop 省略**。
       方式・フェーズ（J1 骨組み → J2 Tier A 網羅 → J3 呼び出し規約/IC → J4 Tier B インライン →
-      J5 既定 on）とゲートは **[ADR-0004（Proposed）](docs/adr/0004-jit-strategy.md)** に策定済み。
+      J5 既定 on）とゲートは **[ADR-0004（Accepted 2026-07-06）](docs/adr/0004-jit-strategy.md)**。
       deopt/stack map なしの subroutine-threading 起点、safepoint poll で GC の STW に協調。
+      着手条件 = 層3b（Lever 2）のゲート達成。
 - [ ] **Lever 6: biased reference counting = ADR-0001 層3c（GC 後の独立 perf）**。凍結 — 着手トリガは
       「JIT J4 完了後の profile で atomic inc/dec が上位に残る」のみ（gc-post-3a-roadmap §4）。
 - [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
