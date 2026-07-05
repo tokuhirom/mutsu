@@ -444,6 +444,35 @@ impl Compiler {
         modifier: &Option<char>,
         quoted: bool,
     ) {
+        // A mutating hyper postfix on a subscript/slice (`%h<a b c>»++`,
+        // `@a[0,1]»--`) has no simple `@`/`%` variable name for the generic hyper
+        // path to write back through, so the in/decremented values were computed
+        // and discarded. Desugar it to a post-increment: read the OLD slice, then
+        // mutate it in place through the working `»+=»`/`»-=»` metaop, and leave
+        // the OLD values as the expression result.
+        let resolved = name.resolve();
+        if args.is_empty()
+            && modifier.is_none()
+            && matches!(resolved.as_str(), "postfix:<++>" | "postfix:<-->")
+            && matches!(target, Expr::Index { .. })
+        {
+            let op = if resolved == "postfix:<++>" {
+                "+="
+            } else {
+                "-="
+            };
+            let mutate = Expr::HyperOp {
+                op: op.to_string(),
+                left: Box::new(target.clone()),
+                right: Box::new(Expr::Literal(Value::Int(1))),
+                dwim_left: false,
+                dwim_right: true,
+            };
+            self.compile_expr(target); // OLD slice values (post-increment result)
+            self.compile_expr(&mutate); // mutate in place, pushes NEW
+            self.code.emit(OpCode::Pop); // discard NEW, keep OLD
+            return;
+        }
         self.compile_expr(target);
         let arity = args.len() as u32;
         for arg in args {
