@@ -892,27 +892,21 @@ pub(crate) use dispatch_core_coerce::str_numeric_failure;
 
 /// Unicode case folding for `.fc` and `fc()`.
 pub(crate) fn unicode_foldcase(s: &str) -> String {
-    let mut lowered = String::with_capacity(s.len());
+    // Unicode full case folding (CaseFolding.txt, statuses C + F). Most
+    // characters fold to their simple lowercase (`char::to_lowercase`); the
+    // characters whose full fold expands to several codepoints (ligatures, ß,
+    // the Greek iota-subscript vowels, ...) come from `full_case_fold`. A plain
+    // NFKD would be wrong here — it also decomposes non-cased compatibility
+    // characters (NBSP, superscripts, Roman numerals, circled/fullwidth
+    // letters), which do not case-fold to their decomposition.
+    let mut out = String::with_capacity(s.len());
     for c in s.chars() {
-        match c {
-            '\u{00DF}' | '\u{1E9E}' => lowered.push_str("ss"),
-            _ => {
-                for lc in c.to_lowercase() {
-                    lowered.push(lc);
-                }
-            }
+        match crate::builtins::unicode::full_case_fold(c as u32) {
+            Some(folded) => out.push_str(folded),
+            None => out.extend(c.to_lowercase()),
         }
     }
-
-    let mut expanded = String::with_capacity(lowered.len());
-    for c in lowered.nfkd() {
-        if c == '\u{0345}' {
-            expanded.push('\u{03B9}');
-        } else {
-            expanded.push(c);
-        }
-    }
-    expanded.nfc().collect()
+    out
 }
 
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
