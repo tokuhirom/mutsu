@@ -113,6 +113,18 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     parse_statement_modifier(rest, stmt)
 }
 
+/// A trailing comma in a `take` argument (`take X,`) parses as a one-element
+/// comma list. Raku treats `take X,` as `take X` (the trailing comma is a
+/// separator, not a list constructor), so unwrap the lone element — otherwise
+/// `take ['x', $a, $b],` would gather the wrapper `(['x', $a, $b],)` instead of
+/// the array itself. (`take X, Y` keeps its multi-element list.)
+fn unwrap_single_trailing_comma(expr: crate::ast::Expr) -> crate::ast::Expr {
+    match expr {
+        crate::ast::Expr::ArrayLiteral(mut items) if items.len() == 1 => items.pop().unwrap(),
+        other => other,
+    }
+}
+
 /// Parse `take` or `take-rw` statement.
 pub(crate) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
     // Try `take-rw` first (longer match wins)
@@ -120,6 +132,7 @@ pub(crate) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
         && let Ok((rest, _)) = ws1(rest)
     {
         let (rest, expr) = parse_comma_or_expr(rest)?;
+        let expr = unwrap_single_trailing_comma(expr);
         // `take-rw`: is_rw=true. The compiler captures the source container so the
         // gathered value keeps container identity (`=:=`) with the original lvalue.
         return parse_statement_modifier(rest, Stmt::Take(expr, true));
@@ -127,6 +140,7 @@ pub(crate) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("take", input).ok_or_else(|| PError::expected("take statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, expr) = parse_comma_or_expr(rest)?;
+    let expr = unwrap_single_trailing_comma(expr);
     parse_statement_modifier(rest, Stmt::Take(expr, false))
 }
 
