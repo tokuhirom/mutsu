@@ -211,7 +211,12 @@ pub(crate) fn unicode_bidi_class(ch: char) -> String {
         | 0x2070                     // superscript 0
         | 0x2074..=0x2079            // superscript 4-9
         | 0x2080..=0x2089            // subscript 0-9
-        | 0xFF10..=0xFF19 => "EN",   // fullwidth digits
+        | 0x2488..=0x249B            // digit-full-stop forms
+        | 0xFF10..=0xFF19            // fullwidth digits
+        | 0x102E1..=0x102FB          // Coptic epact numbers
+        | 0x1D7CE..=0x1D7FF          // mathematical digits
+        | 0x1F100..=0x1F10A          // dingbat/enclosed digits
+        | 0x1FBF0..=0x1FBF9 => "EN", // segmented digits
         0x0600..=0x0605             // Arabic number signs
         | 0x0660..=0x0669            // Arabic-Indic digits
         | 0x066B..=0x066C            // Arabic decimal/thousands separator
