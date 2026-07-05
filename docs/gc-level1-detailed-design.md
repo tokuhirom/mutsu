@@ -783,7 +783,17 @@ unit test / integration test では random 依存にせず、**明示 collect ho
 8. safepoint で synchronous collect
 9. `Sub` / `Instance` / captured env / attrs を second wave で移行
 10. `LazyList` を third wave として移行
-11. OS resource 主体の async registry で `Value` edge を持つものを必要に応じて追従させる
+11. ✅ OS resource 主体の async registry で `Value` edge を持つものを必要に応じて追従させる
+    — **2026-07-05 調査で「コード変更不要（sound-by-refcount）」としてクローズ**。本実装の
+    collector は candidate バッファ起点の trial deletion で、liveness 判定は GC strong refcount
+    のみ（root visitor は production 未消費・テスト専用）。レジストリが `Value`/`SharedPromise`/
+    `SharedChannel` を保持していれば、その保持自体が external strong ref として scan フェーズで
+    ノードを revive するため、visitor 未カバーでも unsoundness・リーク・VERIFY 誤検出は起きない。
+    edge を持つ未カバーレジストリ（将来 root 消費型の仕組み＝full-root VERIFY / tracing collector
+    を入れる際の hardening リスト）: `AsyncSocketConnMap`（deferred_accept_*）/
+    `AsyncSocketListenerMap`（callback）/ `SupplyChannelMap`（in-flight SupplyEvent）/
+    `PipeProcMap` / `ProcByPidMap`（Proc instance）/ `SignalRegistry`（value, queued Emit）/
+    `uncaught_handler_store` / `FakeSchedulerMap`（callback）/ `LockStateMap.async_waiters`。
 
 ## 12. この設計で捨てるもの
 
@@ -798,7 +808,10 @@ unit test / integration test では random 依存にせず、**明示 collect ho
 残件は 3 つまで絞る。
 
 1. `Instance` は「本体 node」と「attributes cell」を別 node にするか
-2. OS resource 主体の async registry（socket/proc/udp 等）のうち、どこまでを supply first-wave root visitor に同時包含するか
+2. ~~OS resource 主体の async registry（socket/proc/udp 等）のうち、どこまでを supply first-wave root visitor に同時包含するか~~
+   → **解決（2026-07-05・§11 step 11）**: 包含不要。collector は refcount 駆動で root visitor を
+   消費しないため、レジストリの保持は external strong ref として自動的に健全。visitor 拡張は
+   root 消費型の仕組みを導入する時の hardening として §11 step 11 のリストに繰延。
 3. cooperative STW の停止プロトコルを `shared_vars` 系の既存同期とどう共存させるか
 
 この 3 つ以外は、Level 1a では未決にしないほうがよい。
