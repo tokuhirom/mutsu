@@ -53,6 +53,57 @@ pub(crate) fn str_numeric_failure(s: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
+/// Build the `X::Numeric::CannotConvert` Failure raised when a non-finite Num
+/// (`NaN`/`Inf`/`-Inf`) is coerced to `Int`.
+fn cannot_convert_to_int_failure(source: &Value, f: f64) -> Value {
+    let label = if f.is_nan() {
+        "NaN"
+    } else if f.is_sign_positive() {
+        "Inf"
+    } else {
+        "-Inf"
+    };
+    let msg = format!("Cannot convert {label} to Int: not a finite number");
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg));
+    attrs.insert("source".to_string(), source.clone());
+    attrs.insert("target".to_string(), Value::str_from("Int"));
+    let ex = Value::make_instance(Symbol::intern("X::Numeric::CannotConvert"), attrs);
+    let mut failure_attrs = std::collections::HashMap::new();
+    failure_attrs.insert("exception".to_string(), ex);
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
+
+/// Truncate a numeric `Value` toward zero to an `Int`, returning `None` for a
+/// non-numeric value. A non-finite `Num` or a zero-denominator `Rational`
+/// yields the same lazy `Failure` a direct `.Int` would. Used both by the
+/// `.Int` coercion arm and by `Str.Int` after parsing a numeric string form
+/// (radix `:16<ff>`, rational `3/4`, ...) through the full numeric grammar,
+/// mirroring raku's "numify then truncate" semantics.
+fn numeric_to_int(target: &Value) -> Option<Value> {
+    Some(match target {
+        Value::Int(i) => Value::Int(*i),
+        Value::BigInt(_) => target.clone(),
+        Value::Num(f) => {
+            if f.is_nan() || f.is_infinite() {
+                cannot_convert_to_int_failure(target, *f)
+            } else {
+                Value::Int(*f as i64)
+            }
+        }
+        Value::Rat(_, 0) | Value::FatRat(_, 0) => {
+            RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
+        }
+        Value::Rat(n, d) | Value::FatRat(n, d) => Value::Int(*n / *d),
+        Value::BigRat(_, d) if d.is_zero() => {
+            RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
+        }
+        Value::BigRat(n, d) => Value::Int((n.as_ref() / d.as_ref()).to_i64().unwrap_or(i64::MAX)),
+        Value::Complex(r, _) => Value::Int(*r as i64),
+        _ => return None,
+    })
+}
+
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
@@ -497,6 +548,16 @@ pub(super) fn dispatch(
                         Value::Int(0)
                     } else if let Some(v) = parse_raku_int_from_str(s) {
                         v
+                    } else if let Some(v) =
+                        runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
+                            .as_ref()
+                            .and_then(numeric_to_int)
+                    {
+                        // raku's `Str.Int` parses via the full numeric grammar
+                        // and truncates the result, so numeric string forms the
+                        // strict integer parser above rejects — radix `:16<ff>`,
+                        // rational `3/4`, ... — still coerce like their value.
+                        v
                     } else {
                         // Return a Failure (lazy exception) instead of throwing.
                         return Some(Some(Ok(str_numeric_failure(s))));
@@ -532,6 +593,15 @@ pub(super) fn dispatch(
                 Value::Str(s) if s.trim().is_empty() => Some(Value::Int(0)),
                 Value::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(s) {
+                        Some(v)
+                    } else if let Some(v) =
+                        runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
+                            .as_ref()
+                            .and_then(numeric_to_int)
+                    {
+                        // Same numeric-string forms as `.Int` (radix `:16<ff>`,
+                        // rational `3/4`, ...): numify then truncate, then the
+                        // non-negative check below applies.
                         Some(v)
                     } else {
                         // Invalid string: same X::Str::Numeric Failure (with the `⏏`
