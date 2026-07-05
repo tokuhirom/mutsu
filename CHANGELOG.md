@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.2.5](https://github.com/tokuhirom/mutsu/compare/v0.2.4...v0.2.5) - 2026-07-05
+
+- fix(str): uniprop Decomposition_Type Super/Sub/Font/Nobreak sets by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4183
+- feat(parser): leading-:: and symbolic package variable lookup for @ / % by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4184
+- feat(gc): cooperative cross-thread stop-the-world for the cycle scan by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4186
+- fix(str): uniprop Decomposition_Type Circle/Square/Wide/Vertical sets by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4187
+
 ## [v0.2.4](https://github.com/tokuhirom/mutsu/compare/v0.2.3...v0.2.4) - 2026-07-05
 
 - fix(str): uniprop Decomposition_Type=Small for CJK Small Form Variants by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4180
