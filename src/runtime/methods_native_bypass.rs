@@ -247,11 +247,6 @@ impl Interpreter {
                     .collect();
             return Ok(Value::str(format!("Map.new(({}))", parts.join(","))));
         }
-        // When key type is non-string (e.g. Int), use `key => value` format
-        // instead of colonpair `:key(value)` format.
-        let use_arrow = info.key_type.is_some()
-            && info.key_type.as_deref() != Some("Str")
-            && info.key_type.as_deref() != Some("Str(Any)");
         let parts: Vec<String> = sorted_keys
             .iter()
             .map(|k| {
@@ -265,21 +260,24 @@ impl Interpreter {
                             .unwrap_or_else(|_| format!("{:?}", v))
                     }
                 };
-                // Object hashes store `.WHICH` string keys; serialize the
-                // original typed key (`1`, not `Int|1`; `a`, not `Str|a`).
+                // Object hashes store `.WHICH` string keys; serialize the original
+                // typed key (`1`, not `Int|1`; `a`, not `Str|a`). Raku renders each
+                // pair per its *key*, independent of the hash's key-type: a Str key
+                // that is a valid identifier becomes a colonpair `:key(value)`;
+                // every other key (a non-Str key, or a Str needing quotes) becomes
+                // `key => value` with the key rendered via `.raku`.
                 let typed = map.typed_key(k);
-                let key_disp = match &typed {
-                    Value::Str(s) => (**s).clone(),
-                    _ => crate::builtins::methods_0arg::raku_value(&typed),
-                };
-                if use_arrow {
-                    format!("{} => {}", key_disp, value_repr())
-                } else if let Value::Bool(true) = v {
-                    format!(":{}", key_disp)
-                } else if let Value::Bool(false) = v {
-                    format!(":!{}", key_disp)
-                } else {
-                    format!(":{}({})", key_disp, value_repr())
+                match &typed {
+                    Value::Str(s)
+                        if crate::builtins::methods_0arg::raku_repr::is_adverbial_pair_key(s) =>
+                    {
+                        format!(":{}({})", s, value_repr())
+                    }
+                    _ => format!(
+                        "{} => {}",
+                        crate::builtins::methods_0arg::raku_value(&typed),
+                        value_repr()
+                    ),
                 }
             })
             .collect();

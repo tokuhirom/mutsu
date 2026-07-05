@@ -333,6 +333,7 @@ impl Interpreter {
                     updated = Some(Self::classify_finish_hash(
                         buckets.clone(),
                         object_keys.clone(),
+                        false,
                     ));
                 }
                 if let Some(new_value) = updated {
@@ -352,7 +353,14 @@ impl Interpreter {
             return Ok(Value::mix(counts));
         }
 
-        Ok(Self::classify_finish_hash(buckets, object_keys))
+        // Only the standalone `.classify`/`.categorize` (no `:into` target) mints a
+        // fresh `Hash[Any,Mu]`; `classify-list`/`:into(%h)` classify into an
+        // existing container and keep its type.
+        Ok(Self::classify_finish_hash(
+            buckets,
+            object_keys,
+            into_target.is_none(),
+        ))
     }
 
     /// Wrap classify's bucket map in a `Value::Hash`, marking it an *object hash*
@@ -383,12 +391,33 @@ impl Interpreter {
     fn classify_finish_hash(
         buckets: HashMap<String, Value>,
         object_keys: HashMap<String, Value>,
+        standalone: bool,
     ) -> Value {
         let buckets: HashMap<String, Value> = buckets
             .into_iter()
             .map(|(k, v)| (k, Self::itemize_bucket_value(v)))
             .collect();
         let hash = Value::hash(buckets);
+        // The standalone `.classify`/`.categorize` always return a fresh
+        // `Hash[Any,Mu]` in Raku: the value type is `Any` (each bucket is an
+        // itemized array) and the key type is the most general `Mu` (keys can be
+        // anything the mapper returns). Classifying *into* an existing container
+        // (`classify-list`, `:into(%h)`) instead keeps the invocant's own type
+        // (a plain `Hash`, `BagHash`, ...), so only tag when standalone.
+        if standalone {
+            if let Value::Hash(mut arc) = hash {
+                let data = crate::gc::Gc::make_mut(&mut arc);
+                data.value_type = Some("Any".to_string());
+                data.key_type = Some("Mu".to_string());
+                if !object_keys.is_empty() {
+                    data.original_keys = Some(object_keys);
+                }
+                return Value::Hash(arc);
+            }
+            return hash;
+        }
+        // Classifying into an existing plain hash: preserve the object-hash
+        // tagging (typed keys) but not the `Any`/`Mu` type-object constraint.
         if object_keys.is_empty() {
             return hash;
         }
