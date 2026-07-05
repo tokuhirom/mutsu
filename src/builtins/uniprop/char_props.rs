@@ -145,43 +145,43 @@ fn is_bidi_on(cp: u32) -> bool {
         | 0x1FAC0..=0x1FAC2 | 0x1FAD0..=0x1FAD6 | 0x1FB00..=0x1FB92 | 0x1FB94..=0x1FBCA)
 }
 
-/// Default Bidi_Class of a letter (Lu/Ll/Lt/Lm/Lo), determined by its script:
-/// Arabic-family scripts are Arabic_Letter (AL), other right-to-left scripts
-/// are Right_to_Left (R), and everything else is Left_to_Right (L).
-fn bidi_letter_class(ch: char) -> &'static str {
-    match crate::builtins::unicode::unicode_script_name(ch).as_str() {
-        "Arabic" | "Syriac" | "Thaana" | "Sogdian" | "Hanifi_Rohingya" => "AL",
-        "Hebrew"
-        | "Samaritan"
-        | "Mandaic"
-        | "Adlam"
-        | "Nko"
-        | "Yezidi"
-        | "Mende_Kikakui"
-        | "Cypriot"
-        | "Phoenician"
-        | "Nabataean"
-        | "Palmyrene"
-        | "Hatran"
-        | "Elymaic"
-        | "Imperial_Aramaic"
-        | "Manichaean"
-        | "Avestan"
-        | "Chorasmian"
-        | "Kharoshthi"
-        | "Lydian"
-        | "Meroitic_Cursive"
-        | "Meroitic_Hieroglyphs"
-        | "Old_Turkic"
-        | "Old_Hungarian"
-        | "Old_North_Arabian"
-        | "Old_South_Arabian"
-        | "Old_Sogdian"
-        | "Psalter_Pahlavi"
-        | "Inscriptional_Pahlavi"
-        | "Inscriptional_Parthian" => "R",
-        _ => "L",
-    }
+/// UAX #44 Bidi_Class=AL (Arabic_Letter) set: Arabic/Syriac/Thaana/... letters,
+/// marks, digits, punctuation and symbols. Enumerated from the UCD.
+fn is_bidi_al(cp: u32) -> bool {
+    matches!(cp,
+        0x0608 | 0x060B | 0x060D | 0x061B..=0x061C | 0x061E..=0x064A | 0x066D..=0x066F
+        | 0x0671..=0x06D5 | 0x06E5..=0x06E6 | 0x06EE..=0x06EF | 0x06FA..=0x070D | 0x070F..=0x0710
+        | 0x0712..=0x072F | 0x074D..=0x07A5 | 0x07B1 | 0x0860..=0x086A | 0x08A0..=0x08B4
+        | 0x08B6..=0x08C7 | 0xFB50..=0xFBC1 | 0xFBD3..=0xFD3D | 0xFD50..=0xFD8F | 0xFD92..=0xFDC7
+        | 0xFDF0..=0xFDFC | 0xFE70..=0xFE74 | 0xFE76..=0xFEFC | 0x10D00..=0x10D23 | 0x10F30..=0x10F45
+        | 0x10F51..=0x10F59 | 0x1EC71..=0x1ECB4 | 0x1ED01..=0x1ED3D | 0x1EE00..=0x1EE03
+        | 0x1EE05..=0x1EE1F | 0x1EE21..=0x1EE22 | 0x1EE24 | 0x1EE27 | 0x1EE29..=0x1EE32
+        | 0x1EE34..=0x1EE37 | 0x1EE39 | 0x1EE3B | 0x1EE42 | 0x1EE47 | 0x1EE49 | 0x1EE4B
+        | 0x1EE4D..=0x1EE4F | 0x1EE51..=0x1EE52 | 0x1EE54 | 0x1EE57 | 0x1EE59 | 0x1EE5B | 0x1EE5D
+        | 0x1EE5F | 0x1EE61..=0x1EE62 | 0x1EE64 | 0x1EE67..=0x1EE6A | 0x1EE6C..=0x1EE72
+        | 0x1EE74..=0x1EE77 | 0x1EE79..=0x1EE7C | 0x1EE7E | 0x1EE80..=0x1EE89 | 0x1EE8B..=0x1EE9B
+        | 0x1EEA1..=0x1EEA3 | 0x1EEA5..=0x1EEA9 | 0x1EEAB..=0x1EEBB)
+}
+
+/// UAX #44 Bidi_Class=R (Right_to_Left) set: Hebrew and other RTL-script
+/// letters, marks, digits, punctuation and symbols. Enumerated from the UCD.
+fn is_bidi_r(cp: u32) -> bool {
+    matches!(cp,
+        0x05BE | 0x05C0 | 0x05C3 | 0x05C6 | 0x05D0..=0x05EA | 0x05EF..=0x05F4 | 0x07C0..=0x07EA
+        | 0x07F4..=0x07F5 | 0x07FA | 0x07FE..=0x0815 | 0x081A | 0x0824 | 0x0828 | 0x0830..=0x083E
+        | 0x0840..=0x0858 | 0x085E | 0x200F | 0xFB1D | 0xFB1F..=0xFB28 | 0xFB2A..=0xFB36
+        | 0xFB38..=0xFB3C | 0xFB3E | 0xFB40..=0xFB41 | 0xFB43..=0xFB44 | 0xFB46..=0xFB4F
+        | 0x10800..=0x10805 | 0x10808 | 0x1080A..=0x10835 | 0x10837..=0x10838 | 0x1083C
+        | 0x1083F..=0x10855 | 0x10857..=0x1089E | 0x108A7..=0x108AF | 0x108E0..=0x108F2
+        | 0x108F4..=0x108F5 | 0x108FB..=0x1091B | 0x10920..=0x10939 | 0x1093F | 0x10980..=0x109B7
+        | 0x109BC..=0x109CF | 0x109D2..=0x10A00 | 0x10A10..=0x10A13 | 0x10A15..=0x10A17
+        | 0x10A19..=0x10A35 | 0x10A40..=0x10A48 | 0x10A50..=0x10A58 | 0x10A60..=0x10A9F
+        | 0x10AC0..=0x10AE4 | 0x10AEB..=0x10AF6 | 0x10B00..=0x10B35 | 0x10B40..=0x10B55
+        | 0x10B58..=0x10B72 | 0x10B78..=0x10B91 | 0x10B99..=0x10B9C | 0x10BA9..=0x10BAF
+        | 0x10C00..=0x10C48 | 0x10C80..=0x10CB2 | 0x10CC0..=0x10CF2 | 0x10CFA..=0x10CFF
+        | 0x10E80..=0x10EA9 | 0x10EAD | 0x10EB0..=0x10EB1 | 0x10F00..=0x10F27 | 0x10FB0..=0x10FCB
+        | 0x10FE0..=0x10FF6 | 0x1E800..=0x1E8C4 | 0x1E8C7..=0x1E8CF | 0x1E900..=0x1E943 | 0x1E94B
+        | 0x1E950..=0x1E959 | 0x1E95E..=0x1E95F)
 }
 
 /// Bidi_Class property.
@@ -224,10 +224,6 @@ pub(crate) fn unicode_bidi_class(ch: char) -> String {
         | 0x08E2                     // Arabic disputed end of ayah
         | 0x10D30..=0x10D39          // Hanifi Rohingya digits
         | 0x10E60..=0x10E7E => "AN", // Rumi numeral symbols
-        // Arabic tatweel, letter marks, and the Common-script Arabic
-        // punctuation (semicolon, question mark) have Bidi_Class=AL even though
-        // their script is Common rather than Arabic.
-        0x0640 | 0x061C | 0x070F | 0x061B | 0x061F => "AL",
         // Segment_Separator
         0x0009 | 0x000B | 0x001F => "S",
         // Form feed and line separator are Whitespace.
@@ -244,19 +240,18 @@ pub(crate) fn unicode_bidi_class(ch: char) -> String {
         | 0x20A0..=0x20BF | 0x212E | 0x2213 | 0xA838..=0xA839 | 0xFE5F | 0xFE69..=0xFE6A
         | 0xFF03..=0xFF05 | 0xFFE0..=0xFFE1 | 0xFFE5..=0xFFE6 | 0x11FDD..=0x11FE0
         | 0x1E2FF => "ET",
+        // Arabic_Letter, Right_to_Left and Other_Neutral are per-codepoint
+        // classes not derivable from General_Category (they cover letters,
+        // marks, digits, punctuation and symbols of the relevant scripts).
+        _ if is_bidi_al(cp) => "AL",
+        _ if is_bidi_r(cp) => "R",
         _ if is_bidi_on(cp) => "ON",
         _ => {
-            // Use General Category heuristics
+            // Everything not covered above defaults by General_Category.
             let gc = crate::builtins::unicode::unicode_general_category(ch);
             match gc.as_str() {
-                "Lu" | "Ll" | "Lt" | "Lm" | "Lo" => bidi_letter_class(ch),
-                "Nd" | "Nl" | "No" => "L",
                 "Mn" | "Me" => "NSM",
                 "Cf" => "BN",
-                // Punctuation in a right-to-left script (e.g. Arabic/Hebrew
-                // punctuation) inherits the script direction (AL / R). Neutral
-                // symbols (Bidi_Class=ON) are handled by is_bidi_on above.
-                "Ps" | "Pe" | "Pi" | "Pf" | "Po" | "Pc" | "Pd" => bidi_letter_class(ch),
                 "Zs" => "WS",
                 "Zl" => "WS",
                 "Zp" => "B",
