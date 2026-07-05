@@ -29,6 +29,34 @@ impl Interpreter {
         if self.shared_vars_active {
             let val = self.stack.pop().unwrap_or(Value::Nil);
             let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
+            // Track B/Track C: a `state @a` under an active thread context is a
+            // shared `ContainerRef` cell. Push INTO the cell under its lock
+            // (COW of the inner node keeps escaped snapshots immutable), so
+            // every holder — other calls, other threads, the state store —
+            // sees the append. Previously this fell through to the plain
+            // method dispatch with the raw cell as invocant and failed with
+            // "No such method 'push'" once the cell was non-empty.
+            if let Value::ContainerRef(cell) = &target {
+                let is_cell_array = matches!(
+                    &*cell.lock().unwrap_or_else(|e| e.into_inner()),
+                    Value::Array(..)
+                );
+                if is_cell_array {
+                    let items = match val {
+                        Value::Slip(items) => items.to_vec(),
+                        other => vec![other],
+                    };
+                    let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+                    if let Value::Array(arc, _) = &mut *guard {
+                        let data = crate::gc::Gc::make_mut(arc);
+                        data.items.extend(items);
+                    }
+                    let result = guard.clone();
+                    drop(guard);
+                    self.stack.push(result);
+                    return Ok(());
+                }
+            }
             // Only a plain lexical `@name` (not an attribute `@!x`/`@.x` or other
             // twigil'd form) has a single shared identity across threads, so only
             // it may funnel into the name-keyed atomic shared store.

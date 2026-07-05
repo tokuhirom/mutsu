@@ -263,7 +263,13 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 
 ## 6. 並行（Track C 残）・構造リファクタ（独立・中長期）
 
-- [ ] **`state @`/`%`・lexical aggregate の真共有**（Track B 要素 cell 基盤に依存＝§2 の層3a 待ち）。
+- [ ] **`state @`/`%`・lexical aggregate の真共有** — Track B スライス 2 で大半解消:
+      shared ctx 下の state 集約 cell への write-through（`set_state_var`）＋ shared `ArrayPush` の
+      cell 経路＋ mut-dispatch の cell ファンネルで、呼び出し間・逐次スレッド間の累積が raku 一致
+      （t/state-aggregate-shared-cell.t、real raku でも全 pass を確認）。残: ① 非スレッドの
+      同一 sub 由来クロージャ間共有（`mk()` × 2 → 1,1,2 / raku は 1,2,3 — cell 非関与の env
+      snapshot 問題）② 高競合の並行「構造」挿入は lost-update（ただし real rakudo は同形で
+      MoarVM oops クラッシュ＝言語保証外。mutsu は不壊で優位）。
 - [ ] Semaphore / nonblocking await / lock 競合（S17・hard・別軸）。
 - [ ] `unsafe` の single-thread 前提コメント是正（`Arc::as_ptr as *mut` を strong_count ガード前提に・
       最終的に要素も cell 化）。

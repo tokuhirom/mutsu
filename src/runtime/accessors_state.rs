@@ -218,6 +218,23 @@ impl Interpreter {
     }
 
     pub(crate) fn set_state_var(&mut self, key: String, value: Value) {
+        // Track C/Track B: once a `state` variable lives in a shared
+        // `ContainerRef` cell (StateVarInit under an active thread context),
+        // every writeback must go THROUGH the cell, not replace the store
+        // entry with a plain snapshot. The block-exit sync
+        // (`sync_state_locals`) hands us the mutated plain aggregate; before
+        // this write-through, storing it here severed the cell, so the next
+        // call's StateVarInit re-read the stale cell content and `state @a` /
+        // `state %h` accumulation was lost entirely whenever a thread had
+        // ever been spawned (deterministic: `%h<k>++` returned 1,1,1... —
+        // t/state-aggregate-shared-cell.t). Writing a cell over a cell (the
+        // StateVarInit path itself) keeps the plain insert.
+        if let Some(Value::ContainerRef(cell)) = self.state_vars.get(&key)
+            && !value.is_container_ref()
+        {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = value;
+            return;
+        }
         self.state_vars.insert(key, value);
     }
 

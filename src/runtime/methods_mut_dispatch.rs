@@ -62,6 +62,33 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Track B/Track C: an aggregate that lives in a shared `ContainerRef`
+        // cell (a `state @a`/`state %h` under an active thread context — see
+        // `exec_state_var_init_op`). Dispatch on the cell's CONTENT, then fold
+        // the mutated aggregate back INTO the cell and re-point the env at the
+        // cell, so every holder (other closures, other threads, the state
+        // store) observes the mutation and the next op keeps cell semantics.
+        // Without this, `@a.push` on a cell-held state array mis-dispatched
+        // ("No such method 'push' for invocant of type 'Array'") whenever the
+        // cell was seeded non-empty (pre-existing on the thread-spawn
+        // migration path; also every second call once the state write-through
+        // keeps the cell current).
+        if let Value::ContainerRef(cell) = &target {
+            let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if matches!(inner, Value::Array(..) | Value::Hash(..)) {
+                let cell = cell.clone();
+                let result = self.call_method_mut_with_values(target_var, inner, method, args)?;
+                if let Some(updated) = self.env.get(target_var).cloned()
+                    && !updated.is_container_ref()
+                    && matches!(updated, Value::Array(..) | Value::Hash(..))
+                {
+                    *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
+                    self.env
+                        .insert(target_var.to_string(), Value::ContainerRef(cell));
+                }
+                return Ok(result);
+            }
+        }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
         let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
         let has_sigilless_meta =
