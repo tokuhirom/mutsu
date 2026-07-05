@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.2.2](https://github.com/tokuhirom/mutsu/compare/v0.2.1...v0.2.2) - 2026-07-05
+
+- fix(str): uniprop Word_Break follows UAX #29 classification by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4158
+- fix(array/hash): whole-container assignment preserves container identity (splice.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4162
+- docs(plan): restructure PLAN.md around the battery-included goal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4161
+- fix(str): uniprop Sentence_Break follows UAX #29 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4163
+- fix(str): uniprop Numeric_Type is Numeric for CJK numeral ideographs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4164
+- fix(regex): fold captures of a separator-quantified capturing group (**N %sep) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4165
+- fix(concurrency): route listop shared-array pushes through the atomic store (t/lock.t race) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4167
+- fix(str): uniprop Numeric_Type=Digit for single-digit presentation forms by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4166
+- fix(str): uniprop Bidi_Class of right-to-left script letters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4169
+- fix(str): uniprop Grapheme_Cluster_Break follows UAX #29 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4160
+- fix(supply): batch(:seconds) buckets by absolute time periods; de-flake audit by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4171
+- fix(signature): read-only param prefix ++/--; a bare @array arg does not auto-flatten by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4170
+- fix(str): uniprop Bidi_Class separators, terminators and RTL punctuation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4172
+- fix(io): custom $*OUT/$*ERR .print accumulates across say/print/put/note by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4173
+- fix(num/seq): Num.gist matches .Str; arithmetic sequence keeps a rational step exact by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4168
+- fix(str): uniprop Decomposition_Type of Arabic presentation forms by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4174
+- fix(str): uniprop Decomposition_Type of Number Forms and subscripts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4175
+
 ## [v0.2.1](https://github.com/tokuhirom/mutsu/compare/v0.2.0...v0.2.1) - 2026-07-04
 
 - fix(regex): keep highest-priority alternative on full-match ties (advent2009-day10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/3985
