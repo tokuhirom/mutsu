@@ -51,6 +51,22 @@ fn function_carrier_by_name() -> &'static Mutex<HashMap<String, u64>> {
     BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Per-opcode execution histogram (only populated when stats are on). Keyed by
+/// the opcode's `Discriminant` so the per-instruction cost is one discriminant
+/// hash + counter bump under the mutex; the human-readable variant name is
+/// derived once per variant from the `Debug` representation (truncated at the
+/// first non-identifier character). This is the empirical basis for
+/// instruction-set decisions (which ops to fuse/shrink/remove) — see
+/// docs/opcode-design-review.md.
+#[allow(clippy::type_complexity)]
+fn opcode_histogram()
+-> &'static Mutex<HashMap<std::mem::Discriminant<crate::opcode::OpCode>, (String, u64)>> {
+    static HIST: OnceLock<
+        Mutex<HashMap<std::mem::Discriminant<crate::opcode::OpCode>, (String, u64)>>,
+    > = OnceLock::new();
+    HIST.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 /// Per-name histogram of method calls that entered the slow-path resolver dispatch
 /// `run_instance_method` (resolve candidate + frame setup + env clone). §B #3680
 /// deleted the tree-walk of the method body, so these now execute the body as
@@ -91,6 +107,33 @@ static GC_ROOTS_SCANNED: AtomicU64 = AtomicU64::new(0);
 pub(crate) fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var_os("MUTSU_VM_STATS").is_some())
+}
+
+/// Record one bytecode instruction dispatch (called from `exec_one` when stats
+/// are on). Counts are exact and deterministic; the mutex + hash cost only
+/// exists under `MUTSU_VM_STATS=1`, so use the counts (not wall-clock) from
+/// instrumented runs.
+#[inline]
+pub(crate) fn record_opcode(op: &crate::opcode::OpCode) {
+    if !enabled() {
+        return;
+    }
+    let d = std::mem::discriminant(op);
+    if let Ok(mut map) = opcode_histogram().lock() {
+        match map.get_mut(&d) {
+            Some(entry) => entry.1 += 1,
+            None => {
+                // First time this variant is seen: derive its bare name from the
+                // Debug output (`ForLoop(..)` / `WhileLoop { .. }` -> `ForLoop`).
+                let dbg = format!("{op:?}");
+                let name: String = dbg
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                map.insert(d, (name, 1));
+            }
+        }
+    }
 }
 
 /// Record that an explicit method-call opcode (`.foo(...)`) was executed.
@@ -295,6 +338,25 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] gc: collections={gc_collections} candidate_pushes={gc_candidate_pushes} dedup_hits={gc_dedup_hits} reclaimed_nodes={gc_reclaimed_nodes} reclaimed_cycles={gc_reclaimed_cycles} pause_ns_total={gc_pause_ns_total} pause_ns_max={gc_pause_ns_max} roots_scanned={gc_roots_scanned} gc_threshold={gc_threshold}"
     );
+    if let Ok(map) = opcode_histogram().lock()
+        && !map.is_empty()
+    {
+        let total: u64 = map.values().map(|(_, c)| c).sum();
+        let mut entries: Vec<(&String, &u64)> = map.values().map(|(n, c)| (n, c)).collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(30)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] opcodes executed total={} distinct={} (top {}): {}",
+            total,
+            map.len(),
+            top.len(),
+            top.join(" ")
+        );
+    }
     if let Ok(map) = function_fallback_by_name().lock()
         && !map.is_empty()
     {

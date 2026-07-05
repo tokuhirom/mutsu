@@ -112,6 +112,81 @@ impl CompoundBaseOp {
     }
 }
 
+/// Payload of `OpCode::ForLoop`, boxed to keep `size_of::<OpCode>()` small.
+/// This is by far the widest instruction (it used to carry three `Vec<String>`s
+/// plus two `Option<String>`s inline, padding EVERY opcode in every
+/// `Vec<OpCode>` to 192 bytes — see docs/opcode-design-review.md). The VM
+/// borrows the boxed spec directly, so executing a `for` loop no longer clones
+/// any of these fields.
+#[derive(Debug, Clone)]
+pub(crate) struct ForLoopSpec {
+    pub(crate) param_idx: Option<u32>,
+    pub(crate) param_local: Option<u32>,
+    pub(crate) body_end: u32,
+    pub(crate) label: Option<String>,
+    pub(crate) arity: u32,
+    pub(crate) collect: bool,
+    /// Restore outer `$_` after loop execution (used by postfix/do-for semantics).
+    pub(crate) restore_topic: bool,
+    /// When true, run the loop body in a spawned thread (race for / hyper for).
+    pub(crate) threaded: bool,
+    /// When true, the named param is writable (via `<->`, `is rw`, or `is copy`).
+    pub(crate) is_rw: bool,
+    /// When true, write back modifications to the source container.
+    pub(crate) do_writeback: bool,
+    /// Param names for multi-param rw for loops (used for writeback).
+    pub(crate) rw_param_names: Vec<String>,
+    /// When true, the iterable is from .kv (key-value pairs).
+    /// Writeback only applies to value params (odd-indexed in the chunk).
+    pub(crate) kv_mode: bool,
+    /// Variable names for per-element writeback when the iterable is a list
+    /// of scalar variables (e.g. `for ($a, $b, $c) { $_++ }`).
+    pub(crate) source_var_names: Vec<String>,
+    /// Compiler-baked local slot for each `source_var_names` entry (§1.5): the
+    /// per-element writeback (`write_back_to_source_var`) writes the mutated
+    /// loop value straight into `locals[slot]` instead of re-resolving the
+    /// target name via `update_local_if_exists`. `None` for a target with no
+    /// local slot (`our`/global/undeclared), which keeps the by-name path.
+    /// Parallel to `source_var_names`.
+    pub(crate) source_var_locals: Vec<Option<u32>>,
+    /// When true, Junction items are expanded into their eigenstates
+    /// (parameter type is Any or more specific, not Mu or Junction).
+    pub(crate) autothread_junctions: bool,
+    /// When true, the block explicitly declared zero parameters (`-> {}`).
+    /// Passing any argument should throw "Too many positionals passed".
+    pub(crate) explicit_zero_params: bool,
+    /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
+    /// Used to temporarily clear sigilless readonly flags before binding.
+    pub(crate) multi_param_names: Vec<String>,
+    /// When true, the iterable is a `.pairs`/`.antipairs` transform: the
+    /// loop variable is a `Pair` that *wraps* the source element, not the
+    /// element itself. The plain (topic/named) per-element source writeback
+    /// is suppressed (it would overwrite the element with the Pair); the
+    /// source tag is still kept so the Pair's rw `.value` alias can detect
+    /// immutability and propagate.
+    pub(crate) loop_var_wraps_element: bool,
+    /// When true, the iterable is `%h.values` / `$b.values` on a variable:
+    /// the loop variable (`$_` / a plain named param) aliases the container's
+    /// *value*, so a `$_ = ...` topic assignment writes back to the source by
+    /// key order (`$_ = X for %h.values` mutates `%h`; `for $b.values` mutates
+    /// a mutable MixHash/BagHash). The VM branches on the runtime container
+    /// type. Distinguished from bare `for %h` (Pairs, no value writeback) and
+    /// `.keys` (read-only).
+    pub(crate) values_mode: bool,
+    /// The bare source array variable name for `for @a` (without sigil), when
+    /// the iterable is a single plain array variable. Enables live-array
+    /// iteration: if the loop body pushes onto `@a`, the loop keeps yielding
+    /// the newly-appended tail (raku semantics). `None` for any non-trivial
+    /// iterable. Separate from `source_var_names` (a per-index scalar-list
+    /// writeback mechanism that must NOT be populated for a `@`-source).
+    pub(crate) single_array_source: Option<String>,
+    /// Compiler-baked local slot for `single_array_source` (§1.5): the
+    /// live-array re-read reads `locals[slot]` directly instead of resolving
+    /// the source name via `find_local_slot`. `None` when the source is not a
+    /// resolvable local (keeps the by-name + env fallback).
+    pub(crate) single_array_source_local: Option<u32>,
+}
+
 /// Bytecode operations for the VM.
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
@@ -435,10 +510,6 @@ pub(crate) enum OpCode {
         exclude_end: bool,
     },
 
-    // -- Nil check (for defined-or //) --
-    #[allow(dead_code)]
-    IsNil,
-
     // -- Control flow --
     /// No-op label marker for `goto`.
     Label(u32),
@@ -447,9 +518,6 @@ pub(crate) enum OpCode {
     Jump(i32),
     JumpIfFalse(i32),
     JumpIfTrue(i32),
-    /// Jump if top of stack is nil/undefined (without popping)
-    #[allow(dead_code)]
-    JumpIfNil(i32),
     /// Jump if top of stack is not nil/defined (without popping)
     JumpIfNotNil(i32),
     /// Call .defined on top of stack, replace with Bool result
@@ -692,12 +760,7 @@ pub(crate) enum OpCode {
     Index {
         is_positional: bool,
     },
-    /// Like Index, but auto-vivifies intermediate hash entries and returns
-    /// a `HashEntryRef` for the final key.  Used by IndexAutovivifyLazy's
-    /// fallback path for non-hash targets.
-    #[allow(dead_code)]
-    IndexAutovivify,
-    /// Like IndexAutovivify but does NOT create the hash entry if missing.
+    /// Auto-vivifying index that does NOT create the hash entry if missing.
     /// Returns a HashEntryRef that defers creation until write.
     /// Used for the outermost level of `:=` bind so that binding alone
     /// does not autovivify (e.g. `my $b := %h<a><b>` keeps %h empty).
@@ -715,7 +778,6 @@ pub(crate) enum OpCode {
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]
     /// Stack: [target, dim0, dim1, ..., dimN] → [result]
-    #[allow(dead_code)]
     MultiDimIndex(u32),
     /// Multi-dimensional index assignment: @a[$x;$y;$z] = value
     /// Stack: [value, dim0, dim1, ..., dimN] (target by name)
@@ -884,73 +946,8 @@ pub(crate) enum OpCode {
     },
     /// For loop. Iterable value must be on stack.
     /// Body opcodes at [ip+1..body_end). VM iterates internally.
-    ForLoop {
-        param_idx: Option<u32>,
-        param_local: Option<u32>,
-        body_end: u32,
-        label: Option<String>,
-        arity: u32,
-        collect: bool,
-        /// Restore outer `$_` after loop execution (used by postfix/do-for semantics).
-        restore_topic: bool,
-        /// When true, run the loop body in a spawned thread (race for / hyper for).
-        threaded: bool,
-        /// When true, the named param is writable (via `<->`, `is rw`, or `is copy`).
-        is_rw: bool,
-        /// When true, write back modifications to the source container.
-        do_writeback: bool,
-        /// Param names for multi-param rw for loops (used for writeback).
-        rw_param_names: Vec<String>,
-        /// When true, the iterable is from .kv (key-value pairs).
-        /// Writeback only applies to value params (odd-indexed in the chunk).
-        kv_mode: bool,
-        /// Variable names for per-element writeback when the iterable is a list
-        /// of scalar variables (e.g. `for ($a, $b, $c) { $_++ }`).
-        source_var_names: Vec<String>,
-        /// Compiler-baked local slot for each `source_var_names` entry (§1.5): the
-        /// per-element writeback (`write_back_to_source_var`) writes the mutated
-        /// loop value straight into `locals[slot]` instead of re-resolving the
-        /// target name via `update_local_if_exists`. `None` for a target with no
-        /// local slot (`our`/global/undeclared), which keeps the by-name path.
-        /// Parallel to `source_var_names`.
-        source_var_locals: Vec<Option<u32>>,
-        /// When true, Junction items are expanded into their eigenstates
-        /// (parameter type is Any or more specific, not Mu or Junction).
-        autothread_junctions: bool,
-        /// When true, the block explicitly declared zero parameters (`-> {}`).
-        /// Passing any argument should throw "Too many positionals passed".
-        explicit_zero_params: bool,
-        /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
-        /// Used to temporarily clear sigilless readonly flags before binding.
-        multi_param_names: Vec<String>,
-        /// When true, the iterable is a `.pairs`/`.antipairs` transform: the
-        /// loop variable is a `Pair` that *wraps* the source element, not the
-        /// element itself. The plain (topic/named) per-element source writeback
-        /// is suppressed (it would overwrite the element with the Pair); the
-        /// source tag is still kept so the Pair's rw `.value` alias can detect
-        /// immutability and propagate.
-        loop_var_wraps_element: bool,
-        /// When true, the iterable is `%h.values` / `$b.values` on a variable:
-        /// the loop variable (`$_` / a plain named param) aliases the container's
-        /// *value*, so a `$_ = ...` topic assignment writes back to the source by
-        /// key order (`$_ = X for %h.values` mutates `%h`; `for $b.values` mutates
-        /// a mutable MixHash/BagHash). The VM branches on the runtime container
-        /// type. Distinguished from bare `for %h` (Pairs, no value writeback) and
-        /// `.keys` (read-only).
-        values_mode: bool,
-        /// The bare source array variable name for `for @a` (without sigil), when
-        /// the iterable is a single plain array variable. Enables live-array
-        /// iteration: if the loop body pushes onto `@a`, the loop keeps yielding
-        /// the newly-appended tail (raku semantics). `None` for any non-trivial
-        /// iterable. Separate from `source_var_names` (a per-index scalar-list
-        /// writeback mechanism that must NOT be populated for a `@`-source).
-        single_array_source: Option<String>,
-        /// Compiler-baked local slot for `single_array_source` (§1.5): the
-        /// live-array re-read reads `locals[slot]` directly instead of resolving
-        /// the source name via `find_local_slot`. `None` when the source is not a
-        /// resolvable local (keeps the by-name + env fallback).
-        single_array_source_local: Option<u32>,
-    },
+    /// The spec is boxed to keep `size_of::<OpCode>()` small (see `ForLoopSpec`).
+    ForLoop(Box<ForLoopSpec>),
     /// Restore the single named for-loop param's prior binding, deferred until
     /// after the loop's LAST/post phasers have run (which must still see the
     /// param bound to its final iteration value). Pairs with the push the
@@ -1387,6 +1384,27 @@ pub(crate) enum OpCode {
     SetSourceLine(i64),
 }
 
+#[cfg(test)]
+mod opcode_size_guard {
+    use super::*;
+    #[test]
+    fn opcode_stays_small() {
+        // Every instruction in a `Vec<OpCode>` is padded to the widest variant,
+        // so one fat variant taxes the fetch/decode cache locality of ALL code.
+        // `ForLoop` used to hold its 21-field spec inline (192 bytes); boxing it
+        // brought `OpCode` to 48 bytes (current widest: `SmartMatchExpr`, `Subst`).
+        //
+        // If this assert fails because you added/widened a variant: do NOT just
+        // bump the limit. First try to keep `OpCode` at the current size —
+        // `Box` the payload (like `ForLoop(Box<ForLoopSpec>)`), move strings to
+        // the constant pool as `u32` indices, or pack flags. Raise the limit
+        // only when none of those work, and record the reasoning in
+        // docs/opcode-design-review.md.
+        let sz = std::mem::size_of::<OpCode>();
+        assert!(sz <= 48, "size_of::<OpCode>() = {sz}, expected <= 48");
+    }
+}
+
 /// A compiled chunk of bytecode.
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
@@ -1702,7 +1720,7 @@ impl CompiledCode {
         self.captures_env_by_name = self.ops.iter().any(|op| {
             matches!(
                 op,
-                OpCode::ForLoop { .. }
+                OpCode::ForLoop(..)
                     | OpCode::BlockScope { .. }
                     | OpCode::BlockLocalScope { .. }
                     | OpCode::MakeGather(_)
@@ -2398,7 +2416,6 @@ impl CompiledCode {
             OpCode::Jump(offset)
             | OpCode::JumpIfFalse(offset)
             | OpCode::JumpIfTrue(offset)
-            | OpCode::JumpIfNil(offset)
             | OpCode::JumpIfNotNil(offset) => {
                 *offset = target;
             }
@@ -2413,7 +2430,6 @@ impl CompiledCode {
             OpCode::Jump(offset)
             | OpCode::JumpIfFalse(offset)
             | OpCode::JumpIfTrue(offset)
-            | OpCode::JumpIfNil(offset)
             | OpCode::JumpIfNotNil(offset) => {
                 *offset = target;
             }
@@ -2431,7 +2447,7 @@ impl CompiledCode {
         let target = self.ops.len() as u32;
         match &mut self.ops[idx] {
             OpCode::WhileLoop { body_end, .. } => *body_end = target,
-            OpCode::ForLoop { body_end, .. } => *body_end = target,
+            OpCode::ForLoop(spec) => spec.body_end = target,
             OpCode::CStyleLoop { body_end, .. } => *body_end = target,
             OpCode::RepeatLoop { body_end, .. } => *body_end = target,
             OpCode::BlockScope { end, .. } => *end = target,
@@ -2807,7 +2823,7 @@ impl CompiledFunction {
                         | OpCode::CallOnValue { .. }
                         | OpCode::CallOnCodeVar { .. }
                         // ForLoop may have FIRST/NEXT/LAST phasers that need proper state
-                        | OpCode::ForLoop { .. }
+                        | OpCode::ForLoop(..)
                 )
             });
         // A routine declared directly in this body (not inside a nested

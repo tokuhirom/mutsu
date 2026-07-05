@@ -223,30 +223,32 @@ impl Compiler {
             .and_then(|p| self.local_map.get(p.as_str()).copied());
         let source_var_names = Self::for_iterable_var_names(iterable);
         let source_var_locals = self.for_source_var_locals(&source_var_names);
-        let loop_idx = self.code.emit(OpCode::ForLoop {
-            param_idx,
-            param_local,
-            body_end: 0,
-            label: label.clone(),
-            arity,
-            collect: true,
-            restore_topic: true,
-            threaded: false,
-            is_rw: has_rw,
-            do_writeback: has_rw,
-            rw_param_names: Vec::new(),
-            kv_mode: false,
-            source_var_names,
-            source_var_locals,
-            autothread_junctions: false,
-            explicit_zero_params: false,
-            multi_param_names: Vec::new(),
-            loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
-            values_mode: Self::for_iterable_is_values_alias(iterable),
-            single_array_source: Self::for_single_array_source(iterable),
-            single_array_source_local: self
-                .for_single_array_source_local(&Self::for_single_array_source(iterable)),
-        });
+        let loop_idx = self
+            .code
+            .emit(OpCode::ForLoop(Box::new(crate::opcode::ForLoopSpec {
+                param_idx,
+                param_local,
+                body_end: 0,
+                label: label.clone(),
+                arity,
+                collect: true,
+                restore_topic: true,
+                threaded: false,
+                is_rw: has_rw,
+                do_writeback: has_rw,
+                rw_param_names: Vec::new(),
+                kv_mode: false,
+                source_var_names,
+                source_var_locals,
+                autothread_junctions: false,
+                explicit_zero_params: false,
+                multi_param_names: Vec::new(),
+                loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
+                values_mode: Self::for_iterable_is_values_alias(iterable),
+                single_array_source: Self::for_single_array_source(iterable),
+                single_array_source_local: self
+                    .for_single_array_source_local(&Self::for_single_array_source(iterable)),
+            })));
         self.compile_collected_loop_body(&loop_body);
         self.code.patch_loop_end(loop_idx);
         // Balance the ForLoop opcode's deferred param-restore push (see the
