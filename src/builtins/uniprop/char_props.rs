@@ -301,6 +301,9 @@ fn compatibility_decomposition_type(ch: char) -> String {
         0x2460..=0x24FF => "Circle".to_string(), // Enclosed alphanumerics
         0x3300..=0x33FF => "Square".to_string(), // CJK compat
         0xFB00..=0xFB06 => "Compat".to_string(), // Latin ligatures
+        // Mathematical Alphanumeric Symbols and the segmented (seven-segment)
+        // digits decompose to their ASCII base with a <font> tag.
+        0x1D400..=0x1D7FF | 0x1FBF0..=0x1FBF9 => "Font".to_string(),
         // Arabic presentation forms: the specific positional form (Isolated /
         // Final / Initial / Medial) is encoded in the character name.
         0xFB50..=0xFDFF | 0xFE70..=0xFEFF => arabic_presentation_form_type(ch),
