@@ -1627,6 +1627,9 @@ impl Interpreter {
         register_x("X::Undeclared", "X::Comp");
         register_x("X::Undeclared::Symbols", "X::Comp");
 
+        // An undeclared attribute is a compile-time error (does X::Comp).
+        register_x("X::Attribute::Undeclared", "X::Comp");
+
         // X::Redeclaration
         register_x("X::Redeclaration", "X::Comp");
 
