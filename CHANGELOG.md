@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.2.11](https://github.com/tokuhirom/mutsu/compare/v0.2.10...v0.2.11) - 2026-07-05
+
+- fix(str): uniprop Bidi_Class AL/R follow the exact UCD sets by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4206
+- feat(gc): emit all safepoint kinds + MUTSU_GC_AT / MUTSU_GC_COLLECT_NOW / seeded random stress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4195
+- fix(regex): preserve folded/nested captures in global (m:g) match objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4208
+
 ## [v0.2.10](https://github.com/tokuhirom/mutsu/compare/v0.2.9...v0.2.10) - 2026-07-05
 
 - fix(cli): parse-error snippet no longer panics on multi-byte source lines by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4202
