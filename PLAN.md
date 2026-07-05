@@ -252,11 +252,6 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       emit するだけ。intループのネイティブ化で hot path は GC/refcount コストゼロ（ADR-0001 §3-8）。
 - [ ] **Lever 6: biased reference counting = ADR-0001 層3c（GC 後の独立 perf）**。JIT が intループを
       ネイティブ化すれば hot path から refcount が消えるため優先度は低め。
-- [ ] GC dead sweep のクロススレッド free コスト: collector が worker 確保ノードを一括 drop すると
-      glibc の他スレッド arena ロックと競合（S17-lowlevel/thread.t で collect あたり数秒・
-      ~250µs/drop を実測。refcount map / candidate バッファのシャーディングでは解消せず＝
-      アロケータ層）。候補: 解放の逐次化/バッチ戦略・jemalloc/mimalloc 検討。当面は
-      run-roast-test.sh の per-file 60s で吸収。
 - [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
 - 目標: method-call <1.5x、bench-class <1.5x、bench-fib（型制約付き）<2x。
 

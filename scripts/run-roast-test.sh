@@ -25,11 +25,10 @@ per_file_timeout() {
       echo 60
       ;;
     roast/S17-lowlevel/thread.t)
-      # Thread-churn workload: under the default-on GC the dead sweep frees
-      # worker-allocated containers cross-thread (glibc arena contention), so
-      # the file measures ~22s release vs ~12s GC-off — inside the default 30s
-      # but with no headroom for CI load. Allocator-level follow-up tracked in
-      # PLAN.md §5.
+      # Thread-churn workload, sleep-heavy: ~12s GC-off release and within a
+      # few percent of that under the default-on GC since the dead sweep's
+      # batch release moved off the collector thread — but it sat at ~29s on
+      # a loaded CI runner once, so keep explicit headroom.
       echo 60
       ;;
     roast/S17-promise/allof.t)
