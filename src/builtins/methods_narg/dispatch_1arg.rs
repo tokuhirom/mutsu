@@ -796,22 +796,26 @@ pub(crate) fn native_method_1arg(
             }
         }
         "batch" => {
+            // `.batch(N)` and the named `.batch(:elems(N))` are equivalent.
             let n = match arg {
                 Value::Int(i) => *i,
+                Value::Pair(key, val) if key == "elems" || key == "batch" => val.to_f64() as i64,
                 _ => return None,
             };
             if n < 1 {
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("got".to_string(), Value::Int(n));
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str(format!("batch size must be at least 1, got {}", n)),
+                let message = format!(
+                    "Batching sublist length is out of range. Is: {n}, should be in 1..^Inf"
                 );
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "what".to_string(),
+                    Value::str_from("Batching sublist length"),
+                );
+                attrs.insert("got".to_string(), Value::Int(n));
+                attrs.insert("range".to_string(), Value::str_from("1..^Inf"));
+                attrs.insert("message".to_string(), Value::str(message.clone()));
                 let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
-                let mut err = RuntimeError::new(format!(
-                    "X::OutOfRange: batch size must be at least 1, got {}",
-                    n
-                ));
+                let mut err = RuntimeError::new(message);
                 err.exception = Some(Box::new(ex));
                 return Some(Err(err));
             }
