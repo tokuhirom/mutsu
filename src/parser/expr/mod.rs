@@ -77,9 +77,14 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
             // Auto-quote bareword on LHS of => only for plain barewords.
             // Parenthesized forms like `(Mu) => 4` must preserve the original value key.
             let consumed = &input[..input.len() - rest.len()];
-            let is_bareword = matches!(&expr, Expr::BareWord(_));
+            // A qualified name (`Bool::True`, `Foo::Bar`) is NOT autoquoted — it is
+            // evaluated to its value, so `Bool::True => "a"` has the Bool *value*
+            // as its (positional) key, matching raku.
+            let is_bareword = matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
             let left = match expr {
-                Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
+                Expr::BareWord(ref name)
+                    if !consumed.trim_start().starts_with('(') && !name.contains("::") =>
+                {
                     Expr::Literal(Value::str(name.clone()))
                 }
                 _ => expr,
@@ -137,9 +142,11 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
         let consumed = &input[..input.len() - rest.len()];
-        let is_bareword = matches!(&expr, Expr::BareWord(_));
+        let is_bareword = matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
         let left = match expr {
-            Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
+            Expr::BareWord(ref name)
+                if !consumed.trim_start().starts_with('(') && !name.contains("::") =>
+            {
                 Expr::Literal(Value::str(name.clone()))
             }
             _ => expr,
@@ -185,9 +192,11 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
         let consumed = &input[..input.len() - rest.len()];
-        let is_bareword = matches!(&expr, Expr::BareWord(_));
+        let is_bareword = matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
         let left = match expr {
-            Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
+            Expr::BareWord(ref name)
+                if !consumed.trim_start().starts_with('(') && !name.contains("::") =>
+            {
                 Expr::Literal(Value::str(name.clone()))
             }
             _ => expr,
@@ -237,9 +246,11 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
         let consumed = &input[..input.len() - rest.len()];
-        let is_bareword = matches!(&expr, Expr::BareWord(_));
+        let is_bareword = matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
         let left = match expr {
-            Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
+            Expr::BareWord(ref name)
+                if !consumed.trim_start().starts_with('(') && !name.contains("::") =>
+            {
                 Expr::Literal(Value::str(name.clone()))
             }
             _ => expr,
@@ -281,9 +292,11 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
         let consumed = &input[..input.len() - rest.len()];
-        let is_bareword = matches!(&expr, Expr::BareWord(_));
+        let is_bareword = matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
         let left = match expr {
-            Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
+            Expr::BareWord(ref name)
+                if !consumed.trim_start().starts_with('(') && !name.contains("::") =>
+            {
                 Expr::Literal(Value::str(name.clone()))
             }
             _ => expr,

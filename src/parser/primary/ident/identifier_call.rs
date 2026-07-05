@@ -197,6 +197,19 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if should_wrap_whatevercode(&value) {
                 value = wrap_whatevercode(&value);
             }
+            // A qualified name (`Bool::True`, `Foo::Bar`) is NOT autoquoted — it
+            // is evaluated to its value, so `Bool::True => "a"` has the Bool
+            // *value* as its (positional) key, matching raku.
+            if name.contains("::") {
+                return Ok((
+                    r2,
+                    Expr::PositionalPair(Box::new(Expr::Binary {
+                        left: Box::new(Expr::BareWord(name)),
+                        op: crate::token_kind::TokenKind::FatArrow,
+                        right: Box::new(value),
+                    })),
+                ));
+            }
             return Ok((
                 r2,
                 Expr::Binary {
@@ -1223,6 +1236,19 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // Use parse_fat_arrow_value for right-associative chaining:
         // a => b => c parses as a => (b => c)
         let (r2, value) = parse_fat_arrow_value(r2)?;
+        // A qualified name (`Bool::True`, `Foo::Bar`) is NOT autoquoted — it is
+        // evaluated to its value, so `Bool::True => "a"` has the Bool *value* as
+        // its (positional) key, matching raku.
+        if name.contains("::") {
+            return Ok((
+                r2,
+                Expr::PositionalPair(Box::new(Expr::Binary {
+                    left: Box::new(Expr::BareWord(name)),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(value),
+                })),
+            ));
+        }
         return Ok((
             r2,
             Expr::Binary {
