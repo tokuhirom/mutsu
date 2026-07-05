@@ -450,7 +450,7 @@ impl Interpreter {
     /// BUILD frame), so the outer `.new` drain finds nothing and the caller's slot
     /// stays stale. Retaining the miss leaves it for the frame that actually owns
     /// the slot.
-    pub(super) fn reconcile_caller_after_internal_dispatch(&mut self, caller_code: usize) {
+    pub(crate) fn reconcile_caller_after_internal_dispatch(&mut self, caller_code: usize) {
         self.current_code = caller_code;
         if caller_code == 0 {
             return;

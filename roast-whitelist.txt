@@ -1300,6 +1300,7 @@ roast/integration/advent2009-day14.t
 roast/integration/advent2009-day15.t
 roast/integration/advent2009-day17.t
 roast/integration/advent2009-day19.t
+roast/integration/advent2009-day21.t
 roast/integration/advent2009-day22.t
 roast/integration/advent2010-day06.t
 roast/integration/advent2010-day08.t

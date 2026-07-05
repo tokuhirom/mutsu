@@ -126,12 +126,22 @@ impl Interpreter {
             } else {
                 text.to_string()
             };
+            // A user `$*OUT`/`$*ERR` handle's `print` method can mutate a
+            // captured-outer caller lexical (the classic output-capture idiom:
+            // `my $out; my $*OUT = class { method print(*@a) { $out ~= @a.join } }`).
+            // This internal dispatch has no surrounding `CallMethod` op to drain
+            // the writeback, so across successive `say`/`print` calls the earlier
+            // mutations were lost (only the last write survived). Reconcile the
+            // caller frame afterwards so the accumulation persists (Slice F).
+            let caller_code = self.current_code;
             if self
                 .call_method_with_values(handle, "print", vec![Value::str(payload.clone())])
                 .is_ok()
             {
+                self.reconcile_caller_after_internal_dispatch(caller_code);
                 return Ok(());
             }
+            self.reconcile_caller_after_internal_dispatch(caller_code);
             if name == "$*ERR" {
                 self.output_sink_mut().stderr_output.push_str(&payload);
             }
