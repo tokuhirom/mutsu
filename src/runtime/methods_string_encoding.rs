@@ -80,6 +80,27 @@ impl Interpreter {
         self.encode_with_encoding(input, encoding_name)
     }
 
+    /// Raku's human-readable name for an encoding, used in encode error
+    /// messages (e.g. `ascii` -> `ASCII`, `windows-1252` -> `Windows-1252`).
+    fn encoding_display_name(enc: &str) -> String {
+        match enc {
+            "ascii" => "ASCII".to_string(),
+            "iso-8859-1" | "latin1" => "Latin-1".to_string(),
+            _ if enc.starts_with("windows-") => format!("Windows-{}", &enc["windows-".len()..]),
+            _ if enc.starts_with("utf") => enc.to_uppercase(),
+            _ => enc.to_string(),
+        }
+    }
+
+    /// The `X::AdHoc` message Raku raises when a codepoint cannot be encoded.
+    fn encode_codepoint_error(enc: &str, ch: char) -> RuntimeError {
+        RuntimeError::new(format!(
+            "Error encoding {} string: could not encode codepoint {}",
+            Self::encoding_display_name(enc),
+            ch as u32
+        ))
+    }
+
     pub(super) fn encode_with_encoding(
         &self,
         input: &str,
@@ -96,10 +117,7 @@ impl Interpreter {
             "ascii" => {
                 for ch in input.chars() {
                     if (ch as u32) > 0x7F {
-                        return Err(RuntimeError::new(format!(
-                            "Error encoding ascii string: character '{}' (U+{:04X}) is not representable",
-                            ch, ch as u32
-                        )));
+                        return Err(Self::encode_codepoint_error("ascii", ch));
                     }
                 }
                 Ok(input.bytes().collect())
@@ -107,10 +125,7 @@ impl Interpreter {
             "iso-8859-1" => {
                 for ch in input.chars() {
                     if (ch as u32) > 0xFF {
-                        return Err(RuntimeError::new(format!(
-                            "Error encoding iso-8859-1 string: character '{}' (U+{:04X}) is not representable",
-                            ch, ch as u32
-                        )));
+                        return Err(Self::encode_codepoint_error("iso-8859-1", ch));
                     }
                 }
                 Ok(input.chars().map(|c| c as u8).collect())
@@ -125,10 +140,7 @@ impl Interpreter {
                         let s = ch.to_string();
                         let (encoded, _, had_errors) = enc.encode(&s);
                         if had_errors || !Self::char_is_encodable(ch, &encoded, enc) {
-                            return Err(RuntimeError::new(format!(
-                                "Error encoding {} string: could not encode codepoint 0x{:x}",
-                                encoding, ch as u32
-                            )));
+                            return Err(Self::encode_codepoint_error(&encoding, ch));
                         }
                     }
                     if matches!(encoding.as_str(), "windows-1251" | "windows-1252") {
