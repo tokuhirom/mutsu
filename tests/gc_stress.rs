@@ -481,3 +481,56 @@ fn threaded_cycle_churn_is_collected_soundly() {
         "cycle garbage from worker threads must be reclaimed; stderr:\n{err}"
     );
 }
+
+/// Rapid short-lived worker churn (a `Promise.start` per loop iteration, RT
+/// #128628 shape — S17-lowlevel/semaphore.t) must not starve the cooperative
+/// stop-the-world. Two regressions made this degrade from seconds to a CI
+/// timeout under GC=on, each burning ~the full 50ms STW wait at nearly every
+/// collect: (1) the spawn *birth window* — a worker counted in the quiescence
+/// target from `enter_mutator_worker` (parent-side) but unable to park until
+/// it starts running — fixed by parent-side `preregister_worker_quiescent`;
+/// (2) a worker *exit* satisfies the quiescence equation by lowering the
+/// target, which never woke the waiting collector — fixed by
+/// `notify_worker_exit`. Guard both via the accumulated pause total: with
+/// either regression, ~50ms × (collects during 300 spawns) blows far past the
+/// bound (measured pre-fix: multiple seconds; post-fix: tens of ms).
+#[test]
+fn spawn_churn_does_not_starve_stop_the_world() {
+    let src = r#"
+        my Semaphore $s .= new(1);
+        my @p;
+        my $r = 0;
+        for ^300 {
+            my $i = $_;
+            @p.push: Promise.start({ $s.acquire; $r += $i; $s.release; });
+        }
+        await @p;
+        say $r;
+    "#;
+
+    let (out, err, ok) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_EVERY_CANDIDATE", "64"),
+            ("MUTSU_VM_STATS", "1"),
+        ],
+    );
+
+    assert!(ok, "spawn-churn run must not crash; stderr:\n{err}");
+    assert_eq!(out.trim(), "44850", "semaphore-protected sum must be exact");
+
+    let pause_total_ns = err
+        .lines()
+        .find(|l| l.contains("[mutsu vm-stats] gc:"))
+        .and_then(|l| {
+            l.split_whitespace()
+                .find_map(|tok| tok.strip_prefix("pause_ns_total="))
+        })
+        .and_then(|n| n.parse::<u64>().ok())
+        .unwrap_or(u64::MAX);
+    assert!(
+        pause_total_ns < 2_000_000_000,
+        "STW must not repeatedly time out under spawn churn; pause_ns_total={pause_total_ns}\nstderr:\n{err}"
+    );
+}

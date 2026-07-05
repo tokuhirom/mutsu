@@ -21,6 +21,11 @@ where
     // parent — before the thread exists — so the count is up the instant this
     // returns, then dropped by the worker's RAII guard (panic-safe).
     crate::gc::enter_mutator_worker();
+    // Count the unborn worker quiescent until it actually starts: it touches
+    // no `Gc` state before `worker_started` leaves quiescence (checked), and
+    // without this a spawn burst starves every stop-the-world attempt — see
+    // `gc::stw::preregister_worker_quiescent`.
+    crate::gc::preregister_worker_quiescent();
     std::thread::Builder::new()
         .stack_size(USER_THREAD_STACK_SIZE)
         .spawn(move || {
@@ -32,9 +37,11 @@ where
                 }
             }
             let _guard = WorkerGuard;
-            // Registered-mutator flag: this thread's quiescence now counts
-            // toward (and is required by) the STW rendezvous (gc::stw).
-            crate::gc::mark_thread_registered(true);
+            // Registered-mutator flag + leave the parent-granted quiescent
+            // state (parking first if a scan is in progress): this thread's
+            // quiescence now counts toward (and is required by) the STW
+            // rendezvous (gc::stw).
+            crate::gc::worker_started();
             f()
         })
         .expect("failed to spawn worker thread")
