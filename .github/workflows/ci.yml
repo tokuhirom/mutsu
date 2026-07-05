@@ -199,6 +199,11 @@ jobs:
       MUTSU_GC: "on"
       MUTSU_GC_EVERY_CANDIDATE: "1024"
       MUTSU_GC_VERIFY: "1"
+      # GC=on + VERIFY runs the roast suite ~2x slower across the board;
+      # scale every per-file timeout accordingly (see run-roast-test.sh) —
+      # S17-lowlevel/thread.t sat at ~24s against the 30s GC-off budget and
+      # timed out on a loaded runner the first time this step ran blocking.
+      MUTSU_ROAST_TIMEOUT_SCALE: "2"
     steps:
       - uses: actions/checkout@v4
         with:

@@ -72,6 +72,17 @@ needs_roast_cwd() {
 
 test_file="$1"
 file_timeout=$(per_file_timeout "$test_file")
+# MUTSU_ROAST_TIMEOUT_SCALE: integer multiplier on every per-file timeout.
+# The CI gc-stress job sets 2: with MUTSU_GC=on + MUTSU_GC_VERIFY=1 the suite
+# runs ~2x slower across the board (collector scans + verify snapshots), so
+# fixed budgets tuned for GC-off leave no headroom — S17-lowlevel/thread.t
+# measured 23.5s locally against the 30s default and timed out on a loaded
+# runner the first time the GC=on roast step ran as a blocking gate. Scaling
+# the whole schedule encodes "same tests, slower mode" once, instead of
+# per-file whack-a-mole after each flake.
+if [[ "${MUTSU_ROAST_TIMEOUT_SCALE:-1}" =~ ^[0-9]+$ ]] && [ "${MUTSU_ROAST_TIMEOUT_SCALE:-1}" -gt 1 ]; then
+  file_timeout=$((file_timeout * MUTSU_ROAST_TIMEOUT_SCALE))
+fi
 if needs_roast_cwd "$test_file"; then
   abs_bin="$(cd "$(dirname "$MUTSU_BIN")" && pwd)/$(basename "$MUTSU_BIN")"
   abs_test="$(cd "$(dirname "$test_file")" && pwd)/$(basename "$test_file")"
