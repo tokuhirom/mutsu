@@ -59,6 +59,19 @@ impl Interpreter {
     /// Expand a `:nth`/`:st`/`:nd`/`:rd`/`:th` adverb argument into a list of
     /// 1-based match indices. Accepts an Int, an Array of Ints, or any Range
     /// variant (`:nth(1..3)`).
+    /// Is `value` a `WhateverCode` (e.g. `*-1`)? Those carry a
+    /// `__mutsu_callable_type` marker in their captured environment.
+    fn is_whatever_code_value(value: &Value) -> bool {
+        matches!(
+            value,
+            Value::Sub(data)
+                if matches!(
+                    data.env.get("__mutsu_callable_type"),
+                    Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+                )
+        )
+    }
+
     fn subst_nth_indices(value: &Value) -> Vec<i64> {
         match value {
             Value::Int(n) => vec![*n],
@@ -108,6 +121,9 @@ impl Interpreter {
         let mut positional: Vec<Value> = Vec::new();
         let mut global = false;
         let mut nth: Option<Vec<i64>> = None;
+        // `:nth(*)` / `:nth(*-1)` can only be resolved once the match count is
+        // known, so keep the raw Whatever/WhateverCode for deferred resolution.
+        let mut nth_deferred: Vec<Value> = Vec::new();
         let mut x_count: Option<Value> = None;
         let mut pos_start: Option<usize> = None;
         let mut continue_from: Option<usize> = None;
@@ -121,8 +137,16 @@ impl Interpreter {
                     // select 1-based match indices. The argument may be an Int, a
                     // list of Ints, or a Range (`:nth(1..3)`).
                     "nth" | "st" | "nd" | "rd" | "th" => {
-                        let idxs = Self::subst_nth_indices(value);
-                        nth.get_or_insert_with(Vec::new).extend(idxs);
+                        if matches!(value.as_ref(), Value::Whatever)
+                            || Self::is_whatever_code_value(value)
+                        {
+                            // Resolved later against the match count.
+                            nth_deferred.push((**value).clone());
+                            nth.get_or_insert_with(Vec::new);
+                        } else {
+                            let idxs = Self::subst_nth_indices(value);
+                            nth.get_or_insert_with(Vec::new).extend(idxs);
+                        }
                     }
                     "1st" | "first" if value.truthy() => nth = Some(vec![1]),
                     "2nd" | "second" if value.truthy() => nth = Some(vec![2]),
@@ -271,6 +295,19 @@ impl Interpreter {
                     // If no :g, :x, :nth - single match mode
                     if !pat_global && x_count.is_none() && nth.is_none() {
                         selected.truncate(1);
+                    }
+
+                    // Resolve any deferred `:nth(*)` / `:nth(*-1)` now that the
+                    // match count is known.
+                    if !nth_deferred.is_empty() {
+                        let total = selected.len();
+                        let mut extra: Vec<i64> = Vec::new();
+                        for spec in &nth_deferred {
+                            let resolved = self.resolve_nth_value_indices(spec, total)?;
+                            extra.extend(resolved.into_iter().map(|i| i as i64));
+                        }
+                        extra.sort_unstable();
+                        nth.get_or_insert_with(Vec::new).extend(extra);
                     }
 
                     // Apply :nth - select specific 1-based match indices
