@@ -44,8 +44,19 @@ impl Value {
             // `arc_contents_mut`. No borrow into the items is live across the
             // growth/promotion below.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
+            // Autovivifying past the end fills the gap with the element's type
+            // object (`Any`, or the declared element type / `is default` value),
+            // matching Raku — `my @a; my $r := @a[5]; $r = 1` yields
+            // `[Any, Any, Any, Any, Any, 1]`, not `Nil` holes.
+            let hole = data
+                .default
+                .as_ref()
+                .map(|d| (**d).clone())
+                .unwrap_or_else(|| {
+                    Value::Package(Symbol::intern(data.value_type.as_deref().unwrap_or("Any")))
+                });
             while data.len() <= idx {
-                data.push(Value::Nil);
+                data.push(hole.clone());
             }
             let elem = &mut data[idx];
             if let Value::ContainerRef(cell) = elem {
