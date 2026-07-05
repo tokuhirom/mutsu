@@ -107,9 +107,10 @@ pub(crate) fn format_num_str(f: f64) -> String {
     let sign = if f < 0.0 { "-" } else { "" };
 
     // For numbers that are naturally expressible without scientific notation
-    // (roughly 1e-4 to 1e15), use fixed-point representation.
-    // For others, use scientific notation.
-    if (1e-4..1e16).contains(&abs_f) {
+    // (the half-open magnitude window [1e-4, 1e15)), use fixed-point
+    // representation. For others, use scientific notation — matching `Num.Str`,
+    // so `1e15` prints `1e+15` while `9e14` stays `900000000000000`.
+    if (1e-4..1e15).contains(&abs_f) {
         // Find shortest fixed-point round-trip representation
         for prec in 0..=20 {
             let candidate = format!("{sign}{abs_f:.prec$}");
@@ -142,7 +143,15 @@ pub(crate) fn format_num_str(f: f64) -> String {
             } else {
                 mantissa
             };
-            return format!("{sign}{mantissa}e{exp_str}");
+            // Raku always writes the exponent with an explicit sign and a
+            // 2-digit minimum (`1e-05`, `1e+20`, `1e-100`), matching `Num.Str`.
+            let exp_num: i32 = exp_str.parse().unwrap_or(0);
+            let exp_fmt = if exp_num < 0 {
+                format!("-{:02}", exp_num.unsigned_abs())
+            } else {
+                format!("+{:02}", exp_num)
+            };
+            return format!("{sign}{mantissa}e{exp_fmt}");
         }
     }
 

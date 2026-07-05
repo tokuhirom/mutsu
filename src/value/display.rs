@@ -375,7 +375,16 @@ impl Value {
                         format!("{}", *f as i64)
                     }
                 } else {
-                    format!("{}", f)
+                    // Fractional Num: Raku renders in scientific notation once the
+                    // magnitude leaves [1e-4, 1e15) — e.g. `1e-5` prints `1e-05`,
+                    // not `0.00001`. Rust's `{}` never switches to scientific, so
+                    // apply the same threshold as the integer-valued branch.
+                    let abs = f.abs();
+                    if !(1e-4..1e15).contains(&abs) {
+                        format_num_scientific(*f)
+                    } else {
+                        format!("{}", f)
+                    }
                 }
             }
             Value::Str(s) => (**s).clone(),
