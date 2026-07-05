@@ -290,10 +290,14 @@ fn compatibility_decomposition_type(ch: char) -> String {
     match cp {
         0x00A0 => "Nobreak".to_string(),                 // NO-BREAK SPACE
         0x00B2 | 0x00B3 | 0x00B9 => "Super".to_string(), // Superscripts
+        0x00BC..=0x00BE => "Fraction".to_string(),       // vulgar fractions
         0x2070..=0x207E => "Super".to_string(),
-        0x2080..=0x208E => "Sub".to_string(),
+        0x2080..=0x209C => "Sub".to_string(), // subscripts + Latin subscript letters
         0x2100..=0x214F => "Compat".to_string(), // Letterlike symbols
-        0x2150..=0x218F => "Fraction".to_string(), // Number forms
+        // Number Forms: vulgar fractions, then Roman numerals (Compat).
+        0x2150..=0x215F => "Fraction".to_string(),
+        0x2160..=0x2188 => "Compat".to_string(), // Roman numerals
+        0x2189 => "Fraction".to_string(),
         0x2460..=0x24FF => "Circle".to_string(), // Enclosed alphanumerics
         0x3300..=0x33FF => "Square".to_string(), // CJK compat
         0xFB00..=0xFB06 => "Compat".to_string(), // Latin ligatures
