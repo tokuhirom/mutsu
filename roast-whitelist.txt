@@ -119,6 +119,7 @@ roast/S02-one-pass-parsing/misc.t
 roast/S02-packages/package-lookup.t
 roast/S02-types/WHICH.t
 roast/S02-types/anon_block.t
+roast/S02-types/array.t
 roast/S02-types/array_extending.t
 roast/S02-types/array_ref.t
 roast/S02-types/assigning-refs.t

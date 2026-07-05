@@ -18,6 +18,64 @@ use super::scalar::scalar_var;
 
 static ANON_ARRAY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Parse a leading-`::` qualified variable name after a sigil, i.e. the
+/// `::Pkg::name` / `::Pkg::('name')` form (`input` starts at the first `::`).
+///
+/// Returns `(rest, static_name, dynamic)`:
+/// - `static_name` is the fully-qualified name with `::` separators (e.g.
+///   `Pkg::name`), used when every segment is a static identifier.
+/// - `dynamic` is `Some(expr)` when any segment is a runtime `::('expr')` lookup;
+///   the expression evaluates to the qualified name string (`"Pkg::" ~ name`),
+///   for a `SymbolicDeref`.
+///
+/// Mirrors the qualified-name deduction in `ident/term_literals.rs` so
+/// `@::Pkg::('name')` resolves the same variable as `@Pkg::name`.
+fn parse_leading_colon_qualified(input: &str) -> Option<(&str, String, Option<Expr>)> {
+    let after = input.strip_prefix("::")?;
+    // The first segment must be a static identifier (`::Pkg…`); `::(...)` alone
+    // is the already-handled `@::(expr)` symbolic form.
+    let (mut r, first) = parse_ident_with_hyphens(after).ok()?;
+    let mut full_name = first.to_string();
+    let mut dynamic: Option<Expr> = None;
+    while let Some(r2) = r.strip_prefix("::") {
+        if let Some(after_paren) = r2.strip_prefix('(') {
+            let (r3, _) = ws(after_paren).ok()?;
+            let (r3, seg) = crate::parser::expr::expression(r3).ok()?;
+            let (r3, _) = ws(r3).ok()?;
+            let (r3, _) = parse_char(r3, ')').ok()?;
+            let base = match dynamic.take() {
+                Some(prev) => Expr::Binary {
+                    left: Box::new(prev),
+                    op: crate::token_kind::TokenKind::Tilde,
+                    right: Box::new(Expr::Literal(Value::str("::".to_string()))),
+                },
+                None => Expr::Literal(Value::str(format!("{}::", full_name))),
+            };
+            dynamic = Some(Expr::Binary {
+                left: Box::new(base),
+                op: crate::token_kind::TokenKind::Tilde,
+                right: Box::new(seg),
+            });
+            r = r3;
+        } else if let Ok((r2b, part)) = parse_ident_with_hyphens(r2) {
+            if let Some(dyn_expr) = dynamic.as_mut() {
+                let old = std::mem::replace(dyn_expr, Expr::Literal(Value::Nil));
+                *dyn_expr = Expr::Binary {
+                    left: Box::new(old),
+                    op: crate::token_kind::TokenKind::Tilde,
+                    right: Box::new(Expr::Literal(Value::str(format!("::{}", part)))),
+                };
+            } else {
+                full_name = format!("{}::{}", full_name, part);
+            }
+            r = r2b;
+        } else {
+            break;
+        }
+    }
+    Some((r, full_name, dynamic))
+}
+
 /// Parse an @array variable reference.
 pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
@@ -35,6 +93,27 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
             Expr::SymbolicDeref {
                 sigil: "@".to_string(),
                 expr: Box::new(expr),
+            },
+        ));
+    }
+    // Leading-`::` qualified array: `@::Pkg::bar` (static) / `@::Pkg::('bar')`
+    // (symbolic). The leading `::` is optional in Raku, so `@::Pkg::bar` names
+    // the same `@Pkg::bar`; a `::('expr')` segment makes it a runtime lookup.
+    if input.starts_with("::")
+        && input
+            .as_bytes()
+            .get(2)
+            .is_some_and(|&b| b.is_ascii_alphabetic() || b == b'_')
+        && let Some((rest, name, dynamic)) = parse_leading_colon_qualified(input)
+    {
+        return Ok((
+            rest,
+            match dynamic {
+                Some(expr) => Expr::SymbolicDeref {
+                    sigil: "@".to_string(),
+                    expr: Box::new(expr),
+                },
+                None => Expr::ArrayVar(name),
             },
         ));
     }
@@ -144,6 +223,25 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
             Expr::SymbolicDeref {
                 sigil: "%".to_string(),
                 expr: Box::new(expr),
+            },
+        ));
+    }
+    // Leading-`::` qualified hash: `%::Pkg::h` (static) / `%::Pkg::('h')`.
+    if input.starts_with("::")
+        && input
+            .as_bytes()
+            .get(2)
+            .is_some_and(|&b| b.is_ascii_alphabetic() || b == b'_')
+        && let Some((rest, name, dynamic)) = parse_leading_colon_qualified(input)
+    {
+        return Ok((
+            rest,
+            match dynamic {
+                Some(expr) => Expr::SymbolicDeref {
+                    sigil: "%".to_string(),
+                    expr: Box::new(expr),
+                },
+                None => Expr::HashVar(name),
             },
         ));
     }
