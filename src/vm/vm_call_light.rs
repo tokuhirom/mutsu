@@ -8,6 +8,9 @@ impl Interpreter {
         compiled_fns: &HashMap<String, CompiledFunction>,
         func_name: &str,
     ) -> Result<Value, RuntimeError> {
+        // GC safepoint (§9.2a `call`): this fast path skips push_call_frame,
+        // so it emits the call safepoint itself.
+        crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
         self.record_cf_deprecation(cf);
         let param_slots = cf.param_local_slots.as_ref().unwrap();
         let positional_count = param_slots.len();

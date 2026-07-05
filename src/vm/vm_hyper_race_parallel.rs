@@ -127,6 +127,9 @@ impl Interpreter {
                 }
             }
         }
+        // GC safepoint (§9.2a `thread_join`): the hyper/race join-merge
+        // boundary — every batch worker has joined, its results are owned here.
+        crate::gc::gc_safepoint(crate::gc::SafepointKind::ThreadJoin);
         // Sync any shared variable updates from threads back to our env
         self.sync_shared_vars_to_env();
         if let Some(e) = first_error {

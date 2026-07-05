@@ -217,6 +217,10 @@ impl SharedPromise {
     }
 
     pub(crate) fn wait(&self) -> (Value, String, String) {
+        // GC safepoint (§9.2a `await`): the await entry boundary, before the
+        // state lock is taken (a collect here can run finalizers that touch
+        // other promises/channels, so it must not hold this mutex).
+        crate::gc::gc_safepoint(crate::gc::SafepointKind::Await);
         let (lock, cvar) = &*self.inner;
         let state = lock.lock().unwrap();
         // STW-aware: the waiting thread counts as quiescent for the GC's
@@ -286,6 +290,9 @@ impl SharedChannel {
     }
 
     pub(crate) fn receive_result(&self) -> Result<Value, Value> {
+        // GC safepoint (§9.2a `await`): the blocking-receive entry, before the
+        // channel lock is taken — see `SharedPromise::wait`.
+        crate::gc::gc_safepoint(crate::gc::SafepointKind::Await);
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
         loop {

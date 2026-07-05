@@ -42,6 +42,8 @@ class Pointer {
 
 impl Interpreter {
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
+        // `MUTSU_GC_COLLECT_NOW=1` (§9.2): one collect right at program start.
+        crate::gc::startup_collect_if_requested();
         let preprocessed = Self::maybe_preprocess_roast_directives(input);
         if !self.env.contains_key("*PROGRAM") {
             self.env

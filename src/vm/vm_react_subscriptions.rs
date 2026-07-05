@@ -38,8 +38,11 @@ impl Interpreter {
             // GC park point: an idle react loop polls `recv_timeout` without
             // dispatching bytecode, so it would never reach the backedge
             // safepoint — park here so a stop-the-world can proceed while the
-            // loop waits for events.
+            // loop waits for events. (Unconditional: `gc_safepoint` below only
+            // parks when a trigger is armed.)
             crate::gc::gc_park_point();
+            // GC safepoint (§9.2a `react_poll`): one drive-loop poll unit.
+            crate::gc::gc_safepoint(crate::gc::SafepointKind::ReactPoll);
             if let SupplyDrivePolicy::Promise {
                 promise, deadline, ..
             } = &policy

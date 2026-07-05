@@ -214,7 +214,18 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y perl
 
       - name: Unit + integration tests (GC on)
-        run: cargo test
+        # Single-threaded: with MUTSU_GC=on, parallel in-process test threads
+        # share the process-global collector state (candidate buffer, mutator
+        # worker count, STW flags), so an interpreter test's safepoint collect
+        # can steal another test's buffered candidates or react to its fake
+        # registered workers — intermittent unit-test failures that are test
+        # isolation artifacts, not GC bugs (seen: buffering_marks_purple_and_
+        # dedupes, collect_is_deferred_while_a_mutator_worker_is_active,
+        # stw_times_out_against_a_non_cooperating_worker). Serializing tests
+        # removes the cross-talk; the multi-threaded GC coverage lives in the
+        # subprocess-based tests/gc_stress.rs and the prove t/ suite below.
+        # Costs ~1s over the parallel run.
+        run: cargo test -- --test-threads=1
         env:
           RUST_MIN_STACK: 8388608
 
