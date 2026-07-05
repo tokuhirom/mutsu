@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.20](https://github.com/tokuhirom/mutsu/compare/v0.2.19...v0.2.20) - 2026-07-05
+
+- fix(autoviv): nested <>/{}  ++/--/OP= autovivifies a Hash, not an Array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4264
+
 ## [v0.2.19](https://github.com/tokuhirom/mutsu/compare/v0.2.18...v0.2.19) - 2026-07-05
 
 - fix(array): .List/.Array on a shaped array flattens + fills Nil with the default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4270
