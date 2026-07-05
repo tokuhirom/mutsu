@@ -359,10 +359,35 @@ impl Interpreter {
     /// (typed keys) when any classifier key was non-`Str` (e.g. a Junction). An
     /// object hash makes `$result{ $key }` a by-key lookup rather than junction
     /// autothreading, and `.keys` yield the real key objects.
+    /// Itemize each bucket's value list so `%classified<key>` behaves as a
+    /// single (non-flattening) array — Raku stores each bucket as `$[...]`, so
+    /// `my @a = %c<k>` yields one element and `for %c<k> {}` runs once. Recurses
+    /// into nested categorize buckets (multi-level paths become nested hashes).
+    fn itemize_bucket_value(v: Value) -> Value {
+        match v {
+            Value::Array(items, kind) => Value::Array(items, kind.itemize()),
+            Value::Hash(mut arc) => {
+                let data = crate::gc::Gc::make_mut(&mut arc);
+                let keys: Vec<String> = data.map.keys().cloned().collect();
+                for k in keys {
+                    if let Some(val) = data.map.remove(&k) {
+                        data.map.insert(k, Self::itemize_bucket_value(val));
+                    }
+                }
+                Value::Hash(arc)
+            }
+            other => other,
+        }
+    }
+
     fn classify_finish_hash(
         buckets: HashMap<String, Value>,
         object_keys: HashMap<String, Value>,
     ) -> Value {
+        let buckets: HashMap<String, Value> = buckets
+            .into_iter()
+            .map(|(k, v)| (k, Self::itemize_bucket_value(v)))
+            .collect();
         let hash = Value::hash(buckets);
         if object_keys.is_empty() {
             return hash;
