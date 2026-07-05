@@ -41,7 +41,12 @@ pub(crate) fn unicode_grapheme_cluster_break(ch: char) -> String {
         0x1160..=0x11A7 | 0xD7B0..=0xD7C6 => return "V".to_string(),
         0x11A8..=0x11FF | 0xD7CB..=0xD7FB => return "T".to_string(),
         0xAC00..=0xD7A3 => {
-            return if (cp - 0xAC00).is_multiple_of(28) { "LV" } else { "LVT" }.to_string();
+            return if (cp - 0xAC00).is_multiple_of(28) {
+                "LV"
+            } else {
+                "LVT"
+            }
+            .to_string();
         }
         _ => {}
     }
