@@ -96,6 +96,25 @@ pub(crate) trait Trace: Send + Sync {
     /// not-yet-migrated nodes have no `Gc` edges); container nodes override it to
     /// clear their `Value`-holding collections.
     fn drop_gc_edges(&mut self) {}
+
+    /// Run this node's *value-level* finalizer (Raku `DESTROY` queueing), once
+    /// per node death. Decouples language-level finalization from Rust `Drop`:
+    /// with GC on, a node's memory drop can be arbitrarily deferred by the
+    /// candidate buffer's retained handle, so waiting for `Drop` would delay
+    /// (or, for a short program, entirely skip) `DESTROY`.
+    ///
+    /// Called from exactly two places, both on an interpreter thread:
+    /// - `Gc::drop`, when the *last live handle* goes away (GC on; the memory
+    ///   may live on in the candidate buffer) — the prompt refcount-death path.
+    /// - the collector's reclaim pass, on proven cycle garbage, BEFORE
+    ///   `drop_gc_edges` clears the node (so a `DESTROY` submethod still sees
+    ///   the attributes).
+    ///
+    /// Implementations must be idempotent (guard with an internal once-flag):
+    /// the eventual Rust `Drop` of the value typically funnels into the same
+    /// logic for the GC-off path. The default does nothing (only `Instance`
+    /// attributes carry a Raku destructor).
+    fn finalize(&self) {}
 }
 
 /// Bacon-Rajan node header stored alongside the value inside a [`GcBox`].
@@ -433,8 +452,18 @@ impl<T: Trace + 'static> Drop for Gc<T> {
         // be reachable only through a cycle that outlives every stack root —
         // record it as a candidate. `prev == 1`: this was the last handle; the
         // `Arc` frees the allocation once its own count reaches zero.
-        if prev > 1 && gc_enabled() {
-            buffer_candidate(self.inner.clone());
+        if gc_enabled() {
+            if prev > 1 {
+                buffer_candidate(self.inner.clone());
+            } else {
+                // Last live handle. The allocation may outlive this drop in the
+                // candidate buffer, deferring the value's Rust `Drop` (and with
+                // it any `Drop`-coupled Raku `DESTROY`) until some future
+                // collect — or forever, in a program too short to trigger one.
+                // Run the value-level finalizer NOW, on the dropping
+                // (interpreter) thread, exactly when refcount death occurs.
+                self.inner.value.finalize();
+            }
         }
     }
 }
@@ -589,6 +618,24 @@ pub(crate) fn drain_candidates() -> Vec<ErasedGc> {
     drained
 }
 
+/// Put still-suspect candidates back into the buffer (the collector drained
+/// them but declined trial deletion — e.g. worker threads were active). Skips
+/// any node a concurrent `Gc::drop` re-buffered since the drain (its `buffered`
+/// flag is already set), so the buffer never holds duplicates.
+pub(crate) fn requeue_candidates(nodes: Vec<ErasedGc>) {
+    if nodes.is_empty() {
+        return;
+    }
+    if let Ok(mut buf) = candidate_buffer().lock() {
+        for node in nodes {
+            if node.header.buffered.swap(true, Ordering::Relaxed) {
+                continue;
+            }
+            buf.push(node);
+        }
+    }
+}
+
 // ---- Collector-facing internals (used by `gc::collect`) --------------------
 
 /// Set while the collector is dropping a garbage node's edges, so `Gc::drop`
@@ -670,6 +717,12 @@ pub(crate) fn gc_drop_edges(node: &ErasedGc) {
     // SAFETY: as above. `Arc::as_ptr` yields the box's genuine heap pointer.
     let boxed = Arc::as_ptr(node) as *mut GcBox<dyn Trace>;
     unsafe { (*boxed).value.drop_gc_edges() };
+}
+
+/// Run a type-erased node's value-level finalizer (see [`Trace::finalize`]).
+/// Shared-reference access — no aliasing concerns.
+pub(crate) fn gc_finalize(node: &ErasedGc) {
+    node.value.finalize();
 }
 
 /// Whether GC candidate registration is active. `off`/unset (the default) makes

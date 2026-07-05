@@ -416,6 +416,11 @@ pub(crate) struct InstanceAttrs {
     attributes: AttrCell,
     id: u64,
     queue_destroy: bool,
+    /// Once-guard for DESTROY queueing: `Trace::finalize` (GC-on refcount
+    /// death / cycle reclaim) and Rust `Drop` (GC-off, and the eventual memory
+    /// drop of a GC node) funnel into the same `finalize_destroy`; whichever
+    /// runs first wins and the other becomes a no-op.
+    finalized: std::sync::atomic::AtomicBool,
 }
 
 /// Type constraints for typed scalar `ContainerRef` cells, keyed by the cell's

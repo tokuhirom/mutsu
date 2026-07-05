@@ -1,19 +1,6 @@
 use super::*;
 
 impl Interpreter {
-    /// Whether this interpreter is (currently) the only one sharing its
-    /// `shared_vars` — i.e. no `start`/`Promise`/`hyper`/`race` worker is live.
-    ///
-    /// `clone_for_thread` hands each worker an `Arc::clone` of `shared_vars`, so
-    /// a strong count of 1 means execution is single-threaded again. The GC
-    /// safepoint uses this to skip a collect while workers might be mutating a
-    /// shared `Gc` container concurrently (cross-thread cooperative STW is not
-    /// implemented yet — design doc §6). Conservative in the safe direction: a
-    /// transient extra `Arc` clone only *skips* a collect, never runs one racily.
-    pub(crate) fn gc_single_threaded(&self) -> bool {
-        Arc::strong_count(&self.shared_vars) == 1
-    }
-
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`

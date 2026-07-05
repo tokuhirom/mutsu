@@ -182,8 +182,12 @@ fn log_modes_emit_expected_lines() {
         ],
     );
     assert!(ok2);
+    // A garbage node is reclaimed either by the cycle scan (`reclaim cycle=`)
+    // or, when its refcount already hit 0 in the buffer, by the dead sweep
+    // (`reclaim dead`) — trace mode logs a per-node line in both cases.
     assert!(
-        trace_err.contains("[mutsu gc] reclaim cycle="),
+        trace_err.contains("[mutsu gc] reclaim cycle=")
+            || trace_err.contains("[mutsu gc] reclaim dead"),
         "trace log missing per-node reclaim lines:\n{trace_err}"
     );
 }
@@ -288,5 +292,137 @@ fn cycles_are_reclaimed_during_execution() {
     assert!(
         reclaimed > 0,
         "expected the collector to reclaim cycle nodes, got reclaimed_nodes={reclaimed}\nstderr:\n{err}"
+    );
+}
+
+/// Raku `DESTROY` must fire under GC=on exactly as it does GC-off. The
+/// candidate buffer's retained handle defers the value's Rust `Drop`
+/// indefinitely, so DESTROY queueing is decoupled from `Drop` into
+/// `Trace::finalize`, which runs at last-live-handle drop (refcount death) and
+/// at cycle reclaim. Regression: t/destroy.t returned `got: []` under
+/// `MUTSU_GC=on` before the finalize hook existed.
+#[test]
+fn destroy_fires_on_refcount_death_under_gc() {
+    let src = r#"
+        my @events;
+        class Foo { submethod DESTROY { @events.push("foo") } }
+        my $foo = Foo.new;
+        $foo = Nil;
+        quietly $*VM.request-garbage-collection;
+        say @events.join(",");
+    "#;
+
+    let (off, _, ok_off) = run(src, &[]);
+    let (on, on_err, ok_on) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_EVERY_CANDIDATE", "64"),
+            ("MUTSU_GC_VERIFY", "1"),
+        ],
+    );
+
+    assert!(ok_off, "GC-off run must succeed");
+    assert!(ok_on, "GC-on run must not crash; stderr:\n{on_err}");
+    assert_eq!(off.trim(), "foo", "GC-off DESTROY baseline");
+    assert_eq!(on.trim(), "foo", "GC-on DESTROY must match GC-off");
+    assert!(
+        !on_err.contains("VERIFY FAIL"),
+        "no soundness violations; stderr:\n{on_err}"
+    );
+}
+
+/// An object kept alive ONLY by a reference cycle gets its DESTROY when the
+/// collector reclaims the cycle — the finalize pass runs before
+/// `drop_gc_edges` clears the attributes, so the submethod still sees them.
+#[test]
+fn destroy_fires_on_cycle_reclaim() {
+    let src = r#"
+        my @events;
+        class Node {
+            has $.name;
+            has $.peer is rw;
+            submethod DESTROY { @events.push($!name) }
+        }
+        sub make-cycle() {
+            my $a = Node.new(name => "a");
+            my $b = Node.new(name => "b");
+            $a.peer = $b;
+            $b.peer = $a;
+        }
+        make-cycle();
+        quietly $*VM.request-garbage-collection;
+        say @events.sort.join(",");
+    "#;
+
+    let (on, on_err, ok_on) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_EVERY_SAFEPOINT", "1"),
+            ("MUTSU_GC_VERIFY", "1"),
+        ],
+    );
+
+    assert!(ok_on, "GC-on run must not crash; stderr:\n{on_err}");
+    assert_eq!(
+        on.trim(),
+        "a,b",
+        "both cycle members' DESTROY must fire at reclaim; stderr:\n{on_err}"
+    );
+    assert!(
+        !on_err.contains("VERIFY FAIL"),
+        "no soundness violations; stderr:\n{on_err}"
+    );
+}
+
+/// While worker threads are live the cycle scan defers (no cross-thread STW),
+/// but the dead sweep must still run at safepoints and bound the candidate
+/// buffer: a threaded mutation-heavy loop must not defer every container
+/// release to one giant post-join collect. Guards both correctness (all cas
+/// increments land) and the pause bound (no multi-second single collect).
+#[test]
+fn dead_sweep_bounds_threaded_mutation_memory() {
+    let src = r#"
+        my %seen;
+        my $times = 400;
+        %seen{^$times} = (0 xx $times);
+        my @t = (1..2).map: { Thread.start({
+            cas %seen{$_}, {.succ} for ^$times;
+        }) };
+        .finish for @t;
+        say "sum=", [+] %seen.values;
+    "#;
+
+    let (on, on_err, ok_on) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_EVERY_CANDIDATE", "64"),
+            ("MUTSU_VM_STATS", "1"),
+        ],
+    );
+
+    assert!(
+        ok_on,
+        "threaded GC-on run must not crash; stderr:\n{on_err}"
+    );
+    assert_eq!(on.trim(), "sum=800", "every cas increment must land");
+
+    // The dead sweep runs during the loop, so the maximum single pause must
+    // stay far below the giant post-join collect it replaced (which scanned
+    // every dead snapshot: seconds). 500ms is a generous CI-load bound.
+    let pause_max_ns = on_err
+        .lines()
+        .find(|l| l.contains("[mutsu vm-stats] gc:"))
+        .and_then(|l| {
+            l.split_whitespace()
+                .find_map(|tok| tok.strip_prefix("pause_ns_max="))
+        })
+        .and_then(|n| n.parse::<u64>().ok())
+        .unwrap_or(u64::MAX);
+    assert!(
+        pause_max_ns < 500_000_000,
+        "expected bounded collect pauses with the dead sweep, got pause_ns_max={pause_max_ns}\nstderr:\n{on_err}"
     );
 }

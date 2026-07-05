@@ -116,12 +116,15 @@ impl Interpreter {
             // GC safepoint (design doc §1.2): the dispatch backward edge holds no
             // container borrow, so a cycle collect may run here. Off by default —
             // `gc_safepoints_armed()` is a single cached load unless `MUTSU_GC`
-            // enables an automatic trigger. Gated on single-threaded execution:
-            // worker interpreters (`start`/`Promise`/`hyper`/`race`) hold a clone
-            // of `shared_vars`, so `strong_count > 1` means another thread may be
-            // mutating a shared `Gc` container — collecting then would race
-            // (cross-thread cooperative STW is not implemented yet, design §6).
-            if crate::gc::gc_safepoints_armed() && self.gc_single_threaded() {
+            // enables an automatic trigger. Fires on worker threads too: the
+            // collector itself splits the work by thread-safety — the dead sweep
+            // (refcount-dead candidates, plain `Arc` drops) runs even while other
+            // mutators are live, while the trial-deletion cycle scan defers until
+            // `mutator_workers_active()` clears (cross-thread cooperative STW is
+            // not implemented yet, design §6). Without in-thread sweeps, threaded
+            // mutation-heavy loops grew the candidate buffer — and their dead
+            // snapshots' memory — unboundedly until the post-join collect.
+            if crate::gc::gc_safepoints_armed() {
                 crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
             }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -367,12 +370,15 @@ impl Interpreter {
             // GC safepoint (design doc §1.2): the dispatch backward edge holds no
             // container borrow, so a cycle collect may run here. Off by default —
             // `gc_safepoints_armed()` is a single cached load unless `MUTSU_GC`
-            // enables an automatic trigger. Gated on single-threaded execution:
-            // worker interpreters (`start`/`Promise`/`hyper`/`race`) hold a clone
-            // of `shared_vars`, so `strong_count > 1` means another thread may be
-            // mutating a shared `Gc` container — collecting then would race
-            // (cross-thread cooperative STW is not implemented yet, design §6).
-            if crate::gc::gc_safepoints_armed() && self.gc_single_threaded() {
+            // enables an automatic trigger. Fires on worker threads too: the
+            // collector itself splits the work by thread-safety — the dead sweep
+            // (refcount-dead candidates, plain `Arc` drops) runs even while other
+            // mutators are live, while the trial-deletion cycle scan defers until
+            // `mutator_workers_active()` clears (cross-thread cooperative STW is
+            // not implemented yet, design §6). Without in-thread sweeps, threaded
+            // mutation-heavy loops grew the candidate buffer — and their dead
+            // snapshots' memory — unboundedly until the post-join collect.
+            if crate::gc::gc_safepoints_armed() {
                 crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
             }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -516,6 +522,16 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let mut ip = start;
         while ip < end {
+            // GC safepoint on the inner dispatch backedge too: compound-loop
+            // ops (for/while bodies) iterate entirely inside ONE `exec_one` of
+            // the outer `run` loop, so without this a tight loop never reaches
+            // a safepoint and candidate-triggered collects (and the dead sweep
+            // that bounds buffer memory) defer to the loop's end. Same borrow
+            // argument as the outer site: between instructions no container
+            // borrow is live (design doc §1.2).
+            if crate::gc::gc_safepoints_armed() {
+                crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
+            }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()

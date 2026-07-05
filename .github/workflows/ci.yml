@@ -179,14 +179,14 @@ jobs:
     # future work.
     #
     # BLOCKING gates: `cargo test` (the collector unit tests + the gc_stress
-    # integration tests, which assert no verify violations) and the final
-    # "No GC verify violations" step (any `VERIFY FAIL` in the suite = heap
-    # corruption). The `prove t/` and roast steps are `continue-on-error`: they
-    # RUN the whole suite under GC=on (their purpose is to feed real programs to
-    # the collector so the verify step can catch corruption), but they are not
-    # gated on pass/fail — a few tests fail under GC=on on *semantics* the
-    # collector does not yet implement (e.g. `DESTROY`-on-reclaim), which is a
-    # known gap, not corruption. Promote them to blocking once those close.
+    # integration tests, which assert no verify violations), the `prove t/`
+    # step (the whole t/ suite passes under GC=on since the
+    # DESTROY-on-reclaim / dead-sweep slice — a failure is a real GC
+    # regression), and the final "No GC verify violations" step (any
+    # `VERIFY FAIL` in the suite = heap corruption). The roast step remains
+    # `continue-on-error` for one observation cycle (S17 timing tests under
+    # the ~2x GC=on slowdown may be load-sensitive); promote it once it has
+    # stayed green.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -222,12 +222,11 @@ jobs:
         run: cargo build
 
       - name: TAP tests (prove t/, GC on)
-        # Advisory: runs the whole t/ suite under GC on to feed the collector.
-        # Not gated on pass/fail (see job comment); the verify step below is the
-        # hard gate. `|| true` keeps the log tee from failing the step.
-        continue-on-error: true
+        # BLOCKING since the DESTROY-on-reclaim / dead-sweep slice: the whole
+        # t/ suite passes under GC=on, so a failure here is a real GC
+        # regression (semantics or soundness), not a known gap.
         run: |
-          set +e
+          set -o pipefail
           mkdir -p tmp
           prove --merge -e 'timeout 60 target/debug/mutsu' t/ 2>&1 | tee tmp/gc-stress-t.log
 

@@ -65,6 +65,7 @@ impl Clone for InstanceAttrs {
             attributes: Arc::new(RwLock::new(read_attrs(&self.attributes).clone())),
             id: self.id,
             queue_destroy: false,
+            finalized: std::sync::atomic::AtomicBool::new(false),
         }
     }
 }
@@ -85,6 +86,7 @@ impl InstanceAttrs {
             attributes: cell,
             id,
             queue_destroy,
+            finalized: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -99,6 +101,7 @@ impl InstanceAttrs {
             attributes: cell,
             id,
             queue_destroy,
+            finalized: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -226,9 +229,21 @@ impl PartialEq for InstanceAttrs {
     }
 }
 
-impl Drop for InstanceAttrs {
-    fn drop(&mut self) {
+impl InstanceAttrs {
+    /// Queue this instance's Raku `DESTROY` (once). Shared by Rust `Drop`
+    /// (GC-off: fires at refcount death; GC-on: fires at the node's eventual
+    /// memory drop) and `Trace::finalize` (GC-on: fires at last-live-handle
+    /// drop or at cycle reclaim, while the attributes are still intact) —
+    /// whichever runs first wins via the `finalized` once-flag, which also
+    /// guards the `live_instance_refcounts` bookkeeping from double-decrement.
+    pub(crate) fn finalize_destroy(&self) {
         if !self.queue_destroy {
+            return;
+        }
+        if self
+            .finalized
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
             return;
         }
         // Suppress recursive DESTROY queuing when we're already inside a DESTROY handler
@@ -259,5 +274,11 @@ impl Drop for InstanceAttrs {
                 attributes: read_attrs(&self.attributes).clone(),
             });
         });
+    }
+}
+
+impl Drop for InstanceAttrs {
+    fn drop(&mut self) {
+        self.finalize_destroy();
     }
 }
