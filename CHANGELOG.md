@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.15](https://github.com/tokuhirom/mutsu/compare/v0.2.14...v0.2.15) - 2026-07-05
+
+- fix(bind): array element bind-autoviv fills gaps with Any, not Nil by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4260
+
 ## [v0.2.14](https://github.com/tokuhirom/mutsu/compare/v0.2.13...v0.2.14) - 2026-07-05
 
 - chore(gc): close §11 step 11 (sound-by-refcount) + raise gc-stress knob to EVERY_CANDIDATE=1024 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4215
