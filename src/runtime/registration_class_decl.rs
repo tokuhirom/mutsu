@@ -1964,6 +1964,17 @@ impl Interpreter {
                         .insert((name.to_string(), method_name), fdef);
                 }
                 _ => {
+                    // An anonymous method (`method { $!x }`) parses as an
+                    // `AnonSubParams` expression statement (with an implicit
+                    // `self` param), NOT a `MethodDecl`, so it bypasses the
+                    // named-method validation above. Validate its body too so an
+                    // undeclared attribute inside it still raises
+                    // X::Attribute::Undeclared at composition time.
+                    if let Stmt::Expr(Expr::AnonSubParams { params, body, .. }) = stmt
+                        && params.first().map(String::as_str) == Some("self")
+                    {
+                        Self::validate_attr_declared_in_class(&class_attr_ctx, body)?;
+                    }
                     // BEGIN phasers and EVAL calls in class bodies may fail
                     // (e.g. `BEGIN EVAL q[has $.x]` or `EVAL q[has $.x]`).
                     // Swallow errors from these so the class still registers.
