@@ -70,7 +70,17 @@ impl Interpreter {
             self.set_state_var(scoped_key.clone(), cell.clone());
             cell
         } else if let Some(stored) = self.get_state_var(&scoped_key) {
-            stored.clone()
+            let stored = stored.clone();
+            // Track B slice 3: upgrade a plain stored aggregate to a cell
+            // (a value written by a pre-cell `set_state_var` plain insert),
+            // so every reader from here on shares one container.
+            if (name.starts_with('@') || name.starts_with('%')) && !stored.is_container_ref() {
+                let cell = stored.into_container_ref();
+                self.set_state_var(scoped_key.clone(), cell.clone());
+                cell
+            } else {
+                stored
+            }
         } else {
             // Coerce @ variables to Array and % variables to Hash,
             // matching the behavior of SetLocal for these sigils.
@@ -81,16 +91,41 @@ impl Interpreter {
             } else {
                 init_val
             };
-            self.set_state_var(scoped_key.clone(), coerced.clone());
-            coerced
+            // Track B slice 3: a `state @a` / `state %h` aggregate lives in a
+            // shared `ContainerRef` cell in ALL modes, not just under an active
+            // thread context. Every closure created in the declaring routine
+            // captures the CELL, so sibling closures from the same factory
+            // share one live container exactly like raku (`mk()` twice used to
+            // give 1,1,2 instead of 1,2,3: each closure env froze its own
+            // aggregate snapshot). Scalars keep the plain store: they are
+            // already shared via box-on-capture escape analysis, and celling
+            // them here would double-box.
+            let val = if name.starts_with('@') || name.starts_with('%') {
+                coerced.into_container_ref()
+            } else {
+                coerced
+            };
+            self.set_state_var(scoped_key.clone(), val.clone());
+            val
         };
         self.locals[slot_idx] = val.clone();
         let name = name.to_string();
         // Only insert into env if the value differs from what's already there.
         // This avoids triggering Arc::make_mut deep clone on the CoW env when
         // the state variable is already initialized with the same value (common
-        // case in tight loops).
-        let needs_env_insert = self.env().get(&name) != Some(&val);
+        // case in tight loops). For a celled aggregate the comparison must be
+        // CELL IDENTITY, not `PartialEq` — `Value::eq` derefs `ContainerRef`, so
+        // a fresh cell holding `[]` compares equal to the plain `[]` that the
+        // decl op pre-seeded in env, and the cell would never reach env (every
+        // name-based reader/writer would then use the detached plain snapshot,
+        // e.g. `state @a; @a = 9,8` right after init read back as empty).
+        let needs_env_insert = match (&val, self.env().get(&name)) {
+            (Value::ContainerRef(cell), Some(Value::ContainerRef(existing))) => {
+                !crate::gc::Gc::ptr_eq(cell, existing)
+            }
+            (Value::ContainerRef(_), _) => true,
+            (_, existing) => existing != Some(&val),
+        };
         if needs_env_insert {
             self.env_mut().insert(name.clone(), val);
         }

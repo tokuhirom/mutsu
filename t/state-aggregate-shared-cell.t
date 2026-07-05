@@ -12,7 +12,36 @@ use Test;
 # outside language guarantees (real rakudo crashes with a MoarVM oops on that
 # shape; mutsu loses some updates but never corrupts).
 
-plan 10;
+plan 18;
+
+# --- Track B slice 3: state aggregates live in a ContainerRef cell in ALL
+# modes (not just under a thread context), so sibling closures returned from
+# the same factory share ONE live container, matching raku. Pre-fix these
+# accumulated per-closure (mk() twice gave 1,1,2 instead of 1,2,3). ---
+
+sub mk-arr() { state @a; -> { @a.push(1); @a.elems } }
+my $a1 = mk-arr();
+my $a2 = mk-arr();
+is $a1(), 1, 'closure-shared state @: first closure first call';
+is $a2(), 2, 'closure-shared state @: sibling closure sees prior push';
+is $a1(), 3, 'closure-shared state @: first closure keeps accumulating';
+
+sub mk-hash() { state %h; -> { %h<k>++; %h<k> } }
+my $h1 = mk-hash();
+my $h2 = mk-hash();
+is $h1(), 1, 'closure-shared state %: first closure first call';
+is $h2(), 2, 'closure-shared state %: sibling closure sees prior increment';
+is $h1(), 3, 'closure-shared state %: first closure keeps accumulating';
+
+# Whole-aggregate assignment as the FIRST op after init must write through
+# the cell (regression: the env insert was skipped when the fresh cell
+# compared PartialEq-equal to the pre-seeded plain empty aggregate, so the
+# assignment landed in a detached snapshot and reads gave 0).
+sub wa() { state @a; @a = 9,8; @a.elems }
+is wa(), 2, 'whole-array assignment on a fresh state cell is visible';
+
+sub wh() { state %h; %h = (k => 1); %h.elems }
+is wh(), 1, 'whole-hash assignment on a fresh state cell is visible';
 
 # Pre-thread baseline: plain state store, and a seed for the migration case.
 sub pa() { state @p; @p.push('x'); @p.elems }
