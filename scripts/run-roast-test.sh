@@ -24,13 +24,6 @@ per_file_timeout() {
       # This test intentionally uses multiple sleep 1 calls and needs >30s.
       echo 60
       ;;
-    roast/S17-lowlevel/thread.t)
-      # Thread-churn workload, sleep-heavy: ~12s GC-off release and within a
-      # few percent of that under the default-on GC since the dead sweep's
-      # batch release moved off the collector thread — but it sat at ~29s on
-      # a loaded CI runner once, so keep explicit headroom.
-      echo 60
-      ;;
     roast/S17-promise/allof.t)
       # This test uses sleep 2*$_ with $_ up to 9, parallel start blocks take ~18s.
       echo 60

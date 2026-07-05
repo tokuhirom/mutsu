@@ -314,51 +314,19 @@ impl Interpreter {
         // which would overwrite our atomic array with stale local values.
         let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
 
-        // Initialize shared_vars with the array if not yet set
-        {
-            let shared = self.shared_vars.read().unwrap();
-            if !shared.contains_key(&atomic_key) {
-                drop(shared);
-                let arr = self.env.get(&arr_name).cloned().unwrap_or(Value::Array(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                    crate::value::ArrayKind::Array,
-                ));
-                let mut shared = self.shared_vars.write().unwrap();
-                if !shared.contains_key(&atomic_key) {
-                    shared.insert(atomic_key.clone(), arr);
-                }
-            }
-        }
-
+        // Track B element cells: box elements at first atomic touch, then CAS
+        // the one element in place through its cell (no whole-array COW per
+        // op — see `init_celled_atomic_store`).
+        self.init_celled_atomic_store(&atomic_key, &arr_name);
+        let cell = self.celled_array_elem(&atomic_key, &arr_name, index);
         let mut did_swap = false;
         let current;
         {
-            let mut shared = self.shared_vars.write().unwrap();
-            let arr = shared.get(&atomic_key).cloned().unwrap_or(Value::Array(
-                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                crate::value::ArrayKind::Array,
-            ));
-            if let Value::Array(ref elements, kind) = arr {
-                let idx = if index < 0 {
-                    (elements.len() as i64 + index) as usize
-                } else {
-                    index as usize
-                };
-                current = elements.get(idx).cloned().unwrap_or(Value::Int(0));
-                if Self::cas_retry_matches(&current, expected) {
-                    let mut new_elements = (**elements).clone();
-                    while new_elements.len() <= idx {
-                        new_elements.push(Value::Int(0));
-                    }
-                    new_elements[idx] = new_val.clone();
-                    shared.insert(
-                        atomic_key.clone(),
-                        Value::Array(crate::gc::Gc::new(new_elements), kind),
-                    );
-                    did_swap = true;
-                }
-            } else {
-                current = Value::Int(0);
+            let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+            current = guard.clone();
+            if Self::cas_retry_matches(&current, expected) {
+                *guard = new_val;
+                did_swap = true;
             }
         }
 
