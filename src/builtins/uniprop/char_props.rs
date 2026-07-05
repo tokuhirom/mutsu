@@ -110,6 +110,45 @@ pub(crate) fn case_mapping(ch: char, prop: &str) -> String {
     }
 }
 
+/// Default Bidi_Class of a letter (Lu/Ll/Lt/Lm/Lo), determined by its script:
+/// Arabic-family scripts are Arabic_Letter (AL), other right-to-left scripts
+/// are Right_to_Left (R), and everything else is Left_to_Right (L).
+fn bidi_letter_class(ch: char) -> &'static str {
+    match crate::builtins::unicode::unicode_script_name(ch).as_str() {
+        "Arabic" | "Syriac" | "Thaana" | "Sogdian" | "Hanifi_Rohingya" => "AL",
+        "Hebrew"
+        | "Samaritan"
+        | "Mandaic"
+        | "Adlam"
+        | "Nko"
+        | "Yezidi"
+        | "Mende_Kikakui"
+        | "Cypriot"
+        | "Phoenician"
+        | "Nabataean"
+        | "Palmyrene"
+        | "Hatran"
+        | "Elymaic"
+        | "Imperial_Aramaic"
+        | "Manichaean"
+        | "Avestan"
+        | "Chorasmian"
+        | "Kharoshthi"
+        | "Lydian"
+        | "Meroitic_Cursive"
+        | "Meroitic_Hieroglyphs"
+        | "Old_Turkic"
+        | "Old_Hungarian"
+        | "Old_North_Arabian"
+        | "Old_South_Arabian"
+        | "Old_Sogdian"
+        | "Psalter_Pahlavi"
+        | "Inscriptional_Pahlavi"
+        | "Inscriptional_Parthian" => "R",
+        _ => "L",
+    }
+}
+
 /// Bidi_Class property.
 pub(crate) fn unicode_bidi_class(ch: char) -> String {
     let cp = ch as u32;
@@ -143,11 +182,14 @@ pub(crate) fn unicode_bidi_class(ch: char) -> String {
         | 0x066B..=0x066C            // Arabic decimal/thousands separator
         | 0x06DD                     // Arabic end of ayah
         | 0x08E2 => "AN",            // Arabic disputed end of ayah
+        // Arabic tatweel is script=Common (not Arabic) but Bidi_Class=AL.
+        0x0640 => "AL",
         _ => {
             // Use General Category heuristics
             let gc = crate::builtins::unicode::unicode_general_category(ch);
             match gc.as_str() {
-                "Lu" | "Ll" | "Lt" | "Lm" | "Lo" | "Nd" | "Nl" | "No" => "L",
+                "Lu" | "Ll" | "Lt" | "Lm" | "Lo" => bidi_letter_class(ch),
+                "Nd" | "Nl" | "No" => "L",
                 "Mn" | "Me" | "Cf" => "NSM",
                 "Zs" => "WS",
                 "Zl" | "Zp" => "B",
