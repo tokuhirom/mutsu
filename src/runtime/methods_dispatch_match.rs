@@ -194,6 +194,7 @@ impl Interpreter {
             }
             "match" => Some(self.dispatch_match_method(target, &args)),
             "subst" => Some(self.dispatch_subst(target, &args)),
+            "wordcase" if !args.is_empty() => Some(self.dispatch_wordcase(target, &args)),
             "comb" if !args.is_empty() => {
                 if matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") {
                     Some(self.dispatch_supply_transform(target, "comb", &args))
