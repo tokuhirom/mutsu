@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.2.3](https://github.com/tokuhirom/mutsu/compare/v0.2.2...v0.2.3) - 2026-07-05
+
+- fix(gather): slipping a gather runs its body; lazy gather stays lazy until eager by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4176
+- feat(gc): DESTROY-on-reclaim via Trace::finalize + dead sweep; promote gc-stress t/ to blocking by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4177
+- fix(str): uniprop Decomposition_Type=Font for math alphanumeric symbols by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4178
+
 ## [v0.2.2](https://github.com/tokuhirom/mutsu/compare/v0.2.1...v0.2.2) - 2026-07-05
 
 - fix(str): uniprop Word_Break follows UAX #29 classification by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4158
