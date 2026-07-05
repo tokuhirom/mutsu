@@ -522,29 +522,46 @@ impl Interpreter {
         } else {
             Value::Nil
         };
-        let effective = match &current {
-            Value::Nil => {
-                // Check if the container has an `is default(...)` value;
-                // e.g. `my @a is default(42); @a[0]++` should increment 42.
-                // Prefer the value-carried default (HashData/ArrayData) so it
-                // works when the container arrived via a parameter (whose name
-                // is not in the name-keyed `var_defaults` table).
-                let def = container
-                    .as_ref()
-                    .and_then(Self::value_carried_default)
-                    .or_else(|| self.var_default(&name).cloned());
-                match def {
-                    Some(d) if !matches!(d, Value::Nil) => d,
-                    _ => Value::Int(0),
-                }
-            }
-            other => other.clone(),
-        };
-        let effective = Self::normalize_incdec_source(effective);
-        let new_val = if increment {
-            self.increment_value_smart(&effective)?
+        // A SetHash element is Bool-valued: `$sh<k>++` sets the key present and
+        // `$sh<k>--` removes it, and the op evaluates to a Bool (the OLD value for
+        // postfix, the NEW value for prefix) — not the numeric 0/1 the generic
+        // increment would produce.
+        let target_is_set = matches!(container.as_ref(), Some(Value::Set(..)))
+            || matches!(
+                container.as_ref(),
+                Some(Value::Package(sym)) if sym.resolve() == "SetHash"
+            )
+            || declared_type_incdec.as_deref() == Some("SetHash")
+            || declared_constraint_incdec.as_deref() == Some("SetHash");
+        let (effective, new_val) = if target_is_set {
+            let old_present = matches!(&current, Value::Bool(true));
+            (Value::Bool(old_present), Value::Bool(increment))
         } else {
-            self.decrement_value_smart(&effective)?
+            let effective = match &current {
+                Value::Nil => {
+                    // Check if the container has an `is default(...)` value;
+                    // e.g. `my @a is default(42); @a[0]++` should increment 42.
+                    // Prefer the value-carried default (HashData/ArrayData) so it
+                    // works when the container arrived via a parameter (whose name
+                    // is not in the name-keyed `var_defaults` table).
+                    let def = container
+                        .as_ref()
+                        .and_then(Self::value_carried_default)
+                        .or_else(|| self.var_default(&name).cloned());
+                    match def {
+                        Some(d) if !matches!(d, Value::Nil) => d,
+                        _ => Value::Int(0),
+                    }
+                }
+                other => other.clone(),
+            };
+            let effective = Self::normalize_incdec_source(effective);
+            let new_val = if increment {
+                self.increment_value_smart(&effective)?
+            } else {
+                self.decrement_value_smart(&effective)?
+            };
+            (effective, new_val)
         };
         // A Bag/BagHash holds non-negative integer counts: decrementing a weight
         // below 0 clamps the *returned* (and stored) value to 0 (the element is
