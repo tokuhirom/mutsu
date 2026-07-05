@@ -139,6 +139,16 @@ impl Interpreter {
                                 dims[1] - 1
                             )));
                         }
+                        // A shaped-array row is a mutable sub-Array: normalize a
+                        // List/Seq row (e.g. `<a b>`) to `ArrayKind::Array` so it
+                        // renders as `[...]` and behaves like the `[a, b]` form.
+                        use crate::value::ArrayKind;
+                        let val = match val {
+                            Value::Array(items, ArrayKind::List) => {
+                                Value::Array(items, ArrayKind::Array)
+                            }
+                            other => other,
+                        };
                         if i < new_items.len() {
                             new_items[i] = val;
                         }
