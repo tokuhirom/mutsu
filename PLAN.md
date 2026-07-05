@@ -181,12 +181,16 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 - ✅ **既定値 `MUTSU_GC` は on**（2026-07-05 切替済み — ADR-0003 §5 に受け入れ実測とゲート改訂を記録。
       bench-class ~+8% はユーザー判断で許容、根本削減は層 3b=NaN-boxing）。GC キャンペーン（層 3a）完了。
       残る GC 関連 perf は NaN-boxing（3b）に統合。
-- **Track B（要素 cell 化）** — スライス 1 完了: atomic ストア（`__mutsu_atomic_hash/arr::`）の
-  要素を `ContainerRef` セル化（cas/要素代入が全体 COW なしの O(1) RMW に。thread.t test 28 の
-  12.2s→1.6s）。map/array の「構造」は従来どおり COW スナップショット、要素「値」のみセル —
-  この分割が Track B の一般化テンプレート。残: 通常（非 atomic）経路の要素セル化と
-  `state @`/`%`・lexical aggregate の真共有（Track C 残、§6）。続いて NaN-boxing（層3b・JIT 地ならし）
-  → JIT（層4）。
+- **Track B（要素 cell 化）** — スライス 1（atomic ストア要素セル #4241）/ 2（state aggregate
+  cell 書き戻し #4245）/ 3（state 集約の全モードセル化 — 非スレッドのクロージャ間共有 raku 一致
+  #4251）完了。map/array の「構造」は COW スナップショット、要素「値」のみセル — この分割が
+  Track B の一般化テンプレート。残スライス（T4 multidim cas / T5 typed-constraint 透過 /
+  T6 非 state escaped aggregate probe）と着手条件・ゲートは
+  [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §2 に精緻化済み。
+- **post-3a ロードマップ**: 層3a hardening（H1 継続計測〜H5 background collect の着手トリガ）・
+  層3b NaN-boxing のスライス計画（3b-0 API 壁 → 3b-1 表現スイッチ → 3b-2 交通量刈り）・
+  層3c 凍結条件は [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) 参照。
+  続いて JIT（層4）= [ADR-0004（Proposed）](docs/adr/0004-jit-strategy.md)。
 
 ---
 
@@ -247,15 +251,19 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 - [ ] `Value` clone/drop（bench-class の ~50%）＋ `attributes.to_map()` の毎回クローン ＋
       `call_compiled_method` の属性キー `format!` ＋ instance 構築 HashMap ＋ `merge_method_env` —
       Lever 2（NaN-boxing・GC 後）待ち、ないし属性 materialization の作り直し（深い）。
-- [ ] **Lever 2: NaN-boxing（高 payoff・設計済）= ADR-0001 層3b（JIT の地ならし・GC 後）**: `Value` 48→8 bytes。
-      int-arith 2x・fib ~30% 狙い。`value_size_guard` テストでサイズ監視中。
-- [ ] **Lever 3: threaded dispatch（中 payoff・ラフ）**: opcode の `match` を関数ポインタテーブルに。
-      命令律速ベンチ 10–30%。
+- [ ] **Lever 2: NaN-boxing = ADR-0001 層3b（JIT の地ならし・GC 後）**: `Value` 48→8 bytes。
+      int-arith 2x・fib ~30% 狙い。`value_size_guard` テストでサイズ監視中。スライス計画
+      （3b-0 API 壁 → 3b-1 表現スイッチ → 3b-2 交通量刈り）とゲートは
+      [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §3。
+- [ ] **Lever 3: threaded dispatch — 凍結提案**（[ADR-0004](docs/adr/0004-jit-strategy.md) §2.5 J0）:
+      JIT Tier A が dispatch ループ除去で同じ利得をより大きく取るため二重投資を避ける。
+      JIT が頓挫した場合のみ復活。
 - [ ] **Lever 4: JIT（Cranelift）= ADR-0001 層4（GC の後）/ Lever 5: 型制約チェックの tight-loop 省略**。
-      cycle collector on Arc の決定で JIT は stack map/forwarding/write barrier 不要・`Arc` inc/dec を
-      emit するだけ。intループのネイティブ化で hot path は GC/refcount コストゼロ（ADR-0001 §3-8）。
-- [ ] **Lever 6: biased reference counting = ADR-0001 層3c（GC 後の独立 perf）**。JIT が intループを
-      ネイティブ化すれば hot path から refcount が消えるため優先度は低め。
+      方式・フェーズ（J1 骨組み → J2 Tier A 網羅 → J3 呼び出し規約/IC → J4 Tier B インライン →
+      J5 既定 on）とゲートは **[ADR-0004（Proposed）](docs/adr/0004-jit-strategy.md)** に策定済み。
+      deopt/stack map なしの subroutine-threading 起点、safepoint poll で GC の STW に協調。
+- [ ] **Lever 6: biased reference counting = ADR-0001 層3c（GC 後の独立 perf）**。凍結 — 着手トリガは
+      「JIT J4 完了後の profile で atomic inc/dec が上位に残る」のみ（gc-post-3a-roadmap §4）。
 - [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
 - 目標: method-call <1.5x、bench-class <1.5x、bench-fib（型制約付き）<2x。
 
@@ -263,13 +271,13 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 
 ## 6. 並行（Track C 残）・構造リファクタ（独立・中長期）
 
-- [ ] **`state @`/`%`・lexical aggregate の真共有** — Track B スライス 2 で大半解消:
-      shared ctx 下の state 集約 cell への write-through（`set_state_var`）＋ shared `ArrayPush` の
-      cell 経路＋ mut-dispatch の cell ファンネルで、呼び出し間・逐次スレッド間の累積が raku 一致
-      （t/state-aggregate-shared-cell.t、real raku でも全 pass を確認）。残: ① 非スレッドの
-      同一 sub 由来クロージャ間共有（`mk()` × 2 → 1,1,2 / raku は 1,2,3 — cell 非関与の env
-      snapshot 問題）② 高競合の並行「構造」挿入は lost-update（ただし real rakudo は同形で
-      MoarVM oops クラッシュ＝言語保証外。mutsu は不壊で優位）。
+- [ ] **`state @`/`%`・lexical aggregate の真共有** — Track B スライス 2+3 でほぼ解消:
+      state 集約は全モードで `ContainerRef` セル（#4245 write-through/cell 経路、#4251 全モード
+      セル化 — 非スレッドの同一 sub 由来クロージャ間共有も raku 一致）。
+      pin = t/state-aggregate-shared-cell.t（18 本、real raku でも全 pass）。残:
+      高競合の並行「構造」挿入の lost-update（real rakudo は同形で MoarVM oops クラッシュ＝
+      言語保証外。mutsu は不壊で優位 — 仕様外のまま維持）と、非 state の escaped aggregate
+      probe（gc-post-3a-roadmap §2 T6）。
 - [ ] Semaphore / nonblocking await / lock 競合（S17・hard・別軸）。
 - [ ] `unsafe` の single-thread 前提コメント是正（`Arc::as_ptr as *mut` を strong_count ガード前提に・
       最終的に要素も cell 化）。
