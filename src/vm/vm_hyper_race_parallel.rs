@@ -99,8 +99,9 @@ impl Interpreter {
         let mut all_results = Vec::with_capacity(items.len());
         let mut first_error: Option<RuntimeError> = None;
         for handle in handles {
+            // STW-aware: blocked on a worker join = quiescent for the GC.
             let (thread_interp, batch_result, output, stderr) =
-                handle.join().unwrap_or_else(|_| {
+                crate::gc::block_quiescent(|| handle.join()).unwrap_or_else(|_| {
                     let interp = self.clone_for_thread();
                     (
                         interp,

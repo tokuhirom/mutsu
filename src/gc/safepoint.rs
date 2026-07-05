@@ -163,6 +163,9 @@ pub(crate) fn gc_safepoint(kind: SafepointKind) {
     if !armed() {
         return;
     }
+    // Another thread may have stopped the world for its cycle scan: park here
+    // until it releases (one load when no stop is requested — see gc::stw).
+    super::stw::park_at_safepoint();
     let t = triggers();
     // `every_safepoint` fires unconditionally; otherwise consume a pending
     // arming from the candidate counter.

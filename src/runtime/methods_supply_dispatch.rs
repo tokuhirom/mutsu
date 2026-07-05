@@ -190,7 +190,10 @@ impl Interpreter {
             }
         }
 
-        std::thread::spawn(move || {
+        // Buffers and emits `Value`s (Gc nodes): registered GC mutator; the
+        // poll loop parks at a GC park point each round so a stop-the-world
+        // can proceed while it idles.
+        crate::runtime::builtins_system::spawn_user_thread(move || {
             let n = sources.len();
             let mut buffers: Vec<std::collections::VecDeque<Value>> =
                 vec![std::collections::VecDeque::new(); n];
@@ -209,6 +212,7 @@ impl Interpreter {
             let timeout = std::time::Duration::from_millis(10);
 
             loop {
+                crate::gc::gc_park_point();
                 // Emit zipped values while all buffers have at least one value
                 while buffers.iter().all(|b| !b.is_empty()) {
                     let tuple: Vec<Value> =

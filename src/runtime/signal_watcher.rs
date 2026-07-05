@@ -39,9 +39,15 @@ mod unix_impl {
                 let flags = libc::fcntl(fds[1], libc::F_GETFL);
                 libc::fcntl(fds[1], libc::F_SETFL, flags | libc::O_NONBLOCK);
             }
-            // Start the reader thread
+            // Start the reader thread. Registered as a GC mutator
+            // (`spawn_user_thread`): `dispatch_signal` clones registered
+            // `Value`s (potential Gc nodes); the blocking pipe read is a
+            // quiescent safe region so the daemon never stalls a
+            // stop-the-world.
             let read_fd = fds[0];
-            std::thread::spawn(move || signal_reader_thread(read_fd));
+            crate::runtime::builtins_system::spawn_user_thread(move || {
+                signal_reader_thread(read_fd)
+            });
             (fds[0], fds[1])
         })
     }
@@ -61,8 +67,9 @@ mod unix_impl {
     fn signal_reader_thread(read_fd: i32) {
         let mut buf = [0u8; 64];
         loop {
-            let n =
-                unsafe { libc::read(read_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+            let n = crate::gc::block_quiescent(|| unsafe {
+                libc::read(read_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len())
+            });
             if n <= 0 {
                 // EINTR or error - just retry
                 std::thread::sleep(std::time::Duration::from_millis(1));

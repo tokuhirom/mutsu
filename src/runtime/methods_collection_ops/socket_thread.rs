@@ -458,8 +458,10 @@ impl Interpreter {
 
         let handle = THREAD_HANDLES.lock().unwrap().remove(&thread_id);
         if let Some(handle) = handle {
-            handle
-                .join()
+            // STW-aware: a thread blocked in `.finish`/join counts as quiescent
+            // for the GC's cooperative stop-the-world (it cannot mutate the Gc
+            // graph until the join returns).
+            crate::gc::block_quiescent(|| handle.join())
                 .map_err(|_| RuntimeError::new("Thread panicked"))?;
         }
         // Sync shared variables back to env after thread completes

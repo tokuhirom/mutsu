@@ -280,9 +280,12 @@ impl Interpreter {
                         });
                     } else if let Some(source_supply_id) = stdin_supply_id {
                         let stdin_arc = stdin_arc.clone();
-                        std::thread::spawn(move || {
+                        // Receives `Value`s (Gc nodes) from the supply channel:
+                        // must be a registered GC mutator, with the blocking
+                        // recv as a quiescent safe region.
+                        crate::runtime::builtins_system::spawn_user_thread(move || {
                             if let Some(rx) = take_supply_channel(source_supply_id) {
-                                while let Ok(event) = rx.recv() {
+                                while let Ok(event) = crate::gc::block_quiescent(|| rx.recv()) {
                                     match event {
                                         SupplyEvent::Emit(value) => {
                                             if let Ok(mut guard) = stdin_arc.lock()
@@ -309,7 +312,9 @@ impl Interpreter {
                                         }
                                         break;
                                     }
-                                    std::thread::sleep(std::time::Duration::from_millis(10));
+                                    crate::gc::block_quiescent(|| {
+                                        std::thread::sleep(std::time::Duration::from_millis(10))
+                                    });
                                 }
                             }
                             if let Ok(mut guard) = stdin_arc.lock() {
@@ -344,12 +349,16 @@ impl Interpreter {
                 let ret = Value::Promise(promise.clone());
                 let cmd_arr_clone = cmd_arr.clone();
 
-                std::thread::spawn(move || {
+                // Builds Proc `Value`s (Gc nodes) and resolves the promise:
+                // registered GC mutator; its child-wait / joins are quiescent.
+                crate::runtime::builtins_system::spawn_user_thread(move || {
                     // Spawn stdout reader thread — streams raw chunks through channel
                     let stdout_handle = child_stdout.map(|stdout| {
                         let tx = stdout_channel;
                         let bin_mode = stdout_bin;
-                        std::thread::spawn(move || {
+                        // Emits Buf `Value`s (Gc nodes): registered mutator,
+                        // pipe reads quiescent.
+                        crate::runtime::builtins_system::spawn_user_thread(move || {
                             use std::io::Read;
                             let mut stdout = stdout;
                             let mut collected = String::new();
@@ -357,7 +366,7 @@ impl Interpreter {
                             let mut pending: Vec<u8> = Vec::new();
                             let mut quit = false;
                             loop {
-                                match stdout.read(&mut buf) {
+                                match crate::gc::block_quiescent(|| stdout.read(&mut buf)) {
                                     Ok(0) => break,
                                     Ok(n) => {
                                         if bin_mode {
@@ -394,7 +403,8 @@ impl Interpreter {
                     let stderr_handle = child_stderr.map(|stderr| {
                         let tx = stderr_channel;
                         let bin_mode = stderr_bin;
-                        std::thread::spawn(move || {
+                        // Same as the stdout reader: registered + quiescent reads.
+                        crate::runtime::builtins_system::spawn_user_thread(move || {
                             use std::io::Read;
                             let mut stderr = stderr;
                             let mut collected = String::new();
@@ -402,7 +412,7 @@ impl Interpreter {
                             let mut pending: Vec<u8> = Vec::new();
                             let mut quit = false;
                             loop {
-                                match stderr.read(&mut buf) {
+                                match crate::gc::block_quiescent(|| stderr.read(&mut buf)) {
                                     Ok(0) => break,
                                     Ok(n) => {
                                         if bin_mode {
@@ -435,8 +445,8 @@ impl Interpreter {
                         })
                     });
 
-                    // Wait for child to exit
-                    let status = child.wait();
+                    // Wait for child to exit (quiescent for the GC's STW)
+                    let status = crate::gc::block_quiescent(|| child.wait());
                     let exit_code = status
                         .as_ref()
                         .map(|s| s.code().unwrap_or(-1))
@@ -458,10 +468,10 @@ impl Interpreter {
 
                     // Join reader threads and collect output
                     let collected_stdout = stdout_handle
-                        .and_then(|h| h.join().ok())
+                        .and_then(|h| crate::gc::block_quiescent(|| h.join()).ok())
                         .unwrap_or_default();
                     let collected_stderr = stderr_handle
-                        .and_then(|h| h.join().ok())
+                        .and_then(|h| crate::gc::block_quiescent(|| h.join()).ok())
                         .unwrap_or_default();
                     let collected_stdout = collected_stdout.replace("\r\n", "\n");
 

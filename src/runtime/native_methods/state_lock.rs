@@ -85,10 +85,12 @@ pub(crate) fn acquire_lock(
                 return Ok(());
             }
             Some(_) => {
-                state = runtime
-                    .lock_cv
-                    .wait(state)
-                    .map_err(|_| RuntimeError::new("Lock wait failed"))?;
+                // STW-aware: a thread blocked on lock acquisition counts as
+                // quiescent for the GC's cooperative stop-the-world.
+                state = crate::gc::stw_aware_wait(&runtime.lock_cv, state, |s| match s.owner {
+                    None => true,
+                    Some(owner) => owner == me,
+                });
             }
         }
     }
@@ -242,16 +244,13 @@ pub(crate) fn semaphore_runtime_by_id(id: u64) -> Option<Arc<SemaphoreRuntime>> 
 }
 
 pub(crate) fn semaphore_acquire(rt: &SemaphoreRuntime) -> Result<(), RuntimeError> {
-    let mut state = rt
+    let state = rt
         .state
         .lock()
         .map_err(|_| RuntimeError::new("Semaphore state poisoned"))?;
-    while *state <= 0 {
-        state = rt
-            .cv
-            .wait(state)
-            .map_err(|_| RuntimeError::new("Semaphore wait failed"))?;
-    }
+    // STW-aware: blocked acquirers count as quiescent for the GC's
+    // cooperative stop-the-world.
+    let mut state = crate::gc::stw_aware_wait(&rt.cv, state, |s| *s > 0);
     *state -= 1;
     Ok(())
 }
