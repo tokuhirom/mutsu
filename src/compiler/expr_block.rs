@@ -61,19 +61,36 @@ impl Compiler {
                     self.code.emit(OpCode::StateVarInit(slot, key_idx));
                     self.code.emit(OpCode::GetLocal(slot));
                 } else if name.starts_with('@') || name.starts_with('%') {
+                    // A container decl WITH an explicit initializer (`my @o = $x`)
+                    // must RE-ASSIGN on every evaluation, so `(my @o = $x)` in a
+                    // loop yields the current `$x` rather than a value frozen at
+                    // the first iteration. A BARE container decl (`my @a`) keeps
+                    // the "initialize once per declaration site" behavior (via the
+                    // `__do_decl_init` marker), so repeated evaluation reuses the
+                    // current lexical value instead of resetting it.
+                    let has_initializer =
+                        custom_traits.iter().any(|(t, _)| t == "__has_initializer");
                     let marker_name = format!(
                         "__do_decl_init_{}",
                         STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
                     );
                     let marker_slot = self.alloc_local(&marker_name);
-                    // Container declarations in expression position (`my @a`) should
-                    // initialize once per declaration site and then keep using the
-                    // current lexical value on repeated evaluation (e.g. in loops).
-                    self.code.emit(OpCode::GetLocal(marker_slot));
-                    let jump_have_value = self.code.emit(OpCode::JumpIfNotNil(0));
-                    self.code.emit(OpCode::Pop);
+                    let jump_have_value = if has_initializer {
+                        None
+                    } else {
+                        self.code.emit(OpCode::GetLocal(marker_slot));
+                        let j = self.code.emit(OpCode::JumpIfNotNil(0));
+                        self.code.emit(OpCode::Pop);
+                        Some(j)
+                    };
                     self.compile_expr(expr);
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    // Mark a fresh declaration so SetGlobal creates a NEW container
+                    // (not an in-place reuse of the previous evaluation's), keeping
+                    // `push @a2, my @o = $_` iterations independent.
+                    if has_initializer {
+                        self.code.emit(OpCode::MarkVarDeclContext);
+                    }
                     self.code.emit(OpCode::SetGlobal(name_idx));
                     // Apply an `is default(...)` trait BEFORE reading the value back,
                     // so the container's embedded default travels with the value
@@ -159,18 +176,24 @@ impl Compiler {
                     } else {
                         self.code.emit(OpCode::GetHashVar(name_idx2));
                     }
-                    self.code.emit(OpCode::Dup);
-                    self.code.emit(OpCode::SetLocal(marker_slot));
-                    let jump_end = self.code.emit(OpCode::Jump(0));
-                    self.code.patch_jump(jump_have_value);
-                    self.code.emit(OpCode::Pop);
-                    let name_idx = self.code.add_constant(Value::str(name.clone()));
-                    if name.starts_with('@') {
-                        self.code.emit(OpCode::GetArrayVar(name_idx));
-                    } else {
-                        self.code.emit(OpCode::GetHashVar(name_idx));
+                    if let Some(jump_have_value) = jump_have_value {
+                        // Bare-decl path: cache the value in the marker so a later
+                        // evaluation reuses it instead of re-initializing.
+                        self.code.emit(OpCode::Dup);
+                        self.code.emit(OpCode::SetLocal(marker_slot));
+                        let jump_end = self.code.emit(OpCode::Jump(0));
+                        self.code.patch_jump(jump_have_value);
+                        self.code.emit(OpCode::Pop);
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        if name.starts_with('@') {
+                            self.code.emit(OpCode::GetArrayVar(name_idx));
+                        } else {
+                            self.code.emit(OpCode::GetHashVar(name_idx));
+                        }
+                        self.code.patch_jump(jump_end);
                     }
-                    self.code.patch_jump(jump_end);
+                    // With an initializer, the freshly re-assigned value read back
+                    // above is already the result — no marker branch needed.
                 } else {
                     // For `our` redeclarations with no initializer (expr is Nil),
                     // load the existing package variable value instead of Nil.
