@@ -252,7 +252,14 @@ impl Interpreter {
         {
             return existing.clone();
         }
-        let cell = initial.into_container_ref();
+        // Track B slice 3: aggregates are celled at StateVarInit in every mode,
+        // so the pre-thread seed may already BE a cell — adopt it rather than
+        // double-wrapping (a cell inside a cell would break every deref path).
+        let cell = if initial.is_container_ref() {
+            initial
+        } else {
+            initial.into_container_ref()
+        };
         sv.insert(key.to_string(), cell.clone());
         cell
     }
