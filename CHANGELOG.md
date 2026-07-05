@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.2.9](https://github.com/tokuhirom/mutsu/compare/v0.2.8...v0.2.9) - 2026-07-05
+
+- fix(str): uniprop Bidi_Class=ON for neutral punctuation and symbols by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4197
+- feat(concurrency): diagnose `whenever` outside a `supply`/`react` block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4199
+- fix(str): uniprop Bidi_Class=EN for more digit forms by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4200
+
 ## [v0.2.8](https://github.com/tokuhirom/mutsu/compare/v0.2.7...v0.2.8) - 2026-07-05
 
 - fix(gather): a trailing comma in a `take` argument is ignored (`take X,` == `take X`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4196
