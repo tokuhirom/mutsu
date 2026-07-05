@@ -21,6 +21,7 @@ impl Interpreter {
         } else {
             match shape_val {
                 Value::Int(i) => vec![Value::Int(i)],
+                Value::BigInt(ref n) => vec![Value::BigInt(n.clone())],
                 Value::Package(ref name) => {
                     // Enum type as shape: use the number of enum variants
                     if let Some(variants) = self.registry().enum_types.get(&name.resolve()) {
@@ -45,6 +46,11 @@ impl Interpreter {
                 Value::Num(f) if *f > 0.0 => *f as usize,
                 Value::Num(f) => {
                     return Err(RuntimeError::illegal_dimension_in_shape(*f as i64));
+                }
+                // A dimension that overflows i64 (parsed as a BigInt) is always
+                // illegal: either negative, or far too large to allocate.
+                Value::BigInt(n) => {
+                    return Err(RuntimeError::illegal_dimension_in_shape_bigint(n.as_ref()));
                 }
                 Value::Package(name) => {
                     if let Some(variants) = self.registry().enum_types.get(&name.resolve()) {

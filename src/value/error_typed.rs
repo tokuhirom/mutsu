@@ -330,6 +330,20 @@ impl RuntimeError {
         Self::typed("X::IllegalDimensionInShape", attrs)
     }
 
+    /// Like `illegal_dimension_in_shape`, but for a dimension that does not fit
+    /// in `i64` (`my @a[99999999999999999999]`, or `-9223372036854775808` which
+    /// parses as a BigInt): keep the exact value in the message.
+    pub(crate) fn illegal_dimension_in_shape_bigint(dim: &num_bigint::BigInt) -> Self {
+        let msg = format!(
+            "Illegal dimension in shape: {}. All dimensions must be integers bigger than 0",
+            dim
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("dim".to_string(), Value::bigint(dim.clone()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::IllegalDimensionInShape", attrs)
+    }
+
     /// X::Adverb - Unsupported adverb combination on subscript access
     pub(crate) fn x_adverb(
         what: &str,
