@@ -620,7 +620,22 @@ pub(super) fn dispatch(
                         if let Some(v) =
                             crate::runtime::str_numeric::parse_raku_str_to_numeric(&normalized)
                         {
-                            Value::Num(v.to_f64())
+                            let f = v.to_f64();
+                            // "-0"/"-0.0" parse as Int/Rat zero, which has no
+                            // sign — but `.Num` must yield the IEEE negative
+                            // zero (roast S32-num/negative-zero.t). Restore the
+                            // sign from the source string when the magnitude is
+                            // zero. (The scientific path, e.g. "-0e0", already
+                            // returns a signed Num.)
+                            let f = if f == 0.0
+                                && f.is_sign_positive()
+                                && normalized.starts_with('-')
+                            {
+                                -0.0
+                            } else {
+                                f
+                            };
+                            Value::Num(f)
                         } else {
                             // An invalid string yields a lazy X::Str::Numeric Failure,
                             // mirroring `.Int` (not an eager X::AdHoc RuntimeError).
