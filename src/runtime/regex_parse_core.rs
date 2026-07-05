@@ -2927,6 +2927,21 @@ impl Interpreter {
                     quant,
                     RegexQuant::ZeroOrMore | RegexQuant::OneOrMore | RegexQuant::Repeat(..)
                 );
+            // An `@<name>=` array-sigil alias only produces a List when the
+            // aliased atom is itself a *capturing* construct — a capture group
+            // (`@<x>=(\w)`) or a subrule call (`@<x>=<alpha>`, `@<x>=<myrule>`),
+            // quantified or not. Aliasing a plain atom (metachar `@<x>=\w+`,
+            // non-capturing group `@<x>=[\w]+`, or char class `@<x>=<[a..z]>`)
+            // matches once and yields a single Match, exactly like the scalar
+            // `$<name>=` form. `user_alias_is_array` alone (set for every
+            // `@<name>=`) wrongly forced a List for these non-capturing atoms.
+            // Decide here, from the original `atom` before it may be moved into a
+            // wrapping group below. Builtin subrules like `<alpha>`/`<digit>`
+            // parse as a `CharClass` atom but set a `secondary_named` capture, so
+            // that presence is what distinguishes them from a raw `<[a..z]>`.
+            let force_list_capture = user_alias_is_array
+                && (matches!(atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_))
+                    || secondary_named.is_some());
             if wrap_named_quant {
                 let inner = RegexToken {
                     atom,
@@ -2951,7 +2966,7 @@ impl Interpreter {
                     named_capture: primary_named,
                     hash_capture: None,
                     secondary_named_capture: secondary_named,
-                    force_list_capture: user_alias_is_array,
+                    force_list_capture,
                     ratchet: token_ratchet,
                     frugal: token_frugal,
                     separator: None,
@@ -2963,7 +2978,7 @@ impl Interpreter {
                     named_capture: primary_named,
                     hash_capture,
                     secondary_named_capture: secondary_named,
-                    force_list_capture: user_alias_is_array,
+                    force_list_capture,
                     ratchet: token_ratchet,
                     frugal: token_frugal,
                     separator: token_separator,
