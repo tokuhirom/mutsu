@@ -582,6 +582,9 @@ impl Interpreter {
                     self.clear_match_state();
                     return false;
                 }
+                // :exhaustive orders matches by start position ascending and,
+                // at each position, longest first.
+                all.sort_by(|a, b| a.from.cmp(&b.from).then(b.to.cmp(&a.to)));
                 let selected = if let Some(needed) = *repeat {
                     let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
                     all.retain(|c| c.from == earliest);

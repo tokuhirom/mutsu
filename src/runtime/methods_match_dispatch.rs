@@ -12,6 +12,7 @@ impl Interpreter {
         }
         let text = target.to_string_value();
         let mut overlap = false;
+        let mut exhaustive = false;
         let mut global = false;
         let mut anchored_pos: Option<usize> = None;
         let mut continue_pos: Option<usize> = None;
@@ -22,6 +23,8 @@ impl Interpreter {
             if let Value::Pair(key, value) = arg {
                 if (key == "ov" || key == "overlap") && value.truthy() {
                     overlap = true;
+                } else if (key == "ex" || key == "exhaustive") && value.truthy() {
+                    exhaustive = true;
                 } else if key == "p" || key == "pos" {
                     anchored_pos = Some(value.to_f64() as usize);
                 } else if key == "c" || key == "continue" {
@@ -57,9 +60,15 @@ impl Interpreter {
             }
             _ => return Ok(Value::Nil),
         };
-        if global || overlap || repeat_bounds.is_some() || nth_arg.is_some() {
+        if global || overlap || exhaustive || repeat_bounds.is_some() || nth_arg.is_some() {
             let all = self.regex_match_all_with_captures(&pat, &text);
-            let mut selected = if overlap {
+            let mut selected = if exhaustive {
+                // :exhaustive keeps every possible match, ordered by start
+                // position ascending and, at each position, longest first.
+                let mut all = all;
+                all.sort_by(|a, b| a.from.cmp(&b.from).then(b.to.cmp(&a.to)));
+                all
+            } else if overlap {
                 let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
                     std::collections::BTreeMap::new();
                 for capture in all {
