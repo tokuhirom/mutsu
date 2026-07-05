@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.2.21](https://github.com/tokuhirom/mutsu/compare/v0.2.20...v0.2.21) - 2026-07-05
+
+- fix(regex): `@<name>=` capture is a List only for a capturing atom by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4274
+- fix(coerce): `Str.Int`/`Str.UInt` accept radix and rational string forms by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4276
+
 ## [v0.2.20](https://github.com/tokuhirom/mutsu/compare/v0.2.19...v0.2.20) - 2026-07-05
 
 - fix(autoviv): nested <>/{}  ++/--/OP= autovivifies a Hash, not an Array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4264
