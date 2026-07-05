@@ -127,6 +127,21 @@ fn quiescent_enter() {
     rendezvous().1.notify_all();
 }
 
+/// Wake a collector blocked in [`try_stop_the_world`] so it re-evaluates its
+/// quiescence equation. Called from `gc_ptr::exit_mutator_worker`: a worker
+/// EXITING (unregistering) satisfies the equation by lowering `needed`, not by
+/// raising [`QUIESCENT`], so without this wake the collector slept its full
+/// remaining timeout and only noticed at the deadline — during short-lived
+/// worker churn (a `Promise.start` per loop iteration) some worker is almost
+/// always mid-exit at stop time, so nearly every collect paid the whole STW
+/// timeout as pause (S17-lowlevel/semaphore.t: ~50ms × hundreds of collects =
+/// CI timeout).
+pub(crate) fn notify_worker_exit() {
+    if super::gc_ptr::gc_enabled() {
+        rendezvous().1.notify_all();
+    }
+}
+
 /// Leave quiescence. If a (possibly new) stop-the-world is in progress at the
 /// moment of leaving, the collector may already have counted this thread —
 /// re-enter quiescence and park until release, then try to leave again. This
@@ -150,6 +165,34 @@ fn wait_until_released() {
     while stw_requested() {
         let (g, _) = cvar.wait_timeout(guard, Duration::from_millis(10)).unwrap();
         guard = g;
+    }
+}
+
+/// Count a not-yet-started worker thread quiescent on the parent's behalf,
+/// right before `spawn_user_thread` creates it. This closes the *birth window*
+/// (the parent's `enter_mutator_worker` → the worker's first safepoint or safe
+/// region): the unborn worker is already in the quiescence target, but until
+/// it starts executing it cannot park, so during a spawn burst (`Promise.start`
+/// per loop iteration) some thread is almost always inside clone3/thread setup
+/// and `try_stop_the_world` burns its full timeout at nearly every candidate
+/// trigger — S17-lowlevel/semaphore.t (4000 rapid `Promise.start`s) degraded
+/// from seconds to a CI timeout under `MUTSU_GC=on`. Counting the unborn
+/// worker quiescent is sound: it provably touches no `Gc` state until
+/// [`worker_started`] leaves quiescence via the checked protocol.
+pub(crate) fn preregister_worker_quiescent() {
+    if super::gc_ptr::gc_enabled() {
+        quiescent_enter();
+    }
+}
+
+/// The spawned worker's first act (before any user code): become a registered
+/// mutator and leave the parent-granted quiescent state. The checked exit
+/// parks first if a stop-the-world is in progress, so the worker cannot start
+/// mutating refcounts mid-scan. Pairs with [`preregister_worker_quiescent`].
+pub(crate) fn worker_started() {
+    mark_thread_registered(true);
+    if super::gc_ptr::gc_enabled() {
+        quiescent_exit_checked();
     }
 }
 

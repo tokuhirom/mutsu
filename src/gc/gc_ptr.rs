@@ -592,9 +592,12 @@ pub(crate) fn enter_mutator_worker() {
 
 /// Register that a user worker thread has finished. Balanced against
 /// `enter_mutator_worker`; run from the worker via an RAII guard so a panic in
-/// user code still decrements.
+/// user code still decrements. Wakes any collector waiting for quiescence —
+/// an exit *lowers* the quiescence target, which is just as satisfying as a
+/// park (see `stw::notify_worker_exit`).
 pub(crate) fn exit_mutator_worker() {
     MUTATOR_WORKER_THREADS.fetch_sub(1, Ordering::AcqRel);
+    super::stw::notify_worker_exit();
 }
 
 /// Whether any user worker thread may currently be mutating the `Gc` graph.
