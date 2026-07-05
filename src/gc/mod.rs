@@ -28,6 +28,13 @@ mod stw;
 /// GC statics (candidate buffer, worker count, STW flags, cooldown). The
 /// modules' tests run in parallel threads within one process; without a single
 /// shared lock they interfere through those statics.
+///
+/// NOTE: this lock only serializes the GC modules' own tests. With `MUTSU_GC=on`
+/// (the CI gc-stress job), *interpreter* unit tests in other modules also drive
+/// the collector through VM safepoints and can steal buffered candidates or
+/// react to a test's fake registered workers — so the stress job runs
+/// `cargo test -- --test-threads=1`. A parallel `MUTSU_GC=on cargo test` is
+/// expected to flake; that is test isolation, not a GC bug.
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::sync::{Mutex, MutexGuard, OnceLock};
