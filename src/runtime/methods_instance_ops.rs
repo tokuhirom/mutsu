@@ -1,4 +1,6 @@
-use super::methods_signature_errors::{make_method_not_found_error, make_private_permission_error};
+use super::methods_signature_errors::{
+    make_method_not_found_error, make_private_permission_error, make_private_unqualified_error,
+};
 use super::*;
 use crate::symbol::Symbol;
 
@@ -48,6 +50,11 @@ impl Interpreter {
                     .last()
                     .cloned()
                     .or_else(|| Some(self.current_package().to_string()));
+                // An unqualified external private call (`$o!meth` where `$o` is
+                // not `self`) must name the defining package — Raku reports
+                // X::Method::Private::Unqualified rather than the Permission
+                // error used for a qualified-but-untrusted call.
+                let was_qualified = private_rest.contains("::");
                 // Resolve: owner-qualified (!Owner::method) or unqualified (!method)
                 let (pm_name, resolved) =
                     if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
@@ -97,11 +104,14 @@ impl Interpreter {
                                     .is_some_and(|caller| trusted.contains(caller))
                             });
                     if !caller_allowed {
-                        return Err(make_private_permission_error(
-                            pm_name,
-                            &class_name.resolve(),
-                            caller_class.as_deref().unwrap_or("GLOBAL"),
-                        ));
+                        if was_qualified {
+                            return Err(make_private_permission_error(
+                                pm_name,
+                                &class_name.resolve(),
+                                caller_class.as_deref().unwrap_or("GLOBAL"),
+                            ));
+                        }
+                        return Err(make_private_unqualified_error(pm_name));
                     }
                     let (result, updated) = self.run_resolved_method_compiled_or_treewalk(
                         &class_name.resolve(),
