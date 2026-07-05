@@ -22,6 +22,26 @@ impl Interpreter {
                 continue;
             }
             let token = &pattern.tokens[idx];
+            // Separator quantifiers (`atom **N %% sep`, `atom +% sep`, ...) whose
+            // atom carries a capture are kept as a native separated token by the
+            // parser (see `expand_ltm_pattern`); the capturing matcher handles
+            // them via `match_separated_quantifier`. This no-capture matcher must
+            // do the same, otherwise it silently ignores the separator and treats
+            // the token as a plain count (so `(\d) ** 4 % '.'` fails to match
+            // "1.2.3.4"). We only need the end positions here, so discard caps.
+            if token.separator.is_some() {
+                for (next, _caps) in self.match_separated_quantifier(
+                    token,
+                    chars,
+                    pos,
+                    &RegexCaptures::default(),
+                    pkg,
+                    pattern,
+                ) {
+                    stack.push((idx + 1, next));
+                }
+                continue;
+            }
             match token.quant {
                 RegexQuant::One => {
                     if let Some(next) = self.regex_match_atom_in_pkg(
