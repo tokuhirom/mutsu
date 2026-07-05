@@ -313,8 +313,15 @@ impl Compiler {
                 && args.is_empty()
                 && modifier.is_none()
                 && !quoted
-                && matches!(target.as_ref(), Expr::Index { .. }) =>
+                && matches!(target.as_ref(), Expr::Index { target: it, .. }
+                    if Self::index_assign_target_name(it).is_some()) =>
             {
+                // `.VAR` on `@a[0]` / `%h<k>` (a *named* container's element) needs
+                // the element-variable metadata path. A `.VAR` on a subscript of a
+                // literal (`[1,2,3][1].VAR`) has no named source, so it falls
+                // through to the general method dispatch below — otherwise the
+                // special path emitted no value and the next chained method
+                // (`.VAR.^name`) underflowed the stack.
                 self.compile_expr_method_var_on_index(target);
             }
             Expr::MethodCall {
