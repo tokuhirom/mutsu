@@ -522,14 +522,53 @@ impl Interpreter {
                     for &idx in &keep {
                         let (start, end) = str_matches[idx];
                         result.push_str(&text[last_end..start]);
-                        result.push_str(&transforms.apply(&replacement_str, &text[start..end]));
+                        let matched_text = &text[start..end];
+                        let caps = is_closure.then(|| RegexCaptures {
+                            matched: matched_text.to_string(),
+                            from: char_indices[idx].0,
+                            to: char_indices[idx].1,
+                            ..Default::default()
+                        });
+                        let repl = self.eval_subst_replacement_cased(
+                            &replacement_val,
+                            is_closure,
+                            &replacement_str,
+                            matched_text,
+                            caps.as_ref(),
+                            Some(&text),
+                            transforms,
+                        )?;
+                        result.push_str(&repl);
                         last_end = end;
                     }
                     result.push_str(&text[last_end..]);
                     Ok(Value::str(result))
+                } else if let Some(bpos) = text.find(pat.as_str()) {
+                    // Single (first-match) replacement.
+                    let end = bpos + pat.as_str().len();
+                    let matched_text = &text[bpos..end];
+                    let caps = is_closure.then(|| RegexCaptures {
+                        matched: matched_text.to_string(),
+                        from: text[..bpos].chars().count(),
+                        to: text[..end].chars().count(),
+                        ..Default::default()
+                    });
+                    let repl = self.eval_subst_replacement_cased(
+                        &replacement_val,
+                        is_closure,
+                        &replacement_str,
+                        matched_text,
+                        caps.as_ref(),
+                        Some(&text),
+                        transforms,
+                    )?;
+                    let mut result = String::with_capacity(text.len());
+                    result.push_str(&text[..bpos]);
+                    result.push_str(&repl);
+                    result.push_str(&text[end..]);
+                    Ok(Value::str(result))
                 } else {
-                    let repl = transforms.apply(&replacement_str, pat.as_str());
-                    Ok(Value::str(text.replacen(pat.as_str(), &repl, 1)))
+                    Ok(Value::str(text))
                 }
             }
             _ => {
