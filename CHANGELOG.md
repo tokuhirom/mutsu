@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.22](https://github.com/tokuhirom/mutsu/compare/v0.2.21...v0.2.22) - 2026-07-05
+
+- docs(adr): ADR-0004 accepted — JIT strategy + Lever 3 freeze by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4277
+
 ## [v0.2.21](https://github.com/tokuhirom/mutsu/compare/v0.2.20...v0.2.21) - 2026-07-05
 
 - fix(regex): `@<name>=` capture is a List only for a capturing atom by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4274
