@@ -7,6 +7,16 @@ thread_local! {
 }
 
 pub(super) fn check_unicode_property(name: &str, c: char) -> bool {
+    // Paren-argument form Prop("Value") / Prop(Value): the <+:Prop(...)>
+    // character-class combining syntax embeds the value in the name string.
+    if let Some(open) = name.find('(')
+        && name.ends_with(')')
+        && open > 0
+    {
+        let prop = &name[..open];
+        let args = &name[open + 1..name.len() - 1];
+        return check_unicode_property_with_args(prop, args, c);
+    }
     // Handle Unicode block properties (InXxx) separately since the regex crate
     // doesn't support the unicode-block feature
     if let Some(block_name) = name.strip_prefix("In")
