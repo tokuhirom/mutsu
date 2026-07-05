@@ -467,6 +467,22 @@ impl Env {
         self.cow_mut().values_mut()
     }
 
+    /// Whether this env's overlay map (`inner`) is uniquely owned by this `Env`
+    /// handle — i.e. no other `Env` clone (another closure's capture, a saved
+    /// call frame, the live interpreter env) shares the same `Arc<SymMap>`.
+    ///
+    /// GC edge rule (see `value_gc::uniquely_owned`): a `Trace` impl may claim
+    /// the map's contained `Gc` handles as its own edges ONLY when it is the
+    /// map's sole holder. The map owns each handle once, so N sharers each
+    /// tracing it would report N phantom edge sets and over-decrement live
+    /// nodes during trial deletion — a false reclaim that empties live data
+    /// (observed: `$*PROGRAM`'s IO::Path attrs wiped in
+    /// roast/S11-modules/require.t under `MUTSU_GC=on`).
+    #[inline]
+    pub(crate) fn gc_overlay_uniquely_owned(&self) -> bool {
+        Arc::strong_count(&self.inner) == 1
+    }
+
     /// GC root enumeration (ADR-0001/0002, `docs/gc-level1-detailed-design.md`
     /// §2.2/§11 step 1): visit every `Value` reachable from this env, including
     /// the `parent` overlay chain. Unlike `iter`/`keys`/`values` (overlay-only,
