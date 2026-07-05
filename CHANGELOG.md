@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.8](https://github.com/tokuhirom/mutsu/compare/v0.2.7...v0.2.8) - 2026-07-05
+
+- fix(gather): a trailing comma in a `take` argument is ignored (`take X,` == `take X`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4196
+
 ## [v0.2.7](https://github.com/tokuhirom/mutsu/compare/v0.2.6...v0.2.7) - 2026-07-05
 
 - fix(str): uniprop Joining_Group follows ArabicShaping.txt exactly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4193
