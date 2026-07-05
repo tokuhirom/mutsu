@@ -414,8 +414,11 @@ impl Interpreter {
             // `:nth(*-1)` is the second-to-last match. An out-of-range result
             // selects nothing (rather than erroring like a literal `:nth(0)`).
             Value::Sub(_) => {
-                let result =
-                    self.call_sub_value(val.clone(), vec![Value::Int(total_matches as i64)], false)?;
+                let result = self.call_sub_value(
+                    val.clone(),
+                    vec![Value::Int(total_matches as i64)],
+                    false,
+                )?;
                 let i = Self::value_to_nth_int(&result)?;
                 if i >= 1 && (i as usize) <= total_matches {
                     indices.push(i as usize);
