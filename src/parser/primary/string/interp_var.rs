@@ -468,9 +468,13 @@ pub(crate) fn try_interpolate_var<'a>(
                 return Some(r);
             }
             let (expr, remainder) = parse_postcircumfix_index(tail, expr);
-            // In qq-like strings, `%hash` without a postcircumfix remains literal.
-            // Only interpolate hash variables for explicit access forms like
-            // `%hash<key>` / `%hash{...}`.
+            // Also allow a trailing method call: `%hash.keys()` (mirrors the
+            // `@array.method()` branch above). `try_parse_interp_method_call`
+            // only commits when the chain ends in parens, matching Raku.
+            let (expr, remainder) = try_parse_interp_method_call(remainder, expr);
+            // In qq-like strings, `%hash` without a postcircumfix or method call
+            // remains literal. Only interpolate for explicit access forms like
+            // `%hash<key>` / `%hash{...}` / `%hash.method()`.
             if remainder.len() == tail.len() {
                 return None;
             }
