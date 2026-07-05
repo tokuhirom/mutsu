@@ -357,6 +357,11 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
             crate::gc::stw::try_stop_the_world(std::time::Duration::from_millis(50))
         };
         if stw.is_none() {
+            // The requeued suspects went unscanned and stay in the buffer;
+            // count them as survivors for the ADR-0003 adaptive threshold so
+            // the size trigger backs off instead of re-arming a drain/requeue
+            // round-trip on every push over the (still-exceeded) threshold.
+            crate::gc::safepoint::note_collect_survivors(suspects.len());
             crate::gc::gc_ptr::requeue_candidates(suspects);
             if dead_count > 0 {
                 let pause_ns = start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
@@ -450,6 +455,11 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
         cycles as u64,
         pause_ns,
     );
+    // ADR-0003 adaptive threshold: the revived (live) portion of the scanned
+    // subgraph is what the next scan would re-trace for nothing — back the
+    // size trigger off proportionally (clamped to BASE when the scan was
+    // productive).
+    crate::gc::safepoint::note_collect_survivors(m.revived);
 
     if mode != LogMode::Off {
         let cycles_field = if mode >= LogMode::Detail {

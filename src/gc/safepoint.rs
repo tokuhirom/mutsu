@@ -24,6 +24,17 @@
 //!   (§9.2 "seed を必ずログに出す").
 //! - `MUTSU_GC=on` + `MUTSU_GC_COLLECT_NOW=1` — one collect right at program
 //!   start ([`startup_collect_if_requested`], called from `Interpreter::run`).
+//!
+//! ## Production trigger (ADR-0003, on by default under `MUTSU_GC=on`)
+//! - Candidate-buffer **size** threshold with adaptive backoff: a collect is
+//!   armed when the buffer reaches the effective threshold, and after each
+//!   collect `threshold = clamp(BASE, 2 × survivors, MAX)` — a scan that
+//!   mostly re-proved liveness backs off (the fixed-period rescan of a large
+//!   live suspect set is quadratic; measured on S17-lowlevel/cas-loop.t), a
+//!   productive scan falls back toward BASE. `MUTSU_GC_THRESHOLD` sets BASE
+//!   (default 16384; `0` disables the size trigger). Same production shape as
+//!   PHP 7.3's Zend GC (root-buffer threshold that raises itself on
+//!   unproductive collects).
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -108,7 +119,18 @@ struct Triggers {
     at_mask: u16,
     /// `MUTSU_GC_RANDOM_RATE` as `f64` bits (0 = random stress off).
     random_rate_bits: u64,
+    /// Production trigger (ADR-0003): BASE of the candidate-buffer size
+    /// threshold. Defaults ON whenever `MUTSU_GC=on` (`MUTSU_GC_THRESHOLD`
+    /// overrides; `0` disables). 0 here = size trigger off.
+    threshold_base: usize,
 }
+
+/// Default BASE for the ADR-0003 size threshold (starting point pending the
+/// acceptance measurements; tune via `MUTSU_GC_THRESHOLD`).
+const THRESHOLD_BASE_DEFAULT: usize = 16384;
+/// Upper clamp for the adaptive threshold: bounds worst-case buffer memory
+/// while still backing far out of rescan churn on huge live suspect sets.
+const THRESHOLD_MAX: usize = 1 << 20;
 
 impl Triggers {
     fn from_env() -> Triggers {
@@ -119,18 +141,33 @@ impl Triggers {
                 every_candidate: 0,
                 at_mask: 0,
                 random_rate_bits: 0,
+                threshold_base: 0,
             };
         }
         let every_safepoint = parse_flag("MUTSU_GC_EVERY_SAFEPOINT");
         let every_candidate = parse_count("MUTSU_GC_EVERY_CANDIDATE");
         let at_mask = parse_at_mask("MUTSU_GC_AT");
         let random_rate_bits = init_random("MUTSU_GC_RANDOM_RATE", "MUTSU_GC_RANDOM_SEED");
+        let threshold_base = match std::env::var("MUTSU_GC_THRESHOLD").ok().as_deref() {
+            None => THRESHOLD_BASE_DEFAULT,
+            Some(s) => s.parse::<usize>().unwrap_or_else(|_| {
+                eprintln!(
+                    "[mutsu gc] warning: unrecognized MUTSU_GC_THRESHOLD={s:?}, using default"
+                );
+                THRESHOLD_BASE_DEFAULT
+            }),
+        };
         Triggers {
-            armed: every_safepoint || every_candidate > 0 || at_mask != 0 || random_rate_bits != 0,
+            armed: every_safepoint
+                || every_candidate > 0
+                || at_mask != 0
+                || random_rate_bits != 0
+                || threshold_base > 0,
             every_safepoint,
             every_candidate,
             at_mask,
             random_rate_bits,
+            threshold_base,
         }
     }
 }
@@ -254,6 +291,54 @@ pub(crate) fn armed() -> bool {
 /// next safepoint).
 static CANDIDATE_PUSHES: AtomicUsize = AtomicUsize::new(0);
 static PENDING: AtomicBool = AtomicBool::new(false);
+
+/// ADR-0003 adaptive size threshold. `0` = not yet adapted (use the BASE from
+/// `MUTSU_GC_THRESHOLD`); otherwise the clamped `2 × survivors` from the last
+/// collect. A scan that mostly re-proves liveness raises it (backing out of
+/// the fixed-period rescan pathology measured on cas-loop.t); a scan that
+/// reclaims most of its input lets it fall back toward BASE.
+static ADAPTIVE_THRESHOLD: AtomicUsize = AtomicUsize::new(0);
+
+/// The size threshold currently in effect, or 0 when the size trigger is
+/// disabled (`MUTSU_GC_THRESHOLD=0` or GC off). Also surfaced in the
+/// `MUTSU_VM_STATS` gc line so tests/operators can observe adaptation.
+pub(crate) fn current_size_threshold() -> usize {
+    let base = triggers().threshold_base;
+    if base == 0 {
+        return 0;
+    }
+    match ADAPTIVE_THRESHOLD.load(Ordering::Relaxed) {
+        0 => base,
+        adapted => adapted,
+    }
+}
+
+/// Record the candidate buffer's length after a push (called from
+/// `gc_ptr::buffer_candidate`, outside the buffer lock). Arms a pending
+/// collect when the buffer reaches the effective size threshold (ADR-0003).
+#[inline]
+pub(crate) fn note_buffer_len(len: usize) {
+    let eff = current_size_threshold();
+    if eff != 0 && len >= eff {
+        PENDING.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Adapt the size threshold after a collect: `clamp(BASE, 2 × survivors, MAX)`
+/// (ADR-0003 §2-2). `survivors` is the live portion of the scanned subgraph —
+/// the nodes the next scan would re-trace for nothing. The deferred path (STW
+/// timeout re-queues its suspects unscanned) reports the requeued count as
+/// survivors for the same reason: they stay in the buffer, and without the
+/// backoff every subsequent push over the threshold would re-arm a drain/
+/// requeue round-trip against the same stuck set.
+pub(crate) fn note_collect_survivors(survivors: usize) {
+    let base = triggers().threshold_base;
+    if base == 0 {
+        return;
+    }
+    let next = survivors.saturating_mul(2).clamp(base, THRESHOLD_MAX);
+    ADAPTIVE_THRESHOLD.store(next, Ordering::Relaxed);
+}
 
 /// Record a candidate-buffer push (called from `gc_ptr::buffer_candidate`).
 /// Under `MUTSU_GC_EVERY_CANDIDATE=N`, arms a pending collect every `N` pushes.
