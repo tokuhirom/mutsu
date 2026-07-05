@@ -259,6 +259,74 @@ impl Interpreter {
         }
     }
 
+    /// The exact rational difference `b - a` of two Int/Rat sequence seeds,
+    /// reduced to lowest terms. `None` if either seed is not exactly rational or
+    /// the arithmetic overflows `i64`. Used to carry an arithmetic sequence's step
+    /// as an exact `Rat` (`0, 1/10 … 1` stays `0.1 0.2 0.3 …`, not the float
+    /// `0.30000000000000004`).
+    pub(in crate::runtime) fn seq_rat_diff(a: &Value, b: &Value) -> Option<(i64, i64)> {
+        let (an, ad) = Self::seq_value_to_rat(a)?;
+        let (bn, bd) = Self::seq_value_to_rat(b)?;
+        // b - a = (bn*ad - an*bd) / (bd*ad)
+        let num = (bn as i128) * (ad as i128) - (an as i128) * (bd as i128);
+        let den = (bd as i128) * (ad as i128);
+        if den == 0 {
+            return None;
+        }
+        let (mut num, mut den) = (num, den);
+        if den < 0 {
+            num = -num;
+            den = -den;
+        }
+        let g = {
+            let (mut x, mut y) = (num.unsigned_abs(), den.unsigned_abs());
+            while y != 0 {
+                let t = y;
+                y = x % y;
+                x = t;
+            }
+            x.max(1) as i128
+        };
+        let (n, d) = (num / g, den / g);
+        if (i64::MIN as i128..=i64::MAX as i128).contains(&n)
+            && (i64::MIN as i128..=i64::MAX as i128).contains(&d)
+        {
+            Some((n as i64, d as i64))
+        } else {
+            None
+        }
+    }
+
+    /// Add a rational step `num/den` to a sequence value, preserving the exact
+    /// `Rat`/`Int` type (falling back to `Num` only on overflow). The rational
+    /// counterpart of [`seq_add`], used for arithmetic sequences whose step is a
+    /// genuine fraction so exactness is not lost to float accumulation.
+    pub(in crate::runtime) fn seq_add_rat(val: &Value, num: i64, den: i64) -> Value {
+        match val {
+            Value::Int(i) => {
+                // i + num/den = (i*den + num) / den
+                if let Some(nn) = i.checked_mul(den).and_then(|x| x.checked_add(num)) {
+                    make_rat(nn, den)
+                } else {
+                    Value::Num(*i as f64 + num as f64 / den as f64)
+                }
+            }
+            Value::Rat(n, d) => {
+                // n/d + num/den = (n*den + num*d) / (d*den)
+                if let (Some(a), Some(b), Some(dd)) =
+                    (n.checked_mul(den), num.checked_mul(*d), d.checked_mul(den))
+                    && let Some(nn) = a.checked_add(b)
+                {
+                    make_rat(nn, dd)
+                } else {
+                    Value::Num(*n as f64 / *d as f64 + num as f64 / den as f64)
+                }
+            }
+            Value::Num(f) => Value::Num(*f + num as f64 / den as f64),
+            _ => Value::Num(Self::seq_value_to_f64(val).unwrap_or(0.0) + num as f64 / den as f64),
+        }
+    }
+
     // Multiply a sequence value by a rational ratio (num/den), preserving Rat type
     pub(in crate::runtime) fn seq_mul_rat(val: &Value, num: i64, den: i64) -> Value {
         match val {
