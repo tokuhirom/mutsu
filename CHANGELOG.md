@@ -1,5 +1,52 @@
 # Changelog
 
+## [v0.2.14](https://github.com/tokuhirom/mutsu/compare/v0.2.13...v0.2.14) - 2026-07-05
+
+- chore(gc): close §11 step 11 (sound-by-refcount) + raise gc-stress knob to EVERY_CANDIDATE=1024 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4215
+- fix(str): .encode('latin1') is true ISO-8859-1, not windows-1252 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4216
+- fix(interp): interpolate `%h.method()` and a type object's user `.Str` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4217
+- ci(gc): promote the gc-stress roast step to a blocking gate by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4219
+- docs(adr): propose ADR-0003 — default-on GC trigger policy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4220
+- fix(str): .NFC/.NFD/.NFKC/.NFKD gist shows the normalization form by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4221
+- ci(gc): scale roast per-file timeouts 2x in the gc-stress job by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4222
+- fix(str): sprintf numeric directives parse radix-prefixed string args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4224
+- docs(adr): ADR-0003 accepted — default-on GC trigger policy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4225
+- fix(class): detect undeclared attrs in anonymous methods; X::Attribute::Undeclared does X::Comp by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4223
+- fix(dispatch): nextsame/callsame from a mixed-in role method reaches the base method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4226
+- feat(gc): ADR-0003 production trigger — candidate-buffer size threshold with adaptive backoff by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4227
+- fix(str): .fc uses true Unicode case folding, not NFKD by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4228
+- fix(method): unqualified external private call is X::Method::Private::Unqualified by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4229
+- fix(str): .encode result is an immutable Blob, not a mutable Buf by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4230
+- fix(regex): .match(:ex) / :exhaustive returns all matches, ordered longest-first by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4231
+- fix(classify): each classify/categorize bucket is an itemized array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4232
+- fix(regex): :nth(*) / :nth(*-1) resolves Whatever against the match count by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4233
+- feat(str): Str.wordcase accepts :where and :filter adverbs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4234
+- feat(parser): X::Redeclaration::Outer for redeclaring a used outer lexical by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4235
+- fix(list): .batch accepts the named :elems(N) form by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4237
+- feat(gc): MUTSU_GC defaults to ON — mutsu collects reference cycles by default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4236
+- feat(eval): X::Undeclared for assigning to an undeclared variable in a block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4239
+- feat(temporal): Date.mm-dd-yyyy / dd-mm-yyyy + separator argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4238
+- fix(str): .encode error message matches raku (display name + decimal codepoint) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4240
+- feat(gc): Track B slice 1 — atomic-store element cells (no whole-container COW per cas) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4241
+- fix(str): .Num/.Numeric/.Real reject "inf"/"nan" keyword strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4242
+- fix(classify): classify/categorize is Hash[Any,Mu]; object-hash .raku pairs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4243
+- fix(gc): Track B slice 2 — state aggregate cells accumulate again (write-through + push path) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4245
+- fix(grep): .grep over an Array returns a Seq (like Raku), not a List by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4246
+- fix(gc): count candidate pushes before the shard insert so APPROX_BUFFERED never wraps by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4247
+- fix(compiler): .VAR chained on a subscript of a literal no longer underflows by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4248
+- fix(str): .Num/.Real parse radix prefixes and underscores by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4244
+- fix(str): qualified-name pair keys are values; Bool keys render without parens by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4249
+- fix(num): render a Num in scientific notation outside [1e-4, 1e15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4250
+- fix(gc): Track B slice 3 — state aggregates live in a ContainerRef cell in all modes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4251
+- docs(plan): GC post-3a roadmap + ADR-0004 JIT strategy (Proposed) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4252
+- fix(setbagmix): SetHash/BagHash/MixHash retain object keys, not strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4253
+- fix(subst): call a Callable replacement when the pattern is a plain string by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4254
+- fix(parser): my @a.[2] = 42 applies the postcircumfix to the declared variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4255
+- fix(hyper): »++/»-- on a subscript slice writes back (and post-increments) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4256
+- fix(shape): a BigInt shaped-array dimension throws X::IllegalDimensionInShape by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4257
+- fix(incdec): ++/-- on a WhateverCode-indexed element writes back by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4258
+- fix(array): .pairs .value= writeback keeps the array's kind (not a List) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4259
+
 ## [v0.2.13](https://github.com/tokuhirom/mutsu/compare/v0.2.12...v0.2.13) - 2026-07-05
 
 - fix(regex): value-typed properties in <+:...>/<-:...> character classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4212
