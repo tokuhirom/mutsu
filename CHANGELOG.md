@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.2.12](https://github.com/tokuhirom/mutsu/compare/v0.2.11...v0.2.12) - 2026-07-05
+
+- fix(regex): match value-typed Unicode properties the regex crate can't by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4209
+- fix(parser): a user sub named like an IO builtin shadows its listop form by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4210
+
 ## [v0.2.11](https://github.com/tokuhirom/mutsu/compare/v0.2.10...v0.2.11) - 2026-07-05
 
 - fix(str): uniprop Bidi_Class AL/R follow the exact UCD sets by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4206
