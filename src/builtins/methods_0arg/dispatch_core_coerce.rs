@@ -548,9 +548,10 @@ pub(super) fn dispatch(
                         Value::Int(0)
                     } else if let Some(v) = parse_raku_int_from_str(s) {
                         v
-                    } else if let Some(v) = runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
-                        .as_ref()
-                        .and_then(numeric_to_int)
+                    } else if let Some(v) =
+                        runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
+                            .as_ref()
+                            .and_then(numeric_to_int)
                     {
                         // raku's `Str.Int` parses via the full numeric grammar
                         // and truncates the result, so numeric string forms the
@@ -593,9 +594,10 @@ pub(super) fn dispatch(
                 Value::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(s) {
                         Some(v)
-                    } else if let Some(v) = runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
-                        .as_ref()
-                        .and_then(numeric_to_int)
+                    } else if let Some(v) =
+                        runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
+                            .as_ref()
+                            .and_then(numeric_to_int)
                     {
                         // Same numeric-string forms as `.Int` (radix `:16<ff>`,
                         // rational `3/4`, ...): numify then truncate, then the
