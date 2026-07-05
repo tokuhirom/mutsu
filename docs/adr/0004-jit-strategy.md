@@ -1,6 +1,6 @@
 # ADR-0004: JIT の方式選定とフェーズ計画（層4）
 
-- **Status**: Proposed（2026-07-05）
+- **Status**: Accepted（2026-07-06 ユーザー承認 — Lever 3 凍結を含む）
 - **Date**: 2026-07-05
 - **Deciders**: tokuhirom, Claude
 - **関連**: [ADR-0001](0001-gc-strategy-and-phasing.md)（フェーズ順序 3a→3b→4、レベル1 GC が
@@ -123,5 +123,5 @@ JIT の最初の形は「opcode 列を、**VM ヘルパ関数呼び出しの列*
 
 ---
 
-*本 ADR は Proposed。ユーザー承認後に Accepted へ更新し、J1 着手時に PLAN.md §5 を本 ADR
-参照に差し替える。*
+*2026-07-06 ユーザー承認により Accepted（Lever 3 の凍結も同時承認）。実装は
+gc-post-3a-roadmap の層3b（NaN-boxing）完了後、§2.5 のフェーズ J1 から着手する。*
