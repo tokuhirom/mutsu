@@ -240,6 +240,32 @@ pub fn format_date(year: i64, month: i64, day: i64) -> String {
     }
 }
 
+/// Format the year component the way `format_date` does (signed 4+ digits,
+/// `+`-prefixed past 9999).
+fn format_year_part(year: i64) -> String {
+    if year < 0 {
+        format!("-{:04}", -year)
+    } else if year > 9999 {
+        format!("+{:04}", year)
+    } else {
+        format!("{:04}", year)
+    }
+}
+
+/// Format a date in one of Raku's `yyyy-mm-dd` / `mm-dd-yyyy` / `dd-mm-yyyy`
+/// orderings, joined by `sep` (default `-`).
+pub fn format_date_ordered(order: &str, year: i64, month: i64, day: i64, sep: &str) -> String {
+    let y = format_year_part(year);
+    let m = format!("{:02}", month);
+    let d = format!("{:02}", day);
+    match order {
+        "mm-dd-yyyy" => format!("{m}{sep}{d}{sep}{y}"),
+        "dd-mm-yyyy" => format!("{d}{sep}{m}{sep}{y}"),
+        // "yyyy-mm-dd"
+        _ => format!("{y}{sep}{m}{sep}{d}"),
+    }
+}
+
 /// Format a DateTime as ISO 8601.
 pub fn format_datetime(
     year: i64,
