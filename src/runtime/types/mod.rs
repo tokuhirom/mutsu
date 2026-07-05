@@ -171,9 +171,22 @@ impl Interpreter {
     /// Check if a variable is readonly for increment/decrement operations.
     /// Returns Err with X::Multi::NoMatch (like Raku's postfix:<++> dispatch failure).
     pub(crate) fn check_readonly_for_increment(&self, name: &str) -> Result<(), RuntimeError> {
+        self.check_readonly_for_incdec(name, "postfix:<++>")
+    }
+
+    /// Reject an in-place increment/decrement of a read-only variable (a
+    /// non-`is rw`/`is copy` parameter). `op` is the display operator
+    /// (`prefix:<++>`, `postfix:<-->`, ...). Raku models `++`/`--` as multi
+    /// candidates that all require `is rw`, so a read-only argument yields
+    /// `X::Multi::NoMatch` — mirror that here so `sub f($n){ ++$n }` throws.
+    pub(crate) fn check_readonly_for_incdec(
+        &self,
+        name: &str,
+        op: &str,
+    ) -> Result<(), RuntimeError> {
         if self.readonly_vars.contains(name) {
             let msg = format!(
-                "Cannot resolve caller postfix:<++>({}); the parameter requires mutable arguments",
+                "Cannot resolve caller {op}({}); the parameter requires mutable arguments",
                 name
             );
             let mut err = RuntimeError::new(msg.clone());

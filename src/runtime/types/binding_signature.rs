@@ -234,11 +234,11 @@ impl Interpreter {
                             expanded.extend(named_args);
                             expanded
                         }
-                        Value::Array(items, kind) if !kind.is_itemized() => {
-                            let mut expanded = items.to_vec();
-                            expanded.extend(named_args);
-                            expanded
-                        }
+                        // A bare `@array` argument is a SINGLE Positional in Raku;
+                        // it does NOT auto-flatten to fill several scalar params
+                        // (`sub f($x,$y,$z){}; f(@a)` is a too-few-arguments error —
+                        // only `f(|@a)` flattens). So an Array is left intact here;
+                        // explicit slips arrive as `Value::Slip` and still flatten.
                         Value::Slip(items) => {
                             let mut expanded = items.to_vec();
                             expanded.extend(named_args);
