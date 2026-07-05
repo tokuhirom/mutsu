@@ -266,12 +266,22 @@ impl Interpreter {
         let slash_list = selected
             .iter()
             .map(|c| {
-                Value::make_match_object_with_captures(
+                // Use the full builder so quantified / nested positional captures
+                // (e.g. `(\d) ** 4 % '.'` folding group 0 into a 4-element list)
+                // survive into each `m:g` match object, matching the single-match
+                // path. The short builder dropped `positional_quantified` etc.,
+                // collapsing `$m[0]` to a bare string.
+                Value::make_match_object_full(
                     c.matched.clone(),
                     c.from as i64,
                     c.to as i64,
                     &c.positional,
                     &c.named,
+                    &c.named_subcaps,
+                    &c.positional_subcaps,
+                    &c.positional_quantified,
+                    &c.positional_nil,
+                    None,
                 )
             })
             .collect::<Vec<_>>();
