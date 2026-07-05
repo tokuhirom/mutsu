@@ -132,8 +132,8 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 
 ### 3.1 残っている対象
 
-- `S02-names-vars/variables-and-packages.t`（30/39、9 失敗: test 29-34, 37-39）
-  — 全 9 失敗が独立した深い lexical/scoping/BEGIN 問題。2026-07-02 に各グループを root-cause 精査した結果:
+- `S02-names-vars/variables-and-packages.t`（32/39、7 失敗: test 29-34, 39）
+  — 残り 7 失敗が独立した深い lexical/scoping/BEGIN 問題。2026-07-02 に各グループを root-cause 精査した結果:
   - **test 29-31（BEGIN block init）**: `{ baz(); ...; my $a; BEGIN { $a = 3 }; sub baz { $a++ } }` が
     3,4,5 でなく **0,1,2**。`BEGIN { $a = 3 }` が compile-time に走らないため `$a` が 3 に初期化されない。
     → BEGIN compile-time execution（declaration model 再設計・medium-large）。
@@ -147,10 +147,12 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
     上書きできていない。★assignment 時に persist を足す fix（試行済）は branch 非発火で**無効**＝
     `collect_escaping_our_lexical_names`（accessors_state.rs:137・`_free` を読まない）と box_decl 両方の
     code-level 分類を直す必要。
-  - **test 37-38（X::Redeclaration::Outer）**: `sub s($i is copy){ for ...{ @a.push($i); my $i=1 } }` が
-    silent（raku=compile-time「Lexical symbol '$i' is already bound to an outer symbol」）。
-    → block 内で outer 名を **使用後に** `my` 再宣言する use-before-decl の compile-time scope 解析が必要
-    （既存の same-scope 重複検出とは別軸）。
+  - ~~**test 37-38（X::Redeclaration::Outer）**~~ — **DONE（post-parse scope walker）**。
+    `sub s($i is copy){ for ...{ @a.push($i); my $i=1 } }` が silent だった。新設
+    `src/parser/outer_redecl.rs` が「あるスコープで outer binding を **参照した後に** 同名を
+    `my`/`state` 再宣言する」場合に compile-time `X::Redeclaration::Outer` を投げる（同一スコープ
+    での参照→再宣言のときのみ発火。redecl-before-use・deeper-nested-ref・sibling-block は非発火）。
+    回帰テスト＝`t/outer-redeclaration.t`。
   - **test 39（`$OUTER::_`）**: `for "a" { $t = sub { $OUTER::_ } }; $t()` が 'a' でなく **Nil**。
     **2 バグ**: ①`$OUTER::x` は `GetOuterVar`→`get_outer_var`（vm_var_get_ops.rs:357）が closure の captured
     env でなく `outer_scope_locals`（lexical block nesting 用）を見るため closure 呼び出し時に空→Nil
