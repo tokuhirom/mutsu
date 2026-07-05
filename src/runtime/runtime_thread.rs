@@ -407,7 +407,23 @@ impl Interpreter {
         values: Vec<Value>,
         target_fallback: &Value,
     ) -> Value {
-        if key.starts_with('@') && self.shared_vars_active {
+        // A plain lexical `@name` already present in the shared store routes
+        // through the atomic store (see `push_to_existing_shared_array`); when
+        // absent it is thread-local and falls through to the env path below.
+        if key.starts_with('@') && self.shared_vars_active && Self::is_plain_lexical_array_name(key)
+        {
+            let in_shared = {
+                let sv = self.shared_vars.read().unwrap();
+                let atomic_key = format!("__mutsu_atomic_arr::{key}");
+                matches!(sv.get(&atomic_key), Some(Value::Array(..)))
+                    || matches!(sv.get(key), Some(Value::Array(..)))
+            };
+            if in_shared {
+                return self.shared_array_extend(key, values, false);
+            }
+        } else if key.starts_with('@') && self.shared_vars_active {
+            // Attribute / twigil'd arrays keep the base-key in-place path
+            // (per-instance identity — see `push_to_existing_shared_array`).
             // Drop env's copy of the Arc first so that shared_vars holds
             // the only strong reference (refcount=1). This keeps repeated
             // shared pushes in-place instead of degenerating into O(n²) COW.
@@ -479,6 +495,28 @@ impl Interpreter {
         if !key.starts_with('@') || !self.shared_vars_active {
             return None;
         }
+        // A plain lexical `@name` routes through the `__mutsu_atomic_arr::`
+        // store (single authoritative container; `set_shared_var` refuses to
+        // clobber it with a stale parent snapshot — the t/lock.t lost-push
+        // race lived here: this helper used to mutate the *base* key, which a
+        // parent-thread env sync could wipe wholesale). "Existing" contract:
+        // only handle a var already present in the shared store.
+        if Self::is_plain_lexical_array_name(key) {
+            let in_shared = {
+                let sv = self.shared_vars.read().unwrap();
+                let atomic_key = format!("__mutsu_atomic_arr::{key}");
+                matches!(sv.get(&atomic_key), Some(Value::Array(..)))
+                    || matches!(sv.get(key), Some(Value::Array(..)))
+            };
+            if !in_shared {
+                return None;
+            }
+            return Some(self.shared_array_extend(key, values, false));
+        }
+        // Attribute / twigil'd arrays have per-instance identity and must NOT
+        // funnel into the name-keyed atomic store (roles-6e.t: every C1
+        // instance's `@!order` would accumulate cross-object). They keep the
+        // base-key in-place path, serialized by the shared_vars write lock.
         let is_thread_clone = self.is_thread_clone();
         if is_thread_clone {
             self.env.remove(key);
