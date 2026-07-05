@@ -47,7 +47,10 @@ impl Interpreter {
                 let vals = source_values;
                 let blk = block;
                 let mut thread_interp = self.clone_for_thread();
-                std::thread::spawn(move || {
+                // Runs a full interpreter (VM safepoints park it during
+                // execution): registered GC mutator; idle poll sleeps are
+                // quiescent safe regions.
+                crate::runtime::builtins_system::spawn_user_thread(move || {
                     let mut current_limit: i64 = 0;
                     let start = std::time::Instant::now();
                     while current_limit == 0 && start.elapsed() < std::time::Duration::from_secs(30)
@@ -62,7 +65,9 @@ impl Interpreter {
                             }
                         }
                         if current_limit == 0 {
-                            std::thread::sleep(std::time::Duration::from_millis(10));
+                            crate::gc::block_quiescent(|| {
+                                std::thread::sleep(std::time::Duration::from_millis(10))
+                            });
                         }
                     }
                     let effective_limit = if current_limit > 0 {
@@ -145,7 +150,9 @@ impl Interpreter {
             let vals = source_values;
             let secs = seconds;
             let mut thread_interp = self.clone_for_thread();
-            std::thread::spawn(move || {
+            // Registered GC mutator (runs a full interpreter); idle poll
+            // sleeps are quiescent safe regions.
+            crate::runtime::builtins_system::spawn_user_thread(move || {
                 let mut current_limit: i64 = 0;
                 let start = std::time::Instant::now();
                 while current_limit == 0 && start.elapsed() < std::time::Duration::from_secs(30) {
@@ -159,7 +166,9 @@ impl Interpreter {
                         }
                     }
                     if current_limit == 0 {
-                        std::thread::sleep(std::time::Duration::from_millis(10));
+                        crate::gc::block_quiescent(|| {
+                            std::thread::sleep(std::time::Duration::from_millis(10))
+                        });
                     }
                 }
                 let effective_limit = if current_limit > 0 {

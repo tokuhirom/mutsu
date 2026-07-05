@@ -125,8 +125,17 @@ fn scan_black(node: &ErasedGc, m: &mut Metrics) {
 /// Gather the white (garbage) nodes reachable from `node` into `out`, recoloring
 /// them black so each is visited once. Returns whether it started a fresh white
 /// component (used for the rough cycle count).
+///
+/// A white node that is *currently buffered* is collected too: a mutator can
+/// re-buffer a cycle member between the collector's drain and the world
+/// actually stopping (its handle drop raced the STW rendezvous), and skipping
+/// it would strand the node White with strong 0 — deferred a full collect and
+/// flagged by `MUTSU_GC_VERIFY` as an inconsistent survivor. Reclaiming it
+/// here is sound: whiteness was proven on the frozen post-STW counts, and the
+/// buffer's retained handle merely keeps the (edge-cleared) shell allocated
+/// until the next collect's dead sweep drops it.
 fn collect_white(node: &ErasedGc, out: &mut Vec<ErasedGc>, seen: &mut HashSet<usize>) -> bool {
-    if node.gc_color() != Color::White || node.gc_buffered() {
+    if node.gc_color() != Color::White {
         return false;
     }
     let started = seen.insert(erased_id(node));
@@ -334,27 +343,40 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
     // Trial deletion is not safe against concurrent mutation: it decrements and
     // restores strong counts, so a worker thread cloning/dropping a `Gc` (or
     // CAS-swapping a pointer) mid-collect corrupts the bookkeeping and can free
-    // a still-live node (design doc §13.3 — cross-thread STW is deferred). Until
-    // that lands, decline the cycle scan while any worker thread is active: the
-    // suspects go back into the buffer and are scanned at the next safepoint
-    // once the threads have joined. Reclaim is deferred, never unsound.
-    if crate::gc::mutator_workers_active() {
-        crate::gc::gc_ptr::requeue_candidates(suspects);
-        if dead_count > 0 {
-            let pause_ns = start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-            record_gc_collection(0, dead_count as u64, 0, pause_ns);
-            if log_mode() != LogMode::Off {
-                eprintln!(
-                    "[mutsu gc] dead-sweep reason={reason} dead={dead_count} (cycle scan deferred: workers active)"
-                );
-            }
-        }
-        return CollectStats {
-            roots_scanned: 0,
-            reclaimed_nodes: dead_count,
-            reclaimed_cycles: 0,
+    // a still-live node. With worker threads live, stop the world first
+    // (cooperative — design doc §6.1): every other mutator must be parked at a
+    // safepoint or blocked in a quiescent safe region before the scan starts,
+    // and stays stopped until it finishes (`_stw` guard). If quiescence is not
+    // reached in time (an unwrapped blocking site), fall back to the previous
+    // behavior: re-queue the suspects and defer the scan. Deferred, never
+    // unsound.
+    let _stw: Option<crate::gc::stw::StwGuard> = if crate::gc::mutator_workers_active() {
+        let stw = if suspects.is_empty() || crate::gc::stw::stw_cooldown_active() {
+            None
+        } else {
+            crate::gc::stw::try_stop_the_world(std::time::Duration::from_millis(50))
         };
-    }
+        if stw.is_none() {
+            crate::gc::gc_ptr::requeue_candidates(suspects);
+            if dead_count > 0 {
+                let pause_ns = start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+                record_gc_collection(0, dead_count as u64, 0, pause_ns);
+                if log_mode() != LogMode::Off {
+                    eprintln!(
+                        "[mutsu gc] dead-sweep reason={reason} dead={dead_count} (cycle scan deferred: workers active)"
+                    );
+                }
+            }
+            return CollectStats {
+                roots_scanned: 0,
+                reclaimed_nodes: dead_count,
+                reclaimed_cycles: 0,
+            };
+        }
+        stw
+    } else {
+        None
+    };
     let roots = suspects;
     let roots_scanned = roots.len();
     let mode = log_mode();
@@ -477,14 +499,13 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    /// Serializes tests: they share the process-global candidate buffer, the
-    /// `CollectGuard` flag, and the `DROPS` counter. Poison-tolerant.
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
     /// Counts `TestNode` frees, so a test can assert a cycle was reclaimed.
     static DROPS: AtomicUsize = AtomicUsize::new(0);
 
+    /// Serializes tests: they share the process-global candidate buffer, the
+    /// `CollectGuard` flag, the STW/worker statics, and the `DROPS` counter.
     fn lock() -> std::sync::MutexGuard<'static, ()> {
-        TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+        crate::gc::test_support::serial_lock()
     }
 
     /// A GC node that holds mutable `Gc` children, so tests can wire cycles and
@@ -525,7 +546,12 @@ mod tests {
     fn empty_buffer_collects_nothing() {
         let _g = lock();
         drain_candidates();
-        assert_eq!(collect_cycles(), CollectStats::default());
+        // Under `MUTSU_GC=on` (the CI gc-stress job) OTHER unit tests running
+        // in parallel push real candidates into the shared buffer at any time,
+        // so exact-count assertions on `stats` are impossible here; the
+        // property is just that an (almost-)empty collect is a sound no-op.
+        let _ = collect_cycles();
+        let _ = collect_cycles();
     }
 
     #[test]
@@ -546,8 +572,11 @@ mod tests {
         drop(b);
 
         let stats = collect_cycles();
-        assert_eq!(stats.reclaimed_nodes, 2, "both cycle nodes reclaimed");
-        assert_eq!(stats.reclaimed_cycles, 1);
+        // `>=`: parallel tests may add stray candidates under `MUTSU_GC=on`
+        // (see `empty_buffer_collects_nothing`); OUR nodes are asserted
+        // precisely through the `DROPS` counter.
+        assert!(stats.reclaimed_nodes >= 2, "both cycle nodes reclaimed");
+        assert!(stats.reclaimed_cycles >= 1);
         assert_eq!(
             DROPS.load(Ordering::Relaxed) - before,
             2,
@@ -572,30 +601,74 @@ mod tests {
         drop(a);
         drop(b);
 
-        // While a worker thread may be mutating the graph, the collector must
-        // decline (trial deletion needs stop-the-world): nothing is reclaimed
-        // and, crucially, the candidates stay buffered (not drained-and-lost).
+        // While a (non-cooperating) worker thread may be mutating the graph,
+        // the cycle scan must decline: the stop-the-world attempt times out
+        // (this phantom worker never parks), the suspects are re-queued, and
+        // crucially OUR cycle is neither freed nor drained-and-lost. (Stray
+        // dead candidates from parallel tests may still be swept — the dead
+        // sweep is concurrency-safe by design — so no assertion on `stats`.)
         enter_mutator_worker();
-        let stats = collect_cycles();
-        assert_eq!(
-            stats,
-            CollectStats::default(),
-            "deferred: no-op while active"
-        );
+        let _ = collect_cycles();
         assert_eq!(
             DROPS.load(Ordering::Relaxed) - before,
             0,
-            "nothing freed while a worker is active"
+            "nothing of ours freed while a worker is active"
         );
 
         // Once the worker is gone, the still-buffered cycle is reclaimed.
         exit_mutator_worker();
+        super::super::stw::test_reset(); // clear the timeout's retry cooldown
         let stats = collect_cycles();
-        assert_eq!(
-            stats.reclaimed_nodes, 2,
+        assert!(
+            stats.reclaimed_nodes >= 2,
             "candidates survived to be collected"
         );
         assert_eq!(DROPS.load(Ordering::Relaxed) - before, 2);
+    }
+
+    #[test]
+    fn cycle_scan_runs_under_a_cooperatively_parking_worker() {
+        use super::super::gc_ptr::{enter_mutator_worker, exit_mutator_worker};
+        use std::sync::atomic::AtomicBool;
+        let _g = lock();
+        drain_candidates();
+        let before = DROPS.load(Ordering::Relaxed);
+
+        // A REAL worker thread that cooperates: it loops through the safepoint
+        // park. The stop-the-world must land while it is alive, and the cycle
+        // scan must reclaim OUR garbage cycle mid-run — the whole point of
+        // gc::stw (a server-style worker never joins, its cycles must still be
+        // collectable).
+        enter_mutator_worker();
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+        let stop2 = stop.clone();
+        let worker = std::thread::spawn(move || {
+            while !stop2.load(Ordering::Relaxed) {
+                super::super::stw::park_at_safepoint();
+                std::thread::yield_now();
+            }
+        });
+
+        let a = TestNode::new();
+        let b = TestNode::new();
+        TestNode::link(&a, &b);
+        TestNode::link(&b, &a);
+        a.buffer_as_candidate();
+        b.buffer_as_candidate();
+        drop(a);
+        drop(b);
+
+        let stats = collect_cycles();
+        assert_eq!(
+            DROPS.load(Ordering::Relaxed) - before,
+            2,
+            "the cycle is reclaimed WHILE the worker is still running"
+        );
+        assert!(stats.reclaimed_nodes >= 2);
+
+        stop.store(true, Ordering::Relaxed);
+        worker.join().unwrap();
+        exit_mutator_worker();
     }
 
     #[test]
@@ -610,7 +683,7 @@ mod tests {
         drop(a);
 
         let stats = collect_cycles();
-        assert_eq!(stats.reclaimed_nodes, 1);
+        assert!(stats.reclaimed_nodes >= 1);
         assert_eq!(DROPS.load(Ordering::Relaxed) - before, 1);
     }
 
@@ -629,9 +702,12 @@ mod tests {
         // Keep `a` alive (external reference); only `b`'s external handle drops.
         drop(b);
 
-        let stats = collect_cycles();
-        assert_eq!(stats.reclaimed_nodes, 0, "live external ref => not garbage");
-        assert_eq!(DROPS.load(Ordering::Relaxed) - before, 0);
+        let _ = collect_cycles();
+        assert_eq!(
+            DROPS.load(Ordering::Relaxed) - before,
+            0,
+            "live external ref => not garbage"
+        );
         // `a` (and `b` through the cycle) are still usable.
         assert_eq!(a.children.lock().unwrap().len(), 1);
         drop(a);
@@ -650,8 +726,7 @@ mod tests {
         a.buffer_as_candidate();
         b.buffer_as_candidate();
 
-        let stats = collect_cycles();
-        assert_eq!(stats.reclaimed_nodes, 0);
+        let _ = collect_cycles();
         assert_eq!(DROPS.load(Ordering::Relaxed) - before, 0);
         drop(a);
         drop(b);

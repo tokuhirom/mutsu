@@ -35,6 +35,11 @@ impl Interpreter {
         // Event loop: poll all subscriptions
         let timeout = Duration::from_millis(10);
         'react_loop: loop {
+            // GC park point: an idle react loop polls `recv_timeout` without
+            // dispatching bytecode, so it would never reach the backedge
+            // safepoint — park here so a stop-the-world can proceed while the
+            // loop waits for events.
+            crate::gc::gc_park_point();
             if let SupplyDrivePolicy::Promise {
                 promise, deadline, ..
             } = &policy

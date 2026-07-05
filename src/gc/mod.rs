@@ -22,6 +22,26 @@ mod collect;
 mod gc_ptr;
 mod root_visitor;
 mod safepoint;
+mod stw;
+
+/// Test-only serialization for every unit test that touches the process-global
+/// GC statics (candidate buffer, worker count, STW flags, cooldown). The
+/// modules' tests run in parallel threads within one process; without a single
+/// shared lock they interfere through those statics.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    pub(crate) fn serial_lock() -> MutexGuard<'static, ()> {
+        static L: OnceLock<Mutex<()>> = OnceLock::new();
+        let g = L
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        super::stw::test_reset();
+        g
+    }
+}
 
 #[allow(unused_imports)]
 pub(crate) use collect::{
@@ -36,3 +56,7 @@ pub(crate) use gc_ptr::{
 pub(crate) use root_visitor::{RootVisitor, visit_map_values, visit_opt, visit_slice};
 #[allow(unused_imports)]
 pub(crate) use safepoint::{SafepointKind, armed as gc_safepoints_armed, gc_safepoint};
+#[allow(unused_imports)]
+pub(crate) use stw::{
+    block_quiescent, park_at_safepoint as gc_park_point, stw_aware_wait, stw_requested,
+};

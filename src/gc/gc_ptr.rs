@@ -603,6 +603,14 @@ pub(crate) fn mutator_workers_active() -> bool {
     MUTATOR_WORKER_THREADS.load(Ordering::Acquire) > 0
 }
 
+/// Current number of registered user worker threads. With exactly one
+/// additional mutator (the main thread), this is also the number of *other*
+/// mutators a stopping collector must see quiescent, whichever thread it runs
+/// on (see `gc::stw`).
+pub(crate) fn mutator_worker_count() -> usize {
+    MUTATOR_WORKER_THREADS.load(Ordering::Acquire)
+}
+
 /// Drain the candidate buffer, clearing each node's `buffered` flag, and return
 /// the nodes. The synchronous collector (§11 step 8) will consume this to run
 /// trial-deletion; exposed now as the seam between candidate registration and
@@ -751,10 +759,8 @@ mod tests {
     /// the test harness runs them on multiple threads and a concurrent push
     /// would leak into another test's `drain_candidates`. Poison-tolerant so a
     /// panicking test does not cascade into the rest.
-    static BUFFER_TEST_LOCK: Mutex<()> = Mutex::new(());
-
     fn lock_buffer_tests() -> std::sync::MutexGuard<'static, ()> {
-        BUFFER_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+        crate::gc::test_support::serial_lock()
     }
 
     /// Leaf test node: no `Gc` children.

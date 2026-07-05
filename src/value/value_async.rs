@@ -218,10 +218,11 @@ impl SharedPromise {
 
     pub(crate) fn wait(&self) -> (Value, String, String) {
         let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
-        while state.status == "Planned" {
-            state = cvar.wait(state).unwrap();
-        }
+        let state = lock.lock().unwrap();
+        // STW-aware: the waiting thread counts as quiescent for the GC's
+        // cooperative stop-the-world, and never resumes (cloning `Value`s
+        // below mutates Gc refcounts) while a cycle scan is in progress.
+        let state = crate::gc::stw_aware_wait(cvar, state, |s| s.status != "Planned");
         (
             state.result.clone(),
             state.output.clone(),
@@ -288,6 +289,11 @@ impl SharedChannel {
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
         loop {
+            // STW-aware: block (quiescent) until there is something to take or
+            // the channel is drained-closed; the queue pop / `Value` clones run
+            // only outside a stop-the-world window.
+            state =
+                crate::gc::stw_aware_wait(cvar, state, |s| !s.queue.is_empty() || s.drained_closed);
             if let Some(val) = state.queue.pop_front() {
                 Self::finish_if_drained(&mut state);
                 return Ok(val);
@@ -298,7 +304,6 @@ impl SharedChannel {
                 }
                 return Ok(Value::Nil);
             }
-            state = cvar.wait(state).unwrap();
         }
     }
 

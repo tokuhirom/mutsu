@@ -426,3 +426,58 @@ fn dead_sweep_bounds_threaded_mutation_memory() {
         "expected bounded collect pauses with the dead sweep, got pause_ns_max={pause_max_ns}\nstderr:\n{on_err}"
     );
 }
+
+/// Worker threads churning reference CYCLES while other workers run: the
+/// cooperative stop-the-world must let the cycle scan reclaim garbage without
+/// ever corrupting live data (VERIFY clean, correct output). This is the
+/// gc::stw end-to-end exercise — before it, the scan simply deferred until
+/// every worker joined.
+#[test]
+fn threaded_cycle_churn_is_collected_soundly() {
+    let src = r#"
+        my @sums;
+        await start {
+            my $local-sum = 0;
+            for ^60 {
+                # A garbage self-cycle per iteration...
+                my %h; %h<self> := %h; %h<n> = $_;
+                # ...plus live data the collector must not disturb.
+                $local-sum += $_;
+            }
+            $local-sum;
+        } xx 3;
+        say "done";
+    "#;
+
+    let (out, err, ok) = run(
+        src,
+        &[
+            ("MUTSU_GC", "on"),
+            ("MUTSU_GC_EVERY_CANDIDATE", "16"),
+            ("MUTSU_GC_VERIFY", "1"),
+            ("MUTSU_VM_STATS", "1"),
+        ],
+    );
+
+    assert!(ok, "threaded cycle churn must not crash; stderr:\n{err}");
+    assert!(out.contains("done"), "program must run to completion");
+    assert!(
+        !err.contains("VERIFY FAIL"),
+        "no soundness violations under threaded cycle churn:\n{err}"
+    );
+    // The cycles must be reclaimed by program end (mid-run via STW scans
+    // and/or at the final single-threaded collect).
+    let reclaimed = err
+        .lines()
+        .find(|l| l.contains("[mutsu vm-stats] gc:"))
+        .and_then(|l| {
+            l.split_whitespace()
+                .find_map(|tok| tok.strip_prefix("reclaimed_nodes="))
+        })
+        .and_then(|n| n.parse::<u64>().ok())
+        .unwrap_or(0);
+    assert!(
+        reclaimed > 0,
+        "cycle garbage from worker threads must be reclaimed; stderr:\n{err}"
+    );
+}

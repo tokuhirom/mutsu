@@ -52,7 +52,7 @@ impl Interpreter {
                 // Poll for global exit flag so that `start { exit }` can
                 // wake us up.
                 loop {
-                    thread::sleep(Duration::from_millis(100));
+                    crate::gc::block_quiescent(|| thread::sleep(Duration::from_millis(100)));
                     if let Some(code) = super::builtins_control_flow::global_exit_requested() {
                         self.halted = true;
                         self.exit_code = code;
@@ -72,7 +72,7 @@ impl Interpreter {
                         return Ok(Value::Nil);
                     }
                 } else {
-                    thread::sleep(duration);
+                    crate::gc::block_quiescent(|| thread::sleep(duration));
                 }
                 self.sync_shared_vars_to_env();
                 Ok(Value::Nil)
@@ -86,7 +86,7 @@ impl Interpreter {
         while start.elapsed() < total {
             let remaining = total.saturating_sub(start.elapsed());
             let chunk = remaining.min(Duration::from_millis(100));
-            thread::sleep(chunk);
+            crate::gc::block_quiescent(|| thread::sleep(chunk));
             if super::builtins_control_flow::global_exit_requested().is_some() {
                 return;
             }
@@ -96,7 +96,7 @@ impl Interpreter {
     pub(super) fn builtin_sleep_timer(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let duration = Self::duration_from_seconds(Self::seconds_from_value(args.first().cloned()));
         let start = Instant::now();
-        thread::sleep(duration);
+        crate::gc::block_quiescent(|| thread::sleep(duration));
         let elapsed = start.elapsed();
         let remaining = duration.checked_sub(elapsed).unwrap_or_default();
         Ok(crate::builtins::arith::make_duration_value(
@@ -141,7 +141,7 @@ impl Interpreter {
                 return Ok(Value::Bool(false));
             }
             let diff_secs = target - now;
-            thread::sleep(Duration::from_secs_f64(diff_secs));
+            crate::gc::block_quiescent(|| thread::sleep(Duration::from_secs_f64(diff_secs)));
             return Ok(Value::Bool(true));
         }
         Ok(Value::Bool(false))
