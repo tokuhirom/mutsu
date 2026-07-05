@@ -235,6 +235,16 @@ impl Interpreter {
                 local.insert(name.clone());
                 self.find_undeclared_var_ordered(expr, &mut local)
             }
+            // A bare block `{ ... }` is a nested lexical scope. Inside it, an
+            // assignment to a variable that was never declared (`{ $var = 42 }`)
+            // is X::Undeclared — assignment does not declare in strict mode, and a
+            // block can only assign to a name that is already in scope (an outer
+            // lexical, in `declared`/env) or block-local (`my`/`state`). This
+            // strict assign-target check is confined to blocks; the top-level
+            // ordered scan keeps its lenient assign-as-declaration behavior.
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                self.check_block_scope_undeclared(body, declared)
+            }
             // Descend into `sub`/`method` bodies so undeclared variables used
             // inside them (e.g. `sub greet($name) { say "$nam" }`) are caught at
             // EVAL/compile time. The body's lexical scope adds the routine's
@@ -285,6 +295,59 @@ impl Interpreter {
                 None
             }
             _ => None,
+        }
+    }
+
+    /// Check a bare-block body as a nested lexical scope. Variables declared with
+    /// `my`/`state`/etc. inside the block extend `declared` for later statements;
+    /// an assignment whose target is not in scope (nor in the outer env) is
+    /// X::Undeclared. Assignment itself never declares (strict mode), so the
+    /// target is not added to the scope after the check.
+    fn check_block_scope_undeclared(
+        &self,
+        body: &[Stmt],
+        declared: &HashSet<String>,
+    ) -> Option<(&'static str, String, Vec<String>)> {
+        let mut inner = declared.clone();
+        for s in body {
+            if let Stmt::Assign { name, expr, .. } = s {
+                // Check the assignment *target* against the current scope + env.
+                let lhs = Self::assign_lhs_expr(name);
+                if let Some(r) = self.find_undeclared_var_in_expr(&lhs, &inner) {
+                    return Some(r);
+                }
+                // Then check the RHS, treating the target as in scope for a
+                // self-referential `$x = $x + 1`.
+                let mut local = inner.clone();
+                local.insert(name.clone());
+                if let Some(r) = self.find_undeclared_var_ordered(expr, &mut local) {
+                    return Some(r);
+                }
+                // Assignment does not declare: do NOT add the target to `inner`.
+            } else {
+                if let Some(r) = self.find_undeclared_var_in_stmt(s, &inner) {
+                    return Some(r);
+                }
+                // Bring the statement's real (`my`/`state`/loop) declarations into
+                // scope for subsequent statements. `collect_declared_vars` may also
+                // pull in nested assign targets, which only makes the check *less*
+                // strict (a safe false negative).
+                Self::collect_declared_vars(s, &mut inner);
+            }
+        }
+        None
+    }
+
+    /// Build the reference-form expression for an assignment target name
+    /// (`"var"` → `$var`, `"@a"` → `@a`, `"%h"` → `%h`), so the shared
+    /// `find_undeclared_var_in_expr` skip/env logic applies to the LHS.
+    fn assign_lhs_expr(name: &str) -> Expr {
+        if let Some(base) = name.strip_prefix('@') {
+            Expr::ArrayVar(base.to_string())
+        } else if let Some(base) = name.strip_prefix('%') {
+            Expr::HashVar(base.to_string())
+        } else {
+            Expr::Var(name.trim_start_matches('$').to_string())
         }
     }
 
