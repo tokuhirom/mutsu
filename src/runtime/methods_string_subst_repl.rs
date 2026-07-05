@@ -102,6 +102,18 @@ impl Interpreter {
             self.env.insert("$_".to_string(), match_val.clone());
             self.env.insert("_".to_string(), match_val);
         }
+        // A pointy replacement block (`-> $m { $m.uc }`) receives the match as its
+        // argument, not just via the `$_` topic. Bind its first parameter to the
+        // current topic (the match, set just above) so an explicit signature works.
+        if let Some(first) = sub_data.params.first() {
+            let pname = first.trim_start_matches(['$', '@', '%', '&']);
+            if !pname.is_empty()
+                && pname != "_"
+                && let Some(topic) = self.env.get("_").cloned()
+            {
+                self.env.insert(pname.to_string(), topic);
+            }
+        }
         let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::Nil);
         // Propagate the block's writes to its closed-over lexicals back to the
         // caller before restoring the outer env, skipping the injected
