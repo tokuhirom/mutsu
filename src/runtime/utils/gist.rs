@@ -83,6 +83,21 @@ pub(crate) fn gist_value(value: &Value) -> String {
         }
     }
     match value {
+        // A Uni / normalization form gists as e.g. NFKC:0x<0066 0066>, not as
+        // the plain decoded text.
+        Value::Uni(u) => {
+            let cps: Vec<String> = u
+                .text
+                .chars()
+                .map(|c| format!("{:04X}", c as u32))
+                .collect();
+            let form = if u.form.is_empty() {
+                "Uni"
+            } else {
+                u.form.as_str()
+            };
+            format!("{}:0x<{}>", form, cps.join(" "))
+        }
         // A `:=`-bound element holds a `ContainerRef` cell; render the held
         // value so a bound element gists like a plain one (Phase 5 leak).
         Value::ContainerRef(cell) => gist_value(&cell.lock().unwrap()),

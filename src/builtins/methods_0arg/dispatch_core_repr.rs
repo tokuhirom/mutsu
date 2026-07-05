@@ -12,6 +12,20 @@ const GIST_ELEM_CAP: usize = 100;
 /// Leaf-value gist for a list/array element: a WhateverCode (`*+1`) gists as
 /// `WhateverCode.new`; everything else uses its string value.
 fn leaf_gist(v: &Value) -> String {
+    if let Value::Uni(u) = v {
+        // A Uni / normalization form gists as e.g. NFKC:0x<0066 0066>.
+        let cps: Vec<String> = u
+            .text
+            .chars()
+            .map(|c| format!("{:04X}", c as u32))
+            .collect();
+        let form = if u.form.is_empty() {
+            "Uni"
+        } else {
+            u.form.as_str()
+        };
+        return format!("{}:0x<{}>", form, cps.join(" "));
+    }
     if let Value::Sub(data) = v
         && matches!(
             data.env.get("__mutsu_callable_type"),
