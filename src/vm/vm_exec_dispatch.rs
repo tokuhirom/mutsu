@@ -1410,7 +1410,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::MakeSlip => {
-                self.exec_make_slip_op();
+                self.exec_make_slip_op()?;
                 *ip += 1;
             }
             OpCode::Decont => {
