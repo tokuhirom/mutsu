@@ -232,6 +232,10 @@ impl Interpreter {
         slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        // `++$n` on a read-only parameter (non-`is rw`/`is copy`) is an
+        // X::Multi::NoMatch in Raku (prefix:<++> requires a mutable argument) —
+        // mirror the post-increment check, which already enforces this.
+        self.check_readonly_for_incdec(name, "prefix:<++>")?;
         if let Some(r) = self.try_slotless_attr_incdec(code, name, true, true) {
             return r;
         }
@@ -345,6 +349,8 @@ impl Interpreter {
         slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        // `--$n` on a read-only parameter is likewise an X::Multi::NoMatch.
+        self.check_readonly_for_incdec(name, "prefix:<-->")?;
         if let Some(r) = self.try_slotless_attr_incdec(code, name, false, true) {
             return r;
         }
