@@ -240,6 +240,22 @@ pub(crate) fn unicode_decomposition_type(ch: char) -> String {
     "None".to_string()
 }
 
+/// Positional form (Isolated / Final / Initial / Medial) of an Arabic
+/// presentation-form character, read from its Unicode name suffix.
+fn arabic_presentation_form_type(ch: char) -> String {
+    let name = crate::builtins::unicode::unicode_char_name(ch);
+    if name.ends_with("INITIAL FORM") {
+        "Initial".to_string()
+    } else if name.ends_with("MEDIAL FORM") {
+        "Medial".to_string()
+    } else if name.ends_with("FINAL FORM") {
+        "Final".to_string()
+    } else {
+        // Isolated forms and everything else in these blocks.
+        "Isolated".to_string()
+    }
+}
+
 fn compatibility_decomposition_type(ch: char) -> String {
     let cp = ch as u32;
     // Heuristic mapping based on common compatibility decomposition types
@@ -253,11 +269,12 @@ fn compatibility_decomposition_type(ch: char) -> String {
         0x2460..=0x24FF => "Circle".to_string(), // Enclosed alphanumerics
         0x3300..=0x33FF => "Square".to_string(), // CJK compat
         0xFB00..=0xFB06 => "Compat".to_string(), // Latin ligatures
-        0xFB50..=0xFDFF => "Isolated".to_string(), // Arabic pres forms
+        // Arabic presentation forms: the specific positional form (Isolated /
+        // Final / Initial / Medial) is encoded in the character name.
+        0xFB50..=0xFDFF | 0xFE70..=0xFEFF => arabic_presentation_form_type(ch),
         0xFE30..=0xFE4F => "Vertical".to_string(), // CJK compat forms
-        0xFE70..=0xFEFF => "Isolated".to_string(), // Arabic pres forms B
-        0xFF01..=0xFF5E => "Wide".to_string(),   // Fullwidth
-        0xFF61..=0xFFDC => "Narrow".to_string(), // Halfwidth
+        0xFF01..=0xFF5E => "Wide".to_string(),     // Fullwidth
+        0xFF61..=0xFFDC => "Narrow".to_string(),   // Halfwidth
         0xFFE0..=0xFFE6 => "Wide".to_string(),
         0xFFE8..=0xFFEE => "Narrow".to_string(),
         _ => "Compat".to_string(),
