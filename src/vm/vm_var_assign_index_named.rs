@@ -21,6 +21,33 @@ enum SliceKeyTree {
 }
 
 impl Interpreter {
+    /// Record the original object key when a non-string value is used as a
+    /// QuantHash (Set/Bag/Mix) subscript (`$sh{1001} = 42`). Set/Bag/Mix store
+    /// their keys stringified; the `original_keys` side table lets `.keys`/
+    /// `.raku` recover the object (`1001`, an Int) rather than the string.
+    fn record_quanthash_object_key(
+        original_keys: &mut Option<std::collections::HashMap<String, Value>>,
+        key: &str,
+        idx: &Value,
+    ) {
+        if matches!(idx, Value::Str(_)) {
+            return;
+        }
+        original_keys
+            .get_or_insert_with(std::collections::HashMap::new)
+            .insert(key.to_string(), idx.clone());
+    }
+
+    /// Drop an original-object key when its QuantHash element is removed.
+    fn forget_quanthash_object_key(
+        original_keys: &mut Option<std::collections::HashMap<String, Value>>,
+        key: &str,
+    ) {
+        if let Some(ok) = original_keys.as_mut() {
+            ok.remove(key);
+        }
+    }
+
     fn build_slice_key_tree(&mut self, key: &Value) -> Result<SliceKeyTree, RuntimeError> {
         match key {
             Value::LazyList(ll) => {
@@ -1612,8 +1639,10 @@ impl Interpreter {
                             let s = crate::gc::Gc::make_mut(set);
                             if val.truthy() {
                                 s.insert(key.clone());
+                                Self::record_quanthash_object_key(&mut s.original_keys, &key, &idx);
                             } else {
                                 s.remove(&key);
+                                Self::forget_quanthash_object_key(&mut s.original_keys, &key);
                             }
                         }
                         Value::Bag(ref mut bag, is_mutable) => {
@@ -1624,8 +1653,10 @@ impl Interpreter {
                             let count = Self::bag_assignment_count(&val)?;
                             if count == num_bigint::BigInt::from(0) {
                                 b.remove(&key);
+                                Self::forget_quanthash_object_key(&mut b.original_keys, &key);
                             } else {
                                 b.insert(key.clone(), count);
+                                Self::record_quanthash_object_key(&mut b.original_keys, &key, &idx);
                             }
                         }
                         Value::Mix(ref mut mix, is_mutable) => {
@@ -1636,8 +1667,10 @@ impl Interpreter {
                             let weight = Self::mix_assignment_weight(&val)?;
                             if weight == 0.0 {
                                 m.remove(&key);
+                                Self::forget_quanthash_object_key(&mut m.original_keys, &key);
                             } else {
                                 m.insert(key.clone(), weight);
+                                Self::record_quanthash_object_key(&mut m.original_keys, &key, &idx);
                             }
                         }
                         // Autovivify typed containers: MixHash, BagHash, SetHash
