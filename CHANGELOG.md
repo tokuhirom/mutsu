@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.2.6](https://github.com/tokuhirom/mutsu/compare/v0.2.5...v0.2.6) - 2026-07-05
+
+- fix(gc): registered-only STW quiescence accounting (fixes main gc-stress) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4189
+- fix(str): uniprop Joining_Type follows ArabicShaping.txt exactly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4191
+
 ## [v0.2.5](https://github.com/tokuhirom/mutsu/compare/v0.2.4...v0.2.5) - 2026-07-05
 
 - fix(str): uniprop Decomposition_Type Super/Sub/Font/Nobreak sets by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4183
