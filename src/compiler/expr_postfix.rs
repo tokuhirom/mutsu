@@ -197,7 +197,13 @@ impl Compiler {
     /// 4. Write back tmp_val (which now has new value) via IndexAssign
     /// 5. Return tmp_old (the old value before increment)
     fn compile_nested_postfix_incdec(&mut self, expr: &Expr, increment: bool) {
-        if let Expr::Index { target, index, .. } = expr {
+        if let Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } = expr
+        {
             let tmp_val = format!("__mutsu_nested_incdec_val_{}", self.code.constants.len());
             let tmp_val_idx = self.code.add_constant(Value::str(tmp_val.clone()));
             let tmp_old = format!("__mutsu_nested_incdec_old_{}", self.code.constants.len());
@@ -220,12 +226,16 @@ impl Compiler {
             self.code.emit(OpCode::SetGlobal(tmp_old_idx));
             self.code.emit(OpCode::Pop);
 
-            // 3. Write back the new value (tmp_val) via IndexAssign
+            // 3. Write back the new value (tmp_val) via IndexAssign. Preserve the
+            //    subscript's positional/associative kind so an autovivified
+            //    intermediate container is a Hash for `%h<a><b>++` (associative)
+            //    and an Array for `@a[0][1]++` (positional) — a hardcoded `true`
+            //    here wrongly made `%h<a><b>++` create an Array.
             let assign_expr = Expr::IndexAssign {
                 target: target.clone(),
                 index: index.clone(),
                 value: Box::new(Expr::Var(tmp_val)),
-                is_positional: true,
+                is_positional: *is_positional,
             };
             self.compile_expr(&assign_expr);
             self.code.emit(OpCode::Pop);
@@ -245,7 +255,13 @@ impl Compiler {
     /// 3. Write back tmp_val via IndexAssign
     /// 4. Return the new value
     pub(super) fn compile_nested_prefix_incdec(&mut self, expr: &Expr, increment: bool) {
-        if let Expr::Index { target, index, .. } = expr {
+        if let Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } = expr
+        {
             let tmp_val = format!("__mutsu_nested_preincdec_val_{}", self.code.constants.len());
             let tmp_val_idx = self.code.add_constant(Value::str(tmp_val.clone()));
 
@@ -269,12 +285,13 @@ impl Compiler {
             self.code.emit(OpCode::SetGlobal(tmp_new_idx));
             self.code.emit(OpCode::Pop);
 
-            // 3. Write back the new value via IndexAssign
+            // 3. Write back the new value via IndexAssign (preserve subscript kind
+            //    so `%h<a><b>` autovivifies a Hash, `@a[0][1]` an Array).
             let assign_expr = Expr::IndexAssign {
                 target: target.clone(),
                 index: index.clone(),
                 value: Box::new(Expr::Var(tmp_val)),
-                is_positional: true,
+                is_positional: *is_positional,
             };
             self.compile_expr(&assign_expr);
             self.code.emit(OpCode::Pop);
