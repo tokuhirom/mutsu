@@ -5,6 +5,7 @@ mod parse_result;
 mod primary;
 mod sink_warn;
 mod stmt;
+mod whenever_scope;
 use std::sync::OnceLock;
 
 pub(crate) fn is_imported_function(name: &str) -> bool {
@@ -123,6 +124,29 @@ fn build_vcs_conflict_error(lines: &[i64]) -> RuntimeError {
     err.exception = Some(Box::new(Value::make_instance(
         crate::symbol::Symbol::intern("X::Comp::Group"),
         group_attrs,
+    )));
+    err
+}
+
+/// Build the compile-time error rakudo raises when a `whenever` block appears
+/// outside the lexical scope of a `supply`/`react` block: `X::Comp::WheneverOutOfScope`.
+fn build_whenever_out_of_scope_error(line: i64) -> RuntimeError {
+    const MESSAGE: &str =
+        "Cannot have a 'whenever' block outside the scope of a 'supply' or 'react' block";
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(MESSAGE.to_string()));
+    attrs.insert("payload".to_string(), Value::str(MESSAGE.to_string()));
+    if line > 0 {
+        attrs.insert("line".to_string(), Value::Int(line));
+    }
+    let mut err = RuntimeError::new(MESSAGE);
+    err.set_code(Some(RuntimeErrorCode::ParseGeneric));
+    if line > 0 {
+        err.set_line(Some(line as usize));
+    }
+    err.exception = Some(Box::new(Value::make_instance(
+        crate::symbol::Symbol::intern("X::Comp::WheneverOutOfScope"),
+        attrs,
     )));
     err
 }
@@ -266,6 +290,10 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                     line_num,
                     col_num,
                 ))
+            } else if let Some(line) = whenever_scope::find_out_of_scope_whenever(&stmts) {
+                // A `whenever` outside a `supply`/`react` block is a compile-time
+                // error in rakudo (X::Comp::WheneverOutOfScope).
+                Err(build_whenever_out_of_scope_error(line))
             } else {
                 sink_warn::add_sink_warnings(&stmts);
                 Ok((stmts, finish_content))

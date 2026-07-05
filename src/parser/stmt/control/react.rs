@@ -14,8 +14,23 @@ pub(crate) fn react_stmt(input: &str) -> PResult<'_, Stmt> {
             },
         ));
     }
-    let (rest, body) = block(rest)?;
-    Ok((rest, Stmt::React { body }))
+    // `react { ... }` block form.
+    if let Ok((rest, body)) = block(rest) {
+        return Ok((rest, Stmt::React { body }));
+    }
+    // `react STATEMENT` blorst form (e.g. `react foo`). A `react` takes a
+    // block-or-statement; when it's a bare statement, parse a single expression
+    // as the body. This is mainly needed so that programs like
+    // `sub foo { whenever ... }; react foo` parse at all — the actual
+    // "whenever outside react/supply scope" compile error is diagnosed by the
+    // post-parse whenever-scope check, matching rakudo.
+    let (rest, expr) = expression(rest)?;
+    Ok((
+        rest,
+        Stmt::React {
+            body: vec![Stmt::Expr(expr)],
+        },
+    ))
 }
 
 /// Parse `whenever` block.
