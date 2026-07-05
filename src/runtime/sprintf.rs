@@ -10,6 +10,13 @@ pub(crate) use super::sprintf_validate::{
     validate_sprintf_arg_types, validate_sprintf_directives,
 };
 
+/// Numify a string argument the way Raku does when a numeric directive (%d,
+/// %x, %f, ...) is given a string: this honours radix prefixes (0x/0o/0b),
+/// underscores and rationals, so sprintf("%d", "0x1F") is 31, not 0.
+fn sprintf_numify_str(s: &str) -> Option<Value> {
+    super::str_numeric::parse_raku_str_to_numeric(s.trim())
+}
+
 pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
     match arg {
         Some(value) => format_sprintf_impl(fmt, std::slice::from_ref(value), false),
@@ -172,10 +179,18 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                 use num_traits::ToPrimitive;
                 (n.as_ref() / d.as_ref()).to_i64().unwrap_or(0)
             }
-            Some(Value::Str(s)) => s
-                .trim()
-                .parse::<i64>()
-                .unwrap_or_else(|_| s.trim().parse::<f64>().unwrap_or(0.0) as i64),
+            Some(Value::Str(s)) => match sprintf_numify_str(s) {
+                Some(Value::Int(i)) => i,
+                Some(Value::BigInt(bi)) => {
+                    num_traits::ToPrimitive::to_i64(bi.as_ref()).unwrap_or(0)
+                }
+                Some(Value::Num(f)) => f as i64,
+                Some(Value::Rat(n, d)) if d != 0 => n / d,
+                _ => s
+                    .trim()
+                    .parse::<i64>()
+                    .unwrap_or_else(|_| s.trim().parse::<f64>().unwrap_or(0.0) as i64),
+            },
             Some(Value::Bool(true)) => 1,
             Some(Value::Bool(false)) => 0,
             _ => 0,
@@ -189,10 +204,15 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
             Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
                 n.as_ref() / d.as_ref()
             }
-            Some(Value::Str(s)) => s
-                .trim()
-                .parse::<BigInt>()
-                .unwrap_or_else(|_| BigInt::from(s.trim().parse::<f64>().unwrap_or(0.0) as i64)),
+            Some(Value::Str(s)) => match sprintf_numify_str(s) {
+                Some(Value::BigInt(bi)) => (*bi).clone(),
+                Some(Value::Int(i)) => BigInt::from(i),
+                Some(Value::Num(f)) => BigInt::from(f as i64),
+                Some(Value::Rat(n, d)) if d != 0 => BigInt::from(n / d),
+                _ => s.trim().parse::<BigInt>().unwrap_or_else(|_| {
+                    BigInt::from(s.trim().parse::<f64>().unwrap_or(0.0) as i64)
+                }),
+            },
             Some(Value::Bool(true)) => BigInt::from(1),
             Some(Value::Bool(false)) => BigInt::from(0),
             _ => BigInt::from(0),
@@ -207,7 +227,15 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                 let result = n.as_ref() * BigInt::from(1_000_000_000i64) / d.as_ref();
                 result.to_f64().unwrap_or(0.0) / 1_000_000_000.0
             }
-            Some(Value::Str(s)) => s.trim().parse::<f64>().unwrap_or(0.0),
+            Some(Value::Str(s)) => match sprintf_numify_str(s) {
+                Some(Value::Int(i)) => i as f64,
+                Some(Value::Num(f)) => f,
+                Some(Value::Rat(n, d)) if d != 0 => n as f64 / d as f64,
+                Some(Value::BigInt(bi)) => {
+                    num_traits::ToPrimitive::to_f64(bi.as_ref()).unwrap_or(0.0)
+                }
+                _ => s.trim().parse::<f64>().unwrap_or(0.0),
+            },
             _ => 0.0,
         };
         let rendered = match spec {
