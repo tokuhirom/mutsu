@@ -6,7 +6,203 @@
 use super::*;
 
 impl Interpreter {
+    /// Box `v` into a fresh element cell unless it already is one (Track B
+    /// slice 1 — ADR-0001 layer 3a's element-cell companion).
+    pub(super) fn boxed_elem_cell(v: Value) -> Value {
+        if v.is_container_ref() {
+            v
+        } else {
+            Value::ContainerRef(crate::gc::Gc::new(std::sync::Mutex::new(v)))
+        }
+    }
+
+    /// Ensure the `__mutsu_atomic_hash::`/`__mutsu_atomic_arr::` store node
+    /// for `name` exists with EVERY element value boxed into a `ContainerRef`
+    /// cell — the Track B element-cell representation, applied in ONE pass at
+    /// the container's first atomic touch.
+    ///
+    /// Why cells: the store previously kept plain snapshots, so every atomic
+    /// element RMW had to clone the whole container to publish one element
+    /// (readers on other threads hold the old node without a lock, so
+    /// in-place map mutation would be a data race). That made
+    /// `cas %h{$_}` × 30k on a 10k-entry hash cost ~300M entry copies
+    /// (S17-lowlevel/thread.t test 28: 12.2s GC-off / 21.2s GC-on). With
+    /// element cells the map STRUCTURE stays copy-on-write (readers'
+    /// snapshots remain immutable), while element VALUES mutate in place
+    /// under the cell's own mutex — every holder of any snapshot shares the
+    /// cells, so cross-thread reads stay coherent and an element RMW is O(1).
+    /// Reader-side deref of `ContainerRef` hash/array values is the
+    /// long-standing `%h<k> := $x` binding machinery and is already
+    /// universal on the read paths (element read, arithmetic, compare, grep,
+    /// sort, stringify — probed before this slice landed).
+    pub(super) fn init_celled_atomic_store(&mut self, atomic_key: &str, name: &str) {
+        {
+            let shared = self.shared_vars.read().unwrap();
+            if shared.contains_key(atomic_key) {
+                return;
+            }
+        }
+        let base = self
+            .env
+            .get(name)
+            .cloned()
+            .or_else(|| self.get_shared_var(name));
+        let celled = match base {
+            Some(Value::Hash(h)) => {
+                let mut data = h.as_ref().clone();
+                for v in data.map.values_mut() {
+                    let taken = std::mem::replace(v, Value::Nil);
+                    *v = Self::boxed_elem_cell(taken);
+                }
+                Value::Hash(crate::gc::Gc::new(data))
+            }
+            Some(Value::Array(a, kind)) => {
+                let mut data = a.as_ref().clone();
+                for v in data.items.iter_mut() {
+                    let taken = std::mem::replace(v, Value::Nil);
+                    *v = Self::boxed_elem_cell(taken);
+                }
+                Value::Array(crate::gc::Gc::new(data), kind)
+            }
+            _ => {
+                if name.starts_with('@') {
+                    Value::Array(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+                        crate::value::ArrayKind::Array,
+                    )
+                } else {
+                    Value::Hash(Value::hash_arc(HashMap::new()))
+                }
+            }
+        };
+        let mut shared = self.shared_vars.write().unwrap();
+        if !shared.contains_key(atomic_key) {
+            shared.insert(atomic_key.to_string(), celled.clone());
+            shared.insert(name.to_string(), celled.clone());
+            drop(shared);
+            self.env.insert(name.to_string(), celled);
+            if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                dirty.insert(atomic_key.to_string());
+                dirty.insert(name.to_string());
+            }
+        }
+    }
+
+    /// The element cell for `key` in the celled atomic hash store, creating it
+    /// (one COW of the map structure) when the key is missing or was
+    /// overwritten with a plain value by a structural assignment. The returned
+    /// handle is shared by every snapshot of the container, so mutating
+    /// through it is visible everywhere without republishing the node.
+    pub(super) fn celled_hash_elem(
+        &mut self,
+        atomic_key: &str,
+        hash_name: &str,
+        key: &str,
+    ) -> crate::gc::Gc<std::sync::Mutex<Value>> {
+        {
+            let shared = self.shared_vars.read().unwrap();
+            if let Some(Value::Hash(h)) = shared.get(atomic_key)
+                && let Some(Value::ContainerRef(c)) = h.get(key)
+            {
+                return c.clone();
+            }
+        }
+        let mut shared = self.shared_vars.write().unwrap();
+        // Re-check under the write lock (a racer may have boxed it).
+        if let Some(Value::Hash(h)) = shared.get(atomic_key)
+            && let Some(Value::ContainerRef(c)) = h.get(key)
+        {
+            return c.clone();
+        }
+        let mut data = match shared.get(atomic_key) {
+            Some(Value::Hash(h)) => h.as_ref().clone(),
+            _ => crate::value::HashData::default(),
+        };
+        let seed = match data.map.get(key) {
+            Some(Value::ContainerRef(c)) => return c.clone(),
+            Some(v) => v.clone(),
+            None => Value::Int(0),
+        };
+        let cell = crate::gc::Gc::new(std::sync::Mutex::new(seed));
+        data.map
+            .insert(key.to_string(), Value::ContainerRef(cell.clone()));
+        let updated = Value::Hash(crate::gc::Gc::new(data));
+        shared.insert(atomic_key.to_string(), updated.clone());
+        shared.insert(hash_name.to_string(), updated.clone());
+        drop(shared);
+        self.env.insert(hash_name.to_string(), updated);
+        cell
+    }
+
+    /// The element cell at `idx` in the celled atomic array store, creating it
+    /// (one COW, padding missing slots with fresh `0`-cells) when needed.
+    pub(super) fn celled_array_elem(
+        &mut self,
+        atomic_key: &str,
+        arr_name: &str,
+        index: i64,
+    ) -> crate::gc::Gc<std::sync::Mutex<Value>> {
+        let resolve =
+            |arr: &Value, index: i64| -> (usize, Option<crate::gc::Gc<std::sync::Mutex<Value>>>) {
+                if let Value::Array(elements, _) = arr {
+                    let idx = if index < 0 {
+                        (elements.len() as i64 + index).max(0) as usize
+                    } else {
+                        index as usize
+                    };
+                    if let Some(Value::ContainerRef(c)) = elements.get(idx) {
+                        return (idx, Some(c.clone()));
+                    }
+                    (idx, None)
+                } else {
+                    (index.max(0) as usize, None)
+                }
+            };
+        {
+            let shared = self.shared_vars.read().unwrap();
+            if let Some(arr) = shared.get(atomic_key) {
+                let (_, cell) = resolve(arr, index);
+                if let Some(c) = cell {
+                    return c;
+                }
+            }
+        }
+        let mut shared = self.shared_vars.write().unwrap();
+        let arr = shared.get(atomic_key).cloned().unwrap_or(Value::Array(
+            crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+            crate::value::ArrayKind::Array,
+        ));
+        let (idx, cell) = resolve(&arr, index);
+        if let Some(c) = cell {
+            return c;
+        }
+        let (mut data, kind) = match arr {
+            Value::Array(a, kind) => (a.as_ref().clone(), kind),
+            _ => (
+                crate::value::ArrayData::new(Vec::new()),
+                crate::value::ArrayKind::Array,
+            ),
+        };
+        while data.items.len() <= idx {
+            data.items.push(Self::boxed_elem_cell(Value::Int(0)));
+        }
+        let seed = match &data.items[idx] {
+            Value::ContainerRef(c) => return c.clone(),
+            v => v.clone(),
+        };
+        let cell = crate::gc::Gc::new(std::sync::Mutex::new(seed));
+        data.items[idx] = Value::ContainerRef(cell.clone());
+        let updated = Value::Array(crate::gc::Gc::new(data), kind);
+        shared.insert(atomic_key.to_string(), updated.clone());
+        drop(shared);
+        // Arrays deliberately skip the env mirror: GetLocal consults the
+        // atomic shared key directly (see builtin_cas_array_elem's note).
+        let _ = arr_name;
+        cell
+    }
+
     /// Thread-safe `@arr.push(...)` (and `.unshift`) in shared (threaded)
+    /// context. (and `.unshift`) in shared (threaded)
     /// context.
     ///
     /// A plain `.push` in a thread reads `@arr` from the thread's *local* env
@@ -106,6 +302,23 @@ impl Interpreter {
         value: Value,
     ) -> Value {
         let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+        // Track B cell fast path: an already-celled slot is assigned through
+        // its cell in place — every snapshot holder sees it, no COW, no
+        // republish.
+        {
+            let shared = self.shared_vars.read().unwrap();
+            if let Some(Value::Array(elems, _)) = shared.get(&atomic_key)
+                && let Some(Value::ContainerRef(c)) = elems.get(idx)
+            {
+                let cell = c.clone();
+                drop(shared);
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = value.clone();
+                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                    dirty.insert(arr_name.to_string());
+                }
+                return value;
+            }
+        }
         let updated = {
             let mut shared = self.shared_vars.write().unwrap();
             let mut elements: Vec<Value> = match shared.get(&atomic_key) {
@@ -146,6 +359,21 @@ impl Interpreter {
         value: Value,
     ) -> Value {
         let atomic_key = format!("__mutsu_atomic_hash::{hash_name}");
+        // Track B cell fast path — see `shared_array_elem_set`.
+        {
+            let shared = self.shared_vars.read().unwrap();
+            if let Some(Value::Hash(h)) = shared.get(&atomic_key)
+                && let Some(Value::ContainerRef(c)) = h.get(&elem_key)
+            {
+                let cell = c.clone();
+                drop(shared);
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = value.clone();
+                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                    dirty.insert(hash_name.to_string());
+                }
+                return value;
+            }
+        }
         let updated = {
             let mut shared = self.shared_vars.write().unwrap();
             let mut map = match shared.get(&atomic_key) {
@@ -337,22 +565,11 @@ impl Interpreter {
         let code = args[2].clone();
         let atomic_key = format!("__mutsu_atomic_hash::{hash_name}");
 
-        // Initialize shared_vars with the hash if not yet set
-        {
-            let shared = self.shared_vars.read().unwrap();
-            if !shared.contains_key(&atomic_key) {
-                drop(shared);
-                let hash = self
-                    .env
-                    .get(&hash_name)
-                    .cloned()
-                    .unwrap_or_else(|| Value::Hash(Value::hash_arc(HashMap::new())));
-                let mut shared = self.shared_vars.write().unwrap();
-                if !shared.contains_key(&atomic_key) {
-                    shared.insert(atomic_key.clone(), hash);
-                }
-            }
-        }
+        // Track B element cells: box every element at the container's first
+        // atomic touch, then RMW individual elements in place through their
+        // cell — no whole-map COW per op (see `init_celled_atomic_store`).
+        self.init_celled_atomic_store(&atomic_key, &hash_name);
+        let cell = self.celled_hash_elem(&atomic_key, &hash_name, &key);
 
         // Check if code is {.succ} or {.pred} for fast path
         if let Value::Sub(ref sub) = code {
@@ -381,45 +598,24 @@ impl Interpreter {
                     None
                 };
                 if let Some(d) = delta {
-                    let mut shared = self.shared_vars.write().unwrap();
-                    let hash = shared
-                        .get(&atomic_key)
-                        .cloned()
-                        .unwrap_or_else(|| Value::Hash(Value::hash_arc(HashMap::new())));
-                    if let Value::Hash(ref map) = hash {
-                        let current = map.get(&key).cloned().unwrap_or(Value::Int(0));
-                        let new_val = crate::builtins::arith_add(current, Value::Int(d))?;
-                        let mut new_map = (**map).clone();
-                        new_map.insert(key, new_val);
-                        let updated = Value::Hash(Value::hash_arc(new_map));
-                        shared.insert(atomic_key.clone(), updated.clone());
-                        shared.insert(hash_name.clone(), updated.clone());
-                        drop(shared);
-                        self.env.insert(hash_name.clone(), updated);
-                        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
-                            dirty.insert(atomic_key);
-                            dirty.insert(hash_name);
-                        }
-                        return Ok(Value::Nil);
-                    }
+                    // `.succ`/`.pred` never re-enter the VM, so the whole RMW
+                    // runs under the element cell's own lock — one locked
+                    // add, no retry, no COW, no republish (every snapshot
+                    // shares this cell).
+                    let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+                    let current = guard.clone();
+                    *guard = crate::builtins::arith_add(current, Value::Int(d))?;
+                    return Ok(Value::Nil);
                 }
             }
         }
 
-        // General CAS loop for hash elements
+        // General CAS retry loop over the element cell. The user closure runs
+        // OUTSIDE the cell lock (it re-enters the VM — the Track B re-entrancy
+        // rule shared with GC safepoints, ADR-0001 §3-6): read, compute, then
+        // compare-and-store under the lock, retrying on interference.
         loop {
-            let current = {
-                let shared = self.shared_vars.read().unwrap();
-                let hash = shared
-                    .get(&atomic_key)
-                    .cloned()
-                    .unwrap_or_else(|| Value::Hash(Value::hash_arc(HashMap::new())));
-                if let Value::Hash(ref map) = hash {
-                    map.get(&key).cloned().unwrap_or(Value::Int(0))
-                } else {
-                    Value::Int(0)
-                }
-            };
+            let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let new_val = {
                 let call_args = if let Value::Sub(ref sub) = code {
                     if sub.params.is_empty() {
@@ -434,30 +630,11 @@ impl Interpreter {
                 };
                 self.call_sub_value(code.clone(), call_args, true)?
             };
-            // CAS: check if value is still `current`, if so store `new_val`
-            let mut shared = self.shared_vars.write().unwrap();
-            let hash = shared
-                .get(&atomic_key)
-                .cloned()
-                .unwrap_or_else(|| Value::Hash(Value::hash_arc(HashMap::new())));
-            if let Value::Hash(ref map) = hash {
-                let seen = map.get(&key).cloned().unwrap_or(Value::Int(0));
-                if Self::cas_retry_matches(&current, &seen) {
-                    let mut new_map = (**map).clone();
-                    new_map.insert(key, new_val);
-                    let updated = Value::Hash(Value::hash_arc(new_map));
-                    shared.insert(atomic_key.clone(), updated.clone());
-                    shared.insert(hash_name.clone(), updated.clone());
-                    drop(shared);
-                    self.env.insert(hash_name.clone(), updated);
-                    if let Ok(mut dirty) = self.shared_vars_dirty.write() {
-                        dirty.insert(atomic_key);
-                        dirty.insert(hash_name);
-                    }
-                    return Ok(Value::Nil);
-                }
+            let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+            if Self::cas_retry_matches(&current, &guard) {
+                *guard = new_val;
+                return Ok(Value::Nil);
             }
-            drop(shared);
         }
     }
 }

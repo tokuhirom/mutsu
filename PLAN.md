@@ -181,8 +181,12 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 - ✅ **既定値 `MUTSU_GC` は on**（2026-07-05 切替済み — ADR-0003 §5 に受け入れ実測とゲート改訂を記録。
       bench-class ~+8% はユーザー判断で許容、根本削減は層 3b=NaN-boxing）。GC キャンペーン（層 3a）完了。
       残る GC 関連 perf は NaN-boxing（3b）に統合。
-- **Track B（要素 cell 化）と GC は統合キャンペーン（層3a）**。続いて NaN-boxing（層3b・JIT 地ならし）
-  → JIT（層4）。`state @`/`%`・lexical aggregate の真共有（Track C 残）も Track B=層3a に依存。
+- **Track B（要素 cell 化）** — スライス 1 完了: atomic ストア（`__mutsu_atomic_hash/arr::`）の
+  要素を `ContainerRef` セル化（cas/要素代入が全体 COW なしの O(1) RMW に。thread.t test 28 の
+  12.2s→1.6s）。map/array の「構造」は従来どおり COW スナップショット、要素「値」のみセル —
+  この分割が Track B の一般化テンプレート。残: 通常（非 atomic）経路の要素セル化と
+  `state @`/`%`・lexical aggregate の真共有（Track C 残、§6）。続いて NaN-boxing（層3b・JIT 地ならし）
+  → JIT（層4）。
 
 ---
 
