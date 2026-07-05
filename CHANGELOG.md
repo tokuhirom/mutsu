@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.23](https://github.com/tokuhirom/mutsu/compare/v0.2.22...v0.2.23) - 2026-07-05
+
+- perf(vm): shrink OpCode 192->48 bytes, add per-opcode stats, drop dead opcodes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4279
+
 ## [v0.2.22](https://github.com/tokuhirom/mutsu/compare/v0.2.21...v0.2.22) - 2026-07-05
 
 - docs(adr): ADR-0004 accepted — JIT strategy + Lever 3 freeze by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4277
