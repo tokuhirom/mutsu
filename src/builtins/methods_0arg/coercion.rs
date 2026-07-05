@@ -290,6 +290,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 crate::value::seq_mark_cached(items);
                 Some(Ok(Value::array(items.to_vec())))
             }
+            // A shaped array falls through to the slow path, which flattens all
+            // dimensions and replaces Nil slots with the type-default.
+            Value::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
             Value::Array(items, _) => Some(Ok(Value::array(items.to_vec()))),
             Value::GenericRange {
                 start,
@@ -457,6 +460,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     };
                     Some(Ok(wrap(bytes)))
                 }
+                // A shaped array falls through to the slow path (flatten + Nil
+                // → type-default). Non-shaped arrays keep the fast path.
+                Value::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
                 Value::Array(items, kind) => {
                     if method == "Array" && !kind.is_real_array() {
                         Some(Ok(Value::real_array(items.to_vec())))

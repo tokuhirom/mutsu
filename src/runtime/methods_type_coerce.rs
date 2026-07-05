@@ -75,6 +75,31 @@ impl Interpreter {
         })
     }
 
+    /// `.List`/`.Array` on a shaped array flattens all dimensions to a plain
+    /// sequence of elements, with uninitialized (`Nil`) slots replaced by the
+    /// container's type-default (`Any`, or the native/typed element default):
+    /// `my @a[2;2]` → `(Any, Any, Any, Any)`, `my Int @a[3]` → `(Int, Int, Int)`.
+    /// Returns `None` when `target` is not a shaped array (normal coercion runs).
+    pub(super) fn shaped_flatten_with_default(&mut self, target: &Value) -> Option<Vec<Value>> {
+        let depth = crate::runtime::utils::shaped_array_shape(target)?.len();
+        let default = self.typed_container_default(target);
+        let mut out = Vec::new();
+        Self::flatten_shaped_dims(target, depth, &default, &mut out);
+        Some(out)
+    }
+
+    fn flatten_shaped_dims(v: &Value, depth: usize, default: &Value, out: &mut Vec<Value>) {
+        match v {
+            Value::Array(items, _) if depth > 0 => {
+                for it in items.iter() {
+                    Self::flatten_shaped_dims(it, depth - 1, default, out);
+                }
+            }
+            Value::Nil => out.push(default.clone()),
+            other => out.push(other.clone()),
+        }
+    }
+
     /// Dispatch .List coercion method
     pub(super) fn dispatch_list_coercion(&self, target: Value) -> Result<Value, RuntimeError> {
         if let Value::Instance {

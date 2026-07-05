@@ -11,6 +11,22 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        // `.List`/`.list`/`.Array` on a shaped array flattens all dimensions and
+        // replaces uninitialized (`Nil`) slots with the container's type-default.
+        if matches!(method, "List" | "list" | "Array")
+            && args.is_empty()
+            && let Some(flat) = self.shaped_flatten_with_default(&target)
+        {
+            let kind = if method == "Array" {
+                crate::value::ArrayKind::Array
+            } else {
+                crate::value::ArrayKind::List
+            };
+            return Some(Ok(Value::Array(
+                crate::gc::Gc::new(crate::value::ArrayData::new(flat)),
+                kind,
+            )));
+        }
         match method {
             "Seq" if args.is_empty() => Some(self.dispatch_seq_coercion(target)),
             "list" | "Array" if args.is_empty() => {
