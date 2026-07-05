@@ -381,6 +381,10 @@ fn unimatch_property(ch: char, prop_value: &str, prop_name: &str) -> bool {
             let block = super::char_props::unicode_block(ch);
             block_matches(&block, prop_value)
         }
+        "ea" | "East_Asian_Width" => {
+            let val = super::char_props::unicode_east_asian_width(ch);
+            east_asian_width_matches(&val, prop_value)
+        }
         _ => {
             // Try to get the property value and compare
             let val = unicode_property_value(ch, prop_name);
@@ -413,6 +417,22 @@ fn unimatch_general_category(ch: char, cat: &str) -> bool {
     }
 
     false
+}
+
+/// Match an East_Asian_Width value. Rakudo exposes East_Asian_Width using the
+/// short property-value aliases (W, Na, F, H, A, N), so normalise our long-form
+/// value to the short alias and compare against the target as given.
+fn east_asian_width_matches(actual: &str, target: &str) -> bool {
+    let short = match actual.to_ascii_uppercase().as_str() {
+        "N" | "NEUTRAL" => "N",
+        "NA" | "NARROW" => "Na",
+        "W" | "WIDE" => "W",
+        "F" | "FULLWIDTH" => "F",
+        "H" | "HALFWIDTH" => "H",
+        "A" | "AMBIGUOUS" => "A",
+        _ => return false,
+    };
+    short.eq_ignore_ascii_case(target.trim())
 }
 
 /// Check if a block name matches, normalizing case, underscores, spaces, and hyphens.

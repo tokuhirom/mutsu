@@ -30,17 +30,22 @@ pub(super) fn check_unicode_property(name: &str, c: char) -> bool {
             "gc" => format!("General_Category={}", value),
             _ => format!("{}={}", prop, value),
         };
-        return UNICODE_PROP_CACHE.with(|cache| {
+        let via_regex = UNICODE_PROP_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
             let entry = cache.entry(full_prop.clone()).or_insert_with(|| {
                 let pattern = format!(r"^\p{{{}}}", full_prop);
                 regex::Regex::new(&pattern).ok()
             });
-            match entry {
-                Some(re) => re.is_match(&c.to_string()),
-                None => false,
-            }
+            entry.as_ref().map(|re| re.is_match(&c.to_string()))
         });
+        // The regex crate only supports a handful of value-typed properties
+        // (General_Category, Script, Script_Extensions). For everything else
+        // (Line_Break, Word_Break, Bidi_Class, East_Asian_Width, Joining_Type,
+        // ...) the pattern fails to compile; fall back to the uniprop matcher.
+        return match via_regex {
+            Some(matched) => matched,
+            None => crate::builtins::uniprop::unimatch(c, value, Some(prop)),
+        };
     }
     UNICODE_PROP_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -57,6 +62,19 @@ pub(super) fn check_unicode_property(name: &str, c: char) -> bool {
 
 /// Check a Unicode property with arguments, e.g. NumericValue(0 ^..^ 1) or name(/:s LATIN SMALL/).
 pub(super) fn check_unicode_property_with_args(prop: &str, args: &str, c: char) -> bool {
+    // A quoted value form such as <:Line_Break("ID")> passes the surrounding
+    // quotes through in `args`; strip a single matching pair so the value
+    // compares equal to the property's string value.
+    let trimmed = args.trim();
+    let args = trimmed
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .or_else(|| {
+            trimmed
+                .strip_prefix('\'')
+                .and_then(|s| s.strip_suffix('\''))
+        })
+        .unwrap_or(trimmed);
     let prop_lower = prop.to_lowercase();
     match prop_lower.as_str() {
         "numericvalue" | "numeric_value" | "nv" => check_numeric_value_property(args, c),
