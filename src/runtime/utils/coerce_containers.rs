@@ -384,10 +384,17 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             }
         }
         Value::Slip(items) | Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
-            Value::Array(
-                crate::value::Value::array_arc(items.to_vec()),
-                ArrayKind::Array,
-            )
+            // Like the `Value::Array` arm: assigning to an `@` variable snapshots
+            // element VALUES, so decontainerize any shared `ContainerRef` cells the
+            // Seq carries (e.g. `my @g = @a.grep(...)`, whose Seq references @a's
+            // rw slots) so a later write through the copy does not leak into the
+            // source. Only rebuild when a cell is actually present.
+            let arc = if items.iter().any(|v| matches!(v, Value::ContainerRef(_))) {
+                crate::value::Value::array_arc(items.iter().map(|v| v.deref_container()).collect())
+            } else {
+                crate::value::Value::array_arc(items.to_vec())
+            };
+            Value::Array(arc, ArrayKind::Array)
         }
         Value::LazyList(_) => value,
         // A bare Hash assigned to an @-var flattens into its pairs
