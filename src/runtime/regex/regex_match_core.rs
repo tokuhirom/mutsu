@@ -130,7 +130,7 @@ impl Interpreter {
     ///
     /// Returns `(end, caps)` pairs in LOWEST-priority-first order (for the LIFO
     /// matching stack): shortest match first, longest (greedy) last.
-    fn match_separated_quantifier(
+    pub(super) fn match_separated_quantifier(
         &self,
         token: &RegexToken,
         chars: &[char],
