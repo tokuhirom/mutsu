@@ -178,10 +178,6 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 
 残:
 
-- [ ] **CI gc-stress roast ステップの blocking 昇格**: `prove t/` は blocking 済み。advisory roast の
-      失敗 3 クラスは 2026-07-05 に全て解消（STW spawn-churn 飢餓 #4205・共有 env phantom edge
-      #4213・`EVERY_CANDIDATE=64` の quadratic → 1024 へ）— **knob 変更後の main run が green を
-      1 回示したら `continue-on-error` を外す**（news/2026-07.md 参照）。
 - [ ] デフォルト GC=on のトリガ方針（現状 automatic trigger 無指定だと program-end collect のみ）。
       方式は同期 + candidate バッファ**サイズ**閾値 + adaptive backoff を Proposed ADR-0003 として
       起票予定（`EVERY_CANDIDATE` 型の push 周期トリガは大きな live graph で quadratic になることを
