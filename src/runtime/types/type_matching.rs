@@ -508,14 +508,11 @@ impl Interpreter {
                     {
                         let class = class_name.resolve();
                         let class_ok = if base == "Buf" {
-                            class == "Buf" || class.starts_with("Buf[") || class.starts_with("buf")
+                            crate::runtime::utils::is_buf_like_class(&class)
                         } else {
-                            class == "Blob"
-                                || class == "Buf"
-                                || class.starts_with("Blob[")
-                                || class.starts_with("blob")
-                                || class.starts_with("Buf[")
-                                || class.starts_with("buf")
+                            // A Blob constraint accepts Buf-like types too (Buf
+                            // does Blob), plus the immutable encoding buffers.
+                            crate::runtime::utils::is_buf_or_blob_class(&class)
                         };
                         if !class_ok {
                             return false;
