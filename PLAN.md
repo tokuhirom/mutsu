@@ -178,11 +178,10 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 
 残:
 
-- [ ] デフォルト GC=on のトリガ方針（現状 automatic trigger 無指定だと program-end collect のみ）。
-      方式は同期 + candidate バッファ**サイズ**閾値 + adaptive backoff を Proposed ADR-0003 として
-      起票予定（`EVERY_CANDIDATE` 型の push 周期トリガは大きな live graph で quadratic になることを
-      cas-loop.t で実測済み）。A' は step 11 調査により **1a の前提から外れた**（collector は
-      refcount 駆動で root 列挙を消費しない — ADR-0001 §4.3 の狭い解決）。
+- [ ] デフォルト GC=on のトリガ方針 → **[ADR-0003](docs/adr/0003-default-on-gc-trigger.md)（Proposed）
+      で起票済み**（同期 + candidate バッファサイズ閾値 + adaptive backoff。ADR-0001 §4.2/§4.3 の
+      未決を解決する提案）。Accepted 後に実装 → 受け入れ計測（出力一致・pause 有界・オーバーヘッド
+      予算）→ 既定値 on 切替、の順。
 - **Track B（要素 cell 化）と GC は統合キャンペーン（層3a）**。続いて NaN-boxing（層3b・JIT 地ならし）
   → JIT（層4）。`state @`/`%`・lexical aggregate の真共有（Track C 残）も Track B=層3a に依存。
 
