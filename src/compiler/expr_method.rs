@@ -274,9 +274,47 @@ impl Compiler {
             && let Expr::Index {
                 target: delete_target,
                 index: delete_index,
+                is_positional: delete_positional,
                 ..
             } = target
         {
+            // Nested `:delete` (`%h<a><x>:delete`, `@a[0][1]:delete`): the delete
+            // target is itself a subscript, so there is no simple name to write the
+            // modified container back through — the generic `DeleteIndexExpr` path
+            // would delete from a copy and lose it. Bind a temp to the nested slot
+            // (`my $t := %h<a>`) — which shares its `ContainerRef` cell — and delete
+            // through it, so the deletion reaches the real inner container.
+            if matches!(delete_target.as_ref(), Expr::Index { .. }) {
+                let tmp = format!("__mutsu_nested_del_{}", self.code.constants.len());
+                let bind_decl = Stmt::VarDecl {
+                    name: tmp.clone(),
+                    expr: (**delete_target).clone(),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: vec![("__scalar_bind".to_string(), None)],
+                    where_constraint: None,
+                };
+                let delete_through = Expr::MethodCall {
+                    target: Box::new(Expr::Index {
+                        target: Box::new(Expr::Var(tmp)),
+                        index: delete_index.clone(),
+                        is_positional: *delete_positional,
+                    }),
+                    name: Symbol::intern("DELETE-KEY"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                };
+                self.compile_expr(&Expr::DoBlock {
+                    body: vec![Stmt::MarkBind, bind_decl, Stmt::Expr(delete_through)],
+                    label: None,
+                });
+                return;
+            }
             if let Some(var_name) = Self::postfix_index_name(delete_target) {
                 if Self::index_assign_target_requires_eval(delete_target) {
                     self.compile_expr(delete_target);
