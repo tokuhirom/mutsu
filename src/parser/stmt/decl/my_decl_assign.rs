@@ -511,20 +511,29 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // parameterized by the element constraint, e.g. `my Int @x .= new` calls
     // `Array[Int].new`, and `my Array of Bool @x .= new` calls
     // `Array[Array[Bool]].new` — not `Int.new` / `Array[Bool].new`.
-    let target_name = match &s.type_constraint {
+    let target_expr = match &s.type_constraint {
         Some(c) if s.name.starts_with('@') => {
             if crate::runtime::native_types::is_native_array_element_type(c) {
-                format!("array[{c}]")
+                Expr::BareWord(format!("array[{c}]"))
             } else {
-                format!("Array[{c}]")
+                Expr::BareWord(format!("Array[{c}]"))
             }
         }
-        Some(c) if s.name.starts_with('%') => format!("Hash[{c}]"),
-        Some(c) => c.clone(),
-        None => s.name.clone(),
+        Some(c) if s.name.starts_with('%') => Expr::BareWord(format!("Hash[{c}]")),
+        Some(c) => Expr::BareWord(c.clone()),
+        // Untyped: `.= new` desugars to `$var = $var.new(...)`, so the invocant is
+        // the variable itself, NOT a type named after it. Using a `@c`-named
+        // `BareWord` mis-dispatched (e.g. `my @c .= new(:shape(2,2), ...)` built
+        // only a 1-element array). Mirror the `@c = @c.new(...)` var-read expr.
+        None => match s.name.chars().next() {
+            Some('@') => Expr::ArrayVar(s.name[1..].to_string()),
+            Some('%') => Expr::HashVar(s.name[1..].to_string()),
+            Some('$') => Expr::Var(s.name[1..].to_string()),
+            _ => Expr::BareWord(s.name.clone()),
+        },
     };
     let expr = Expr::MethodCall {
-        target: Box::new(Expr::BareWord(target_name)),
+        target: Box::new(target_expr),
         name: Symbol::intern(&method_name),
         args,
         modifier: None,
