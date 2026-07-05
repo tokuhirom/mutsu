@@ -599,10 +599,20 @@ fn buffer_candidate(node: ErasedGc) {
     node.header
         .color
         .store(Color::Purple as u8, Ordering::Relaxed);
+    // Count BEFORE pushing: a concurrent drain that takes the shard between
+    // the push and a later count would subtract a node it drained but we had
+    // not yet added, wrapping APPROX_BUFFERED below zero — after which the
+    // debug-build `+ 1` on the wrapped usize::MAX panicked with "attempt to
+    // add with overflow" (intermittent under threaded churn: gc_stress
+    // spawn_churn / threaded_cycle_churn). Counting first only ever leaves a
+    // transient OVERSHOOT (a counted node the drain hasn't seen), which the
+    // saturating drain-side update absorbs.
+    let len = APPROX_BUFFERED
+        .fetch_add(1, Ordering::Relaxed)
+        .saturating_add(1);
     if let Ok(mut buf) = candidate_shard_for(&node).lock() {
         buf.push(node);
     }
-    let len = APPROX_BUFFERED.fetch_add(1, Ordering::Relaxed) + 1;
     record_gc_candidate_push();
     // May arm a pending collect (the MUTSU_GC_EVERY_CANDIDATE stress period,
     // or the ADR-0003 production size threshold); never collects inline here —
@@ -669,7 +679,14 @@ pub(crate) fn drain_candidates() -> Vec<ErasedGc> {
             drained.append(&mut buf);
         }
     }
-    APPROX_BUFFERED.fetch_sub(drained.len(), Ordering::Relaxed);
+    // Saturating: with count-before-push on the producer side the counter can
+    // only overshoot, never undershoot — but keep the subtraction saturating
+    // so no interleaving can ever wrap it (the counter is an approximation
+    // that only steers the ADR-0003 trigger point).
+    let removed = drained.len();
+    let _ = APPROX_BUFFERED.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+        Some(v.saturating_sub(removed))
+    });
     for node in &drained {
         node.header.buffered.store(false, Ordering::Relaxed);
     }
@@ -685,10 +702,12 @@ pub(crate) fn requeue_candidates(nodes: Vec<ErasedGc>) {
         if node.header.buffered.swap(true, Ordering::Relaxed) {
             continue;
         }
+        // Count-before-push, mirroring `buffer_candidate` (see the comment
+        // there for the underflow race this ordering prevents).
+        APPROX_BUFFERED.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut buf) = candidate_shard_for(&node).lock() {
             buf.push(node);
         }
-        APPROX_BUFFERED.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -1249,6 +1268,54 @@ mod tests {
         assert!(
             observer.upgrade().is_none(),
             "a weak observer never resurrects a reclaimed node"
+        );
+    }
+
+    /// Regression (gc_stress `spawn_churn_does_not_starve_stop_the_world` /
+    /// `threaded_cycle_churn_is_collected_soundly`, intermittent): when
+    /// `buffer_candidate` incremented `APPROX_BUFFERED` *after* pushing into
+    /// the shard, a concurrent `drain_candidates` could drain the node and
+    /// subtract it before the producer's add — wrapping the counter to
+    /// `usize::MAX` and panicking on the debug-build `+ 1` ("attempt to add
+    /// with overflow"). Hammer push against a concurrent drainer: no thread
+    /// may panic, and once quiescent the count must return exactly to zero.
+    #[test]
+    fn concurrent_buffer_and_drain_never_wraps_the_approx_count() {
+        let _serial = lock_buffer_tests();
+        // Clear any leftover candidates so the final assertion is exact.
+        drop(drain_candidates());
+        assert_eq!(APPROX_BUFFERED.load(Ordering::Relaxed), 0);
+
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let drainer = {
+            let stop = Arc::clone(&stop);
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    drop(drain_candidates());
+                }
+            })
+        };
+        let producers: Vec<_> = (0..4)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    for _ in 0..50_000 {
+                        Gc::new(Leaf).buffer_as_candidate();
+                    }
+                })
+            })
+            .collect();
+        for p in producers {
+            p.join()
+                .expect("producer must not panic (APPROX_BUFFERED underflow wrap)");
+        }
+        stop.store(true, Ordering::Relaxed);
+        drainer.join().expect("drainer must not panic");
+
+        drop(drain_candidates());
+        assert_eq!(
+            APPROX_BUFFERED.load(Ordering::Relaxed),
+            0,
+            "count-before-push accounting must settle back to exactly zero"
         );
     }
 }
