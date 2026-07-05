@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.16](https://github.com/tokuhirom/mutsu/compare/v0.2.15...v0.2.16) - 2026-07-05
+
+- fix(setbagmix): SetHash element ++/--/assign use Bool existence semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4262
+
 ## [v0.2.15](https://github.com/tokuhirom/mutsu/compare/v0.2.14...v0.2.15) - 2026-07-05
 
 - fix(bind): array element bind-autoviv fills gaps with Any, not Nil by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4260
