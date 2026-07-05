@@ -246,6 +246,10 @@ impl Interpreter {
             .as_deref()
             .unwrap_or(&original_var_name)
             .to_string();
+        // A SetHash element assignment evaluates to the key's Bool existence, not
+        // the assigned value (`$sh<k> = 2` is `Bool::True`); set in the Set store
+        // arm and applied at the final result push.
+        let mut setty_bool_result: Option<Value> = None;
         // §1.4 shadow-slot: the compiler-baked slot is valid only for the
         // target's own name (`original_var_name`). If a sigilless alias redirects
         // to a DIFFERENT variable, the baked slot no longer applies — fall back to
@@ -1438,7 +1442,14 @@ impl Interpreter {
                             _ => unreachable!(),
                         };
                         self.env_mut().insert(var_name.clone(), new_container);
-                        self.stack.push(val);
+                        // A SetHash element assignment evaluates to the key's Bool
+                        // existence (`$sh<k> = 2` is `Bool::True`), not the RHS.
+                        let result = if type_name == "SetHash" {
+                            Value::Bool(val.truthy())
+                        } else {
+                            val.clone()
+                        };
+                        self.stack.push(result);
                         // Update local slot
                         if let Some(new_val) = self.env().get(&var_name).cloned() {
                             self.write_local_slot_or_name(code, eff_slot, &var_name, new_val);
@@ -1637,13 +1648,15 @@ impl Interpreter {
                                 return Err(RuntimeError::assignment_ro(Some("Set")));
                             }
                             let s = crate::gc::Gc::make_mut(set);
-                            if val.truthy() {
+                            let present = val.truthy();
+                            if present {
                                 s.insert(key.clone());
                                 Self::record_quanthash_object_key(&mut s.original_keys, &key, &idx);
                             } else {
                                 s.remove(&key);
                                 Self::forget_quanthash_object_key(&mut s.original_keys, &key);
                             }
+                            setty_bool_result = Some(Value::Bool(present));
                         }
                         Value::Bag(ref mut bag, is_mutable) => {
                             if !is_mutable {
@@ -1875,7 +1888,9 @@ impl Interpreter {
         // Positional array elements only: hash single-key / hash-slice assignment
         // exits through other push sites (not reached here), and this restriction
         // keeps a string-range hash subscript from being mis-itemized.
-        let result = if idx_is_single_element && !var_name.starts_with('%') {
+        let result = if let Some(bool_result) = setty_bool_result {
+            bool_result
+        } else if idx_is_single_element && !var_name.starts_with('%') {
             Self::itemize_value(val)
         } else {
             val
