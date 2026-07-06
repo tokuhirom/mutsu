@@ -211,10 +211,14 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 
 - [ ] default-param OTF の builtin-shadow 単一候補（name-cache 汚染リスクがあるため意図的に除外を維持中）。
 - [ ] モジュール sub OTF に残る interpreter 結合構文: `state` / `EVAL` / `EVALFILE` / `start` /
-      `CATCH` / `CONTROL` / phaser / ネスト宣言 / subtest / sigilless scalar（`\x`）/ 戻り型 coercion
+      `CATCH` / `CONTROL` / phaser / ネスト宣言 / subtest / sigilless scalar（`\x`）/ 戻り型 coercion /
+      `is encoded(...)`（NativeCall marshalling）
       （ゲート実体 = `def_is_otf_compilable_module_single`、`vm/vm_call_func_ops.rs`）。
-      `is rw`/`is raw` は #4091（rw-arg のコンパイル時 caller slot 化）でゲートから外れた。
-      本筋は `compiled_fns` の拡充。
+      標準 param trait（`is copy`/`is rw`/`is raw`/`is readonly`/`is required`）はゲートから外れた
+      （旧 `pd.traits.is_empty()` の一律除外を解除。compiled binding は元々これらを処理していた＝
+      builtin-shadow ゲート `def_is_otf_compilable` は trait 未チェック。加えて tree-walk fallback が
+      黙って落としていた `is rw` の caller writeback が OTF 化で修正された。担保 =
+      `t/module-sub-otf-trait-params.t`）。本筋は `compiled_fns` の拡充。
 - [ ] `@_` slurpy recursive sub（別カテゴリ）。`@a[1..*]` 再帰の immutable-List bug は §4 扱い。
 - 完了済み（計測で確認）: bare multi OTF / `state` 候補・caching-proto body（#4047）/ `code_signature`
   param（#3883）/ capture param。signature alternates の `state` 共有のみ interpreter 境界として
