@@ -242,16 +242,8 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
 
         // Instance ~~ Instance: value types use eqv, others use identity
         (
-            ValueView::Instance {
-                class_name: lc,
-                id: id_a,
-                ..
-            },
-            ValueView::Instance {
-                class_name: rc,
-                id: id_b,
-                ..
-            },
+            ValueView::Instance { class_name: lc, .. },
+            ValueView::Instance { class_name: rc, .. },
         ) if lc == rc
             && matches!(
                 lc.resolve().as_ref(),
