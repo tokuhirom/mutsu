@@ -262,7 +262,11 @@ impl Interpreter {
     }
 
     /// Apply multiple regex captures (for :g, :ov, :ex) -- set $/ to list of Match objects.
-    pub(in crate::runtime) fn apply_multi_regex_captures(&mut self, selected: &[RegexCaptures]) {
+    pub(in crate::runtime) fn apply_multi_regex_captures(
+        &mut self,
+        selected: &[RegexCaptures],
+        orig: &str,
+    ) {
         let slash_list = selected
             .iter()
             .map(|c| {
@@ -271,6 +275,11 @@ impl Interpreter {
                 // survive into each `m:g` match object, matching the single-match
                 // path. The short builder dropped `positional_quantified` etc.,
                 // collapsing `$m[0]` to a bare string.
+                //
+                // `orig` is the whole subject string so each match's `.orig`
+                // (and nested captures' `.orig`) reports the source text, matching
+                // the single-match path and `.match(:g)` — the `~~ m:g/.../` path
+                // previously passed `None`, leaving `.orig` empty.
                 Value::make_match_object_full(
                     c.matched.clone(),
                     c.from as i64,
@@ -281,7 +290,7 @@ impl Interpreter {
                     &c.positional_subcaps,
                     &c.positional_quantified,
                     &c.positional_nil,
-                    None,
+                    Some(orig),
                 )
             })
             .collect::<Vec<_>>();
