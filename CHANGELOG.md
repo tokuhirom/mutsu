@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.26](https://github.com/tokuhirom/mutsu/compare/v0.2.25...v0.2.26) - 2026-07-06
+
+- refactor(value): start 3b-0 API wall — ValueView, accessors, ratchet (slice a) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4287
+
 ## [v0.2.25](https://github.com/tokuhirom/mutsu/compare/v0.2.24...v0.2.25) - 2026-07-06
 
 - feat(phaser): run top-level BEGIN blocks at compile time by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4285
