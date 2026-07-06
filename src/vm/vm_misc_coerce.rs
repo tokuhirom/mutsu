@@ -293,6 +293,7 @@ impl Interpreter {
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
+            .or_else(|| self.escaping_our_incdec_cell(code, name))
             .unwrap_or(Value::Int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
         // closures over this lexical observe the change and the smart string/Int
@@ -408,6 +409,7 @@ impl Interpreter {
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
+            .or_else(|| self.escaping_our_incdec_cell(code, name))
             .unwrap_or(Value::Int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
         // closures over this lexical observe the change and the smart string/Int
