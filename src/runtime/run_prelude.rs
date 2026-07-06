@@ -255,6 +255,174 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Execute top-level `BEGIN { ... }` phaser blocks at compile time (before
+    /// the mainline runs), so that a read appearing textually *before* the
+    /// BEGIN in source order observes its side effects. In Raku, BEGIN runs at
+    /// compile time; mutsu otherwise compiles it inline and runs it in source
+    /// position, so e.g. `my @a; my $c = @a.elems; BEGIN { @a = 1,2,3 }` would
+    /// see `$c == 0` instead of `3`.
+    ///
+    /// Only "hoistable" BEGIN blocks are pre-run: their body must declare no
+    /// outer-visible symbols (`sub`/`class`/`role`/...). A hoisted BEGIN runs
+    /// via the sub-interpreter (`eval_block_value`), whose plain lexical writes
+    /// persist into the shared `env` (only `&`-callable keys are isolated), and
+    /// it is then removed from `body_main` so it does not run a second time.
+    ///
+    /// If pre-running a BEGIN throws — e.g. it references a `class` declared
+    /// later in source that is not yet registered — the `env` is rolled back
+    /// and the BEGIN is left in place to run at its original position, so
+    /// dependency cases keep working exactly as before.
+    pub(crate) fn run_toplevel_begin_phasers(&mut self, body_main: &mut Vec<Stmt>) {
+        let has_candidate = body_main.iter().any(|s| {
+            matches!(s, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, body }
+                if Self::begin_body_is_hoistable(body))
+        });
+        if !has_candidate {
+            return;
+        }
+        let mut new_body: Vec<Stmt> = Vec::with_capacity(body_main.len());
+        let mut hoisted_any = false;
+        for stmt in std::mem::take(body_main) {
+            let hoistable_body = match &stmt {
+                Stmt::Phaser {
+                    kind: crate::ast::PhaserKind::Begin,
+                    body,
+                } if Self::begin_body_is_hoistable(body) => Some(body),
+                _ => None,
+            };
+            if let Some(body) = hoistable_body {
+                let snapshot = self.env.clone();
+                match self.eval_block_value(body) {
+                    Ok(_) => {
+                        hoisted_any = true;
+                        continue; // consumed: dropped from the mainline
+                    }
+                    Err(_) => {
+                        // Roll back partial writes and keep the BEGIN in place
+                        // so it runs (successfully) at its original source
+                        // position during the mainline.
+                        self.env = snapshot;
+                    }
+                }
+            }
+            new_body.push(stmt);
+        }
+        if hoisted_any {
+            // A hoisted BEGIN wrote its lexicals into `env` at compile time. The
+            // mainline still contains the bare `my @a;` declarations for those
+            // vars, which would reset them to empty. Drop the no-init reset for
+            // any variable the BEGIN already populated so the seeded value
+            // survives into the mainline (Raku creates the container once, at
+            // compile time; the runtime declaration does not re-initialize it).
+            Self::drop_seeded_noinit_decls(&mut new_body, &self.env);
+        }
+        *body_main = new_body;
+    }
+
+    /// A top-level BEGIN is safe to pre-execute at compile time only when its
+    /// body is a self-contained sequence of value assignments — no
+    /// declarations, no barewords, and no calls. The narrowness is deliberate:
+    /// the pre-run goes through the `eval_block_value` sub-interpreter, whose
+    /// semantics diverge from the mainline VM for name resolution and for
+    /// sink-context error forcing, so anything that could resolve a symbol or
+    /// raise an exception must stay on the mainline (in-place) path instead.
+    ///
+    /// - Declarations (`sub`/`class`/`role`/...) inside a BEGIN are not visible
+    ///   outside it in Raku anyway, and pre-running then discarding the
+    ///   sub-interpreter's registries must not silently drop one.
+    /// - A bareword may name a `class`/`role`/`enum`/type object not registered
+    ///   until the mainline runs, so pre-executing would capture a wrong value.
+    /// - A call may target a routine not yet registered at compile time, or may
+    ///   throw — both of which are handled correctly only by the mainline path
+    ///   (which wraps BEGIN-time errors in `X::Comp::BeginTime`).
+    ///
+    /// The `BareWord(`/`Call` markers are matched in the AST debug form, which
+    /// catches them at any nesting depth without a bespoke full-AST walker. All
+    /// call-shaped `Expr` variants (`Call`, `MethodCall`, `HyperMethodCall`,
+    /// `CallOn`, `DynamicMethodCall`, ...) contain `Call` in their name.
+    fn begin_body_is_hoistable(body: &[Stmt]) -> bool {
+        let has_decl = body.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::SubDecl { .. }
+                    | Stmt::ClassDecl { .. }
+                    | Stmt::RoleDecl { .. }
+                    | Stmt::EnumDecl { .. }
+                    | Stmt::Package { .. }
+                    | Stmt::ProtoDecl { .. }
+                    | Stmt::MethodDecl { .. }
+                    | Stmt::SubsetDecl { .. }
+                    | Stmt::TokenDecl { .. }
+                    | Stmt::RuleDecl { .. }
+                    | Stmt::Use { .. }
+            )
+        });
+        if has_decl {
+            return false;
+        }
+        let debug = format!("{body:?}");
+        !debug.contains("BareWord(") && !debug.contains("Call")
+    }
+
+    /// Remove the no-init reset of plain `my`/`our`-free declarations whose
+    /// variable a hoisted top-level BEGIN already populated in `env`. Descends
+    /// one level into `SyntheticBlock` (which carries `my (@a, @b)` group
+    /// declarations). Only plain, unadorned, empty-default declarations are
+    /// touched — anything with a type constraint, trait, `state`/`our`/`is
+    /// dynamic`/`is export`, or a real initializer is left intact.
+    fn drop_seeded_noinit_decls(body: &mut Vec<Stmt>, env: &crate::env::Env) {
+        body.retain_mut(|stmt| match stmt {
+            Stmt::SyntheticBlock(inner) => {
+                Self::drop_seeded_noinit_decls(inner, env);
+                !inner.is_empty()
+            }
+            _ => match Self::plain_noinit_vardecl_name(stmt) {
+                Some(name) => env.get(name).is_none(),
+                None => true,
+            },
+        });
+    }
+
+    /// If `stmt` is a plain `my $x;` / `my @a;` / `my %h;` with the synthesized
+    /// empty-container default and no adornments, return the variable name (in
+    /// env-key form). Otherwise `None`.
+    fn plain_noinit_vardecl_name(stmt: &Stmt) -> Option<&str> {
+        if let Stmt::VarDecl {
+            name,
+            expr,
+            type_constraint,
+            is_state,
+            is_our,
+            is_dynamic,
+            is_export,
+            custom_traits,
+            where_constraint,
+            ..
+        } = stmt
+        {
+            if *is_state
+                || *is_our
+                || *is_dynamic
+                || *is_export
+                || type_constraint.is_some()
+                || !custom_traits.is_empty()
+                || where_constraint.is_some()
+            {
+                return None;
+            }
+            let is_default = match expr {
+                Expr::Literal(Value::Nil) => true,
+                Expr::Literal(Value::Array(d, _)) => d.items.is_empty(),
+                Expr::Hash(items) => items.is_empty(),
+                _ => false,
+            };
+            if is_default {
+                return Some(name.as_str());
+            }
+        }
+        None
+    }
+
     /// If the first non-Use/non-Package statement is a `unit class Foo;` (ClassDecl with empty
     /// body), merge all subsequent method/sub declarations into the class body.
     pub(super) fn merge_unit_class(stmts: Vec<Stmt>) -> Vec<Stmt> {
