@@ -169,6 +169,39 @@ impl Interpreter {
         )
     }
 
+    /// Resolve a bare-name increment/decrement (`$a++`, `--$a`) of a block
+    /// lexical captured by an escaped `our` sub through its persisted shared
+    /// cell. Consulted as the LAST resort in the inc/dec read chain, AFTER the
+    /// env/package lookups: a plain `my sub` that merely shares the variable name
+    /// is called while its declaring block is still live, so its captured `$a`
+    /// resolves through the env cell earlier in the chain and never reaches here.
+    /// Only an escaped `our` sub — whose declaring block has exited, leaving no
+    /// env entry, yet which outlives it in the package registry — falls through
+    /// to the persisted cell. This mirrors what makes reads of such a capture
+    /// work (`escaping_our_read`).
+    ///
+    /// Returns the `ContainerRef` cell only when one is actually recorded (and
+    /// `name` is neither a local nor an upvalue of `code`), so unrelated
+    /// same-named locals/captures and pre-block calls stay untouched.
+    pub(crate) fn escaping_our_incdec_cell(
+        &self,
+        code: &crate::opcode::CompiledCode,
+        name: &str,
+    ) -> Option<Value> {
+        if self.escaping_our_lexical_names.is_empty() {
+            return None;
+        }
+        if code.locals.iter().any(|n| n == name)
+            || code.upvalue_syms.iter().any(|s| s.with_str(|u| u == name))
+        {
+            return None;
+        }
+        // Only intercept when a real persisted cell exists (a `ContainerRef`);
+        // `escaping_our_read` otherwise yields `Nil` (pre-block call), which must
+        // fall through to the normal env chain untouched.
+        self.escaping_our_read(name).filter(|v| v.is_container_ref())
+    }
+
     /// Get a cloned copy of the persisted closure env for a given closure id.
     pub(crate) fn get_closure_env_override(&self, id: u64) -> Option<crate::env::Env> {
         self.closure_env_overrides.get(&id).cloned()

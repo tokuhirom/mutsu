@@ -229,6 +229,7 @@ impl Interpreter {
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
+            .or_else(|| self.escaping_our_incdec_cell(code, name))
             .unwrap_or(Value::Int(0));
         // ContainerRef: deref for increment, write back through the shared container.
         // Use an atomic read-modify-write under the cell lock so concurrent
@@ -321,6 +322,7 @@ impl Interpreter {
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
+            .or_else(|| self.escaping_our_incdec_cell(code, name))
             .unwrap_or(Value::Int(0));
         // ContainerRef: deref for decrement, write back through the shared container.
         // Atomic RMW under the cell lock for concurrent `start` blocks (Track C).
