@@ -350,23 +350,40 @@ impl Interpreter {
     /// `depth` is the number of OUTER:: prefixes (1 = immediate outer, 2 = two levels up).
     /// Uses the `outer_scope_locals` stack which is populated by BlockScope operations.
     pub(super) fn get_outer_var(&self, code: &CompiledCode, name: &str, depth: usize) -> Value {
-        let stack_len = self.outer_scope_locals.len();
-        if depth == 0 || stack_len == 0 {
+        if depth == 0 {
             return Value::NIL;
         }
-        // The outer_scope_locals stack has the most recent (innermost) scope at the end.
-        // depth=1 means the immediately enclosing scope (last element).
-        let idx = if depth <= stack_len {
-            stack_len - depth
-        } else {
-            return Value::NIL;
-        };
-        let saved = &self.outer_scope_locals[idx];
-        // Find the local slot for this variable name
-        for (slot, local_name) in code.locals.iter().enumerate() {
-            if local_name == name && slot < saved.len() {
-                return saved[slot].clone();
+        let stack_len = self.outer_scope_locals.len();
+        // Inline nested-block path: `outer_scope_locals` (runtime-saved slots)
+        // reflects the lexical structure of nested bare blocks executed in place,
+        // so it distinguishes multiple same-named `my $a` bindings by depth.
+        if stack_len > 0 && depth <= stack_len {
+            let idx = stack_len - depth;
+            let saved = &self.outer_scope_locals[idx];
+            // Find the local slot for this variable name.
+            for (slot, local_name) in code.locals.iter().enumerate() {
+                if local_name == name && slot < saved.len() {
+                    return saved[slot].clone();
+                }
             }
+        }
+        // Stored-closure path: when a closure is invoked later (after its defining
+        // block has exited), `outer_scope_locals` no longer holds that block's
+        // scope — the closure's *lexical* outer scope was captured into its `env`
+        // at creation time (the flattened enclosing scope). OUTER:: is a lexical
+        // construct, so resolve the name against the captured env rather than the
+        // dynamic runtime stack. The flat capture holds every enclosing lexical,
+        // so a depth>1 access reaches transitive outers too.
+        //
+        // Prefer the reserved `__mutsu_outer::<name>` snapshot: the running frame
+        // may have overwritten the plain name (e.g. a bare `sub {...}` establishes
+        // a fresh topic `$_ = Any`), but the snapshot preserves the captured
+        // enclosing value that `$OUTER::` must see.
+        if let Some(val) = self.env().get(&format!("__mutsu_outer::{name}")) {
+            return val.clone();
+        }
+        if let Some(val) = self.env().get(name) {
+            return val.clone();
         }
         Value::NIL
     }

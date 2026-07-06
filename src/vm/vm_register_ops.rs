@@ -338,6 +338,18 @@ impl Interpreter {
                     flat.insert_sym(*sym, val.clone());
                 }
             }
+            // `$OUTER::x` inside this closure reads the *enclosing* binding of `x`,
+            // which is captured into `flat` right now. But when the closure runs,
+            // its own frame may overwrite that name in the live env (most commonly
+            // the topic `$_`: a bare `sub {...}` establishes a fresh `$_ = Any`).
+            // OUTER:: is lexical, so snapshot the captured enclosing value under a
+            // reserved key the running frame never touches; `get_outer_var` reads
+            // it back regardless of any later same-name overwrite.
+            for name in &cc.outer_ref_names {
+                if let Some(val) = flat.get(name).cloned() {
+                    flat.insert(format!("__mutsu_outer::{name}"), val);
+                }
+            }
             // Drop the closure's own params/locals (e.g. a WhateverCode's `_`
             // topic param) so a stale enclosing `for`/map topic is not inherited
             // and later leaked back to the caller.

@@ -1475,6 +1475,12 @@ pub(crate) struct CompiledCode {
     /// the entire (~100-entry) captured env. Empty until `compute_free_vars`
     /// runs (during `compute_needs_env_sync`).
     pub(crate) free_var_syms: Vec<Symbol>,
+    /// Bare names this code reads through an `$OUTER::` reference (`$OUTER::x` →
+    /// `x`). Populated by `compute_free_vars` from `GetOuterVar` ops. The closure
+    /// snapshots each such name's captured enclosing value under a reserved
+    /// `__mutsu_outer::<name>` env key so `get_outer_var` can resolve it even after
+    /// the running frame overwrites the plain name (e.g. a fresh topic `$_`).
+    pub(crate) outer_ref_names: Vec<String>,
     /// Free variables (names not in this code's own locals) that this code or a
     /// nested closure *writes* (assign / inc-dec / bind). Folded up from nested
     /// closures so an enclosing scope can tell which of *its* locals are mutated
@@ -1629,6 +1635,7 @@ impl CompiledCode {
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),
             free_var_syms: Vec::new(),
+            outer_ref_names: Vec::new(),
             free_var_writes: Vec::new(),
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
@@ -1994,6 +2001,8 @@ impl CompiledCode {
         // Free `@`/`%` containers mutated in place (push/append/element-assign).
         let mut free_container_writes: std::collections::HashSet<Symbol> =
             std::collections::HashSet::new();
+        // Bare names read via `$OUTER::` (order-preserving, de-duplicated).
+        let mut outer_ref_names: Vec<String> = Vec::new();
         let mut pending_decl = false;
         for op in &self.ops {
             // Read+write free-var set (names referenced from an enclosing scope).
@@ -2038,6 +2047,26 @@ impl CompiledCode {
                     // scoping in grammar actions, t/grammar-reduce-time-dynvar.t),
                     // so they are NOT excluded here.
                     free_writes.insert(Symbol::intern(name));
+                }
+            }
+            // `$OUTER::x` reads the enclosing lexical scope's binding of `x`.
+            // OUTER:: is a *lexical* construct, so the enclosing binding must be
+            // captured into this closure's env (`get_outer_var` resolves it there
+            // once the defining block has exited). The op scan above does not treat
+            // `GetOuterVar` as a name-read, so register the bare name here. (CALLER::
+            // is dynamic-scope — resolved against the live call stack — so it is
+            // deliberately NOT captured.)
+            if let OpCode::GetOuterVar { name_idx, .. } = op
+                && let Some(name) = self
+                    .constants
+                    .get(*name_idx as usize)
+                    .and_then(|v| v.as_str())
+            {
+                if !outer_ref_names.iter().any(|n| n == name) {
+                    outer_ref_names.push(name.to_string());
+                }
+                if !own.contains(name) {
+                    free.insert(Symbol::intern(name));
                 }
             }
             match op {
@@ -2222,6 +2251,7 @@ impl CompiledCode {
         self.needs_cell_escaping_our_sub = nceos.into_iter().collect();
         self.needs_cell_escaping_our_sub_free = nceos_free.into_iter().collect();
         self.free_var_syms = free.into_iter().collect();
+        self.outer_ref_names = outer_ref_names;
         self.free_var_writes = free_writes.into_iter().collect();
         self.free_var_container_writes = free_container_writes.into_iter().collect();
         self.captured_mutated_locals = captured_mutated.into_iter().collect();
