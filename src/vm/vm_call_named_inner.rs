@@ -81,8 +81,8 @@ impl Interpreter {
             let resolved_callable_id = self
                 .env()
                 .get(&callable_key)
-                .and_then(|v| match v {
-                    Value::Int(i) => Some(*i),
+                .and_then(|v| match v.view() {
+                    ValueView::Int(i) => Some(i),
                     _ => None,
                 })
                 .unwrap_or(0);
@@ -93,7 +93,7 @@ impl Interpreter {
             if resolved_callable_id != 0 {
                 self.env_mut().insert(
                     "__mutsu_callable_id".to_string(),
-                    Value::Int(resolved_callable_id),
+                    Value::int(resolved_callable_id),
                 );
             }
         }
@@ -140,7 +140,9 @@ impl Interpreter {
         // into the current env so where-constraint expressions can access them.
         if !fn_name.is_empty() && cf.param_defs.iter().any(|pd| pd.where_constraint.is_some()) {
             let ampname = format!("&{}", fn_name);
-            if let Some(Value::Sub(ref sub_data)) = self.env().get(&ampname).cloned() {
+            if let Some(ValueView::Sub(sub_data)) =
+                self.env().get(&ampname).cloned().as_ref().map(Value::view)
+            {
                 for (k, v) in &sub_data.env {
                     // Skip internal variables, parameters, and sigiled variables
                     // that belong to the calling scope. Only merge simple lexical
@@ -190,12 +192,9 @@ impl Interpreter {
         // Only insert if $! isn't already Nil, to avoid triggering
         // Arc::make_mut deep clone on the CoW env.
         if !fn_name.is_empty() {
-            let needs_reset = self
-                .env()
-                .get("!")
-                .is_some_and(|v| !matches!(v, Value::Nil));
+            let needs_reset = self.env().get("!").is_some_and(|v| !v.is_nil());
             if needs_reset {
-                self.env_mut().insert("!".to_string(), Value::Nil);
+                self.env_mut().insert("!".to_string(), Value::NIL);
             }
         }
 
@@ -203,11 +202,11 @@ impl Interpreter {
         if cf.code.is_routine && !cf.param_defs.iter().any(|pd| pd.name == "_") {
             self.env_mut().insert(
                 "_".to_string(),
-                Value::Package(crate::symbol::Symbol::intern("Any")),
+                Value::package(crate::symbol::Symbol::intern("Any")),
             );
         }
 
-        self.locals = vec![Value::Nil; cf.code.locals.len()];
+        self.locals = vec![Value::NIL; cf.code.locals.len()];
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
@@ -243,7 +242,7 @@ impl Interpreter {
                     if matches_frame {
                         e.is_leave = false;
                         e.control = None;
-                        let ret_val = e.return_value.unwrap_or(Value::Nil);
+                        let ret_val = e.return_value.unwrap_or(Value::NIL);
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
                         self.stack.push(ret_val);
@@ -304,19 +303,19 @@ impl Interpreter {
 
         let mut ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
-                self.stack.pop().unwrap_or(Value::Nil)
+                self.stack.pop().unwrap_or(Value::NIL)
             } else {
-                Value::Nil
+                Value::NIL
             }
         } else {
-            Value::Nil
+            Value::NIL
         };
         // Raku semantics: `sub foo(...) { ... }` as the last statement
         // of a block returns the Sub. If the return value is Nil/Any and
         // the last opcode was RegisterSub, create the Sub value.
         if result.is_ok()
-            && (matches!(ret_val, Value::Nil)
-                || matches!(&ret_val, Value::Package(n) if n.resolve() == "Any"))
+            && (ret_val.is_nil()
+                || matches!(ret_val.view(), ValueView::Package(n) if n.resolve() == "Any"))
             && let Some(crate::opcode::OpCode::RegisterSub(idx)) = cf.code.ops.last()
             && let crate::ast::Stmt::SubDecl {
                 name: sub_name,

@@ -16,14 +16,10 @@ impl Interpreter {
         let invocant_type = crate::value::types::what_type_name(target);
         let arg_profile: Vec<String> = args
             .iter()
-            .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+            .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             .map(|a| {
                 let tn = crate::value::types::what_type_name(a);
-                if matches!(a, Value::Nil) {
-                    tn
-                } else {
-                    format!("{}:D", tn)
-                }
+                if a.is_nil() { tn } else { format!("{}:D", tn) }
             })
             .collect();
         let message = format!(
@@ -34,7 +30,7 @@ impl Interpreter {
         );
         let mut positional = vec![target.clone()];
         for a in args {
-            if !matches!(a, Value::Pair(..) | Value::ValuePair(..)) {
+            if !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)) {
                 positional.push(a.clone());
             }
         }
@@ -77,11 +73,11 @@ impl Interpreter {
         if !args.is_empty() || has_modifier || quoted {
             return None;
         }
-        let Value::Instance {
+        let ValueView::Instance {
             attributes,
             class_name,
             ..
-        } = target
+        } = target.view()
         else {
             return None;
         };
@@ -155,7 +151,7 @@ impl Interpreter {
                 Some(out)
             }
             // Public accessor exists but the attribute is unset.
-            None => Some(Value::Nil),
+            None => Some(Value::NIL),
         }
     }
 
@@ -177,11 +173,11 @@ impl Interpreter {
         if !matches!(method, "Str" | "gist") || !args.is_empty() {
             return Ok(None);
         }
-        let Value::Instance {
+        let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = target
+        } = target.view()
         else {
             return Ok(None);
         };
@@ -226,7 +222,7 @@ impl Interpreter {
         if !matches!(method, "fail" | "die" | "throw" | "rethrow" | "resume") || !args.is_empty() {
             return None;
         }
-        let Value::Package(type_name) = target else {
+        let ValueView::Package(type_name) = target.view() else {
             return None;
         };
         let name = type_name.resolve();
@@ -272,7 +268,10 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        let args = if raw_args.iter().any(|a| matches!(a, Value::Slip(_))) {
+        let args = if raw_args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::Slip(_)))
+        {
             let preserve_empty_slip = Self::preserve_empty_slip_arg(method);
             let mut args = Vec::new();
             for arg in raw_args {
@@ -287,7 +286,7 @@ impl Interpreter {
         })?;
         // Force LazyIoLines into an eager array when calling methods on it,
         // unless the method preserves laziness (e.g., .kv).
-        let target = if matches!(&target, Value::LazyIoLines { .. })
+        let target = if matches!(target.view(), ValueView::LazyIoLines { .. })
             && !matches!(method, "kv" | "iterator" | "lazy")
         {
             self.force_if_lazy_io_lines(target)?
@@ -299,7 +298,7 @@ impl Interpreter {
         // `.head`/`.first`) is transparent to method dispatch — decontainerize it
         // so the method runs on the inner value (Raku container semantics). `.VAR`
         // is the one introspection method that wants the container itself.
-        let target = if matches!(&target, Value::ContainerRef(_)) && method != "VAR" {
+        let target = if matches!(target.view(), ValueView::ContainerRef(_)) && method != "VAR" {
             target.deref_container()
         } else {
             target
@@ -339,19 +338,19 @@ impl Interpreter {
         let target = if matches!(method, "throw" | "rethrow")
             && args.is_empty()
             && matches!(
-                &target,
-                Value::Instance { class_name, attributes, .. }
+                target.view(),
+                ValueView::Instance { class_name, attributes, .. }
                     if {
                         let cn = class_name.resolve();
                         (cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::"))
                             && !attributes.as_map().contains_key("backtrace")
                     }
             ) {
-            if let Value::Instance {
+            if let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
             {
                 let backtrace_val = self.build_backtrace_value_with_leading(Some(method));
                 let mut new_attrs = attributes.as_map().clone();
@@ -359,14 +358,14 @@ impl Interpreter {
                 if let Some(line) = self.current_source_line() {
                     new_attrs
                         .entry("line".to_string())
-                        .or_insert_with(|| Value::Int(line as i64));
+                        .or_insert_with(|| Value::int(line as i64));
                 }
                 if let Some(file) = self.current_source_file() {
                     new_attrs
                         .entry("file".to_string())
                         .or_insert_with(|| Value::str_from(&file));
                 }
-                Value::make_instance(*class_name, new_attrs)
+                Value::make_instance(class_name, new_attrs)
             } else {
                 target
             }
@@ -384,7 +383,7 @@ impl Interpreter {
         // reads `@x[0]` as the `Array[Int]` type object — pushing builds a fresh
         // typed `Array[Int]` whose elements are type-checked (so a later
         // `@x[0].push('foo')` still dies), and the result is written back to the slot.
-        if let Value::Package(type_name) = &target
+        if let ValueView::Package(type_name) = target.view()
             && matches!(method, "push" | "append" | "unshift" | "prepend")
             && let Some(result) = self.autoviv_typed_array_push(&type_name.resolve(), &args)?
         {
@@ -397,13 +396,13 @@ impl Interpreter {
         if method == "emit"
             && args.is_empty()
             && !matches!(
-                &target,
-                Value::Instance { class_name, .. } if class_name == "Supplier"
+                target.view(),
+                ValueView::Instance { class_name, .. } if class_name == "Supplier"
             )
         {
             if let Some(buf) = self.supply_emit_buffer.last_mut() {
                 buf.push(target);
-                self.stack.push(Value::Nil);
+                self.stack.push(Value::NIL);
                 // Buffering into the supply emit buffer touches no env: no mark.
                 return Ok(());
             }
@@ -428,9 +427,9 @@ impl Interpreter {
         // .Bool) rather than the native truthiness fast path, which is unaware of
         // user-defined Bool.
         if matches!(method, "so" | "not") && args.is_empty() {
-            let user_bool_owner = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
-                Value::Package(name) => Some(name.resolve()),
+            let user_bool_owner = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) => Some(name.resolve()),
                 _ => None,
             };
             if let Some(cn) = user_bool_owner
@@ -438,7 +437,7 @@ impl Interpreter {
             {
                 let t = self.eval_truthy(&target);
                 self.stack
-                    .push(Value::Bool(if method == "not" { !t } else { t }));
+                    .push(Value::truth(if method == "not" { !t } else { t }));
                 return Ok(());
             }
         }
@@ -448,7 +447,7 @@ impl Interpreter {
         // view is seen.
         self.flatten_scoped_env();
         // Junction auto-threading: thread method calls over junction values
-        if let Value::Junction { kind, values } = &target
+        if let ValueView::Junction { kind, values } = target.view()
             && !matches!(
                 method,
                 "Bool"
@@ -489,10 +488,7 @@ impl Interpreter {
                     self.record_caller_var_writeback(&name);
                 }
             }
-            let junction_result = Value::Junction {
-                kind,
-                values: Arc::new(results),
-            };
+            let junction_result = Value::junction(kind, results);
             self.stack.push(junction_result);
             // Slice F (env<->locals coherence): see the matching CallMethodMut
             // junction path. An invocant junction threading a user method that
@@ -513,11 +509,11 @@ impl Interpreter {
 
         // Deprecation.report — return the accumulated deprecation report
         if method == "report"
-            && matches!(&target, Value::Package(name) if name.resolve() == "Deprecation")
+            && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Deprecation")
         {
             let result = match crate::runtime::deprecation::take_report() {
                 Some(report) => Value::str(report),
-                None => Value::Nil,
+                None => Value::NIL,
             };
             self.stack.push(result);
             // Reads/clears global deprecation state, not env: no mark.
@@ -527,15 +523,15 @@ impl Interpreter {
         // Fast path for Lock::Async.protect — execute block inline in current Interpreter
         if method == "protect"
             && args.len() == 1
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
             && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
         {
-            let lock_id = match attributes.as_map().get("lock-id") {
-                Some(Value::Int(id)) if *id > 0 => *id as u64,
+            let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
+                Some(ValueView::Int(id)) if id > 0 => id as u64,
                 _ => {
                     return Err(RuntimeError::new(
                         "Lock.protect called on Lock without lock-id",
@@ -550,7 +546,7 @@ impl Interpreter {
             // shared scalar a previous holder committed inside its own
             // critical section (mirrors Semaphore.acquire).
             self.enter_critical_section();
-            let code_val = args.into_iter().next().unwrap_or(Value::Nil);
+            let code_val = args.into_iter().next().unwrap_or(Value::NIL);
             let result = match self.try_exec_simple_shared_protect_block(code, &code_val)? {
                 Some(value) => Ok(value),
                 None => self.exec_protect_block_inline(code, &code_val),
@@ -569,9 +565,9 @@ impl Interpreter {
                     method,
                     "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
                 ));
-        let is_junction_target = match &target {
-            Value::Junction { .. } => true,
-            Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
+        let is_junction_target = match target.view() {
+            ValueView::Junction { .. } => true,
+            ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
             _ => false,
         };
         if matches!(method, "gist" | "raku" | "perl") && is_junction_target {
@@ -585,9 +581,9 @@ impl Interpreter {
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             )
         {
-            let class_name = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
-                Value::Package(name) => Some(name.resolve()),
+            let class_name = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) => Some(name.resolve()),
                 _ => None,
             };
             if let Some(cn) = class_name
@@ -598,12 +594,12 @@ impl Interpreter {
         }
         if !skip_native
             && matches!(method, "AT-KEY" | "keys")
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash")
         {
             skip_native = true;
         }
         if !skip_native
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Proc::Async")
             && matches!(
                 method,
                 "start"
@@ -628,7 +624,7 @@ impl Interpreter {
             skip_native = true;
         }
         if !skip_native
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IterationBuffer")
             && matches!(
                 method,
                 "elems"
@@ -657,11 +653,11 @@ impl Interpreter {
         }
         // Auto-FETCH Proxy containers for non-meta method calls
         // Skip auto-FETCH for Proxy subclass attribute access and decontainerized proxies
-        let target = if let Value::Proxy {
+        let target = if let ValueView::Proxy {
             subclass,
             decontainerized,
             ..
-        } = &target
+        } = target.view()
             && !decontainerized
             && !matches!(
                 method,
@@ -685,7 +681,7 @@ impl Interpreter {
         // reifying the (possibly infinite) sequence: `(...)` for gist/raku,
         // `...` for Str. An eager gather has neither `sequence_spec` nor
         // `lazy_pipe` and is forced & rendered normally below.
-        if let Value::LazyList(ref ll) = target
+        if let ValueView::LazyList(ll) = target.view()
             && matches!(method, "gist" | "Str" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
@@ -704,7 +700,7 @@ impl Interpreter {
         // Exception: .List and .values on coroutine-equipped gathers preserve laziness.
         // Lazy `.first` over a gather coroutine: pull incrementally instead of
         // forcing the (possibly infinite) list to completion.
-        if let Value::LazyList(ref ll) = target
+        if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && method == "first"
             && let Some(result) = self.try_lazy_gather_first(ll, &args)
@@ -715,7 +711,7 @@ impl Interpreter {
         // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
         // lazy index-pipe stage instead of forcing (mirrors the CallMethodMut
         // fast-path so a chained `.pairs` stays lazy too).
-        if let Value::LazyList(ref ll) = target
+        if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && ll.is_genuinely_lazy()
             && args.is_empty()
@@ -726,10 +722,9 @@ impl Interpreter {
                 "antipairs" => crate::value::IndexTransform::AntiPairs,
                 _ => crate::value::IndexTransform::Kv,
             };
-            let pipe = Value::LazyList(crate::gc::Gc::new(crate::value::LazyList::new_index_pipe(
-                target.clone(),
-                transform,
-            )));
+            let pipe = Value::lazy_list(crate::gc::Gc::new(
+                crate::value::LazyList::new_index_pipe(target.clone(), transform),
+            ));
             self.stack.push(pipe);
             return Ok(());
         }
@@ -738,16 +733,16 @@ impl Interpreter {
         // pulled elements internally, so return it unchanged — this keeps
         // `(my $l = $cat.lines).cache` lazy so later slice reads still reflect
         // mid-iteration changes to the cat's `.nl-in`/`.chomp`.
-        if let Value::LazyList(ref ll) = target
+        if let ValueView::LazyList(ll) = target.view()
             && method == "cache"
             && ll.is_genuinely_lazy()
         {
-            self.stack.push(Value::LazyList(crate::gc::Gc::new(
+            self.stack.push(Value::lazy_list(crate::gc::Gc::new(
                 ll.with_cached_no_sink(),
             )));
             return Ok(());
         }
-        let target = if let Value::LazyList(ref ll) = target
+        let target = if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && Self::lazy_list_needs_forcing(method)
             && !(ll.coroutine.is_some() && matches!(method, "List" | "values"))
@@ -787,7 +782,7 @@ impl Interpreter {
             if !matches!(method, "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.env_mut() = saved_env;
             }
-            Value::Seq(std::sync::Arc::new(items))
+            Value::seq(items)
         } else {
             target
         };
@@ -797,9 +792,9 @@ impl Interpreter {
             let mut batch: Option<i64> = None;
             let mut degree: Option<i64> = None;
             for arg in &args {
-                let (key, val) = match arg {
-                    Value::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
-                    Value::ValuePair(k, v) => (k.to_string_value(), crate::runtime::to_int(v)),
+                let (key, val) = match arg.view() {
+                    ValueView::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
+                    ValueView::ValuePair(k, v) => (k.to_string_value(), crate::runtime::to_int(v)),
                     _ => continue,
                 };
                 match key.as_str() {
@@ -815,7 +810,7 @@ impl Interpreter {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("batch".to_string()));
-                attrs.insert("value".to_string(), Value::Int(b));
+                attrs.insert("value".to_string(), Value::int(b));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!("Invalid value '{}' for 'batch' on '{}'", b, method)),
@@ -829,7 +824,7 @@ impl Interpreter {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("degree".to_string()));
-                attrs.insert("value".to_string(), Value::Int(d));
+                attrs.insert("value".to_string(), Value::int(d));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!(
@@ -843,42 +838,45 @@ impl Interpreter {
             let items = crate::runtime::value_to_list(&target);
             let arc = std::sync::Arc::new(items);
             let result = if method == "hyper" {
-                Value::HyperSeq(arc)
+                Value::hyper_seq_arc(arc)
             } else {
-                Value::RaceSeq(arc)
+                Value::race_seq_arc(arc)
             };
             self.stack.push(result);
             // Pure value wrap (no env write): no env_dirty mark needed.
             return Ok(());
         }
         // HyperSeq/RaceSeq delegation: unwrap, dispatch on inner list, wrap back for map/grep
-        let hyper_race_wrap = if matches!(&target, Value::HyperSeq(_) | Value::RaceSeq(_)) {
+        let hyper_race_wrap = if matches!(
+            target.view(),
+            ValueView::HyperSeq(_) | ValueView::RaceSeq(_)
+        ) {
             match method {
                 "hyper" => {
-                    let items_arc = match &target {
-                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                    let items_arc = match target.view() {
+                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
-                    self.stack.push(Value::HyperSeq(items_arc));
+                    self.stack.push(Value::hyper_seq_arc(items_arc));
                     // Pure rewrap (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "race" => {
-                    let items_arc = match &target {
-                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                    let items_arc = match target.view() {
+                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
-                    self.stack.push(Value::RaceSeq(items_arc));
+                    self.stack.push(Value::race_seq_arc(items_arc));
                     // Pure rewrap (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "is-lazy" => {
-                    self.stack.push(Value::Bool(false));
+                    self.stack.push(Value::FALSE);
                     // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "^name" => {
-                    let name = if matches!(&target, Value::HyperSeq(_)) {
+                    let name = if matches!(target.view(), ValueView::HyperSeq(_)) {
                         "HyperSeq"
                     } else {
                         "RaceSeq"
@@ -888,20 +886,20 @@ impl Interpreter {
                     return Ok(());
                 }
                 "WHAT" => {
-                    let name = if matches!(&target, Value::HyperSeq(_)) {
+                    let name = if matches!(target.view(), ValueView::HyperSeq(_)) {
                         "HyperSeq"
                     } else {
                         "RaceSeq"
                     };
-                    self.stack.push(Value::Package(Symbol::intern(name)));
+                    self.stack.push(Value::package(Symbol::intern(name)));
                     // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "isa" | "does" => {
                     let type_name = if !args.is_empty() {
-                        match &args[0] {
-                            Value::Package(name) => name.resolve(),
-                            Value::Str(s) => (**s).clone(),
+                        match args[0].view() {
+                            ValueView::Package(name) => name.resolve(),
+                            ValueView::Str(s) => (**s).clone(),
                             _ => args[0].to_string_value(),
                         }
                     } else {
@@ -909,18 +907,18 @@ impl Interpreter {
                     };
                     // Delegate to isa_check which handles the full type hierarchy
                     let result = target.isa_check(&type_name);
-                    self.stack.push(Value::Bool(result));
+                    self.stack.push(Value::truth(result));
                     // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "defined" => {
-                    self.stack.push(Value::Bool(true));
+                    self.stack.push(Value::TRUE);
                     // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "map" | "grep" => {
-                    let items_arc = match &target {
-                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                    let items_arc = match target.view() {
+                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
                     // For small lists, use parallel execution so inter-item
@@ -928,35 +926,35 @@ impl Interpreter {
                     // For large lists, fall through to the sequential array
                     // map/grep path which is more efficient.
                     if items_arc.len() < 1000 {
-                        let is_hyper = matches!(&target, Value::HyperSeq(_));
+                        let is_hyper = matches!(target.view(), ValueView::HyperSeq(_));
                         let block = if !args.is_empty() {
                             args[0].clone()
                         } else {
-                            Value::Nil
+                            Value::NIL
                         };
                         let is_map = method == "map";
                         let result =
                             self.exec_hyper_race_map_grep(&items_arc, block, is_map, is_hyper)?;
                         let wrapped = if is_hyper {
-                            Value::HyperSeq(Arc::new(result))
+                            Value::hyper_seq_arc(Arc::new(result))
                         } else {
-                            Value::RaceSeq(Arc::new(result))
+                            Value::race_seq_arc(Arc::new(result))
                         };
                         self.stack.push(wrapped);
                         return Ok(());
                     }
                     // Large list: fall through to array-based dispatch
-                    Some(matches!(&target, Value::HyperSeq(_)))
+                    Some(matches!(target.view(), ValueView::HyperSeq(_)))
                 }
                 "iterator" if args.is_empty() => {
                     // A HyperSeq/RaceSeq allows only a single iterator (rakudo #4413):
                     // a second `.iterator` throws X::Seq::Consumed. The consumed-state
                     // is tracked on the inner Arc via the shared Seq registry.
-                    let items_arc = match &target {
-                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                    let items_arc = match target.view() {
+                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
-                    let type_name = if matches!(&target, Value::HyperSeq(_)) {
+                    let type_name = if matches!(target.view(), ValueView::HyperSeq(_)) {
                         "HyperSeq"
                     } else {
                         "RaceSeq"
@@ -967,7 +965,7 @@ impl Interpreter {
                     if crate::value::seq_consume(&items_arc).is_err() {
                         return Err(crate::value::seq_consumed_error_for(type_name));
                     }
-                    let list = Value::Array(
+                    let list = Value::array_with_kind(
                         crate::value::Value::array_arc(items_arc.to_vec()),
                         crate::value::ArrayKind::List,
                     );
@@ -981,35 +979,35 @@ impl Interpreter {
             None
         };
         // Convert HyperSeq/RaceSeq to List for method dispatch
-        let target = match target {
-            Value::HyperSeq(items) | Value::RaceSeq(items) => Value::Array(
+        let target = match target.view() {
+            ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
             ),
-            other => other,
+            _ => target,
         };
         // Regex.Bool / Regex.so: smartmatch against $_ (needs runtime context)
         if matches!(method, "Bool" | "so")
             && args.is_empty()
             && matches!(
-                &target,
-                Value::Regex(_)
-                    | Value::RegexWithAdverbs { .. }
-                    | Value::Routine { is_regex: true, .. }
+                target.view(),
+                ValueView::Regex(_)
+                    | ValueView::RegexWithAdverbs { .. }
+                    | ValueView::Routine { is_regex: true, .. }
             )
         {
-            let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
+            let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
             let matched = self.vm_smart_match(&topic, &target);
-            self.stack.push(Value::Bool(matched));
+            self.stack.push(Value::truth(matched));
             return Ok(());
         }
         // .WHO on pseudo-package Package values: build the stash in the Interpreter
         // where we have access to locals (which the interpreter doesn't have).
         if method == "WHO"
             && args.is_empty()
-            && matches!(&target, Value::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
+            && matches!(target.view(), ValueView::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
         {
-            if let Value::Package(pkg_name) = &target {
+            if let ValueView::Package(pkg_name) = target.view() {
                 let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
                 self.stack.push(stash);
             }
@@ -1024,8 +1022,8 @@ impl Interpreter {
         if matches!(method, "print" | "say" | "put" | "note")
             && args
                 .iter()
-                .any(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
-            && let Value::Instance { class_name, .. } = &target
+                .any(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            && let ValueView::Instance { class_name, .. } = target.view()
             && class_name.resolve() == "Failure"
             && !target.is_failure_handled()
         {
@@ -1033,7 +1031,7 @@ impl Interpreter {
         }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name.resolve() == "Failure"
             && !target.is_failure_handled()
             && !matches!(
@@ -1097,11 +1095,11 @@ impl Interpreter {
                 // Array-subclass instance delegation: when the Instance's class
                 // inherits from Array, delegate non-mutating Array methods to the
                 // backing __mutsu_array_storage attribute.
-                if let Value::Instance {
+                if let ValueView::Instance {
                     class_name,
                     attributes,
                     ..
-                } = &target
+                } = target.view()
                 {
                     let cn = class_name.resolve();
                     if !self.has_user_method(&cn, method)
@@ -1137,7 +1135,7 @@ impl Interpreter {
                 // Certain mutating methods throw exceptions.
                 // This must be in the Interpreter path (not the interpreter's call_method_with_values)
                 // to avoid affecting internal dispatch (e.g. max :by comparators).
-                if matches!(&target, Value::Nil) {
+                if target.is_nil() {
                     match method {
                         "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE" => {
                             return Err(RuntimeError::new(format!(
@@ -1160,14 +1158,14 @@ impl Interpreter {
                                     // Flatten list arguments for append/prepend
                                     let mut flat = Vec::new();
                                     for arg in &args {
-                                        match arg {
-                                            Value::Array(items, _) => {
+                                        match arg.view() {
+                                            ValueView::Array(items, _) => {
                                                 flat.extend(items.iter().cloned());
                                             }
-                                            Value::Seq(items) | Value::Slip(items) => {
+                                            ValueView::Seq(items) | ValueView::Slip(items) => {
                                                 flat.extend(items.iter().cloned());
                                             }
-                                            other => flat.push(other.clone()),
+                                            _ => flat.push(arg.clone()),
                                         }
                                     }
                                     flat
@@ -1203,7 +1201,7 @@ impl Interpreter {
                             let msg = "Use of Nil in numeric context".to_string();
                             return Err(RuntimeError::warn_signal_with_resume(
                                 msg,
-                                Value::Package(Symbol::intern(method)),
+                                Value::package(Symbol::intern(method)),
                             ));
                         }
                         // `Nil.ords` warns ("Use of Nil in string context") and
@@ -1212,7 +1210,7 @@ impl Interpreter {
                         "ords" if args.is_empty() => {
                             return Err(RuntimeError::warn_signal_with_resume(
                                 "Use of Nil in string context".to_string(),
-                                Value::Seq(Arc::new(vec![])),
+                                Value::seq(vec![]),
                             ));
                         }
                         "chrs" if args.is_empty() => {
@@ -1223,7 +1221,7 @@ impl Interpreter {
                         }
                         _ => {
                             // Nil-absorbing method returns Nil and touches no env.
-                            self.stack.push(Value::Nil);
+                            self.stack.push(Value::NIL);
                             return Ok(());
                         }
                     }
@@ -1231,20 +1229,20 @@ impl Interpreter {
                 // Any:U autovivification: push/append/unshift/prepend on a type
                 // object (e.g. Any from hash miss) creates a new Array.
                 if matches!(method, "push" | "append" | "unshift" | "prepend")
-                    && matches!(&target, Value::Package(name) if name.resolve() == "Any" || name.resolve() == "Mu")
+                    && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Any" || name.resolve() == "Mu")
                 {
                     let arr: Vec<Value> = match method {
                         "append" | "prepend" => {
                             let mut flat = Vec::new();
                             for arg in &args {
-                                match arg {
-                                    Value::Array(items, _) => {
+                                match arg.view() {
+                                    ValueView::Array(items, _) => {
                                         flat.extend(items.iter().cloned());
                                     }
-                                    Value::Seq(items) | Value::Slip(items) => {
+                                    ValueView::Seq(items) | ValueView::Slip(items) => {
                                         flat.extend(items.iter().cloned());
                                     }
-                                    other => flat.push(other.clone()),
+                                    _ => flat.push(arg.clone()),
                                 }
                             }
                             flat
@@ -1261,7 +1259,7 @@ impl Interpreter {
                 if matches!(
                     method,
                     "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
-                ) && matches!(&target, Value::Array(..))
+                ) && matches!(target.view(), ValueView::Array(..))
                     && let Some((attrs_ref, attr_name)) = self.pending_proxy_subclass_attr.take()
                 {
                     let result =
@@ -1280,16 +1278,16 @@ impl Interpreter {
                 self.method_dispatch_pure = false;
                 let call_result = if matches!(method, "shift" | "pop")
                     && args.is_empty()
-                    && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
+                    && matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())
                 {
                     // Native array read on a by-value target: env-pure.
                     self.method_dispatch_pure = true;
-                    if let Value::Array(_, kind) = &target
+                    if let ValueView::Array(_, kind) = target.view()
                         && kind.is_lazy()
                     {
                         return Err(RuntimeError::cannot_lazy(method));
                     }
-                    if let Value::Array(items, _) = &target {
+                    if let ValueView::Array(items, _) = target.view() {
                         Ok(if items.is_empty() {
                             crate::runtime::make_empty_array_failure(method)
                         } else if method == "shift" {
@@ -1303,7 +1301,7 @@ impl Interpreter {
                 } else if !skip_native {
                     // Resolve hash sentinel entries (bound variable refs, self-refs)
                     // before passing to native methods that iterate hash values.
-                    if let Value::Hash(ref items) = target
+                    if let ValueView::Hash(items) = target.view()
                         && Self::hash_has_sentinels(items)
                     {
                         let resolved = self.resolve_hash_for_iteration(items);
@@ -1316,7 +1314,7 @@ impl Interpreter {
                             // method_dispatch_pure): no env_dirty mark needed.
                             match modifier {
                                 Some("?") => {
-                                    self.stack.push(result.unwrap_or(Value::Nil));
+                                    self.stack.push(result.unwrap_or(Value::NIL));
                                 }
                                 _ => {
                                     self.stack.push(result?);
@@ -1327,15 +1325,19 @@ impl Interpreter {
                     }
                     // .Slip on arrays with `is default(X)`: fill holes with
                     // the default value instead of leaving Package("Any").
-                    if method == "Slip" && args.is_empty() && matches!(&target, Value::Array(..)) {
+                    if method == "Slip"
+                        && args.is_empty()
+                        && matches!(target.view(), ValueView::Array(..))
+                    {
                         if let Some(def) = self.container_default(&target).cloned() {
-                            let Value::Array(items, ..) = &target else {
+                            let ValueView::Array(items, ..) = target.view() else {
                                 unreachable!()
                             };
                             let converted: Vec<Value> = items
                                 .iter()
                                 .map(|v| {
-                                    if matches!(v, Value::Package(name) if name == "Any") {
+                                    if matches!(v.view(), ValueView::Package(name) if name == "Any")
+                                    {
                                         def.clone()
                                     } else {
                                         v.clone()
@@ -1344,7 +1346,7 @@ impl Interpreter {
                                 .collect();
                             // Pure array transform: env-pure.
                             self.method_dispatch_pure = true;
-                            Ok(Value::Slip(std::sync::Arc::new(converted)))
+                            Ok(Value::slip(converted))
                         } else if let Some(native_result) =
                             self.try_native_method(&target, Symbol::intern(method), &args)
                         {
@@ -1376,7 +1378,7 @@ impl Interpreter {
                             if mark_dirty {}
                         }
                         Err(e) if Self::is_method_not_found_error(&e) => {
-                            self.stack.push(Value::Nil);
+                            self.stack.push(Value::NIL);
                             if mark_dirty {}
                         }
                         Err(e) => return Err(e),
@@ -1408,9 +1410,9 @@ impl Interpreter {
                 {
                     let result_items = crate::runtime::value_to_list(&result);
                     let wrapped = if is_hyper {
-                        Value::HyperSeq(std::sync::Arc::new(result_items))
+                        Value::hyper_seq_arc(std::sync::Arc::new(result_items))
                     } else {
-                        Value::RaceSeq(std::sync::Arc::new(result_items))
+                        Value::race_seq_arc(std::sync::Arc::new(result_items))
                     };
                     self.stack.push(wrapped);
                 }

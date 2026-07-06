@@ -5,13 +5,13 @@ use std::sync::Arc;
 impl Interpreter {
     /// The invocant of a `.&sub(...)` call is always bound positionally to the
     /// sub's first parameter, even when it is a literal colonpair (`:42foo.&f`).
-    /// A bare `Value::Pair` in an argument list is otherwise splatted into a
+    /// A bare `Pair` in an argument list is otherwise splatted into a
     /// named argument, so containerize a Pair invocant into a positional
     /// `ValuePair` (the same conversion `OpCode::ContainerizePair` performs).
     fn invocant_as_positional(target: Value) -> Value {
-        match target {
-            Value::Pair(k, v) => Value::ValuePair(Box::new(Value::str(k)), v),
-            other => other,
+        match target.view() {
+            ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
+            _ => target,
         }
     }
 
@@ -45,7 +45,7 @@ impl Interpreter {
         // Force lazy IO lines for non-lazy-preserving methods
         let method_name_str = name_val.to_string_value();
         let method = Self::rewrite_method_name(&method_name_str, modifier);
-        let target = if matches!(&target, Value::LazyIoLines { .. })
+        let target = if matches!(target.view(), ValueView::LazyIoLines { .. })
             && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
         {
             self.force_if_lazy_io_lines(target)?
@@ -72,8 +72,8 @@ impl Interpreter {
             _ => {}
         }
         let call_result = if matches!(
-            &name_val,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            name_val.view(),
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
         ) {
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(Self::invocant_as_positional(target));
@@ -93,9 +93,11 @@ impl Interpreter {
                 let mut batch: Option<i64> = None;
                 let mut degree: Option<i64> = None;
                 for arg in &args {
-                    let (key, val) = match arg {
-                        Value::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
-                        Value::ValuePair(k, v) => (k.to_string_value(), crate::runtime::to_int(v)),
+                    let (key, val) = match arg.view() {
+                        ValueView::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
+                        ValueView::ValuePair(k, v) => {
+                            (k.to_string_value(), crate::runtime::to_int(v))
+                        }
                         _ => continue,
                     };
                     match key.as_str() {
@@ -110,7 +112,7 @@ impl Interpreter {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("method".to_string(), Value::str(method.clone()));
                     attrs.insert("name".to_string(), Value::str("batch".to_string()));
-                    attrs.insert("value".to_string(), Value::Int(b));
+                    attrs.insert("value".to_string(), Value::int(b));
                     attrs.insert(
                         "message".to_string(),
                         Value::str(format!("Invalid value '{}' for 'batch' on '{}'", b, method)),
@@ -123,7 +125,7 @@ impl Interpreter {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("method".to_string(), Value::str(method.clone()));
                     attrs.insert("name".to_string(), Value::str("degree".to_string()));
-                    attrs.insert("value".to_string(), Value::Int(d));
+                    attrs.insert("value".to_string(), Value::int(d));
                     attrs.insert(
                         "message".to_string(),
                         Value::str(format!(
@@ -137,31 +139,34 @@ impl Interpreter {
                 let items = crate::runtime::value_to_list(&target);
                 let arc = std::sync::Arc::new(items);
                 let result = if method == "hyper" {
-                    Value::HyperSeq(arc)
+                    Value::hyper_seq_arc(arc)
                 } else {
-                    Value::RaceSeq(arc)
+                    Value::race_seq_arc(arc)
                 };
                 self.stack.push(result);
                 return Ok(());
             }
             // HyperSeq/RaceSeq: delegate methods
-            if matches!(&target, Value::HyperSeq(_) | Value::RaceSeq(_)) {
-                let is_hyper = matches!(&target, Value::HyperSeq(_));
-                let items_arc = match &target {
-                    Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+            if matches!(
+                target.view(),
+                ValueView::HyperSeq(_) | ValueView::RaceSeq(_)
+            ) {
+                let is_hyper = matches!(target.view(), ValueView::HyperSeq(_));
+                let items_arc = match target.view() {
+                    ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                     _ => unreachable!(),
                 };
                 match method.as_str() {
                     "hyper" => {
-                        self.stack.push(Value::HyperSeq(items_arc));
+                        self.stack.push(Value::hyper_seq_arc(items_arc));
                         return Ok(());
                     }
                     "race" => {
-                        self.stack.push(Value::RaceSeq(items_arc));
+                        self.stack.push(Value::race_seq_arc(items_arc));
                         return Ok(());
                     }
                     "is-lazy" => {
-                        self.stack.push(Value::Bool(false));
+                        self.stack.push(Value::FALSE);
                         return Ok(());
                     }
                     "^name" => {
@@ -171,7 +176,7 @@ impl Interpreter {
                         return Ok(());
                     }
                     "WHAT" => {
-                        self.stack.push(Value::Package(Symbol::intern(if is_hyper {
+                        self.stack.push(Value::package(Symbol::intern(if is_hyper {
                             "HyperSeq"
                         } else {
                             "RaceSeq"
@@ -179,11 +184,11 @@ impl Interpreter {
                         return Ok(());
                     }
                     "defined" => {
-                        self.stack.push(Value::Bool(true));
+                        self.stack.push(Value::TRUE);
                         return Ok(());
                     }
                     "map" | "grep" => {
-                        let array_target = Value::Array(
+                        let array_target = Value::array_with_kind(
                             crate::value::Value::array_arc(items_arc.to_vec()),
                             crate::value::ArrayKind::List,
                         );
@@ -197,16 +202,16 @@ impl Interpreter {
                         let result_val = call_result?;
                         let result_items = crate::runtime::value_to_list(&result_val);
                         let wrapped = if is_hyper {
-                            Value::HyperSeq(Arc::new(result_items))
+                            Value::hyper_seq_arc(Arc::new(result_items))
                         } else {
-                            Value::RaceSeq(Arc::new(result_items))
+                            Value::race_seq_arc(Arc::new(result_items))
                         };
                         self.stack.push(wrapped);
                         return Ok(());
                     }
                     _ => {
                         // Convert to array and delegate
-                        let array_target = Value::Array(
+                        let array_target = Value::array_with_kind(
                             crate::value::Value::array_arc(items_arc.to_vec()),
                             crate::value::ArrayKind::List,
                         );
@@ -233,7 +238,7 @@ impl Interpreter {
         match modifier {
             Some("?") => match call_result {
                 Ok(val) => self.stack.push(val),
-                Err(e) if Self::is_method_not_found_error(&e) => self.stack.push(Value::Nil),
+                Err(e) if Self::is_method_not_found_error(&e) => self.stack.push(Value::NIL),
                 Err(e) => return Err(e),
             },
             _ => {
@@ -300,8 +305,8 @@ impl Interpreter {
         // would see `$obj` leaked in. See try_compiled_method_or_interpret.
         let saved_self = self.get_env_with_main_alias("self");
         let call_result = if matches!(
-            &name_val,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            name_val.view(),
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
         ) {
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(Self::invocant_as_positional(target));
@@ -358,7 +363,10 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        let args = if raw_args.iter().any(|a| matches!(a, Value::Slip(_))) {
+        let args = if raw_args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::Slip(_)))
+        {
             let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
             let mut args = Vec::new();
             for arg in raw_args {
@@ -378,7 +386,7 @@ impl Interpreter {
             return Err(err);
         }
         // Force lazy IO lines for non-lazy-preserving methods
-        let target = if matches!(&target, Value::LazyIoLines { .. })
+        let target = if matches!(target.view(), ValueView::LazyIoLines { .. })
             && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
         {
             self.force_if_lazy_io_lines(target)?
@@ -391,7 +399,7 @@ impl Interpreter {
         // splice), which reify the cached prefix to a real Array first
         // (no worse than the pre-L2 capped Array). Restricted to cache-backed
         // specs so the reify never runs user code or hangs. (L2)
-        if let Value::LazyList(ref ll) = target
+        if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
             && ll.is_genuinely_lazy()
             && let Some(action) = match method.as_str() {
@@ -403,7 +411,7 @@ impl Interpreter {
         {
             return Err(RuntimeError::cannot_lazy_with_action(action, "Array"));
         }
-        let target = if let Value::LazyList(ref ll) = target
+        let target = if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
             && (ll.sequence_spec.is_some() || ll.closure_seq.is_some() || ll.scan_spec.is_some())
             && matches!(method.as_str(), "shift" | "unshift" | "prepend" | "splice")
@@ -435,7 +443,7 @@ impl Interpreter {
         // (`[...]` in `@` array context, `(...)` for a bare Seq, `...` for Str)
         // rather than forcing the (possibly infinite) sequence. Must run before
         // the gather-coroutine force below, which would hang on an infinite list.
-        if let Value::LazyList(ref ll) = target
+        if let ValueView::LazyList(ll) = target.view()
             && matches!(method.as_str(), "gist" | "Str" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
@@ -448,7 +456,7 @@ impl Interpreter {
         }
         // Lazy `.first` over a gather coroutine: pull incrementally instead of
         // forcing the (possibly infinite) list to completion.
-        if let Value::LazyList(ref ll) = target
+        if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && method == "first"
             && let Some(result) = self.try_lazy_gather_first(ll, &args)
@@ -459,7 +467,7 @@ impl Interpreter {
         // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
         // lazy index-pipe stage instead of forcing the (possibly infinite)
         // source. Matches Rakudo where these are `.is-lazy` over a lazy list.
-        if let Value::LazyList(ref ll) = target
+        if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && ll.is_genuinely_lazy()
             && args.is_empty()
@@ -470,25 +478,24 @@ impl Interpreter {
                 "antipairs" => crate::value::IndexTransform::AntiPairs,
                 _ => crate::value::IndexTransform::Kv,
             };
-            let pipe = Value::LazyList(crate::gc::Gc::new(crate::value::LazyList::new_index_pipe(
-                target.clone(),
-                transform,
-            )));
+            let pipe = Value::lazy_list(crate::gc::Gc::new(
+                crate::value::LazyList::new_index_pipe(target.clone(), transform),
+            ));
             self.stack.push(pipe);
             return Ok(());
         }
         // `.cache` on a genuinely-lazy list stays lazy (caches on demand); see
         // the matching note in the non-mut dispatch path.
-        if let Value::LazyList(ref ll) = target
+        if let ValueView::LazyList(ll) = target.view()
             && method == "cache"
             && ll.is_genuinely_lazy()
         {
-            self.stack.push(Value::LazyList(crate::gc::Gc::new(
+            self.stack.push(Value::lazy_list(crate::gc::Gc::new(
                 ll.with_cached_no_sink(),
             )));
             return Ok(());
         }
-        let target = if let Value::LazyList(ref ll) = target
+        let target = if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && Self::lazy_list_needs_forcing(&method)
             // A `.map`/`.grep` on a lazy pipeline, an infinite sequence/closure
@@ -527,7 +534,7 @@ impl Interpreter {
             if !matches!(method.as_str(), "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.env_mut() = saved_env;
             }
-            Value::Seq(std::sync::Arc::new(items))
+            Value::seq(items)
         } else {
             target
         };
@@ -548,9 +555,9 @@ impl Interpreter {
         // dispatch through that method (Mu.so / Mu.not are defined in terms of
         // .Bool) rather than the native truthiness fast path.
         if matches!(method.as_str(), "so" | "not") && args.is_empty() {
-            let user_bool_owner = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
-                Value::Package(name) => Some(name.resolve()),
+            let user_bool_owner = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) => Some(name.resolve()),
                 _ => None,
             };
             if let Some(cn) = user_bool_owner
@@ -558,7 +565,7 @@ impl Interpreter {
             {
                 let t = self.eval_truthy(&target);
                 self.stack
-                    .push(Value::Bool(if method == "not" { !t } else { t }));
+                    .push(Value::truth(if method == "not" { !t } else { t }));
                 return Ok(());
             }
         }
@@ -572,7 +579,7 @@ impl Interpreter {
         // (because the name wasn't a known type/class), and .new() is called on it,
         // this means the user tried to instantiate a nonexistent class.
         if method == "new"
-            && let Value::Str(s) = &target
+            && let ValueView::Str(s) = target.view()
             && **s == target_name
             && target_name
                 .chars()
@@ -590,7 +597,7 @@ impl Interpreter {
             ));
         }
         // Junction auto-threading: thread method calls over junction values
-        if let Value::Junction { kind, values } = &target
+        if let ValueView::Junction { kind, values } = target.view()
             && !matches!(
                 method.as_str(),
                 "Bool"
@@ -641,10 +648,7 @@ impl Interpreter {
                     self.record_caller_var_writeback(&name);
                 }
             }
-            let junction_result = Value::Junction {
-                kind,
-                values: Arc::new(results),
-            };
+            let junction_result = Value::junction(kind, results);
             self.stack.push(junction_result);
             // Slice F (env<->locals coherence): an invocant junction that threads
             // a *user* method mutating a captured outer / `our` variable (e.g.
@@ -670,9 +674,9 @@ impl Interpreter {
         // where we have access to locals (which the interpreter doesn't have).
         if method == "WHO"
             && args.is_empty()
-            && matches!(&target, Value::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
+            && matches!(target.view(), ValueView::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
         {
-            if let Value::Package(pkg_name) = &target {
+            if let ValueView::Package(pkg_name) = target.view() {
                 let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
                 self.stack.push(stash);
             }
@@ -682,15 +686,15 @@ impl Interpreter {
         // Fast path for Lock::Async.protect — execute block inline in current Interpreter
         if method == "protect"
             && args.len() == 1
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
             && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
         {
-            let lock_id = match attributes.as_map().get("lock-id") {
-                Some(Value::Int(id)) if *id > 0 => *id as u64,
+            let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
+                Some(ValueView::Int(id)) if id > 0 => id as u64,
                 _ => {
                     return Err(RuntimeError::new(
                         "Lock.protect called on Lock without lock-id",
@@ -705,7 +709,7 @@ impl Interpreter {
             // shared scalar a previous holder committed inside its own
             // critical section (mirrors Semaphore.acquire).
             self.enter_critical_section();
-            let code_val = args.into_iter().next().unwrap_or(Value::Nil);
+            let code_val = args.into_iter().next().unwrap_or(Value::NIL);
             let result = match self.try_exec_simple_shared_protect_block(code, &code_val)? {
                 Some(value) => Ok(value),
                 None => self.exec_protect_block_inline(code, &code_val),
@@ -724,7 +728,7 @@ impl Interpreter {
         if matches!(method.as_str(), "push" | "unshift")
             && !args.is_empty()
             && target_name.starts_with('@')
-            && matches!(&target, Value::Array(..))
+            && matches!(target.view(), ValueView::Array(..))
             && self.shared_vars_active
         {
             // Only a plain *lexical* `@name` is a single variable shared across
@@ -762,9 +766,9 @@ impl Interpreter {
                 method.as_str(),
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
-        let is_junction_target = match &target {
-            Value::Junction { .. } => true,
-            Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
+        let is_junction_target = match target.view() {
+            ValueView::Junction { .. } => true,
+            ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
             _ => false,
         };
         if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
@@ -778,9 +782,9 @@ impl Interpreter {
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             )
         {
-            let class_name = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
-                Value::Package(name) => Some(name.resolve()),
+            let class_name = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) => Some(name.resolve()),
                 _ => None,
             };
             if let Some(cn) = class_name
@@ -791,7 +795,7 @@ impl Interpreter {
         }
         if !skip_native
             && matches!(method.as_str(), "AT-KEY" | "keys")
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash")
         {
             skip_native = true;
         }
@@ -803,7 +807,7 @@ impl Interpreter {
             skip_native = true;
         }
         if !skip_native
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Proc::Async")
             && matches!(
                 method.as_str(),
                 "start"
@@ -828,7 +832,7 @@ impl Interpreter {
             skip_native = true;
         }
         if !skip_native
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IterationBuffer")
             && matches!(
                 method.as_str(),
                 "elems"
@@ -852,27 +856,27 @@ impl Interpreter {
         // Handle Match.make — must mutate the Match instance's `ast` attribute
         // and write the modified Match back to the variable.
         if method == "make"
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Match")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Match")
         {
-            let value = args.into_iter().next().unwrap_or(Value::Nil);
-            if let Value::Instance {
+            let value = args.into_iter().next().unwrap_or(Value::NIL);
+            if let ValueView::Instance {
                 class_name,
                 attributes,
                 id,
-            } = target
+            } = target.view()
             {
-                let attrs = crate::value::InstanceAttrs::clone(&attributes);
+                let attrs = crate::value::InstanceAttrs::clone(attributes);
                 attrs.insert("ast".to_string(), value.clone());
-                let updated = Value::Instance {
+                let updated = Value::instance_parts(
                     class_name,
-                    attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+                    crate::gc::Gc::new(crate::value::InstanceAttrs::new(
                         class_name,
                         (attrs).to_map(),
                         id,
                         false,
                     )),
                     id,
-                };
+                );
                 self.env_mut().insert(target_name.to_string(), updated);
                 self.env_mut().insert("made".to_string(), value.clone());
                 self.action_made = Some(value.clone());
@@ -886,14 +890,14 @@ impl Interpreter {
         // Matches under `:g`. Reuses the `.subst` machinery for the new string
         // and the `.match` machinery for the return, then writes the new string
         // back to the variable -- mirroring the `Match.make` pattern above.
-        if method == "subst-mutate" && matches!(&target, Value::Str(_)) {
+        if method == "subst-mutate" && matches!(target.view(), ValueView::Str(_)) {
             let new_str = self.dispatch_subst(target.clone(), &args)?;
             // `.match` takes the pattern + adverbs but not the replacement (the
             // 2nd positional), so drop the replacement when building its args.
             let mut match_args: Vec<Value> = Vec::new();
             let mut positional_seen = 0;
             for arg in &args {
-                if matches!(arg, Value::Pair(..)) {
+                if matches!(arg.view(), ValueView::Pair(..)) {
                     match_args.push(arg.clone());
                 } else {
                     positional_seen += 1;
@@ -903,13 +907,13 @@ impl Interpreter {
                 }
             }
             let global = args.iter().any(
-                |a| matches!(a, Value::Pair(k, v) if (k == "g" || k == "global") && v.truthy()),
+                |a| matches!(a.view(), ValueView::Pair(k, v) if (k == "g" || k == "global") && v.truthy()),
             );
             let match_result = self.dispatch_match_method(target.clone(), &match_args)?;
             // A single failed match yields the `Any` type object (matching `$/`
             // after a failed `s///`), where `.match` alone would yield `Nil`.
-            let ret = if !global && matches!(match_result, Value::Nil) {
-                Value::Package(crate::symbol::Symbol::intern("Any"))
+            let ret = if !global && match_result.is_nil() {
+                Value::package(crate::symbol::Symbol::intern("Any"))
             } else {
                 match_result
             };
@@ -924,9 +928,9 @@ impl Interpreter {
             let mut batch: Option<i64> = None;
             let mut degree: Option<i64> = None;
             for arg in &args {
-                let (key, val) = match arg {
-                    Value::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
-                    Value::ValuePair(k, v) => (k.to_string_value(), crate::runtime::to_int(v)),
+                let (key, val) = match arg.view() {
+                    ValueView::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
+                    ValueView::ValuePair(k, v) => (k.to_string_value(), crate::runtime::to_int(v)),
                     _ => continue,
                 };
                 match key.as_str() {
@@ -944,7 +948,7 @@ impl Interpreter {
                     Value::str(method.as_str().to_string()),
                 );
                 attrs.insert("name".to_string(), Value::str("batch".to_string()));
-                attrs.insert("value".to_string(), Value::Int(b));
+                attrs.insert("value".to_string(), Value::int(b));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!(
@@ -964,7 +968,7 @@ impl Interpreter {
                     Value::str(method.as_str().to_string()),
                 );
                 attrs.insert("name".to_string(), Value::str("degree".to_string()));
-                attrs.insert("value".to_string(), Value::Int(d));
+                attrs.insert("value".to_string(), Value::int(d));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!(
@@ -978,34 +982,37 @@ impl Interpreter {
             let items = crate::runtime::value_to_list(&target);
             let arc = std::sync::Arc::new(items);
             let result = if method == "hyper" {
-                Value::HyperSeq(arc)
+                Value::hyper_seq_arc(arc)
             } else {
-                Value::RaceSeq(arc)
+                Value::race_seq_arc(arc)
             };
             self.stack.push(result);
             return Ok(());
         }
         // HyperSeq/RaceSeq delegation in mut path
-        if matches!(&target, Value::HyperSeq(_) | Value::RaceSeq(_)) {
-            let is_hyper = matches!(&target, Value::HyperSeq(_));
+        if matches!(
+            target.view(),
+            ValueView::HyperSeq(_) | ValueView::RaceSeq(_)
+        ) {
+            let is_hyper = matches!(target.view(), ValueView::HyperSeq(_));
             match method.as_str() {
                 "hyper" | "race" | "is-lazy" | "^name" | "WHAT" | "defined" => {
-                    let items_arc = match &target {
-                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                    let items_arc = match target.view() {
+                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
                     let result = match method.as_str() {
-                        "hyper" => Value::HyperSeq(items_arc),
-                        "race" => Value::RaceSeq(items_arc),
-                        "is-lazy" => Value::Bool(false),
-                        "defined" => Value::Bool(true),
+                        "hyper" => Value::hyper_seq_arc(items_arc),
+                        "race" => Value::race_seq_arc(items_arc),
+                        "is-lazy" => Value::FALSE,
+                        "defined" => Value::TRUE,
                         "^name" => {
                             let name = if is_hyper { "HyperSeq" } else { "RaceSeq" };
                             Value::str(name.to_string())
                         }
                         "WHAT" => {
                             let name = if is_hyper { "HyperSeq" } else { "RaceSeq" };
-                            Value::Package(Symbol::intern(name))
+                            Value::package(Symbol::intern(name))
                         }
                         _ => unreachable!(),
                     };
@@ -1014,11 +1021,11 @@ impl Interpreter {
                 }
                 "map" | "grep" => {
                     // Delegate to array, then wrap result
-                    let items_arc = match &target {
-                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                    let items_arc = match target.view() {
+                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
-                    let array_target = Value::Array(
+                    let array_target = Value::array_with_kind(
                         crate::value::Value::array_arc(items_arc.to_vec()),
                         crate::value::ArrayKind::List,
                     );
@@ -1037,9 +1044,9 @@ impl Interpreter {
                     let result_val = call_result?;
                     let result_items = crate::runtime::value_to_list(&result_val);
                     let wrapped = if is_hyper {
-                        Value::HyperSeq(std::sync::Arc::new(result_items))
+                        Value::hyper_seq_arc(std::sync::Arc::new(result_items))
                     } else {
-                        Value::RaceSeq(std::sync::Arc::new(result_items))
+                        Value::race_seq_arc(std::sync::Arc::new(result_items))
                     };
                     self.stack.push(wrapped);
                     return Ok(());
@@ -1048,8 +1055,8 @@ impl Interpreter {
                     // A HyperSeq/RaceSeq allows only a single iterator (rakudo #4413):
                     // a second `.iterator` throws X::Seq::Consumed. The consumed-state
                     // is tracked on the inner Arc via the shared Seq registry.
-                    let items_arc = match &target {
-                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                    let items_arc = match target.view() {
+                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
                     let type_name = if is_hyper { "HyperSeq" } else { "RaceSeq" };
@@ -1059,7 +1066,7 @@ impl Interpreter {
                     if crate::value::seq_consume(&items_arc).is_err() {
                         return Err(crate::value::seq_consumed_error_for(type_name));
                     }
-                    let array_target = Value::Array(
+                    let array_target = Value::array_with_kind(
                         crate::value::Value::array_arc(items_arc.to_vec()),
                         crate::value::ArrayKind::List,
                     );
@@ -1074,22 +1081,22 @@ impl Interpreter {
             }
         }
         // Convert HyperSeq/RaceSeq to List for remaining method dispatch
-        let target = match target {
-            Value::HyperSeq(items) | Value::RaceSeq(items) => Value::Array(
+        let target = match target.view() {
+            ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
             ),
-            other => other,
+            _ => target,
         };
 
         // Fast paths for xxKEY methods on Hash/Set/Bag/Mix types
         match method.as_str() {
             "AT-KEY" if args.len() == 1 => {
-                let inner_target = match &target {
-                    Value::Scalar(inner) => inner.as_ref(),
-                    other => other,
+                let inner_target = match target.view() {
+                    ValueView::Scalar(inner) => inner,
+                    _ => &target,
                 };
-                if let Value::Hash(map) = inner_target {
+                if let ValueView::Hash(map) = inner_target.view() {
                     let key = args[0].to_string_value();
                     let result = self.resolve_hash_entry(map, &key);
                     self.stack.push(result);
@@ -1099,19 +1106,19 @@ impl Interpreter {
             "ASSIGN-KEY" if args.len() == 2 => {
                 let key = args[0].to_string_value();
                 let value = args[1].clone();
-                let inner_target = match &target {
-                    Value::Scalar(inner) => inner.as_ref(),
-                    other => other,
+                let inner_target = match target.view() {
+                    ValueView::Scalar(inner) => inner,
+                    _ => &target,
                 };
-                match inner_target {
-                    Value::Hash(_) => {
+                match inner_target.view() {
+                    ValueView::Hash(_) => {
                         let old_meta = self.container_type_metadata(inner_target).clone();
-                        let mut hash = match inner_target {
-                            Value::Hash(map) => map.map.clone(),
+                        let mut hash = match inner_target.view() {
+                            ValueView::Hash(map) => map.map.clone(),
                             _ => std::collections::HashMap::new(),
                         };
                         hash.insert(key, value.clone());
-                        let new_hash = Value::Hash(Value::hash_arc(hash));
+                        let new_hash = Value::hash_with_data(Value::hash_arc(hash));
                         let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
                             value_type: "Any".to_string(),
                             key_type: None,
@@ -1122,11 +1129,11 @@ impl Interpreter {
                         self.stack.push(value);
                         return Ok(());
                     }
-                    Value::Set(_, false) => {
+                    ValueView::Set(_, false) => {
                         let repr = crate::runtime::gist_value(inner_target);
                         return Err(RuntimeError::assignment_ro_typename("Set", &repr));
                     }
-                    Value::Set(data, true) => {
+                    ValueView::Set(data, true) => {
                         let mut new_set = data.elements.clone();
                         if value.truthy() {
                             new_set.insert(key);
@@ -1138,10 +1145,10 @@ impl Interpreter {
                         self.stack.push(value);
                         return Ok(());
                     }
-                    Value::Bag(_, false) => {
+                    ValueView::Bag(_, false) => {
                         return Err(RuntimeError::assignment_ro_typename("Int", "1"));
                     }
-                    Value::Bag(data, true) => {
+                    ValueView::Bag(data, true) => {
                         let count = value.to_bigint();
                         let mut new_counts = data.counts.clone();
                         if num_traits::Signed::is_positive(&count) {
@@ -1154,10 +1161,10 @@ impl Interpreter {
                         self.stack.push(value);
                         return Ok(());
                     }
-                    Value::Mix(_, false) => {
+                    ValueView::Mix(_, false) => {
                         return Err(RuntimeError::assignment_ro_typename("Int", "1"));
                     }
-                    Value::Mix(data, true) => {
+                    ValueView::Mix(data, true) => {
                         let weight = crate::runtime::to_float_value(&value).unwrap_or(0.0);
                         let mut new_weights = data.weights.clone();
                         if weight != 0.0 {
@@ -1170,11 +1177,13 @@ impl Interpreter {
                         self.stack.push(value);
                         return Ok(());
                     }
-                    Value::Nil | Value::Package(_) => {
+                    ValueView::Nil | ValueView::Package(_) => {
                         let mut hash = std::collections::HashMap::new();
                         hash.insert(key, value.clone());
-                        self.env_mut()
-                            .insert(target_name.to_string(), Value::Hash(Value::hash_arc(hash)));
+                        self.env_mut().insert(
+                            target_name.to_string(),
+                            Value::hash_with_data(Value::hash_arc(hash)),
+                        );
                         self.stack.push(value);
                         return Ok(());
                     }
@@ -1183,12 +1192,12 @@ impl Interpreter {
             }
             "DELETE-KEY" if args.len() == 1 => {
                 let key = args[0].to_string_value();
-                let inner_target = match &target {
-                    Value::Scalar(inner) => inner.as_ref(),
-                    other => other,
+                let inner_target = match target.view() {
+                    ValueView::Scalar(inner) => inner,
+                    _ => &target,
                 };
-                match inner_target {
-                    Value::Hash(map) => {
+                match inner_target.view() {
+                    ValueView::Hash(map) => {
                         let old_meta = self.container_type_metadata(inner_target).clone();
                         let old_value = if map.contains_key(&key) {
                             self.resolve_hash_entry(map, &key)
@@ -1197,11 +1206,11 @@ impl Interpreter {
                                 .as_ref()
                                 .map(|info| info.value_type.clone())
                                 .unwrap_or_else(|| "Any".to_string());
-                            Value::Package(Symbol::intern(&type_name))
+                            Value::package(Symbol::intern(&type_name))
                         };
                         let mut new_map = (**map).clone();
                         new_map.remove(&key);
-                        let new_hash = Value::Hash(Value::hash_arc(new_map));
+                        let new_hash = Value::hash_with_data(Value::hash_arc(new_map));
                         let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
                             value_type: "Any".to_string(),
                             key_type: None,
@@ -1212,22 +1221,22 @@ impl Interpreter {
                         self.stack.push(old_value);
                         return Ok(());
                     }
-                    Value::Set(_, false) => {
+                    ValueView::Set(_, false) => {
                         return Err(RuntimeError::immutable("Set", "DELETE-KEY"));
                     }
-                    Value::Set(data, true) => {
+                    ValueView::Set(data, true) => {
                         let existed = data.elements.contains(&key);
                         let mut new_set = data.elements.clone();
                         new_set.remove(&key);
                         let new_val = Value::set_hash(new_set);
                         self.env_mut().insert(target_name.to_string(), new_val);
-                        self.stack.push(Value::Bool(existed));
+                        self.stack.push(Value::truth(existed));
                         return Ok(());
                     }
-                    Value::Bag(_, false) => {
+                    ValueView::Bag(_, false) => {
                         return Err(RuntimeError::immutable("Bag", "DELETE-KEY"));
                     }
-                    Value::Bag(data, true) => {
+                    ValueView::Bag(data, true) => {
                         let old_count = data.counts.get(&key).cloned().unwrap_or_default();
                         let mut new_counts = data.counts.clone();
                         new_counts.remove(&key);
@@ -1236,10 +1245,10 @@ impl Interpreter {
                         self.stack.push(Value::from_bigint(old_count));
                         return Ok(());
                     }
-                    Value::Mix(_, false) => {
+                    ValueView::Mix(_, false) => {
                         return Err(RuntimeError::immutable("Mix", "DELETE-KEY"));
                     }
-                    Value::Mix(data, true) => {
+                    ValueView::Mix(data, true) => {
                         let old_weight = data.weights.get(&key).copied().unwrap_or(0.0);
                         let mut new_weights = data.weights.clone();
                         new_weights.remove(&key);
@@ -1249,20 +1258,20 @@ impl Interpreter {
                         self.stack.push(result);
                         return Ok(());
                     }
-                    Value::Nil | Value::Package(_) => {
-                        self.stack.push(Value::Nil);
+                    ValueView::Nil | ValueView::Package(_) => {
+                        self.stack.push(Value::NIL);
                         return Ok(());
                     }
                     _ => {}
                 }
             }
             "BIND-KEY" if args.len() == 2 => {
-                let inner_target = match &target {
-                    Value::Scalar(inner) => inner.as_ref(),
-                    other => other,
+                let inner_target = match target.view() {
+                    ValueView::Scalar(inner) => inner,
+                    _ => &target,
                 };
-                match inner_target {
-                    Value::Hash(map) => {
+                match inner_target.view() {
+                    ValueView::Hash(map) => {
                         let old_meta = self.container_type_metadata(inner_target).clone();
                         let key = args[0].to_string_value();
                         let value = args[1].clone();
@@ -1277,21 +1286,21 @@ impl Interpreter {
                         // BOUND_HASH_REF_SENTINEL back-reference.
                         let mut bind_source_install: Option<(String, Value)> = None;
                         if let Some(var_name) = source_var {
-                            let cell = match self.env().get(&var_name) {
-                                Some(Value::ContainerRef(cell)) => cell.clone(),
+                            let cell = match self.env().get(&var_name).map(Value::view) {
+                                Some(ValueView::ContainerRef(cell)) => cell.clone(),
                                 _ => {
                                     let cell =
                                         crate::gc::Gc::new(std::sync::Mutex::new(value.clone()));
                                     bind_source_install =
-                                        Some((var_name, Value::ContainerRef(cell.clone())));
+                                        Some((var_name, Value::container_ref(cell.clone())));
                                     cell
                                 }
                             };
-                            new_map.insert(key, Value::ContainerRef(cell));
+                            new_map.insert(key, Value::container_ref(cell));
                         } else {
                             new_map.insert(key, value.clone());
                         }
-                        let new_hash = Value::Hash(Value::hash_arc(new_map));
+                        let new_hash = Value::hash_with_data(Value::hash_arc(new_map));
                         let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
                             value_type: "Any".to_string(),
                             key_type: None,
@@ -1306,7 +1315,7 @@ impl Interpreter {
                         self.stack.push(value);
                         return Ok(());
                     }
-                    Value::Nil | Value::Package(_) => {
+                    ValueView::Nil | ValueView::Package(_) => {
                         let key = args[0].to_string_value();
                         let value = args[1].clone();
                         let source_var = arg_sources
@@ -1316,23 +1325,23 @@ impl Interpreter {
                         let mut new_map = std::collections::HashMap::new();
                         let mut bind_source_install: Option<(String, Value)> = None;
                         if let Some(var_name) = source_var {
-                            let cell = match self.env().get(&var_name) {
-                                Some(Value::ContainerRef(cell)) => cell.clone(),
+                            let cell = match self.env().get(&var_name).map(Value::view) {
+                                Some(ValueView::ContainerRef(cell)) => cell.clone(),
                                 _ => {
                                     let cell =
                                         crate::gc::Gc::new(std::sync::Mutex::new(value.clone()));
                                     bind_source_install =
-                                        Some((var_name, Value::ContainerRef(cell.clone())));
+                                        Some((var_name, Value::container_ref(cell.clone())));
                                     cell
                                 }
                             };
-                            new_map.insert(key, Value::ContainerRef(cell));
+                            new_map.insert(key, Value::container_ref(cell));
                         } else {
                             new_map.insert(key, value.clone());
                         }
                         self.env_mut().insert(
                             target_name.to_string(),
-                            Value::Hash(Value::hash_arc(new_map)),
+                            Value::hash_with_data(Value::hash_arc(new_map)),
                         );
                         if let Some((source_name, cell_val)) = bind_source_install {
                             self.set_env_with_main_alias(&source_name, cell_val.clone());
@@ -1341,16 +1350,16 @@ impl Interpreter {
                         self.stack.push(value);
                         return Ok(());
                     }
-                    Value::Set(_, mutable) => {
-                        let name = if *mutable { "SetHash" } else { "Set" };
+                    ValueView::Set(_, mutable) => {
+                        let name = if mutable { "SetHash" } else { "Set" };
                         return Err(RuntimeError::bind(name));
                     }
-                    Value::Bag(_, mutable) => {
-                        let name = if *mutable { "BagHash" } else { "Bag" };
+                    ValueView::Bag(_, mutable) => {
+                        let name = if mutable { "BagHash" } else { "Bag" };
                         return Err(RuntimeError::bind(name));
                     }
-                    Value::Mix(_, mutable) => {
-                        let name = if *mutable { "MixHash" } else { "Mix" };
+                    ValueView::Mix(_, mutable) => {
+                        let name = if mutable { "MixHash" } else { "Mix" };
                         return Err(RuntimeError::bind(name));
                     }
                     _ => {}
@@ -1362,10 +1371,10 @@ impl Interpreter {
             // vice versa). Only the single-index plain-`Array` case with a scalar
             // *variable* source is handled here; a literal source (no var) and
             // multi-dimensional BIND-POS fall through to the slow path, which
-            // stores the immutable `Value::Scalar` bind marker.
+            // stores the immutable `Scalar` bind marker.
             "BIND-POS"
                 if args.len() == 2
-                    && matches!(&target, Value::Array(..))
+                    && matches!(target.view(), ValueView::Array(..))
                     && arg_sources
                         .as_ref()
                         .and_then(|s| s.get(1))
@@ -1377,13 +1386,18 @@ impl Interpreter {
                 // a natively typed array". Detect it (a var bound to this same
                 // backing Arc whose element type is native) and fall through to
                 // the slow path, which raises that error.
-                let is_native_array = if let Value::Array(items, ..) = &target {
-                    let native_var = self.env().iter().find_map(|(name, bound)| match bound {
-                        Value::Array(existing, ..) if crate::gc::Gc::ptr_eq(existing, items) => {
-                            Some(*name)
-                        }
-                        _ => None,
-                    });
+                let is_native_array = if let ValueView::Array(items, ..) = target.view() {
+                    let native_var =
+                        self.env()
+                            .iter()
+                            .find_map(|(name, bound)| match bound.view() {
+                                ValueView::Array(existing, ..)
+                                    if crate::gc::Gc::ptr_eq(existing, items) =>
+                                {
+                                    Some(*name)
+                                }
+                                _ => None,
+                            });
                     native_var.is_some_and(|name| {
                         self.var_type_constraint(&name.resolve())
                             .as_deref()
@@ -1393,10 +1407,10 @@ impl Interpreter {
                     false
                 };
                 if !is_native_array
-                    && let Value::Array(items, arr_kind) = &target
-                    && let Some(i) = match &args[0] {
-                        Value::Int(n) if *n >= 0 => Some(*n as usize),
-                        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                    && let ValueView::Array(items, arr_kind) = target.view()
+                    && let Some(i) = match args[0].view() {
+                        ValueView::Int(n) if n >= 0 => Some(n as usize),
+                        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
                         _ => None,
                     }
                 {
@@ -1410,23 +1424,23 @@ impl Interpreter {
                     // cell-bound (so all aliases stay shared); otherwise install a
                     // fresh cell back into the source var.
                     let mut bind_source_install: Option<(String, Value)> = None;
-                    let cell = match self.env().get(&source_var) {
-                        Some(Value::ContainerRef(cell)) => cell.clone(),
+                    let cell = match self.env().get(&source_var).map(Value::view) {
+                        Some(ValueView::ContainerRef(cell)) => cell.clone(),
                         _ => {
                             let cell = crate::gc::Gc::new(std::sync::Mutex::new(value.clone()));
                             bind_source_install =
-                                Some((source_var, Value::ContainerRef(cell.clone())));
+                                Some((source_var, Value::container_ref(cell.clone())));
                             cell
                         }
                     };
                     let mut updated = items.to_vec();
                     if i >= updated.len() {
-                        updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                        updated.resize(i + 1, Value::package(Symbol::intern("Any")));
                     }
-                    updated[i] = Value::ContainerRef(cell);
-                    let new_array = Value::Array(
+                    updated[i] = Value::container_ref(cell);
+                    let new_array = Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                        *arr_kind,
+                        arr_kind,
                     );
                     self.env_mut().insert(target_name.to_string(), new_array);
                     if let Some((source_name, cell_val)) = bind_source_install {
@@ -1444,10 +1458,10 @@ impl Interpreter {
         // for mutating list methods. In Raku, calling push/unshift/append/prepend on
         // an undefined variable auto-vivifies it to an Array.
         let target = if matches!(method.as_str(), "push" | "unshift" | "append" | "prepend")
-            && (matches!(&target, Value::Nil)
+            && (target.is_nil()
                 || matches!(
-                    &target,
-                    Value::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu" | "Array")
+                    target.view(),
+                    ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu" | "Array")
                 )) {
             let empty_array = Value::real_array(vec![]);
             self.env_mut()
@@ -1533,11 +1547,11 @@ impl Interpreter {
                 // Array-subclass instance delegation (mut path): when the Instance's
                 // class inherits from Array, delegate mutating Array methods to the
                 // backing __mutsu_array_storage attribute and write back.
-                if let Value::Instance {
-                    class_name: ref inst_class,
-                    ref attributes,
+                if let ValueView::Instance {
+                    class_name: inst_class,
+                    attributes,
                     id: inst_id,
-                } = target
+                } = target.view()
                 {
                     let cn = inst_class.resolve();
                     let is_array_method = matches!(
@@ -1621,7 +1635,7 @@ impl Interpreter {
                             let result = result?;
                             self.write_back_array_storage_instance(
                                 &target_name,
-                                inst_class,
+                                &inst_class,
                                 attributes,
                                 inst_id,
                                 storage,
@@ -1691,7 +1705,7 @@ impl Interpreter {
                         // Update the instance with the new storage
                         self.write_back_array_storage_instance(
                             &target_name,
-                            inst_class,
+                            &inst_class,
                             attributes,
                             inst_id,
                             storage,
@@ -1712,7 +1726,7 @@ impl Interpreter {
                 let call_result = if !skip_native {
                     // Resolve hash sentinel entries (bound variable refs, self-refs)
                     // before passing to native methods that iterate hash values.
-                    let effective_target = if let Value::Hash(ref items) = target {
+                    let effective_target = if let ValueView::Hash(items) = target.view() {
                         if Self::hash_has_sentinels(items) {
                             Some(self.resolve_hash_for_iteration(items))
                         } else {
@@ -1749,7 +1763,7 @@ impl Interpreter {
                             self.stack.push(val);
                         }
                         Err(e) if Self::is_method_not_found_error(&e) => {
-                            self.stack.push(Value::Nil);
+                            self.stack.push(Value::NIL);
                         }
                         Err(e) => return Err(e),
                     },
@@ -1818,12 +1832,12 @@ impl Interpreter {
         if !matches!(method, "push" | "append") {
             return None;
         }
-        let cell = match self.env().get(target_name) {
-            Some(Value::ContainerRef(cell)) => cell.clone(),
+        let cell = match self.env().get(target_name).map(Value::view) {
+            Some(ValueView::ContainerRef(cell)) => cell.clone(),
             _ => return None,
         };
         let inner = cell.lock().unwrap().clone();
-        if !matches!(inner, Value::Hash(_)) {
+        if !matches!(inner.view(), ValueView::Hash(_)) {
             return None;
         }
         let result = match loan_env!(self, call_method_with_values(inner, method, args.to_vec())) {
@@ -1852,9 +1866,15 @@ impl Interpreter {
         // variable bound to a whole array container (`my $r := @a`), which holds
         // a shared `ContainerRef` cell that `env_root_descended_mut` below
         // unwraps so the mutation still writes through the shared array.
-        let is_bound_cell = matches!(self.env().get(target_name), Some(Value::ContainerRef(_)));
+        let is_bound_cell = matches!(
+            self.env().get(target_name).map(Value::view),
+            Some(ValueView::ContainerRef(_))
+        );
         if (!target_name.starts_with('@') && !is_bound_cell)
-            || !matches!(target, Value::Array(_, crate::value::ArrayKind::Array))
+            || !matches!(
+                target.view(),
+                ValueView::Array(_, crate::value::ArrayKind::Array)
+            )
         {
             return None;
         }
@@ -1877,68 +1897,76 @@ impl Interpreter {
         // an in-place `Arc::make_mut` writeback is correct. Descend through a
         // whole-container `:=` bound cell (`my @x := @a`) so the mutation writes
         // back through the shared cell (every alias observes it).
-        let Some(Value::Array(arc_items, crate::value::ArrayKind::Array)) =
-            self.env_root_descended_mut(target_name)
-        else {
-            return None;
-        };
-        let result = match method {
-            "push" => {
-                // `@a.push` compiles to `ArrayPush` only for single-arg pushes on
-                // a *local* array; the captured-closure and multi-arg forms reach
-                // here as `CallMethodMut`. Mirror the `ArrayPush` opcode's env-bound
-                // branch (`normalize_push_unshift_args` then extend).
-                let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
-                crate::gc::Gc::make_mut(arc_items).extend(norm);
-                Value::Array(
-                    crate::gc::Gc::clone(arc_items),
-                    crate::value::ArrayKind::Array,
-                )
-            }
-            "append" | "prepend" => {
-                let flat = crate::runtime::flatten_append_args(args.to_vec());
-                let items = crate::gc::Gc::make_mut(arc_items);
-                if method == "append" {
-                    items.extend(flat);
-                } else {
-                    for (i, v) in flat.into_iter().enumerate() {
-                        items.insert(i, v);
+        let result =
+            self.env_root_descended_mut(target_name)?
+                .with_array_mut(|arc_items, kind| {
+                    if !matches!(*kind, crate::value::ArrayKind::Array) {
+                        return None;
                     }
-                }
-                Value::Array(
-                    crate::gc::Gc::clone(arc_items),
-                    crate::value::ArrayKind::Array,
-                )
-            }
-            "unshift" => {
-                let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
-                let items = crate::gc::Gc::make_mut(arc_items);
-                for (i, v) in norm.into_iter().enumerate() {
-                    items.insert(i, v);
-                }
-                Value::Array(
-                    crate::gc::Gc::clone(arc_items),
-                    crate::value::ArrayKind::Array,
-                )
-            }
-            "pop" => {
-                if arc_items.is_empty() {
-                    crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
-                } else {
-                    crate::gc::Gc::make_mut(arc_items)
-                        .pop()
-                        .unwrap_or(Value::Nil)
-                }
-            }
-            "shift" => {
-                if arc_items.is_empty() {
-                    crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
-                } else {
-                    crate::gc::Gc::make_mut(arc_items).remove(0)
-                }
-            }
-            _ => unreachable!(),
-        };
+                    Some(match method {
+                        "push" => {
+                            // `@a.push` compiles to `ArrayPush` only for single-arg pushes on
+                            // a *local* array; the captured-closure and multi-arg forms reach
+                            // here as `CallMethodMut`. Mirror the `ArrayPush` opcode's env-bound
+                            // branch (`normalize_push_unshift_args` then extend).
+                            let norm = crate::runtime::Interpreter::normalize_push_unshift_args(
+                                args.to_vec(),
+                            );
+                            crate::gc::Gc::make_mut(arc_items).extend(norm);
+                            Value::array_with_kind(
+                                crate::gc::Gc::clone(arc_items),
+                                crate::value::ArrayKind::Array,
+                            )
+                        }
+                        "append" | "prepend" => {
+                            let flat = crate::runtime::flatten_append_args(args.to_vec());
+                            let items = crate::gc::Gc::make_mut(arc_items);
+                            if method == "append" {
+                                items.extend(flat);
+                            } else {
+                                for (i, v) in flat.into_iter().enumerate() {
+                                    items.insert(i, v);
+                                }
+                            }
+                            Value::array_with_kind(
+                                crate::gc::Gc::clone(arc_items),
+                                crate::value::ArrayKind::Array,
+                            )
+                        }
+                        "unshift" => {
+                            let norm = crate::runtime::Interpreter::normalize_push_unshift_args(
+                                args.to_vec(),
+                            );
+                            let items = crate::gc::Gc::make_mut(arc_items);
+                            for (i, v) in norm.into_iter().enumerate() {
+                                items.insert(i, v);
+                            }
+                            Value::array_with_kind(
+                                crate::gc::Gc::clone(arc_items),
+                                crate::value::ArrayKind::Array,
+                            )
+                        }
+                        "pop" => {
+                            if arc_items.is_empty() {
+                                crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
+                            } else {
+                                crate::gc::Gc::make_mut(arc_items)
+                                    .pop()
+                                    .unwrap_or(Value::NIL)
+                            }
+                        }
+                        "shift" => {
+                            if arc_items.is_empty() {
+                                crate::runtime::utils::make_empty_array_failure_what(
+                                    "shift", "Array",
+                                )
+                            } else {
+                                crate::gc::Gc::make_mut(arc_items).remove(0)
+                            }
+                        }
+                        _ => unreachable!(),
+                    })
+                })??;
         Some(Ok(result))
     }
 
@@ -1989,72 +2017,76 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let Value::Array(arc_items, crate::value::ArrayKind::Array) = storage else {
-            return None;
-        };
-        let result = match method {
-            "push" => {
-                let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
-                crate::gc::Gc::make_mut(arc_items).extend(norm);
-                Value::Array(
-                    crate::gc::Gc::clone(arc_items),
-                    crate::value::ArrayKind::Array,
-                )
+        let result = storage.with_array_mut(|arc_items, kind| {
+            if !matches!(*kind, crate::value::ArrayKind::Array) {
+                return None;
             }
-            "append" => {
-                let flat = crate::runtime::flatten_append_args(args.to_vec());
-                crate::gc::Gc::make_mut(arc_items).extend(flat);
-                Value::Array(
-                    crate::gc::Gc::clone(arc_items),
-                    crate::value::ArrayKind::Array,
-                )
-            }
-            "unshift" => {
-                let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
-                let items = crate::gc::Gc::make_mut(arc_items);
-                for (i, v) in norm.into_iter().enumerate() {
-                    items.insert(i, v);
+            Some(match method {
+                "push" => {
+                    let norm =
+                        crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
+                    crate::gc::Gc::make_mut(arc_items).extend(norm);
+                    Value::array_with_kind(
+                        crate::gc::Gc::clone(arc_items),
+                        crate::value::ArrayKind::Array,
+                    )
                 }
-                Value::Array(
-                    crate::gc::Gc::clone(arc_items),
-                    crate::value::ArrayKind::Array,
-                )
-            }
-            "prepend" => {
-                let flat = crate::runtime::flatten_append_args(args.to_vec());
-                let items = crate::gc::Gc::make_mut(arc_items);
-                for (i, v) in flat.into_iter().enumerate() {
-                    items.insert(i, v);
+                "append" => {
+                    let flat = crate::runtime::flatten_append_args(args.to_vec());
+                    crate::gc::Gc::make_mut(arc_items).extend(flat);
+                    Value::array_with_kind(
+                        crate::gc::Gc::clone(arc_items),
+                        crate::value::ArrayKind::Array,
+                    )
                 }
-                Value::Array(
-                    crate::gc::Gc::clone(arc_items),
-                    crate::value::ArrayKind::Array,
-                )
-            }
-            "pop" => {
-                if !args.is_empty() {
-                    return None;
+                "unshift" => {
+                    let norm =
+                        crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
+                    let items = crate::gc::Gc::make_mut(arc_items);
+                    for (i, v) in norm.into_iter().enumerate() {
+                        items.insert(i, v);
+                    }
+                    Value::array_with_kind(
+                        crate::gc::Gc::clone(arc_items),
+                        crate::value::ArrayKind::Array,
+                    )
                 }
-                if arc_items.is_empty() {
-                    crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
-                } else {
-                    crate::gc::Gc::make_mut(arc_items)
-                        .pop()
-                        .unwrap_or(Value::Nil)
+                "prepend" => {
+                    let flat = crate::runtime::flatten_append_args(args.to_vec());
+                    let items = crate::gc::Gc::make_mut(arc_items);
+                    for (i, v) in flat.into_iter().enumerate() {
+                        items.insert(i, v);
+                    }
+                    Value::array_with_kind(
+                        crate::gc::Gc::clone(arc_items),
+                        crate::value::ArrayKind::Array,
+                    )
                 }
-            }
-            "shift" => {
-                if !args.is_empty() {
-                    return None;
+                "pop" => {
+                    if !args.is_empty() {
+                        return None;
+                    }
+                    if arc_items.is_empty() {
+                        crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
+                    } else {
+                        crate::gc::Gc::make_mut(arc_items)
+                            .pop()
+                            .unwrap_or(Value::NIL)
+                    }
                 }
-                if arc_items.is_empty() {
-                    crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
-                } else {
-                    crate::gc::Gc::make_mut(arc_items).remove(0)
+                "shift" => {
+                    if !args.is_empty() {
+                        return None;
+                    }
+                    if arc_items.is_empty() {
+                        crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
+                    } else {
+                        crate::gc::Gc::make_mut(arc_items).remove(0)
+                    }
                 }
-            }
-            _ => return None,
-        };
+                _ => return None,
+            })
+        })??;
         Some(Ok(result))
     }
 
@@ -2071,16 +2103,16 @@ impl Interpreter {
     ) {
         let new_attrs = crate::value::InstanceAttrs::clone(attributes);
         new_attrs.insert("__mutsu_array_storage".to_string(), storage);
-        let updated_instance = Value::Instance {
-            class_name: *inst_class,
-            attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+        let updated_instance = Value::instance_parts(
+            *inst_class,
+            crate::gc::Gc::new(crate::value::InstanceAttrs::new(
                 *inst_class,
                 new_attrs.to_map(),
                 inst_id,
                 true,
             )),
-            id: inst_id,
-        };
+            inst_id,
+        );
         self.env_mut()
             .insert(target_name.to_string(), updated_instance);
     }
@@ -2112,9 +2144,15 @@ impl Interpreter {
         // (ArrayKind::Array), excluding List/Item/Shaped/Lazy — OR a scalar bound
         // to a whole array container (`my $r := @a`), unwrapped via
         // `env_root_descended_mut` below.
-        let is_bound_cell = matches!(self.env().get(target_name), Some(Value::ContainerRef(_)));
+        let is_bound_cell = matches!(
+            self.env().get(target_name).map(Value::view),
+            Some(ValueView::ContainerRef(_))
+        );
         if (!target_name.starts_with('@') && !is_bound_cell)
-            || !matches!(target, Value::Array(_, crate::value::ArrayKind::Array))
+            || !matches!(
+                target.view(),
+                ValueView::Array(_, crate::value::ArrayKind::Array)
+            )
         {
             return None;
         }
@@ -2130,14 +2168,14 @@ impl Interpreter {
         // Offset (arg 0) and count (arg 1): plain non-negative `Int`, or absent.
         // Anything else (Whatever/Str/Num/Callable) goes to the interpreter,
         // which also owns the `X::OutOfRange` error for a negative offset/count.
-        let raw_start = match args.first() {
+        let raw_start = match args.first().map(Value::view) {
             None => None,
-            Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+            Some(ValueView::Int(i)) if i >= 0 => Some(i as usize),
             _ => return None,
         };
-        let raw_count = match args.get(1) {
+        let raw_count = match args.get(1).map(Value::view) {
             None => None,
-            Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+            Some(ValueView::Int(i)) if i >= 0 => Some(i as usize),
             _ => return None,
         };
         // Replacement values (args[2..]): reject lazy values (the interpreter
@@ -2145,18 +2183,18 @@ impl Interpreter {
         // interpreter's `do_splice` does.
         let mut replacement: Vec<Value> = Vec::new();
         for arg in args.iter().skip(2) {
-            match arg {
-                Value::Array(arr, ..) => {
+            match arg.view() {
+                ValueView::Array(arr, ..) => {
                     if arr.iter().any(crate::builtins::methods_0arg::is_value_lazy) {
                         return None;
                     }
                     replacement.extend(arr.iter().cloned());
                 }
-                other => {
-                    if crate::builtins::methods_0arg::is_value_lazy(other) {
+                _ => {
+                    if crate::builtins::methods_0arg::is_value_lazy(arg) {
                         return None;
                     }
-                    replacement.push(other.clone());
+                    replacement.push(arg.clone());
                 }
             }
         }
@@ -2164,24 +2202,27 @@ impl Interpreter {
         // an in-place `Arc::make_mut` writeback is correct. Compute the splice
         // bounds from the live binding's length (not `target`). Descend through a
         // whole-container `:=` bound cell so the splice writes through the cell.
-        let Some(Value::Array(arc_items, crate::value::ArrayKind::Array)) =
-            self.env_root_descended_mut(target_name)
-        else {
-            return None;
-        };
-        let len = arc_items.len();
-        let start = raw_start.unwrap_or(0);
-        // An offset past the end is `X::OutOfRange` in the interpreter.
-        if start > len {
-            return None;
-        }
-        let count = raw_count.unwrap_or(len - start);
-        let end = (start + count).min(len);
-        let items = crate::gc::Gc::make_mut(arc_items);
-        let removed: Vec<Value> = items.drain(start..end).collect();
-        for (i, item) in replacement.into_iter().enumerate() {
-            items.insert(start + i, item);
-        }
+        let removed =
+            self.env_root_descended_mut(target_name)?
+                .with_array_mut(|arc_items, kind| {
+                    if !matches!(*kind, crate::value::ArrayKind::Array) {
+                        return None;
+                    }
+                    let len = arc_items.len();
+                    let start = raw_start.unwrap_or(0);
+                    // An offset past the end is `X::OutOfRange` in the interpreter.
+                    if start > len {
+                        return None;
+                    }
+                    let count = raw_count.unwrap_or(len - start);
+                    let end = (start + count).min(len);
+                    let items = crate::gc::Gc::make_mut(arc_items);
+                    let removed: Vec<Value> = items.drain(start..end).collect();
+                    for (i, item) in replacement.into_iter().enumerate() {
+                        items.insert(start + i, item);
+                    }
+                    Some(removed)
+                })??;
         Some(Ok(Value::real_array(removed)))
     }
 
@@ -2212,11 +2253,11 @@ impl Interpreter {
         if !(is_write_bits || is_write_num || is_write_int) {
             return None;
         }
-        let Value::Instance {
+        let ValueView::Instance {
             class_name,
             attributes,
             id,
-        } = target
+        } = target.view()
         else {
             return None;
         };
@@ -2230,13 +2271,14 @@ impl Interpreter {
         }
         // Extract the current bytes (same clamping the interpreter uses).
         let mut bytes: Vec<u8> = Vec::new();
-        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+        if let Some(ValueView::Array(items, ..)) = attributes.as_map().get("bytes").map(Value::view)
+        {
             bytes.reserve(items.len());
             for it in items.iter() {
-                bytes.push(match it {
-                    Value::Int(i) => (*i).clamp(0, 255) as u8,
-                    Value::Num(f) => (*f as i64).clamp(0, 255) as u8,
-                    Value::BigInt(bi) => num_traits::ToPrimitive::to_i64(bi.as_ref())
+                bytes.push(match it.view() {
+                    ValueView::Int(i) => i.clamp(0, 255) as u8,
+                    ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
+                    ValueView::BigInt(bi) => num_traits::ToPrimitive::to_i64(bi.as_ref())
                         .unwrap_or(0)
                         .clamp(0, 255) as u8,
                     _ => 0,
@@ -2263,9 +2305,9 @@ impl Interpreter {
             if args.len() < 2 || args.len() > 3 {
                 return None;
             }
-            let offset_i64 = match &args[0] {
-                Value::Int(i) => *i,
-                Value::Num(f) => *f as i64,
+            let offset_i64 = match args[0].view() {
+                ValueView::Int(i) => i,
+                ValueView::Num(f) => f as i64,
                 _ => 0,
             };
             let endian_val = if args.len() == 3 {
@@ -2296,11 +2338,11 @@ impl Interpreter {
             Value::array(
                 new_bytes
                     .into_iter()
-                    .map(|b| Value::Int(b as i64))
+                    .map(|b| Value::int(b as i64))
                     .collect(),
             ),
         );
-        let updated = Value::write_back_sharing(attributes, *class_name, updated_attrs, *id);
+        let updated = Value::write_back_sharing(attributes, class_name, updated_attrs, id);
         self.env_mut()
             .insert(target_name.to_string(), updated.clone());
         Some(Ok(updated))

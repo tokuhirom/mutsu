@@ -8,18 +8,18 @@ impl Interpreter {
         } else if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
             && let Some(match_val) = self.env().get("/").cloned()
         {
-            match &match_val {
-                Value::Hash(map) => map.get(key).cloned().unwrap_or(Value::Nil),
+            match match_val.view() {
+                ValueView::Hash(map) => map.get(key).cloned().unwrap_or(Value::NIL),
                 _ => self
                     .try_compiled_method_or_interpret(
                         match_val,
                         "AT-KEY",
                         vec![Value::str(key.to_string())],
                     )
-                    .unwrap_or(Value::Nil),
+                    .unwrap_or(Value::NIL),
             }
         } else {
-            Value::Nil
+            Value::NIL
         };
         self.stack.push(val);
     }
@@ -34,10 +34,12 @@ impl Interpreter {
         // Fallback for fast-path method dispatch (skip_env_setup=true):
         // &!attr is not set in env, so read directly from self's instance
         // attributes when available.
-        if matches!(val, Value::Nil)
+        if val.is_nil()
             && let Some(attr_name) = name.strip_prefix('!').filter(|n| !n.is_empty())
-            && let Some(Value::Instance { attributes, .. }) =
-                self.get_env_with_main_alias("self").as_ref()
+            && let Some(ValueView::Instance { attributes, .. }) = self
+                .get_env_with_main_alias("self")
+                .as_ref()
+                .map(Value::view)
             && let Some(attr_val) = attributes.as_map().get(attr_name)
         {
             val = attr_val.clone();
@@ -46,11 +48,14 @@ impl Interpreter {
         // We approximate this at runtime, but only inside EVAL context
         // to avoid breaking code that relies on &name returning Nil for
         // non-existent routines (e.g. custom EXPORT mechanisms).
-        if matches!(val, Value::Nil)
+        if val.is_nil()
             && !name.contains("::")
             && !name.starts_with('?')
             && !name.starts_with('*')
-            && matches!(self.env().get("__mutsu_in_eval"), Some(Value::Bool(true)))
+            && matches!(
+                self.env().get("__mutsu_in_eval").map(Value::view),
+                Some(ValueView::Bool(true))
+            )
         {
             let env_key = format!("&{}", name);
             let is_declared = self.env().contains_key(&env_key);
@@ -70,7 +75,7 @@ impl Interpreter {
     pub(super) fn exec_indirect_code_lookup_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let func_name = Self::const_str(code, name_idx).to_string();
         // Pop the package name from the stack (result of evaluating the package expr)
-        let package = self.stack.pop().unwrap_or(Value::Nil);
+        let package = self.stack.pop().unwrap_or(Value::NIL);
         // Construct a qualified name: "SETTING::OUTER::...::not"
         // resolve_code_var will strip pseudo-package prefixes and resolve to builtin
         let pkg_str = package.to_string_value();
@@ -87,7 +92,7 @@ impl Interpreter {
     /// Pops the name string from the stack, prepends the sigil, and looks up the variable.
     pub(super) fn exec_symbolic_deref_op(&mut self, code: &CompiledCode, sigil_idx: u32) {
         let sigil = Self::const_str(code, sigil_idx).to_string();
-        let name_val = self.stack.pop().unwrap_or(Value::Nil);
+        let name_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = name_val.to_string_value();
         // For $::("x"), look up the bare name "x" (scalars are stored without sigil).
         // For @::("x"), look up "@x" (arrays are stored with sigil).
@@ -114,7 +119,7 @@ impl Interpreter {
             };
             let val = self
                 .get_caller_var(&bare_name, caller_depth)
-                .unwrap_or(Value::Nil);
+                .unwrap_or(Value::NIL);
             self.stack.push(val);
             return;
         }
@@ -126,16 +131,16 @@ impl Interpreter {
         };
         let val = self
             .get_env_with_main_alias(&lookup_name)
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         self.stack.push(val);
     }
 
     pub(super) fn exec_symbolic_deref_store_op(&mut self, code: &CompiledCode, sigil_idx: u32) {
         let sigil = Self::const_str(code, sigil_idx).to_string();
-        let name_val = self.stack.pop().unwrap_or(Value::Nil);
+        let name_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = name_val.to_string_value();
         // Stack: [value] (already below name)
-        let raw_value = self.stack.pop().unwrap_or(Value::Nil);
+        let raw_value = self.stack.pop().unwrap_or(Value::NIL);
         let store_name = match sigil.as_str() {
             "$" => name.to_string(),
             "@" => format!("@{}", name),
@@ -184,9 +189,9 @@ impl Interpreter {
     }
 
     pub(super) fn exec_indirect_type_lookup_store_op(&mut self, code: &CompiledCode) {
-        let name_val = self.stack.pop().unwrap_or(Value::Nil);
+        let name_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = name_val.to_string_value();
-        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let value = self.stack.pop().unwrap_or(Value::NIL);
         // ::('$x') stores into the variable named $x.
         // Scalars are stored without the '$' sigil, so strip it.
         // Arrays (@) and hashes (%) are stored with their sigil.
@@ -214,7 +219,7 @@ impl Interpreter {
         let r = self.exec_assign_expr_op_inner(code, name_idx);
         // Phase 3 Stage 2: mirror name-based attribute writes into the shared cell.
         if r.is_ok()
-            && let Value::Str(name) = &code.constants[name_idx as usize]
+            && let ValueView::Str(name) = code.constants[name_idx as usize].view()
         {
             if name.starts_with('@') || name.starts_with('%') {
                 self.mirror_array_hash_attr_to_cell(code, name_idx, None);
@@ -260,15 +265,15 @@ impl Interpreter {
         // so the reassigned value is list-/hash-assigned back to the source. The
         // assignment result (the method value, e.g. `"FOO"`) is on the stack top.
         if let Some(src) = self.topic_container_source.clone() {
-            let val = self.stack.last().cloned().unwrap_or(Value::Nil);
+            let val = self.stack.last().cloned().unwrap_or(Value::NIL);
             let written = if src.starts_with('@') {
-                if matches!(val, Value::Array(..)) {
+                if matches!(val.view(), ValueView::Array(..)) {
                     val
                 } else {
                     crate::runtime::utils::coerce_to_array(val)
                 }
             } else if src.starts_with('%') {
-                if matches!(val, Value::Hash(_)) {
+                if matches!(val.view(), ValueView::Hash(_)) {
                     val
                 } else {
                     crate::runtime::utils::coerce_to_hash(val)
@@ -291,7 +296,8 @@ impl Interpreter {
 
     pub(super) fn exec_get_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
         let key = Self::const_str(code, key_idx);
-        let val = if let Some(Value::Hash(env_hash)) = self.env().get("%*ENV") {
+        let val = if let Some(ValueView::Hash(env_hash)) = self.env().get("%*ENV").map(Value::view)
+        {
             env_hash.get(key).cloned().unwrap_or_else(|| {
                 std::env::var_os(key)
                     .map(|v| {
@@ -299,30 +305,31 @@ impl Interpreter {
                             v.to_string_lossy().to_string(),
                         )])
                     })
-                    .unwrap_or(Value::Nil)
+                    .unwrap_or(Value::NIL)
             })
         } else if let Some(value) = std::env::var_os(key) {
             crate::runtime::builtins_collection::builtin_val(&[Value::str(
                 value.to_string_lossy().to_string(),
             )])
         } else {
-            Value::Nil
+            Value::NIL
         };
         self.stack.push(val);
     }
 
     pub(super) fn exec_exists_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
         let key = Self::const_str(code, key_idx);
-        let exists = if let Some(Value::Hash(env_hash)) = self.env().get("%*ENV") {
-            env_hash.contains_key(key) || std::env::var_os(key).is_some()
-        } else {
-            std::env::var_os(key).is_some()
-        };
-        self.stack.push(Value::Bool(exists));
+        let exists =
+            if let Some(ValueView::Hash(env_hash)) = self.env().get("%*ENV").map(Value::view) {
+                env_hash.contains_key(key) || std::env::var_os(key).is_some()
+            } else {
+                std::env::var_os(key).is_some()
+            };
+        self.stack.push(Value::truth(exists));
     }
 
     pub(super) fn exec_exists_expr_op(&mut self) {
-        let val = self.stack.pop().unwrap_or(Value::Nil);
-        self.stack.push(Value::Bool(val.truthy()));
+        let val = self.stack.pop().unwrap_or(Value::NIL);
+        self.stack.push(Value::truth(val.truthy()));
     }
 }

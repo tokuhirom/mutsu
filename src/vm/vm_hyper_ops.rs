@@ -15,7 +15,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let from = Self::const_str(code, from_idx);
         let to = Self::const_str(code, to_idx);
-        let target = self.env().get("_").cloned().unwrap_or(Value::Nil);
+        let target = self.env().get("_").cloned().unwrap_or(Value::NIL);
         // If $_ is bound to a read-only topic, a destructive tr/// must throw
         // X::Assignment::RO. Two cases:
         //  1. A literal `with`/`given`/`for` topic routed through the `given`
@@ -27,13 +27,13 @@ impl Interpreter {
         // variable, so it is never blocked here.
         if !non_destructive && !self.in_smartmatch_rhs {
             let mixin_ro = matches!(
-                &target,
-                Value::Mixin(_, overrides) if overrides.contains_key("__mutsu_topic_ro__")
+                target.view(),
+                ValueView::Mixin(_, overrides) if overrides.contains_key("__mutsu_topic_ro__")
             );
             if mixin_ro || self.readonly_vars().contains("_") {
-                let type_name = match &target {
-                    Value::Int(_) => "Int",
-                    Value::Num(_) => "Num",
+                let type_name = match target.view() {
+                    ValueView::Int(_) => "Int",
+                    ValueView::Num(_) => "Num",
                     _ => "Str",
                 };
                 let mut attrs = std::collections::HashMap::new();
@@ -85,20 +85,20 @@ impl Interpreter {
     /// Scalars return false, meaning the hyper result should not be wrapped in an array.
     pub(super) fn is_listy(val: &Value) -> bool {
         matches!(
-            val,
-            Value::Array(..)
-                | Value::Seq(..)
-                | Value::Hash(..)
-                | Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. }
-                | Value::LazyList(..)
-                | Value::Set(..)
-                | Value::Bag(..)
-                | Value::Mix(..)
-                | Value::Slip(..)
+            val.view(),
+            ValueView::Array(..)
+                | ValueView::Seq(..)
+                | ValueView::Hash(..)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+                | ValueView::LazyList(..)
+                | ValueView::Set(..)
+                | ValueView::Bag(..)
+                | ValueView::Mix(..)
+                | ValueView::Slip(..)
         )
     }
 
@@ -125,15 +125,15 @@ impl Interpreter {
     /// a routine handle named `infix:<+>` so `.operator.name` works.
     fn hyperop_nondwim_error(left_elems: usize, right_elems: usize, op: &str) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("left-elems".to_string(), Value::Int(left_elems as i64));
-        attrs.insert("right-elems".to_string(), Value::Int(right_elems as i64));
+        attrs.insert("left-elems".to_string(), Value::int(left_elems as i64));
+        attrs.insert("right-elems".to_string(), Value::int(right_elems as i64));
         attrs.insert(
             "operator".to_string(),
-            Value::Routine {
-                package: crate::symbol::Symbol::intern("GLOBAL"),
-                name: crate::symbol::Symbol::intern(&format!("infix:<{}>", op)),
-                is_regex: false,
-            },
+            Value::routine_parts(
+                crate::symbol::Symbol::intern("GLOBAL"),
+                crate::symbol::Symbol::intern(&format!("infix:<{}>", op)),
+                false,
+            ),
         );
         let msg = format!(
             "Lists on both sides of non-dwimmy hyperop are not of the same length: \
@@ -156,8 +156,8 @@ impl Interpreter {
         dwim_left: bool,
         dwim_right: bool,
     ) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap_or(Value::Nil);
-        let left = self.stack.pop().unwrap_or(Value::Nil);
+        let right = self.stack.pop().unwrap_or(Value::NIL);
+        let left = self.stack.pop().unwrap_or(Value::NIL);
         let op = Self::const_str(code, op_idx).to_string();
         // X::HyperOp::Infinite: when the result length is determined by an
         // infinite/lazy operand, the hyper op cannot produce a finite result.
@@ -198,7 +198,7 @@ impl Interpreter {
         // Hyper op on two hashes: combine values key-by-key, with the dwim arrows
         // selecting the resulting key set. A missing value on either side uses the
         // operator's identity element (e.g. 0 for `+`).
-        if let (Value::Hash(la), Value::Hash(ra)) = (&left, &right) {
+        if let (ValueView::Hash(la), ValueView::Hash(ra)) = (left.view(), right.view()) {
             let la = la.clone();
             let ra = ra.clone();
             // Key set by dwim direction:
@@ -228,11 +228,11 @@ impl Interpreter {
                 let v = self.hyper_op_pair(op, &l, &r, dwim_left, dwim_right)?;
                 result.insert(key, v);
             }
-            return Ok(Value::Hash(Value::hash_arc(result)));
+            return Ok(Value::hash_with_data(Value::hash_arc(result)));
         }
         // Hyper op between a hash and a scalar: apply the op to each value with
         // the scalar broadcast over every key (`%h >>*>> 4`, `2 <<**<< %h`).
-        if let Value::Hash(map) = &left
+        if let ValueView::Hash(map) = left.view()
             && !Self::is_listy(right)
         {
             let map = map.clone();
@@ -241,9 +241,9 @@ impl Interpreter {
                 let v = self.hyper_op_pair(op, value, right, dwim_left, dwim_right)?;
                 result.insert(key.clone(), v);
             }
-            return Ok(Value::Hash(Value::hash_arc(result)));
+            return Ok(Value::hash_with_data(Value::hash_arc(result)));
         }
-        if let Value::Hash(map) = &right
+        if let ValueView::Hash(map) = right.view()
             && !Self::is_listy(left)
         {
             let map = map.clone();
@@ -252,26 +252,26 @@ impl Interpreter {
                 let v = self.hyper_op_pair(op, left, value, dwim_left, dwim_right)?;
                 result.insert(key.clone(), v);
             }
-            return Ok(Value::Hash(Value::hash_arc(result)));
+            return Ok(Value::hash_with_data(Value::hash_arc(result)));
         }
         // A Pair leaf broadcasts the op into its `.value`, keeping `.key`
         // unchanged (https://github.com/rakudo/rakudo/issues/4700). Only
         // applies when the *other* side is a plain scalar (not itself a Pair
         // or an Iterable) — those cases fall through to the generic
         // element-wise/base-case handling below.
-        if let Value::Pair(k, v) = left
-            && !matches!(right, Value::Pair(..))
+        if let ValueView::Pair(k, v) = left.view()
+            && !matches!(right.view(), ValueView::Pair(..))
             && !Self::is_listy(right)
         {
             let new_v = self.hyper_op_pair(op, v, right, dwim_left, dwim_right)?;
-            return Ok(Value::Pair(k.clone(), Box::new(new_v)));
+            return Ok(Value::pair(k.clone(), new_v));
         }
-        if let Value::Pair(k, v) = right
-            && !matches!(left, Value::Pair(..))
+        if let ValueView::Pair(k, v) = right.view()
+            && !matches!(left.view(), ValueView::Pair(..))
             && !Self::is_listy(left)
         {
             let new_v = self.hyper_op_pair(op, left, v, dwim_left, dwim_right)?;
-            return Ok(Value::Pair(k.clone(), Box::new(new_v)));
+            return Ok(Value::pair(k.clone(), new_v));
         }
         // At least one side is a (non-hash) Iterable: distribute element-wise,
         // recursing so nested Iterables/Hashes are handled at every depth.
@@ -282,8 +282,11 @@ impl Interpreter {
             // by copying its last real element". Strip the trailing Whatever;
             // such a side adapts to the other side's length (like a dwim side)
             // but pads with its last real element instead of cycling.
-            let left_ext = matches!(left_list.last(), Some(Value::Whatever));
-            let right_ext = matches!(right_list.last(), Some(Value::Whatever));
+            let left_ext = matches!(left_list.last().map(Value::view), Some(ValueView::Whatever));
+            let right_ext = matches!(
+                right_list.last().map(Value::view),
+                Some(ValueView::Whatever)
+            );
             if left_ext {
                 left_list.pop();
             }
@@ -337,21 +340,31 @@ impl Interpreter {
                 results.push(self.hyper_op_pair(op, l, r, dwim_left, dwim_right)?);
             }
             // Preserve List kind when inputs are Lists (not Arrays)
-            let left_is_array = matches!(left, Value::Array(_, crate::value::ArrayKind::Array));
-            let right_is_array = matches!(right, Value::Array(_, crate::value::ArrayKind::Array));
+            let left_is_array = matches!(
+                left.view(),
+                ValueView::Array(_, crate::value::ArrayKind::Array)
+            );
+            let right_is_array = matches!(
+                right.view(),
+                ValueView::Array(_, crate::value::ArrayKind::Array)
+            );
             // A typed source array (`Int @foo`) only keeps its Array shape
             // when every result still satisfies the element type; otherwise
             // the hyper op degrades to a plain List (rakudo#5778) rather than
             // raising a type-check error on assignment.
-            let declared_type = [left, right].into_iter().find_map(|side| match side {
-                Value::Array(data, crate::value::ArrayKind::Array) => data.value_type.clone(),
-                _ => None,
-            });
+            let declared_type = [left, right]
+                .into_iter()
+                .find_map(|side| match side.view() {
+                    ValueView::Array(data, crate::value::ArrayKind::Array) => {
+                        data.value_type.clone()
+                    }
+                    _ => None,
+                });
             let fits_declared_type = declared_type
                 .as_deref()
                 .is_none_or(|t| results.iter().all(|v| self.type_matches_value(t, v)));
             return if (!left_is_array && !right_is_array) || !fits_declared_type {
-                Ok(Value::Array(
+                Ok(Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(results)),
                     crate::value::ArrayKind::List,
                 ))
@@ -361,11 +374,13 @@ impl Interpreter {
         }
         // Base case: both operands are scalars.
         if op == "~~" {
-            return Ok(Value::Bool(self.vm_smart_match(left, right)));
+            return Ok(Value::truth(self.vm_smart_match(left, right)));
         }
         // Try user-defined infix dispatch first when either operand is an
         // instance, to avoid built-in ops silently coercing objects.
-        if matches!(left, Value::Instance { .. }) || matches!(right, Value::Instance { .. }) {
+        if matches!(left.view(), ValueView::Instance { .. })
+            || matches!(right.view(), ValueView::Instance { .. })
+        {
             let infix_name = format!("infix:<{}>", op);
             if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
                 return Ok(v);
@@ -376,10 +391,10 @@ impl Interpreter {
 
     /// The QuantHash kind and mutability of a value, if it is a Set/Bag/Mix.
     pub(super) fn quanthash_kind(v: &Value) -> Option<(QuantKind, bool)> {
-        match v {
-            Value::Set(_, m) => Some((QuantKind::Set, *m)),
-            Value::Bag(_, m) => Some((QuantKind::Bag, *m)),
-            Value::Mix(_, m) => Some((QuantKind::Mix, *m)),
+        match v.view() {
+            ValueView::Set(_, m) => Some((QuantKind::Set, m)),
+            ValueView::Bag(_, m) => Some((QuantKind::Bag, m)),
+            ValueView::Mix(_, m) => Some((QuantKind::Mix, m)),
             _ => None,
         }
     }
@@ -388,33 +403,34 @@ impl Interpreter {
     /// hyper logic applies. Set membership becomes `True`, Bag/Mix weights become
     /// Int/Num. Non-QuantHash values pass through unchanged (scalar broadcast).
     pub(super) fn quanthash_to_hash(v: &Value) -> Value {
-        let map: std::collections::HashMap<String, Value> = match v {
-            Value::Set(d, _) => d
+        let map: std::collections::HashMap<String, Value> = match v.view() {
+            ValueView::Set(d, _) => d
                 .elements
                 .iter()
-                .map(|k| (k.clone(), Value::Bool(true)))
+                .map(|k| (k.clone(), Value::TRUE))
                 .collect(),
-            Value::Bag(d, _) => d
+            ValueView::Bag(d, _) => d
                 .counts
                 .iter()
                 .map(|(k, c)| (k.clone(), Value::from_bigint(c.clone())))
                 .collect(),
-            Value::Mix(d, _) => d
+            ValueView::Mix(d, _) => d
                 .weights
                 .iter()
-                .map(|(k, w)| (k.clone(), Value::Num(*w)))
+                .map(|(k, w)| (k.clone(), Value::num(*w)))
                 .collect(),
-            other => return other.clone(),
+            _ => return v.clone(),
         };
-        Value::Hash(Value::hash_arc(map))
+        Value::hash_with_data(Value::hash_arc(map))
     }
 
     /// Rebuild a QuantHash of the given kind/mutability from a result Hash,
     /// applying Rakudo's QuantHash coercion: Set keeps truthy keys, Bag keeps
     /// strictly-positive integer weights, Mix keeps non-zero weights.
     pub(super) fn hash_to_quanthash(v: Value, kind: QuantKind, mutable: bool) -> Value {
-        let Value::Hash(map) = v else {
-            return v;
+        let map = match v.view() {
+            ValueView::Hash(map) => map.clone(),
+            _ => return v,
         };
         match kind {
             QuantKind::Set => {

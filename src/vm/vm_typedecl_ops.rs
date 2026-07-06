@@ -183,14 +183,14 @@ impl Interpreter {
             let env = self.env_mut();
             env.insert(
                 "_".to_string(),
-                Value::Package(Symbol::intern(&storage_name)),
+                Value::package(Symbol::intern(&storage_name)),
             );
             // Always insert the class type object so that class names take
             // precedence over same-named `$`-sigiled variables (whose stripped
             // name may already be in the env).
             env.insert(
                 qualified_name.clone(),
-                Value::Package(Symbol::intern(&storage_name)),
+                Value::package(Symbol::intern(&storage_name)),
             );
             // When a nested class is registered inside another class (e.g. class B inside class A
             // becomes A::B), suppress the short name (B) so it cannot be used outside.
@@ -208,7 +208,7 @@ impl Interpreter {
                 let env = self.env_mut();
                 env.insert(
                     resolved_name.clone(),
-                    Value::Package(Symbol::intern(&storage_name)),
+                    Value::package(Symbol::intern(&storage_name)),
                 );
             }
             // When a class is declared with an already-qualified name
@@ -226,7 +226,7 @@ impl Interpreter {
                 // must not make the bare name `Channel` resolve to the user class).
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
                     self.env_mut().entry_or_insert_with(short, || {
-                        Value::Package(Symbol::intern(&storage_name))
+                        Value::package(Symbol::intern(&storage_name))
                     });
                 }
             }
@@ -246,20 +246,20 @@ impl Interpreter {
             let has_trait_mod =
                 self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
             if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
-                let type_obj = Value::Package(Symbol::intern(&storage_name));
+                let type_obj = Value::package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
                 for (trait_name, trait_arg) in custom_traits {
                     let trait_value = if let Some(arg_expr) = trait_arg {
                         self.vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
                     } else {
-                        Value::Bool(true)
+                        Value::TRUE
                     };
-                    let named_arg = Value::Pair(trait_name.clone(), Box::new(trait_value));
+                    let named_arg = Value::pair(trait_name.clone(), trait_value);
                     self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
                 // Dispatch deferred unknown parents as custom traits (no args)
                 for trait_name in &deferred_traits {
-                    let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
+                    let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
                     self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
             }
@@ -371,16 +371,16 @@ impl Interpreter {
             self.compile_role_methods(&qualified_name);
             self.env_mut().insert(
                 "_".to_string(),
-                Value::Package(Symbol::intern(&qualified_name)),
+                Value::package(Symbol::intern(&qualified_name)),
             );
             self.env_mut().insert(
                 qualified_name.clone(),
-                Value::Package(Symbol::intern(&qualified_name)),
+                Value::package(Symbol::intern(&qualified_name)),
             );
             if qualified_name != name_str && !name_str.contains("::") {
                 self.env_mut().insert(
                     name_str.clone(),
-                    Value::Package(Symbol::intern(&qualified_name)),
+                    Value::package(Symbol::intern(&qualified_name)),
                 );
             }
             // When a role is declared with an already-qualified name
@@ -395,7 +395,7 @@ impl Interpreter {
                     .unwrap_or_else(|| qualified_name.clone());
                 if !short.is_empty() && short != qualified_name {
                     self.env_mut().entry_or_insert_with(short, || {
-                        Value::Package(Symbol::intern(&qualified_name))
+                        Value::package(Symbol::intern(&qualified_name))
                     });
                 }
             }
@@ -443,7 +443,7 @@ impl Interpreter {
             let has_trait_mod =
                 self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
             if has_trait_mod && (!custom_traits.is_empty() || !role_deferred.is_empty()) {
-                let type_obj = Value::Package(Symbol::intern(&qualified_name));
+                let type_obj = Value::package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {
                     // Skip internal markers (e.g. `__my_scoped`); they are not real `is` traits.
                     if trait_name.starts_with("__") {
@@ -452,14 +452,14 @@ impl Interpreter {
                     let trait_value = if let Some(arg_expr) = trait_arg {
                         self.vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
                     } else {
-                        Value::Bool(true)
+                        Value::TRUE
                     };
-                    let named_arg = Value::Pair(trait_name.clone(), Box::new(trait_value));
+                    let named_arg = Value::pair(trait_name.clone(), trait_value);
                     self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
                 // Dispatch deferred unknown parents as custom traits (no args)
                 for trait_name in &role_deferred {
-                    let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
+                    let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
                     self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
             }

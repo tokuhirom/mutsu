@@ -11,8 +11,8 @@ impl Interpreter {
         {
             return shape.len();
         }
-        match value {
-            Value::Array(items, ..) => {
+        match value.view() {
+            ValueView::Array(items, ..) => {
                 let child = items
                     .first()
                     .map(Self::array_depth)
@@ -25,18 +25,18 @@ impl Interpreter {
     }
 
     pub(super) fn index_to_usize(idx: &Value) -> Option<usize> {
-        match idx {
-            Value::Int(i) if *i >= 0 => Some(*i as usize),
-            Value::Num(f) if *f >= 0.0 => Some(*f as usize),
-            Value::Rat(n, d) if *d != 0 => {
-                let f = *n as f64 / *d as f64;
+        match idx.view() {
+            ValueView::Int(i) if i >= 0 => Some(i as usize),
+            ValueView::Num(f) if f >= 0.0 => Some(f as usize),
+            ValueView::Rat(n, d) if d != 0 => {
+                let f = n as f64 / d as f64;
                 (f >= 0.0).then_some(f as usize)
             }
-            Value::FatRat(n, d) if *d != 0 => {
-                let f = *n as f64 / *d as f64;
+            ValueView::FatRat(n, d) if d != 0 => {
+                let f = n as f64 / d as f64;
                 (f >= 0.0).then_some(f as usize)
             }
-            Value::BigRat(_, d) if !d.is_zero() => {
+            ValueView::BigRat(_, d) if !d.is_zero() => {
                 let f = runtime::to_float_value(idx)?;
                 (f >= 0.0).then_some(f as usize)
             }
@@ -47,8 +47,8 @@ impl Interpreter {
     fn not_enough_dimensions_error(operation: &str, got: usize, needed: usize) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("operation".to_string(), Value::str(operation.to_string()));
-        attrs.insert("got-dimensions".to_string(), Value::Int(got as i64));
-        attrs.insert("needed-dimensions".to_string(), Value::Int(needed as i64));
+        attrs.insert("got-dimensions".to_string(), Value::int(got as i64));
+        attrs.insert("needed-dimensions".to_string(), Value::int(needed as i64));
         attrs.insert(
             "message".to_string(),
             Value::str(format!(
@@ -73,14 +73,14 @@ impl Interpreter {
             return Ok(target.clone());
         }
         let head = &indices[0];
-        if matches!(head, Value::Whatever)
-            || matches!(head, Value::Num(f) if f.is_infinite() && *f > 0.0)
+        if matches!(head.view(), ValueView::Whatever)
+            || matches!(head.view(), ValueView::Num(f) if f.is_infinite() && f > 0.0)
         {
             if indices.len() > 1 && crate::runtime::utils::is_shaped_array(target) {
                 return Err(RuntimeError::typed_msg("X::NYI", "Not yet implemented"));
             }
-            let Value::Array(items, ..) = target else {
-                return Ok(Value::Nil);
+            let ValueView::Array(items, ..) = target.view() else {
+                return Ok(Value::NIL);
             };
             let mut out = Vec::with_capacity(items.len());
             for item in items.iter() {
@@ -89,16 +89,16 @@ impl Interpreter {
             return Ok(Value::array(out));
         }
         let Some(i) = Self::index_to_usize(head) else {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         };
-        let Value::Array(items, ..) = target else {
-            return Ok(Value::Nil);
+        let ValueView::Array(items, ..) = target.view() else {
+            return Ok(Value::NIL);
         };
         if i >= items.len() {
             if strict_oob {
                 return Err(RuntimeError::new("Index out of bounds"));
             }
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         Self::index_array_multidim(&items[i], &indices[1..], strict_oob)
     }
@@ -123,22 +123,24 @@ impl Interpreter {
         let Some(i) = Self::index_to_usize(&indices[0]) else {
             return Err(RuntimeError::new("Index out of bounds"));
         };
-        let Value::Array(items, ..) = target else {
+        let Some(res) = target.with_array_mut(|items, _| {
+            if i >= items.len() {
+                return Err(RuntimeError::new("Index out of bounds"));
+            }
+            let arr = crate::gc::Gc::make_mut(items);
+            if indices.len() == 1 {
+                Value::assign_element_slot(&mut arr[i], val);
+            } else {
+                Self::assign_array_multidim(&mut arr[i], &indices[1..], val)?;
+            }
+            if let Some(shape) = shape.as_deref() {
+                crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
+            }
+            Ok(())
+        }) else {
             return Err(RuntimeError::new("Index out of bounds"));
         };
-        if i >= items.len() {
-            return Err(RuntimeError::new("Index out of bounds"));
-        }
-        let arr = crate::gc::Gc::make_mut(items);
-        if indices.len() == 1 {
-            Value::assign_element_slot(&mut arr[i], val);
-        } else {
-            Self::assign_array_multidim(&mut arr[i], &indices[1..], val)?;
-        }
-        if let Some(shape) = shape.as_deref() {
-            crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
-        }
-        Ok(())
+        res
     }
 
     pub(super) fn delete_array_multidim(
@@ -155,32 +157,34 @@ impl Interpreter {
                 depth,
             ));
         }
-        let hole_value = || Value::Package(Symbol::intern(hole_type));
+        let hole_value = || Value::package(Symbol::intern(hole_type));
         if indices.is_empty() {
             return Ok(hole_value());
         }
         let Some(i) = Self::index_to_usize(&indices[0]) else {
             return Ok(hole_value());
         };
-        let Value::Array(items, ..) = target else {
-            return Ok(hole_value());
-        };
-        if i >= items.len() {
-            return Ok(hole_value());
-        }
-        let arr = crate::gc::Gc::make_mut(items);
-        if indices.len() == 1 {
-            let prev = arr[i].clone();
-            arr[i] = hole_value();
+        let Some(res) = target.with_array_mut(|items, _| {
+            if i >= items.len() {
+                return Ok(hole_value());
+            }
+            let arr = crate::gc::Gc::make_mut(items);
+            if indices.len() == 1 {
+                let prev = arr[i].clone();
+                arr[i] = hole_value();
+                if let Some(shape) = shape.as_deref() {
+                    crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
+                }
+                return Ok(prev);
+            }
+            let deleted = Self::delete_array_multidim(&mut arr[i], &indices[1..], hole_type)?;
             if let Some(shape) = shape.as_deref() {
                 crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
             }
-            return Ok(prev);
-        }
-        let deleted = Self::delete_array_multidim(&mut arr[i], &indices[1..], hole_type)?;
-        if let Some(shape) = shape.as_deref() {
-            crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
-        }
-        Ok(deleted)
+            Ok(deleted)
+        }) else {
+            return Ok(hole_value());
+        };
+        res
     }
 }

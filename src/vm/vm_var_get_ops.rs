@@ -9,45 +9,41 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let val = if name == "Bool::True" {
-            Value::Bool(true)
+            Value::TRUE
         } else if name == "Bool::False" {
-            Value::Bool(false)
+            Value::FALSE
         } else if name == "Order::Less" {
-            Value::Enum {
-                enum_type: Symbol::intern("Order"),
-                key: Symbol::intern("Less"),
-                value: EnumValue::Int(-1),
-                index: 0,
-            }
+            Value::enum_parts(
+                Symbol::intern("Order"),
+                Symbol::intern("Less"),
+                EnumValue::Int(-1),
+                0,
+            )
         } else if name == "Order::Same" {
-            Value::Enum {
-                enum_type: Symbol::intern("Order"),
-                key: Symbol::intern("Same"),
-                value: EnumValue::Int(0),
-                index: 1,
-            }
+            Value::enum_parts(
+                Symbol::intern("Order"),
+                Symbol::intern("Same"),
+                EnumValue::Int(0),
+                1,
+            )
         } else if name == "Order::More" {
-            Value::Enum {
-                enum_type: Symbol::intern("Order"),
-                key: Symbol::intern("More"),
-                value: EnumValue::Int(1),
-                index: 2,
-            }
+            Value::enum_parts(
+                Symbol::intern("Order"),
+                Symbol::intern("More"),
+                EnumValue::Int(1),
+                2,
+            )
         } else if (name.starts_with("infix:<")
             || name.starts_with("prefix:<")
             || name.starts_with("postfix:<"))
             && name.ends_with('>')
         {
-            Value::Routine {
-                package: Symbol::intern("GLOBAL"),
-                name: Symbol::intern(name),
-                is_regex: false,
-            }
+            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(name), false)
         } else if self.is_name_suppressed(name) {
             // If we are inside the parent class of the suppressed nested class,
             // resolve the short name to the qualified name (e.g. Frog -> Forest::Frog).
             if let Some(qualified) = self.resolve_suppressed_type(name) {
-                Value::Package(Symbol::intern(&qualified))
+                Value::package(Symbol::intern(&qualified))
             } else {
                 return Err(RuntimeError::new(format!(
                     "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
@@ -59,11 +55,7 @@ impl Interpreter {
         {
             let qualified_name = format!("{pkg}::{stripped_sym}");
             if self.has_function(&qualified_name) || self.has_multi_function(&qualified_name) {
-                Value::Routine {
-                    package: Symbol::intern(pkg),
-                    name: Symbol::intern(&qualified_name),
-                    is_regex: false,
-                }
+                Value::routine_parts(Symbol::intern(pkg), Symbol::intern(&qualified_name), false)
             } else {
                 Value::str(name.to_string())
             }
@@ -71,25 +63,25 @@ impl Interpreter {
             // Raku term constant `i` (imaginary unit) — must be resolved before
             // the env lookup because `$i` is stored under key "i" (no sigil) and
             // would shadow the term.  Sigilless `my \i` goes through GetLocal.
-            Value::Complex(0.0, 1.0)
+            Value::complex(0.0, 1.0)
         } else if name == "NaN" {
-            Value::Num(f64::NAN)
+            Value::num(f64::NAN)
         } else if name == "Inf" {
-            Value::Num(f64::INFINITY)
+            Value::num(f64::INFINITY)
         } else if name == "Empty" && !self.has_type(name) {
             // A user-declared type named `Empty` shadows the empty-Slip term
             // (it is resolved to a Package by the `has_type` branch below).
             // `Inf`/`NaN` are numeric literals and are not shadowable.
-            Value::Slip(std::sync::Arc::new(vec![]))
+            Value::slip_arc(std::sync::Arc::new(vec![]))
         } else if name == "GLOBALish" {
             // GLOBALish is the per-compunit alias for the GLOBAL package.
-            Value::Package(Symbol::intern("GLOBAL"))
+            Value::package(Symbol::intern("GLOBAL"))
         } else if Self::is_pseudo_package_bare(name) {
             // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to
             // Package values so that .WHO/.WHAT etc. work correctly.
-            Value::Package(Symbol::intern(name))
+            Value::package(Symbol::intern(name))
         } else if (self.has_type(name) || Self::is_builtin_type(name))
-            && matches!(self.env().get(name), Some(Value::Nil))
+            && matches!(self.env().get(name).map(Value::view), Some(ValueView::Nil))
         {
             // A bareword that names a type resolves to the type object. A same-named
             // `$`-sigiled scalar (`my $foo` where a class `foo` exists) is stored
@@ -97,13 +89,13 @@ impl Interpreter {
             // (Nil) it must NOT shadow the type — `$foo` and `foo` are distinct
             // symbols in Raku. This notably affects `my $foo = foo.new`, whose RHS
             // resolves `foo` before the `$foo` slot is assigned.
-            Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
+            Value::package(Symbol::intern(Self::resolve_type_alias(name)))
         } else if let Some(v) = self.env().get(name) {
-            if matches!(v, Value::Enum { .. } | Value::Nil)
-                || matches!(v, Value::Package(pkg) if pkg.resolve() != name)
+            if matches!(v.view(), ValueView::Enum { .. } | ValueView::Nil)
+                || matches!(v.view(), ValueView::Package(pkg) if pkg.resolve() != name)
             {
                 // Check for poisoned enum aliases
-                if matches!(v, Value::Enum { .. })
+                if matches!(v.view(), ValueView::Enum { .. })
                     && !name.contains("::")
                     && let Some(pkg_name) = self.is_poisoned_enum_alias(name)
                 {
@@ -131,12 +123,15 @@ impl Interpreter {
                 }
                 v.clone()
             } else if self.has_type(name) || Self::is_builtin_type(name) {
-                Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
+                Value::package(Symbol::intern(Self::resolve_type_alias(name)))
             } else if name.contains("::")
                 && !name.starts_with('$')
                 && !name.starts_with('@')
                 && !name.starts_with('%')
-                && matches!(v, Value::Routine { .. } | Value::Sub(_) | Value::WeakSub(_))
+                && matches!(
+                    v.view(),
+                    ValueView::Routine { .. } | ValueView::Sub(_) | ValueView::WeakSub(_)
+                )
             {
                 // CARRIER: pseudo-package names (SETTING::, OUTER::, CALLER::) need
                 // the interpreter's reflective scope resolution. See ledger §C.
@@ -172,7 +167,7 @@ impl Interpreter {
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, self)
         {
-            Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
+            Value::package(Symbol::intern(Self::resolve_type_alias(name)))
         } else if let Some(sub_id) = self.wrap_sub_id_for_name(name)
             && !self.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.get_wrapped_sub(name)
@@ -184,8 +179,8 @@ impl Interpreter {
             self.vm_call_on_value(sub_val, Vec::new(), Some(compiled_fns))?
         } else if let Some(callable) = self.env().get(&format!("&{name}")).cloned()
             && matches!(
-                callable,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                callable.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             )
         {
             self.vm_call_on_value(callable, Vec::new(), Some(compiled_fns))?
@@ -229,7 +224,7 @@ impl Interpreter {
             self.vm_call_function(name, Vec::new())?
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
-            Value::Package(Symbol::intern(name))
+            Value::package(Symbol::intern(name))
         } else if name.contains("::") {
             // Check if this is an access to a non-existent enum variant
             if let Some((pkg, sym)) = name.rsplit_once("::")
@@ -276,18 +271,18 @@ impl Interpreter {
                         || Self::is_builtin_type(bare)
                         || Self::is_type_with_smiley(bare, self))
                 {
-                    Value::Package(Symbol::intern(Self::resolve_type_alias(bare)))
+                    Value::package(Symbol::intern(Self::resolve_type_alias(bare)))
                 } else {
-                    Value::Package(Symbol::intern(name))
+                    Value::package(Symbol::intern(name))
                 }
             }
         } else if name.chars().count() == 1 {
             // Single unicode character — check for vulgar fractions etc.
             let ch = name.chars().next().unwrap();
             if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
-                Value::Rat(n, d)
+                Value::rat_raw(n, d)
             } else if let Some(val) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
-                Value::Int(val)
+                Value::int(val)
             } else if let Some(our_val) = self.get_our_var(name).cloned() {
                 // Single-character `our`-scoped constant declared in an inner
                 // block (see the multi-char case below for rationale).
@@ -335,7 +330,7 @@ impl Interpreter {
         }
         let (prefix, variant) = name.rsplit_once("::")?;
         // The prefix must resolve through the lexical env to an enum type object.
-        let Some(Value::Package(pkg)) = self.env().get(prefix) else {
+        let Some(ValueView::Package(pkg)) = self.env().get(prefix).map(Value::view) else {
             return None;
         };
         let pkg = pkg.resolve();
@@ -357,14 +352,14 @@ impl Interpreter {
     pub(super) fn get_outer_var(&self, code: &CompiledCode, name: &str, depth: usize) -> Value {
         let stack_len = self.outer_scope_locals.len();
         if depth == 0 || stack_len == 0 {
-            return Value::Nil;
+            return Value::NIL;
         }
         // The outer_scope_locals stack has the most recent (innermost) scope at the end.
         // depth=1 means the immediately enclosing scope (last element).
         let idx = if depth <= stack_len {
             stack_len - depth
         } else {
-            return Value::Nil;
+            return Value::NIL;
         };
         let saved = &self.outer_scope_locals[idx];
         // Find the local slot for this variable name
@@ -373,6 +368,6 @@ impl Interpreter {
                 return saved[slot].clone();
             }
         }
-        Value::Nil
+        Value::NIL
     }
 }

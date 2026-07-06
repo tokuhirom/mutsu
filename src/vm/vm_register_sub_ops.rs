@@ -41,7 +41,7 @@ impl Interpreter {
                 .and_then(|cc| cc.source_line)
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
-            let val = Value::Sub(crate::gc::Gc::new(crate::value::SubData {
+            let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(""),
                 params: params.clone(),
@@ -89,7 +89,7 @@ impl Interpreter {
                 .and_then(|cc| cc.source_line)
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
-            let val = Value::Sub(crate::gc::Gc::new(crate::value::SubData {
+            let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(""),
                 params: vec![],
@@ -220,8 +220,11 @@ impl Interpreter {
                     // be dropped when the module scope exits. Capture it so `import`
                     // can restore the trait-modified value.
                     let code_var_key = format!("&{}", resolved_name);
-                    if let Some(val @ Value::Mixin(..)) = self.env().get(&code_var_key) {
-                        self.record_exported_sub_value(pkg, resolved_name.clone(), val.clone());
+                    if let Some(val) = self.env().get(&code_var_key)
+                        && matches!(val.view(), ValueView::Mixin(..))
+                    {
+                        let val = val.clone();
+                        self.record_exported_sub_value(pkg, resolved_name.clone(), val);
                     }
                 }
                 if !signature_alternates.is_empty() {
@@ -269,7 +272,9 @@ impl Interpreter {
             {
                 let names: Vec<String> = self.escaping_our_lexical_names.iter().cloned().collect();
                 for name in names {
-                    if let Some(cell @ Value::ContainerRef(_)) = self.env().get(&name).cloned() {
+                    if let Some(cell) = self.env().get(&name).cloned()
+                        && cell.is_container_ref()
+                    {
                         self.escaped_our_lexical_cells.insert(name, cell);
                     }
                 }
@@ -435,14 +440,14 @@ impl Interpreter {
                         false,
                         self.clone_env(),
                     );
-                    let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
+                    let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
                     let result = loan_env!(
                         self,
                         call_function("trait_mod:<is>", vec![sub_val, named_arg])
                     )?;
                     // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
                     // store it in the env so function dispatch can find it.
-                    if matches!(result, Value::Mixin(..)) {
+                    if matches!(result.view(), ValueView::Mixin(..)) {
                         self.env_mut().insert(format!("&{}", name), result);
                     }
                 }

@@ -24,9 +24,9 @@ impl Interpreter {
         current_value: Option<Value>,
     ) -> bool {
         match body_result {
-            Ok(()) => current_value.unwrap_or(Value::Nil).truthy(),
+            Ok(()) => current_value.unwrap_or(Value::NIL).truthy(),
             Err(e) if !Self::is_exceptional_block_exit(e) => {
-                e.return_value.clone().unwrap_or(Value::Nil).truthy()
+                e.return_value.clone().unwrap_or(Value::NIL).truthy()
             }
             Err(_) => false,
         }
@@ -39,18 +39,18 @@ impl Interpreter {
         is_pre: bool,
         condition: Option<String>,
     ) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap_or(Value::Nil);
+        let val = self.stack.pop().unwrap_or(Value::NIL);
         if !val.truthy() {
             let phaser_name = if is_pre { "PRE" } else { "POST" };
             let condition = condition.unwrap_or_default();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
                 "phaser".to_string(),
-                Value::Str(Arc::new(phaser_name.to_string())),
+                Value::str_arc(Arc::new(phaser_name.to_string())),
             );
             attrs.insert(
                 "condition".to_string(),
-                Value::Str(Arc::new(condition.clone())),
+                Value::str_arc(Arc::new(condition.clone())),
             );
             let exception =
                 Value::make_instance(crate::symbol::Symbol::intern("X::Phaser::PrePost"), attrs);
@@ -103,7 +103,8 @@ impl Interpreter {
                 }
                 Err(e) if e.is_next() && has_label && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
-                    self.stack.push(Value::Slip(std::sync::Arc::new(vec![])));
+                    self.stack
+                        .push(Value::slip_arc(std::sync::Arc::new(vec![])));
                     break Ok(());
                 }
                 Err(e)
@@ -115,7 +116,7 @@ impl Interpreter {
                     self.stack.truncate(stack_base);
                     self.stack.push(
                         e.return_value
-                            .unwrap_or(Value::Slip(std::sync::Arc::new(vec![]))),
+                            .unwrap_or(Value::slip_arc(std::sync::Arc::new(vec![]))),
                     );
                     break Ok(());
                 }
@@ -123,7 +124,7 @@ impl Interpreter {
                     self.stack.truncate(stack_base);
                     self.stack.push(
                         e.return_value
-                            .unwrap_or(Value::Slip(std::sync::Arc::new(vec![]))),
+                            .unwrap_or(Value::slip_arc(std::sync::Arc::new(vec![]))),
                     );
                     break Ok(());
                 }
@@ -134,7 +135,7 @@ impl Interpreter {
         self.pop_once_scope();
         // Restore scope if scope_isolate is true
         if let Some((saved_env, saved_locals)) = saved_env {
-            let block_result = self.stack.pop().unwrap_or(Value::Nil);
+            let block_result = self.stack.pop().unwrap_or(Value::NIL);
             // Scope-isolating exit. The block isolates its OWN scalar/array `my`/
             // `state` declarations (reverted to the pre-block value so they don't
             // leak), but a mutation of an OUTER variable must persist —
@@ -154,11 +155,13 @@ impl Interpreter {
                     .to_string()
             };
             let isolate_set: std::collections::HashSet<String> = if isolate_decls_idx != u32::MAX {
-                if let Value::Array(items, ..) = &code.constants[isolate_decls_idx as usize] {
+                if let ValueView::Array(items, ..) =
+                    code.constants[isolate_decls_idx as usize].view()
+                {
                     items
                         .iter()
-                        .filter_map(|v| match v {
-                            Value::Str(s) => Some(strip_sigil(s.as_ref())),
+                        .filter_map(|v| match v.view() {
+                            ValueView::Str(s) => Some(strip_sigil(s.as_ref())),
                             _ => None,
                         })
                         .collect()
@@ -246,9 +249,9 @@ impl Interpreter {
         let stack_base = self.stack.len();
         self.run_range(code, body_start, end, compiled_fns)?;
         let value = if self.stack.len() > stack_base {
-            self.stack.pop().unwrap_or(Value::Nil)
+            self.stack.pop().unwrap_or(Value::NIL)
         } else {
-            Value::Nil
+            Value::NIL
         };
         self.set_once_value(cache_key, value.clone());
         self.stack.push(value);
@@ -266,7 +269,7 @@ impl Interpreter {
     ) {
         let name = Self::const_str(code, name_idx).to_string();
         if index_mode {
-            let _idx_val = self.stack.pop().unwrap_or(Value::Int(0));
+            let _idx_val = self.stack.pop().unwrap_or(Value::int(0));
         }
         let old_val = self
             .get_env_with_main_alias(&name)
@@ -276,7 +279,7 @@ impl Interpreter {
                     .position(|n| n == &name)
                     .map(|i| self.locals[i].clone())
             })
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         // A boxed (shared-cell) scalar saves its INNER value, decoupled from the
         // cell: otherwise the snapshot would be the same Arc that the dynamic-scope
         // write mutates, so the restore would see the modified value, not the
@@ -284,9 +287,9 @@ impl Interpreter {
         // docs/captured-outer-cell-sharing.md). The matching write-through restore
         // is in `restore_let_value`. Gated on the same toggle as the boxing it
         // supports, so the default build is byte-identical to before.
-        let old_val = match old_val {
-            Value::ContainerRef(arc) => arc.lock().unwrap().clone(),
-            v => v,
+        let old_val = match old_val.view() {
+            ValueView::ContainerRef(arc) => arc.lock().unwrap().clone(),
+            _ => old_val.clone(),
         };
         // For temp, deep-copy Array/Hash so the snapshot is independent of
         // future mutations (Arc is shared, so a shallow clone wouldn't work).
@@ -302,22 +305,22 @@ impl Interpreter {
     /// independent of future in-place mutations (the inner Arc would otherwise
     /// be shared).
     fn deep_copy_value(val: &Value) -> Value {
-        match val {
-            Value::Array(arc_vec, kind) => {
+        match val.view() {
+            ValueView::Array(arc_vec, kind) => {
                 let copied: Vec<Value> = arc_vec.iter().map(Self::deep_copy_value).collect();
-                Value::Array(
+                Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(copied)),
-                    *kind,
+                    kind,
                 )
             }
-            Value::Hash(arc_map) => {
+            ValueView::Hash(arc_map) => {
                 let copied: std::collections::HashMap<String, Value> = arc_map
                     .iter()
                     .map(|(k, v)| (k.clone(), Self::deep_copy_value(v)))
                     .collect();
-                Value::Hash(Value::hash_arc(copied))
+                Value::hash_with_data(Value::hash_arc(copied))
             }
-            other => other.clone(),
+            _ => val.clone(),
         }
     }
 
@@ -333,7 +336,7 @@ impl Interpreter {
         let end = body_end as usize;
         match self.run_range(code, body_start, end, compiled_fns) {
             Ok(()) => {
-                let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
+                let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
                 let success = Self::is_let_success(&topic);
                 loan_env!(self, resolve_let_saves_on_success(mark, success));
                 // `let`/`temp` restore writes the saved value back into `env` only;

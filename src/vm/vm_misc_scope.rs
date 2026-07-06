@@ -25,7 +25,7 @@ impl Interpreter {
     }
 
     pub(super) fn exec_state_var_init_op(&mut self, code: &CompiledCode, slot: u32, key_idx: u32) {
-        let init_val = self.stack.pop().unwrap_or(Value::Nil);
+        let init_val = self.stack.pop().unwrap_or(Value::NIL);
         let base_key = Self::const_str(code, key_idx);
         let scoped_key = self.scoped_state_key(base_key);
         let slot_idx = slot as usize;
@@ -119,12 +119,12 @@ impl Interpreter {
         // decl op pre-seeded in env, and the cell would never reach env (every
         // name-based reader/writer would then use the detached plain snapshot,
         // e.g. `state @a; @a = 9,8` right after init read back as empty).
-        let needs_env_insert = match (&val, self.env().get(&name)) {
-            (Value::ContainerRef(cell), Some(Value::ContainerRef(existing))) => {
+        let needs_env_insert = match (val.view(), self.env().get(&name).map(Value::view)) {
+            (ValueView::ContainerRef(cell), Some(ValueView::ContainerRef(existing))) => {
                 !crate::gc::Gc::ptr_eq(cell, existing)
             }
-            (Value::ContainerRef(_), _) => true,
-            (_, existing) => existing != Some(&val),
+            (ValueView::ContainerRef(_), _) => true,
+            _ => self.env().get(&name) != Some(&val),
         };
         if needs_env_insert {
             self.env_mut().insert(name.clone(), val);
@@ -265,8 +265,8 @@ impl Interpreter {
         // Set $! to the exception if the body threw one
         if post_start < end {
             let post_topic = match &body_result {
-                Ok(()) => self.last_topic_value.clone().unwrap_or(Value::Nil),
-                Err(e) => e.return_value.clone().unwrap_or(Value::Nil),
+                Ok(()) => self.last_topic_value.clone().unwrap_or(Value::NIL),
+                Err(e) => e.return_value.clone().unwrap_or(Value::NIL),
             };
             self.env_mut().insert("_".to_string(), post_topic.clone());
             // Also update the local slot for $_ if present
@@ -337,7 +337,7 @@ impl Interpreter {
             // package name. Restrict this to keys that look like a real
             // package identifier (uppercase ASCII start, not internal/
             // special variables like `_` or `__mutsu_*`).
-            if matches!(&v, Value::Package(_))
+            if matches!(v.view(), ValueView::Package(_))
                 && !saved_env.contains_key_sym(k)
                 && k.with_str(|s| s.chars().next().is_some_and(|c| c.is_ascii_uppercase()))
             {
@@ -401,7 +401,13 @@ impl Interpreter {
         // current value to the alias target in env so they stay in sync.
         for (idx, name) in code.locals.iter().enumerate() {
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-            if let Some(Value::Str(target)) = self.env().get(&alias_key).cloned() {
+            if let Some(ValueView::Str(target)) = self
+                .env()
+                .get(&alias_key)
+                .cloned()
+                .as_ref()
+                .map(Value::view)
+            {
                 let local_val = self.locals[idx].clone();
                 let differs = self
                     .env()

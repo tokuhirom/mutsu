@@ -30,11 +30,11 @@ impl Interpreter {
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::Bool(
+                Ok(Value::truth(
                     Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
                 ))
             } else {
-                Ok(Value::Bool(l.to_str_context() == r.to_str_context()))
+                Ok(Value::truth(l.to_str_context() == r.to_str_context()))
             }
         })?;
         self.stack.push(result);
@@ -50,14 +50,14 @@ impl Interpreter {
         // then negates the boolean-collapsed result, always returning Bool.
         let eq_result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::Bool(
+                Ok(Value::truth(
                     Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
                 ))
             } else {
-                Ok(Value::Bool(l.to_str_context() == r.to_str_context()))
+                Ok(Value::truth(l.to_str_context() == r.to_str_context()))
             }
         })?;
-        self.stack.push(Value::Bool(!eq_result.truthy()));
+        self.stack.push(Value::truth(!eq_result.truthy()));
         Ok(())
     }
 
@@ -73,11 +73,11 @@ impl Interpreter {
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::Bool(
+                Ok(Value::truth(
                     Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Less,
                 ))
             } else {
-                Ok(Value::Bool(l.to_str_context() < r.to_str_context()))
+                Ok(Value::truth(l.to_str_context() < r.to_str_context()))
             }
         })?;
         self.stack.push(result);
@@ -90,11 +90,11 @@ impl Interpreter {
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::Bool(
+                Ok(Value::truth(
                     Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Greater,
                 ))
             } else {
-                Ok(Value::Bool(l.to_str_context() > r.to_str_context()))
+                Ok(Value::truth(l.to_str_context() > r.to_str_context()))
             }
         })?;
         self.stack.push(result);
@@ -107,11 +107,11 @@ impl Interpreter {
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::Bool(
+                Ok(Value::truth(
                     Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Greater,
                 ))
             } else {
-                Ok(Value::Bool(l.to_str_context() <= r.to_str_context()))
+                Ok(Value::truth(l.to_str_context() <= r.to_str_context()))
             }
         })?;
         self.stack.push(result);
@@ -124,11 +124,11 @@ impl Interpreter {
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::Bool(
+                Ok(Value::truth(
                     Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Less,
                 ))
             } else {
-                Ok(Value::Bool(l.to_str_context() >= r.to_str_context()))
+                Ok(Value::truth(l.to_str_context() >= r.to_str_context()))
             }
         })?;
         self.stack.push(result);
@@ -137,53 +137,55 @@ impl Interpreter {
 
     pub(super) fn spaceship_ordering(left: &Value, right: &Value) -> std::cmp::Ordering {
         // Unwrap Mixin for comparison
-        let left = match left {
-            Value::Mixin(inner, _) => inner.as_ref(),
-            other => other,
+        let left = match left.view() {
+            ValueView::Mixin(inner, _) => inner.as_ref(),
+            _ => left,
         };
-        let right = match right {
-            Value::Mixin(inner, _) => inner.as_ref(),
-            other => other,
+        let right = match right.view() {
+            ValueView::Mixin(inner, _) => inner.as_ref(),
+            _ => right,
         };
-        match (left, right) {
-            (Value::Int(a), Value::Int(b)) => a.cmp(b),
-            (l, r)
-                if (is_rationalish(l) || is_rationalish(r))
+        match (left.view(), right.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => a.cmp(&b),
+            (_, _)
+                if (is_rationalish(left) || is_rationalish(right))
                     && matches!(
-                        l,
-                        Value::Int(_)
-                            | Value::BigInt(_)
-                            | Value::Rat(_, _)
-                            | Value::FatRat(_, _)
-                            | Value::BigRat(_, _)
+                        left.view(),
+                        ValueView::Int(_)
+                            | ValueView::BigInt(_)
+                            | ValueView::Rat(_, _)
+                            | ValueView::FatRat(_, _)
+                            | ValueView::BigRat(_, _)
                     )
                     && matches!(
-                        r,
-                        Value::Int(_)
-                            | Value::BigInt(_)
-                            | Value::Rat(_, _)
-                            | Value::FatRat(_, _)
-                            | Value::BigRat(_, _)
+                        right.view(),
+                        ValueView::Int(_)
+                            | ValueView::BigInt(_)
+                            | ValueView::Rat(_, _)
+                            | ValueView::FatRat(_, _)
+                            | ValueView::BigRat(_, _)
                     ) =>
             {
-                runtime::to_big_rat_parts(l)
-                    .zip(runtime::to_big_rat_parts(r))
+                runtime::to_big_rat_parts(left)
+                    .zip(runtime::to_big_rat_parts(right))
                     .and_then(|(a, b)| runtime::compare_big_rat_parts(a, b))
                     .unwrap_or(std::cmp::Ordering::Equal)
             }
-            (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-            (Value::Int(a), Value::Num(b)) => (*a as f64)
-                .partial_cmp(b)
+            (ValueView::Num(a), ValueView::Num(b)) => {
+                a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+            }
+            (ValueView::Int(a), ValueView::Num(b)) => (a as f64)
+                .partial_cmp(&b)
                 .unwrap_or(std::cmp::Ordering::Equal),
-            (Value::Num(a), Value::Int(b)) => a
-                .partial_cmp(&(*b as f64))
+            (ValueView::Num(a), ValueView::Int(b)) => a
+                .partial_cmp(&(b as f64))
                 .unwrap_or(std::cmp::Ordering::Equal),
             (
-                Value::Instance {
+                ValueView::Instance {
                     attributes: left_attrs,
                     ..
                 },
-                Value::Instance {
+                ValueView::Instance {
                     attributes: right_attrs,
                     ..
                 },
@@ -220,44 +222,44 @@ impl Interpreter {
                     .partial_cmp(&right_instant)
                     .unwrap_or(std::cmp::Ordering::Equal)
             }
-            (l, r)
+            (_, _)
                 if matches!(
-                    l,
-                    Value::Int(_)
-                        | Value::BigInt(_)
-                        | Value::Num(_)
-                        | Value::Rat(_, _)
-                        | Value::FatRat(_, _)
-                        | Value::BigRat(_, _)
+                    left.view(),
+                    ValueView::Int(_)
+                        | ValueView::BigInt(_)
+                        | ValueView::Num(_)
+                        | ValueView::Rat(_, _)
+                        | ValueView::FatRat(_, _)
+                        | ValueView::BigRat(_, _)
                 ) && matches!(
-                    r,
-                    Value::Int(_)
-                        | Value::BigInt(_)
-                        | Value::Num(_)
-                        | Value::Rat(_, _)
-                        | Value::FatRat(_, _)
-                        | Value::BigRat(_, _)
+                    right.view(),
+                    ValueView::Int(_)
+                        | ValueView::BigInt(_)
+                        | ValueView::Num(_)
+                        | ValueView::Rat(_, _)
+                        | ValueView::FatRat(_, _)
+                        | ValueView::BigRat(_, _)
                 ) =>
             {
-                value_to_f64(l)
-                    .partial_cmp(&value_to_f64(r))
+                value_to_f64(left)
+                    .partial_cmp(&value_to_f64(right))
                     .unwrap_or(std::cmp::Ordering::Equal)
             }
             // Complex cmp: compare real parts first, then imaginary parts
             // NaN sorts as Greater (More) in Raku
-            (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
+            (ValueView::Complex(ar, ai), ValueView::Complex(br, bi)) => {
                 if ar.is_nan() || ai.is_nan() {
                     return std::cmp::Ordering::Greater;
                 }
-                match ar.partial_cmp(br).unwrap_or(std::cmp::Ordering::Greater) {
+                match ar.partial_cmp(&br).unwrap_or(std::cmp::Ordering::Greater) {
                     std::cmp::Ordering::Equal => {
-                        ai.partial_cmp(bi).unwrap_or(std::cmp::Ordering::Greater)
+                        ai.partial_cmp(&bi).unwrap_or(std::cmp::Ordering::Greater)
                     }
                     ord => ord,
                 }
             }
             // Complex vs Real: treat Real as Complex with im=0
-            (Value::Complex(ar, ai), _) => {
+            (ValueView::Complex(ar, ai), _) => {
                 if ar.is_nan() || ai.is_nan() {
                     return std::cmp::Ordering::Greater;
                 }
@@ -269,80 +271,70 @@ impl Interpreter {
                     ord => ord,
                 }
             }
-            (_, Value::Complex(br, bi)) => {
+            (_, ValueView::Complex(br, bi)) => {
                 if br.is_nan() || bi.is_nan() {
                     return std::cmp::Ordering::Greater;
                 }
                 let ar = value_to_f64(left);
-                match ar.partial_cmp(br).unwrap_or(std::cmp::Ordering::Greater) {
+                match ar.partial_cmp(&br).unwrap_or(std::cmp::Ordering::Greater) {
                     std::cmp::Ordering::Equal => 0.0f64
-                        .partial_cmp(bi)
+                        .partial_cmp(&bi)
                         .unwrap_or(std::cmp::Ordering::Greater),
                     ord => ord,
                 }
             }
-            (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
+            (ValueView::Version { parts: ap, .. }, ValueView::Version { parts: bp, .. }) => {
                 runtime::version_cmp_parts(ap, bp)
             }
             // Enum values: compare by their integer value
-            (Value::Enum { value: av, .. }, Value::Enum { value: bv, .. }) => {
+            (ValueView::Enum { value: av, .. }, ValueView::Enum { value: bv, .. }) => {
                 av.as_i64().cmp(&bv.as_i64())
             }
             // Range cmp Range (both must be ranges; Range vs List handled below)
-            (l, r) if is_range_value(l) && is_range_value(r) => range_cmp(l, r),
+            (_, _) if is_range_value(left) && is_range_value(right) => range_cmp(left, right),
             // Real cmp Range (where Real is not a list/range)
-            (_, r)
-                if is_range_value(r)
+            (_, _)
+                if is_range_value(right)
                     && !is_range_value(left)
                     && get_list_elements(left).is_none() =>
             {
-                let as_range = Value::GenericRange {
-                    start: Arc::new(left.clone()),
-                    end: Arc::new(left.clone()),
-                    excl_start: false,
-                    excl_end: false,
-                };
-                range_cmp(&as_range, r)
+                let as_range = Value::generic_range(left.clone(), left.clone(), false, false);
+                range_cmp(&as_range, right)
             }
             // Range cmp Real (where Real is not a list/range)
-            (l, _)
-                if is_range_value(l)
+            (_, _)
+                if is_range_value(left)
                     && !is_range_value(right)
                     && get_list_elements(right).is_none() =>
             {
-                let as_range = Value::GenericRange {
-                    start: Arc::new(right.clone()),
-                    end: Arc::new(right.clone()),
-                    excl_start: false,
-                    excl_end: false,
-                };
-                range_cmp(l, &as_range)
+                let as_range = Value::generic_range(right.clone(), right.clone(), false, false);
+                range_cmp(left, &as_range)
             }
             // List/Array cmp (including Range vs List: expand range to list)
-            (l, r)
-                if get_list_elements(l).is_some()
-                    || get_list_elements(r).is_some()
-                    || is_range_value(l)
-                    || is_range_value(r) =>
+            (_, _)
+                if get_list_elements(left).is_some()
+                    || get_list_elements(right).is_some()
+                    || is_range_value(left)
+                    || is_range_value(right) =>
             {
                 let l_vec;
-                let l_elems: &[Value] = if let Some(elems) = get_list_elements(l) {
+                let l_elems: &[Value] = if let Some(elems) = get_list_elements(left) {
                     elems
-                } else if is_range_value(l) {
-                    l_vec = expand_range_to_list(l);
+                } else if is_range_value(left) {
+                    l_vec = expand_range_to_list(left);
                     &l_vec
                 } else {
-                    l_vec = vec![l.clone()];
+                    l_vec = vec![left.clone()];
                     &l_vec
                 };
                 let r_vec;
-                let r_elems: &[Value] = if let Some(elems) = get_list_elements(r) {
+                let r_elems: &[Value] = if let Some(elems) = get_list_elements(right) {
                     elems
-                } else if is_range_value(r) {
-                    r_vec = expand_range_to_list(r);
+                } else if is_range_value(right) {
+                    r_vec = expand_range_to_list(right);
                     &r_vec
                 } else {
-                    r_vec = vec![r.clone()];
+                    r_vec = vec![right.clone()];
                     &r_vec
                 };
                 for (le, re) in l_elems.iter().zip(r_elems.iter()) {
@@ -364,7 +356,7 @@ impl Interpreter {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             // NaN <=> anything produces Nil (unordered)
             if is_nan_value(&l) || is_nan_value(&r) {
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             }
             // Complex <=> Real: check $*TOLERANCE for imaginary part
             let l = vm.coerce_complex_to_real_if_tolerant(&l)?;
@@ -380,9 +372,9 @@ impl Interpreter {
     /// coerce it to its real part. Otherwise throw if it's Complex with a
     /// significant imaginary component.
     fn coerce_complex_to_real_if_tolerant(&mut self, val: &Value) -> Result<Value, RuntimeError> {
-        if let Value::Complex(re, im) = val {
-            if *im == 0.0 {
-                return Ok(Value::Num(*re));
+        if let ValueView::Complex(re, im) = val.view() {
+            if im == 0.0 {
+                return Ok(Value::num(re));
             }
             let tolerance = loan_env!(self, get_dynamic_var("$*TOLERANCE"))
                 .ok()
@@ -390,7 +382,7 @@ impl Interpreter {
                 .unwrap_or(1e-15);
             let re_abs = re.abs();
             if re_abs != 0.0 && im.abs() / re_abs <= tolerance {
-                Ok(Value::Num(*re))
+                Ok(Value::num(re))
             } else {
                 Err(RuntimeError::new(
                     "Cannot use <=> on Complex number with non-negligible imaginary part",
@@ -413,7 +405,7 @@ impl Interpreter {
         } else {
             ord == std::cmp::Ordering::Greater
         };
-        self.stack.push(Value::Bool(result));
+        self.stack.push(Value::truth(result));
     }
 
     pub(super) fn exec_cmp_op(&mut self) {
@@ -488,7 +480,7 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(runtime::values_identical(&l, &r)))
+            Ok(Value::truth(runtime::values_identical(&l, &r)))
         })?;
         self.stack.push(result);
         Ok(())
@@ -501,9 +493,9 @@ impl Interpreter {
         // It first evaluates === (which autothreads through junctions),
         // then negates the boolean-collapsed result, always returning Bool.
         let eq_result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(runtime::values_identical(&l, &r)))
+            Ok(Value::truth(runtime::values_identical(&l, &r)))
         })?;
-        self.stack.push(Value::Bool(!eq_result.truthy()));
+        self.stack.push(Value::truth(!eq_result.truthy()));
         Ok(())
     }
 
@@ -512,15 +504,15 @@ impl Interpreter {
     /// is not lazy. The tag follows `.WHAT`: a bare lazy `Seq` is `Seq`, a
     /// `.List`-coerced one is `List`, a `.Array`/`@`-coerced one is `Array`.
     fn lazy_eqv_type(v: &Value) -> Option<&'static str> {
-        match v {
-            Value::LazyList(ll) if ll.eqv_would_hang() => Some(if ll.in_array_context() {
+        match v.view() {
+            ValueView::LazyList(ll) if ll.eqv_would_hang() => Some(if ll.in_array_context() {
                 "Array"
             } else if ll.in_list_context() {
                 "List"
             } else {
                 "Seq"
             }),
-            Value::Array(_, kind) if kind.is_lazy() => Some("Array"),
+            ValueView::Array(_, kind) if kind.is_lazy() => Some("Array"),
             _ => None,
         }
     }
@@ -536,13 +528,13 @@ impl Interpreter {
         match (Self::lazy_eqv_type(&left), Self::lazy_eqv_type(&right)) {
             (Some(a), Some(b)) if a == b => return Err(RuntimeError::cannot_lazy("eqv")),
             (Some(_), Some(_)) => {
-                self.stack.push(Value::Bool(false));
+                self.stack.push(Value::FALSE);
                 return Ok(());
             }
             _ => {}
         }
         let result =
-            self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l.eqv(&r))))?;
+            self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::truth(l.eqv(&r))))?;
         self.stack.push(result);
         Ok(())
     }

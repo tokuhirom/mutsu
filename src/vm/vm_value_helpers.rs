@@ -8,15 +8,15 @@ impl Interpreter {
         let numeric_id = current_mutsu_thread_id();
         let is_initial = is_initial_thread();
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("id".to_string(), Value::Int(numeric_id));
+        attrs.insert("id".to_string(), Value::int(numeric_id));
         attrs.insert("name".to_string(), Value::str_from("<anon>"));
-        attrs.insert("is_initial".to_string(), Value::Bool(is_initial));
+        attrs.insert("is_initial".to_string(), Value::truth(is_initial));
         Value::make_instance(Symbol::intern("Thread"), attrs)
     }
 
     pub(super) fn const_str(code: &CompiledCode, idx: u32) -> &str {
-        match &code.constants[idx as usize] {
-            Value::Str(s) => s.as_str(),
+        match code.constants[idx as usize].view() {
+            ValueView::Str(s) => s.as_str(),
             _ => unreachable!("expected string constant"),
         }
     }
@@ -28,14 +28,14 @@ impl Interpreter {
     /// `.[N>0]` is Nil). A real Match exports its captures as digit keys, so this
     /// is only reached for a non-Match `$/`; Instances/Match fall through to Nil.
     pub(super) fn bound_slash_positional(slash: &Value, i: usize) -> Value {
-        slash.with_deref(|v| match v {
-            Value::Array(data, _) => data.get(i).cloned().unwrap_or(Value::Nil),
-            Value::Instance { .. } => Value::Nil,
+        slash.with_deref(|v| match v.view() {
+            ValueView::Array(data, _) => data.get(i).cloned().unwrap_or(Value::NIL),
+            ValueView::Instance { .. } => Value::NIL,
             _ => {
                 if i == 0 {
                     v.clone()
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             }
         })
@@ -142,21 +142,25 @@ impl Interpreter {
     }
 
     pub(super) fn increment_value(value: &Value) -> Value {
-        match value {
-            Value::Int(i) => i
+        match value.view() {
+            ValueView::Int(i) => i
                 .checked_add(1)
-                .map(Value::Int)
-                .unwrap_or_else(|| Value::bigint(num_bigint::BigInt::from(*i) + 1)),
-            Value::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
-            Value::Bool(_) => Value::Bool(true),
-            Value::Rat(n, d) => make_rat(n + d, *d),
-            Value::FatRat(n, d) => match make_rat(n + d, *d) {
-                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
-                other => other,
-            },
-            Value::Num(f) => Value::Num(f + 1.0),
-            Value::Complex(r, i) => Value::Complex(r + 1.0, *i),
-            Value::Str(s) => {
+                .map(Value::int)
+                .unwrap_or_else(|| Value::bigint(num_bigint::BigInt::from(i) + 1)),
+            ValueView::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
+            ValueView::Bool(_) => Value::TRUE,
+            ValueView::Rat(n, d) => make_rat(n + d, d),
+            ValueView::FatRat(n, d) => {
+                let r = make_rat(n + d, d);
+                if let ValueView::Rat(nn, dd) = r.view() {
+                    Value::fat_rat_raw(nn, dd)
+                } else {
+                    r
+                }
+            }
+            ValueView::Num(f) => Value::num(f + 1.0),
+            ValueView::Complex(r, i) => Value::complex(r + 1.0, i),
+            ValueView::Str(s) => {
                 if let Some(next) = Self::superscript_succ(s) {
                     Value::str(next)
                 } else {
@@ -164,23 +168,26 @@ impl Interpreter {
                 }
             }
             // Mixin (allomorphic types like IntStr): increment the inner value
-            Value::Mixin(inner, _) => Self::increment_value(inner),
-            _ => Value::Int(1),
+            ValueView::Mixin(inner, _) => Self::increment_value(inner),
+            _ => Value::int(1),
         }
     }
 
     pub(super) fn normalize_incdec_source(value: Value) -> Value {
-        match value {
-            Value::Nil => Value::Int(0),
-            Value::Package(name) => match name.resolve().as_str() {
-                "Num" | "num" => Value::Num(0.0),
-                "Rat" => crate::value::make_rat(0, 1),
-                "Complex" => Value::Complex(0.0, 0.0),
-                "Bool" => Value::Bool(false),
-                _ => Value::Int(0),
-            },
-            other => other,
+        match value.view() {
+            ValueView::Nil => return Value::int(0),
+            ValueView::Package(name) => {
+                return match name.resolve().as_str() {
+                    "Num" | "num" => Value::num(0.0),
+                    "Rat" => crate::value::make_rat(0, 1),
+                    "Complex" => Value::complex(0.0, 0.0),
+                    "Bool" => Value::FALSE,
+                    _ => Value::int(0),
+                };
+            }
+            _ => {}
         }
+        value
     }
 
     /// Like normalize_incdec_source, but also checks the variable's type
@@ -191,40 +198,43 @@ impl Interpreter {
         var_name: &str,
         value: Value,
     ) -> Value {
-        match &value {
-            Value::Nil => {
-                if let Some(tc) = loan_env!(self, var_type_constraint(var_name)) {
-                    match tc.as_str() {
-                        "Num" | "num" => Value::Num(0.0),
-                        "Rat" => crate::value::make_rat(0, 1),
-                        "Complex" => Value::Complex(0.0, 0.0),
-                        "Bool" => Value::Bool(false),
-                        _ => Value::Int(0),
-                    }
-                } else {
-                    Value::Int(0)
+        if value.is_nil() {
+            if let Some(tc) = loan_env!(self, var_type_constraint(var_name)) {
+                match tc.as_str() {
+                    "Num" | "num" => Value::num(0.0),
+                    "Rat" => crate::value::make_rat(0, 1),
+                    "Complex" => Value::complex(0.0, 0.0),
+                    "Bool" => Value::FALSE,
+                    _ => Value::int(0),
                 }
+            } else {
+                Value::int(0)
             }
-            _ => Self::normalize_incdec_source(value),
+        } else {
+            Self::normalize_incdec_source(value)
         }
     }
 
     pub(super) fn decrement_value(value: &Value) -> Value {
-        match value {
-            Value::Int(i) => i
+        match value.view() {
+            ValueView::Int(i) => i
                 .checked_sub(1)
-                .map(Value::Int)
-                .unwrap_or_else(|| Value::bigint(num_bigint::BigInt::from(*i) - 1)),
-            Value::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
-            Value::Bool(_) => Value::Bool(false),
-            Value::Rat(n, d) => make_rat(n - d, *d),
-            Value::FatRat(n, d) => match make_rat(n - d, *d) {
-                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
-                other => other,
-            },
-            Value::Num(f) => Value::Num(f - 1.0),
-            Value::Complex(r, i) => Value::Complex(r - 1.0, *i),
-            Value::Str(s) => {
+                .map(Value::int)
+                .unwrap_or_else(|| Value::bigint(num_bigint::BigInt::from(i) - 1)),
+            ValueView::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
+            ValueView::Bool(_) => Value::FALSE,
+            ValueView::Rat(n, d) => make_rat(n - d, d),
+            ValueView::FatRat(n, d) => {
+                let r = make_rat(n - d, d);
+                if let ValueView::Rat(nn, dd) = r.view() {
+                    Value::fat_rat_raw(nn, dd)
+                } else {
+                    r
+                }
+            }
+            ValueView::Num(f) => Value::num(f - 1.0),
+            ValueView::Complex(r, i) => Value::complex(r - 1.0, i),
+            ValueView::Str(s) => {
                 if let Some(prev) = Self::superscript_pred(s) {
                     Value::str(prev)
                 } else if let Some(pred) = Self::string_pred_checked(s) {
@@ -235,8 +245,8 @@ impl Interpreter {
                 }
             }
             // Mixin (allomorphic types like IntStr): decrement the inner value
-            Value::Mixin(inner, _) => Self::decrement_value(inner),
-            _ => Value::Int(-1),
+            ValueView::Mixin(inner, _) => Self::decrement_value(inner),
+            _ => Value::int(-1),
         }
     }
 
@@ -250,7 +260,7 @@ impl Interpreter {
         let exception = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
         let mut failure_attrs = std::collections::HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
-        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        failure_attrs.insert("handled".to_string(), Value::FALSE);
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
@@ -504,16 +514,16 @@ impl Interpreter {
             return value;
         }
 
-        let big_val = match &value {
-            Value::Int(n) => NumBigInt::from(*n),
-            Value::BigInt(n) => (**n).clone(),
+        let big_val = match value.view() {
+            ValueView::Int(n) => NumBigInt::from(n),
+            ValueView::BigInt(n) => (**n).clone(),
             _ => return value,
         };
 
         let wrapped = native_types::wrap_native_int(&constraint, &big_val);
         wrapped
             .to_i64()
-            .map(Value::Int)
+            .map(Value::int)
             .unwrap_or_else(|| Value::bigint(wrapped))
     }
 
@@ -521,43 +531,43 @@ impl Interpreter {
     /// Array/List elements are expanded, itemized containers are preserved.
     /// Ranges and Seqs are also expanded into their elements.
     pub(super) fn flatten_value_for_slurpy(val: &Value, out: &mut Vec<Value>) {
-        match val {
-            Value::Array(items, kind) if !kind.is_itemized() => {
+        match val.view() {
+            ValueView::Array(items, kind) if !kind.is_itemized() => {
                 for item in items.iter() {
                     Self::flatten_value_for_slurpy(item, out);
                 }
             }
-            Value::Range(a, b) => {
-                if *b >= *a {
-                    for i in *a..=*b {
-                        out.push(Value::Int(i));
+            ValueView::Range(a, b) => {
+                if b >= a {
+                    for i in a..=b {
+                        out.push(Value::int(i));
                     }
                 }
             }
-            Value::RangeExcl(a, b) => {
-                if *b > *a {
-                    for i in *a..*b {
-                        out.push(Value::Int(i));
+            ValueView::RangeExcl(a, b) => {
+                if b > a {
+                    for i in a..b {
+                        out.push(Value::int(i));
                     }
                 }
             }
-            Value::RangeExclStart(a, b) => {
+            ValueView::RangeExclStart(a, b) => {
                 let start = a.saturating_add(1);
-                if *b >= start {
-                    for i in start..=*b {
-                        out.push(Value::Int(i));
+                if b >= start {
+                    for i in start..=b {
+                        out.push(Value::int(i));
                     }
                 }
             }
-            Value::RangeExclBoth(a, b) => {
+            ValueView::RangeExclBoth(a, b) => {
                 let start = a.saturating_add(1);
-                if *b > start {
-                    for i in start..*b {
-                        out.push(Value::Int(i));
+                if b > start {
+                    for i in start..b {
+                        out.push(Value::int(i));
                     }
                 }
             }
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
@@ -566,19 +576,19 @@ impl Interpreter {
                 // Try to convert to integer range for flattening
                 let a = crate::runtime::to_int(start);
                 let b = crate::runtime::to_int(end);
-                let s = if *excl_start { a + 1 } else { a };
-                let e = if *excl_end { b } else { b + 1 };
+                let s = if excl_start { a + 1 } else { a };
+                let e = if excl_end { b } else { b + 1 };
                 for i in s..e {
-                    out.push(Value::Int(i));
+                    out.push(Value::int(i));
                 }
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 for item in items.iter() {
                     Self::flatten_value_for_slurpy(item, out);
                 }
             }
-            other => {
-                out.push(other.clone());
+            _ => {
+                out.push(val.clone());
             }
         }
     }

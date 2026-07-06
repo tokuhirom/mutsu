@@ -20,12 +20,13 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if thunks.is_empty() {
             if scan {
-                self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
+                self.stack
+                    .push(Value::seq_arc(std::sync::Arc::new(Vec::new())));
             } else {
                 // Identity values
                 let identity = match op {
-                    "&&" | "and" => Value::Bool(true),
-                    _ => Value::Bool(false),
+                    "&&" | "and" => Value::TRUE,
+                    _ => Value::FALSE,
                 };
                 self.stack.push(identity);
             }
@@ -39,14 +40,14 @@ impl Interpreter {
             // Short-circuit once two truthy values are found.
             let mut found: Option<Value> = None;
             let mut multiple = false;
-            let mut last_val = Value::Nil; // track last evaluated value for all-false case
+            let mut last_val = Value::NIL; // track last evaluated value for all-false case
             let mut results: Vec<Value> = Vec::new();
             let mut done = false; // whether we have short-circuited
             for thunk in thunks {
                 if done {
                     // Already short-circuited: result is Nil for all remaining
                     if scan {
-                        results.push(Value::Nil);
+                        results.push(Value::NIL);
                     }
                     // don't evaluate thunk
                 } else {
@@ -59,7 +60,7 @@ impl Interpreter {
                             found = None;
                             done = true;
                             if scan {
-                                results.push(Value::Nil);
+                                results.push(Value::NIL);
                             }
                         } else {
                             found = Some(val.clone());
@@ -82,7 +83,7 @@ impl Interpreter {
                 }
             }
             let final_result = if multiple {
-                Value::Nil
+                Value::NIL
             } else if let Some(v) = found {
                 v
             } else {
@@ -90,7 +91,8 @@ impl Interpreter {
                 last_val
             };
             if scan {
-                self.stack.push(Value::Seq(std::sync::Arc::new(results)));
+                self.stack
+                    .push(Value::seq_arc(std::sync::Arc::new(results)));
             } else {
                 self.stack.push(final_result);
             }
@@ -144,7 +146,7 @@ impl Interpreter {
                         if runtime::types::value_is_defined(&acc) {
                             val
                         } else {
-                            Value::Slip(std::sync::Arc::new(vec![]))
+                            Value::slip_arc(std::sync::Arc::new(vec![]))
                         }
                     }
                     _ => val,
@@ -155,7 +157,8 @@ impl Interpreter {
             }
         }
         if scan {
-            self.stack.push(Value::Seq(std::sync::Arc::new(results)));
+            self.stack
+                .push(Value::seq_arc(std::sync::Arc::new(results)));
         } else {
             self.stack.push(acc);
         }
@@ -185,7 +188,7 @@ impl Interpreter {
         // .join) that read the cache directly get a useful prefix.
         const INITIAL_BATCH: usize = 1_000;
         self.force_scan_lazy_list(&ll, INITIAL_BATCH)?;
-        self.stack.push(Value::LazyList(ll));
+        self.stack.push(Value::lazy_list(ll));
         Ok(())
     }
 
@@ -202,18 +205,18 @@ impl Interpreter {
             // Return the block_stack Sub directly so callers can invoke it.
             if frame.name.is_empty() || frame.name == "<anon>" {
                 if let Some(val) = self.block_stack_top().cloned()
-                    && matches!(val, Value::Sub(_))
+                    && matches!(val.view(), ValueView::Sub(_))
                 {
                     self.stack.push(val);
                     return Ok(());
                 }
                 return Err(RuntimeError::undeclared_symbols("Undeclared name"));
             }
-            self.stack.push(Value::Routine {
-                package: Symbol::intern(&frame.package),
-                name: Symbol::intern(&frame.name),
-                is_regex: false,
-            });
+            self.stack.push(Value::routine_parts(
+                Symbol::intern(&frame.package),
+                Symbol::intern(&frame.name),
+                false,
+            ));
         } else {
             return Err(RuntimeError::undeclared_symbols("Undeclared name"));
         }
@@ -222,7 +225,7 @@ impl Interpreter {
 
     pub(super) fn exec_block_magic_op(&mut self) -> Result<(), RuntimeError> {
         if let Some(val) = self.block_stack_top().cloned() {
-            if matches!(val, Value::Sub(_)) {
+            if matches!(val.view(), ValueView::Sub(_)) {
                 self.stack.push(val);
             } else {
                 return Err(RuntimeError::undeclared_symbols("Undeclared name"));
@@ -234,7 +237,7 @@ impl Interpreter {
     }
 
     pub(super) fn exec_take_op(&mut self) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap_or(Value::Nil);
+        let val = self.stack.pop().unwrap_or(Value::NIL);
         if self.gather_items_len() > 0 {
             self.take_value(val)
         } else {

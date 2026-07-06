@@ -94,7 +94,7 @@ impl Interpreter {
             .enumerate()
             .filter(|(_, v)| {
                 // Check for junction in named arg (Pair value)
-                if let Value::Pair(_, val) = v {
+                if let ValueView::Pair(_, val) = v.view() {
                     return Self::unwrap_junction_value(val).is_some();
                 }
                 Self::unwrap_junction_value(v).is_some()
@@ -120,7 +120,7 @@ impl Interpreter {
             .into_iter()
             .filter(|&idx| {
                 // Check if the arg is a named arg (Pair) — find matching named param
-                if let Value::Pair(key, _) = &args[idx] {
+                if let ValueView::Pair(key, _) = args[idx].view() {
                     if let Some(pd) = pds
                         .iter()
                         .find(|pd| pd.named && !pd.slurpy && !pd.double_slurpy && pd.name == *key)
@@ -212,8 +212,7 @@ impl Interpreter {
             let mut threaded_args = args.to_vec();
             if let Some(ref pair_key) = is_pair {
                 // Replace the Pair value while keeping the key
-                threaded_args[thread_idx] =
-                    Value::Pair(pair_key.clone(), Box::new(eigenstate.clone()));
+                threaded_args[thread_idx] = Value::pair(pair_key.clone(), eigenstate.clone());
             } else {
                 threaded_args[thread_idx] = eigenstate.clone();
             }
@@ -256,10 +255,10 @@ impl Interpreter {
     pub(super) fn unwrap_junction_value(
         val: &Value,
     ) -> Option<(crate::value::JunctionKind, Arc<Vec<Value>>)> {
-        match val {
-            Value::Junction { kind, values } => Some((kind.clone(), values.clone())),
-            Value::Scalar(inner) => {
-                if let Value::Junction { kind, values } = inner.as_ref() {
+        match val.view() {
+            ValueView::Junction { kind, values } => Some((kind.clone(), values.clone())),
+            ValueView::Scalar(inner) => {
+                if let ValueView::Junction { kind, values } = inner.view() {
                     Some((kind.clone(), values.clone()))
                 } else {
                     None
@@ -274,7 +273,7 @@ impl Interpreter {
     pub(super) fn extract_junction_from_arg(
         val: &Value,
     ) -> Option<(crate::value::JunctionKind, Arc<Vec<Value>>, Option<String>)> {
-        if let Value::Pair(key, inner) = val {
+        if let ValueView::Pair(key, inner) = val.view() {
             Self::unwrap_junction_value(inner).map(|(k, v)| (k, v, Some(key.clone())))
         } else {
             Self::unwrap_junction_value(val).map(|(k, v)| (k, v, None))
@@ -307,16 +306,15 @@ impl Interpreter {
             .get(&format!("&{}", name))
             .cloned()
             .and_then(|callable| {
-                if let Value::Mixin(_, ref mixins) = callable {
-                    let has_call_me = mixins.keys().any(|key| {
+                let has_call_me = if let ValueView::Mixin(_, mixins) = callable.view() {
+                    mixins.keys().any(|key| {
                         key.strip_prefix("__mutsu_role__")
                             .is_some_and(|rn| self.role_has_method(rn, "CALL-ME"))
-                    });
-                    if has_call_me {
-                        return Some(callable);
-                    }
-                }
-                None
+                    })
+                } else {
+                    false
+                };
+                if has_call_me { Some(callable) } else { None }
             })
     }
 
@@ -401,7 +399,7 @@ impl Interpreter {
             .iter()
             .enumerate()
             .filter(|(_, v)| {
-                if let Value::Pair(_, val) = v {
+                if let ValueView::Pair(_, val) = v.view() {
                     return Self::unwrap_junction_value(val).is_some();
                 }
                 Self::unwrap_junction_value(v).is_some()
@@ -422,8 +420,8 @@ impl Interpreter {
         };
 
         // Get instance identity for refreshing target after each call
-        let target_identity = match target {
-            Value::Instance { class_name, id, .. } => Some((class_name.resolve(), *id)),
+        let target_identity = match target.view() {
+            ValueView::Instance { class_name, id, .. } => Some((class_name.resolve(), id)),
             _ => None,
         };
 
@@ -433,8 +431,7 @@ impl Interpreter {
         for eigenstate in values.iter() {
             let mut threaded_args = args.to_vec();
             if let Some(ref pair_key) = is_pair {
-                threaded_args[thread_idx] =
-                    Value::Pair(pair_key.clone(), Box::new(eigenstate.clone()));
+                threaded_args[thread_idx] = Value::pair(pair_key.clone(), eigenstate.clone());
             } else {
                 threaded_args[thread_idx] = eigenstate.clone();
             }
@@ -477,13 +474,13 @@ impl Interpreter {
     /// Used to refresh a target after mutation during auto-threading.
     fn find_instance_in_env(&self, class_name: &str, id: u64) -> Option<Value> {
         for v in self.env().values() {
-            if let Value::Instance {
+            if let ValueView::Instance {
                 class_name: cn,
                 id: vid,
                 ..
-            } = v
+            } = v.view()
                 && cn.resolve() == class_name
-                && *vid == id
+                && vid == id
             {
                 return Some(v.clone());
             }
@@ -493,25 +490,25 @@ impl Interpreter {
 
     /// Recursively unwrap a Junction to get a non-junction eigenstate.
     fn unwrap_junction_deep(val: &Value) -> Value {
-        match val {
-            Value::Junction { values, .. } => {
+        match val.view() {
+            ValueView::Junction { values, .. } => {
                 if let Some(first) = values.first() {
                     Self::unwrap_junction_deep(first)
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             }
-            Value::Scalar(inner) if matches!(inner.as_ref(), Value::Junction { .. }) => {
+            ValueView::Scalar(inner) if matches!(inner.view(), ValueView::Junction { .. }) => {
                 Self::unwrap_junction_deep(inner)
             }
-            Value::Pair(key, val) => {
+            ValueView::Pair(key, val) => {
                 let inner = Self::unwrap_junction_deep(val);
-                if std::ptr::eq(val.as_ref(), &inner) {
-                    return val.as_ref().clone();
+                if std::ptr::eq(val, &inner) {
+                    return val.clone();
                 }
-                Value::Pair(key.clone(), Box::new(inner))
+                Value::pair(key.clone(), inner)
             }
-            other => other.clone(),
+            _ => val.clone(),
         }
     }
 

@@ -10,23 +10,28 @@ impl Interpreter {
         source: &Value,
         idx: usize,
     ) -> Result<Option<Value>, RuntimeError> {
-        match source {
-            Value::Range(a, b)
-            | Value::RangeExcl(a, b)
-            | Value::RangeExclStart(a, b)
-            | Value::RangeExclBoth(a, b) => {
-                let start = match source {
-                    Value::RangeExclStart(..) | Value::RangeExclBoth(..) => a.saturating_add(1),
-                    _ => *a,
+        match source.view() {
+            ValueView::Range(a, b)
+            | ValueView::RangeExcl(a, b)
+            | ValueView::RangeExclStart(a, b)
+            | ValueView::RangeExclBoth(a, b) => {
+                let start = match source.view() {
+                    ValueView::RangeExclStart(..) | ValueView::RangeExclBoth(..) => {
+                        a.saturating_add(1)
+                    }
+                    _ => a,
                 };
-                let inclusive = matches!(source, Value::Range(..) | Value::RangeExclStart(..));
+                let inclusive = matches!(
+                    source.view(),
+                    ValueView::Range(..) | ValueView::RangeExclStart(..)
+                );
                 let cur = match start.checked_add(idx as i64) {
                     Some(v) => v,
                     None => return Ok(None),
                 };
-                let in_bounds = if inclusive { cur <= *b } else { cur < *b };
+                let in_bounds = if inclusive { cur <= b } else { cur < b };
                 if in_bounds {
-                    Ok(Some(Value::Int(cur)))
+                    Ok(Some(Value::int(cur)))
                 } else {
                     Ok(None)
                 }
@@ -34,17 +39,17 @@ impl Interpreter {
             // Integer-start GenericRange (e.g. `^Inf`, `0..^Inf`): pull the
             // idx-th element directly so an infinite range stays lazy instead of
             // being materialized.
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
                 excl_end,
-            } if matches!(start.as_ref(), Value::Int(_)) => {
-                let s = match start.as_ref() {
-                    Value::Int(i) => *i,
+            } if matches!(start.as_ref().view(), ValueView::Int(_)) => {
+                let s = match start.as_ref().view() {
+                    ValueView::Int(i) => i,
                     _ => unreachable!(),
                 };
-                let base = if *excl_start { s.saturating_add(1) } else { s };
+                let base = if excl_start { s.saturating_add(1) } else { s };
                 let cur = match base.checked_add(idx as i64) {
                     Some(v) => v,
                     None => return Ok(None),
@@ -54,36 +59,36 @@ impl Interpreter {
                     true
                 } else {
                     let cur_f = cur as f64;
-                    if *excl_end {
+                    if excl_end {
                         cur_f < end_f
                     } else {
                         cur_f <= end_f
                     }
                 };
-                Ok(in_bounds.then_some(Value::Int(cur)))
+                Ok(in_bounds.then_some(Value::int(cur)))
             }
             // Finite non-integer numeric start with infinite end (`1.5..Inf`):
             // yield `start + idx` (step 1), preserving the Rat/Num type. (Int
             // starts are handled by the case above; finite-end ranges never
             // reach the pull path — they are not lazy-pipe sources — but the
             // bounds check stays correct if one does.)
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
                 excl_end,
             } if start.is_numeric() && start.to_f64().is_finite() => {
-                let i = idx as i64 + if *excl_start { 1 } else { 0 };
-                let cur = match start.as_ref() {
-                    Value::Rat(n, d) => crate::value::make_rat(n + i * *d, *d),
-                    Value::Num(f) => Value::Num(f + i as f64),
-                    other => Value::Num(other.to_f64() + i as f64),
+                let i = idx as i64 + if excl_start { 1 } else { 0 };
+                let cur = match start.as_ref().view() {
+                    ValueView::Rat(n, d) => crate::value::make_rat(n + i * d, d),
+                    ValueView::Num(f) => Value::num(f + i as f64),
+                    _ => Value::num(start.as_ref().to_f64() + i as f64),
                 };
                 let end_f = end.to_f64();
                 let cur_f = cur.to_f64();
                 let in_bounds = if end_f.is_infinite() && end_f.is_sign_positive() {
                     true
-                } else if *excl_end {
+                } else if excl_end {
                     cur_f < end_f
                 } else {
                     cur_f <= end_f
@@ -94,10 +99,10 @@ impl Interpreter {
             // the `.succ` of `-Inf`/`NaN` is itself (`-Inf+1 == -Inf`,
             // `NaN+1 == NaN`), so the range yields its start ad infinitum. A
             // `+Inf` start yields nothing (Rakudo: `(Inf..Inf)` produces Nils).
-            Value::GenericRange { start, end, .. } if matches!(start.as_ref(), Value::Num(f) if !f.is_finite()) =>
+            ValueView::GenericRange { start, end, .. } if matches!(start.as_ref().view(), ValueView::Num(f) if !f.is_finite()) =>
             {
-                let s = match start.as_ref() {
-                    Value::Num(f) => *f,
+                let s = match start.as_ref().view() {
+                    ValueView::Num(f) => f,
                     _ => unreachable!(),
                 };
                 if s == f64::INFINITY {
@@ -110,18 +115,18 @@ impl Interpreter {
                 ) {
                     return Ok(None);
                 }
-                Ok(Some(Value::Num(s)))
+                Ok(Some(Value::num(s)))
             }
-            Value::Seq(items) | Value::Slip(items) => Ok(items.get(idx).cloned()),
-            Value::Array(items, _) => Ok(items.get(idx).cloned()),
-            Value::LazyList(ll) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => Ok(items.get(idx).cloned()),
+            ValueView::Array(items, _) => Ok(items.get(idx).cloned()),
+            ValueView::LazyList(ll) => {
                 let items = self.force_lazy_list_vm_n(ll, idx + 1)?;
                 Ok(items.get(idx).cloned())
             }
             // Other sources (non-integer GenericRange, etc.) are not gated into
             // the lazy pipeline; materialize once and index.
-            other => {
-                let items = crate::runtime::value_to_list(other);
+            _ => {
+                let items = crate::runtime::value_to_list(source);
                 Ok(items.get(idx).cloned())
             }
         }
@@ -162,46 +167,38 @@ impl Interpreter {
         let remaining = needed - cached_len;
 
         // Collect new source values to iterate over
-        let new_values: Vec<Value> = match &source {
-            Value::Range(a, b) => {
-                let start = *a + already as i64;
-                let end = if *b == i64::MAX {
-                    *a + needed as i64
-                } else {
-                    *b
-                };
-                (start..=end).take(remaining).map(Value::Int).collect()
+        let new_values: Vec<Value> = match source.view() {
+            ValueView::Range(a, b) => {
+                let start = a + already as i64;
+                let end = if b == i64::MAX { a + needed as i64 } else { b };
+                (start..=end).take(remaining).map(Value::int).collect()
             }
-            Value::RangeExcl(a, b) => {
-                let start = *a + already as i64;
-                let end = if *b == i64::MAX {
-                    *a + needed as i64
-                } else {
-                    *b
-                };
-                (start..end).take(remaining).map(Value::Int).collect()
+            ValueView::RangeExcl(a, b) => {
+                let start = a + already as i64;
+                let end = if b == i64::MAX { a + needed as i64 } else { b };
+                (start..end).take(remaining).map(Value::int).collect()
             }
-            Value::RangeExclStart(a, b) => {
-                let first = *a + 1;
+            ValueView::RangeExclStart(a, b) => {
+                let first = a + 1;
                 let start = first + already as i64;
-                let end = if *b == i64::MAX {
+                let end = if b == i64::MAX {
                     first + needed as i64
                 } else {
-                    *b
+                    b
                 };
-                (start..=end).take(remaining).map(Value::Int).collect()
+                (start..=end).take(remaining).map(Value::int).collect()
             }
-            Value::RangeExclBoth(a, b) => {
-                let first = *a + 1;
+            ValueView::RangeExclBoth(a, b) => {
+                let first = a + 1;
                 let start = first + already as i64;
-                let end = if *b == i64::MAX {
+                let end = if b == i64::MAX {
                     first + needed as i64
                 } else {
-                    *b
+                    b
                 };
-                (start..end).take(remaining).map(Value::Int).collect()
+                (start..end).take(remaining).map(Value::int).collect()
             }
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
@@ -210,7 +207,7 @@ impl Interpreter {
                 let end_f = end.to_f64();
                 let is_infinite = end_f.is_infinite() && end_f.is_sign_positive();
                 let start_i = start.as_ref().to_f64() as i64;
-                let first_i = if *excl_start { start_i + 1 } else { start_i };
+                let first_i = if excl_start { start_i + 1 } else { start_i };
                 let iter_start = first_i + already as i64;
                 let iter_end = if is_infinite {
                     iter_start + remaining as i64
@@ -219,7 +216,7 @@ impl Interpreter {
                 };
                 (iter_start..=iter_end)
                     .take(remaining)
-                    .map(Value::Int)
+                    .map(Value::int)
                     .collect()
             }
             _ => {
@@ -242,7 +239,7 @@ impl Interpreter {
                     let call_args = vec![prev, val];
                     let v =
                         self.reduction_step_with_args(&base_op, callable.as_ref(), call_args)?;
-                    let v = if negate { Value::Bool(!v.truthy()) } else { v };
+                    let v = if negate { Value::truth(!v.truthy()) } else { v };
                     new_out.push(v.clone());
                     v
                 }
@@ -269,9 +266,9 @@ impl Interpreter {
     }
 
     pub(super) fn force_lazy_if_needed(&mut self, val: Value) -> Result<Value, RuntimeError> {
-        if let Value::LazyList(ll) = &val {
+        if let ValueView::LazyList(ll) = val.view() {
             let items = self.force_lazy_list_vm(ll)?;
-            Ok(Value::Seq(std::sync::Arc::new(items)))
+            Ok(Value::seq(items))
         } else {
             Ok(val)
         }

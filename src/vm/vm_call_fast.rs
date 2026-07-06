@@ -67,7 +67,7 @@ impl Interpreter {
             let old = self.env().get("_").cloned();
             self.env_mut().insert(
                 "_".to_string(),
-                Value::Package(crate::symbol::Symbol::intern("Any")),
+                Value::package(crate::symbol::Symbol::intern("Any")),
             );
             old
         } else {
@@ -77,7 +77,7 @@ impl Interpreter {
         // Reuse locals vec to avoid per-call allocation
         let num_locals = cf.code.locals.len();
         self.locals.clear();
-        self.locals.resize(num_locals, Value::Nil);
+        self.locals.resize(num_locals, Value::NIL);
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
@@ -144,12 +144,12 @@ impl Interpreter {
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
-                self.stack.pop().unwrap_or(Value::Nil)
+                self.stack.pop().unwrap_or(Value::NIL)
             } else {
-                Value::Nil
+                Value::NIL
             }
         } else {
-            Value::Nil
+            Value::NIL
         };
 
         self.stack.truncate(saved_stack_depth);

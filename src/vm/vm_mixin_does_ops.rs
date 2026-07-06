@@ -14,20 +14,20 @@ impl Interpreter {
         // illegal (no instance); mixing a concrete value (`Method but True`) is
         // allowed, so this only guards the role / type-object-RHS branches.
         let left_type_object = self.does_invocant_type_object(&left);
-        let role_composed = match &right {
-            Value::Pair(name, boxed)
-                if self.has_role(name) && matches!(boxed.as_ref(), Value::Array(..)) =>
+        let role_composed = match right.view() {
+            ValueView::Pair(name, boxed)
+                if self.has_role(name) && matches!(boxed.view(), ValueView::Array(..)) =>
             {
                 Some(loan_env!(
                     self,
                     eval_does_values(left.clone(), right.clone())
                 ))
             }
-            Value::Package(name) if self.has_role(&name.resolve()) => Some(loan_env!(
+            ValueView::Package(name) if self.has_role(&name.resolve()) => Some(loan_env!(
                 self,
                 eval_does_values(left.clone(), right.clone())
             )),
-            Value::Str(name) if self.has_role(name) => Some(loan_env!(
+            ValueView::Str(name) if self.has_role(name) => Some(loan_env!(
                 self,
                 eval_does_values(left.clone(), right.clone())
             )),
@@ -46,7 +46,7 @@ impl Interpreter {
         }
         // A type object / class (not a role) on the RHS: into a type-object
         // invocant it is X::Does::TypeObject; otherwise not composable.
-        if matches!(&right, Value::Package(_)) {
+        if matches!(right.view(), ValueView::Package(_)) {
             if let Some(tn) = &left_type_object {
                 return Err(self.but_on_type_object_error(tn));
             }
@@ -64,7 +64,7 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let mixin_type = Self::mixin_type_for_value(&right);
         // Check for duplicate type conflict
-        if let Value::Mixin(_, ref existing) = left
+        if let ValueView::Mixin(_, existing) = left.view()
             && existing.contains_key(&mixin_type)
         {
             return Err(RuntimeError::new(format!(
@@ -80,16 +80,16 @@ impl Interpreter {
 
     /// Determine the mixin type name for a value (used by `but` operator).
     fn mixin_type_for_value(val: &Value) -> String {
-        match val {
-            Value::Bool(_) => "Bool".to_string(),
-            Value::Int(_) | Value::BigInt(_) => "Int".to_string(),
-            Value::Num(_) => "Num".to_string(),
-            Value::Str(_) => "Str".to_string(),
-            Value::Rat(..) | Value::FatRat(..) | Value::BigRat(..) => "Rat".to_string(),
-            Value::Complex(..) => "Complex".to_string(),
-            Value::Package(name) => name.resolve(),
-            Value::Enum { enum_type, .. } => enum_type.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
+        match val.view() {
+            ValueView::Bool(_) => "Bool".to_string(),
+            ValueView::Int(_) | ValueView::BigInt(_) => "Int".to_string(),
+            ValueView::Num(_) => "Num".to_string(),
+            ValueView::Str(_) => "Str".to_string(),
+            ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => "Rat".to_string(),
+            ValueView::Complex(..) => "Complex".to_string(),
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Enum { enum_type, .. } => enum_type.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => "Any".to_string(),
         }
     }
@@ -98,14 +98,14 @@ impl Interpreter {
     /// keyed by its type name.
     fn apply_but_mixin(left: Value, right: Value) -> Result<Value, RuntimeError> {
         // Handle Array RHS: `True but [1, 2]` generates a single "Array" mixin
-        if let Value::Array(_, kind) = &right {
+        if let ValueView::Array(_, kind) = right.view() {
             if kind.is_real_array() {
                 return Ok(Self::apply_single_mixin(left, "Array".to_string(), right));
             }
             // List values from method calls like .list -> "List" mixin
             return Ok(Self::apply_single_mixin(left, "List".to_string(), right));
         }
-        if matches!(&right, Value::Seq(_)) {
+        if matches!(right.view(), ValueView::Seq(_)) {
             return Ok(Self::apply_single_mixin(left, "List".to_string(), right));
         }
 
@@ -115,16 +115,16 @@ impl Interpreter {
 
     /// Apply a single mixin with the given type name.
     fn apply_single_mixin(left: Value, mixin_type: String, right: Value) -> Value {
-        match left {
-            Value::Mixin(inner, existing_mixins) => {
-                let mut mixins = (*existing_mixins).clone();
+        match left.view() {
+            ValueView::Mixin(inner, existing_mixins) => {
+                let mut mixins = (**existing_mixins).clone();
                 mixins.insert(mixin_type, right);
-                Value::mixin((*inner).clone(), mixins)
+                Value::mixin(inner.as_ref().clone(), mixins)
             }
-            other => {
+            _ => {
                 let mut mixins = std::collections::HashMap::new();
                 mixins.insert(mixin_type, right);
-                Value::mixin(other, mixins)
+                Value::mixin(left, mixins)
             }
         }
     }
@@ -134,7 +134,7 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let type_name = right.to_string_value();
         let result = left.isa_check(&type_name);
-        self.stack.push(Value::Bool(result));
+        self.stack.push(Value::truth(result));
     }
 
     /// If `left` is a *built-in* type object, return its type name. Mixing a
@@ -144,9 +144,9 @@ impl Interpreter {
     /// that creates a new anonymous subtype — so it is excluded here. Undefined
     /// scalars are stored as `Nil` and act as the `Any` type object.
     fn does_invocant_type_object(&self, left: &Value) -> Option<String> {
-        match left {
-            Value::Nil => Some("Any".to_string()),
-            Value::Package(name) => {
+        match left.view() {
+            ValueView::Nil => Some("Any".to_string()),
+            ValueView::Package(name) => {
                 let n = name.resolve();
                 if self.has_class(&n) {
                     None
@@ -246,7 +246,7 @@ impl Interpreter {
         // check guards only the role / type-object-RHS branches below.
         let left_type_object = self.does_invocant_type_object(&left);
         // Handle array of roles: `$obj does (RoleA, RoleB)`
-        if let Value::Array(ref items, ..) = right {
+        if let ValueView::Array(items, ..) = right.view() {
             let all_roles = items.iter().all(|item| self.is_role_application(item));
             if all_roles && !items.is_empty() {
                 if let Some(tn) = &left_type_object {
@@ -264,32 +264,32 @@ impl Interpreter {
             return loan_env!(self, eval_does_values(left, right));
         }
         // When the RHS is an enum value, `does` acts as a mixin (like `but`).
-        if matches!(&right, Value::Enum { .. }) {
+        if matches!(right.view(), ValueView::Enum { .. }) {
             return Self::apply_but_mixin(left, right);
         }
         // When the RHS is a concrete value (Str, Int, Bool, etc.), `does` acts
         // as a mutating mixin — it overrides the corresponding type method.
         // For example, `$o does "modded"` makes `$o.Str` return "modded".
         if matches!(
-            &right,
-            Value::Str(_)
-                | Value::Int(_)
-                | Value::BigInt(_)
-                | Value::Num(_)
-                | Value::Bool(_)
-                | Value::Rat(..)
+            right.view(),
+            ValueView::Str(_)
+                | ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
         ) {
             return Self::apply_but_mixin(left, right);
         }
         // When the RHS is an Instance, mix it in so that calling .$ClassName
         // on the result returns that instance.
-        if matches!(&right, Value::Instance { .. }) {
+        if matches!(right.view(), ValueView::Instance { .. }) {
             return Self::apply_but_mixin(left, right);
         }
         // A type object / class (not a role) on the RHS: `(my $foo) does Int`
         // mixes into a type-object invocant (X::Does::TypeObject); otherwise the
         // type itself is not composable (`5 does Int`, `obj does SomeClass`).
-        if matches!(&right, Value::Package(_)) {
+        if matches!(right.view(), ValueView::Package(_)) {
             if let Some(tn) = &left_type_object {
                 return Err(Self::does_type_object_error("does", tn));
             }
@@ -297,7 +297,7 @@ impl Interpreter {
         }
         // Pure check: does the value conform to the named role/type?
         let role_name = right.to_string_value();
-        Ok(Value::Bool(left.does_check(&role_name)))
+        Ok(Value::truth(left.does_check(&role_name)))
     }
 
     pub(super) fn exec_does_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
@@ -314,7 +314,7 @@ impl Interpreter {
         // captured-outer writes reach the caller's slots.
         self.carrier_writeback_changed_aggregates(code, &pre_env);
         // Capture Mixin value for trait_mod writeback (same as DoesVar path)
-        if matches!(&result, Value::Mixin(..)) && self.trait_mod_writeback_key.is_some() {
+        if matches!(result.view(), ValueView::Mixin(..)) && self.trait_mod_writeback_key.is_some() {
             self.trait_mod_writeback_value = Some(result.clone());
         }
         self.stack.push(result);
@@ -346,7 +346,8 @@ impl Interpreter {
         // Capture Mixin value for trait_mod writeback: when `$r does Role`
         // runs inside a trait_mod:<is>, the Mixin needs to propagate back
         // to the outer scope's `&name` variable.
-        if matches!(&updated, Value::Mixin(..)) && self.trait_mod_writeback_key.is_some() {
+        if matches!(updated.view(), ValueView::Mixin(..)) && self.trait_mod_writeback_key.is_some()
+        {
             self.trait_mod_writeback_value = Some(updated.clone());
         }
         self.stack.push(updated);
@@ -361,9 +362,10 @@ impl Interpreter {
         // with `$var`, giving Raku's write-through semantics: `$pair.value = X`
         // updates `$var`, and `$pair.value<k> = v` writes through to `$var`'s
         // backing Array/Hash. (See S02:1704 / roast S02-types/pair.t.)
-        if let Value::Capture { positional, named } = &right
+        if let ValueView::Capture { positional, named } = right.view()
             && positional.is_empty()
-            && let Some(Value::Str(source_name)) = named.get("__mutsu_varref_name")
+            && let Some(ValueView::Str(source_name)) =
+                named.get("__mutsu_varref_name").map(Value::view)
             && let Some(inner) = named.get("__mutsu_varref_value")
         {
             let source_name = source_name.to_string();
@@ -372,14 +374,13 @@ impl Interpreter {
         }
         // Preserve the original key type for `.key` to return the correct type.
         // Use ValuePair for non-string keys, Pair for string keys.
-        match &left {
-            Value::Str(_) => {
+        match left.view() {
+            ValueView::Str(_) => {
                 let key = left.to_string_value();
-                self.stack.push(Value::Pair(key, Box::new(right)));
+                self.stack.push(Value::pair(key, right));
             }
             _ => {
-                self.stack
-                    .push(Value::ValuePair(Box::new(left), Box::new(right)));
+                self.stack.push(Value::value_pair(left, right));
             }
         }
     }

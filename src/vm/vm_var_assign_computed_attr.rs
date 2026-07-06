@@ -12,20 +12,20 @@ impl Interpreter {
         key: &Value,
         val: Value,
     ) -> Result<(), RuntimeError> {
-        match target {
-            Value::Hash(arc) => {
+        match target.view() {
+            ValueView::Hash(arc) => {
                 let k = Value::hash_key_encode(key);
                 // SAFETY: aliased in-place mutation of a shared hash; see
                 // `arc_contents_mut`. No live borrow into the map.
                 let hd = unsafe { crate::value::gc_contents_mut(arc) };
                 Value::hash_insert_through(&mut hd.map, k, val);
             }
-            Value::Array(arc, _) => {
+            ValueView::Array(arc, _) => {
                 if let Some(i) = Self::index_to_usize(key) {
                     // SAFETY: aliased in-place mutation of a shared array; see
                     // `arc_contents_mut`.
                     let v = &mut unsafe { crate::value::gc_contents_mut(arc) }.items;
-                    Self::autoviv_resize(v, i + 1, Value::Nil)?;
+                    Self::autoviv_resize(v, i + 1, Value::NIL)?;
                     Value::assign_element_slot(&mut v[i], val);
                 }
             }
@@ -51,25 +51,25 @@ impl Interpreter {
         idx: usize,
         val: Value,
     ) -> bool {
-        let cell = match &self.locals[idx] {
-            token @ Value::HashEntryRef { .. } => {
-                // Walk-create the deferred path (single key for `$e := %m<solo>`,
-                // multi-key for `$d := %k<p><q>`) and install the shared cell at
-                // the terminal entry so the bound var and the hash entry alias
-                // bidirectionally afterwards.
-                let Some((arc, key)) = token.hash_entry_terminal() else {
-                    return false;
-                };
-                let cell = crate::gc::Gc::new(std::sync::Mutex::new(val));
-                // SAFETY: aliased in-place mutation of a shared hash; see
-                // `arc_contents_mut`. No live borrow into the map.
-                let hd = unsafe { crate::value::gc_contents_mut(&arc) };
-                Value::hash_insert_through(&mut hd.map, key, Value::ContainerRef(cell.clone()));
-                cell
-            }
-            _ => return false,
+        let cell = if matches!(self.locals[idx].view(), ValueView::HashEntryRef { .. }) {
+            let token = &self.locals[idx];
+            // Walk-create the deferred path (single key for `$e := %m<solo>`,
+            // multi-key for `$d := %k<p><q>`) and install the shared cell at
+            // the terminal entry so the bound var and the hash entry alias
+            // bidirectionally afterwards.
+            let Some((arc, key)) = token.hash_entry_terminal() else {
+                return false;
+            };
+            let cell = crate::gc::Gc::new(std::sync::Mutex::new(val));
+            // SAFETY: aliased in-place mutation of a shared hash; see
+            // `arc_contents_mut`. No live borrow into the map.
+            let hd = unsafe { crate::value::gc_contents_mut(&arc) };
+            Value::hash_insert_through(&mut hd.map, key, Value::container_ref(cell.clone()));
+            cell
+        } else {
+            return false;
         };
-        self.locals[idx] = Value::ContainerRef(cell);
+        self.locals[idx] = Value::container_ref(cell);
         self.flush_local_to_env(code, idx);
         true
     }
@@ -137,15 +137,15 @@ impl Interpreter {
     }
 
     /// The inner instance's shared attribute cell for a `self` value, unwrapping a
-    /// `Value::Mixin` (runtime `$obj does Role`) to the wrapped instance. The
+    /// `Mixin` (runtime `$obj does Role`) to the wrapped instance. The
     /// Mixin's inner value is held in a shared `Arc`, and the instance's own cell is
     /// an `Arc<RwLock>` — so a write through this reference persists back to the
     /// caller's Mixin (it shares the same inner instance). Returns `None` for a
     /// type object / non-instance.
     pub(crate) fn self_instance_attrs(val: &Value) -> Option<&crate::value::InstanceAttrs> {
-        match val {
-            Value::Instance { attributes, .. } => Some(attributes),
-            Value::Mixin(inner, _) => Self::self_instance_attrs(inner),
+        match val.view() {
+            ValueView::Instance { attributes, .. } => Some(attributes),
+            ValueView::Mixin(inner, _) => Self::self_instance_attrs(inner),
             _ => None,
         }
     }
@@ -186,8 +186,8 @@ impl Interpreter {
         let mut seen = std::collections::HashSet::new();
         while seen.insert(current.clone()) {
             let key = format!("__mutsu_sigilless_alias::{}", current);
-            match self.env().get(&key) {
-                Some(Value::Str(next)) => {
+            match self.env().get(&key).map(Value::view) {
+                Some(ValueView::Str(next)) => {
                     let next = next.to_string();
                     if Self::attr_twigil_base(&next).is_some() {
                         return Some(next);
@@ -204,8 +204,8 @@ impl Interpreter {
     /// Proxy accessors, hash/array slot refs, deferred hash access).
     pub(crate) fn is_non_mirrorable_attr_value(val: &Value) -> bool {
         matches!(
-            val,
-            Value::ContainerRef(_) | Value::Proxy { .. } | Value::HashEntryRef { .. }
+            val.view(),
+            ValueView::ContainerRef(_) | ValueView::Proxy { .. } | ValueView::HashEntryRef { .. }
         )
     }
 
@@ -220,7 +220,7 @@ impl Interpreter {
         let Some(self_val) = self.get_env_with_main_alias("self") else {
             return;
         };
-        // Unwrap a `Value::Mixin` self to the inner instance's shared cell so a
+        // Unwrap a `Mixin` self to the inner instance's shared cell so a
         // runtime-`does` mixin method's `$.attr`/`$!attr` write persists (the cell
         // is an `Arc<RwLock>` shared with the caller's Mixin).
         let Some(attributes) = Self::self_instance_attrs(&self_val) else {
@@ -328,9 +328,9 @@ impl Interpreter {
     /// Cheap container identity check: true when both values are the same
     /// Array/Hash Arc (a clone that has not been copy-on-write forked).
     pub(crate) fn same_container_arc(a: &Value, b: &Value) -> bool {
-        match (a, b) {
-            (Value::Array(x, _), Value::Array(y, _)) => crate::gc::Gc::ptr_eq(x, y),
-            (Value::Hash(x), Value::Hash(y)) => crate::gc::Gc::ptr_eq(x, y),
+        match (a.view(), b.view()) {
+            (ValueView::Array(x, _), ValueView::Array(y, _)) => crate::gc::Gc::ptr_eq(x, y),
+            (ValueView::Hash(x), ValueView::Hash(y)) => crate::gc::Gc::ptr_eq(x, y),
             _ => false,
         }
     }

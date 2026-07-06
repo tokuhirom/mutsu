@@ -25,7 +25,7 @@ impl Interpreter {
 
     /// Call a user-subclassed `IO::Handle`'s `READ(n)`, returning the raw bytes.
     fn call_user_io_read(&mut self, target: &Value, n: usize) -> Result<Vec<u8>, RuntimeError> {
-        let r = self.call_method_with_values(target.clone(), "READ", vec![Value::Int(n as i64)])?;
+        let r = self.call_method_with_values(target.clone(), "READ", vec![Value::int(n as i64)])?;
         Ok(Self::extract_buf_bytes(&r))
     }
 
@@ -48,17 +48,19 @@ impl Interpreter {
     /// The line separators for a user handle: the instance's `nl-in` attribute
     /// (a Str or list of Str set via `$fh.nl-in = ...`), defaulting to `["\n"]`.
     fn user_io_line_separators(target: &Value) -> Vec<Vec<u8>> {
-        let raw = match target {
-            Value::Instance { attributes, .. } => attributes.as_map().get("nl-in").cloned(),
+        let raw = match target.view() {
+            ValueView::Instance { attributes, .. } => attributes.as_map().get("nl-in").cloned(),
             _ => None,
         };
-        let seps: Vec<Vec<u8>> = match raw {
-            Some(Value::Array(items, ..)) => items
-                .iter()
-                .map(|v| v.to_string_value().into_bytes())
-                .collect(),
-            Some(Value::Str(s)) => vec![s.as_bytes().to_vec()],
-            Some(other) => vec![other.to_string_value().into_bytes()],
+        let seps: Vec<Vec<u8>> = match raw.as_ref() {
+            Some(other) => match other.view() {
+                ValueView::Array(items, ..) => items
+                    .iter()
+                    .map(|v| v.to_string_value().into_bytes())
+                    .collect(),
+                ValueView::Str(s) => vec![s.as_bytes().to_vec()],
+                _ => vec![other.to_string_value().into_bytes()],
+            },
             None => Vec::new(),
         };
         if seps.is_empty() {
@@ -147,8 +149,8 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let class_name = match target {
-            Value::Instance { class_name, .. } => class_name.resolve(),
+        let class_name = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => return None,
         };
         if class_name == "IO::Handle" {
@@ -166,7 +168,10 @@ impl Interpreter {
         if !has_write && !has_read {
             return None;
         }
-        if args.iter().any(|a| matches!(a, Value::Junction { .. })) {
+        if args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::Junction { .. }))
+        {
             return None;
         }
 
@@ -175,11 +180,11 @@ impl Interpreter {
         // it not throwing. A `Nil` arg (binary) returns Nil like the native path.
         if method == "encoding" {
             return match args.first() {
-                Some(Value::Nil) => Some(Ok(Value::Nil)),
+                Some(arg) if arg.is_nil() => Some(Ok(Value::NIL)),
                 Some(arg) => {
                     let enc = arg.to_string_value();
                     Some(Ok(if enc == "bin" {
-                        Value::Nil
+                        Value::NIL
                     } else {
                         Value::str(enc)
                     }))
@@ -190,8 +195,8 @@ impl Interpreter {
 
         if has_write {
             // `nl-out` for the newline-appending methods; default "\n".
-            let nl_out = match target {
-                Value::Instance { attributes, .. } => attributes
+            let nl_out = match target.view() {
+                ValueView::Instance { attributes, .. } => attributes
                     .as_map()
                     .get("nl-out")
                     .map(|v| v.to_string_value())
@@ -209,25 +214,19 @@ impl Interpreter {
                             out.extend(loan_env!(self, render_str_value(arg)).into_bytes());
                         }
                     }
-                    return Some(
-                        self.call_user_io_write(target, out)
-                            .map(|_| Value::Bool(true)),
-                    );
+                    return Some(self.call_user_io_write(target, out).map(|_| Value::TRUE));
                 }
                 "spurt" => {
                     let cv = args
                         .first()
                         .cloned()
-                        .unwrap_or_else(|| Value::Str(String::new().into()));
+                        .unwrap_or_else(|| Value::str(String::new()));
                     let bytes = if Self::is_buf_value(&cv) {
                         Self::extract_buf_bytes(&cv)
                     } else {
                         cv.to_string_value().into_bytes()
                     };
-                    return Some(
-                        self.call_user_io_write(target, bytes)
-                            .map(|_| Value::Bool(true)),
-                    );
+                    return Some(self.call_user_io_write(target, bytes).map(|_| Value::TRUE));
                 }
                 _ => {}
             }
@@ -279,13 +278,13 @@ impl Interpreter {
             }
             return Some(
                 self.call_user_io_write(target, text.into_bytes())
-                    .map(|_| Value::Bool(true)),
+                    .map(|_| Value::TRUE),
             );
         }
 
         if has_read {
             match method {
-                "eof" => return Some(self.call_user_io_eof(target).map(Value::Bool)),
+                "eof" => return Some(self.call_user_io_eof(target).map(Value::truth)),
                 "slurp" => {
                     let bytes = match self.read_all_user_io(target) {
                         Ok(b) => b,
@@ -299,29 +298,29 @@ impl Interpreter {
                         Ok(Some(line)) => {
                             Ok(Value::str(String::from_utf8_lossy(&line).into_owned()))
                         }
-                        Ok(None) => Ok(Value::Nil),
+                        Ok(None) => Ok(Value::NIL),
                         Err(e) => Err(e),
                     });
                 }
                 "getc" => {
                     return Some(match self.read_user_io_char(target) {
                         Ok(Some(c)) => Ok(Value::str(c)),
-                        Ok(None) => Ok(Value::Nil),
+                        Ok(None) => Ok(Value::NIL),
                         Err(e) => Err(e),
                     });
                 }
                 "read" => {
-                    let n = match args.first() {
-                        Some(Value::Int(i)) if *i >= 0 => *i as usize,
-                        Some(Value::Num(f)) if *f >= 0.0 => *f as usize,
+                    let n = match args.first().map(Value::view) {
+                        Some(ValueView::Int(i)) if i >= 0 => i as usize,
+                        Some(ValueView::Num(f)) if f >= 0.0 => f as usize,
                         _ => 0,
                     };
                     return Some(self.call_user_io_read(target, n).map(Self::make_uint8_buf));
                 }
                 "readchars" => {
-                    let n = match args.first() {
-                        Some(Value::Int(i)) if *i >= 0 => *i as usize,
-                        Some(Value::Num(f)) if *f >= 0.0 => *f as usize,
+                    let n = match args.first().map(Value::view) {
+                        Some(ValueView::Int(i)) if i >= 0 => i as usize,
+                        Some(ValueView::Num(f)) if f >= 0.0 => f as usize,
                         _ => 0,
                     };
                     let mut s = String::new();
@@ -346,7 +345,7 @@ impl Interpreter {
                             Err(e) => return Some(Err(e)),
                         }
                     }
-                    return Some(Ok(Value::Seq(std::sync::Arc::new(out))));
+                    return Some(Ok(Value::seq_arc(std::sync::Arc::new(out))));
                 }
                 // words/split/comb operate on the fully-read, decoded text by
                 // delegating to the corresponding Str method (which already
@@ -387,22 +386,27 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let id = match target {
-            Value::Instance {
+        let id = match target.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "IO::Handle" => match attributes.as_map().get("handle") {
-                Some(Value::Int(i)) if *i >= 0 => *i as usize,
-                _ => return None,
-            },
+            } if class_name == "IO::Handle" => {
+                match attributes.as_map().get("handle").map(Value::view) {
+                    Some(ValueView::Int(i)) if i >= 0 => i as usize,
+                    _ => return None,
+                }
+            }
             _ => return None,
         };
 
         // Pure-handle setters/getters whose argument touches only handle state
         // (PLAN.md ③ native IO PR-D Tier-1). Junction arguments fall through to
         // the interpreter for autothreading.
-        if args.iter().any(|a| matches!(a, Value::Junction { .. })) {
+        if args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::Junction { .. }))
+        {
             return None;
         }
 
@@ -416,7 +420,7 @@ impl Interpreter {
             return table
                 .map
                 .get_mut(&id)
-                .map(|state| state.flush_for_method().map(|_| Value::Bool(true)));
+                .map(|state| state.flush_for_method().map(|_| Value::TRUE));
         }
 
         // `.encoding` returns Nil for binary mode and a Str otherwise, so its
@@ -459,7 +463,7 @@ impl Interpreter {
             ),
             "encoding" => Op::Encoding(match args.first() {
                 None => EncodingOp::Get,
-                Some(Value::Nil) => EncodingOp::SetBin,
+                Some(arg) if arg.is_nil() => EncodingOp::SetBin,
                 Some(arg) => {
                     let enc = arg.to_string_value();
                     if enc == "bin" {
@@ -476,11 +480,15 @@ impl Interpreter {
                 // string maps to 0/1/2 (anything else -> 0). Defer to the
                 // interpreter when an arg is a junction (needs autothreading) or
                 // the arity is unexpected.
-                if args.len() > 2 || args.iter().any(|a| matches!(a, Value::Junction { .. })) {
+                if args.len() > 2
+                    || args
+                        .iter()
+                        .any(|a| matches!(a.view(), ValueView::Junction { .. }))
+                {
                     return None;
                 }
-                let pos = match args.first() {
-                    Some(Value::Int(i)) => *i,
+                let pos = match args.first().map(Value::view) {
+                    Some(ValueView::Int(i)) => i,
                     _ => 0,
                 };
                 let mode = match args.get(1) {
@@ -501,28 +509,28 @@ impl Interpreter {
             return Some(Err(RuntimeError::new("Invalid IO::Handle")));
         };
         let result = match op {
-            Op::Tell => state.tell().map(Value::Int),
-            Op::Eof => state.eof().map(Value::Bool),
-            Op::Opened => Ok(Value::Bool(state.is_opened())),
-            Op::Tty => Ok(Value::Bool(state.is_tty())),
-            Op::Close => state.close().map(Value::Bool),
-            Op::Seek(pos, mode) => state.seek(pos, mode).map(Value::Int),
-            Op::Chomp(set) => Ok(Value::Bool(state.chomp_setting(set))),
+            Op::Tell => state.tell().map(Value::int),
+            Op::Eof => state.eof().map(Value::truth),
+            Op::Opened => Ok(Value::truth(state.is_opened())),
+            Op::Tty => Ok(Value::truth(state.is_tty())),
+            Op::Close => state.close().map(Value::truth),
+            Op::Seek(pos, mode) => state.seek(pos, mode).map(Value::int),
+            Op::Chomp(set) => Ok(Value::truth(state.chomp_setting(set))),
             Op::NlOut(set) => Ok(Value::str(state.nl_out_setting(set))),
-            Op::OutBuffer(set) => state.out_buffer_setting(set).map(|n| Value::Int(n as i64)),
-            Op::NativeDescriptor => state.native_descriptor().map(Value::Int),
+            Op::OutBuffer(set) => state.out_buffer_setting(set).map(|n| Value::int(n as i64)),
+            Op::NativeDescriptor => state.native_descriptor().map(Value::int),
             Op::Encoding(enc_op) => Ok(match enc_op {
                 EncodingOp::Get => {
                     let cur = state.encoding_setting(None);
                     if cur == "bin" {
-                        Value::Nil
+                        Value::NIL
                     } else {
                         Value::str(cur)
                     }
                 }
                 EncodingOp::SetBin => {
                     state.encoding_setting(Some("bin".to_string()));
-                    Value::Nil
+                    Value::NIL
                 }
                 EncodingOp::Set(enc) => {
                     state.encoding_setting(Some(enc.clone()));
@@ -554,15 +562,17 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let id = match target {
-            Value::Instance {
+        let id = match target.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "IO::Handle" => match attributes.as_map().get("handle") {
-                Some(Value::Int(i)) if *i >= 0 => *i as usize,
-                _ => return None,
-            },
+            } if class_name == "IO::Handle" => {
+                match attributes.as_map().get("handle").map(Value::view) {
+                    Some(ValueView::Int(i)) if i >= 0 => i as usize,
+                    _ => return None,
+                }
+            }
             _ => return None,
         };
 
@@ -583,7 +593,10 @@ impl Interpreter {
         };
         // Junction args autothread in the interpreter; fall through for those
         // (printf's first-arg junction also threads there).
-        if args.iter().any(|a| matches!(a, Value::Junction { .. })) {
+        if args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::Junction { .. }))
+        {
             return None;
         }
 
@@ -668,7 +681,7 @@ impl Interpreter {
             return Some(
                 state
                     .native_text_write(&content, newline, trying)
-                    .map(|_| Value::Bool(true)),
+                    .map(|_| Value::TRUE),
             );
         }
 
@@ -689,7 +702,7 @@ impl Interpreter {
         } else {
             self.vm_emit_stderr(&payload);
         }
-        Some(Ok(Value::Bool(true)))
+        Some(Ok(Value::TRUE))
     }
 
     /// Interpreter-native raw byte output for a `File` `IO::Handle` receiver
@@ -714,22 +727,27 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let id = match target {
-            Value::Instance {
+        let id = match target.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "IO::Handle" => match attributes.as_map().get("handle") {
-                Some(Value::Int(i)) if *i >= 0 => *i as usize,
-                _ => return None,
-            },
+            } if class_name == "IO::Handle" => {
+                match attributes.as_map().get("handle").map(Value::view) {
+                    Some(ValueView::Int(i)) if i >= 0 => i as usize,
+                    _ => return None,
+                }
+            }
             _ => return None,
         };
         if !matches!(method, "write" | "spurt") {
             return None;
         }
         // Junction args autothread in the interpreter; fall through for those.
-        if args.iter().any(|a| matches!(a, Value::Junction { .. })) {
+        if args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::Junction { .. }))
+        {
             return None;
         }
 
@@ -753,7 +771,7 @@ impl Interpreter {
             let content_value = args
                 .first()
                 .cloned()
-                .unwrap_or_else(|| Value::Str(String::new().into()));
+                .unwrap_or_else(|| Value::str(String::new()));
             if Self::is_buf_value(&content_value) {
                 Self::extract_buf_bytes(&content_value)
             } else {
@@ -778,11 +796,7 @@ impl Interpreter {
         let Some(state) = table.map.get_mut(&id) else {
             return Some(Err(RuntimeError::new("Invalid IO::Handle")));
         };
-        Some(
-            state
-                .native_write_bytes_file(&bytes)
-                .map(|_| Value::Bool(true)),
-        )
+        Some(state.native_write_bytes_file(&bytes).map(|_| Value::TRUE))
     }
 
     /// Interpreter-native reads from a `File`+UTF8 `IO::Handle` receiver (③後段 PR-D read
@@ -801,18 +815,23 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let id = match target {
-            Value::Instance {
+        let id = match target.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "IO::Handle" => match attributes.as_map().get("handle") {
-                Some(Value::Int(i)) if *i >= 0 => *i as usize,
-                _ => return None,
-            },
+            } if class_name == "IO::Handle" => {
+                match attributes.as_map().get("handle").map(Value::view) {
+                    Some(ValueView::Int(i)) if i >= 0 => i as usize,
+                    _ => return None,
+                }
+            }
             _ => return None,
         };
-        if args.iter().any(|a| matches!(a, Value::Junction { .. })) {
+        if args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::Junction { .. }))
+        {
             return None;
         }
         match method {
@@ -829,14 +848,14 @@ impl Interpreter {
                 Some(
                     state
                         .read_line_native()
-                        .map(|line| line.map(Value::str).unwrap_or(Value::Nil)),
+                        .map(|line| line.map(Value::str).unwrap_or(Value::NIL)),
                 )
             }
             "slurp" => {
                 // `:bin` falls through (returns a Buf via the interpreter).
                 let has_bin = args
                     .iter()
-                    .any(|a| matches!(a, Value::Pair(k, v) if k == "bin" && v.truthy()));
+                    .any(|a| matches!(a.view(), ValueView::Pair(k, v) if k == "bin" && v.truthy()));
                 let mut table = self.io_handles_mut();
                 let state = table.map.get_mut(&id)?;
                 if !state.can_native_slurp_string(has_bin) {
@@ -847,12 +866,12 @@ impl Interpreter {
             "read" => {
                 // `.read` returns a Buf. Parse the byte count exactly as the
                 // interpreter (positive Int → that many bytes; else read to EOF).
-                let count = match args.first() {
-                    Some(Value::Int(i)) if *i > 0 => *i as usize,
+                let count = match args.first().map(Value::view) {
+                    Some(ValueView::Int(i)) if i > 0 => i as usize,
                     None => 0,
                     // Any other first arg (0/negative Int, non-Int) → the
                     // interpreter coerces to 0 (read all); match that.
-                    Some(Value::Int(_)) => 0,
+                    Some(ValueView::Int(_)) => 0,
                     _ => return None,
                 };
                 let mut table = self.io_handles_mut();
@@ -881,7 +900,7 @@ impl Interpreter {
                 // itself keeps single-codepoint semantics for a `:bin` handle.
                 Some(state.read_grapheme_native(1).map(|s| {
                     if s.is_empty() {
-                        Value::Nil
+                        Value::NIL
                     } else {
                         Value::str(s)
                     }

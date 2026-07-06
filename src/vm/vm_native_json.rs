@@ -49,7 +49,7 @@ impl Interpreter {
         if !matches!(method, "to-json" | "from-json") {
             return None;
         }
-        let Value::Package(name) = target else {
+        let ValueView::Package(name) = target.view() else {
             return None;
         };
         if name.resolve() != "Rakudo::Internals::JSON" {
@@ -68,16 +68,16 @@ fn native_to_json(args: &[Value]) -> Result<Value, RuntimeError> {
     let mut opts = ToJsonOpts::default();
     let mut subject: Option<&Value> = None;
     for arg in args {
-        match arg {
-            Value::Pair(name, val) => apply_to_json_named(&mut opts, name, val),
-            Value::ValuePair(key, val) => {
+        match arg.view() {
+            ValueView::Pair(name, val) => apply_to_json_named(&mut opts, name, val),
+            ValueView::ValuePair(key, val) => {
                 apply_to_json_named(&mut opts, &key.to_string_value(), val)
             }
-            other if subject.is_none() => subject = Some(other),
+            _ if subject.is_none() => subject = Some(arg),
             _ => {}
         }
     }
-    let subject = subject.unwrap_or(&Value::Nil);
+    let subject = subject.unwrap_or(&Value::NIL);
     Ok(Value::str(json::to_json(subject, &opts)))
 }
 
@@ -86,8 +86,8 @@ fn apply_to_json_named(opts: &mut ToJsonOpts, name: &str, val: &Value) {
         "pretty" => opts.pretty = val.truthy(),
         "sorted-keys" => opts.sorted_keys = val.truthy(),
         "spacing" => {
-            if let Value::Int(n) = val {
-                opts.spacing = (*n).max(0) as usize;
+            if let ValueView::Int(n) = val.view() {
+                opts.spacing = n.max(0) as usize;
             }
         }
         _ => {}
@@ -97,7 +97,7 @@ fn apply_to_json_named(opts: &mut ToJsonOpts, name: &str, val: &Value) {
 fn native_from_json(args: &[Value]) -> Result<Value, RuntimeError> {
     let text = args
         .iter()
-        .find(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+        .find(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
         .map(|v| v.to_string_value())
         .unwrap_or_default();
     json::from_json(&text).map_err(RuntimeError::new)

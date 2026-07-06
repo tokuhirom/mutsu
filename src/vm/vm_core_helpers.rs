@@ -140,7 +140,7 @@ impl Interpreter {
 
     pub(crate) fn vm_eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
         if body.is_empty() {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         // CP-3 collapse: when the block is pure expression statements (no sub/
         // proto/operator declarations and no trailing-sub value), the registry +
@@ -158,7 +158,7 @@ impl Interpreter {
             self.pop_block_scope_depth();
             self.restore_let_saves(let_mark);
             self.loan_env_for(|i| i.run_pending_instance_destroys())?;
-            return result.map(|v| v.unwrap_or(Value::Nil));
+            return result.map(|v| v.unwrap_or(Value::NIL));
         }
         self.loan_env_for(|i| i.eval_block_value(body))
     }
@@ -209,6 +209,6 @@ impl Interpreter {
     /// topic leaks back into the outer source variable (e.g. nested
     /// `with $x { with 12345 { } }` would clobber `$x` with `12345`).
     pub(super) fn is_topic_ro_assignment(val: &Value) -> bool {
-        matches!(val, Value::Mixin(_, ov) if ov.contains_key("__mutsu_topic_ro__"))
+        matches!(val.view(), ValueView::Mixin(_, ov) if ov.contains_key("__mutsu_topic_ro__"))
     }
 }

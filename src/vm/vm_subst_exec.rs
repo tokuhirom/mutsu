@@ -34,7 +34,7 @@ impl Interpreter {
 
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_spec = x_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let target = self.env().get("_").cloned().unwrap_or(Value::Nil);
+        let target = self.env().get("_").cloned().unwrap_or(Value::NIL);
         let text = target.to_string_value();
 
         if nth_spec.is_none() && x_spec.is_none() && !global {
@@ -58,9 +58,9 @@ impl Interpreter {
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                     self.stack.push(match_obj);
                 } else {
-                    self.env_mut().insert("/".to_string(), Value::Nil);
+                    self.env_mut().insert("/".to_string(), Value::NIL);
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
-                    self.stack.push(Value::Bool(false));
+                    self.stack.push(Value::FALSE);
                 }
             } else {
                 let found = loan_env!(
@@ -100,9 +100,9 @@ impl Interpreter {
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                     self.stack.push(match_obj);
                 } else {
-                    self.env_mut().insert("/".to_string(), Value::Nil);
+                    self.env_mut().insert("/".to_string(), Value::NIL);
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
-                    self.stack.push(Value::Bool(false));
+                    self.stack.push(Value::FALSE);
                 }
             }
             return Ok(());
@@ -172,9 +172,9 @@ impl Interpreter {
                 self.stack.push(empty);
                 return Ok(());
             }
-            self.env_mut().insert("/".to_string(), Value::Nil);
+            self.env_mut().insert("/".to_string(), Value::NIL);
             self.substitution_in_smartmatch = self.in_smartmatch_rhs;
-            self.stack.push(Value::Bool(false));
+            self.stack.push(Value::FALSE);
             return Ok(());
         }
 
@@ -312,7 +312,7 @@ impl Interpreter {
 
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_spec = x_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let target = self.env().get("_").cloned().unwrap_or(Value::Nil);
+        let target = self.env().get("_").cloned().unwrap_or(Value::NIL);
         let text = target.to_string_value();
 
         if nth_spec.is_none() && x_spec.is_none() && !global {
@@ -333,7 +333,7 @@ impl Interpreter {
                     self.env_mut().insert("/".to_string(), match_obj);
                     self.stack.push(Value::str(out));
                 } else {
-                    self.env_mut().insert("/".to_string(), Value::Nil);
+                    self.env_mut().insert("/".to_string(), Value::NIL);
                     self.stack.push(Value::str(text));
                 }
             } else {
@@ -369,7 +369,7 @@ impl Interpreter {
                     self.env_mut().insert("/".to_string(), match_obj);
                     self.stack.push(Value::str(out));
                 } else {
-                    self.env_mut().insert("/".to_string(), Value::Nil);
+                    self.env_mut().insert("/".to_string(), Value::NIL);
                     self.stack.push(Value::str(text));
                 }
             }
@@ -429,7 +429,7 @@ impl Interpreter {
             let slash = if result_is_list {
                 Value::array(Vec::new())
             } else {
-                Value::Nil
+                Value::NIL
             };
             self.env_mut().insert("/".to_string(), slash);
             self.stack.push(Value::str(text));

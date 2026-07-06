@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::runtime::Interpreter;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Normalize an IO::Path for ACCEPTS comparison: cleanup + absolute.
 /// Returns the cleaned-up absolute path string.
@@ -39,15 +39,15 @@ fn io_path_attrs(attrs: &crate::gc::Gc<crate::value::InstanceAttrs>) -> (String,
 /// regex matching, type hierarchy checks, etc.).
 fn needs_interpreter_lhs(v: &Value) -> bool {
     matches!(
-        v,
-        Value::Junction { .. }
-            | Value::Sub(_)
-            | Value::Regex(_)
-            | Value::RegexWithAdverbs { .. }
-            | Value::Routine { .. }
-            | Value::Package(_)
-            | Value::CustomType { .. }
-            | Value::ParametricRole { .. }
+        v.view(),
+        ValueView::Junction { .. }
+            | ValueView::Sub(_)
+            | ValueView::Regex(_)
+            | ValueView::RegexWithAdverbs { .. }
+            | ValueView::Routine { .. }
+            | ValueView::Package(_)
+            | ValueView::CustomType { .. }
+            | ValueView::ParametricRole { .. }
     )
 }
 
@@ -56,12 +56,12 @@ fn needs_interpreter_lhs(v: &Value) -> bool {
 /// from the values themselves, or `None` when the interpreter is required (regex
 /// matching, callable invocation, type-object checks with class registries, etc.).
 pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
-    match (left, right) {
+    match (left.view(), right.view()) {
         // Whatever on RHS always matches
-        (_, Value::Whatever) => Some(true),
+        (_, ValueView::Whatever) => Some(true),
 
         // Junction ~~ Junction/Mu type: a Junction IS a Junction, don't autothread
-        (Value::Junction { .. }, Value::Package(name))
+        (ValueView::Junction { .. }, ValueView::Package(name))
             if matches!(name.resolve().as_str(), "Junction" | "Mu") =>
         {
             Some(true)
@@ -69,12 +69,12 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
 
         // DateTime ~~ Date: compare date parts
         (
-            Value::Instance {
+            ValueView::Instance {
                 class_name: left_class,
                 attributes: left_attrs,
                 ..
             },
-            Value::Instance {
+            ValueView::Instance {
                 class_name: right_class,
                 attributes: right_attrs,
                 ..
@@ -88,20 +88,20 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         }
 
         // Version ~~ Version
-        (Value::Version { .. }, Value::Version { parts, plus, minus }) => {
-            Some(Interpreter::version_smart_match(left, parts, *plus, *minus))
+        (ValueView::Version { .. }, ValueView::Version { parts, plus, minus }) => {
+            Some(Interpreter::version_smart_match(left, parts, plus, minus))
         }
 
         // When RHS is NaN, check if LHS is also NaN
-        (_, Value::Num(b)) if b.is_nan() && !needs_interpreter_lhs(left) => {
+        (_, ValueView::Num(b)) if b.is_nan() && !needs_interpreter_lhs(left) => {
             Some(Interpreter::value_is_nan(left))
         }
-        (Value::Num(a), _) if a.is_nan() && !needs_interpreter_lhs(right) => {
+        (ValueView::Num(a), _) if a.is_nan() && !needs_interpreter_lhs(right) => {
             Some(Interpreter::value_is_nan(right))
         }
 
         // Complex comparisons (NaN-aware)
-        (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
+        (ValueView::Complex(ar, ai), ValueView::Complex(br, bi)) => {
             let a_nan = ar.is_nan() || ai.is_nan();
             let b_nan = br.is_nan() || bi.is_nan();
             if a_nan && b_nan {
@@ -112,90 +112,92 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 Some(ar == br && ai == bi)
             }
         }
-        (Value::Int(a), Value::Complex(br, bi)) => Some((*a as f64) == *br && *bi == 0.0),
-        (Value::Complex(ar, ai), Value::Int(b)) => Some(*ar == (*b as f64) && *ai == 0.0),
-        (Value::Num(a), Value::Complex(br, bi)) => {
+        (ValueView::Int(a), ValueView::Complex(br, bi)) => Some((a as f64) == br && bi == 0.0),
+        (ValueView::Complex(ar, ai), ValueView::Int(b)) => Some(ar == (b as f64) && ai == 0.0),
+        (ValueView::Num(a), ValueView::Complex(br, bi)) => {
             if a.is_nan() && (br.is_nan() || bi.is_nan()) {
                 Some(true)
             } else {
-                Some(*a == *br && *bi == 0.0)
+                Some(a == br && bi == 0.0)
             }
         }
-        (Value::Complex(ar, ai), Value::Num(b)) => {
+        (ValueView::Complex(ar, ai), ValueView::Num(b)) => {
             if b.is_nan() && (ar.is_nan() || ai.is_nan()) {
                 Some(true)
             } else {
-                Some(*ar == *b && *ai == 0.0)
+                Some(ar == b && ai == 0.0)
             }
         }
-        (Value::Complex(ar, ai), Value::Rat(n, d)) => {
-            if *d != 0 {
-                Some(*ar == (*n as f64 / *d as f64) && *ai == 0.0)
+        (ValueView::Complex(ar, ai), ValueView::Rat(n, d)) => {
+            if d != 0 {
+                Some(ar == (n as f64 / d as f64) && ai == 0.0)
             } else {
                 Some(false)
             }
         }
-        (Value::Rat(n, d), Value::Complex(br, bi)) => {
-            if *d != 0 {
-                Some((*n as f64 / *d as f64) == *br && *bi == 0.0)
+        (ValueView::Rat(n, d), ValueView::Complex(br, bi)) => {
+            if d != 0 {
+                Some((n as f64 / d as f64) == br && bi == 0.0)
             } else {
                 Some(false)
             }
         }
 
         // Numeric equality
-        (Value::Int(a), Value::Int(b)) => Some(a == b),
-        (Value::Num(a), Value::Num(b)) => Some(a == b),
-        (Value::Int(a), Value::Num(b)) => Some((*a as f64) == *b),
-        (Value::Num(a), Value::Int(b)) => Some(*a == (*b as f64)),
-        (Value::Rat(an, ad), Value::Rat(bn, bd)) => Some(an * bd == bn * ad),
-        (Value::Int(a), Value::Rat(n, d)) => Some(*a * d == *n),
-        (Value::Rat(n, d), Value::Int(b)) => Some(*n == *b * d),
+        (ValueView::Int(a), ValueView::Int(b)) => Some(a == b),
+        (ValueView::Num(a), ValueView::Num(b)) => Some(a == b),
+        (ValueView::Int(a), ValueView::Num(b)) => Some((a as f64) == b),
+        (ValueView::Num(a), ValueView::Int(b)) => Some(a == (b as f64)),
+        (ValueView::Rat(an, ad), ValueView::Rat(bn, bd)) => Some(an * bd == bn * ad),
+        (ValueView::Int(a), ValueView::Rat(n, d)) => Some(a * d == n),
+        (ValueView::Rat(n, d), ValueView::Int(b)) => Some(n == b * d),
 
         // String equality
-        (Value::Str(a), Value::Str(b)) => Some(a == b),
+        (ValueView::Str(a), ValueView::Str(b)) => Some(a == b),
 
         // Str ~~ Numeric: numify LHS and compare
-        (Value::Str(a), Value::Int(b)) => Some(a.trim().parse::<f64>() == Ok(*b as f64)),
-        (Value::Str(a), Value::Num(b)) => {
+        (ValueView::Str(a), ValueView::Int(b)) => Some(a.trim().parse::<f64>() == Ok(b as f64)),
+        (ValueView::Str(a), ValueView::Num(b)) => {
             let trimmed = a.trim().replace('\u{2212}', "-");
             Some(trimmed.parse::<f64>().is_ok_and(|v| {
                 if v.is_nan() && b.is_nan() {
                     true
                 } else {
-                    v == *b
+                    v == b
                 }
             }))
         }
-        (Value::Str(a), Value::Rat(n, d)) => {
-            if *d != 0 {
+        (ValueView::Str(a), ValueView::Rat(n, d)) => {
+            if d != 0 {
                 Some(
                     a.trim()
                         .parse::<f64>()
-                        .is_ok_and(|v| v == *n as f64 / *d as f64),
+                        .is_ok_and(|v| v == n as f64 / d as f64),
                 )
             } else {
                 Some(false)
             }
         }
-        (Value::Int(a), Value::Str(b)) => Some(b.trim().parse::<f64>() == Ok(*a as f64)),
-        (Value::Nil, Value::Str(s)) => Some(s.is_empty()),
+        (ValueView::Int(a), ValueView::Str(b)) => Some(b.trim().parse::<f64>() == Ok(a as f64)),
+        (ValueView::Nil, ValueView::Str(s)) => Some(s.is_empty()),
 
         // Array/List ~~ Numeric: a list smart-matched against a number compares
         // numerically (`@a == $n`), and a list's numeric value is its element
         // count — so `[1,2,3] ~~ 3` is True (3 elems), `~~ 2` is False.
-        (Value::Array(a, _), Value::Int(b)) => Some(a.items.len() as i64 == *b),
-        (Value::Array(a, _), Value::Num(b)) => Some(a.items.len() as f64 == *b),
-        (Value::Array(a, _), Value::Rat(n, d)) => Some(*d != 0 && a.items.len() as i64 * *d == *n),
+        (ValueView::Array(a, _), ValueView::Int(b)) => Some(a.items.len() as i64 == b),
+        (ValueView::Array(a, _), ValueView::Num(b)) => Some(a.items.len() as f64 == b),
+        (ValueView::Array(a, _), ValueView::Rat(n, d)) => {
+            Some(d != 0 && a.items.len() as i64 * d == n)
+        }
 
         // IO::Path ~~ IO::Path: compare by cleanup.absolute
         (
-            Value::Instance {
+            ValueView::Instance {
                 class_name: cn_a,
                 attributes: attrs_a,
                 ..
             },
-            Value::Instance {
+            ValueView::Instance {
                 class_name: cn_b,
                 attributes: attrs_b,
                 ..
@@ -211,10 +213,10 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
 
         // Buf/Blob ~~ Buf/Blob: compare byte contents
         (
-            Value::Instance {
+            ValueView::Instance {
                 class_name: cn_a, ..
             },
-            Value::Instance {
+            ValueView::Instance {
                 class_name: cn_b, ..
             },
         ) if {
@@ -240,12 +242,12 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
 
         // Instance ~~ Instance: value types use eqv, others use identity
         (
-            Value::Instance {
+            ValueView::Instance {
                 class_name: lc,
                 id: id_a,
                 ..
             },
-            Value::Instance {
+            ValueView::Instance {
                 class_name: rc,
                 id: id_b,
                 ..
@@ -261,8 +263,8 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
 
         // Mu instances: Mu ~~ Mu.new is True
         (
-            Value::Package(lhs_type),
-            Value::Instance {
+            ValueView::Package(lhs_type),
+            ValueView::Instance {
                 class_name: rhs_class,
                 ..
             },
@@ -270,18 +272,20 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
 
         // When LHS is a type object (Package) and RHS is not a Package/type,
         // return false (handled more completely in the interpreter for type hierarchy)
-        (Value::Package(_), Value::Instance { .. }) => Some(false),
+        (ValueView::Package(_), ValueView::Instance { .. }) => Some(false),
 
         // When RHS is a Bool, result is that Bool
-        (_, Value::Bool(b))
-            if !matches!(left, Value::Package(_) | Value::Instance { .. })
-                && !needs_interpreter_lhs(left) =>
+        (_, ValueView::Bool(b))
+            if !matches!(
+                left.view(),
+                ValueView::Package(_) | ValueView::Instance { .. }
+            ) && !needs_interpreter_lhs(left) =>
         {
-            Some(*b)
+            Some(b)
         }
 
         // Hash ~~ Hash: structural equality
-        (Value::Hash(lmap), Value::Hash(rmap)) => {
+        (ValueView::Hash(lmap), ValueView::Hash(rmap)) => {
             if lmap.len() != rmap.len() {
                 return Some(false);
             }
@@ -305,7 +309,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         }
 
         // Set ~~ Bag: all set elements must exist in Bag with count 1
-        (Value::Set(set, _), Value::Bag(bag, _)) => Some(
+        (ValueView::Set(set, _), ValueView::Bag(bag, _)) => Some(
             set.len() == bag.len()
                 && set.iter().all(|key| {
                     bag.get(key)
@@ -314,13 +318,13 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         ),
 
         // Bag ~~ Set: keys must match (counts are ignored)
-        (Value::Bag(bag, _), Value::Set(set, _)) => {
+        (ValueView::Bag(bag, _), ValueView::Set(set, _)) => {
             let bag_keys: std::collections::HashSet<&String> = bag.keys().collect();
             Some(bag_keys.len() == set.len() && bag_keys.iter().all(|key| set.contains(*key)))
         }
 
         // Set ~~ Mix: all set elements must exist in Mix with unit weights
-        (Value::Set(set, _), Value::Mix(mix, _)) => Some(
+        (ValueView::Set(set, _), ValueView::Mix(mix, _)) => Some(
             set.len() == mix.len()
                 && set.iter().all(|key| {
                     mix.get(key)
@@ -329,7 +333,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         ),
 
         // Mix ~~ Set: all mix elements must have unit weights and exist in set
-        (Value::Mix(mix, _), Value::Set(set, _)) => Some(
+        (ValueView::Mix(mix, _), ValueView::Set(set, _)) => Some(
             mix.len() == set.len()
                 && mix
                     .iter()
@@ -337,21 +341,21 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         ),
 
         // Array ~~ Hash: check if any element exists as a key
-        (Value::Array(items, ..), Value::Hash(map)) => Some(items.iter().any(|item| {
+        (ValueView::Array(items, ..), ValueView::Hash(map)) => Some(items.iter().any(|item| {
             let key = item.to_string_value();
             map.contains_key(&key)
         })),
 
         // Scalar ~~ Hash: check key existence
         // (but not for types that have more specific matches above)
-        (_, Value::Hash(map))
+        (_, ValueView::Hash(map))
             if !matches!(
-                left,
-                Value::Regex(_)
-                    | Value::RegexWithAdverbs { .. }
-                    | Value::Hash(_)
-                    | Value::Array(..)
-                    | Value::Pair(..)
+                left.view(),
+                ValueView::Regex(_)
+                    | ValueView::RegexWithAdverbs { .. }
+                    | ValueView::Hash(_)
+                    | ValueView::Array(..)
+                    | ValueView::Pair(..)
             ) && !needs_interpreter_lhs(left) =>
         {
             let key = left.to_string_value();
@@ -359,13 +363,13 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         }
 
         // Range ~~ Range: LHS is subset of RHS
-        (l, r) if l.is_range() && r.is_range() => {
-            let r_str = Interpreter::range_has_string_endpoints(r);
-            let (_, _, l_es, l_ee) = Interpreter::range_exclusivity(l);
-            let (_, _, r_es, r_ee) = Interpreter::range_exclusivity(r);
+        (_, _) if left.is_range() && right.is_range() => {
+            let r_str = Interpreter::range_has_string_endpoints(right);
+            let (_, _, l_es, l_ee) = Interpreter::range_exclusivity(left);
+            let (_, _, r_es, r_ee) = Interpreter::range_exclusivity(right);
             if r_str {
-                let (l_min_s, l_max_s) = Interpreter::range_raw_string_bounds(l);
-                let (r_min_s, r_max_s) = Interpreter::range_raw_string_bounds(r);
+                let (l_min_s, l_max_s) = Interpreter::range_raw_string_bounds(left);
+                let (r_min_s, r_max_s) = Interpreter::range_raw_string_bounds(right);
                 let min_ok = if r_es {
                     l_min_s > r_min_s || (l_min_s == r_min_s && l_es)
                 } else {
@@ -378,8 +382,8 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 };
                 Some(min_ok && max_ok)
             } else {
-                let (l_min, l_max) = Interpreter::range_raw_bounds_f64(l);
-                let (r_min, r_max) = Interpreter::range_raw_bounds_f64(r);
+                let (l_min, l_max) = Interpreter::range_raw_bounds_f64(left);
+                let (r_min, r_max) = Interpreter::range_raw_bounds_f64(right);
                 let min_ok = if r_es {
                     l_min > r_min || (l_min == r_min && l_es)
                 } else {
@@ -399,48 +403,48 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         }
 
         // Range ~~ Numeric: numify range (element count) and compare
-        (l, r) if l.is_range() && r.is_numeric() => {
-            let elems = Interpreter::range_elems_f64(l);
-            let rval = r.to_f64();
+        (_, _) if left.is_range() && right.is_numeric() => {
+            let elems = Interpreter::range_elems_f64(left);
+            let rval = right.to_f64();
             Some(elems == rval)
         }
 
         // Value ~~ Range: containment check
         // Exclude types that have their own smartmatch handling so they fall
         // through to the interpreter.
-        (l, r)
-            if r.is_range()
-                && !needs_interpreter_lhs(l)
+        (_, _)
+            if right.is_range()
+                && !needs_interpreter_lhs(left)
                 && !matches!(
-                    l,
-                    Value::Hash(_)
-                        | Value::Array(..)
-                        | Value::Seq(_)
-                        | Value::Slip(_)
-                        | Value::LazyList(_)
+                    left.view(),
+                    ValueView::Hash(_)
+                        | ValueView::Array(..)
+                        | ValueView::Seq(_)
+                        | ValueView::Slip(_)
+                        | ValueView::LazyList(_)
                 ) =>
         {
-            Some(Interpreter::value_in_range(l, r))
+            Some(Interpreter::value_in_range(left, right))
         }
 
         // IO::Path ~~ Pair(:e), :d, :f, :r, :w, :x, :rw, :rwx, :s, :z file tests
         // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!rw, :!rwx, :!s, :!z
         // Note: Str ~~ :d is NOT supported (per Raku spec, only IO::Path has these methods)
         (
-            Value::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
             },
-            Value::Pair(key, val),
+            ValueView::Pair(key, val),
         ) if class_name == "IO::Path"
-            && matches!(val.as_ref(), Value::Bool(_))
+            && matches!(val.view(), ValueView::Bool(_))
             && matches!(
                 key.as_str(),
                 "e" | "d" | "f" | "l" | "r" | "w" | "x" | "rw" | "rwx" | "s" | "z"
             ) =>
         {
-            let negated = matches!(val.as_ref(), Value::Bool(false));
+            let negated = matches!(val.view(), ValueView::Bool(false));
             let path_str = attributes.as_map().get("path").map(|v| v.to_string_value());
             if let Some(p) = path_str {
                 let path = std::path::Path::new(&p);
@@ -537,7 +541,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         // Str/Int/Cool ~~ IO::Path: convert LHS to IO::Path and compare cleanup.absolute
         (
             _,
-            Value::Instance {
+            ValueView::Instance {
                 class_name: cn_b,
                 attributes: attrs_b,
                 ..
@@ -557,19 +561,19 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         // IO::Path ~~ Str: compare path string representation with string.
         // In Raku, Str.ACCEPTS(IO::Path) stringifies the IO::Path and compares.
         // This handles cases like `dir().grep("filename")` after chdir.
-        (Value::Instance { class_name: cn, .. }, Value::Str(s)) if cn == "IO::Path" => {
+        (ValueView::Instance { class_name: cn, .. }, ValueView::Str(s)) if cn == "IO::Path" => {
             Some(left.to_string_value() == s.as_str())
         }
 
         // Instance ~~ Instance identity check (generic, after all specific instance checks).
         // Exclude Signature (needs special ACCEPTS logic) and X::AdHoc (needs payload delegation).
         (
-            Value::Instance {
+            ValueView::Instance {
                 class_name: lc,
                 id: id_a,
                 ..
             },
-            Value::Instance {
+            ValueView::Instance {
                 class_name: rc,
                 id: id_b,
                 ..
@@ -591,8 +595,8 @@ impl Interpreter {
         // short-circuit to an identity check and never reach the dispatch. Junction
         // LHS is excluded so junction autothreading still applies. Mirrors the
         // interpreter `smart_match` arm (the grep/given paths reach that one).
-        if let Value::Instance { class_name, .. } = right
-            && !matches!(left, Value::Junction { .. })
+        if let ValueView::Instance { class_name, .. } = right.view()
+            && !matches!(left.view(), ValueView::Junction { .. })
             && self.has_user_method(&class_name.resolve(), "ACCEPTS")
         {
             match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
@@ -612,26 +616,26 @@ impl Interpreter {
         // to Bool, and compare with pair value coerced to Bool.
         // Per S03: ?."{X.key}" === ?X.value
         // Exclude types with their own Pair smartmatch semantics (Hash checks key+value).
-        // Both `Value::Pair` (string-keyed) and `Value::ValuePair` (`key => val`
+        // Both `Pair` (string-keyed) and `ValuePair` (`key => val`
         // literals are built as ValuePair) reach here.
-        let pair_key_val = match right {
-            Value::Pair(key, val) => Some((key.clone(), val.as_ref().clone())),
-            Value::ValuePair(key, val) => Some((key.to_string_value(), val.as_ref().clone())),
+        let pair_key_val = match right.view() {
+            ValueView::Pair(key, val) => Some((key.clone(), val.clone())),
+            ValueView::ValuePair(key, val) => Some((key.to_string_value(), val.clone())),
             _ => None,
         };
         if let Some((method_name, val)) = pair_key_val
             && !matches!(
-                left,
-                Value::Hash(_)
-                    | Value::Array(..)
-                    | Value::Seq(_)
-                    | Value::Slip(_)
-                    | Value::LazyList(_)
+                left.view(),
+                ValueView::Hash(_)
+                    | ValueView::Array(..)
+                    | ValueView::Seq(_)
+                    | ValueView::Slip(_)
+                    | ValueView::LazyList(_)
                     // A Pair LHS has its own Pair-vs-Pair smartmatch (key AND value
                     // equality), NOT method-key dispatch — `("a"=>"b") ~~ ("a"=>"b")`
                     // must compare, not call method `a` on the left Pair.
-                    | Value::Pair(..)
-                    | Value::ValuePair(..)
+                    | ValueView::Pair(..)
+                    | ValueView::ValuePair(..)
             )
         {
             // Route the key-method call through the Interpreter's unified compiled-first

@@ -11,7 +11,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let end = body_end as usize;
         let body_start = *ip + 1;
-        let label = self.stack.pop().unwrap_or(Value::Nil).to_string_value();
+        let label = self.stack.pop().unwrap_or(Value::NIL).to_string_value();
         let ctx = self.begin_subtest();
         let saved_depth = self.stack.len();
         let run_result = self.run_range(code, body_start, end, compiled_fns);
@@ -83,7 +83,9 @@ impl Interpreter {
         // env so the slot stays coherent (same HashEntryRef / `!attr` per-slot
         // skips); this is what keeps `$i` correct.
         for (i, name) in code.locals.iter().enumerate() {
-            if name.starts_with('!') || matches!(self.locals[i], Value::HashEntryRef { .. }) {
+            if name.starts_with('!')
+                || matches!(self.locals[i].view(), ValueView::HashEntryRef { .. })
+            {
                 continue;
             }
             let cur = self.env().get(name).cloned().or_else(|| {
@@ -122,7 +124,7 @@ impl Interpreter {
         param_idx: &Option<u32>,
         target_var_idx: &Option<u32>,
     ) -> Result<(), RuntimeError> {
-        let supply_val = self.stack.pop().unwrap_or(Value::Nil);
+        let supply_val = self.stack.pop().unwrap_or(Value::NIL);
         let param = param_idx.map(|idx| Self::const_str(code, idx).to_string());
         let target_var = target_var_idx.map(|idx| Self::const_str(code, idx));
         let stmt = &code.stmt_pool[body_idx as usize];
@@ -147,7 +149,7 @@ impl Interpreter {
             // Armed only under boxing; the default build keeps the blanket pull.
             if let Some(name) = target_var
                 && let Some(slot) = self.find_local_slot(code, name)
-                && !matches!(self.locals[slot], Value::HashEntryRef { .. })
+                && !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
                 && let Some(val) = self.env().get(name).cloned()
             {
                 self.locals[slot] = val;

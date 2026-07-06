@@ -6,8 +6,8 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
-        let name = match &code.constants[name_idx as usize] {
-            Value::Str(s) => s.to_string(),
+        let name = match code.constants[name_idx as usize].view() {
+            ValueView::Str(s) => s.to_string(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
         self.check_readonly_for_modify(&name)?;
@@ -18,7 +18,7 @@ impl Interpreter {
                 == Some("Mix")
             && self
                 .get_env_with_main_alias(&name)
-                .is_some_and(|current| !matches!(current, Value::Nil))
+                .is_some_and(|current| !current.is_nil())
         {
             return Err(RuntimeError::assignment_ro(None));
         }
@@ -34,23 +34,24 @@ impl Interpreter {
                 return Err(RuntimeError::assignment_ro(None));
             }
         }
-        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
-        let (raw_val, bind_source) = if let Value::Capture { positional, named } = &raw_val {
-            if positional.is_empty() {
-                if let (Some(Value::Str(source_name)), Some(inner)) = (
-                    named.get("__mutsu_varref_name"),
-                    named.get("__mutsu_varref_value"),
-                ) {
-                    (inner.clone(), Some(source_name.to_string()))
+        let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+        let (raw_val, bind_source) =
+            if let ValueView::Capture { positional, named } = raw_val.view() {
+                if positional.is_empty() {
+                    if let (Some(ValueView::Str(source_name)), Some(inner)) = (
+                        named.get("__mutsu_varref_name").map(Value::view),
+                        named.get("__mutsu_varref_value"),
+                    ) {
+                        (inner.clone(), Some(source_name.to_string()))
+                    } else {
+                        (raw_val, None)
+                    }
                 } else {
                     (raw_val, None)
                 }
             } else {
                 (raw_val, None)
-            }
-        } else {
-            (raw_val, None)
-        };
+            };
         // Capture old hash Arc pointer for circular reference fixup.
         let old_hash_arc = if name.starts_with('%') {
             let current = self.get_env_with_main_alias(&name).or_else(|| {
@@ -62,8 +63,8 @@ impl Interpreter {
                     }
                 })
             });
-            if let Some(Value::Hash(arc)) = current {
-                Some(crate::gc::Gc::as_ptr(&arc) as usize)
+            if let Some(ValueView::Hash(arc)) = current.as_ref().map(Value::view) {
+                Some(crate::gc::Gc::as_ptr(arc) as usize)
             } else {
                 None
             }
@@ -81,8 +82,8 @@ impl Interpreter {
                     }
                 })
             });
-            if let Some(Value::Array(arc, _)) = current {
-                Some(crate::gc::Gc::as_ptr(&arc) as usize)
+            if let Some(ValueView::Array(arc, _)) = current.as_ref().map(Value::view) {
+                Some(crate::gc::Gc::as_ptr(arc) as usize)
             } else {
                 None
             }
@@ -94,7 +95,7 @@ impl Interpreter {
             // Resolve hash sentinel entries (bound variable refs) when assigning
             // to a new hash variable. Assignment creates new containers, so bound
             // refs must be resolved to their current values.
-            if let Value::Hash(ref items) = hash_val {
+            if let ValueView::Hash(items) = hash_val.view() {
                 if Self::hash_has_sentinels(items) {
                     self.resolve_hash_for_iteration(items)
                 } else {
@@ -134,12 +135,12 @@ impl Interpreter {
                     // Also check declared shape metadata for multi-dim
                     let key = format!("__mutsu_shaped_array_dims::{}", name);
                     self.env().get(&key).and_then(|v| {
-                        if let Value::Array(dims, ..) = v {
+                        if let ValueView::Array(dims, ..) = v.view() {
                             Some(
                                 dims.iter()
                                     .filter_map(|d| {
-                                        if let Value::Int(n) = d {
-                                            Some(*n as usize)
+                                        if let ValueView::Int(n) = d.view() {
+                                            Some(n as usize)
                                         } else {
                                             None
                                         }
@@ -154,7 +155,10 @@ impl Interpreter {
             // Only preserve the old shape if the new value is NOT already shaped
             let assigned_has_own_shape = crate::runtime::utils::shaped_array_shape(&assigned)
                 .is_some()
-                || matches!(&assigned, Value::Array(_, crate::value::ArrayKind::Shaped));
+                || matches!(
+                    assigned.view(),
+                    ValueView::Array(_, crate::value::ArrayKind::Shaped)
+                );
             if let Some(ref shape) = current_shape {
                 // For 1D shaped arrays, rebuild with the same shape
                 if shape.len() == 1 && !assigned_has_own_shape {
@@ -162,9 +166,9 @@ impl Interpreter {
                     let item_count = items.len();
                     let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
                     if item_count < shape[0] {
-                        shaped_items.resize(shape[0], Value::Nil);
+                        shaped_items.resize(shape[0], Value::NIL);
                     }
-                    assigned = Value::Array(
+                    assigned = Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(shaped_items)),
                         crate::value::ArrayKind::Shaped,
                     );
@@ -178,9 +182,9 @@ impl Interpreter {
                 }
             }
             if let Some(current) = self.get_env_with_main_alias(&name) {
-                let class_name = match &current {
-                    Value::Instance { class_name, .. } => Some(*class_name),
-                    Value::Package(class_name) => Some(*class_name),
+                let class_name = match current.view() {
+                    ValueView::Instance { class_name, .. } => Some(class_name),
+                    ValueView::Package(class_name) => Some(class_name),
                     _ => None,
                 };
                 if let Some(class_name) = class_name {
@@ -191,10 +195,10 @@ impl Interpreter {
                     if class == "Buf" || class.starts_with("buf") {
                         let items = runtime::value_to_list(&assigned)
                             .into_iter()
-                            .map(|v| Value::Int(runtime::to_int(&v)))
+                            .map(|v| Value::int(runtime::to_int(&v)))
                             .collect::<Vec<_>>();
                         assigned = self.try_compiled_method_or_interpret(
-                            Value::Package(class_name),
+                            Value::package(class_name),
                             "new",
                             items,
                         )?;
@@ -205,7 +209,7 @@ impl Interpreter {
         } else {
             Self::normalize_scalar_assignment_value(raw_val)
         };
-        if matches!(val, Value::Nil)
+        if val.is_nil()
             && let Some(def) = self.var_default(&name)
         {
             val = def.clone();
@@ -226,13 +230,13 @@ impl Interpreter {
             && !name.starts_with('%')
             && let Some(constraint) = loan_env!(self, var_type_constraint(&name))
         {
-            if matches!(val, Value::Nil) {
+            if val.is_nil() {
                 if constraint == "Mu" {
                     val
                 } else {
                     let nominal =
                         loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                    Value::Package(Symbol::intern(&nominal))
+                    Value::package(Symbol::intern(&nominal))
                 }
             } else if !self.type_matches_value(&constraint, &val) {
                 return Err(runtime::utils::type_check_assignment_typed_error(
@@ -240,7 +244,7 @@ impl Interpreter {
                     &constraint,
                     &val,
                 ));
-            } else if !matches!(val, Value::Package(_)) {
+            } else if !matches!(val.view(), ValueView::Package(_)) {
                 loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
             } else {
                 val
@@ -252,9 +256,13 @@ impl Interpreter {
         };
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        if matches!(self.env().get(&readonly_key), Some(Value::Bool(true)))
-            && !matches!(self.env().get(&alias_key), Some(Value::Str(_)))
-        {
+        if matches!(
+            self.env().get(&readonly_key).map(Value::view),
+            Some(ValueView::Bool(true))
+        ) && !matches!(
+            self.env().get(&alias_key).map(Value::view),
+            Some(ValueView::Str(_))
+        ) {
             return Err(RuntimeError::assignment_ro(None));
         }
         if let Some(source_name) = bind_source {
@@ -262,14 +270,14 @@ impl Interpreter {
             let mut seen = std::collections::HashSet::new();
             while seen.insert(resolved_source.clone()) {
                 let key = format!("__mutsu_sigilless_alias::{}", resolved_source);
-                let Some(Value::Str(next)) = self.env().get(&key) else {
+                let Some(ValueView::Str(next)) = self.env().get(&key).map(Value::view) else {
                     break;
                 };
                 resolved_source = next.to_string();
             }
             self.env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source));
-            self.env_mut().insert(readonly_key, Value::Bool(false));
+            self.env_mut().insert(readonly_key, Value::FALSE);
         }
         // If the current value is a Proxy (in locals or env), invoke STORE instead of overwriting
         {
@@ -280,7 +288,7 @@ impl Interpreter {
                 .and_then(|idx| {
                     if idx < self.locals.len() {
                         let v = &self.locals[idx];
-                        if matches!(v, Value::Proxy { .. }) {
+                        if matches!(v.view(), ValueView::Proxy { .. }) {
                             Some(v.clone())
                         } else {
                             None
@@ -291,15 +299,15 @@ impl Interpreter {
                 })
                 .or_else(|| {
                     self.get_env_with_main_alias(&name).and_then(|v| {
-                        if matches!(&v, Value::Proxy { .. }) {
+                        if matches!(v.view(), ValueView::Proxy { .. }) {
                             Some(v)
                         } else {
                             None
                         }
                     })
                 });
-            if let Some(Value::Proxy { ref storer, .. }) = current_proxy
-                && !matches!(storer.as_ref(), Value::Nil)
+            if let Some(ValueView::Proxy { storer, .. }) = current_proxy.as_ref().map(Value::view)
+                && !storer.is_nil()
             {
                 let proxy_val = current_proxy.unwrap();
                 loan_env!(self, assign_proxy_lvalue(proxy_val, val.clone()))?;
@@ -325,7 +333,7 @@ impl Interpreter {
                 .position(|n| n == &name)
                 .and_then(|idx| self.locals.get(idx).cloned())
                 .or_else(|| self.get_env_with_main_alias(&name));
-            if let Some(Value::ContainerRef(arc)) = current {
+            if let Some(ValueView::ContainerRef(arc)) = current.as_ref().map(Value::view) {
                 // Restrict to scalar (sigilless `\target` / `$`) names: `@`/`%`
                 // vars have their own ContainerRef handling and must keep their
                 // existing whole-reassignment semantics here.
@@ -344,10 +352,10 @@ impl Interpreter {
             // expression result also has the circular reference.
             if let Some(old_ptr) = old_hash_arc
                 && let Some(stack_top) = self.stack.last_mut()
-                && let Value::Hash(stack_arc) = stack_top
+                && let ValueView::Hash(stack_arc) = stack_top.view()
             {
                 let has_old_ref = stack_arc.values().any(|v| {
-                    if let Value::Hash(inner_arc) = v {
+                    if let ValueView::Hash(inner_arc) = v.view() {
                         crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr
                     } else {
                         false
@@ -363,10 +371,10 @@ impl Interpreter {
             Self::fixup_circular_array_refs(&mut val, &old_array_arc);
             if let Some(old_ptr) = old_array_arc
                 && let Some(stack_top) = self.stack.last_mut()
-                && let Value::Array(stack_arc, _) = stack_top
+                && let ValueView::Array(stack_arc, _) = stack_top.view()
             {
                 let has_old_ref = stack_arc.iter().any(|v| {
-                    if let Value::Array(inner_arc, _) = v {
+                    if let ValueView::Array(inner_arc, _) = v.view() {
                         crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr
                     } else {
                         false
@@ -389,7 +397,7 @@ impl Interpreter {
                 .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
         }
         let mut alias_name = self.env().get(&alias_key).and_then(|v| {
-            if let Value::Str(name) = v {
+            if let ValueView::Str(name) = v.view() {
                 Some(name.to_string())
             } else {
                 None
@@ -404,7 +412,7 @@ impl Interpreter {
             self.env_mut().insert(current_alias.clone(), val.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
             alias_name = self.env().get(&next_key).and_then(|v| {
-                if let Value::Str(name) = v {
+                if let ValueView::Str(name) = v.view() {
                     Some(name.to_string())
                 } else {
                     None
@@ -435,7 +443,7 @@ impl Interpreter {
     }
 
     pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let value = self.stack.pop().unwrap_or(Value::NIL);
         let name = Self::const_str(code, name_idx).to_string();
         let mut named = std::collections::HashMap::new();
         named.insert("__mutsu_varref_name".to_string(), Value::str(name));
@@ -455,14 +463,14 @@ impl Interpreter {
         use num_traits::ToPrimitive;
 
         // Reject strings
-        if matches!(value, Value::Str(_)) {
+        if matches!(value.view(), ValueView::Str(_)) {
             return Err(RuntimeError::new(format!(
                 "Cannot convert string to native integer type '{}'",
                 type_name
             )));
         }
         // Reject NaN
-        if let Value::Num(n) = value {
+        if let ValueView::Num(n) = value.view() {
             if n.is_nan() {
                 return Err(RuntimeError::new(format!(
                     "Cannot convert NaN to native integer type '{}'",
@@ -478,9 +486,9 @@ impl Interpreter {
             }
         }
         // Reject Rat with non-integer value
-        if let Value::Rat(n, d) = value
-            && *d != 0
-            && *n % *d != 0
+        if let ValueView::Rat(n, d) = value.view()
+            && d != 0
+            && n % d != 0
         {
             return Err(RuntimeError::new(format!(
                 "Cannot convert non-integer value to native integer type '{}'",
@@ -489,18 +497,18 @@ impl Interpreter {
         }
 
         // Convert value to BigInt for range checking
-        let big_val = match value {
-            Value::Int(n) => NumBigInt::from(*n),
-            Value::BigInt(n) => (**n).clone(),
-            Value::Num(n) => NumBigInt::from(*n as i64),
-            Value::Rat(n, d) => {
-                if *d == 0 {
+        let big_val = match value.view() {
+            ValueView::Int(n) => NumBigInt::from(n),
+            ValueView::BigInt(n) => (**n).clone(),
+            ValueView::Num(n) => NumBigInt::from(n as i64),
+            ValueView::Rat(n, d) => {
+                if d == 0 {
                     NumBigInt::from(0)
                 } else {
-                    NumBigInt::from(*n / *d)
+                    NumBigInt::from(n / d)
                 }
             }
-            Value::Bool(b) => NumBigInt::from(if *b { 1 } else { 0 }),
+            ValueView::Bool(b) => NumBigInt::from(if b { 1 } else { 0 }),
             _ => {
                 return Err(RuntimeError::new(format!(
                     "Cannot convert value to native integer type '{}'",
@@ -534,7 +542,7 @@ impl Interpreter {
         };
 
         // Coerce to Int on the stack
-        let int_val = wrapped.to_i64().map(Value::Int).unwrap_or_else(|| {
+        let int_val = wrapped.to_i64().map(Value::int).unwrap_or_else(|| {
             // For uint64 values that don't fit in i64, store as BigInt
             Value::bigint(wrapped)
         });

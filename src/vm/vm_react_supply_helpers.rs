@@ -6,8 +6,8 @@ use crate::runtime::subtest::{ReactSubscription, StreamConsumer};
 
 impl Interpreter {
     pub(super) fn extract_head_limit(attributes: &HashMap<String, Value>) -> Option<usize> {
-        if let Some(Value::Int(n)) = attributes.get("head_limit") {
-            Some(*n as usize)
+        if let Some(ValueView::Int(n)) = attributes.get("head_limit").map(Value::view) {
+            Some(n as usize)
         } else {
             None
         }
@@ -16,7 +16,9 @@ impl Interpreter {
     pub(super) fn extract_supply_on_close_callbacks(
         attributes: &HashMap<String, Value>,
     ) -> Vec<Value> {
-        if let Some(Value::Array(callbacks, ..)) = attributes.get("on_close_callbacks") {
+        if let Some(ValueView::Array(callbacks, ..)) =
+            attributes.get("on_close_callbacks").map(Value::view)
+        {
             callbacks.to_vec()
         } else {
             Vec::new()
@@ -38,12 +40,13 @@ impl Interpreter {
         attributes: &HashMap<String, Value>,
     ) -> Option<u64> {
         // If this is a "lines" supply, use the parent's supply_id
-        if let Some(Value::Int(parent_id)) = attributes.get("parent_supply_id") {
-            return Some(*parent_id as u64);
+        if let Some(ValueView::Int(parent_id)) = attributes.get("parent_supply_id").map(Value::view)
+        {
+            return Some(parent_id as u64);
         }
         // Otherwise use this supply's own supply_id
-        if let Some(Value::Int(id)) = attributes.get("supply_id") {
-            return Some(*id as u64);
+        if let Some(ValueView::Int(id)) = attributes.get("supply_id").map(Value::view) {
+            return Some(id as u64);
         }
         None
     }
@@ -65,17 +68,20 @@ impl Interpreter {
         &mut self,
         v: &Value,
     ) -> Result<Option<bool>, RuntimeError> {
-        let Value::Array(inner_items, ..) = v else {
+        let ValueView::Array(inner_items, ..) = v.view() else {
             return Ok(None);
         };
-        let Some(source @ Value::Instance { class_name, .. }) = inner_items.first() else {
+        let Some(source) = inner_items.first() else {
+            return Ok(None);
+        };
+        let ValueView::Instance { class_name, .. } = source.view() else {
             return Ok(None);
         };
         if class_name != "Supply" {
             return Ok(None);
         }
         let source = source.clone();
-        let inner_cb = inner_items.get(1).cloned().unwrap_or(Value::Nil);
+        let inner_cb = inner_items.get(1).cloned().unwrap_or(Value::NIL);
         let inner_last = inner_items
             .get(2)
             .and_then(crate::runtime::Interpreter::value_array_items)
@@ -99,11 +105,11 @@ impl Interpreter {
         consumer_cb: &Value,
         last_callbacks: &[Value],
     ) -> Result<bool, RuntimeError> {
-        let Value::Instance {
+        let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = source
+        } = source.view()
         else {
             return Ok(false);
         };
@@ -158,11 +164,12 @@ impl Interpreter {
         if !reached {
             for v in emitted {
                 if crate::runtime::Interpreter::is_supply_subscription_registration(&v) {
-                    if let Value::Array(inner, ..) = &v
-                        && let Some(inner_src @ Value::Instance { .. }) = inner.first()
+                    if let ValueView::Array(inner, ..) = v.view()
+                        && let Some(inner_src) = inner.first()
+                        && matches!(inner_src.view(), ValueView::Instance { .. })
                     {
                         let inner_src = inner_src.clone();
-                        let inner_cb = inner.get(1).cloned().unwrap_or(Value::Nil);
+                        let inner_cb = inner.get(1).cloned().unwrap_or(Value::NIL);
                         let inner_last = inner
                             .get(2)
                             .and_then(crate::runtime::Interpreter::value_array_items)
@@ -215,7 +222,7 @@ impl Interpreter {
         last_callbacks: &[Value],
     ) -> Result<bool, RuntimeError> {
         let mut last_topic: Option<Value> = None;
-        if let Some(Value::Array(values, ..)) = attributes.get("values") {
+        if let Some(ValueView::Array(values, ..)) = attributes.get("values").map(Value::view) {
             for v in values.iter() {
                 match self.call_react_callback(&callback.clone(), vec![v.clone()]) {
                     Ok(_) => {}

@@ -12,10 +12,10 @@ impl Interpreter {
         let arity = right_arity as usize;
         let mut right_vals: Vec<Value> = Vec::with_capacity(arity);
         for _ in 0..arity {
-            right_vals.push(self.stack.pop().unwrap_or(Value::Nil));
+            right_vals.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         right_vals.reverse();
-        let left_val = self.stack.pop().unwrap_or(Value::Nil);
+        let left_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
         let result = if name == "atan2" {
@@ -27,10 +27,10 @@ impl Interpreter {
             if modifier.as_deref() == Some("R") {
                 std::mem::swap(&mut x, &mut y);
             }
-            Value::Num(y.atan2(x))
+            Value::num(y.atan2(x))
         } else if name == "sprintf" {
-            let fmt = match &left_val {
-                Value::Str(s) => s.to_string(),
+            let fmt = match left_val.view() {
+                ValueView::Str(s) => s.to_string(),
                 _ => String::new(),
             };
             if modifier.as_deref() == Some("X") {
@@ -89,9 +89,9 @@ impl Interpreter {
                         break;
                     }
                 }
-                Value::Bool(all_true)
+                Value::truth(all_true)
             } else if call_args.len() == 2 {
-                let right_val = right_vals.first().cloned().unwrap_or(Value::Nil);
+                let right_val = right_vals.first().cloned().unwrap_or(Value::NIL);
                 if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
                     result
                 } else {
@@ -125,7 +125,7 @@ impl Interpreter {
     }
 
     fn flip_flop_scope_key(&self) -> String {
-        if let Some(Value::Int(id)) = self.env().get("__mutsu_callable_id") {
+        if let Some(ValueView::Int(id)) = self.env().get("__mutsu_callable_id").map(Value::view) {
             return format!("callable:{id}");
         }
         if let Some(frame) = self.routine_stack_top() {
@@ -135,18 +135,18 @@ impl Interpreter {
     }
 
     fn flip_flop_operand_truthy(&mut self, value: &Value, is_rhs: bool) -> bool {
-        match value {
+        match value.view() {
             // `*` means "always" on the LHS and "never" on the RHS.
-            Value::Whatever => !is_rhs,
+            ValueView::Whatever => !is_rhs,
             // A boolean operand is used directly (the common
             // `$n == 3 ff $n == 5` comparison form).
-            Value::Bool(b) => *b,
+            ValueView::Bool(b) => b,
             // Every other operand (a regex, or a constant such as `2 ff 4`)
             // is smart-matched against the topic `$_` — the sed-style line
             // matching where `2 ff 4` means "from when `$_ ~~ 2` until
             // `$_ ~~ 4`".
             _ => {
-                let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
+                let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
                 self.vm_smart_match(&topic, value)
             }
         }
@@ -161,7 +161,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let saved_depth = self.stack.len();
         self.run_range(code, start, end, compiled_fns)?;
-        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let value = self.stack.pop().unwrap_or(Value::NIL);
         self.stack.truncate(saved_depth);
         Ok(value)
     }
@@ -177,8 +177,8 @@ impl Interpreter {
     ) -> Value {
         let seq = self
             .get_state_var(key)
-            .and_then(|v| match v {
-                Value::Int(i) if *i > 0 => Some(*i),
+            .and_then(|v| match v.view() {
+                ValueView::Int(i) if i > 0 => Some(i),
                 _ => None,
             })
             .unwrap_or(0);
@@ -186,34 +186,34 @@ impl Interpreter {
         if seq > 0 {
             let current = seq;
             if rhs {
-                self.set_state_var(key.to_string(), Value::Int(0));
+                self.set_state_var(key.to_string(), Value::int(0));
                 if exclude_end {
-                    Value::Nil
+                    Value::NIL
                 } else {
-                    Value::Int(current)
+                    Value::int(current)
                 }
             } else {
-                self.set_state_var(key.to_string(), Value::Int(current + 1));
-                Value::Int(current)
+                self.set_state_var(key.to_string(), Value::int(current + 1));
+                Value::int(current)
             }
         } else if lhs {
             if !is_fff && rhs {
-                self.set_state_var(key.to_string(), Value::Int(0));
+                self.set_state_var(key.to_string(), Value::int(0));
                 if exclude_start || exclude_end {
-                    Value::Nil
+                    Value::NIL
                 } else {
-                    Value::Int(1)
+                    Value::int(1)
                 }
             } else {
-                self.set_state_var(key.to_string(), Value::Int(2));
+                self.set_state_var(key.to_string(), Value::int(2));
                 if exclude_start {
-                    Value::Nil
+                    Value::NIL
                 } else {
-                    Value::Int(1)
+                    Value::int(1)
                 }
             }
         } else {
-            Value::Nil
+            Value::NIL
         }
     }
 
@@ -241,13 +241,13 @@ impl Interpreter {
             let scope = self.flip_flop_scope_key();
             let matcher_key = format!("__mutsu_ff_state::{scope}::{site_id}");
             let mut map = std::collections::HashMap::new();
-            map.insert("__mutsu_ff_matcher".to_string(), Value::Bool(true));
+            map.insert("__mutsu_ff_matcher".to_string(), Value::TRUE);
             map.insert("key".to_string(), Value::str(matcher_key));
             map.insert("lhs".to_string(), lhs_pattern);
             map.insert("rhs".to_string(), rhs_pattern);
-            map.insert("exclude_start".to_string(), Value::Bool(exclude_start));
-            map.insert("exclude_end".to_string(), Value::Bool(exclude_end));
-            map.insert("is_fff".to_string(), Value::Bool(is_fff));
+            map.insert("exclude_start".to_string(), Value::truth(exclude_start));
+            map.insert("exclude_end".to_string(), Value::truth(exclude_end));
+            map.insert("is_fff".to_string(), Value::truth(is_fff));
             self.stack.push(Value::hash(map));
             *ip = rhs_end;
             return Ok(());
@@ -257,8 +257,8 @@ impl Interpreter {
         let state_key = format!("__mutsu_ff_state::{scope}::{site_id}");
         let seq = self
             .get_state_var(&state_key)
-            .and_then(|v| match v {
-                Value::Int(i) if *i > 0 => Some(*i),
+            .and_then(|v| match v.view() {
+                ValueView::Int(i) if i > 0 => Some(i),
                 _ => None,
             })
             .unwrap_or(0);
@@ -297,14 +297,14 @@ impl Interpreter {
         // When an infix operator is called with a single Iterable argument,
         // flatten it into elements (like a +@foo slurpy) and reduce over them.
         let call_args = if call_args.len() == 1 {
-            match &call_args[0] {
-                Value::Hash(map) => {
+            match call_args[0].view() {
+                ValueView::Hash(map) => {
                     // Break Hash into Pairs
                     map.iter()
-                        .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                        .map(|(k, v)| Value::pair(k.clone(), v.clone()))
                         .collect::<Vec<_>>()
                 }
-                Value::Array(items, ..) => items.iter().cloned().collect(),
+                ValueView::Array(items, ..) => items.iter().cloned().collect(),
                 _ => call_args,
             }
         } else {
@@ -379,15 +379,15 @@ impl Interpreter {
                     {
                         let mut attrs = std::collections::HashMap::new();
                         attrs.insert("name".to_string(), Value::str(method_name.to_string()));
-                        attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+                        attrs.insert("is_dispatcher".to_string(), Value::FALSE);
                         let mut sig_attrs = std::collections::HashMap::new();
                         sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
                         attrs.insert(
                             "signature".to_string(),
                             Value::make_instance(Symbol::intern("Signature"), sig_attrs),
                         );
-                        attrs.insert("returns".to_string(), Value::Package(Symbol::intern("Mu")));
-                        attrs.insert("of".to_string(), Value::Package(Symbol::intern("Mu")));
+                        attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
+                        attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
                         return Ok(Value::make_instance(Symbol::intern("Method"), attrs));
                     }
                     Err(RuntimeError::syntax_confused_with_reason(
@@ -414,7 +414,7 @@ impl Interpreter {
                         {
                             let mut attrs = std::collections::HashMap::new();
                             attrs.insert("name".to_string(), Value::str(method_name.to_string()));
-                            attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+                            attrs.insert("is_dispatcher".to_string(), Value::FALSE);
                             let mut sig_attrs = std::collections::HashMap::new();
                             sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
                             attrs.insert(
@@ -423,9 +423,9 @@ impl Interpreter {
                             );
                             attrs.insert(
                                 "returns".to_string(),
-                                Value::Package(Symbol::intern("Mu")),
+                                Value::package(Symbol::intern("Mu")),
                             );
-                            attrs.insert("of".to_string(), Value::Package(Symbol::intern("Mu")));
+                            attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
                             return Ok(Value::make_instance(Symbol::intern("Method"), attrs));
                         }
                         Err(RuntimeError::syntax_confused_with_reason(

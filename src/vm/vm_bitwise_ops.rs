@@ -7,16 +7,16 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
-            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(&*a & &*b),
-            (Value::BigInt(a), Value::Int(b)) => {
-                Value::from_bigint(&*a & &num_bigint::BigInt::from(b))
+        let result = match (l.view(), r.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => Value::int(a & b),
+            (ValueView::BigInt(a), ValueView::BigInt(b)) => Value::from_bigint(&**a & &**b),
+            (ValueView::BigInt(a), ValueView::Int(b)) => {
+                Value::from_bigint(&**a & &num_bigint::BigInt::from(b))
             }
-            (Value::Int(a), Value::BigInt(b)) => {
-                Value::from_bigint(&num_bigint::BigInt::from(a) & &*b)
+            (ValueView::Int(a), ValueView::BigInt(b)) => {
+                Value::from_bigint(&num_bigint::BigInt::from(a) & &**b)
             }
-            _ => Value::Int(0),
+            _ => Value::int(0),
         };
         self.stack.push(result);
     }
@@ -25,16 +25,16 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
-            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(&*a | &*b),
-            (Value::BigInt(a), Value::Int(b)) => {
-                Value::from_bigint(&*a | &num_bigint::BigInt::from(b))
+        let result = match (l.view(), r.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => Value::int(a | b),
+            (ValueView::BigInt(a), ValueView::BigInt(b)) => Value::from_bigint(&**a | &**b),
+            (ValueView::BigInt(a), ValueView::Int(b)) => {
+                Value::from_bigint(&**a | &num_bigint::BigInt::from(b))
             }
-            (Value::Int(a), Value::BigInt(b)) => {
-                Value::from_bigint(&num_bigint::BigInt::from(a) | &*b)
+            (ValueView::Int(a), ValueView::BigInt(b)) => {
+                Value::from_bigint(&num_bigint::BigInt::from(a) | &**b)
             }
-            _ => Value::Int(0),
+            _ => Value::int(0),
         };
         self.stack.push(result);
     }
@@ -43,16 +43,16 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
-            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(&*a ^ &*b),
-            (Value::BigInt(a), Value::Int(b)) => {
-                Value::from_bigint(&*a ^ &num_bigint::BigInt::from(b))
+        let result = match (l.view(), r.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => Value::int(a ^ b),
+            (ValueView::BigInt(a), ValueView::BigInt(b)) => Value::from_bigint(&**a ^ &**b),
+            (ValueView::BigInt(a), ValueView::Int(b)) => {
+                Value::from_bigint(&**a ^ &num_bigint::BigInt::from(b))
             }
-            (Value::Int(a), Value::BigInt(b)) => {
-                Value::from_bigint(&num_bigint::BigInt::from(a) ^ &*b)
+            (ValueView::Int(a), ValueView::BigInt(b)) => {
+                Value::from_bigint(&num_bigint::BigInt::from(a) ^ &**b)
             }
-            _ => Value::Int(0),
+            _ => Value::int(0),
         };
         self.stack.push(result);
     }
@@ -66,7 +66,7 @@ impl Interpreter {
                 } else {
                     a >> (shift as u32)
                 };
-                return Value::Int(shifted);
+                return Value::int(shifted);
             }
             let shift = b as u64;
             if shift >= i64::BITS as u64 {
@@ -87,9 +87,9 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l, r) {
-            (Value::Int(a), Value::Int(b)) => shift_left_i64(a, b),
-            (l, r) => {
+        let result = match (l.view(), r.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => shift_left_i64(a, b),
+            (_, _) => {
                 let a = l.to_bigint();
                 let b_big = r.to_bigint();
                 let b = b_big.to_i64().unwrap_or_else(|| {
@@ -113,7 +113,7 @@ impl Interpreter {
                     return Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize));
                 }
                 if let Some(v) = a.checked_shl(shift as u32) {
-                    Value::Int(v)
+                    Value::int(v)
                 } else {
                     Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
                 }
@@ -124,7 +124,7 @@ impl Interpreter {
                 } else {
                     a >> (shift as u32)
                 };
-                Value::Int(shifted)
+                Value::int(shifted)
             }
         }
 
@@ -139,9 +139,9 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l, r) {
-            (Value::Int(a), Value::Int(b)) => shift_right_i64(a, b),
-            (l, r) => {
+        let result = match (l.view(), r.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => shift_right_i64(a, b),
+            (_, _) => {
                 let a = l.to_bigint();
                 let b_big = r.to_bigint();
                 let b = b_big.to_i64().unwrap_or_else(|| {
@@ -160,19 +160,22 @@ impl Interpreter {
     pub(super) fn exec_bool_bit_or_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(left.truthy() | right.truthy()));
+        self.stack
+            .push(Value::truth(left.truthy() | right.truthy()));
     }
 
     pub(super) fn exec_bool_bit_and_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(left.truthy() & right.truthy()));
+        self.stack
+            .push(Value::truth(left.truthy() & right.truthy()));
     }
 
     pub(super) fn exec_bool_bit_xor_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(left.truthy() ^ right.truthy()));
+        self.stack
+            .push(Value::truth(left.truthy() ^ right.truthy()));
     }
 
     /// String bitwise AND (~&): AND corresponding bytes of two strings.
@@ -264,10 +267,10 @@ impl Interpreter {
 
 /// Coerce a shift-count operand to a non-negative bit count.
 fn shift_count(v: &Value) -> usize {
-    match v {
-        Value::Int(i) => (*i).max(0) as usize,
-        Value::Num(f) => (*f as i64).max(0) as usize,
-        other => other.to_string_value().parse::<i64>().unwrap_or(0).max(0) as usize,
+    match v.view() {
+        ValueView::Int(i) => i.max(0) as usize,
+        ValueView::Num(f) => (f as i64).max(0) as usize,
+        _ => v.to_string_value().parse::<i64>().unwrap_or(0).max(0) as usize,
     }
 }
 

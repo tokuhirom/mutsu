@@ -4,8 +4,8 @@ use super::*;
 
 impl Interpreter {
     pub(super) fn encode_bound_index(idx: &Value) -> String {
-        match idx {
-            Value::Array(indices, ..) => indices
+        match idx.view() {
+            ValueView::Array(indices, ..) => indices
                 .iter()
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
@@ -16,7 +16,7 @@ impl Interpreter {
 
     pub(super) fn is_bound_index(&self, var_name: &str, encoded: &str) -> bool {
         let key = format!("__mutsu_bound_index::{}", var_name);
-        if let Some(Value::Hash(map)) = self.env().get(&key) {
+        if let Some(ValueView::Hash(map)) = self.env().get(&key).map(Value::view) {
             map.contains_key(encoded)
         } else {
             false
@@ -25,12 +25,17 @@ impl Interpreter {
 
     pub(super) fn mark_bound_index(&mut self, var_name: &str, encoded: String) {
         let key = format!("__mutsu_bound_index::{}", var_name);
-        if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            crate::gc::Gc::make_mut(map).insert(encoded, Value::Bool(true));
+        if let Some(entry) = self.env_mut().get_mut(&key)
+            && entry
+                .with_hash_mut(|map| {
+                    crate::gc::Gc::make_mut(map).insert(encoded.clone(), Value::TRUE);
+                })
+                .is_some()
+        {
             return;
         }
         let mut map = std::collections::HashMap::new();
-        map.insert(encoded, Value::Bool(true));
+        map.insert(encoded, Value::TRUE);
         self.env_mut().insert(key, Value::hash(map));
     }
 
@@ -42,19 +47,24 @@ impl Interpreter {
     /// consult this marker to choose replace vs write-through.
     pub(super) fn mark_element_share(&mut self, var_name: &str, encoded: String) {
         let key = format!("__mutsu_elem_share::{}", var_name);
-        if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            crate::gc::Gc::make_mut(map).insert(encoded, Value::Bool(true));
+        if let Some(entry) = self.env_mut().get_mut(&key)
+            && entry
+                .with_hash_mut(|map| {
+                    crate::gc::Gc::make_mut(map).insert(encoded.clone(), Value::TRUE);
+                })
+                .is_some()
+        {
             return;
         }
         let mut map = std::collections::HashMap::new();
-        map.insert(encoded, Value::Bool(true));
+        map.insert(encoded, Value::TRUE);
         self.env_mut().insert(key, Value::hash(map));
         self.array_share_active = true;
     }
 
     pub(super) fn is_element_share(&self, var_name: &str, encoded: &str) -> bool {
         let key = format!("__mutsu_elem_share::{}", var_name);
-        if let Some(Value::Hash(map)) = self.env().get(&key) {
+        if let Some(ValueView::Hash(map)) = self.env().get(&key).map(Value::view) {
             map.contains_key(encoded)
         } else {
             false
@@ -63,16 +73,20 @@ impl Interpreter {
 
     pub(super) fn clear_element_share(&mut self, var_name: &str, encoded: &str) {
         let key = format!("__mutsu_elem_share::{}", var_name);
-        if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            crate::gc::Gc::make_mut(map).remove(encoded);
+        if let Some(entry) = self.env_mut().get_mut(&key) {
+            entry.with_hash_mut(|map| {
+                crate::gc::Gc::make_mut(map).remove(encoded);
+            });
         }
     }
 
     /// Remove a bound-index marker (e.g. after splice breaks the binding).
     pub(super) fn remove_bound_index(&mut self, var_name: &str, encoded: &str) {
         let key = format!("__mutsu_bound_index::{}", var_name);
-        if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            crate::gc::Gc::make_mut(map).remove(encoded);
+        if let Some(entry) = self.env_mut().get_mut(&key) {
+            entry.with_hash_mut(|map| {
+                crate::gc::Gc::make_mut(map).remove(encoded);
+            });
         }
     }
 
@@ -81,8 +95,10 @@ impl Interpreter {
         // `:exists` checks report the slot as present again.
         {
             let deleted_key = format!("__mutsu_deleted_index::{}", var_name);
-            if let Some(Value::Hash(map)) = self.env_mut().get_mut(&deleted_key) {
-                crate::gc::Gc::make_mut(map).remove(&encoded);
+            if let Some(entry) = self.env_mut().get_mut(&deleted_key) {
+                entry.with_hash_mut(|map| {
+                    crate::gc::Gc::make_mut(map).remove(&encoded);
+                });
             }
         }
         // Record the assigned index in the array's *embedded* `initialized`
@@ -99,18 +115,20 @@ impl Interpreter {
         // shared array and sever the by-ref alias, so a subsequent `.push` on
         // the original would be lost (t/array-push-byref-coherence).
         let use_inplace = !var_name.starts_with('@');
-        if let Some(Value::Array(items, _)) = self.env_root_descended_mut(var_name) {
-            let data: &mut crate::value::ArrayData =
-                if use_inplace && crate::gc::Gc::strong_count(items) > 1 {
-                    // SAFETY: aliased in-place mutation of a shared array; same
-                    // contract as the assignment site's `arc_contents_mut` use.
-                    unsafe { crate::value::gc_contents_mut(items) }
-                } else {
-                    crate::gc::Gc::make_mut(items)
-                };
-            data.initialized
-                .get_or_insert_with(std::collections::HashSet::new)
-                .insert(idx);
+        if let Some(root) = self.env_root_descended_mut(var_name) {
+            root.with_array_mut(|items, _| {
+                let data: &mut crate::value::ArrayData =
+                    if use_inplace && crate::gc::Gc::strong_count(items) > 1 {
+                        // SAFETY: aliased in-place mutation of a shared array; same
+                        // contract as the assignment site's `arc_contents_mut` use.
+                        unsafe { crate::value::gc_contents_mut(items) }
+                    } else {
+                        crate::gc::Gc::make_mut(items)
+                    };
+                data.initialized
+                    .get_or_insert_with(std::collections::HashSet::new)
+                    .insert(idx);
+            });
         }
     }
 
@@ -119,62 +137,71 @@ impl Interpreter {
     /// as missing even though the slot value is not `Nil`.
     pub(super) fn mark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
         let key = format!("__mutsu_deleted_index::{}", var_name);
-        let map = if let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) {
-            crate::gc::Gc::make_mut(map)
-        } else {
-            let m = std::collections::HashMap::new();
-            self.env_mut().insert(key.clone(), Value::hash(m));
-            match self.env_mut().get_mut(&key) {
-                Some(Value::Hash(map)) => crate::gc::Gc::make_mut(map),
-                _ => return,
-            }
-        };
-        Self::mark_index_entries(map, idx);
+        if let Some(entry) = self.env_mut().get_mut(&key)
+            && entry
+                .with_hash_mut(|map| {
+                    let m = crate::gc::Gc::make_mut(map);
+                    Self::mark_index_entries(m, idx);
+                })
+                .is_some()
+        {
+            return;
+        }
+        let m = std::collections::HashMap::new();
+        self.env_mut().insert(key.clone(), Value::hash(m));
+        if let Some(entry) = self.env_mut().get_mut(&key) {
+            entry.with_hash_mut(|map| {
+                let m = crate::gc::Gc::make_mut(map);
+                Self::mark_index_entries(m, idx);
+            });
+        }
     }
 
     #[allow(dead_code)]
     pub(super) fn unmark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
         let key = format!("__mutsu_deleted_index::{}", var_name);
-        let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) else {
+        let Some(entry) = self.env_mut().get_mut(&key) else {
             return;
         };
-        let m = crate::gc::Gc::make_mut(map);
-        Self::unmark_index_entries(m, idx);
+        entry.with_hash_mut(|map| {
+            let m = crate::gc::Gc::make_mut(map);
+            Self::unmark_index_entries(m, idx);
+        });
     }
 
     pub(super) fn is_deleted_index(&self, var_name: &str, idx: i64) -> bool {
         let key = format!("__mutsu_deleted_index::{}", var_name);
         matches!(
-            self.env().get(&key),
-            Some(Value::Hash(map)) if map.contains_key(&idx.to_string())
+            self.env().get(&key).map(Value::view),
+            Some(ValueView::Hash(map)) if map.contains_key(&idx.to_string())
         )
     }
 
     fn mark_index_entries(map: &mut std::collections::HashMap<String, Value>, idx: &Value) {
-        match idx {
-            Value::Array(items, ..) => {
+        match idx.view() {
+            ValueView::Array(items, ..) => {
                 for item in items.iter() {
                     Self::mark_index_entries(map, item);
                 }
             }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {
                 let expanded = crate::runtime::utils::value_to_list(idx);
                 for item in &expanded {
                     Self::mark_index_entries(map, item);
                 }
             }
-            Value::Int(i) => {
-                map.insert(i.to_string(), Value::Bool(true));
+            ValueView::Int(i) => {
+                map.insert(i.to_string(), Value::TRUE);
             }
-            Value::Num(f) => {
-                map.insert((*f as i64).to_string(), Value::Bool(true));
+            ValueView::Num(f) => {
+                map.insert((f as i64).to_string(), Value::TRUE);
             }
             _ => {
-                map.insert(idx.to_string_value(), Value::Bool(true));
+                map.insert(idx.to_string_value(), Value::TRUE);
             }
         }
     }
@@ -183,11 +210,13 @@ impl Interpreter {
     /// This must be called after array element deletion to sever bindings.
     pub(super) fn unmark_bound_indices(&mut self, var_name: &str, idx: &Value) {
         let key = format!("__mutsu_bound_index::{}", var_name);
-        let Some(Value::Hash(map)) = self.env_mut().get_mut(&key) else {
+        let Some(entry) = self.env_mut().get_mut(&key) else {
             return;
         };
-        let m = crate::gc::Gc::make_mut(map);
-        Self::unmark_index_entries(m, idx);
+        entry.with_hash_mut(|map| {
+            let m = crate::gc::Gc::make_mut(map);
+            Self::unmark_index_entries(m, idx);
+        });
     }
 
     /// Remove deleted indices from the initialized-index tracking set.
@@ -203,42 +232,44 @@ impl Interpreter {
         if to_remove.is_empty() {
             return;
         }
-        if let Some(Value::Array(items, _)) = self.env_root_descended_mut(var_name) {
-            let data = crate::gc::Gc::make_mut(items);
-            // A freshly-built array tracks "all present" as `initialized = None`.
-            // Materialize the set (0..len) before removing the deleted indices so
-            // the hole is recorded IN the ArrayData — not only in the name-keyed
-            // `__mutsu_deleted_index::` side table, which a `.clone` (bound to a
-            // new name) would not inherit. This makes `@b := @a.clone` preserve a
-            // deleted slot's `:exists` == False (S02-types/array.t test 108).
-            let len = data.len();
-            let set = data.initialized.get_or_insert_with(|| (0..len).collect());
-            for i in to_remove {
-                set.remove(&i);
-            }
+        if let Some(root) = self.env_root_descended_mut(var_name) {
+            root.with_array_mut(|items, _| {
+                let data = crate::gc::Gc::make_mut(items);
+                // A freshly-built array tracks "all present" as `initialized = None`.
+                // Materialize the set (0..len) before removing the deleted indices so
+                // the hole is recorded IN the ArrayData — not only in the name-keyed
+                // `__mutsu_deleted_index::` side table, which a `.clone` (bound to a
+                // new name) would not inherit. This makes `@b := @a.clone` preserve a
+                // deleted slot's `:exists` == False (S02-types/array.t test 108).
+                let len = data.len();
+                let set = data.initialized.get_or_insert_with(|| (0..len).collect());
+                for i in to_remove {
+                    set.remove(&i);
+                }
+            });
         }
     }
 
     /// Flatten a subscript index `Value` (scalar / array slice / range) into the
     /// list of non-negative integer array indices it addresses.
     fn collect_usize_indices(idx: &Value, out: &mut Vec<usize>) {
-        match idx {
-            Value::Array(items, ..) => {
+        match idx.view() {
+            ValueView::Array(items, ..) => {
                 for item in items.iter() {
                     Self::collect_usize_indices(item, out);
                 }
             }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {
                 for item in &crate::runtime::utils::value_to_list(idx) {
                     Self::collect_usize_indices(item, out);
                 }
             }
-            Value::Int(i) if *i >= 0 => out.push(*i as usize),
-            Value::Num(f) if *f >= 0.0 => out.push(*f as usize),
+            ValueView::Int(i) if i >= 0 => out.push(i as usize),
+            ValueView::Num(f) if f >= 0.0 => out.push(f as usize),
             _ => {
                 if let Ok(i) = idx.to_string_value().parse::<usize>() {
                     out.push(i);
@@ -248,27 +279,27 @@ impl Interpreter {
     }
 
     fn unmark_index_entries(map: &mut std::collections::HashMap<String, Value>, idx: &Value) {
-        match idx {
-            Value::Array(items, ..) => {
+        match idx.view() {
+            ValueView::Array(items, ..) => {
                 for item in items.iter() {
                     Self::unmark_index_entries(map, item);
                 }
             }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {
                 let expanded = crate::runtime::utils::value_to_list(idx);
                 for item in &expanded {
                     Self::unmark_index_entries(map, item);
                 }
             }
-            Value::Int(i) => {
+            ValueView::Int(i) => {
                 map.remove(&i.to_string());
             }
-            Value::Num(f) => {
-                map.remove(&(*f as i64).to_string());
+            ValueView::Num(f) => {
+                map.remove(&(f as i64).to_string());
             }
             _ => {
                 map.remove(&idx.to_string_value());

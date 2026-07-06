@@ -14,7 +14,7 @@ impl Interpreter {
         // A lazy `@`-array (infinite source) cannot be pushed to: there is no
         // end to append after. raku throws `X::Cannot::Lazy`
         // ("Cannot push to a lazy list onto a Array"). (L2)
-        if let Some(Value::LazyList(ll)) = self.env().get(target_name)
+        if let Some(ValueView::LazyList(ll)) = self.env().get(target_name).map(Value::view)
             && ll.in_array_context()
             && ll.is_genuinely_lazy()
         {
@@ -27,8 +27,8 @@ impl Interpreter {
         // stale local snapshots (lost update). Non-Array targets keep the
         // interpreter fallback.
         if self.shared_vars_active {
-            let val = self.stack.pop().unwrap_or(Value::Nil);
-            let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
+            let val = self.stack.pop().unwrap_or(Value::NIL);
+            let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
             // Track B/Track C: a `state @a` under an active thread context is a
             // shared `ContainerRef` cell. Push INTO the cell under its lock
             // (COW of the inner node keeps escaped snapshots immutable), so
@@ -36,21 +36,21 @@ impl Interpreter {
             // sees the append. Previously this fell through to the plain
             // method dispatch with the raw cell as invocant and failed with
             // "No such method 'push'" once the cell was non-empty.
-            if let Value::ContainerRef(cell) = &target {
+            if let ValueView::ContainerRef(cell) = target.view() {
                 let is_cell_array = matches!(
-                    &*cell.lock().unwrap_or_else(|e| e.into_inner()),
-                    Value::Array(..)
+                    cell.lock().unwrap_or_else(|e| e.into_inner()).view(),
+                    ValueView::Array(..)
                 );
                 if is_cell_array {
-                    let items = match val {
-                        Value::Slip(items) => items.to_vec(),
-                        other => vec![other],
+                    let items = match val.view() {
+                        ValueView::Slip(items) => items.to_vec(),
+                        _ => vec![val],
                     };
                     let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
-                    if let Value::Array(arc, _) = &mut *guard {
+                    (*guard).with_array_mut(|arc, _| {
                         let data = crate::gc::Gc::make_mut(arc);
                         data.items.extend(items);
-                    }
+                    });
                     let result = guard.clone();
                     drop(guard);
                     self.stack.push(result);
@@ -60,12 +60,12 @@ impl Interpreter {
             // Only a plain lexical `@name` (not an attribute `@!x`/`@.x` or other
             // twigil'd form) has a single shared identity across threads, so only
             // it may funnel into the name-keyed atomic shared store.
-            if matches!(target, Value::Array(..) | Value::Nil)
+            if matches!(target.view(), ValueView::Array(..) | ValueView::Nil)
                 && Self::is_plain_lexical_array_name(target_name)
             {
-                let items = match val {
-                    Value::Slip(items) => items.to_vec(),
-                    other => vec![other],
+                let items = match val.view() {
+                    ValueView::Slip(items) => items.to_vec(),
+                    _ => vec![val],
                 };
                 let result = self.shared_array_extend(target_name, items, false);
                 self.stack.push(result);
@@ -79,16 +79,16 @@ impl Interpreter {
         // dimension metadata check in Interpreter. See ledger §1.
         // Check for shaped arrays — must fall back to interpreter
         // (push is illegal on fixed-dimension arrays)
-        if let Some(Value::Array(_, kind)) = self.env().get(target_name)
-            && *kind == crate::value::ArrayKind::Shaped
+        if let Some(ValueView::Array(_, kind)) = self.env().get(target_name).map(Value::view)
+            && kind == crate::value::ArrayKind::Shaped
         {
-            let val = self.stack.pop().unwrap_or(Value::Nil);
-            let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
+            let val = self.stack.pop().unwrap_or(Value::NIL);
+            let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
             let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
             self.stack.push(result);
             return Ok(());
         }
-        let mut val = self.stack.pop().unwrap_or(Value::Nil);
+        let mut val = self.stack.pop().unwrap_or(Value::NIL);
 
         // Reference push (`@a.push(@b)` / `@a.push(%h)`): Raku's non-flattening
         // `**@` slurpy stores the container itself, so later mutations of the
@@ -97,7 +97,7 @@ impl Interpreter {
         // and the pushed element (the same mechanism as a whole-container `:=`
         // bind). Reuse the source's existing cell if it already has one.
         if let Some(src_idx) = value_source_idx
-            && matches!(val, Value::Array(..) | Value::Hash(..))
+            && matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..))
         {
             let src_name = Self::const_str(code, src_idx).to_string();
             let existing_cell = self
@@ -106,25 +106,25 @@ impl Interpreter {
                     self.find_local_slot(code, &src_name)
                         .map(|s| self.locals[s].clone())
                 })
-                .and_then(|v| match v {
-                    Value::ContainerRef(cell) => Some(cell),
+                .and_then(|v| match v.view() {
+                    ValueView::ContainerRef(cell) => Some(cell.clone()),
                     _ => None,
                 });
             let cell = existing_cell.unwrap_or_else(|| {
                 let cell = crate::gc::Gc::new(std::sync::Mutex::new(val.clone()));
-                let cell_val = Value::ContainerRef(cell.clone());
+                let cell_val = Value::container_ref(cell.clone());
                 self.set_env_with_main_alias(&src_name, cell_val.clone());
                 self.update_local_if_exists(code, &src_name, &cell_val);
                 cell
             });
-            val = Value::ContainerRef(cell);
+            val = Value::container_ref(cell);
         }
 
         // Empty (empty Slip) means nothing to push -- return the array as-is.
-        if let Value::Slip(ref items) = val
+        if let ValueView::Slip(items) = val.view()
             && items.is_empty()
         {
-            let result = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
+            let result = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
             self.stack.push(result);
             return Ok(());
         }
@@ -137,9 +137,9 @@ impl Interpreter {
         let is_simple_array = self
             .env()
             .get(target_name)
-            .is_some_and(|v| matches!(v, Value::Array(..)));
+            .is_some_and(|v| matches!(v.view(), ValueView::Array(..)));
         if !is_simple_array {
-            let target = self.env().get(target_name).cloned().unwrap_or(Value::Nil);
+            let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
             // Phase 2 Stage 2: a `:=`-cell-bound variable (`@x[0] := @b` /
             // `%h<k> := @b`) or a Slice 2a `=`-array-shared scalar (`$n = @z`)
             // holds a shared `ContainerRef` cell. Mutate the array INSIDE the
@@ -147,21 +147,27 @@ impl Interpreter {
             // below — so a copy made out of this cell (`my @copy = @z`), which
             // shares the inner Arc, is detached rather than mutated in place.
             // The shared cell itself keeps every alias coherent.
-            if let Value::ContainerRef(cell) = target {
+            if let ValueView::ContainerRef(cell) = target.view() {
+                let cell = cell.clone();
                 let mut guard = cell.lock().unwrap();
-                if let Value::Array(arr, kind) = &mut *guard {
+                let mut val_slot = Some(val);
+                let arr_result = (*guard).with_array_mut(|arr, kind| {
                     let kind = *kind;
                     let items = crate::gc::Gc::make_mut(arr);
-                    match &val {
-                        Value::Slip(slip_items) => items.extend(slip_items.iter().cloned()),
+                    let val = val_slot.take().expect("push value present");
+                    match val.view() {
+                        ValueView::Slip(slip_items) => items.extend(slip_items.iter().cloned()),
                         _ => items.push(val),
                     }
-                    let result = Value::Array(arr.clone(), kind);
+                    Value::array_with_kind(arr.clone(), kind)
+                });
+                if let Some(result) = arr_result {
                     drop(guard);
                     self.stack.push(result);
                     return Ok(());
                 }
                 // Non-array inner (e.g. Hash): generic clone-and-write-back.
+                let val = val_slot.take().expect("push value present");
                 let inner = guard.clone();
                 drop(guard);
                 let result = loan_env!(self, call_method_with_values(inner, "push", vec![val]))?;
@@ -180,9 +186,9 @@ impl Interpreter {
             .var_type_constraint_fast(target_name)
             .map(|s| s.to_string())
         {
-            let items_to_check: Vec<&Value> = match &val {
-                Value::Slip(items) => items.iter().collect(),
-                other => vec![other],
+            let items_to_check: Vec<&Value> = match val.view() {
+                ValueView::Slip(items) => items.iter().collect(),
+                _ => vec![&val],
             };
             for item in items_to_check {
                 if !self.type_matches_value(&type_name, item) {
@@ -198,24 +204,33 @@ impl Interpreter {
         // Find the local slot and drop it to allow in-place mutation
         let local_slot = self.find_local_slot(code, target_name);
         if let Some(slot) = local_slot {
-            self.locals[slot] = Value::Nil;
+            self.locals[slot] = Value::NIL;
         }
 
-        let result = if let Some(Value::Array(arr, kind)) = self.env_mut().get_mut(target_name) {
-            let items = crate::gc::Gc::make_mut(arr);
-            match &val {
-                Value::Slip(slip_items) => items.extend(slip_items.iter().cloned()),
-                _ => items.push(val),
+        let mut val_slot = Some(val);
+        let pushed = self.env_mut().get_mut(target_name).and_then(|v| {
+            v.with_array_mut(|arr, kind| {
+                let items = crate::gc::Gc::make_mut(arr);
+                let val = val_slot.take().expect("push value present");
+                match val.view() {
+                    ValueView::Slip(slip_items) => items.extend(slip_items.iter().cloned()),
+                    _ => items.push(val),
+                }
+                Value::array_with_kind(arr.clone(), *kind)
+            })
+        });
+        let result = match pushed {
+            Some(result) => result,
+            None => {
+                let val = val_slot.take().expect("push value present");
+                // Auto-vivify: create new array
+                let arr = match val.view() {
+                    ValueView::Slip(slip_items) => Value::real_array(slip_items.to_vec()),
+                    _ => Value::real_array(vec![val]),
+                };
+                self.env_mut().insert(target_name.to_string(), arr.clone());
+                arr
             }
-            Value::Array(arr.clone(), *kind)
-        } else {
-            // Auto-vivify: create new array
-            let arr = match &val {
-                Value::Slip(slip_items) => Value::real_array(slip_items.to_vec()),
-                _ => Value::real_array(vec![val]),
-            };
-            self.env_mut().insert(target_name.to_string(), arr.clone());
-            arr
         };
 
         // Restore local slot

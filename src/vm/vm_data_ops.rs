@@ -8,19 +8,21 @@ impl Interpreter {
         let mut elems = Vec::with_capacity(raw.len());
         for val in raw {
             // Force lazy IO lines into eager arrays
-            let val = if matches!(&val, Value::LazyIoLines { .. }) {
+            let val = if matches!(val.view(), ValueView::LazyIoLines { .. }) {
                 match self.force_if_lazy_io_lines(val) {
                     Ok(v) => v,
                     Err(_) => continue,
                 }
-            } else if let Value::LazyList(ll) = &val
+            } else if let ValueView::LazyList(ll) = val.view()
                 && ll.coroutine.is_some()
                 && ll.sequence_spec.is_none()
                 && ll.scan_spec.is_none()
                 && ll.lazy_pipe.is_none()
                 && !matches!(
-                    ll.env.get("__mutsu_preserve_lazy_on_array_assign"),
-                    Some(Value::Bool(true))
+                    ll.env
+                        .get("__mutsu_preserve_lazy_on_array_assign")
+                        .map(Value::view),
+                    Some(ValueView::Bool(true))
                 )
             {
                 // Array literals (`[...]`) are eager: a gather/take LazyList must
@@ -32,32 +34,30 @@ impl Interpreter {
                 // would truncate it to its finite cache). A `lazy`-marked list is
                 // likewise left lazy; so is one that fails a strict force.
                 match self.force_lazy_list_vm(ll) {
-                    Ok(items) => Value::Seq(std::sync::Arc::new(items)),
+                    Ok(items) => Value::seq(items),
                     Err(_) => val,
                 }
             } else {
                 val
             };
-            match val {
-                Value::Slip(items) => elems.extend(items.iter().cloned()),
-                Value::Array(items, kind) if kind.is_itemized() => {
-                    elems.push(Value::Array(items, kind))
-                }
+            match val.view() {
+                ValueView::Slip(items) => elems.extend(items.iter().cloned()),
+                ValueView::Array(_, kind) if kind.is_itemized() => elems.push(val),
                 // Scalar-wrapped values (.item / $()) are never flattened.
-                Value::Scalar(inner) => elems.push(Value::Scalar(inner)),
+                ValueView::Scalar(_) => elems.push(val),
                 // Set/Bag/Mix are Iterable but NOT Positional, so they do not
                 // flatten in list context (unlike a List/Array/Seq/Range, and
                 // unlike a Hash, which does flatten to its pairs). A single
                 // `[set(1,2)]` therefore keeps the Set whole as one element.
                 // (Matches raku and `flat(set(...))`; `value_to_list` would
                 // otherwise decompose it into its key/True pairs.)
-                v @ (Value::Set(..) | Value::Bag(..) | Value::Mix(..)) => elems.push(v),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => elems.push(val),
                 // In bracket-array literals (`[...]`), a single element is in
                 // list context and should flatten one level (e.g. `[2..6]`,
                 // `[@a]`, `[(1,2,3)]`), while multi-element forms keep each
                 // element itemized (e.g. `[(1,2),(3,4)]`).
-                other if is_real_array && n == 1 => elems.extend(runtime::value_to_list(&other)),
-                other => elems.push(other),
+                _ if is_real_array && n == 1 => elems.extend(runtime::value_to_list(&val)),
+                _ => elems.push(val),
             }
         }
         if is_real_array {
@@ -76,11 +76,11 @@ impl Interpreter {
         let raw: Vec<Value> = self.stack.drain(start..).collect();
         let mut elems = Vec::with_capacity(raw.len());
         for val in raw {
-            match val {
-                Value::Slip(items) => elems.extend(items.iter().cloned()),
+            match val.view() {
+                ValueView::Slip(items) => elems.extend(items.iter().cloned()),
                 // Nil in list context contributes nothing (same as value_to_list).
-                Value::Nil => {}
-                other => elems.push(other),
+                ValueView::Nil => {}
+                _ => elems.push(val),
             }
         }
         self.stack.push(Value::real_array(elems));
@@ -106,16 +106,16 @@ impl Interpreter {
         let items: Vec<Value> = self.stack.drain(start..).collect();
         let mut map = HashMap::new();
         for item in items {
-            match item {
-                Value::Pair(k, v) => {
-                    map.insert(k, *v);
+            match item.view() {
+                ValueView::Pair(k, v) => {
+                    map.insert(k.clone(), v.clone());
                 }
-                Value::ValuePair(k, v) => {
-                    map.insert(k.to_string_value(), *v);
+                ValueView::ValuePair(k, v) => {
+                    map.insert(k.to_string_value(), v.clone());
                 }
                 _ => {
                     // Non-pair values: use stringified value as key mapped to True
-                    map.insert(item.to_string_value(), Value::Bool(true));
+                    map.insert(item.to_string_value(), Value::TRUE);
                 }
             }
         }
@@ -145,13 +145,13 @@ impl Interpreter {
         // Only box a plain scalar container; reference/type values are not
         // re-containerized (mirrors the box-on-capture guard).
         if matches!(
-            self.locals[idx],
-            Value::Package(_)
-                | Value::Array(..)
-                | Value::Hash(..)
-                | Value::Sub(..)
-                | Value::Instance { .. }
-                | Value::Proxy { .. }
+            self.locals[idx].view(),
+            ValueView::Package(_)
+                | ValueView::Array(..)
+                | ValueView::Hash(..)
+                | ValueView::Sub(..)
+                | ValueView::Instance { .. }
+                | ValueView::Proxy { .. }
         ) {
             return self.locals[idx].clone();
         }
@@ -180,12 +180,13 @@ impl Interpreter {
             // writes through. Box the named local into a shared `ContainerRef`
             // cell (same scope as `$c`, so sharing the slot's cell suffices) and
             // store that cell as the positional element.
-            if let Value::Capture {
+            if let ValueView::Capture {
                 positional: p,
                 named: nm,
-            } = &val
+            } = val.view()
                 && p.is_empty()
-                && let Some(Value::Str(source_name)) = nm.get("__mutsu_varref_name")
+                && let Some(ValueView::Str(source_name)) =
+                    nm.get("__mutsu_varref_name").map(Value::view)
                 && let Some(inner) = nm.get("__mutsu_varref_value")
             {
                 let source_name = source_name.to_string();
@@ -193,46 +194,47 @@ impl Interpreter {
                 positional.push(self.capture_var_cell(code, &source_name, inner));
                 continue;
             }
-            match val {
-                Value::Pair(k, v) => {
+            match val.view() {
+                ValueView::Pair(k, v) => {
                     // A named scalar-var element (`\(:$a)`): the value is a
                     // WrapVarRef-tagged capture — box the named local so `$c<a>`
                     // aliases `$a` and `$c<a>++` writes through.
-                    if let Value::Capture {
+                    if let ValueView::Capture {
                         positional: p,
                         named: nm,
-                    } = v.as_ref()
+                    } = v.view()
                         && p.is_empty()
-                        && let Some(Value::Str(source_name)) = nm.get("__mutsu_varref_name")
+                        && let Some(ValueView::Str(source_name)) =
+                            nm.get("__mutsu_varref_name").map(Value::view)
                         && let Some(inner) = nm.get("__mutsu_varref_value")
                     {
                         let source_name = source_name.to_string();
                         let inner = inner.clone();
                         let cell = self.capture_var_cell(code, &source_name, inner);
-                        named.insert(k, cell);
+                        named.insert(k.clone(), cell);
                     } else {
-                        named.insert(k, *v);
+                        named.insert(k.clone(), v.clone());
                     }
                 }
-                Value::Capture {
+                ValueView::Capture {
                     positional: p,
                     named: n,
                 } => {
                     // Flatten inner capture (from |capture slip)
-                    positional.extend(*p);
-                    named.extend(*n);
+                    positional.extend(p.iter().cloned());
+                    named.extend(n.iter().map(|(k, v)| (k.clone(), v.clone())));
                 }
-                Value::Slip(items) => {
+                ValueView::Slip(items) => {
                     for item in items.iter() {
-                        match item {
-                            Value::Pair(k, v) => {
-                                named.insert(k.clone(), *v.clone());
+                        match item.view() {
+                            ValueView::Pair(k, v) => {
+                                named.insert(k.clone(), v.clone());
                             }
-                            other => positional.push(other.clone()),
+                            _ => positional.push(item.clone()),
                         }
                     }
                 }
-                other => positional.push(other),
+                _ => positional.push(val),
             }
         }
         self.stack.push(Value::capture(positional, named));

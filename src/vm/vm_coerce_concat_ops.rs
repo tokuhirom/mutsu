@@ -5,13 +5,13 @@ use unicode_normalization::UnicodeNormalization;
 
 impl Interpreter {
     pub(super) fn exec_decont_op(&mut self) {
-        // Strips a SINGLE level of Value::Scalar for slurpy flattening. This is
-        // intentionally non-recursive and distinct from the recursive
+        // Strips a SINGLE level of `Scalar` itemization for slurpy flattening.
+        // This is intentionally non-recursive and distinct from the recursive
         // Value::descalarize (see the decont family note in value/mod.rs §3).
         let val = self.stack.pop().unwrap();
-        let new_val = match val {
-            Value::Scalar(inner) => *inner,
-            other => other,
+        let new_val = match val.view() {
+            ValueView::Scalar(inner) => inner.clone(),
+            _ => val,
         };
         self.stack.push(new_val);
     }
@@ -27,8 +27,8 @@ impl Interpreter {
         crate::value::seq_consume(items_arc).ok();
         let mut pulled = Vec::new();
         while let Ok(val) = self.call_method_with_values(iterator.clone(), "pull-one", vec![]) {
-            if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
-                || matches!(&val, Value::Package(name) if *name == crate::symbol::Symbol::intern("IterationEnd"))
+            if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
+                || matches!(val.view(), ValueView::Package(name) if name == crate::symbol::Symbol::intern("IterationEnd"))
             {
                 break;
             }
@@ -46,7 +46,7 @@ impl Interpreter {
         // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
         // Slipping such a Seq must first pull all elements from the iterator
         // (including user-defined `Iterator` classes), else `|$seq` yields nothing.
-        if let Value::Seq(items_arc) = &val
+        if let ValueView::Seq(items_arc) = val.view()
             && crate::value::seq_has_deferred_iter(items_arc)
         {
             let pulled = self.materialize_deferred_seq(items_arc);
@@ -62,7 +62,7 @@ impl Interpreter {
         // `LazyList` value itself preserves that deferred tail. Non-gather lazy
         // lists (infinite `scan_spec`/`sequence_spec` reductions like
         // `|[\+] 1..*`) fall through to the `match` arm's bounded force.
-        if let Value::LazyList(ll) = &val
+        if let ValueView::LazyList(ll) = val.view()
             && ll.is_from_gather()
         {
             if ll.is_genuinely_lazy() {
@@ -73,37 +73,37 @@ impl Interpreter {
             }
             return Ok(());
         }
-        let items = match &val {
-            Value::Array(items, ..) => (*items).to_vec(),
-            Value::Slip(items) => (*items).to_vec(),
-            Value::Seq(items) => (*items).to_vec(),
-            Value::Capture { positional, named } => {
-                let mut items = (**positional).clone();
+        let items = match val.view() {
+            ValueView::Array(items, ..) => (*items).to_vec(),
+            ValueView::Slip(items) => (*items).to_vec(),
+            ValueView::Seq(items) => (*items).to_vec(),
+            ValueView::Capture { positional, named } => {
+                let mut items = positional.clone();
                 for (k, v) in named.iter() {
-                    items.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                    items.push(Value::pair(k.clone(), v.clone()));
                 }
                 items
             }
-            Value::Hash(map) => map
+            ValueView::Hash(map) => map
                 .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .map(|(k, v)| Value::pair(k.clone(), v.clone()))
                 .collect(),
-            Value::LazyList(ll) => {
+            ValueView::LazyList(ll) => {
                 if ll.scan_spec.is_some() {
                     ll.force_scan_to(200_000)
                 } else {
                     ll.cache.lock().unwrap().clone().unwrap_or_default()
                 }
             }
-            Value::LazyIoLines { .. } => match self.force_if_lazy_io_lines(val) {
+            ValueView::LazyIoLines { .. } => match self.force_if_lazy_io_lines(val) {
                 Ok(forced) => crate::runtime::utils::value_to_list(&forced),
                 Err(_) => vec![],
             },
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => crate::runtime::utils::value_to_list(&val),
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => crate::runtime::utils::value_to_list(&val),
             _ => vec![val],
         };
         self.stack.push(Value::slip(items));
@@ -115,22 +115,22 @@ impl Interpreter {
         // Boolifying a Failure marks it as handled
         val.mark_failure_handled();
         let t = self.eval_truthy(&val);
-        self.stack.push(Value::Bool(!t));
+        self.stack.push(Value::truth(!t));
     }
 
     pub(super) fn exec_bool_coerce_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        let out = match &val {
-            Value::Regex(_)
-            | Value::RegexWithAdverbs { .. }
-            | Value::Routine { is_regex: true, .. } => {
-                let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
-                Value::Bool(self.vm_smart_match(&topic, &val))
+        let out = match val.view() {
+            ValueView::Regex(_)
+            | ValueView::RegexWithAdverbs { .. }
+            | ValueView::Routine { is_regex: true, .. } => {
+                let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
+                Value::truth(self.vm_smart_match(&topic, &val))
             }
             _ => {
                 // Boolifying a Failure marks it as handled
                 val.mark_failure_handled();
-                Value::Bool(self.eval_truthy(&val))
+                Value::truth(self.eval_truthy(&val))
             }
         };
         self.stack.push(out);
@@ -143,7 +143,9 @@ impl Interpreter {
         // (unlike arithmetic/comparison which uses right-first for tighter
         // junctions). When both operands are junctions and the right is
         // tighter, we thread left first and swap the junction kinds.
-        if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
+        if matches!(left.view(), ValueView::Junction { .. })
+            || matches!(right.view(), ValueView::Junction { .. })
+        {
             let result = self.eval_concat_with_junctions(left, right);
             self.stack.push(result);
             return Ok(());
@@ -169,9 +171,9 @@ impl Interpreter {
     /// `concat_values` / `to_str_context` handle those, including built-in
     /// `.gist`/`.Str`). Shared by infix `~` and the string-comparison ops.
     pub(super) fn coerce_stringy_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
-        let cn = match &v {
-            Value::Instance { class_name, .. } => class_name.resolve().to_string(),
-            Value::Package(name) => name.resolve().to_string(),
+        let cn = match v.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+            ValueView::Package(name) => name.resolve().to_string(),
             _ => return Ok(v),
         };
         if self.has_user_method(&cn, "Stringy") {
@@ -198,13 +200,15 @@ impl Interpreter {
             .descalarize()
             .clone();
         // Both junctions: thread left first, swap kinds if right is tighter
-        if let (Value::Junction { kind: lk, .. }, Value::Junction { kind: rk, .. }) =
-            (&left, &right)
+        if let (ValueView::Junction { kind: lk, .. }, ValueView::Junction { kind: rk, .. }) =
+            (left.view(), right.view())
         {
             let need_swap = Self::thread_right_first(lk, rk);
             let rk = rk.clone();
             let lk = lk.clone();
-            if let Value::Junction { kind, values } = left {
+            if let ValueView::Junction { kind, values } = left.view() {
+                let kind = kind.clone();
+                let values = values.clone();
                 let results: Vec<Value> = values
                     .iter()
                     .cloned()
@@ -217,7 +221,9 @@ impl Interpreter {
                 return result;
             }
         }
-        if let Value::Junction { kind, values } = left {
+        if let ValueView::Junction { kind, values } = left.view() {
+            let kind = kind.clone();
+            let values = values.clone();
             let results: Vec<Value> = values
                 .iter()
                 .cloned()
@@ -225,7 +231,9 @@ impl Interpreter {
                 .collect();
             return Value::junction(kind, results);
         }
-        if let Value::Junction { kind, values } = right {
+        if let ValueView::Junction { kind, values } = right.view() {
+            let kind = kind.clone();
+            let values = values.clone();
             let results: Vec<Value> = values
                 .iter()
                 .cloned()
@@ -241,11 +249,11 @@ impl Interpreter {
         new_outer: &crate::value::JunctionKind,
         new_inner: &crate::value::JunctionKind,
     ) -> Value {
-        if let Value::Junction { values, .. } = value {
+        if let ValueView::Junction { values, .. } = value.view() {
             let swapped: Vec<Value> = values
                 .iter()
                 .map(|v| {
-                    if let Value::Junction { values: inner, .. } = v {
+                    if let ValueView::Junction { values: inner, .. } = v.view() {
                         Value::junction(new_inner.clone(), inner.to_vec())
                     } else {
                         v.clone()
@@ -265,14 +273,14 @@ impl Interpreter {
     pub(crate) fn concat_values(left: Value, right: Value) -> Value {
         // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
         if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
-            let result_class = if let Value::Instance { class_name, .. } = &left {
-                *class_name
+            let result_class = if let ValueView::Instance { class_name, .. } = left.view() {
+                class_name
             } else {
                 crate::symbol::Symbol::intern("Buf")
             };
             let mut bytes = Self::extract_buf_bytes(&left);
             bytes.extend(Self::extract_buf_bytes(&right));
-            let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+            let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::int(b as i64)).collect();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("bytes".to_string(), Value::array(byte_vals));
             return Value::make_instance(result_class, attrs);
@@ -312,7 +320,7 @@ impl Interpreter {
     }
 
     pub fn is_buf_value(val: &Value) -> bool {
-        if let Value::Instance { class_name, .. } = val {
+        if let ValueView::Instance { class_name, .. } = val.view() {
             let cn = class_name.resolve();
             cn == "Buf"
                 || cn == "Blob"
@@ -328,13 +336,14 @@ impl Interpreter {
     }
 
     pub fn extract_buf_bytes(val: &Value) -> Vec<u8> {
-        if let Value::Instance { attributes, .. } = val
-            && let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
+        if let ValueView::Instance { attributes, .. } = val.view()
+            && let Some(ValueView::Array(items, ..)) =
+                attributes.as_map().get("bytes").map(Value::view)
         {
             return items
                 .iter()
-                .map(|v| match v {
-                    Value::Int(i) => *i as u8,
+                .map(|v| match v.view() {
+                    ValueView::Int(i) => i as u8,
                     _ => 0,
                 })
                 .collect();

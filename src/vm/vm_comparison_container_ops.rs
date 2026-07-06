@@ -24,7 +24,7 @@ impl Interpreter {
         } else {
             crate::runtime::values_identical(&left, &right)
         };
-        self.stack.push(Value::Bool(result));
+        self.stack.push(Value::truth(result));
     }
 
     /// Returns `true` when **both** values are simple, non-reference
@@ -36,21 +36,21 @@ impl Interpreter {
     fn is_value_non_reference(left: &Value, right: &Value) -> bool {
         fn is_non_ref(v: &Value) -> bool {
             matches!(
-                v,
-                Value::Int(_)
-                    | Value::BigInt(_)
-                    | Value::Num(_)
-                    | Value::Str(_)
-                    | Value::Bool(_)
-                    | Value::Nil
-                    | Value::Rat(..)
-                    | Value::FatRat(..)
-                    | Value::BigRat(..)
-                    | Value::Complex(..)
-                    | Value::Whatever
-                    | Value::HyperWhatever
-                    | Value::Enum { .. }
-                    | Value::Version { .. }
+                v.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Nil
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+                    | ValueView::BigRat(..)
+                    | ValueView::Complex(..)
+                    | ValueView::Whatever
+                    | ValueView::HyperWhatever
+                    | ValueView::Enum { .. }
+                    | ValueView::Version { .. }
             )
         }
         is_non_ref(left) && is_non_ref(right)
@@ -88,14 +88,14 @@ impl Interpreter {
             // variables holding the same Package are considered =:=.
             // Instance values (user objects) are NOT singletons: assignment
             // copies the reference but creates a new container, so =:= is False.
-            match (&left, &right) {
-                (Value::Package(a), Value::Package(b)) => a == b,
-                (Value::Sub(a), Value::Sub(b)) => crate::gc::Gc::ptr_eq(a, b),
-                (Value::WeakSub(a), Value::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(a, b),
+            match (left.view(), right.view()) {
+                (ValueView::Package(a), ValueView::Package(b)) => a == b,
+                (ValueView::Sub(a), ValueView::Sub(b)) => crate::gc::Gc::ptr_eq(a, b),
+                (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(a, b),
                 _ => false,
             }
         };
-        self.stack.push(Value::Bool(result));
+        self.stack.push(Value::truth(result));
     }
 
     /// Walk the `__mutsu_sigilless_alias::` chain to find the ultimate
@@ -105,7 +105,7 @@ impl Interpreter {
         let mut seen = std::collections::HashSet::new();
         while seen.insert(current.clone()) {
             let key = format!("__mutsu_sigilless_alias::{}", current);
-            if let Some(Value::Str(next)) = self.env().get(&key) {
+            if let Some(ValueView::Str(next)) = self.env().get(&key).map(Value::view) {
                 current = next.to_string();
             } else {
                 break;
@@ -129,17 +129,19 @@ impl Interpreter {
         let right_source = Self::const_str(code, right_name_idx);
 
         // Same cell `Arc` at both slots → same container.
-        if let (Some(Value::ContainerRef(l)), Some(Value::ContainerRef(r))) = (
-            self.raw_element_at_encoded(left_source),
-            self.raw_element_at_encoded(right_source),
-        ) && crate::gc::Gc::ptr_eq(&l, &r)
+        let left_elem = self.raw_element_at_encoded(left_source);
+        let right_elem = self.raw_element_at_encoded(right_source);
+        if let (Some(ValueView::ContainerRef(l)), Some(ValueView::ContainerRef(r))) = (
+            left_elem.as_ref().map(Value::view),
+            right_elem.as_ref().map(Value::view),
+        ) && crate::gc::Gc::ptr_eq(l, r)
         {
-            self.stack.push(Value::Bool(true));
+            self.stack.push(Value::TRUE);
             return;
         }
         // Same encoded source (e.g. @a[1] =:= @a[1])
         let result = left_source == right_source;
-        self.stack.push(Value::Bool(result));
+        self.stack.push(Value::truth(result));
     }
 
     /// Container identity (`=:=`) using raw container values.
@@ -150,7 +152,7 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let result =
             Self::containers_same_slot(&left, &right) || Self::containers_same_slot(&right, &left);
-        self.stack.push(Value::Bool(result));
+        self.stack.push(Value::truth(result));
     }
 
     /// Check if two raw container values (HashEntryRef)
@@ -161,19 +163,26 @@ impl Interpreter {
         // Arc; a cell is never the same container as a non-cell value. (Must be
         // checked here, not in `values_identical`, which `===` uses to compare
         // *values* and therefore must read through a cell.)
-        match (a, b) {
-            (Value::ContainerRef(x), Value::ContainerRef(y)) => return crate::gc::Gc::ptr_eq(x, y),
-            (Value::ContainerRef(cell), other) | (other, Value::ContainerRef(cell)) => {
+        match (a.view(), b.view()) {
+            (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) => {
+                return crate::gc::Gc::ptr_eq(x, y);
+            }
+            (ValueView::ContainerRef(cell), _) | (_, ValueView::ContainerRef(cell)) => {
                 // A `:=`-bound hash element is promoted to a `ContainerRef` cell
                 // (Phase 2 Stage 1). The OTHER side may still be a HashEntryRef
                 // deferred token pointing at that *same* element (e.g. a
                 // deferred bind `my $b := %h<a><b>` whose element was later
                 // promoted when re-evaluated). They are the same container iff
                 // the element currently stored at that slot IS this cell.
+                let other = if matches!(a.view(), ValueView::ContainerRef(_)) {
+                    b
+                } else {
+                    a
+                };
                 if let Some((arc, key)) = Self::extract_hash_ref(other) {
                     let ptr = crate::gc::Gc::as_ptr(&arc);
-                    if let Some(Value::ContainerRef(elem_cell)) =
-                        unsafe { (*ptr).get(key.as_str()) }
+                    if let Some(ValueView::ContainerRef(elem_cell)) =
+                        unsafe { (*ptr).get(key.as_str()) }.map(Value::view)
                     {
                         return crate::gc::Gc::ptr_eq(cell, elem_cell);
                     }
@@ -198,14 +207,14 @@ impl Interpreter {
     /// is missing or not a hash (the deferred path is not yet materialized, so it
     /// has no stable container identity).
     fn extract_hash_ref(val: &Value) -> Option<(crate::gc::Gc<crate::value::HashData>, String)> {
-        let Value::HashEntryRef { hash, path } = val else {
+        let ValueView::HashEntryRef { hash, path } = val.view() else {
             return None;
         };
         let mut cur = hash.clone();
         for k in &path[..path.len() - 1] {
             let ptr = crate::gc::Gc::as_ptr(&cur);
-            match unsafe { (*ptr).get(k.as_str()) } {
-                Some(Value::Hash(inner)) => cur = inner.clone(),
+            match unsafe { (*ptr).get(k.as_str()) }.map(Value::view) {
+                Some(ValueView::Hash(inner)) => cur = inner.clone(),
                 _ => return None,
             }
         }
@@ -220,12 +229,12 @@ impl Interpreter {
         let sep_pos = encoded.find("\x00idx\x00")?;
         let var_name = &encoded[..sep_pos];
         let idx_str = &encoded[sep_pos + 5..];
-        match self.env().get(var_name) {
-            Some(Value::Array(items, _)) => {
+        match self.env().get(var_name).map(Value::view) {
+            Some(ValueView::Array(items, _)) => {
                 let i = idx_str.parse::<usize>().ok()?;
                 items.get(i).cloned()
             }
-            Some(Value::Hash(hash)) => hash.get(idx_str).cloned(),
+            Some(ValueView::Hash(hash)) => hash.get(idx_str).cloned(),
             _ => None,
         }
     }

@@ -10,12 +10,12 @@ impl Interpreter {
     /// the lvalue-precise alternative to the Arc-identity binding scan, which
     /// cannot tell a bound alias from a COW copy.
     fn write_back_hyper_target_var(&mut self, code: &CompiledCode, var: &str, new_val: Value) {
-        if let Some(Value::ContainerRef(cell)) = self.env().get(var) {
+        if let Some(ValueView::ContainerRef(cell)) = self.env().get(var).map(Value::view) {
             *cell.lock().unwrap() = new_val;
             return;
         }
         if let Some(slot) = self.find_local_slot(code, var)
-            && let Value::ContainerRef(cell) = &self.locals[slot]
+            && let ValueView::ContainerRef(cell) = self.locals[slot].view()
         {
             *cell.lock().unwrap() = new_val;
             return;
@@ -37,8 +37,8 @@ impl Interpreter {
         increment: bool,
     ) -> Result<(), RuntimeError> {
         let is_mutable = matches!(
-            target,
-            Value::Bag(_, true) | Value::Mix(_, true) | Value::Set(_, true)
+            target.view(),
+            ValueView::Bag(_, true) | ValueView::Mix(_, true) | ValueView::Set(_, true)
         );
         if !is_mutable {
             let opname = if increment {
@@ -52,8 +52,8 @@ impl Interpreter {
             )));
         }
         let delta: i64 = if increment { 1 } else { -1 };
-        let new_value = match target {
-            Value::Bag(bag, _) => {
+        let new_value = match target.view() {
+            ValueView::Bag(bag, _) => {
                 let mut counts = std::collections::HashMap::new();
                 for (k, c) in bag.counts.iter() {
                     let n = c + num_bigint::BigInt::from(delta);
@@ -63,7 +63,7 @@ impl Interpreter {
                 }
                 Value::bag_hash_big(counts)
             }
-            Value::Mix(mix, _) => {
+            ValueView::Mix(mix, _) => {
                 let mut weights = std::collections::HashMap::new();
                 for (k, w) in mix.iter() {
                     let n = w + delta as f64;
@@ -73,7 +73,7 @@ impl Interpreter {
                 }
                 Value::mix_hash(weights)
             }
-            Value::Set(set, _) => {
+            ValueView::Set(set, _) => {
                 // Set membership is weight 1: `++` keeps the element (weight 2 is
                 // still "present"), `--` drops it (weight 0).
                 let mut elems = std::collections::HashSet::new();
@@ -125,7 +125,7 @@ impl Interpreter {
             RuntimeError::new("Interpreter stack underflow in HyperMethodCall target")
         })?;
         // Mark Seq as consumed (single-use semantics).
-        if let Value::Seq(ref arc) = target {
+        if let ValueView::Seq(arc) = target.view() {
             crate::value::seq_consume(arc)?;
         }
         // `$b>>++` / `$b>>--` on a Bag/Mix/Set applies the postfix op to each
@@ -134,7 +134,10 @@ impl Interpreter {
         // the source variable. Handled here because the generic value_to_list path
         // below expands a QuantHash to its elements, not its keyed weights.
         if matches!(method_raw, "postfix:<++>" | "postfix:<-->")
-            && matches!(&target, Value::Bag(..) | Value::Mix(..) | Value::Set(..))
+            && matches!(
+                target.view(),
+                ValueView::Bag(..) | ValueView::Mix(..) | ValueView::Set(..)
+            )
         {
             return self.exec_hyper_quant_postfix(
                 code,
@@ -145,28 +148,30 @@ impl Interpreter {
         }
         // Hyper method/postfix on a Hash applies to each *value*, preserving the
         // keys: `%h>>.uc` and `%h>>!` yield a Hash, not a list of pairs.
-        let hash_keys: Option<Vec<String>> = if let Value::Hash(map) = &target {
+        let hash_keys: Option<Vec<String>> = if let ValueView::Hash(map) = target.view() {
             Some(map.keys().cloned().collect())
         } else {
             None
         };
         // For Buf/Blob instances, expand to individual byte values for hyper dispatch
         let mut items = if let Some(keys) = &hash_keys {
-            if let Value::Hash(map) = &target {
+            if let ValueView::Hash(map) = target.view() {
                 keys.iter()
-                    .map(|k| map.get(k).cloned().unwrap_or(Value::Nil))
+                    .map(|k| map.get(k).cloned().unwrap_or(Value::NIL))
                     .collect()
             } else {
                 Vec::new()
             }
-        } else if let Value::Instance {
+        } else if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &target
+        } = target.view()
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
-            if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
+            if let Some(ValueView::Array(bytes, ..)) =
+                attributes.as_map().get("bytes").map(Value::view)
+            {
                 bytes.to_vec()
             } else {
                 Vec::new()
@@ -190,7 +195,10 @@ impl Interpreter {
         // (Hash/Set/Bag/Mix) take their own early-return paths, so we leave their
         // warns propagating as before.
         let collect_warns = hash_keys.is_none()
-            && !matches!(&target, Value::Mix(..) | Value::Bag(..) | Value::Set(..));
+            && !matches!(
+                target.view(),
+                ValueView::Mix(..) | ValueView::Bag(..) | ValueView::Set(..)
+            );
         let mut pending_warn: Option<RuntimeError> = None;
         for (idx, item) in items.iter_mut().enumerate() {
             let method = Self::rewrite_method_name(method_raw, modifier);
@@ -198,8 +206,11 @@ impl Interpreter {
             // Instead of method dispatch, invoke the item directly as a callable.
             if method == "CALL-ME"
                 && matches!(
-                    item,
-                    Value::Sub(..) | Value::WeakSub(..) | Value::Routine { .. } | Value::Mixin(..)
+                    item.view(),
+                    ValueView::Sub(..)
+                        | ValueView::WeakSub(..)
+                        | ValueView::Routine { .. }
+                        | ValueView::Mixin(..)
                 )
             {
                 let val = self.vm_call_on_value(item.clone(), args.clone(), None)?;
@@ -226,7 +237,7 @@ impl Interpreter {
             // in place, so the source aliasing survives. A plain (non-cell) element
             // falls through to the ordinary in-place method dispatch below.
             if matches!(method.as_str(), "postfix:<++>" | "postfix:<-->")
-                && let Value::ContainerRef(cell) = item
+                && let ValueView::ContainerRef(cell) = item.view()
             {
                 let inner = cell.lock().unwrap().clone();
                 let new_val = if method == "postfix:<++>" {
@@ -243,7 +254,7 @@ impl Interpreter {
             // dispatch on the inner value, then write any in-place mutation back
             // THROUGH the cell so the source array observes it and the result
             // array keeps its source aliasing.
-            let hyper_cell = if let Value::ContainerRef(cell) = item {
+            let hyper_cell = if let ValueView::ContainerRef(cell) = item.view() {
                 let cell = cell.clone();
                 *item = cell.lock().unwrap().clone();
                 Some(cell)
@@ -262,9 +273,9 @@ impl Interpreter {
                     "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
                 )
             {
-                let class_name = match item {
-                    Value::Instance { class_name, .. } => Some(class_name.resolve()),
-                    Value::Package(name) => Some(name.resolve()),
+                let class_name = match item.view() {
+                    ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                    ValueView::Package(name) => Some(name.resolve()),
                     _ => None,
                 };
                 if let Some(cn) = class_name
@@ -280,7 +291,7 @@ impl Interpreter {
                         if let Some(native_result) =
                             self.try_native_method(item, Symbol::intern(&method), &item_args)
                         {
-                            native_result.unwrap_or(Value::Package(Symbol::intern("Any")))
+                            native_result.unwrap_or(Value::package(Symbol::intern("Any")))
                         } else {
                             match self
                                 .call_method_mut_with_temp_target(item, &method, item_args, idx)
@@ -289,7 +300,7 @@ impl Interpreter {
                                     *item = updated;
                                     v
                                 }
-                                Err(_) => Value::Package(Symbol::intern("Any")),
+                                Err(_) => Value::package(Symbol::intern("Any")),
                             }
                         }
                     } else {
@@ -298,7 +309,7 @@ impl Interpreter {
                                 *item = updated;
                                 v
                             }
-                            Err(_) => Value::Package(Symbol::intern("Any")),
+                            Err(_) => Value::package(Symbol::intern("Any")),
                         }
                     };
                     results.push(val);
@@ -355,8 +366,10 @@ impl Interpreter {
                     // Raku's >> descends into Iterable structures, but stops
                     // if the method is natively defined on the list type
                     // (e.g., .join, .elems, .sort, .reverse, .unique, .squish).
-                    let is_iterable_item =
-                        matches!(item, Value::Array(..) | Value::Seq(..) | Value::Slip(..));
+                    let is_iterable_item = matches!(
+                        item.view(),
+                        ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..)
+                    );
                     // A qualified dispatch (`».Any::elems`) still names a
                     // plain list-native method once the owner prefix is
                     // stripped, so nodality is decided on the unqualified tail.
@@ -486,7 +499,7 @@ impl Interpreter {
                                     // method: use its carried resume value and
                                     // remember the warn to re-raise after the loop.
                                     Err(e) if collect_warns && e.is_warn() => {
-                                        let rv = e.return_value.clone().unwrap_or(Value::Nil);
+                                        let rv = e.return_value.clone().unwrap_or(Value::NIL);
                                         if pending_warn.is_none() {
                                             pending_warn = Some(e);
                                         }
@@ -516,10 +529,10 @@ impl Interpreter {
             // aliasing for the writeback below.
             if let Some(cell) = hyper_cell {
                 cell.lock().unwrap().clone_from(item);
-                *item = Value::ContainerRef(cell);
+                *item = Value::container_ref(cell);
             }
         }
-        if let Value::Array(existing, kind) = &target {
+        if let ValueView::Array(existing, kind) = target.view() {
             if let Some(var) = target_var
                 .as_ref()
                 .filter(|v| v.starts_with('@') || v.starts_with('%'))
@@ -530,9 +543,9 @@ impl Interpreter {
                 // observe it. A plain array binding is replaced (COW-detach), so
                 // a copy `my @x = @a` keeps its own Arc and is NOT corrupted —
                 // unlike the Arc-identity scan, which over-reaches COW copies.
-                let new_arr = Value::Array(
+                let new_arr = Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items.clone())),
-                    *kind,
+                    kind,
                 );
                 self.write_back_hyper_target_var(code, var, new_arr);
             } else {
@@ -549,7 +562,7 @@ impl Interpreter {
                 }
                 loan_env!(
                     self,
-                    overwrite_array_items_by_identity_for_vm(existing, items.clone(), *kind,)
+                    overwrite_array_items_by_identity_for_vm(existing, items.clone(), kind,)
                 );
             }
         }
@@ -557,14 +570,14 @@ impl Interpreter {
         // original variable (e.g. `%h>>++` increments the stored values). The
         // returned hash (built from `results` below) carries the method return
         // values, which for postfix `++`/`--` differ from the new stored values.
-        if let Value::Hash(existing) = &target
+        if let ValueView::Hash(existing) = target.view()
             && let Some(keys) = &hash_keys
         {
             let mut map = std::collections::HashMap::with_capacity(keys.len());
             for (key, item) in keys.iter().zip(items.iter()) {
                 map.insert(key.clone(), item.clone());
             }
-            let new_hash = Value::Hash(Value::hash_arc(map));
+            let new_hash = Value::hash_with_data(Value::hash_arc(map));
             if let Some(var) = target_var
                 .as_ref()
                 .filter(|v| v.starts_with('@') || v.starts_with('%'))
@@ -580,15 +593,15 @@ impl Interpreter {
         // The items list was produced by value_to_list, which yields Pairs
         // in HashMap iteration order. Reconstruct the same type using the
         // keys from those pairs and the transformed results.
-        match &target {
-            Value::Mix(_, is_mutable) => {
+        match target.view() {
+            ValueView::Mix(_, is_mutable) => {
                 let mut weights = std::collections::HashMap::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item {
-                            Value::Pair(k, _) => k.clone(),
-                            Value::ValuePair(k, _) => k.to_string_value(),
-                            other => other.to_string_value(),
+                        let key = match item.view() {
+                            ValueView::Pair(k, _) => k.clone(),
+                            ValueView::ValuePair(k, _) => k.to_string_value(),
+                            _ => item.to_string_value(),
                         };
                         weights.insert(
                             key,
@@ -596,7 +609,7 @@ impl Interpreter {
                         );
                     }
                 }
-                let result = if *is_mutable {
+                let result = if is_mutable {
                     Value::mix_hash(weights)
                 } else {
                     Value::mix(weights)
@@ -604,19 +617,19 @@ impl Interpreter {
                 self.stack.push(result);
                 return Ok(());
             }
-            Value::Bag(_, is_mutable) => {
+            ValueView::Bag(_, is_mutable) => {
                 let mut counts = std::collections::HashMap::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item {
-                            Value::Pair(k, _) => k.clone(),
-                            Value::ValuePair(k, _) => k.to_string_value(),
-                            other => other.to_string_value(),
+                        let key = match item.view() {
+                            ValueView::Pair(k, _) => k.clone(),
+                            ValueView::ValuePair(k, _) => k.to_string_value(),
+                            _ => item.to_string_value(),
                         };
                         counts.insert(key, crate::runtime::utils::to_int(result));
                     }
                 }
-                let result = if *is_mutable {
+                let result = if is_mutable {
                     Value::bag_hash(counts)
                 } else {
                     Value::bag(counts)
@@ -624,21 +637,21 @@ impl Interpreter {
                 self.stack.push(result);
                 return Ok(());
             }
-            Value::Set(_, is_mutable) => {
+            ValueView::Set(_, is_mutable) => {
                 let mut elems = std::collections::HashSet::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item {
-                            Value::Pair(k, _) => k.clone(),
-                            Value::ValuePair(k, _) => k.to_string_value(),
-                            other => other.to_string_value(),
+                        let key = match item.view() {
+                            ValueView::Pair(k, _) => k.clone(),
+                            ValueView::ValuePair(k, _) => k.to_string_value(),
+                            _ => item.to_string_value(),
                         };
                         if result.truthy() {
                             elems.insert(key);
                         }
                     }
                 }
-                let result = if *is_mutable {
+                let result = if is_mutable {
                     Value::set_hash(elems)
                 } else {
                     Value::set(elems)
@@ -655,17 +668,19 @@ impl Interpreter {
             for (key, value) in keys.into_iter().zip(results) {
                 map.insert(key, value);
             }
-            self.stack.push(Value::Hash(Value::hash_arc(map)));
+            self.stack.push(Value::hash_with_data(Value::hash_arc(map)));
             return Ok(());
         }
         // Preserve the container type of the target: Array->Array, List->List.
         // Nodal methods (applied at the node level) always yield a List, even
         // when hypered over an Array (e.g. `[[2,3],[4,5]]>>.reverse` is a List).
-        let result_kind = match &target {
-            Value::Array(_, kind) if kind.is_real_array() && !method_is_nodal => ArrayKind::Array,
+        let result_kind = match target.view() {
+            ValueView::Array(_, kind) if kind.is_real_array() && !method_is_nodal => {
+                ArrayKind::Array
+            }
             _ => ArrayKind::List,
         };
-        let result = Value::Array(
+        let result = Value::array_with_kind(
             crate::gc::Gc::new(crate::value::ArrayData::new(results)),
             result_kind,
         );
@@ -694,8 +709,8 @@ impl Interpreter {
         args: &[Value],
         skip_native: bool,
     ) -> Result<(Value, Value), RuntimeError> {
-        match item {
-            Value::Array(elems, kind) => {
+        match item.view() {
+            ValueView::Array(elems, kind) => {
                 let mut results = Vec::with_capacity(elems.len());
                 let mut mutated = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
@@ -705,17 +720,17 @@ impl Interpreter {
                     mutated.push(m);
                 }
                 Ok((
-                    Value::Array(
+                    Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(results)),
-                        *kind,
+                        kind,
                     ),
-                    Value::Array(
+                    Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(mutated)),
-                        *kind,
+                        kind,
                     ),
                 ))
             }
-            Value::Seq(elems) | Value::Slip(elems) => {
+            ValueView::Seq(elems) | ValueView::Slip(elems) => {
                 let mut results = Vec::with_capacity(elems.len());
                 let mut mutated = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
@@ -725,30 +740,30 @@ impl Interpreter {
                     mutated.push(m);
                 }
                 Ok((
-                    Value::Array(
+                    Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(results)),
                         ArrayKind::List,
                     ),
-                    Value::Array(
+                    Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(mutated)),
                         ArrayKind::List,
                     ),
                 ))
             }
-            Value::Hash(map) => {
+            ValueView::Hash(map) => {
                 let keys: Vec<String> = map.keys().cloned().collect();
                 let mut res_map = std::collections::HashMap::with_capacity(keys.len());
                 let mut mut_map = std::collections::HashMap::with_capacity(keys.len());
                 for k in keys {
-                    let v = map.get(&k).cloned().unwrap_or(Value::Nil);
+                    let v = map.get(&k).cloned().unwrap_or(Value::NIL);
                     let (r, m) =
                         self.hyper_method_apply_recursive(&v, method, args, skip_native)?;
                     res_map.insert(k.clone(), r);
                     mut_map.insert(k, m);
                 }
                 Ok((
-                    Value::Hash(Value::hash_arc(res_map)),
-                    Value::Hash(Value::hash_arc(mut_map)),
+                    Value::hash_with_data(Value::hash_arc(res_map)),
+                    Value::hash_with_data(Value::hash_arc(mut_map)),
                 ))
             }
             _ => {
@@ -793,8 +808,8 @@ impl Interpreter {
         let mut items = crate::runtime::value_to_list(&target);
         let mut results = Vec::with_capacity(items.len());
         let method = (!matches!(
-            &name_val,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            name_val.view(),
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
         ))
         .then(|| {
             let method_raw = name_val.to_string_value();
@@ -803,8 +818,8 @@ impl Interpreter {
         for (idx, item) in items.iter_mut().enumerate() {
             let item_args = args.clone();
             if matches!(
-                &name_val,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                name_val.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             ) {
                 let mut call_args = Vec::with_capacity(item_args.len() + 1);
                 call_args.push(item.clone());
@@ -813,7 +828,7 @@ impl Interpreter {
                     Some("?") => {
                         results.push(
                             self.vm_call_on_value(name_val.clone(), call_args, None)
-                                .unwrap_or(Value::Package(Symbol::intern("Any"))),
+                                .unwrap_or(Value::package(Symbol::intern("Any"))),
                         );
                     }
                     Some("+") => {
@@ -838,14 +853,14 @@ impl Interpreter {
                     let val = if let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), &item_args)
                     {
-                        native_result.unwrap_or(Value::Package(Symbol::intern("Any")))
+                        native_result.unwrap_or(Value::package(Symbol::intern("Any")))
                     } else {
                         match self.call_method_mut_with_temp_target(item, method, item_args, idx) {
                             Ok((v, updated)) => {
                                 *item = updated;
                                 v
                             }
-                            Err(_) => Value::Package(Symbol::intern("Any")),
+                            Err(_) => Value::package(Symbol::intern("Any")),
                         }
                     };
                     results.push(val);
@@ -901,7 +916,7 @@ impl Interpreter {
                 }
             }
         }
-        if let Value::Array(existing, kind) = &target {
+        if let ValueView::Array(existing, kind) = target.view() {
             // In-place write back through the target's `crate::gc::Gc<ArrayData>` so a
             // nested-element hyper mutation reaches the element (see the twin
             // site in `exec_hyper_method_call_op`).
@@ -912,19 +927,19 @@ impl Interpreter {
             }
             loan_env!(
                 self,
-                overwrite_array_items_by_identity_for_vm(existing, items.clone(), *kind,)
+                overwrite_array_items_by_identity_for_vm(existing, items.clone(), kind,)
             );
         }
         // Preserve the container type of the target for QuantHash types
-        match &target {
-            Value::Mix(_, is_mutable) => {
+        match target.view() {
+            ValueView::Mix(_, is_mutable) => {
                 let mut weights = std::collections::HashMap::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item {
-                            Value::Pair(k, _) => k.clone(),
-                            Value::ValuePair(k, _) => k.to_string_value(),
-                            other => other.to_string_value(),
+                        let key = match item.view() {
+                            ValueView::Pair(k, _) => k.clone(),
+                            ValueView::ValuePair(k, _) => k.to_string_value(),
+                            _ => item.to_string_value(),
                         };
                         weights.insert(
                             key,
@@ -932,7 +947,7 @@ impl Interpreter {
                         );
                     }
                 }
-                let result = if *is_mutable {
+                let result = if is_mutable {
                     Value::mix_hash(weights)
                 } else {
                     Value::mix(weights)
@@ -940,19 +955,19 @@ impl Interpreter {
                 self.stack.push(result);
                 return Ok(());
             }
-            Value::Bag(_, is_mutable) => {
+            ValueView::Bag(_, is_mutable) => {
                 let mut counts = std::collections::HashMap::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item {
-                            Value::Pair(k, _) => k.clone(),
-                            Value::ValuePair(k, _) => k.to_string_value(),
-                            other => other.to_string_value(),
+                        let key = match item.view() {
+                            ValueView::Pair(k, _) => k.clone(),
+                            ValueView::ValuePair(k, _) => k.to_string_value(),
+                            _ => item.to_string_value(),
                         };
                         counts.insert(key, crate::runtime::utils::to_int(result));
                     }
                 }
-                let result = if *is_mutable {
+                let result = if is_mutable {
                     Value::bag_hash(counts)
                 } else {
                     Value::bag(counts)
@@ -960,21 +975,21 @@ impl Interpreter {
                 self.stack.push(result);
                 return Ok(());
             }
-            Value::Set(_, is_mutable) => {
+            ValueView::Set(_, is_mutable) => {
                 let mut elems = std::collections::HashSet::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item {
-                            Value::Pair(k, _) => k.clone(),
-                            Value::ValuePair(k, _) => k.to_string_value(),
-                            other => other.to_string_value(),
+                        let key = match item.view() {
+                            ValueView::Pair(k, _) => k.clone(),
+                            ValueView::ValuePair(k, _) => k.to_string_value(),
+                            _ => item.to_string_value(),
                         };
                         if result.truthy() {
                             elems.insert(key);
                         }
                     }
                 }
-                let result = if *is_mutable {
+                let result = if is_mutable {
                     Value::set_hash(elems)
                 } else {
                     Value::set(elems)
@@ -985,11 +1000,11 @@ impl Interpreter {
             _ => {}
         }
         // Preserve the container type of the target: Array->Array, List->List
-        let result_kind = match &target {
-            Value::Array(_, kind) if kind.is_real_array() => ArrayKind::Array,
+        let result_kind = match target.view() {
+            ValueView::Array(_, kind) if kind.is_real_array() => ArrayKind::Array,
             _ => ArrayKind::List,
         };
-        self.stack.push(Value::Array(
+        self.stack.push(Value::array_with_kind(
             crate::gc::Gc::new(crate::value::ArrayData::new(results)),
             result_kind,
         ));

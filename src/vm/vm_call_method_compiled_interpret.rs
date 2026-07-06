@@ -30,8 +30,8 @@ impl Interpreter {
         // interpreter's generic constructor dispatch (lever A: shrink method-call
         // interpreter fallback).
         if method == "new"
-            && let Value::Package(class_name) = &target
-            && let Some(result) = loan_env!(self, try_native_default_construct(*class_name, &args))
+            && let ValueView::Package(class_name) = target.view()
+            && let Some(result) = loan_env!(self, try_native_default_construct(class_name, &args))
         {
             // An exception type with a user-defined `message` method needs that
             // method run once at construction and cached into the `message`
@@ -60,9 +60,9 @@ impl Interpreter {
         // `StrDistance`/`Stash`/empty-instance handles — pure data builds the Interpreter
         // performs directly instead of routing through `dispatch_new`.
         if method == "new"
-            && let Value::Package(class_name) = &target
+            && let ValueView::Package(class_name) = target.view()
             && let Some(result) =
-                crate::runtime::Interpreter::try_native_builtin_construct(*class_name, &args)
+                crate::runtime::Interpreter::try_native_builtin_construct(class_name, &args)
         {
             self.method_dispatch_pure = true;
             return result;
@@ -73,9 +73,8 @@ impl Interpreter {
         // Built directly via the single `try_native_quanthash_construct` impl the
         // interpreter's `dispatch_new` also delegates to.
         if method == "new"
-            && let Value::Package(class_name) = &target
-            && let Some(result) =
-                self.try_native_quanthash_construct_for_package(*class_name, &args)
+            && let ValueView::Package(class_name) = target.view()
+            && let Some(result) = self.try_native_quanthash_construct_for_package(class_name, &args)
         {
             self.method_dispatch_pure = true;
             return result;
@@ -86,9 +85,8 @@ impl Interpreter {
         // the single `try_native_array_construct` / `try_native_hash_construct`
         // impls the interpreter's `dispatch_new` also delegates to.
         if method == "new"
-            && let Value::Package(class_name) = &target
-            && let Some(result) =
-                self.try_native_aggregate_construct_for_package(*class_name, &args)
+            && let ValueView::Package(class_name) = target.view()
+            && let Some(result) = self.try_native_aggregate_construct_for_package(class_name, &args)
         {
             self.method_dispatch_pure = true;
             return result;
@@ -100,8 +98,8 @@ impl Interpreter {
         // owns). Built via the single `build_io_path_instance` impl the
         // interpreter's `dispatch_new` arm also delegates to.
         if method == "new"
-            && let Value::Package(class_name) = &target
-            && let Some(result) = self.try_native_io_path_construct(*class_name, &args)
+            && let ValueView::Package(class_name) = target.view()
+            && let Some(result) = self.try_native_io_path_construct(class_name, &args)
         {
             self.method_dispatch_pure = true;
             return result;
@@ -112,7 +110,7 @@ impl Interpreter {
         // `build_native_failure_value` impl the interpreter's
         // `dispatch_new_and_constructors` arm also delegates to.
         if method == "new"
-            && let Value::Package(class_name) = &target
+            && let ValueView::Package(class_name) = target.view()
             && class_name.resolve() == "Failure"
         {
             self.method_dispatch_pure = true;
@@ -125,7 +123,7 @@ impl Interpreter {
         // also delegates to. (A user subclass `class S is Seq` resolves to its
         // own class name and is left to the interpreter.)
         if method == "new"
-            && let Value::Package(class_name) = &target
+            && let ValueView::Package(class_name) = target.view()
             && class_name.resolve() == "Seq"
         {
             self.method_dispatch_pure = true;
@@ -138,7 +136,7 @@ impl Interpreter {
         // also delegates to. (A user subclass resolves to its own class name and
         // is left to the interpreter.)
         if method == "new"
-            && let Value::Package(class_name) = &target
+            && let ValueView::Package(class_name) = target.view()
             && class_name.resolve() == "IO::Socket::INET"
         {
             self.method_dispatch_pure = true;
@@ -147,17 +145,15 @@ impl Interpreter {
         // Native built-in *class* method (a pure type-object method other than
         // `.new`, e.g. `Instant.from-posix`) — built directly instead of routing
         // through the interpreter's class-method dispatch.
-        if let Value::Package(class_name) = &target
+        if let ValueView::Package(class_name) = target.view()
             && let Some(result) = crate::runtime::Interpreter::try_native_builtin_class_method(
-                *class_name,
-                method,
-                &args,
+                class_name, method, &args,
             )
         {
             self.method_dispatch_pure = true;
             return result;
         }
-        if let Value::Instance { class_name, .. } = &target {
+        if let ValueView::Instance { class_name, .. } = target.view() {
             let class = class_name.resolve();
             // Interpreter-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D):
             // resolve `IO::Handle`'s state-only methods (close/tell/eof/seek/
@@ -200,7 +196,7 @@ impl Interpreter {
             // the interpreter's `native_io_path`. Filesystem / cwd-relative forms and
             // `child :secure` return `None` and fall through to the native fork below.
             if Self::is_io_path_lexical_class(&class)
-                && let Value::Instance { attributes, .. } = &target
+                && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     Self::try_io_path_lexical(&class, &attributes.as_map(), method, &args)
             {
@@ -209,7 +205,7 @@ impl Interpreter {
             // Interpreter-native `.absolute` / `.relative` (path + cwd, lexical — no
             // filesystem; the VM owns env/cwd). Single impl shared with `native_io_path`.
             if Self::is_io_path_lexical_class(&class)
-                && let Value::Instance { attributes, .. } = &target
+                && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     self.try_io_path_cwd_method(&attributes.as_map(), method, &args)
             {
@@ -220,7 +216,7 @@ impl Interpreter {
             // cwd, then `stat` only — no `io_handles`, no content read (ledger §D).
             // Single impl shared with `native_io_path`.
             if Self::is_io_path_lexical_class(&class)
-                && let Value::Instance { attributes, .. } = &target
+                && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_fs_stat(&attributes.as_map(), method)
             {
                 return result;
@@ -229,7 +225,7 @@ impl Interpreter {
             // read the file + split/decode; no `io_handles` (ledger §D). Single impl
             // shared with `native_io_path`.
             if Self::is_io_path_lexical_class(&class)
-                && let Value::Instance { attributes, .. } = &target
+                && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     self.try_io_path_content_read(&attributes.as_map(), method, &args)
             {
@@ -239,7 +235,7 @@ impl Interpreter {
             // `rmdir`/`unlink`/`chmod`): one-shot syscall, no `io_handles` (ledger
             // §D). Single impl shared with `native_io_path`.
             if Self::is_io_path_lexical_class(&class)
-                && let Value::Instance { attributes, .. } = &target
+                && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     self.try_io_path_fs_mutate(&attributes.as_map(), &class, method, &args)
             {
@@ -249,7 +245,7 @@ impl Interpreter {
             // the `IO::Handle`. The VM owns `io_handles`, so this is a native
             // dispatch (ledger §D ③). Single impl shared with `native_io_path`.
             if Self::is_io_path_lexical_class(&class)
-                && let Value::Instance { attributes, .. } = &target
+                && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_open(&attributes.as_map(), method, &args)
             {
                 return result;
@@ -258,7 +254,7 @@ impl Interpreter {
             // `link`): resolve both paths against the VM-owned cwd, one-shot syscall,
             // no `io_handles` (ledger §D). Single impl shared with `native_io_path`.
             if Self::is_io_path_lexical_class(&class)
-                && let Value::Instance { attributes, .. } = &target
+                && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     self.try_io_path_two_path_op(&attributes.as_map(), method, &args)
             {
@@ -267,7 +263,7 @@ impl Interpreter {
             // Interpreter-native `comb`: read the file then comb the content (no
             // `io_handles`; ledger §D). Single impl shared with `native_io_path`.
             if Self::is_io_path_lexical_class(&class)
-                && let Value::Instance { attributes, .. } = &target
+                && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_comb(&attributes.as_map(), method, &args)
             {
                 return result;
@@ -295,9 +291,9 @@ impl Interpreter {
         // Private method fast path: resolve private candidate and run compiled code
         // when caller context clearly allows direct dispatch.
         if method.starts_with('!') {
-            let class_name = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
-                Value::Package(name) => Some(name.resolve()),
+            let class_name = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) => Some(name.resolve()),
                 _ => None,
             };
             if let Some(cn) = class_name {
@@ -306,20 +302,20 @@ impl Interpreter {
                     let caller_allowed = self.can_fast_dispatch_private_method_vm(&owner_class);
                     if caller_allowed && let Some(ref cc) = method_def.compiled_code {
                         let cc = cc.clone();
-                        let target_id = match &target {
-                            Value::Instance { id, .. } => Some(*id),
+                        let target_id = match target.view() {
+                            ValueView::Instance { id, .. } => Some(id),
                             _ => None,
                         };
-                        let attrs_cell = match &target {
-                            Value::Instance { attributes, .. } => Some(attributes.clone()),
+                        let attrs_cell = match target.view() {
+                            ValueView::Instance { attributes, .. } => Some(attributes.clone()),
                             _ => None,
                         };
-                        let attributes = match &target {
-                            Value::Instance { attributes, .. } => attributes.to_map(),
+                        let attributes = match target.view() {
+                            ValueView::Instance { attributes, .. } => attributes.to_map(),
                             _ => std::collections::HashMap::new(),
                         };
                         let invocant_for_dispatch = if attributes.is_empty() {
-                            Value::Package(crate::symbol::Symbol::intern(&cn))
+                            Value::package(crate::symbol::Symbol::intern(&cn))
                         } else {
                             target.clone()
                         };
@@ -353,7 +349,7 @@ impl Interpreter {
                                 cell.commit_attrs(new_attrs.clone());
                             }
                             if !self.in_lvalue_assignment
-                                && let Value::Proxy { ref fetcher, .. } = result
+                                && let ValueView::Proxy { fetcher, .. } = result.view()
                             {
                                 // Without a `:=` adjustment the triple's map is
                                 // the stale entry snapshot (the lazy reconcile
@@ -382,9 +378,9 @@ impl Interpreter {
             && method.len() > 1
             && !crate::runtime::Interpreter::is_classhow_method(&method[1..])
         {
-            let class_name = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
-                Value::Package(name) => Some(name.resolve()),
+            let class_name = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) => Some(name.resolve()),
                 _ => None,
             };
             if let Some(cn) = class_name
@@ -398,9 +394,9 @@ impl Interpreter {
             }
         }
         // Only attempt compiled path for Instance or Package targets
-        let class_name = match &target {
-            Value::Instance { class_name, .. } => Some(class_name.resolve()),
-            Value::Package(name) => Some(name.resolve()),
+        let class_name = match target.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+            ValueView::Package(name) => Some(name.resolve()),
             _ => None,
         };
         if let Some(ref cn) = class_name {
@@ -426,8 +422,8 @@ impl Interpreter {
                             result
                         })
                     };
-                let has_attr_aliases = match &target {
-                    Value::Instance { attributes, .. } => attributes
+                let has_attr_aliases = match target.view() {
+                    ValueView::Instance { attributes, .. } => attributes
                         .as_map()
                         .keys()
                         .any(|k| k.starts_with(super::vm_method_dispatch::ATTR_ALIAS_META_PREFIX)),
@@ -612,7 +608,7 @@ impl Interpreter {
         // `.MixHash` over a list-like aggregate or a plain Cool scalar (ledger §D:
         // native receiver dispatch -> Interpreter-native). Pure element-folding
         // shared with the interpreter via `builtins::quanthash_coerce`. `.MixHash`
-        // embeds its type metadata directly in the `Value::Mix` Arc (not an
+        // embeds its type metadata directly in the `Mix` value's Arc (not an
         // interpreter-owned side table — container metadata has travelled in the
         // value since #2952), so it is a pure value op like the others. A scalar
         // (`42.Set`) becomes a single-element collection. Instance/Package/Junction

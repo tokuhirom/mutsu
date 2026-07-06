@@ -30,7 +30,7 @@ impl Interpreter {
         key: &str,
         idx: &Value,
     ) {
-        if matches!(idx, Value::Str(_)) {
+        if matches!(idx.view(), ValueView::Str(_)) {
             return;
         }
         original_keys
@@ -49,8 +49,8 @@ impl Interpreter {
     }
 
     fn build_slice_key_tree(&mut self, key: &Value) -> Result<SliceKeyTree, RuntimeError> {
-        match key {
-            Value::LazyList(ll) => {
+        match key.view() {
+            ValueView::LazyList(ll) => {
                 let items = self.force_lazy_list_vm(ll)?;
                 let children = items
                     .iter()
@@ -58,21 +58,21 @@ impl Interpreter {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(SliceKeyTree::Nested(children, true))
             }
-            Value::Array(items, _) => {
+            ValueView::Array(items, _) => {
                 let children = items
                     .iter()
                     .map(|item| self.build_slice_key_tree(item))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(SliceKeyTree::Nested(children, false))
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 let children = items
                     .iter()
                     .map(|item| self.build_slice_key_tree(item))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(SliceKeyTree::Nested(children, false))
             }
-            other => Ok(SliceKeyTree::Leaf(other.clone())),
+            _ => Ok(SliceKeyTree::Leaf(key.clone())),
         }
     }
 
@@ -126,7 +126,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         match key {
             SliceKeyTree::Leaf(k) => {
-                let v = vals.next().unwrap_or(Value::Nil);
+                let v = vals.next().unwrap_or(Value::NIL);
                 Self::assign_array_multidim(container, std::slice::from_ref(k), v)?;
                 marks.push(Self::encode_bound_index(k));
                 Ok(())
@@ -153,11 +153,11 @@ impl Interpreter {
     fn read_slice_key_tree(container: &Value, key: &SliceKeyTree, boundary_len: usize) -> Value {
         match key {
             SliceKeyTree::Leaf(k) => Self::index_to_usize(k)
-                .and_then(|i| match container {
-                    Value::Array(items, ..) => items.get(i).cloned(),
+                .and_then(|i| match container.view() {
+                    ValueView::Array(items, ..) => items.get(i).cloned(),
                     _ => None,
                 })
-                .unwrap_or(Value::Nil),
+                .unwrap_or(Value::NIL),
             SliceKeyTree::Nested(children, lazy_origin) => {
                 let mut out = Vec::with_capacity(children.len());
                 for child in children {
@@ -207,7 +207,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match key {
             SliceKeyTree::Leaf(k) => {
-                let v = vals.next().unwrap_or(Value::Nil);
+                let v = vals.next().unwrap_or(Value::NIL);
                 Self::assign_array_multidim(container, std::slice::from_ref(k), v.clone())?;
                 marks.push(Self::encode_bound_index(k));
                 Ok(v)
@@ -235,7 +235,7 @@ impl Interpreter {
         let sigilless_alias_target = {
             let alias_key = format!("__mutsu_sigilless_alias::{}", original_var_name);
             self.env().get(&alias_key).and_then(|v| {
-                if let Value::Str(target) = v {
+                if let ValueView::Str(target) = v.view() {
                     Some(target.to_string())
                 } else {
                     None
@@ -285,9 +285,9 @@ impl Interpreter {
         // sync code can distinguish stale COW copies from unrelated containers.
         let old_container_arc_ptr: Option<usize> =
             if let Some(container) = self.env().get(&var_name) {
-                match container {
-                    Value::Array(arc, _) => Some(crate::gc::Gc::as_ptr(arc) as usize),
-                    Value::Hash(arc) => Some(crate::gc::Gc::as_ptr(arc) as usize),
+                match container.view() {
+                    ValueView::Array(arc, _) => Some(crate::gc::Gc::as_ptr(arc) as usize),
+                    ValueView::Hash(arc) => Some(crate::gc::Gc::as_ptr(arc) as usize),
                     _ => None,
                 }
             } else {
@@ -304,7 +304,7 @@ impl Interpreter {
         let _target_is_sethash = declared_type.as_deref().is_some_and(|t| t == "SetHash");
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.env().contains_key(&declared_shape_key);
-        let idx = self.stack.pop().unwrap_or(Value::Nil);
+        let idx = self.stack.pop().unwrap_or(Value::NIL);
         // A subscript that names exactly ONE element assigns to a scalar slot, so
         // the assignment's rvalue is itemized just like a scalar-variable
         // assignment (`@z = (@a[0] = 1, 2)` => `@z.elems == 1`, and likewise for
@@ -314,33 +314,33 @@ impl Interpreter {
         // (incl. the string `GenericRange` that a hash subscript enumerates into
         // several keys) is always a slice; a 1-element index list acts as a single
         // element; an itemized subscript (`@a[$(7,8,9)]`) is a single index.
-        let idx_is_single_element = match &idx {
-            Value::Array(items, kind) => {
+        let idx_is_single_element = match idx.view() {
+            ValueView::Array(items, kind) => {
                 matches!(kind, crate::value::ArrayKind::ItemList) || items.len() == 1
             }
-            Value::Seq(items) | Value::Slip(items) => items.len() == 1,
-            Value::Scalar(inner) => {
-                !inner.is_range() && !matches!(inner.as_ref(), Value::Array(..))
+            ValueView::Seq(items) | ValueView::Slip(items) => items.len() == 1,
+            ValueView::Scalar(inner) => {
+                !inner.is_range() && !matches!(inner.view(), ValueView::Array(..))
             }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => false,
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => false,
             _ => true,
         };
         // An *itemized* list/Range subscript (`@a[$(7,8,9)] = …`) is a SINGLE
         // index (its `.Int`, the element count), not a slice — itemization makes
         // it one item. An itemized list reaches here as `ArrayKind::ItemList` (or
         // a `Scalar`-wrapped list/Range). A bare `@a[7,8,9] = …` stays a slice.
-        let idx = match &idx {
-            Value::Array(items, crate::value::ArrayKind::ItemList) => {
-                Value::Int(items.len() as i64)
+        let idx = match idx.view() {
+            ValueView::Array(items, crate::value::ArrayKind::ItemList) => {
+                Value::int(items.len() as i64)
             }
-            Value::Scalar(inner)
-                if inner.is_range() || matches!(inner.as_ref(), Value::Array(..)) =>
+            ValueView::Scalar(inner)
+                if inner.is_range() || matches!(inner.view(), ValueView::Array(..)) =>
             {
-                Value::Int(crate::runtime::utils::value_to_list(inner).len() as i64)
+                Value::int(crate::runtime::utils::value_to_list(inner).len() as i64)
             }
             _ => idx,
         };
@@ -365,42 +365,45 @@ impl Interpreter {
                 crate::runtime::native_types::is_native_array_element_type(&info.value_type)
             });
         let array_var_is_native = !var_name.starts_with('%')
-            && matches!(index_target, Some(Value::Array(..)))
+            && matches!(
+                index_target.as_ref().map(Value::view),
+                Some(ValueView::Array(..))
+            )
             && (vtc_native || ct_native);
         let expand_range = var_name.starts_with('%') || array_var_is_native;
-        let idx = match idx {
-            Value::Seq(items) => Value::Array(
+        let idx = match idx.view() {
+            ValueView::Seq(items) => Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
             ),
-            Value::Slip(items) => Value::Array(
+            ValueView::Slip(items) => Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
             ),
-            Value::Range(a, b) if expand_range => {
-                let items: Vec<Value> = (a..=b).map(Value::Int).collect();
-                Value::Array(
+            ValueView::Range(a, b) if expand_range => {
+                let items: Vec<Value> = (a..=b).map(Value::int).collect();
+                Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
-            Value::RangeExcl(a, b) if expand_range => {
-                let items: Vec<Value> = (a..b).map(Value::Int).collect();
-                Value::Array(
+            ValueView::RangeExcl(a, b) if expand_range => {
+                let items: Vec<Value> = (a..b).map(Value::int).collect();
+                Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
-            Value::RangeExclStart(a, b) if expand_range => {
-                let items: Vec<Value> = ((a + 1)..=b).map(Value::Int).collect();
-                Value::Array(
+            ValueView::RangeExclStart(a, b) if expand_range => {
+                let items: Vec<Value> = ((a + 1)..=b).map(Value::int).collect();
+                Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
-            Value::RangeExclBoth(a, b) if expand_range => {
-                let items: Vec<Value> = ((a + 1)..b).map(Value::Int).collect();
-                Value::Array(
+            ValueView::RangeExclBoth(a, b) if expand_range => {
+                let items: Vec<Value> = ((a + 1)..b).map(Value::int).collect();
+                Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
@@ -408,44 +411,46 @@ impl Interpreter {
             // Non-integer (e.g. string) ranges: `%h{'x'..'z'} = ...` is a hash
             // slice over the enumerated keys `x`, `y`, `z`, not a single
             // stringified `"x y z"` key. Expand via the range's own list.
-            gr @ Value::GenericRange { .. } if expand_range => {
-                let items = crate::runtime::utils::value_to_list(&gr);
-                Value::Array(
+            ValueView::GenericRange { .. } if expand_range => {
+                let items = crate::runtime::utils::value_to_list(&idx);
+                Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
-            other => other,
+            _ => idx,
         };
-        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
-        let (val, bind_mode, bind_sources) = match raw_val {
-            Value::Pair(name, payload) if name == "__mutsu_bind_index_value" => match *payload {
-                Value::Array(items, ..) if items.len() >= 2 => {
-                    let value = items.first().cloned().unwrap_or(Value::Nil);
-                    let sources = match items.get(1) {
-                        Some(Value::Array(srcs, ..)) => srcs
-                            .iter()
-                            .map(|src| match src {
-                                Value::Str(s) if !s.is_empty() => Some((**s).clone()),
-                                _ => None,
-                            })
-                            .collect(),
-                        _ => Vec::new(),
-                    };
-                    (value, true, sources)
+        let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+        let (val, bind_mode, bind_sources) = match raw_val.view() {
+            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => {
+                match payload.view() {
+                    ValueView::Array(items, ..) if items.len() >= 2 => {
+                        let value = items.first().cloned().unwrap_or(Value::NIL);
+                        let sources = match items.get(1).map(Value::view) {
+                            Some(ValueView::Array(srcs, ..)) => srcs
+                                .iter()
+                                .map(|src| match src.view() {
+                                    ValueView::Str(s) if !s.is_empty() => Some((**s).clone()),
+                                    _ => None,
+                                })
+                                .collect(),
+                            _ => Vec::new(),
+                        };
+                        (value, true, sources)
+                    }
+                    _ => (payload.clone(), true, Vec::new()),
                 }
-                other => (other, true, Vec::new()),
-            },
-            other => (other, false, Vec::new()),
+            }
+            _ => (raw_val, false, Vec::new()),
         };
         // For typed container elements, explicit `is default(...)` wins over
         // the nominal type-object fallback when Nil is assigned.
-        let val = if matches!(val, Value::Nil) {
+        let val = if val.is_nil() {
             if let Some(default) = self.var_default(&var_name) {
                 default.clone()
             } else if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name)) {
                 let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                Value::Package(Symbol::intern(&nominal))
+                Value::package(Symbol::intern(&nominal))
             } else {
                 val
             }
@@ -471,8 +476,11 @@ impl Interpreter {
         {
             let current_val = self.env().get(&var_name).cloned();
             let is_undefined = current_val.is_none()
-                || matches!(&current_val, Some(Value::Nil))
-                || matches!(&current_val, Some(Value::Package(_)));
+                || matches!(current_val.as_ref().map(Value::view), Some(ValueView::Nil))
+                || matches!(
+                    current_val.as_ref().map(Value::view),
+                    Some(ValueView::Package(_))
+                );
             if is_undefined {
                 let constraint_owned = loan_env!(self, var_type_constraint(&var_name));
                 let type_name_check = declared_type.as_deref().or(constraint_owned.as_deref());
@@ -488,14 +496,14 @@ impl Interpreter {
         // Immutable List/Range containers - prevent assignment and binding
         if let Some(target_val) = self.env().get(&var_name) {
             let is_immutable = matches!(
-                target_val,
-                Value::Array(_, crate::value::ArrayKind::List)
-                    | Value::Array(_, crate::value::ArrayKind::ItemList)
-                    | Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. }
+                target_val.view(),
+                ValueView::Array(_, crate::value::ArrayKind::List)
+                    | ValueView::Array(_, crate::value::ArrayKind::ItemList)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
             );
             if is_immutable {
                 if bind_mode {
@@ -507,13 +515,13 @@ impl Interpreter {
                     ));
                 }
                 // For List containers: allow assignment through a Scalar element.
-                // `my $l := List.new: 1, 2, my $ = 3` stores a Value::Scalar at
+                // `my $l := List.new: 1, 2, my $ = 3` stores a Scalar value at
                 // position 2; `$l[2] = 42` should update that Scalar in-place.
-                let list_scalar_hit = if let Value::Array(items, kind) = target_val
-                    && (kind == &crate::value::ArrayKind::List
-                        || kind == &crate::value::ArrayKind::ItemList)
+                let list_scalar_hit = if let ValueView::Array(items, kind) = target_val.view()
+                    && (kind == crate::value::ArrayKind::List
+                        || kind == crate::value::ArrayKind::ItemList)
                     && let Some(i) = Self::index_to_usize(&idx)
-                    && matches!(items.get(i), Some(Value::Scalar(_)))
+                    && matches!(items.get(i).map(Value::view), Some(ValueView::Scalar(_)))
                 {
                     Some((items.clone(), i))
                 } else {
@@ -527,12 +535,12 @@ impl Interpreter {
                     // straight to `*mut Vec<Value>`, assuming `items` sits at
                     // offset 0; this types it properly as `&mut ArrayData`.)
                     let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    data.items[i] = Value::Scalar(Box::new(val.clone()));
+                    data.items[i] = Value::scalar(val.clone());
                     self.stack.push(val);
                     return Ok(());
                 }
-                let type_name = match target_val {
-                    Value::Array(..) => "List",
+                let type_name = match target_val.view() {
+                    ValueView::Array(..) => "List",
                     _ => "Range",
                 };
                 let display = target_val.to_string_value();
@@ -556,11 +564,11 @@ impl Interpreter {
         // `:=`-binding to a Buf index is not handled here (falls through to the
         // generic path below, unchanged from before this fix).
         if !bind_mode
-            && let Some(Value::Instance {
+            && let Some(ValueView::Instance {
                 attributes,
                 class_name,
                 ..
-            }) = self.env().get(&var_name)
+            }) = self.env().get(&var_name).map(Value::view)
         {
             let cn = class_name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
@@ -568,7 +576,7 @@ impl Interpreter {
                     return Err(RuntimeError::assignment_ro(Some("Blob")));
                 }
                 let attributes = attributes.clone();
-                if let Value::Array(keys, ..) = &idx {
+                if let ValueView::Array(keys, ..) = idx.view() {
                     let vals = self.assignment_rhs_values(&val)?;
                     let indices = keys
                         .iter()
@@ -581,19 +589,19 @@ impl Interpreter {
                     let mut resize_err = None;
                     let mut assigned = Vec::new();
                     attributes.with_attr_mut("bytes", |bytes_val| {
-                        if let Value::Array(items, ..) = bytes_val {
+                        let _ = bytes_val.with_array_mut(|items, _| {
                             let arr = crate::gc::Gc::make_mut(items);
-                            if let Err(e) = Self::autoviv_resize(arr, max_idx + 1, Value::Int(0)) {
+                            if let Err(e) = Self::autoviv_resize(arr, max_idx + 1, Value::int(0)) {
                                 resize_err = Some(e);
                                 return;
                             }
                             for (i, &pos) in indices.iter().enumerate() {
-                                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                                let v = vals.get(i).cloned().unwrap_or(Value::NIL);
                                 let byte = crate::runtime::to_int(&v) & 0xff;
-                                arr[pos] = Value::Int(byte);
-                                assigned.push(Value::Int(byte));
+                                arr[pos] = Value::int(byte);
+                                assigned.push(Value::int(byte));
                             }
-                        }
+                        });
                     });
                     if let Some(e) = resize_err {
                         return Err(e);
@@ -604,14 +612,14 @@ impl Interpreter {
                     let byte = crate::runtime::to_int(&val) & 0xff;
                     let mut resize_err = None;
                     attributes.with_attr_mut("bytes", |bytes_val| {
-                        if let Value::Array(items, ..) = bytes_val {
+                        let _ = bytes_val.with_array_mut(|items, _| {
                             let arr = crate::gc::Gc::make_mut(items);
-                            if let Err(e) = Self::autoviv_resize(arr, pos + 1, Value::Int(0)) {
+                            if let Err(e) = Self::autoviv_resize(arr, pos + 1, Value::int(0)) {
                                 resize_err = Some(e);
                                 return;
                             }
-                            arr[pos] = Value::Int(byte);
-                        }
+                            arr[pos] = Value::int(byte);
+                        });
                     });
                     if let Some(e) = resize_err {
                         return Err(e);
@@ -654,7 +662,7 @@ impl Interpreter {
             // for an existing non-cell element is stale (e.g. the binding was
             // broken by splice or an array reset) — clean it up; the write
             // proceeds either way (cell writes go through the cell arm).
-            if let Some(Value::Array(items, ..)) = self.env().get(&var_name)
+            if let Some(ValueView::Array(items, ..)) = self.env().get(&var_name).map(Value::view)
                 && let Some(i) = Self::index_to_usize(&idx)
                 && matches!(items.get(i), Some(v) if !v.is_container_ref())
             {
@@ -668,61 +676,71 @@ impl Interpreter {
         }
         // Junction autothreading: when writing back with a junction index,
         // expand the junction and assign each element separately.
-        if let Value::Junction {
+        if let ValueView::Junction {
             values: junc_keys, ..
-        } = &idx
+        } = idx.view()
         {
-            let junc_vals = if let Value::Junction { values: jv, .. } = &val {
+            let junc_vals = if let ValueView::Junction { values: jv, .. } = val.view() {
                 jv.clone()
             } else {
                 // Same value for all junction elements
                 Arc::new(vec![val.clone(); junc_keys.len()])
             };
             for (i, key) in junc_keys.iter().enumerate() {
-                let v = junc_vals.get(i).cloned().unwrap_or(Value::Nil);
+                let v = junc_vals.get(i).cloned().unwrap_or(Value::NIL);
                 let k = key.to_string_value();
                 if var_name.starts_with('%') {
                     // Descend through any `:=`-bound `ContainerRef` cell so the
                     // junction write reaches the shared container (otherwise it
                     // would detach the bind by overwriting the cell with a fresh
                     // hash — see `my %h := %g; %h{'x'|'y'} = v`).
-                    if !matches!(self.env_root_descended_mut(&var_name), Some(Value::Hash(_))) {
+                    if !matches!(
+                        self.env_root_descended_mut(&var_name).map(|c| c.view()),
+                        Some(ValueView::Hash(_))
+                    ) {
                         self.env_mut().insert(
                             var_name.clone(),
                             Value::hash(std::collections::HashMap::new()),
                         );
                     }
-                    if let Some(Value::Hash(hash)) = self.env_root_descended_mut(&var_name) {
-                        let h = crate::gc::Gc::make_mut(hash);
-                        h.insert(k, v);
+                    if let Some(container) = self.env_root_descended_mut(&var_name) {
+                        let _ = container.with_hash_mut(|hash| {
+                            let h = crate::gc::Gc::make_mut(hash);
+                            h.insert(k, v);
+                        });
                     }
                 } else if let Some(idx_usize) = Self::index_to_usize(key) {
                     // For array variables with junction index, use numeric indices
                     // (descend through any `:=`-bound cell, same as the hash arm).
-                    if let Some(Value::Array(items, ..)) = self.env_root_descended_mut(&var_name) {
-                        let arr = crate::gc::Gc::make_mut(items);
-                        Self::autoviv_resize(arr, idx_usize + 1, native_fill.clone())?;
-                        arr[idx_usize] = v;
-                    }
+                    self.env_root_descended_mut(&var_name)
+                        .and_then(|container| {
+                            container.with_array_mut(|items, _| -> Result<(), RuntimeError> {
+                                let arr = crate::gc::Gc::make_mut(items);
+                                Self::autoviv_resize(arr, idx_usize + 1, native_fill.clone())?;
+                                arr[idx_usize] = v;
+                                Ok(())
+                            })
+                        })
+                        .transpose()?;
                 }
             }
             self.stack.push(val);
             return Ok(());
         }
-        match &idx {
+        match idx.view() {
             // Top-level lazy index list: `@a[lazy 1,2,(4,5)] = ...`. Mirrors the
-            // `Value::Array` slice arm below but for a bare `LazyList` subscript
+            // `Array` slice arm below but for a bare `LazyList` subscript
             // (not wrapped in an outer Array) — the whole list is genuinely lazy,
             // so distribution into ITS direct leaves stops at the container's
             // current length (`assign_slice_key_tree`), while any plain nested
             // sublist inside it (like `(4,5)` above) still extends normally.
-            Value::LazyList(_) if is_positional && var_name.starts_with('@') => {
+            ValueView::LazyList(_) if is_positional && var_name.starts_with('@') => {
                 let vals = self.assignment_rhs_values(&val)?;
                 let top_tree = self.build_slice_key_tree(&idx)?;
                 if let Some(container) = self.env_root_descended_mut(&var_name)
-                    && matches!(container, Value::Array(..))
+                    && matches!(container.view(), ValueView::Array(..))
                 {
-                    let boundary_len = if let Value::Array(items, ..) = container {
+                    let boundary_len = if let ValueView::Array(items, ..) = container.view() {
                         items.len()
                     } else {
                         0
@@ -736,11 +754,14 @@ impl Interpreter {
                     } else {
                         Self::slice_key_tree_max_index(&top_tree)
                     };
-                    if let Some(max_idx) = max_index
-                        && let Value::Array(items, ..) = container
-                    {
-                        let arr = crate::gc::Gc::make_mut(items);
-                        Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                    if let Some(max_idx) = max_index {
+                        container
+                            .with_array_mut(|items, _| -> Result<(), RuntimeError> {
+                                let arr = crate::gc::Gc::make_mut(items);
+                                Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                                Ok(())
+                            })
+                            .transpose()?;
                     }
                     let mut vals_iter = vals.into_iter();
                     let mut marks: Vec<String> = Vec::new();
@@ -759,7 +780,7 @@ impl Interpreter {
                     for encoded in marks {
                         self.mark_initialized_index(&var_name, encoded);
                     }
-                    // Early return (like the `Value::Array` slice arm), so repeat
+                    // Early return (like the `Array` slice arm), so repeat
                     // the locals resync the shared tail would otherwise do.
                     if let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
                         && let Some(updated) = self.env().get(&var_name).cloned()
@@ -772,7 +793,7 @@ impl Interpreter {
                 // Not an array container after all (e.g. a hash) — fall through
                 // to the shared generic tail below.
             }
-            Value::Array(keys, ..) => {
+            ValueView::Array(keys, ..) => {
                 let mut vals = self.assignment_rhs_values(&val)?;
                 // Per-element type check for slice assignment to a typed array,
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
@@ -780,7 +801,7 @@ impl Interpreter {
                     && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
                 {
                     for v in &vals {
-                        if !matches!(v, Value::Nil) && !self.type_matches_value(&constraint, v) {
+                        if !v.is_nil() && !self.type_matches_value(&constraint, v) {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
                                 &constraint,
@@ -796,8 +817,11 @@ impl Interpreter {
                 // conflict with that borrow.
                 let has_nested_key = keys.iter().any(|k| {
                     matches!(
-                        k,
-                        Value::Array(..) | Value::Seq(..) | Value::Slip(..) | Value::LazyList(..)
+                        k.view(),
+                        ValueView::Array(..)
+                            | ValueView::Seq(..)
+                            | ValueView::Slip(..)
+                            | ValueView::LazyList(..)
                     )
                 });
                 let key_trees = if has_nested_key {
@@ -814,7 +838,7 @@ impl Interpreter {
                 // Array (every alias observes it) instead of falling through to
                 // the hash-slice path below.
                 if let Some(container) = self.env_root_descended_mut(&var_name)
-                    && matches!(container, Value::Array(..))
+                    && matches!(container.view(), ValueView::Array(..))
                 {
                     let is_shaped =
                         has_declared_shape || crate::runtime::utils::is_shaped_array(container);
@@ -828,7 +852,7 @@ impl Interpreter {
                         if depth <= 1 && keys.len() > 1 {
                             // 1D shaped array with multiple indices: slice assignment
                             for (i, key) in keys.iter().enumerate() {
-                                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                                let v = vals.get(i).cloned().unwrap_or(Value::NIL);
                                 Self::assign_array_multidim(
                                     container,
                                     std::slice::from_ref(key),
@@ -849,16 +873,19 @@ impl Interpreter {
                         // origin leaves only; a lazy-origin nested sublist is
                         // bounded by the container's current length instead
                         // (`assign_slice_key_tree`).
-                        let boundary_len = if let Value::Array(items, ..) = container {
+                        let boundary_len = if let ValueView::Array(items, ..) = container.view() {
                             items.len()
                         } else {
                             0
                         };
-                        if let Some(max_idx) = Self::slice_key_tree_max_index(top_tree)
-                            && let Value::Array(items, ..) = container
-                        {
-                            let arr = crate::gc::Gc::make_mut(items);
-                            Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                        if let Some(max_idx) = Self::slice_key_tree_max_index(top_tree) {
+                            container
+                                .with_array_mut(|items, _| -> Result<(), RuntimeError> {
+                                    let arr = crate::gc::Gc::make_mut(items);
+                                    Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                                    Ok(())
+                                })
+                                .transpose()?;
                         }
                         let mut vals_iter = vals.into_iter();
                         Self::assign_slice_key_tree(
@@ -878,13 +905,16 @@ impl Interpreter {
                             .filter_map(Self::index_to_usize)
                             .max()
                             .unwrap_or(0);
-                        if let Value::Array(items, ..) = container {
-                            let arr = crate::gc::Gc::make_mut(items);
-                            Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
-                        }
+                        container
+                            .with_array_mut(|items, _| -> Result<(), RuntimeError> {
+                                let arr = crate::gc::Gc::make_mut(items);
+                                Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                                Ok(())
+                            })
+                            .transpose()?;
                         // Assign each value to the corresponding index
                         for (i, key) in keys.iter().enumerate() {
-                            let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                            let v = vals.get(i).cloned().unwrap_or(Value::NIL);
                             Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
                             initialized_marks.push(Self::encode_bound_index(key));
                         }
@@ -921,14 +951,14 @@ impl Interpreter {
                     return Ok(());
                 }
                 if vals.is_empty() {
-                    vals.push(Value::Nil);
+                    vals.push(Value::NIL);
                 }
                 // Check value type constraint for hash slice assignment
                 if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
                     && !self.is_container_subclass(&constraint)
                 {
                     for v in &vals {
-                        if !matches!(v, Value::Nil) && !self.type_matches_value(&constraint, v) {
+                        if !v.is_nil() && !self.type_matches_value(&constraint, v) {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
                                 &constraint,
@@ -949,7 +979,10 @@ impl Interpreter {
                         }
                     }
                 }
-                if !matches!(self.env().get(&var_name), Some(Value::Hash(_))) {
+                if !matches!(
+                    self.env().get(&var_name).map(Value::view),
+                    Some(ValueView::Hash(_))
+                ) {
                     self.env_mut().insert(
                         var_name.clone(),
                         Value::hash(std::collections::HashMap::new()),
@@ -964,15 +997,15 @@ impl Interpreter {
                 let mut slice_bind_cells: Vec<Option<BindSourceCell>> = Vec::new();
                 if bind_mode {
                     for (i, _) in keys.iter().enumerate() {
-                        let v = vals.get(i).cloned().unwrap_or(Value::Nil);
-                        let entry = if let Value::ContainerRef(cell) = &v {
+                        let v = vals.get(i).cloned().unwrap_or(Value::NIL);
+                        let entry = if let ValueView::ContainerRef(cell) = v.view() {
                             // Element source: already promoted to a shared cell.
                             Some((None, cell.clone()))
                         } else if let Some(Some(source_name)) = bind_sources.get(i)
                             && !source_name.contains('\0')
                         {
-                            match self.env().get(source_name) {
-                                Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
+                            match self.env().get(source_name).map(Value::view) {
+                                Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                                 _ => Some((
                                     Some(source_name.clone()),
                                     crate::gc::Gc::new(std::sync::Mutex::new(v)),
@@ -988,46 +1021,48 @@ impl Interpreter {
                     String,
                     crate::gc::Gc<std::sync::Mutex<Value>>,
                 )> = Vec::new();
-                if let Some(Value::Hash(hash)) = self.env_mut().get_mut(&var_name) {
-                    let h = crate::gc::Gc::make_mut(hash);
-                    for (i, key) in keys.iter().enumerate() {
-                        let k = if slice_is_object_hash {
-                            runtime::utils::value_which_key(key)
-                        } else {
-                            key.to_string_value()
-                        };
-                        let v = if bind_mode {
-                            vals.get(i).cloned().unwrap_or(Value::Nil)
-                        } else {
-                            vals[i % vals.len()].clone()
-                        };
-                        if bind_mode
-                            && let Some(Some((source_install, cell))) = slice_bind_cells.get(i)
-                        {
-                            h.insert(k, Value::ContainerRef(cell.clone()));
-                            if let Some(source_name) = source_install {
-                                pending_source_cells.push((source_name.clone(), cell.clone()));
+                if let Some(entry) = self.env_mut().get_mut(&var_name) {
+                    let _ = entry.with_hash_mut(|hash| {
+                        let h = crate::gc::Gc::make_mut(hash);
+                        for (i, key) in keys.iter().enumerate() {
+                            let k = if slice_is_object_hash {
+                                runtime::utils::value_which_key(key)
+                            } else {
+                                key.to_string_value()
+                            };
+                            let v = if bind_mode {
+                                vals.get(i).cloned().unwrap_or(Value::NIL)
+                            } else {
+                                vals[i % vals.len()].clone()
+                            };
+                            if bind_mode
+                                && let Some(Some((source_install, cell))) = slice_bind_cells.get(i)
+                            {
+                                h.insert(k, Value::container_ref(cell.clone()));
+                                if let Some(source_name) = source_install {
+                                    pending_source_cells.push((source_name.clone(), cell.clone()));
+                                }
+                            } else {
+                                h.insert(k, v);
                             }
-                        } else {
-                            h.insert(k, v);
                         }
-                    }
-                    // Store original keys for object hashes (embedded in
-                    // HashData, COW-stable) after slice insert.
-                    if slice_is_object_hash {
-                        let orig = h
-                            .original_keys
-                            .get_or_insert_with(std::collections::HashMap::new);
-                        for key in keys.iter() {
-                            let wk = runtime::utils::value_which_key(key);
-                            orig.insert(wk, key.clone());
+                        // Store original keys for object hashes (embedded in
+                        // HashData, COW-stable) after slice insert.
+                        if slice_is_object_hash {
+                            let orig = h
+                                .original_keys
+                                .get_or_insert_with(std::collections::HashMap::new);
+                            for key in keys.iter() {
+                                let wk = runtime::utils::value_which_key(key);
+                                orig.insert(wk, key.clone());
+                            }
                         }
-                    }
+                    });
                 }
                 for (source_name, cell) in pending_source_cells {
                     // Bind the source variable to the same cell installed at
                     // the slice entry, so both sides alias one container.
-                    let cell_val = Value::ContainerRef(cell);
+                    let cell_val = Value::container_ref(cell);
                     self.set_env_with_main_alias(&source_name, cell_val.clone());
                     self.update_local_if_exists(code, &source_name, &cell_val);
                 }
@@ -1075,8 +1110,8 @@ impl Interpreter {
                 // key. (Fully unifying object-hash keying across construction,
                 // flatten, gist and comparison is a larger change.)
                 let use_which = is_object_hash
-                    && match &index_target {
-                        Some(Value::Hash(h)) => h.original_keys.is_some() || h.map.is_empty(),
+                    && match index_target.as_ref().map(Value::view) {
+                        Some(ValueView::Hash(h)) => h.original_keys.is_some() || h.map.is_empty(),
                         _ => true,
                     };
                 let key = if use_which {
@@ -1092,8 +1127,8 @@ impl Interpreter {
                 // below), so it must not be element-type-checked against the
                 // container type.
                 let target_is_quanthash = matches!(
-                    &index_target,
-                    Some(Value::Mix(..) | Value::Bag(..) | Value::Set(..))
+                    index_target.as_ref().map(Value::view),
+                    Some(ValueView::Mix(..) | ValueView::Bag(..) | ValueView::Set(..))
                 );
                 // A parameterized QuantHash (`BagHash[Int]`, `MixHash[Str]`, ...)
                 // constrains its *keys*: `%bh<foo> = 42` on a `BagHash[Int]` must
@@ -1117,7 +1152,7 @@ impl Interpreter {
                     // (IntStr in Raku) that satisfies a numeric key type, so only a
                     // string that does NOT coerce to the numeric type (`%bh<foo>`)
                     // is rejected.
-                    let allomorph_ok = matches!(&idx, Value::Str(s)
+                    let allomorph_ok = matches!(idx.view(), ValueView::Str(s)
                         if crate::runtime::str_numeric::parse_raku_str_to_numeric(s).is_some())
                         && matches!(
                             key_type,
@@ -1134,7 +1169,7 @@ impl Interpreter {
                 }
                 if let Some(constraint) = array_elem_constraint
                     && !target_is_quanthash
-                    && !matches!(val, Value::Nil)
+                    && !val.is_nil()
                     && !self.type_matches_value(&constraint, &val)
                     // For `$`-sigil variables holding a container (e.g. a `Hash $h`
                     // parameter), a container type constraint describes the whole
@@ -1173,8 +1208,9 @@ impl Interpreter {
                 let native_store_val = self.wrap_native_int_for_var(&var_name, val.clone());
                 // Resolve GenericRange with WhateverCode endpoints (e.g. @a[*-4 .. *-1] = ...)
                 let resolved_idx;
-                let idx_for_slice = if let Value::GenericRange { .. } = &idx {
-                    let array_len = if let Some(Value::Array(items, ..)) = self.env().get(&var_name)
+                let idx_for_slice = if let ValueView::GenericRange { .. } = idx.view() {
+                    let array_len = if let Some(ValueView::Array(items, ..)) =
+                        self.env().get(&var_name).map(Value::view)
                     {
                         items.len()
                     } else {
@@ -1198,7 +1234,7 @@ impl Interpreter {
                     && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
                 {
                     for v in rhs_values {
-                        if !matches!(v, Value::Nil) && !self.type_matches_value(&constraint, v) {
+                        if !v.is_nil() && !self.type_matches_value(&constraint, v) {
                             return Err(runtime::utils::type_check_element_typed_error(
                                 &var_name,
                                 &constraint,
@@ -1208,11 +1244,12 @@ impl Interpreter {
                     }
                 }
                 if let Some(current) = self.env().get(&var_name).cloned()
-                    && let Value::Mixin(inner, mixins) = current
+                    && let ValueView::Mixin(inner, mixins) = current.view()
                 {
+                    let (inner, mixins) = (inner.clone(), mixins.clone());
                     let mut updated_mixins = (*mixins).clone();
                     let mut assigned_object_slot = false;
-                    let delegated_attr_key = if matches!(&idx, Value::Str(_)) {
+                    let delegated_attr_key = if matches!(idx.view(), ValueView::Str(_)) {
                         self.delegated_mixin_attr_key(&updated_mixins, "ASSIGN-KEY")
                     } else {
                         self.delegated_mixin_attr_key(&updated_mixins, "ASSIGN-POS")
@@ -1246,7 +1283,7 @@ impl Interpreter {
                     if assigned_object_slot {
                         self.env_mut().insert(
                             var_name.clone(),
-                            Value::Mixin(inner, Arc::new(updated_mixins)),
+                            Value::mixin_parts(inner, Arc::new(updated_mixins)),
                         );
                         self.stack.push(val);
                         return Ok(());
@@ -1273,13 +1310,13 @@ impl Interpreter {
                 // source var after the write. `None` source-install means the
                 // cell is already in place.
                 let bind_cell: Option<BindSourceCell> = if bind_mode {
-                    if let Value::ContainerRef(cell) = &val {
+                    if let ValueView::ContainerRef(cell) = val.view() {
                         Some((None, cell.clone()))
                     } else if let Some(Some(source_name)) = bind_sources.first()
                         && !source_name.contains('\0')
                     {
-                        match self.env().get(source_name) {
-                            Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
+                        match self.env().get(source_name).map(Value::view) {
+                            Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                             _ => Some((
                                 Some(source_name.clone()),
                                 crate::gc::Gc::new(std::sync::Mutex::new(val.clone())),
@@ -1307,14 +1344,17 @@ impl Interpreter {
                 // A readonly `%`-var that was NOT `:=`-bound is a `constant %M`
                 // (an immutable Map): element assignment must die with
                 // X::Assignment::RO, mirroring raku and mutsu's own `constant @A`
-                // behavior. Only fire for plain `Value::Hash`; immutable
+                // behavior. Only fire for a plain Hash value; immutable
                 // Set/Bag/Mix containers keep their dedicated RO paths below.
                 if is_readonly_hash_var
                     && !is_bound_hash_var
-                    && matches!(self.env().get(&var_name), Some(Value::Hash(_)))
+                    && matches!(
+                        self.env().get(&var_name).map(Value::view),
+                        Some(ValueView::Hash(_))
+                    )
                 {
-                    let elem = match self.env().get(&var_name) {
-                        Some(Value::Hash(hd)) => hd.map.get(&key).cloned(),
+                    let elem = match self.env().get(&var_name).map(Value::view) {
+                        Some(ValueView::Hash(hd)) => hd.map.get(&key).cloned(),
                         _ => None,
                     };
                     return Err(match elem {
@@ -1333,7 +1373,12 @@ impl Interpreter {
                 let set_val_clone = self
                     .env()
                     .get(&var_name)
-                    .filter(|v| matches!(v, Value::Set(..) | Value::Bag(..) | Value::Mix(..)))
+                    .filter(|v| {
+                        matches!(
+                            v.view(),
+                            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+                        )
+                    })
                     .cloned();
                 // The subscript key is checked against the element (keyof) type.
                 // For Set/Bag that equals `value_type`; for Mix the keyof lives in
@@ -1368,7 +1413,7 @@ impl Interpreter {
                     attrs.insert("got".to_string(), idx.clone());
                     attrs.insert(
                         "expected".to_string(),
-                        Value::Package(crate::symbol::Symbol::intern(&elem_type)),
+                        Value::package(crate::symbol::Symbol::intern(&elem_type)),
                     );
                     let ex = Value::make_instance(
                         crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
@@ -1383,11 +1428,11 @@ impl Interpreter {
                 // before element assignment so hash operations work correctly.
                 // But if it inherits from an immutable type (Set, Bag, Mix),
                 // throw X::Assignment::RO instead.
-                if let Some(Value::Instance {
+                if let Some(ValueView::Instance {
                     class_name,
                     attributes,
                     ..
-                }) = self.env().get(&var_name)
+                }) = self.env().get(&var_name).map(Value::view)
                     && self.is_container_subclass(&class_name.resolve())
                 {
                     let cn = class_name.resolve();
@@ -1407,8 +1452,8 @@ impl Interpreter {
                     if let Some(type_name) = effective_type
                         && matches!(type_name, "MixHash" | "BagHash" | "SetHash")
                         && matches!(
-                            self.env().get(&var_name),
-                            Some(Value::Nil) | Some(Value::Package(_)) | None
+                            self.env().get(&var_name).map(Value::view),
+                            Some(ValueView::Nil) | Some(ValueView::Package(_)) | None
                         )
                     {
                         let new_container = match type_name {
@@ -1422,10 +1467,10 @@ impl Interpreter {
                             }
                             "BagHash" => {
                                 let mut counts = HashMap::new();
-                                if let Value::Int(n) = &val
-                                    && *n > 0
+                                if let ValueView::Int(n) = val.view()
+                                    && n > 0
                                 {
-                                    counts.insert(key.clone(), *n);
+                                    counts.insert(key.clone(), n);
                                 }
                                 Value::bag_hash(counts)
                             }
@@ -1434,7 +1479,7 @@ impl Interpreter {
                                 if val.truthy() {
                                     items.insert(key.clone());
                                 }
-                                Value::Set(
+                                Value::set_parts(
                                     crate::gc::Gc::new(crate::value::SetData::new(items)),
                                     true,
                                 )
@@ -1445,7 +1490,7 @@ impl Interpreter {
                         // A SetHash element assignment evaluates to the key's Bool
                         // existence (`$sh<k> = 2` is `Bool::True`), not the RHS.
                         let result = if type_name == "SetHash" {
-                            Value::Bool(val.truthy())
+                            Value::truth(val.truthy())
                         } else {
                             val.clone()
                         };
@@ -1458,11 +1503,11 @@ impl Interpreter {
                     }
                 }
                 if let Some(container) = self.env_root_descended_mut(&var_name) {
-                    match *container {
-                        Value::Hash(ref mut hash) => {
+                    let handled_as_hash = container
+                        .with_hash_mut(|hash| {
                             let is_self_hash_ref = matches!(
-                                &val,
-                                Value::Hash(source_hash) if crate::gc::Gc::ptr_eq(hash, source_hash)
+                                val.view(),
+                                ValueView::Hash(source_hash) if crate::gc::Gc::ptr_eq(hash, source_hash)
                             );
                             // Use in-place mutation instead of Arc::make_mut when the
                             // hash is shared (strong_count > 1) AND the variable is a
@@ -1500,7 +1545,7 @@ impl Interpreter {
                                 // Reads decont at `resolve_hash_entry`; writes
                                 // go through `hash_insert_through`.
                                 hd.map
-                                    .insert(key.clone(), Value::ContainerRef(cell.clone()));
+                                    .insert(key.clone(), Value::container_ref(cell.clone()));
                                 if let Some(source_name) = source_install {
                                     pending_source_cell = Some((source_name.clone(), cell.clone()));
                                 }
@@ -1522,21 +1567,23 @@ impl Interpreter {
                                     .get_or_insert_with(std::collections::HashMap::new)
                                     .insert(key.clone(), idx.clone());
                             }
-                        }
-                        Value::Array(..) => {
-                            if has_declared_shape
-                                || crate::runtime::utils::is_shaped_array(container)
-                            {
-                                if bind_mode && is_bound_index {
-                                    return Err(RuntimeError::assignment_ro(None));
-                                }
-                                Self::assign_array_multidim(
-                                    container,
-                                    std::slice::from_ref(&idx),
-                                    val.clone(),
-                                )?;
-                            } else if let Some((slice_indices, vals)) = &range_slice {
-                                if let Value::Array(items, ..) = container {
+                        })
+                        .is_some();
+                    if handled_as_hash {
+                        // Handled by the Hash arm above.
+                    } else if matches!(container.view(), ValueView::Array(..)) {
+                        if has_declared_shape || crate::runtime::utils::is_shaped_array(container) {
+                            if bind_mode && is_bound_index {
+                                return Err(RuntimeError::assignment_ro(None));
+                            }
+                            Self::assign_array_multidim(
+                                container,
+                                std::slice::from_ref(&idx),
+                                val.clone(),
+                            )?;
+                        } else if let Some((slice_indices, vals)) = &range_slice {
+                            container
+                                .with_array_mut(|items, _| -> Result<(), RuntimeError> {
                                     let arr = crate::gc::Gc::make_mut(items);
                                     if let Some(max_idx) = slice_indices.last().copied()
                                         && max_idx >= arr.len()
@@ -1544,25 +1591,28 @@ impl Interpreter {
                                         Self::autoviv_resize(
                                             arr,
                                             max_idx + 1,
-                                            Value::Package(Symbol::intern("Any")),
+                                            Value::package(Symbol::intern("Any")),
                                         )?;
                                     }
-                                }
-                                for (offset, i) in slice_indices.iter().enumerate() {
-                                    let key = Value::Int(*i as i64);
-                                    let v = vals.get(offset).cloned().unwrap_or(Value::Nil);
-                                    Self::assign_array_multidim(
-                                        container,
-                                        std::slice::from_ref(&key),
-                                        v,
-                                    )?;
-                                    range_initialized_marks.push(Self::encode_bound_index(&key));
-                                }
-                            } else if let Some(i) = Self::index_to_usize(&idx) {
-                                if let Value::Array(items, ..) = container {
+                                    Ok(())
+                                })
+                                .transpose()?;
+                            for (offset, i) in slice_indices.iter().enumerate() {
+                                let key = Value::int(*i as i64);
+                                let v = vals.get(offset).cloned().unwrap_or(Value::NIL);
+                                Self::assign_array_multidim(
+                                    container,
+                                    std::slice::from_ref(&key),
+                                    v,
+                                )?;
+                                range_initialized_marks.push(Self::encode_bound_index(&key));
+                            }
+                        } else if let Some(i) = Self::index_to_usize(&idx) {
+                            container
+                                    .with_array_mut(|items, _| -> Result<(), RuntimeError> {
                                     let is_self_array_ref = matches!(
-                                        &val,
-                                        Value::Array(source_items, ..) if crate::gc::Gc::ptr_eq(items, source_items)
+                                        val.view(),
+                                        ValueView::Array(source_items, ..) if crate::gc::Gc::ptr_eq(items, source_items)
                                     );
                                     // Use in-place mutation when the array is shared
                                     // (strong_count > 1) to preserve identity semantics
@@ -1584,7 +1634,7 @@ impl Interpreter {
                                         // back-references). Reads decont at
                                         // `resolve_array_entry`; writes go
                                         // through the cell arm below.
-                                        arr[i] = Value::ContainerRef(cell.clone());
+                                        arr[i] = Value::container_ref(cell.clone());
                                         stored_bind_cell = true;
                                         if let Some(source_name) = source_install {
                                             pending_source_cell =
@@ -1600,7 +1650,7 @@ impl Interpreter {
                                             val.clone(),
                                             source_index,
                                         );
-                                    } else if let Value::ContainerRef(cell) = &arr[i] {
+                                    } else if let ValueView::ContainerRef(cell) = arr[i].view() {
                                         if elem_is_value_share {
                                             // Slice 2b: a `=`-shared element
                                             // reassigned with a non-share value
@@ -1625,127 +1675,128 @@ impl Interpreter {
                                             native_store_val.clone()
                                         };
                                     }
-                                }
-                            } else if let Value::Int(i) = &idx
-                                && *i < 0
-                            {
-                                // Negative index from WhateverCode resolution
-                                // (e.g. @arr[*-1] = 42 on empty array)
-                                return Err(Self::make_out_of_range_error(*i));
-                            } else {
-                                return Err(RuntimeError::new("Index out of bounds"));
-                            }
-                            self.mark_initialized_index(&var_name, encoded_idx.clone());
-                            // A cell-bound element does not need the bound-index
-                            // side table — the `ContainerRef` cell is the alias
-                            // and write-through happens via the cell.
-                            if bind_mode && !stored_bind_cell {
-                                self.mark_bound_index(&var_name, encoded_idx.clone());
-                            }
-                        }
-                        Value::Set(ref mut set, is_mutable) => {
-                            if !is_mutable {
-                                return Err(RuntimeError::assignment_ro(Some("Set")));
-                            }
-                            let s = crate::gc::Gc::make_mut(set);
-                            let present = val.truthy();
-                            if present {
-                                s.insert(key.clone());
-                                Self::record_quanthash_object_key(&mut s.original_keys, &key, &idx);
-                            } else {
-                                s.remove(&key);
-                                Self::forget_quanthash_object_key(&mut s.original_keys, &key);
-                            }
-                            setty_bool_result = Some(Value::Bool(present));
-                        }
-                        Value::Bag(ref mut bag, is_mutable) => {
-                            if !is_mutable {
-                                return Err(RuntimeError::assignment_ro(Some("Bag")));
-                            }
-                            let b = crate::gc::Gc::make_mut(bag);
-                            let count = Self::bag_assignment_count(&val)?;
-                            if count == num_bigint::BigInt::from(0) {
-                                b.remove(&key);
-                                Self::forget_quanthash_object_key(&mut b.original_keys, &key);
-                            } else {
-                                b.insert(key.clone(), count);
-                                Self::record_quanthash_object_key(&mut b.original_keys, &key, &idx);
-                            }
-                        }
-                        Value::Mix(ref mut mix, is_mutable) => {
-                            if !is_mutable {
-                                return Err(RuntimeError::assignment_ro(Some("Mix")));
-                            }
-                            let m = crate::gc::Gc::make_mut(mix);
-                            let weight = Self::mix_assignment_weight(&val)?;
-                            if weight == 0.0 {
-                                m.remove(&key);
-                                Self::forget_quanthash_object_key(&mut m.original_keys, &key);
-                            } else {
-                                m.insert(key.clone(), weight);
-                                Self::record_quanthash_object_key(&mut m.original_keys, &key, &idx);
-                            }
-                        }
-                        // Autovivify typed containers: MixHash, BagHash, SetHash
-                        Value::Package(sym)
-                            if matches!(
-                                sym.resolve().as_str(),
-                                "MixHash" | "BagHash" | "SetHash"
-                            ) =>
+                                    Ok(())
+                                })
+                                    .transpose()?;
+                        } else if let ValueView::Int(i) = idx.view()
+                            && i < 0
                         {
-                            let type_name = sym.resolve();
-                            match type_name.as_str() {
-                                "MixHash" => {
-                                    let mut weights = HashMap::new();
-                                    let weight = Self::mix_assignment_weight(&val)?;
-                                    if weight != 0.0 {
-                                        weights.insert(key.clone(), weight);
-                                    }
-                                    *container = Value::mix_hash(weights);
-                                }
-                                "BagHash" => {
-                                    let mut counts = HashMap::new();
-                                    let count = Self::bag_assignment_count(&val)?;
-                                    if num_traits::Signed::is_positive(&count) {
-                                        counts.insert(key.clone(), count);
-                                    }
-                                    *container = Value::bag_hash_big(counts);
-                                }
-                                "SetHash" => {
-                                    let mut items = std::collections::HashSet::new();
-                                    if val.truthy() {
-                                        items.insert(key.clone());
-                                    }
-                                    *container = Value::Set(
-                                        crate::gc::Gc::new(crate::value::SetData::new(items)),
-                                        true,
-                                    );
-                                }
-                                _ => unreachable!(),
-                            }
+                            // Negative index from WhateverCode resolution
+                            // (e.g. @arr[*-1] = 42 on empty array)
+                            return Err(Self::make_out_of_range_error(i));
+                        } else {
+                            return Err(RuntimeError::new("Index out of bounds"));
                         }
-                        _ => {
-                            // Autovivify Nil/uninitialized container: pick
-                            // Array if subscript was positional, else Hash.
-                            if (var_name.starts_with('@')
-                                || (is_positional && !var_name.starts_with('%')))
-                                && let Some(i) = Self::index_to_usize(&idx)
-                            {
-                                let mut arr = vec![Value::Package(Symbol::intern("Any")); i + 1];
-                                arr[i] = val.clone();
-                                *container = Value::real_array_initialized_at(arr, i);
-                            } else {
-                                let mut hash = std::collections::HashMap::new();
-                                hash.insert(key.clone(), val.clone());
-                                let mut hash_val = Value::hash(hash);
-                                if use_which {
-                                    let mut orig = HashMap::new();
-                                    orig.insert(key.clone(), idx.clone());
-                                    hash_val =
-                                        runtime::utils::set_hash_original_keys(hash_val, orig);
+                        self.mark_initialized_index(&var_name, encoded_idx.clone());
+                        // A cell-bound element does not need the bound-index
+                        // side table — the `ContainerRef` cell is the alias
+                        // and write-through happens via the cell.
+                        if bind_mode && !stored_bind_cell {
+                            self.mark_bound_index(&var_name, encoded_idx.clone());
+                        }
+                    } else if let ValueView::Package(sym) = container.view()
+                        && matches!(sym.resolve().as_str(), "MixHash" | "BagHash" | "SetHash")
+                    {
+                        // Autovivify typed containers: MixHash, BagHash, SetHash
+                        let type_name = sym.resolve();
+                        match type_name.as_str() {
+                            "MixHash" => {
+                                let mut weights = HashMap::new();
+                                let weight = Self::mix_assignment_weight(&val)?;
+                                if weight != 0.0 {
+                                    weights.insert(key.clone(), weight);
                                 }
-                                *container = hash_val;
+                                *container = Value::mix_hash(weights);
                             }
+                            "BagHash" => {
+                                let mut counts = HashMap::new();
+                                let count = Self::bag_assignment_count(&val)?;
+                                if num_traits::Signed::is_positive(&count) {
+                                    counts.insert(key.clone(), count);
+                                }
+                                *container = Value::bag_hash_big(counts);
+                            }
+                            "SetHash" => {
+                                let mut items = std::collections::HashSet::new();
+                                if val.truthy() {
+                                    items.insert(key.clone());
+                                }
+                                *container = Value::set_parts(
+                                    crate::gc::Gc::new(crate::value::SetData::new(items)),
+                                    true,
+                                );
+                            }
+                            _ => unreachable!(),
+                        }
+                    } else if let Some(res) = container.with_set_mut(|set, is_mutable| {
+                        if !*is_mutable {
+                            return Err(RuntimeError::assignment_ro(Some("Set")));
+                        }
+                        let s = crate::gc::Gc::make_mut(set);
+                        let present = val.truthy();
+                        if present {
+                            s.insert(key.clone());
+                            Self::record_quanthash_object_key(&mut s.original_keys, &key, &idx);
+                        } else {
+                            s.remove(&key);
+                            Self::forget_quanthash_object_key(&mut s.original_keys, &key);
+                        }
+                        setty_bool_result = Some(Value::truth(present));
+                        Ok(())
+                    }) {
+                        res?;
+                    } else if let Some(res) = container.with_bag_mut(|bag, is_mutable| {
+                        if !*is_mutable {
+                            return Err(RuntimeError::assignment_ro(Some("Bag")));
+                        }
+                        let b = crate::gc::Gc::make_mut(bag);
+                        let count = Self::bag_assignment_count(&val)?;
+                        if count == num_bigint::BigInt::from(0) {
+                            b.remove(&key);
+                            Self::forget_quanthash_object_key(&mut b.original_keys, &key);
+                        } else {
+                            b.insert(key.clone(), count);
+                            Self::record_quanthash_object_key(&mut b.original_keys, &key, &idx);
+                        }
+                        Ok(())
+                    }) {
+                        res?;
+                    } else if let Some(res) = container.with_mix_mut(|mix, is_mutable| {
+                        if !*is_mutable {
+                            return Err(RuntimeError::assignment_ro(Some("Mix")));
+                        }
+                        let m = crate::gc::Gc::make_mut(mix);
+                        let weight = Self::mix_assignment_weight(&val)?;
+                        if weight == 0.0 {
+                            m.remove(&key);
+                            Self::forget_quanthash_object_key(&mut m.original_keys, &key);
+                        } else {
+                            m.insert(key.clone(), weight);
+                            Self::record_quanthash_object_key(&mut m.original_keys, &key, &idx);
+                        }
+                        Ok(())
+                    }) {
+                        res?;
+                    } else {
+                        // Autovivify Nil/uninitialized container: pick
+                        // Array if subscript was positional, else Hash.
+                        if (var_name.starts_with('@')
+                            || (is_positional && !var_name.starts_with('%')))
+                            && let Some(i) = Self::index_to_usize(&idx)
+                        {
+                            let mut arr = vec![Value::package(Symbol::intern("Any")); i + 1];
+                            arr[i] = val.clone();
+                            *container = Value::real_array_initialized_at(arr, i);
+                        } else {
+                            let mut hash = std::collections::HashMap::new();
+                            hash.insert(key.clone(), val.clone());
+                            let mut hash_val = Value::hash(hash);
+                            if use_which {
+                                let mut orig = HashMap::new();
+                                orig.insert(key.clone(), idx.clone());
+                                hash_val = runtime::utils::set_hash_original_keys(hash_val, orig);
+                            }
+                            *container = hash_val;
                         }
                     }
                 } else {
@@ -1753,7 +1804,7 @@ impl Interpreter {
                     if (var_name.starts_with('@') || (is_positional && !var_name.starts_with('%')))
                         && let Some(i) = Self::index_to_usize(&idx)
                     {
-                        let mut arr = vec![Value::Package(Symbol::intern("Any")); i + 1];
+                        let mut arr = vec![Value::package(Symbol::intern("Any")); i + 1];
                         arr[i] = val.clone();
                         self.env_mut()
                             .insert(var_name.clone(), Value::real_array_initialized_at(arr, i));
@@ -1775,7 +1826,7 @@ impl Interpreter {
                 if let Some((source_name, cell)) = pending_source_cell {
                     // Bind the source variable to the same cell installed at the
                     // element, so both sides alias one container.
-                    let cell_val = Value::ContainerRef(cell);
+                    let cell_val = Value::container_ref(cell);
                     self.set_env_with_main_alias(&source_name, cell_val.clone());
                     self.update_local_if_exists(code, &source_name, &cell_val);
                 }
@@ -1864,9 +1915,9 @@ impl Interpreter {
                 .get_env_with_main_alias(&var_name)
                 .or_else(|| self.env().get(&original_var_name).cloned());
             if let Some(ref container) = current {
-                let new_arc_ptr = match container {
-                    Value::Array(arc, _) => Some(crate::gc::Gc::as_ptr(arc) as usize),
-                    Value::Hash(arc) => Some(crate::gc::Gc::as_ptr(arc) as usize),
+                let new_arc_ptr = match container.view() {
+                    ValueView::Array(arc, _) => Some(crate::gc::Gc::as_ptr(arc) as usize),
+                    ValueView::Hash(arc) => Some(crate::gc::Gc::as_ptr(arc) as usize),
                     _ => None,
                 };
                 if let Some(new_ptr) = new_arc_ptr {
@@ -1874,12 +1925,13 @@ impl Interpreter {
                     if new_ptr != old_ptr {
                         for local in self.locals.iter_mut() {
                             // Only update refs that pointed to the OLD container.
-                            if let Value::HashEntryRef { hash, .. } = local
-                                && crate::gc::Gc::as_ptr(hash) as usize == old_ptr
-                                && let Value::Hash(new_arc) = container
-                            {
-                                *hash = new_arc.clone();
-                            }
+                            local.with_hash_entry_ref_mut(|hash, _| {
+                                if crate::gc::Gc::as_ptr(hash) as usize == old_ptr
+                                    && let ValueView::Hash(new_arc) = container.view()
+                                {
+                                    *hash = new_arc.clone();
+                                }
+                            });
                         }
                     }
                 }
@@ -1920,7 +1972,7 @@ impl Interpreter {
                 Some('%') => format!("%*{}", &raw_key[1..]),
                 _ => format!("*{raw_key}"),
             };
-            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let val = self.stack.pop().unwrap_or(Value::NIL);
             let val = if env_key.starts_with('@') {
                 runtime::coerce_to_array(val)
             } else if env_key.starts_with('%') {
@@ -1948,7 +2000,7 @@ impl Interpreter {
             raw_key.to_string()
         };
 
-        let val = self.stack.pop().unwrap_or(Value::Nil);
+        let val = self.stack.pop().unwrap_or(Value::NIL);
         if let Some(slot) = self.find_local_slot(code, &resolved_name) {
             self.stack.push(val);
             self.exec_assign_expr_local_op(code, slot as u32)
@@ -1963,7 +2015,7 @@ impl Interpreter {
 
             self.check_readonly_for_modify(&resolved_name)?;
             if let Some(default) = self.var_default(&resolved_name)
-                && matches!(val, Value::Nil)
+                && val.is_nil()
             {
                 val = default.clone();
             }
@@ -1974,11 +2026,11 @@ impl Interpreter {
                 && !resolved_name.starts_with('@')
                 && !resolved_name.starts_with('%')
             {
-                if matches!(val, Value::Nil) {
+                if val.is_nil() {
                     if constraint != "Mu" {
                         let nominal =
                             loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                        val = Value::Package(Symbol::intern(&nominal));
+                        val = Value::package(Symbol::intern(&nominal));
                     }
                 } else if !self.type_matches_value(&constraint, &val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
@@ -1987,7 +2039,7 @@ impl Interpreter {
                         &val,
                     ));
                 }
-                if !matches!(val, Value::Nil | Value::Package(_)) {
+                if !matches!(val.view(), ValueView::Nil | ValueView::Package(_)) {
                     val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
                 }
             }
@@ -2010,20 +2062,20 @@ impl Interpreter {
             let tc = loan_env!(self, var_type_constraint(&var_name));
             Self::native_fill_for_constraint(tc.as_deref())
         };
-        let inner_idx = self.stack.pop().unwrap_or(Value::Nil);
-        let outer_idx = self.stack.pop().unwrap_or(Value::Nil);
-        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
+        let inner_idx = self.stack.pop().unwrap_or(Value::NIL);
+        let outer_idx = self.stack.pop().unwrap_or(Value::NIL);
+        let raw_val = self.stack.pop().unwrap_or(Value::NIL);
         // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
-        let val = match raw_val {
-            Value::Pair(ref name, ref payload) if name == "__mutsu_bind_index_value" => {
-                match payload.as_ref() {
-                    Value::Array(items, ..) if !items.is_empty() => {
-                        items.first().cloned().unwrap_or(Value::Nil)
+        let val = match raw_val.view() {
+            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => {
+                match payload.view() {
+                    ValueView::Array(items, ..) if !items.is_empty() => {
+                        items.first().cloned().unwrap_or(Value::NIL)
                     }
-                    other => other.clone(),
+                    _ => payload.clone(),
                 }
             }
-            other => other,
+            _ => raw_val,
         };
 
         // Junction / slice outer subscript (`%h<x>{any('p','q')} = v`,
@@ -2031,21 +2083,26 @@ impl Interpreter {
         // handles a single scalar outer key, so re-dispatch for each expanded
         // key (previously the junction/array was stringified into one garbage
         // entry, so a later read of any real key returned Any).
-        if matches!(outer_idx, Value::Junction { .. } | Value::Array(..)) {
-            let outer_keys: Vec<Value> = match &outer_idx {
-                Value::Junction { values, .. } => values.as_ref().clone(),
-                Value::Array(a, ..) => a.items.to_vec(),
+        if matches!(
+            outer_idx.view(),
+            ValueView::Junction { .. } | ValueView::Array(..)
+        ) {
+            let outer_keys: Vec<Value> = match outer_idx.view() {
+                ValueView::Junction { values, .. } => values.as_ref().clone(),
+                ValueView::Array(a, ..) => a.items.to_vec(),
                 _ => unreachable!(),
             };
             // A scalar RHS goes to every junction key; a slice/junction RHS
             // pairs element-wise.
-            let vals: Vec<Value> = match (&outer_idx, &val) {
-                (Value::Junction { .. }, Value::Junction { values: jv, .. }) => jv.as_ref().clone(),
-                (Value::Junction { .. }, _) => vec![val.clone(); outer_keys.len()],
+            let vals: Vec<Value> = match (outer_idx.view(), val.view()) {
+                (ValueView::Junction { .. }, ValueView::Junction { values: jv, .. }) => {
+                    jv.as_ref().clone()
+                }
+                (ValueView::Junction { .. }, _) => vec![val.clone(); outer_keys.len()],
                 _ => self.assignment_rhs_values(&val)?,
             };
             for (i, ok) in outer_keys.into_iter().enumerate() {
-                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                let v = vals.get(i).cloned().unwrap_or(Value::NIL);
                 // Re-dispatch with a single scalar outer key. Stack order
                 // (bottom→top): value, outer_idx, inner_idx.
                 self.stack.push(v);
@@ -2070,10 +2127,10 @@ impl Interpreter {
         // (`to_string_value` on the unresolved WhateverCode yields a non-numeric
         // key, so the assignment was silently dropped.) `outer_idx` is the trailing
         // `[...]` subscript; `inner_key` is the container it indexes into.
-        let outer_idx = if matches!(outer_idx, Value::Sub(_)) {
-            let inner_container: Option<Value> = match self.env().get(&var_name) {
-                Some(Value::Hash(map)) => map.get(&inner_key).cloned(),
-                Some(Value::Array(arr, ..)) => inner_key
+        let outer_idx = if matches!(outer_idx.view(), ValueView::Sub(_)) {
+            let inner_container: Option<Value> = match self.env().get(&var_name).map(Value::view) {
+                Some(ValueView::Hash(map)) => map.get(&inner_key).cloned(),
+                Some(ValueView::Array(arr, ..)) => inner_key
                     .parse::<usize>()
                     .ok()
                     .and_then(|i| arr.items.get(i).cloned()),
@@ -2124,66 +2181,87 @@ impl Interpreter {
         // Drop the locals copy first so the Arc refcount is 1 (avoids
         // unnecessary cloning in Arc::make_mut).
         if let Some(slot) = self.find_local_slot(code, &var_name)
-            && matches!(self.locals[slot], Value::Array(..))
+            && matches!(self.locals[slot].view(), ValueView::Array(..))
         {
-            self.locals[slot] = Value::Nil;
+            self.locals[slot] = Value::NIL;
         }
-        if let Some(Value::Array(outer_arr, _kind)) = self.env_root_descended_mut(&var_name)
-            && let Ok(inner_i) = inner_key.parse::<usize>()
-        {
-            let arr = crate::gc::Gc::make_mut(outer_arr);
-            Self::autoviv_resize(arr, inner_i + 1, native_fill.clone())?;
-            // Autovivify the slot if it's not already a container. A
-            // `:=`-bound element is a shared `ContainerRef` cell holding a
-            // container — descend through it (below) instead of clobbering it.
-            let needs_viv = !matches!(
-                &arr[inner_i],
-                Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_)
-            );
-            if needs_viv {
-                arr[inner_i] = if outer_positional {
-                    Value::real_array(Vec::new())
-                } else {
-                    Value::hash(std::collections::HashMap::new())
-                };
-            }
-            match &mut arr[inner_i] {
-                // A bound element holds a shared cell: write through it so the
-                // mutation reaches the aliased container (`@h[i] := @inner;
-                // @h[i][j] = v` updates `@inner[j]`).
-                Value::ContainerRef(_) => {
-                    Self::assign_into_nested_container(&mut arr[inner_i], &outer_key, val.clone())?;
-                }
-                Value::Array(inner_arr, _) => {
-                    if let Ok(j) = outer_key.parse::<usize>() {
-                        // Use interior mutation when the inner array is shared
-                        // (e.g., by a `ContainerRef` cell from := binding).
-                        if crate::gc::Gc::strong_count(inner_arr) > 1 {
-                            // SAFETY: aliased in-place mutation of a shared array
-                            // (strong_count > 1); see `arc_contents_mut`.
-                            let v = &mut unsafe { crate::value::gc_contents_mut(inner_arr) }.items;
-                            Self::autoviv_resize(v, j + 1, native_fill.clone())?;
-                            Value::assign_element_slot(&mut v[j], val.clone());
+        if let Some(handled) = self
+            .env_root_descended_mut(&var_name)
+            .and_then(|container| {
+                container.with_array_mut(|outer_arr, _kind| -> Result<bool, RuntimeError> {
+                    let Ok(inner_i) = inner_key.parse::<usize>() else {
+                        return Ok(false);
+                    };
+                    let arr = crate::gc::Gc::make_mut(outer_arr);
+                    Self::autoviv_resize(arr, inner_i + 1, native_fill.clone())?;
+                    // Autovivify the slot if it's not already a container. A
+                    // `:=`-bound element is a shared `ContainerRef` cell holding a
+                    // container — descend through it (below) instead of clobbering it.
+                    let needs_viv = !matches!(
+                        arr[inner_i].view(),
+                        ValueView::Array(..) | ValueView::Hash(..) | ValueView::ContainerRef(_)
+                    );
+                    if needs_viv {
+                        arr[inner_i] = if outer_positional {
+                            Value::real_array(Vec::new())
                         } else {
-                            let inner = crate::gc::Gc::make_mut(inner_arr);
-                            Self::autoviv_resize(inner, j + 1, native_fill.clone())?;
-                            Value::assign_element_slot(&mut inner[j], val.clone());
-                        }
+                            Value::hash(std::collections::HashMap::new())
+                        };
                     }
-                }
-                Value::Hash(inner_hash) => {
-                    if crate::gc::Gc::strong_count_of(inner_hash) > 1 {
-                        // SAFETY: aliased in-place mutation of a shared hash
-                        // (strong_count > 1); see `arc_contents_mut`.
-                        let hd = unsafe { crate::value::gc_contents_mut(inner_hash) };
-                        Value::hash_insert_through(&mut hd.map, outer_key.clone(), val.clone());
+                    // A bound element holds a shared cell: write through it so the
+                    // mutation reaches the aliased container (`@h[i] := @inner;
+                    // @h[i][j] = v` updates `@inner[j]`).
+                    if matches!(arr[inner_i].view(), ValueView::ContainerRef(_)) {
+                        Self::assign_into_nested_container(
+                            &mut arr[inner_i],
+                            &outer_key,
+                            val.clone(),
+                        )?;
+                    } else if let Some(r) =
+                        arr[inner_i].with_array_mut(|inner_arr, _| -> Result<(), RuntimeError> {
+                            if let Ok(j) = outer_key.parse::<usize>() {
+                                // Use interior mutation when the inner array is shared
+                                // (e.g., by a `ContainerRef` cell from := binding).
+                                if crate::gc::Gc::strong_count(inner_arr) > 1 {
+                                    // SAFETY: aliased in-place mutation of a shared array
+                                    // (strong_count > 1); see `arc_contents_mut`.
+                                    let v =
+                                        &mut unsafe { crate::value::gc_contents_mut(inner_arr) }
+                                            .items;
+                                    Self::autoviv_resize(v, j + 1, native_fill.clone())?;
+                                    Value::assign_element_slot(&mut v[j], val.clone());
+                                } else {
+                                    let inner = crate::gc::Gc::make_mut(inner_arr);
+                                    Self::autoviv_resize(inner, j + 1, native_fill.clone())?;
+                                    Value::assign_element_slot(&mut inner[j], val.clone());
+                                }
+                            }
+                            Ok(())
+                        })
+                    {
+                        r?;
                     } else {
-                        let h = crate::gc::Gc::make_mut(inner_hash);
-                        Value::hash_insert_through(h, outer_key.clone(), val.clone());
+                        let _ = arr[inner_i].with_hash_mut(|inner_hash| {
+                            if crate::gc::Gc::strong_count_of(inner_hash) > 1 {
+                                // SAFETY: aliased in-place mutation of a shared hash
+                                // (strong_count > 1); see `arc_contents_mut`.
+                                let hd = unsafe { crate::value::gc_contents_mut(inner_hash) };
+                                Value::hash_insert_through(
+                                    &mut hd.map,
+                                    outer_key.clone(),
+                                    val.clone(),
+                                );
+                            } else {
+                                let h = crate::gc::Gc::make_mut(inner_hash);
+                                Value::hash_insert_through(h, outer_key.clone(), val.clone());
+                            }
+                        });
                     }
-                }
-                _ => {}
-            }
+                    Ok(true)
+                })
+            })
+            && handled?
+        {
             if let Some(updated) = self.get_env_with_main_alias(&var_name) {
                 self.update_local_if_exists(code, &var_name, &updated);
             }
@@ -2196,36 +2274,41 @@ impl Interpreter {
         // This avoids unnecessary cloning in Arc::make_mut which would
         // change the pointer and break .WHICH identity stability.
         if let Some(slot) = self.find_local_slot(code, &var_name) {
-            self.locals[slot] = Value::Nil;
+            self.locals[slot] = Value::NIL;
         }
-        if let Some(Value::Hash(outer_hash)) = self.env_root_descended_mut(&var_name) {
-            // At refcount 1, write in place via the raw pointer (same pattern
-            // as the bound-cell Array arm below): `Arc::make_mut` relocates a
-            // Weak-guarded (metadata-bearing, e.g. object-hash / `is default`)
-            // hash even when it is the only strong holder, which would break
-            // `.WHICH` pointer identity. When shared, keep the make_mut COW
-            // detach. The cast MUST target `HashData` (not its inner map) —
-            // see docs/hashdata-migration-plan.md "Latent UB found & fixed".
-            let oh: &mut crate::value::HashData = if crate::gc::Gc::strong_count_of(outer_hash) == 1
-            {
-                // SAFETY: single strong holder; in-place avoids the make_mut
-                // relocation that would break `.WHICH` identity. See
-                // `arc_contents_mut`.
-                unsafe { crate::value::gc_contents_mut(outer_hash) }
-            } else {
-                crate::gc::Gc::make_mut(outer_hash)
-            };
-            // Vivify the missing entry as Array if the OUTER (second) subscript
-            // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
-            let inner_val = oh.entry(inner_key).or_insert_with(|| {
-                if outer_positional {
-                    Value::real_array(Vec::new())
-                } else {
-                    Value::hash(std::collections::HashMap::new())
-                }
-            });
-            Self::assign_into_nested_container(inner_val, &outer_key, val.clone())?;
-        }
+        self.env_root_descended_mut(&var_name)
+            .and_then(|container| {
+                container.with_hash_mut(|outer_hash| -> Result<(), RuntimeError> {
+                    // At refcount 1, write in place via the raw pointer (same pattern
+                    // as the bound-cell Array arm below): `Arc::make_mut` relocates a
+                    // Weak-guarded (metadata-bearing, e.g. object-hash / `is default`)
+                    // hash even when it is the only strong holder, which would break
+                    // `.WHICH` pointer identity. When shared, keep the make_mut COW
+                    // detach. The cast MUST target `HashData` (not its inner map) —
+                    // see docs/hashdata-migration-plan.md "Latent UB found & fixed".
+                    let oh: &mut crate::value::HashData =
+                        if crate::gc::Gc::strong_count_of(outer_hash) == 1 {
+                            // SAFETY: single strong holder; in-place avoids the make_mut
+                            // relocation that would break `.WHICH` identity. See
+                            // `arc_contents_mut`.
+                            unsafe { crate::value::gc_contents_mut(outer_hash) }
+                        } else {
+                            crate::gc::Gc::make_mut(outer_hash)
+                        };
+                    // Vivify the missing entry as Array if the OUTER (second) subscript
+                    // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
+                    let inner_val = oh.entry(inner_key).or_insert_with(|| {
+                        if outer_positional {
+                            Value::real_array(Vec::new())
+                        } else {
+                            Value::hash(std::collections::HashMap::new())
+                        }
+                    });
+                    Self::assign_into_nested_container(inner_val, &outer_key, val.clone())?;
+                    Ok(())
+                })
+            })
+            .transpose()?;
         if let Some(updated) = self.get_env_with_main_alias(&var_name) {
             self.update_local_if_exists(code, &var_name, &updated);
         }
@@ -2243,38 +2326,39 @@ impl Interpreter {
         outer_key: &str,
         val: Value,
     ) -> Result<(), RuntimeError> {
-        match target {
-            Value::ContainerRef(cell) => {
-                let mut guard = cell.lock().unwrap();
-                Self::assign_into_nested_container(&mut guard, outer_key, val)?;
-            }
-            Value::Array(arr, _) => {
-                if let Ok(i) = outer_key.parse::<usize>() {
-                    // Autovivified gaps fill with the `Any` type object (matching
-                    // a direct `@a[i] = v`), not `Nil`. A nested hash/array element
-                    // container is untyped here, so `Any` is the correct hole.
-                    let fill = Value::Package(crate::symbol::Symbol::intern("Any"));
-                    if crate::gc::Gc::strong_count(arr) > 1 {
-                        // SAFETY: aliased in-place mutation of a shared array
-                        // (strong_count > 1); see `arc_contents_mut`.
-                        let v = &mut unsafe { crate::value::gc_contents_mut(arr) }.items;
-                        Self::autoviv_resize(v, i + 1, fill)?;
-                        Value::assign_element_slot(&mut v[i], val);
-                    } else {
-                        let a = crate::gc::Gc::make_mut(arr);
-                        Self::autoviv_resize(a, i + 1, fill)?;
-                        Value::assign_element_slot(&mut a[i], val);
-                    }
+        if let ValueView::ContainerRef(cell) = target.view() {
+            let cell = cell.clone();
+            let mut guard = cell.lock().unwrap();
+            Self::assign_into_nested_container(&mut guard, outer_key, val)?;
+        } else if let Some(r) = target.with_array_mut(|arr, _| -> Result<(), RuntimeError> {
+            if let Ok(i) = outer_key.parse::<usize>() {
+                // Autovivified gaps fill with the `Any` type object (matching
+                // a direct `@a[i] = v`), not `Nil`. A nested hash/array element
+                // container is untyped here, so `Any` is the correct hole.
+                let fill = Value::package(crate::symbol::Symbol::intern("Any"));
+                if crate::gc::Gc::strong_count(arr) > 1 {
+                    // SAFETY: aliased in-place mutation of a shared array
+                    // (strong_count > 1); see `arc_contents_mut`.
+                    let v = &mut unsafe { crate::value::gc_contents_mut(arr) }.items;
+                    Self::autoviv_resize(v, i + 1, fill)?;
+                    Value::assign_element_slot(&mut v[i], val.clone());
+                } else {
+                    let a = crate::gc::Gc::make_mut(arr);
+                    Self::autoviv_resize(a, i + 1, fill)?;
+                    Value::assign_element_slot(&mut a[i], val.clone());
                 }
             }
-            Value::Hash(h) => {
+            Ok(())
+        }) {
+            r?;
+        } else {
+            let _ = target.with_hash_mut(|h| {
                 Value::hash_insert_through(
                     &mut crate::gc::Gc::make_mut(h).map,
                     outer_key.to_string(),
-                    val,
+                    val.clone(),
                 );
-            }
-            _ => {}
+            });
         }
         Ok(())
     }
@@ -2296,8 +2380,8 @@ impl Interpreter {
     pub(crate) unsafe fn descend_container_ref(mut current: *mut Value) -> *mut Value {
         const MAX_DESCENT: usize = 256;
         for _ in 0..MAX_DESCENT {
-            let cell = match unsafe { &mut *current } {
-                Value::ContainerRef(cell) => cell.clone(),
+            let cell = match unsafe { &*current }.view() {
+                ValueView::ContainerRef(cell) => cell.clone(),
                 _ => return current,
             };
             let mut guard = cell.lock().unwrap();
@@ -2309,7 +2393,7 @@ impl Interpreter {
     /// Read a root variable for index-assignment, descending through any
     /// `:=`-bound container cell so a `ContainerRef` root resolves to its held
     /// Hash/Array. Without this, a write to `$x[i]`/`$x<k>` where `$x` is itself
-    /// a bound cell would fall through every handler's `Value::Hash`/`Value::Array`
+    /// a bound cell would fall through every handler's Hash/Array
     /// match and be silently dropped (Phase 3).
     ///
     /// SAFETY: the returned reference points into the cell's mutex data, kept
@@ -2342,34 +2426,39 @@ impl Interpreter {
         // Pop indices from stack: innermost first (top of stack)
         let mut indices_val: Vec<Value> = Vec::with_capacity(depth);
         for _ in 0..depth {
-            indices_val.push(self.stack.pop().unwrap_or(Value::Nil));
+            indices_val.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         // indices_val[0] = innermost, indices_val[depth-1] = outermost
 
-        let raw_val_for_junction = self.stack.pop().unwrap_or(Value::Nil);
+        let raw_val_for_junction = self.stack.pop().unwrap_or(Value::NIL);
 
         // Junction / slice OUTERMOST subscript (`%h<a><b>{any('p','q')} = v`):
         // autothread per outer key. The rest of this op handles a single scalar
         // outermost key, so re-dispatch for each expanded key (previously the
         // junction/array was stringified into one garbage entry).
         let outermost = &indices_val[depth - 1];
-        if !matches!(&raw_val_for_junction, Value::Pair(n, _) if n == "__mutsu_bind_index_value")
-            && matches!(outermost, Value::Junction { .. } | Value::Array(..))
+        if !matches!(raw_val_for_junction.view(), ValueView::Pair(n, _) if n == "__mutsu_bind_index_value")
+            && matches!(
+                outermost.view(),
+                ValueView::Junction { .. } | ValueView::Array(..)
+            )
         {
-            let outer_keys: Vec<Value> = match outermost {
-                Value::Junction { values, .. } => values.as_ref().clone(),
-                Value::Array(a, ..) => a.items.to_vec(),
+            let outer_keys: Vec<Value> = match outermost.view() {
+                ValueView::Junction { values, .. } => values.as_ref().clone(),
+                ValueView::Array(a, ..) => a.items.to_vec(),
                 _ => unreachable!(),
             };
-            let vals: Vec<Value> = match (outermost, &raw_val_for_junction) {
-                (Value::Junction { .. }, Value::Junction { values: jv, .. }) => jv.as_ref().clone(),
-                (Value::Junction { .. }, _) => {
+            let vals: Vec<Value> = match (outermost.view(), raw_val_for_junction.view()) {
+                (ValueView::Junction { .. }, ValueView::Junction { values: jv, .. }) => {
+                    jv.as_ref().clone()
+                }
+                (ValueView::Junction { .. }, _) => {
                     vec![raw_val_for_junction.clone(); outer_keys.len()]
                 }
                 _ => self.assignment_rhs_values(&raw_val_for_junction)?,
             };
             for (i, ok) in outer_keys.into_iter().enumerate() {
-                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                let v = vals.get(i).cloned().unwrap_or(Value::NIL);
                 // Re-push for recursion. Stack (bottom→top): value, outermost,
                 // ..., innermost. Replace the outermost with the scalar key.
                 self.stack.push(v);
@@ -2408,17 +2497,22 @@ impl Interpreter {
 
         // Extract positional flags from constant
         let flags_val = code.constants[positional_flags_idx as usize].clone();
-        let positional_flags: Vec<bool> = if let Value::Array(arr, _) = &flags_val {
-            arr.iter().map(|v| matches!(v, Value::Bool(true))).collect()
+        let positional_flags: Vec<bool> = if let ValueView::Array(arr, _) = flags_val.view() {
+            arr.iter()
+                .map(|v| matches!(v.view(), ValueView::Bool(true)))
+                .collect()
         } else {
             vec![true; depth]
         };
 
         // Invalidate local cache for the variable
         if let Some(slot) = self.find_local_slot(code, &var_name)
-            && matches!(self.locals[slot], Value::Array(..) | Value::Hash(..))
+            && matches!(
+                self.locals[slot].view(),
+                ValueView::Array(..) | ValueView::Hash(..)
+            )
         {
-            self.locals[slot] = Value::Nil;
+            self.locals[slot] = Value::NIL;
         }
 
         // Ensure the root variable exists
@@ -2455,8 +2549,9 @@ impl Interpreter {
                 // Intermediate level: autovivify and descend
                 let next_positional = positional_flags[level + 1];
                 unsafe {
-                    match &mut *current {
-                        Value::Array(arr_arc, _) => {
+                    let cur = &mut *current;
+                    if let Some(next) =
+                        cur.with_array_mut(|arr_arc, _| -> Result<*mut Value, RuntimeError> {
                             if let Ok(i) = key.parse::<usize>() {
                                 let arr = crate::gc::Gc::make_mut(arr_arc);
                                 Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
@@ -2465,8 +2560,10 @@ impl Interpreter {
                                 // a container on the next iteration; treating it
                                 // as "needs vivify" would clobber the binding.
                                 let needs_viv = !matches!(
-                                    &arr[i],
-                                    Value::Array(..) | Value::Hash(..) | Value::ContainerRef(..)
+                                    arr[i].view(),
+                                    ValueView::Array(..)
+                                        | ValueView::Hash(..)
+                                        | ValueView::ContainerRef(..)
                                 );
                                 if needs_viv {
                                     arr[i] = if next_positional {
@@ -2475,58 +2572,66 @@ impl Interpreter {
                                         Value::hash(std::collections::HashMap::new())
                                     };
                                 }
-                                current = &mut arr[i] as *mut Value;
-                            }
-                        }
-                        Value::Hash(hash_arc) => {
-                            let hash = crate::gc::Gc::make_mut(hash_arc);
-                            if !hash.contains_key(key.as_str()) {
-                                let new_val = if next_positional {
-                                    Value::real_array(Vec::new())
-                                } else {
-                                    Value::hash(std::collections::HashMap::new())
-                                };
-                                hash.insert(key.clone(), new_val);
-                            }
-                            current = hash.get_mut(key.as_str()).unwrap() as *mut Value;
-                        }
-                        _ => {
-                            // Autovivify the root itself if needed
-                            if is_positional {
-                                *current = Value::real_array(Vec::new());
+                                Ok(&mut arr[i] as *mut Value)
                             } else {
-                                *current = Value::hash(std::collections::HashMap::new());
+                                Ok(current)
                             }
-                            // Retry this level
-                            match &mut *current {
-                                Value::Array(arr_arc, _) => {
-                                    if let Ok(i) = key.parse::<usize>() {
-                                        let arr = crate::gc::Gc::make_mut(arr_arc);
-                                        Self::autoviv_resize(
-                                            arr,
-                                            i + 1,
-                                            Value::Package(Symbol::intern("Any")),
-                                        )?;
-                                        arr[i] = if next_positional {
-                                            Value::real_array(Vec::new())
-                                        } else {
-                                            Value::hash(std::collections::HashMap::new())
-                                        };
-                                        current = &mut arr[i] as *mut Value;
-                                    }
-                                }
-                                Value::Hash(hash_arc) => {
-                                    let hash = crate::gc::Gc::make_mut(hash_arc);
-                                    let new_val = if next_positional {
+                        })
+                    {
+                        current = next?;
+                    } else if let Some(next) = cur.with_hash_mut(|hash_arc| {
+                        let hash = crate::gc::Gc::make_mut(hash_arc);
+                        if !hash.contains_key(key.as_str()) {
+                            let new_val = if next_positional {
+                                Value::real_array(Vec::new())
+                            } else {
+                                Value::hash(std::collections::HashMap::new())
+                            };
+                            hash.insert(key.clone(), new_val);
+                        }
+                        hash.get_mut(key.as_str()).unwrap() as *mut Value
+                    }) {
+                        current = next;
+                    } else {
+                        // Autovivify the root itself if needed
+                        if is_positional {
+                            *cur = Value::real_array(Vec::new());
+                        } else {
+                            *cur = Value::hash(std::collections::HashMap::new());
+                        }
+                        // Retry this level
+                        if let Some(next) =
+                            cur.with_array_mut(|arr_arc, _| -> Result<*mut Value, RuntimeError> {
+                                if let Ok(i) = key.parse::<usize>() {
+                                    let arr = crate::gc::Gc::make_mut(arr_arc);
+                                    Self::autoviv_resize(
+                                        arr,
+                                        i + 1,
+                                        Value::package(Symbol::intern("Any")),
+                                    )?;
+                                    arr[i] = if next_positional {
                                         Value::real_array(Vec::new())
                                     } else {
                                         Value::hash(std::collections::HashMap::new())
                                     };
-                                    hash.insert(key.clone(), new_val);
-                                    current = hash.get_mut(key.as_str()).unwrap() as *mut Value;
+                                    Ok(&mut arr[i] as *mut Value)
+                                } else {
+                                    Ok(current)
                                 }
-                                _ => {}
-                            }
+                            })
+                        {
+                            current = next?;
+                        } else if let Some(next) = cur.with_hash_mut(|hash_arc| {
+                            let hash = crate::gc::Gc::make_mut(hash_arc);
+                            let new_val = if next_positional {
+                                Value::real_array(Vec::new())
+                            } else {
+                                Value::hash(std::collections::HashMap::new())
+                            };
+                            hash.insert(key.clone(), new_val);
+                            hash.get_mut(key.as_str()).unwrap() as *mut Value
+                        }) {
+                            current = next;
                         }
                     }
                 }
@@ -2537,43 +2642,46 @@ impl Interpreter {
                 // source's cell.
                 let leaf_val = bind_cell
                     .as_ref()
-                    .map(|c| Value::ContainerRef(c.clone()))
+                    .map(|c| Value::container_ref(c.clone()))
                     .unwrap_or_else(|| val.clone());
                 unsafe {
-                    match &mut *current {
-                        Value::Array(arr_arc, _) => {
-                            if let Ok(i) = key.parse::<usize>() {
-                                let arr = crate::gc::Gc::make_mut(arr_arc);
-                                Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
-                                if bind_cell.is_some() {
-                                    arr[i] = leaf_val;
-                                } else {
-                                    Value::assign_element_slot(&mut arr[i], leaf_val);
-                                }
+                    let cur = &mut *current;
+                    if let Some(r) = cur.with_array_mut(|arr_arc, _| -> Result<(), RuntimeError> {
+                        if let Ok(i) = key.parse::<usize>() {
+                            let arr = crate::gc::Gc::make_mut(arr_arc);
+                            Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
+                            if bind_cell.is_some() {
+                                arr[i] = leaf_val.clone();
+                            } else {
+                                Value::assign_element_slot(&mut arr[i], leaf_val.clone());
                             }
                         }
-                        Value::Hash(hash_arc) => {
+                        Ok(())
+                    }) {
+                        r?;
+                    } else if cur
+                        .with_hash_mut(|hash_arc| {
                             let hash = crate::gc::Gc::make_mut(hash_arc);
                             if bind_cell.is_some() {
-                                hash.insert(key.clone(), leaf_val);
+                                hash.insert(key.clone(), leaf_val.clone());
                             } else {
-                                Value::hash_insert_through(hash, key.clone(), leaf_val);
+                                Value::hash_insert_through(hash, key.clone(), leaf_val.clone());
                             }
-                        }
-                        _ => {
-                            // Autovivify at final level
-                            if is_positional {
-                                let mut arr = Vec::new();
-                                if let Ok(i) = key.parse::<usize>() {
-                                    Self::autoviv_resize(&mut arr, i + 1, native_fill.clone())?;
-                                    arr[i] = leaf_val;
-                                }
-                                *current = Value::real_array(arr);
-                            } else {
-                                let mut h = std::collections::HashMap::new();
-                                h.insert(key.clone(), leaf_val);
-                                *current = Value::hash(h);
+                        })
+                        .is_none()
+                    {
+                        // Autovivify at final level
+                        if is_positional {
+                            let mut arr = Vec::new();
+                            if let Ok(i) = key.parse::<usize>() {
+                                Self::autoviv_resize(&mut arr, i + 1, native_fill.clone())?;
+                                arr[i] = leaf_val.clone();
                             }
+                            *cur = Value::real_array(arr);
+                        } else {
+                            let mut h = std::collections::HashMap::new();
+                            h.insert(key.clone(), leaf_val.clone());
+                            *cur = Value::hash(h);
                         }
                     }
                 }
@@ -2583,7 +2691,7 @@ impl Interpreter {
         // Write the shared cell back to the source variable so both sides alias
         // the same container (the symmetric counterpart of the leaf store above).
         if let (Some(src), Some(cell)) = (bind_source, bind_cell) {
-            let cell_val = Value::ContainerRef(cell);
+            let cell_val = Value::container_ref(cell);
             self.set_env_with_main_alias(&src, cell_val.clone());
             self.update_local_if_exists(code, &src, &cell_val);
         }
@@ -2613,46 +2721,48 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
     ) -> Result<(), RuntimeError> {
-        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
-        let idx = self.stack.pop().unwrap_or(Value::Nil);
-        let target = self.stack.pop().unwrap_or(Value::Nil);
+        let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+        let idx = self.stack.pop().unwrap_or(Value::NIL);
+        let target = self.stack.pop().unwrap_or(Value::NIL);
         let key = idx.to_string_value();
         // A single scalar index names one element, so the assignment's rvalue is
         // itemized (like a scalar-variable / named single-index assignment);
         // `@z = (foo()[$b] = l, l)` => `@z.elems == 1`. A multi-element slice
         // (list of indices / Range) keeps the flat list.
-        let idx_is_single_element = match &idx {
-            Value::Array(items, kind) => {
+        let idx_is_single_element = match idx.view() {
+            ValueView::Array(items, kind) => {
                 matches!(kind, crate::value::ArrayKind::ItemList) || items.len() == 1
             }
-            Value::Seq(items) | Value::Slip(items) => items.len() == 1,
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => false,
+            ValueView::Seq(items) | ValueView::Slip(items) => items.len() == 1,
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => false,
             _ => true,
         };
 
         // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
-        let (val, bind_source, was_bind) = match raw_val {
-            Value::Pair(ref name, ref payload) if name == "__mutsu_bind_index_value" => {
-                match payload.as_ref() {
-                    Value::Array(items, ..) if items.len() >= 2 => {
-                        let value = items.first().cloned().unwrap_or(Value::Nil);
-                        let source = match items.get(1) {
-                            Some(Value::Array(srcs, ..)) => srcs.first().and_then(|s| match s {
-                                Value::Str(name) if !name.is_empty() => Some((**name).clone()),
+        let (val, bind_source, was_bind) = match raw_val.view() {
+            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => {
+                match payload.view() {
+                    ValueView::Array(items, ..) if items.len() >= 2 => {
+                        let value = items.first().cloned().unwrap_or(Value::NIL);
+                        let source = match items.get(1).map(Value::view) {
+                            Some(ValueView::Array(srcs, ..)) => srcs.first().and_then(|s| match s
+                                .view()
+                            {
+                                ValueView::Str(name) if !name.is_empty() => Some((**name).clone()),
                                 _ => None,
                             }),
                             _ => None,
                         };
                         (value, source, true)
                     }
-                    other => (other.clone(), None, true),
+                    _ => (payload.clone(), None, true),
                 }
             }
-            other => (other, None, false),
+            _ => (raw_val, None, false),
         };
 
         // Phase 2 Stage 2: a `:=` bind to a stack-computed element target
@@ -2664,13 +2774,13 @@ impl Interpreter {
         // was stale (the alias never propagated). Pre-read before any container
         // borrow. An element source (`:= @b[j]`, encoded with `\0`) is left to a
         // later slice unless it already arrived promoted to a cell.
-        let bind_cell: Option<BindSourceCell> = if let Value::ContainerRef(cell) = &val {
+        let bind_cell: Option<BindSourceCell> = if let ValueView::ContainerRef(cell) = val.view() {
             Some((None, cell.clone()))
         } else if let Some(source_name) = &bind_source
             && !source_name.contains('\0')
         {
-            match self.env().get(source_name) {
-                Some(Value::ContainerRef(cell)) => Some((None, cell.clone())),
+            match self.env().get(source_name).map(Value::view) {
+                Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                 _ => Some((
                     Some(source_name.clone()),
                     crate::gc::Gc::new(std::sync::Mutex::new(val.clone())),
@@ -2686,30 +2796,35 @@ impl Interpreter {
         // stringified the multi-key index and wrote a single garbage entry, so a
         // later read of any real key returned Any. Only plain assignment is
         // handled here (a multi-key `:=` bind is a separate, exotic path).
-        if bind_cell.is_none() && matches!(idx, Value::Junction { .. } | Value::Array(..)) {
-            let resolved = match &target {
-                Value::HashEntryRef { .. } => target.hash_entry_read(),
-                Value::Scalar(inner) => inner.as_ref().clone(),
-                other => other.clone(),
+        if bind_cell.is_none()
+            && matches!(
+                idx.view(),
+                ValueView::Junction { .. } | ValueView::Array(..)
+            )
+        {
+            let resolved = match target.view() {
+                ValueView::HashEntryRef { .. } => target.hash_entry_read(),
+                ValueView::Scalar(inner) => inner.clone(),
+                _ => target.clone(),
             };
-            if matches!(resolved, Value::Hash(_) | Value::Array(..)) {
-                let (keys, vals): (Vec<Value>, Vec<Value>) = match &idx {
-                    Value::Junction { values, .. } => {
+            if matches!(resolved.view(), ValueView::Hash(_) | ValueView::Array(..)) {
+                let (keys, vals): (Vec<Value>, Vec<Value>) = match idx.view() {
+                    ValueView::Junction { values, .. } => {
                         // A scalar RHS is assigned to every junction key; a
                         // junction RHS pairs element-wise.
-                        let vals = match &val {
-                            Value::Junction { values: jv, .. } => jv.as_ref().clone(),
+                        let vals = match val.view() {
+                            ValueView::Junction { values: jv, .. } => jv.as_ref().clone(),
                             _ => vec![val.clone(); values.len()],
                         };
                         (values.as_ref().clone(), vals)
                     }
-                    Value::Array(keys, ..) => {
+                    ValueView::Array(keys, ..) => {
                         (keys.items.to_vec(), self.assignment_rhs_values(&val)?)
                     }
                     _ => unreachable!(),
                 };
                 for (i, k) in keys.iter().enumerate() {
-                    let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                    let v = vals.get(i).cloned().unwrap_or(Value::NIL);
                     self.assign_into_computed_target(&resolved, k, v)?;
                 }
                 // A slice assignment's rvalue is the list of values actually
@@ -2719,10 +2834,10 @@ impl Interpreter {
                 let assigned: Vec<Value> = keys
                     .iter()
                     .enumerate()
-                    .map(|(i, _)| vals.get(i).cloned().unwrap_or(Value::Nil))
+                    .map(|(i, _)| vals.get(i).cloned().unwrap_or(Value::NIL))
                     .collect();
                 let result = if idx_is_single_element {
-                    Self::itemize_value(assigned.into_iter().next().unwrap_or(Value::Nil))
+                    Self::itemize_value(assigned.into_iter().next().unwrap_or(Value::NIL))
                 } else {
                     Value::array(assigned)
                 };
@@ -2731,11 +2846,11 @@ impl Interpreter {
             }
         }
 
-        match &target {
-            Value::Hash(arc) => {
+        match target.view() {
+            ValueView::Hash(arc) => {
                 // Check for callframe .my hash with depth marker
-                if let Some(Value::Int(depth)) = arc.get("__callframe_depth") {
-                    let depth = *depth as usize;
+                if let Some(ValueView::Int(depth)) = arc.get("__callframe_depth").map(Value::view) {
+                    let depth = depth as usize;
                     // Strip sigil from key to get bare variable name
                     let bare_name =
                         if key.starts_with('$') || key.starts_with('@') || key.starts_with('%') {
@@ -2752,7 +2867,7 @@ impl Interpreter {
                 // In bind mode, store the shared cell at the key; otherwise the
                 // plain value.
                 let stored = match &bind_cell {
-                    Some((_, cell)) => Value::ContainerRef(cell.clone()),
+                    Some((_, cell)) => Value::container_ref(cell.clone()),
                     None => val.clone(),
                 };
                 // SAFETY: aliased in-place mutation of a shared hash so the change
@@ -2762,13 +2877,13 @@ impl Interpreter {
                 // For a fresh-cell bind, write the cell back to the source var
                 // so both sides alias the same container.
                 if let Some((Some(src), cell)) = &bind_cell {
-                    let cell_val = Value::ContainerRef(cell.clone());
+                    let cell_val = Value::container_ref(cell.clone());
                     self.set_env_with_main_alias(src, cell_val.clone());
                     self.update_local_if_exists(code, src, &cell_val);
                 }
                 self.stack.push(val);
             }
-            Value::Array(arc, _kind) => {
+            ValueView::Array(arc, _kind) => {
                 // Interior mutation: write into the array via raw pointer
                 // so the change is visible to all holders of the same Arc.
                 if let Ok(i) = key.parse::<usize>() {
@@ -2779,13 +2894,13 @@ impl Interpreter {
                     Self::autoviv_resize(
                         v,
                         i + 1,
-                        Value::Package(crate::symbol::Symbol::intern("Any")),
+                        Value::package(crate::symbol::Symbol::intern("Any")),
                     )?;
                     match &bind_cell {
                         // Bind mode installs the shared cell at the element;
                         // the same cell is written back to the source var
                         // below so both sides alias.
-                        Some((_, cell)) => v[i] = Value::ContainerRef(cell.clone()),
+                        Some((_, cell)) => v[i] = Value::container_ref(cell.clone()),
                         // An element source (`:= @b[j]`) not promoted to a
                         // cell installs the payload directly (rare; left to a
                         // later slice).
@@ -2800,7 +2915,7 @@ impl Interpreter {
                     }
                     // For a fresh-cell bind, write the cell back to the source var.
                     if let Some((Some(src), cell)) = &bind_cell {
-                        let cell_val = Value::ContainerRef(cell.clone());
+                        let cell_val = Value::container_ref(cell.clone());
                         self.set_env_with_main_alias(src, cell_val.clone());
                         self.update_local_if_exists(code, src, &cell_val);
                     }
@@ -2812,7 +2927,7 @@ impl Interpreter {
                 };
                 self.stack.push(result);
             }
-            Value::HashEntryRef { .. } => {
+            ValueView::HashEntryRef { .. } => {
                 // Resolve the HashEntryRef and assign into the resolved container.
                 let resolved = target.hash_entry_read();
                 self.stack.push(resolved);
@@ -2820,7 +2935,7 @@ impl Interpreter {
                 self.stack.push(val);
                 return self.exec_index_assign_generic_op(code);
             }
-            Value::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..

@@ -83,10 +83,10 @@ impl Interpreter {
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         // ContainerRef cell: atomic RMW under the cell lock so concurrent
         // `start { $shared += n }` blocks don't lose updates (Track C).
-        if let Value::ContainerRef(ref arc) = raw_val {
+        if let ValueView::ContainerRef(arc) = raw_val.view() {
             let arc = arc.clone();
             // Hold the cell lock across the whole read-modify-write so concurrent
             // threads can't interleave and lose updates. `rhs` was already popped
@@ -101,8 +101,8 @@ impl Interpreter {
             return Ok(());
         }
         // Proxy: FETCH -> op -> STORE.
-        if let Value::Proxy { storer, .. } = &raw_val
-            && !matches!(storer.as_ref(), Value::Nil)
+        if let ValueView::Proxy { storer, .. } = raw_val.view()
+            && !storer.is_nil()
         {
             let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
             let new_val = self.apply_compound_base_op(op, fetched, rhs)?;
@@ -199,10 +199,11 @@ impl Interpreter {
         self.check_readonly_for_increment(name)?;
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
-            && !matches!(self.locals[slot], Value::Proxy { .. })
+            && !matches!(self.locals[slot].view(), ValueView::Proxy { .. })
         {
             // ContainerRef: increment through the shared arc (e.g. `$!attr := outer_var`).
-            if let Value::ContainerRef(ref arc) = self.locals[slot].clone() {
+            let local_val = self.locals[slot].clone();
+            if let ValueView::ContainerRef(arc) = local_val.view() {
                 if self.atomic_container_incdec(arc, name, true, true) {
                     return Ok(());
                 }
@@ -230,11 +231,11 @@ impl Interpreter {
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .or_else(|| self.escaping_our_incdec_cell(code, name))
-            .unwrap_or(Value::Int(0));
+            .unwrap_or(Value::int(0));
         // ContainerRef: deref for increment, write back through the shared container.
         // Use an atomic read-modify-write under the cell lock so concurrent
         // `start { $shared++ }` blocks don't lose updates (Track C).
-        if let Value::ContainerRef(ref arc) = raw_val {
+        if let ValueView::ContainerRef(arc) = raw_val.view() {
             if self.atomic_container_incdec(arc, name, true, true) {
                 return Ok(());
             }
@@ -246,8 +247,8 @@ impl Interpreter {
             return Ok(());
         }
         // If the value is a Proxy, FETCH → increment → STORE
-        if let Value::Proxy { storer, .. } = &raw_val
-            && !matches!(storer.as_ref(), Value::Nil)
+        if let ValueView::Proxy { storer, .. } = raw_val.view()
+            && !storer.is_nil()
         {
             let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
             let val = Self::normalize_incdec_source(fetched);
@@ -292,10 +293,11 @@ impl Interpreter {
         self.check_readonly_for_increment(name)?;
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
-            && !matches!(self.locals[slot], Value::Proxy { .. })
+            && !matches!(self.locals[slot].view(), ValueView::Proxy { .. })
         {
             // ContainerRef: decrement through the shared arc (e.g. `$!attr := outer_var`).
-            if let Value::ContainerRef(ref arc) = self.locals[slot].clone() {
+            let local_val = self.locals[slot].clone();
+            if let ValueView::ContainerRef(arc) = local_val.view() {
                 if self.atomic_container_incdec(arc, name, false, true) {
                     return Ok(());
                 }
@@ -323,10 +325,10 @@ impl Interpreter {
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .or_else(|| self.escaping_our_incdec_cell(code, name))
-            .unwrap_or(Value::Int(0));
+            .unwrap_or(Value::int(0));
         // ContainerRef: deref for decrement, write back through the shared container.
         // Atomic RMW under the cell lock for concurrent `start` blocks (Track C).
-        if let Value::ContainerRef(ref arc) = raw_val {
+        if let ValueView::ContainerRef(arc) = raw_val.view() {
             if self.atomic_container_incdec(arc, name, false, true) {
                 return Ok(());
             }
@@ -402,12 +404,12 @@ impl Interpreter {
         let _target_is_sethash_incdec = declared_type_incdec
             .as_deref()
             .is_some_and(|t| t == "SetHash");
-        let idx_val = self.stack.pop().unwrap_or(Value::Nil);
+        let idx_val = self.stack.pop().unwrap_or(Value::NIL);
         let container = self.get_env_with_main_alias(&name);
         // Resolve a WhateverCode / Whatever index (`@a[*-1]++`, `@a[*-2]--`)
         // against the container's length before using it as the key — otherwise
         // the raw closure stringifies to a bogus key and the increment is lost.
-        let idx_val = if matches!(idx_val, Value::Sub(_) | Value::Whatever) {
+        let idx_val = if matches!(idx_val.view(), ValueView::Sub(_) | ValueView::Whatever) {
             self.resolve_whatever_index_for_target(idx_val, container.as_ref())
         } else {
             idx_val
@@ -417,13 +419,16 @@ impl Interpreter {
         // `ContainerRef` cell (built from `\($a)` / `\(:$a)`), increment *through*
         // the cell so the original variable observes the change. The generic
         // Hash/Array path below does not understand Captures.
-        if let Some(Value::Capture { positional, named }) = container.as_ref() {
+        if let Some(ValueView::Capture { positional, named }) = container.as_ref().map(Value::view)
+        {
             let elem = if let Ok(i) = key.parse::<usize>() {
                 positional.get(i).cloned()
             } else {
                 named.get(&key).cloned()
             };
-            if let Some(Value::ContainerRef(arc)) = elem {
+            if let Some(elem_val) = elem
+                && let ValueView::ContainerRef(arc) = elem_val.view()
+            {
                 let inner = arc.lock().unwrap().clone();
                 let effective = Self::normalize_incdec_source(inner);
                 let new_val = if increment {
@@ -450,23 +455,24 @@ impl Interpreter {
         // only, so a raw cell would read `Nil` and discard the write. (Named
         // params resolve to a deref'd-but-Arc-shared plain container instead, which
         // the strong_count>1 in-place writeback below handles.)
-        if let Some(Value::ContainerRef(arc)) = container.as_ref() {
+        if let Some(ValueView::ContainerRef(arc)) = container.as_ref().map(Value::view) {
             let inner = arc.lock().unwrap().clone();
-            let current = match &inner {
-                Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
-                Value::Array(arr, ..) => key
+            let current = match inner.view() {
+                ValueView::Hash(h) => h.get(&key).cloned().unwrap_or(Value::NIL),
+                ValueView::Array(arr, ..) => key
                     .parse::<usize>()
                     .ok()
                     .and_then(|i| arr.get(i).cloned())
-                    .unwrap_or(Value::Nil),
-                _ => Value::Nil,
+                    .unwrap_or(Value::NIL),
+                _ => Value::NIL,
             };
-            let effective = Self::normalize_incdec_source(match current {
-                Value::Nil => Self::value_carried_default(&inner)
+            let effective = Self::normalize_incdec_source(if current.is_nil() {
+                Self::value_carried_default(&inner)
                     .or_else(|| self.var_default(&name).cloned())
-                    .filter(|d| !matches!(d, Value::Nil))
-                    .unwrap_or(Value::Int(0)),
-                other => other,
+                    .filter(|d| !d.is_nil())
+                    .unwrap_or(Value::int(0))
+            } else {
+                current
             });
             let new_val = if increment {
                 self.increment_value_smart(&effective)?
@@ -474,22 +480,26 @@ impl Interpreter {
                 self.decrement_value_smart(&effective)?
             };
             let mut updated = inner;
-            match &mut updated {
-                Value::Hash(h) => {
+            if updated
+                .with_hash_mut(|h| {
                     Value::hash_insert_through(
                         &mut crate::gc::Gc::make_mut(h).map,
                         key.clone(),
                         new_val.clone(),
                     );
-                }
-                Value::Array(arr, ..) => {
-                    if let Ok(i) = key.parse::<usize>() {
-                        let a = crate::gc::Gc::make_mut(arr);
-                        Self::autoviv_resize(a, i + 1, Value::Nil)?;
-                        a[i] = new_val.clone();
-                    }
-                }
-                _ => {}
+                })
+                .is_none()
+                && let Some(arr_result) =
+                    updated.with_array_mut(|arr, _kind| -> Result<(), RuntimeError> {
+                        if let Ok(i) = key.parse::<usize>() {
+                            let a = crate::gc::Gc::make_mut(arr);
+                            Self::autoviv_resize(a, i + 1, Value::NIL)?;
+                            a[i] = new_val.clone();
+                        }
+                        Ok(())
+                    })
+            {
+                arr_result?;
             }
             *arc.lock().unwrap() = updated;
             self.stack
@@ -497,65 +507,65 @@ impl Interpreter {
             return Ok(());
         }
         let current = if let Some(container_value) = container.as_ref() {
-            match container_value {
-                Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
-                Value::Array(arr, ..) => {
+            match container_value.view() {
+                ValueView::Hash(h) => h.get(&key).cloned().unwrap_or(Value::NIL),
+                ValueView::Array(arr, ..) => {
                     if let Ok(i) = key.parse::<usize>() {
-                        arr.get(i).cloned().unwrap_or(Value::Nil)
+                        arr.get(i).cloned().unwrap_or(Value::NIL)
                     } else {
-                        Value::Nil
+                        Value::NIL
                     }
                 }
-                Value::Mix(mix, _) => mix
+                ValueView::Mix(mix, _) => mix
                     .get(&key)
-                    .map_or(Value::Int(0), |w| Self::mix_weight_as_value(*w)),
-                Value::Set(set, _) => {
+                    .map_or(Value::int(0), |w| Self::mix_weight_as_value(*w)),
+                ValueView::Set(set, _) => {
                     if set.contains(&key) {
-                        Value::Bool(true)
+                        Value::TRUE
                     } else {
-                        Value::Bool(false)
+                        Value::FALSE
                     }
                 }
-                Value::Bag(bag, _) => {
+                ValueView::Bag(bag, _) => {
                     Value::from_bigint(bag.get(&key).cloned().unwrap_or_default())
                 }
-                _ => Value::Nil,
+                _ => Value::NIL,
             }
         } else {
-            Value::Nil
+            Value::NIL
         };
         // A SetHash element is Bool-valued: `$sh<k>++` sets the key present and
         // `$sh<k>--` removes it, and the op evaluates to a Bool (the OLD value for
         // postfix, the NEW value for prefix) — not the numeric 0/1 the generic
         // increment would produce.
-        let target_is_set = matches!(container.as_ref(), Some(Value::Set(..)))
-            || matches!(
-                container.as_ref(),
-                Some(Value::Package(sym)) if sym.resolve() == "SetHash"
-            )
-            || declared_type_incdec.as_deref() == Some("SetHash")
+        let target_is_set = matches!(
+            container.as_ref().map(Value::view),
+            Some(ValueView::Set(..))
+        ) || matches!(
+            container.as_ref().map(Value::view),
+            Some(ValueView::Package(sym)) if sym.resolve() == "SetHash"
+        ) || declared_type_incdec.as_deref() == Some("SetHash")
             || declared_constraint_incdec.as_deref() == Some("SetHash");
         let (effective, new_val) = if target_is_set {
-            let old_present = matches!(&current, Value::Bool(true));
-            (Value::Bool(old_present), Value::Bool(increment))
+            let old_present = matches!(current.view(), ValueView::Bool(true));
+            (Value::truth(old_present), Value::truth(increment))
         } else {
-            let effective = match &current {
-                Value::Nil => {
-                    // Check if the container has an `is default(...)` value;
-                    // e.g. `my @a is default(42); @a[0]++` should increment 42.
-                    // Prefer the value-carried default (HashData/ArrayData) so it
-                    // works when the container arrived via a parameter (whose name
-                    // is not in the name-keyed `var_defaults` table).
-                    let def = container
-                        .as_ref()
-                        .and_then(Self::value_carried_default)
-                        .or_else(|| self.var_default(&name).cloned());
-                    match def {
-                        Some(d) if !matches!(d, Value::Nil) => d,
-                        _ => Value::Int(0),
-                    }
+            let effective = if current.is_nil() {
+                // Check if the container has an `is default(...)` value;
+                // e.g. `my @a is default(42); @a[0]++` should increment 42.
+                // Prefer the value-carried default (HashData/ArrayData) so it
+                // works when the container arrived via a parameter (whose name
+                // is not in the name-keyed `var_defaults` table).
+                let def = container
+                    .as_ref()
+                    .and_then(Self::value_carried_default)
+                    .or_else(|| self.var_default(&name).cloned());
+                match def {
+                    Some(d) if !d.is_nil() => d,
+                    _ => Value::int(0),
                 }
-                other => other.clone(),
+            } else {
+                current.clone()
             };
             let effective = Self::normalize_incdec_source(effective);
             let new_val = if increment {
@@ -569,16 +579,17 @@ impl Interpreter {
         // below 0 clamps the *returned* (and stored) value to 0 (the element is
         // then removed), so `--$bh<k>` on an absent key returns 0, not -1. Mix
         // weights are unbounded and keep their negative value.
-        let target_is_bag = matches!(container.as_ref(), Some(Value::Bag(..)))
-            || matches!(
-                container.as_ref(),
-                Some(Value::Package(sym)) if sym.resolve() == "BagHash"
-            )
-            || declared_type_incdec.as_deref() == Some("BagHash")
+        let target_is_bag = matches!(
+            container.as_ref().map(Value::view),
+            Some(ValueView::Bag(..))
+        ) || matches!(
+            container.as_ref().map(Value::view),
+            Some(ValueView::Package(sym)) if sym.resolve() == "BagHash"
+        ) || declared_type_incdec.as_deref() == Some("BagHash")
             || declared_constraint_incdec.as_deref() == Some("BagHash");
         let new_val = if target_is_bag {
-            match &new_val {
-                Value::Int(n) if *n < 0 => Value::Int(0),
+            match new_val.view() {
+                ValueView::Int(n) if n < 0 => Value::int(0),
                 _ => new_val,
             }
         } else {
@@ -609,7 +620,7 @@ impl Interpreter {
                     | "Seq"
             )
             && !self.is_container_subclass(constraint)
-            && !matches!(&new_val, Value::Nil)
+            && !new_val.is_nil()
             && !self.type_matches_value(constraint, &new_val)
         {
             return Err(runtime::utils::type_check_element_typed_error(
@@ -620,32 +631,32 @@ impl Interpreter {
         // (e.g. when two variables reference the same array via Arc).
         // First try to modify via env_mut().get_mut() to avoid clone.
         let modified_in_place = if let Some(container_value) = self.env_mut().get_mut(&name) {
-            match container_value {
-                Value::Hash(h) => {
-                    // Mirror the array arm below: when the hash Arc is shared
-                    // (strong_count > 1) via a scalar-bound `ContainerRef` cell
-                    // (`sub f($h){ $h<k>++ }` / `my $s = %h; $s<k>++`), mutate it
-                    // in place so the caller observes the change. `Arc::make_mut`
-                    // would COW-detach and silently drop the write (the array
-                    // path already special-cased this; the hash path did not).
-                    let use_inplace =
-                        crate::gc::Gc::strong_count_of(h) > 1 && !name.starts_with('%');
-                    if use_inplace {
-                        // SAFETY: aliased in-place mutation of a shared hash
-                        // (strong_count > 1, the shared-cell case); mirrors the
-                        // array arm's `arc_contents_mut` usage.
-                        let h = unsafe { crate::value::gc_contents_mut(h) };
-                        Value::hash_insert_through(&mut h.map, key.clone(), new_val.clone());
-                    } else {
-                        Value::hash_insert_through(
-                            &mut crate::gc::Gc::make_mut(h).map,
-                            key.clone(),
-                            new_val.clone(),
-                        );
-                    }
-                    true
+            if let Some(done) = container_value.with_hash_mut(|h| {
+                // Mirror the array arm below: when the hash Arc is shared
+                // (strong_count > 1) via a scalar-bound `ContainerRef` cell
+                // (`sub f($h){ $h<k>++ }` / `my $s = %h; $s<k>++`), mutate it
+                // in place so the caller observes the change. `Arc::make_mut`
+                // would COW-detach and silently drop the write (the array
+                // path already special-cased this; the hash path did not).
+                let use_inplace = crate::gc::Gc::strong_count_of(h) > 1 && !name.starts_with('%');
+                if use_inplace {
+                    // SAFETY: aliased in-place mutation of a shared hash
+                    // (strong_count > 1, the shared-cell case); mirrors the
+                    // array arm's `arc_contents_mut` usage.
+                    let h = unsafe { crate::value::gc_contents_mut(h) };
+                    Value::hash_insert_through(&mut h.map, key.clone(), new_val.clone());
+                } else {
+                    Value::hash_insert_through(
+                        &mut crate::gc::Gc::make_mut(h).map,
+                        key.clone(),
+                        new_val.clone(),
+                    );
                 }
-                Value::Array(arr, ..) => {
+                true
+            }) {
+                done
+            } else if let Some(res) =
+                container_value.with_array_mut(|arr, _| -> Result<bool, RuntimeError> {
                     if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
                         // Use in-place mutation when the array is shared
                         // (strong_count > 1) to preserve identity semantics,
@@ -667,12 +678,15 @@ impl Interpreter {
                             Self::native_fill_for_constraint(declared_constraint_incdec.as_deref());
                         Self::autoviv_resize(a, i + 1, fill)?;
                         a[i] = new_val.clone();
-                        true
+                        Ok(true)
                     } else {
-                        false
+                        Ok(false)
                     }
-                }
-                Value::Mix(mix, is_mutable) => {
+                })
+            {
+                res?
+            } else if let Some(res) =
+                container_value.with_mix_mut(|mix, is_mutable| -> Result<bool, RuntimeError> {
                     if !*is_mutable {
                         return Err(RuntimeError::assignment_ro(Some("Mix")));
                     }
@@ -683,9 +697,12 @@ impl Interpreter {
                     } else {
                         m.remove(&key);
                     }
-                    true
-                }
-                Value::Set(set, is_mutable) => {
+                    Ok(true)
+                })
+            {
+                res?
+            } else if let Some(res) =
+                container_value.with_set_mut(|set, is_mutable| -> Result<bool, RuntimeError> {
                     if !*is_mutable {
                         return Err(RuntimeError::assignment_ro(Some("Set")));
                     }
@@ -695,16 +712,19 @@ impl Interpreter {
                     } else {
                         s.remove(&key);
                     }
-                    true
-                }
-                Value::Bag(bag, is_mutable) => {
+                    Ok(true)
+                })
+            {
+                res?
+            } else if let Some(res) =
+                container_value.with_bag_mut(|bag, is_mutable| -> Result<bool, RuntimeError> {
                     if !*is_mutable {
                         return Err(RuntimeError::assignment_ro(Some("Bag")));
                     }
                     let b = crate::gc::Gc::make_mut(bag);
-                    let n = match &new_val {
-                        Value::Int(i) => num_bigint::BigInt::from(*i),
-                        Value::BigInt(big) => (**big).clone(),
+                    let n = match new_val.view() {
+                        ValueView::Int(i) => num_bigint::BigInt::from(i),
+                        ValueView::BigInt(big) => (**big).clone(),
                         _ => num_bigint::BigInt::from(0),
                     };
                     if num_traits::Signed::is_positive(&n) {
@@ -712,46 +732,48 @@ impl Interpreter {
                     } else {
                         b.remove(&key);
                     }
-                    true
-                }
+                    Ok(true)
+                })
+            {
+                res?
+            } else if let ValueView::Package(sym) = container_value.view() {
                 // Autovivify typed variables: `my MixHash $mh; $mh<key>++`
-                Value::Package(sym) => {
-                    let type_name = sym.resolve();
-                    match type_name.as_str() {
-                        "MixHash" => {
-                            let mut weights = HashMap::new();
-                            let weight = Self::mix_assignment_weight(&new_val)?;
-                            if new_val.truthy() {
-                                weights.insert(key.clone(), weight);
-                            }
-                            *container_value = Value::mix_hash(weights);
-                            true
+                let type_name = sym.resolve();
+                match type_name.as_str() {
+                    "MixHash" => {
+                        let mut weights = HashMap::new();
+                        let weight = Self::mix_assignment_weight(&new_val)?;
+                        if new_val.truthy() {
+                            weights.insert(key.clone(), weight);
                         }
-                        "BagHash" => {
-                            let mut counts = HashMap::new();
-                            if let Value::Int(n) = &new_val
-                                && *n > 0
-                            {
-                                counts.insert(key.clone(), *n);
-                            }
-                            *container_value = Value::bag_hash(counts);
-                            true
-                        }
-                        "SetHash" => {
-                            let mut items = std::collections::HashSet::new();
-                            if new_val.truthy() {
-                                items.insert(key.clone());
-                            }
-                            *container_value = Value::Set(
-                                crate::gc::Gc::new(crate::value::SetData::new(items)),
-                                true,
-                            );
-                            true
-                        }
-                        _ => false,
+                        *container_value = Value::mix_hash(weights);
+                        true
                     }
+                    "BagHash" => {
+                        let mut counts = HashMap::new();
+                        if let ValueView::Int(n) = new_val.view()
+                            && n > 0
+                        {
+                            counts.insert(key.clone(), n);
+                        }
+                        *container_value = Value::bag_hash(counts);
+                        true
+                    }
+                    "SetHash" => {
+                        let mut items = std::collections::HashSet::new();
+                        if new_val.truthy() {
+                            items.insert(key.clone());
+                        }
+                        *container_value = Value::set_parts(
+                            crate::gc::Gc::new(crate::value::SetData::new(items)),
+                            true,
+                        );
+                        true
+                    }
+                    _ => false,
                 }
-                _ => false,
+            } else {
+                false
             }
         } else {
             false
@@ -784,10 +806,10 @@ impl Interpreter {
                     }
                     "BagHash" => {
                         let mut counts = HashMap::new();
-                        if let Value::Int(n) = &new_val
-                            && *n > 0
+                        if let ValueView::Int(n) = new_val.view()
+                            && n > 0
                         {
-                            counts.insert(key.clone(), *n);
+                            counts.insert(key.clone(), n);
                         }
                         Value::bag_hash(counts)
                     }
@@ -796,7 +818,10 @@ impl Interpreter {
                         if new_val.truthy() {
                             items.insert(key.clone());
                         }
-                        Value::Set(crate::gc::Gc::new(crate::value::SetData::new(items)), true)
+                        Value::set_parts(
+                            crate::gc::Gc::new(crate::value::SetData::new(items)),
+                            true,
+                        )
                     }
                     _ => unreachable!(),
                 };

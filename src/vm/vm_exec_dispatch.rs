@@ -2,16 +2,15 @@ use super::*;
 
 impl Interpreter {
     fn mark_failure_handled_on_stack(stack: &mut [Value]) {
-        if let Some(Value::Instance {
+        if let Some(ValueView::Instance {
             class_name,
             id,
             attributes,
-            ..
-        }) = stack.last_mut()
-            && *class_name == "Failure"
+        }) = stack.last().map(Value::view)
+            && class_name == "Failure"
         {
-            attributes.insert("handled".to_string(), Value::Bool(true));
-            crate::value::mark_failure_handled(*id);
+            attributes.insert("handled".to_string(), Value::TRUE);
+            crate::value::mark_failure_handled(id);
         }
     }
 
@@ -21,7 +20,7 @@ impl Interpreter {
         default_message: &str,
         is_fail: bool,
     ) -> RuntimeError {
-        if matches!(value, Value::Nil) {
+        if value.is_nil() {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
                 "payload".to_string(),
@@ -40,7 +39,7 @@ impl Interpreter {
             return err;
         }
 
-        let message = if let Value::Instance { attributes, .. } = &value {
+        let message = if let ValueView::Instance { attributes, .. } = value.view() {
             attributes
                 .as_map()
                 .get("message")
@@ -51,7 +50,7 @@ impl Interpreter {
                         .map(|v| v.to_string_value())
                         .unwrap_or_else(|_| value.to_string_value())
                 })
-        } else if let Value::Array(items, _) = &value {
+        } else if let ValueView::Array(items, _) = value.view() {
             // Multi-arg die: concatenate .Str of each element
             let mut parts = Vec::new();
             for item in items.iter() {
@@ -69,7 +68,7 @@ impl Interpreter {
         if is_fail {
             err.control = Some(crate::value::Control::Fail);
         }
-        if let Value::Instance { class_name, .. } = &value {
+        if let ValueView::Instance { class_name, .. } = value.view() {
             let cn = class_name.resolve();
             let is_exception = cn == "Exception"
                 || cn.starts_with("X::")
@@ -129,15 +128,15 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::LoadNil => {
-                self.stack.push(Value::Nil);
+                self.stack.push(Value::NIL);
                 *ip += 1;
             }
             OpCode::LoadTrue => {
-                self.stack.push(Value::Bool(true));
+                self.stack.push(Value::TRUE);
                 *ip += 1;
             }
             OpCode::LoadFalse => {
-                self.stack.push(Value::Bool(false));
+                self.stack.push(Value::FALSE);
                 *ip += 1;
             }
 
@@ -148,7 +147,7 @@ impl Interpreter {
             OpCode::GetGlobal(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 if name == "?CALLER::LINE" {
-                    let line = self.get_caller_line(1).unwrap_or(Value::Nil);
+                    let line = self.get_caller_line(1).unwrap_or(Value::NIL);
                     self.stack.push(line);
                     *ip += 1;
                     return Ok(());
@@ -369,7 +368,7 @@ impl Interpreter {
                             return None;
                         }
                         let slash = self.get_env_with_main_alias("/")?;
-                        if matches!(slash, Value::Nil) {
+                        if slash.is_nil() {
                             return None;
                         }
                         let i: usize = name.parse().ok()?;
@@ -378,7 +377,7 @@ impl Interpreter {
                     .map(Ok)
                     .unwrap_or_else(|| {
                         if name.starts_with('^') {
-                            Ok(Value::Bool(true))
+                            Ok(Value::TRUE)
                         } else if name == "self" || name.ends_with("::self") {
                             Err(RuntimeError::new(
                                 "'self' used where no object is available".to_string(),
@@ -391,7 +390,7 @@ impl Interpreter {
                                 .is_some_and(|c| c.is_alphanumeric() || c == '_')
                         {
                             if self.get_env_with_main_alias("self").is_some() {
-                                Ok(Value::Nil)
+                                Ok(Value::NIL)
                             } else {
                                 Err(RuntimeError::new(format!(
                                     "Variable $!{} used where no 'self' is available",
@@ -399,18 +398,18 @@ impl Interpreter {
                                 )))
                             }
                         } else {
-                            Ok(Value::Nil)
+                            Ok(Value::NIL)
                         }
                     })?;
                 // When the value is Nil and the variable has a type constraint,
                 // return the type object (consistent with GetLocal behavior).
-                let val = if matches!(val, Value::Nil) {
+                let val = if val.is_nil() {
                     if let Some(def) = self.var_default(name) {
                         def.clone()
                     } else if let Some(constraint) = self.var_type_constraint_fast(name).cloned() {
                         let nominal =
                             loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                        Value::Package(Symbol::intern(&nominal))
+                        Value::package(Symbol::intern(&nominal))
                     } else {
                         val
                     }
@@ -418,7 +417,7 @@ impl Interpreter {
                     val
                 };
                 // Force lazy thunks transparently on access
-                let val = if let Value::LazyThunk(ref thunk_data) = val {
+                let val = if let ValueView::LazyThunk(thunk_data) = val.view() {
                     self.force_lazy_thunk(thunk_data)?
                 } else {
                     val
@@ -467,13 +466,13 @@ impl Interpreter {
                 // from `self`'s shared cell so a mutation in a nested method frame
                 // is visible here.
                 if let Some(cell_val) = self.read_self_attr_cell(name) {
-                    let val = match cell_val {
-                        Value::Hash(ref map) => Value::real_array(
+                    let val = match cell_val.view() {
+                        ValueView::Hash(map) => Value::real_array(
                             map.iter()
-                                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                                .map(|(k, v)| Value::pair(k.clone(), v.clone()))
                                 .collect(),
                         ),
-                        other => other,
+                        _ => cell_val,
                     };
                     self.stack.push(val);
                     *ip += 1;
@@ -498,7 +497,7 @@ impl Interpreter {
                             return None;
                         }
                         let self_val = self.get_env_with_main_alias("self")?;
-                        if let Value::Instance { attributes, .. } = &self_val {
+                        if let ValueView::Instance { attributes, .. } = self_val.view() {
                             attributes.as_map().get(attr_name).cloned()
                         } else {
                             None
@@ -509,7 +508,7 @@ impl Interpreter {
                         if name.contains("__ANON_ARRAY_") || name == "@__ANON_ARRAY__" {
                             Value::real_array(vec![])
                         } else {
-                            Value::Nil
+                            Value::NIL
                         }
                     });
                 // A whole-container `:=` bind (`my @b := @a`) stores a shared
@@ -519,18 +518,18 @@ impl Interpreter {
                 // an array element). Element-level cells are handled at Index.
                 let val = val.into_deref();
                 // When @-sigil dereferences a Hash, convert to a list of pairs
-                let val = match val {
-                    Value::Hash(ref map) => {
+                let val = match val.view() {
+                    ValueView::Hash(map) => {
                         let pairs: Vec<Value> = map
                             .iter()
-                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                            .map(|(k, v)| Value::pair(k.clone(), v.clone()))
                             .collect();
                         Value::real_array(pairs)
                     }
                     // Array-contextualizing a Seq (`@$s`) reifies and caches it, so
                     // it may be read repeatedly. If the Seq's iterator was already
                     // taken (e.g. by `.skip`/`.iterator`) and not cached, throw.
-                    Value::Seq(ref items) => {
+                    ValueView::Seq(items) => {
                         if crate::value::seq_is_consumed(items)
                             && !crate::value::seq_is_cached(items)
                         {
@@ -539,7 +538,7 @@ impl Interpreter {
                         crate::value::seq_mark_cached(items);
                         val
                     }
-                    other => other,
+                    _ => val,
                 };
                 self.stack.push(val);
                 *ip += 1;
@@ -589,7 +588,7 @@ impl Interpreter {
                             return None;
                         }
                         let self_val = self.get_env_with_main_alias("self")?;
-                        if let Value::Instance { attributes, .. } = &self_val {
+                        if let ValueView::Instance { attributes, .. } = self_val.view() {
                             attributes.as_map().get(attr_name).cloned()
                         } else {
                             None
@@ -611,7 +610,7 @@ impl Interpreter {
                             self.stack
                                 .push(Value::hash(std::collections::HashMap::new()));
                         } else {
-                            self.stack.push(Value::Nil);
+                            self.stack.push(Value::NIL);
                         }
                     }
                 }
@@ -635,7 +634,7 @@ impl Interpreter {
                     .get_our_var(name)
                     .cloned()
                     .or_else(|| self.get_env_with_main_alias(name))
-                    .unwrap_or(Value::Nil);
+                    .unwrap_or(Value::NIL);
                 self.stack.push(val);
                 *ip += 1;
             }
@@ -672,8 +671,8 @@ impl Interpreter {
                 if is_rebind {
                     self.rebind_context = false;
                 }
-                let name_str = match &code.constants[*name_idx as usize] {
-                    Value::Str(s) => s.as_str(),
+                let name_str = match code.constants[*name_idx as usize].view() {
+                    ValueView::Str(s) => s.as_str(),
                     _ => unreachable!("SetGlobal name must be a string constant"),
                 };
                 // Fast path for the anonymous state scalar (`$` and `$.` desugaring).
@@ -691,10 +690,16 @@ impl Interpreter {
                     && !self.fatal_mode
                     && self.var_type_constraint_fast(name_str).is_none()
                     && !self.is_readonly(name_str)
-                    && !matches!(self.stack.last(), Some(Value::Capture { .. }))
-                    && !matches!(self.env().get(name_str), Some(Value::ContainerRef(_)))
+                    && !matches!(
+                        self.stack.last().map(Value::view),
+                        Some(ValueView::Capture { .. })
+                    )
+                    && !matches!(
+                        self.env().get(name_str).map(Value::view),
+                        Some(ValueView::ContainerRef(_))
+                    )
                 {
-                    let val = self.stack.pop().unwrap_or(Value::Nil);
+                    let val = self.stack.pop().unwrap_or(Value::NIL);
                     // Preserve `$` state persistence across closure calls.
                     self.sync_anon_state_value("__ANON_STATE__", &val);
                     let sym = Symbol::intern("__ANON_STATE__");
@@ -769,12 +774,18 @@ impl Interpreter {
                 // Hash/Array bound containers.
                 let is_bound_container = name.starts_with(['@', '%'])
                     && matches!(
-                        self.env().get(&format!("__mutsu_bound::{}", name)),
-                        Some(Value::Bool(true))
+                        self.env()
+                            .get(&format!("__mutsu_bound::{}", name))
+                            .map(Value::view),
+                        Some(ValueView::Bool(true))
                     )
                     && !matches!(
-                        self.env().get(&name),
-                        Some(Value::Mix(_, false) | Value::Set(_, false) | Value::Bag(_, false))
+                        self.env().get(&name).map(Value::view),
+                        Some(
+                            ValueView::Mix(_, false)
+                                | ValueView::Set(_, false)
+                                | ValueView::Bag(_, false)
+                        )
                     );
                 if !raw_mode && !is_bind_ctx && !is_bound_container {
                     self.check_readonly_for_modify(&name)?;
@@ -798,14 +809,16 @@ impl Interpreter {
                     if matches!(base, "Mix" | "Set" | "Bag")
                         && let Some(existing) = self.env().get(&name)
                         && matches!(
-                            existing,
-                            Value::Mix(_, false) | Value::Set(_, false) | Value::Bag(_, false)
+                            existing.view(),
+                            ValueView::Mix(_, false)
+                                | ValueView::Set(_, false)
+                                | ValueView::Bag(_, false)
                         )
                     {
-                        let type_name = match existing {
-                            Value::Mix(..) => "Mix",
-                            Value::Set(..) => "Set",
-                            Value::Bag(..) => "Bag",
+                        let type_name = match existing.view() {
+                            ValueView::Mix(..) => "Mix",
+                            ValueView::Set(..) => "Set",
+                            ValueView::Bag(..) => "Bag",
                             _ => unreachable!(),
                         };
                         return Err(RuntimeError::new(format!(
@@ -821,7 +834,10 @@ impl Interpreter {
                     && !name.starts_with('%')
                     && !name.starts_with('&')
                     && !name.contains("::")
-                    && matches!(self.env().get(&name), Some(Value::Package(_)))
+                    && matches!(
+                        self.env().get(&name).map(Value::view),
+                        Some(ValueView::Package(_))
+                    )
                     && self.has_class(&name)
                 {
                     return Err(RuntimeError::new(format!(
@@ -829,38 +845,36 @@ impl Interpreter {
                         name
                     )));
                 }
-                let raw_val = self.stack.pop().unwrap_or(Value::Nil);
-                let (raw_val, bind_source) = if let Value::Capture { positional, named } = &raw_val
-                {
-                    if positional.is_empty() {
-                        if let (Some(Value::Str(source_name)), Some(inner)) = (
-                            named.get("__mutsu_varref_name"),
-                            named.get("__mutsu_varref_value"),
-                        ) {
-                            (inner.clone(), Some(source_name.to_string()))
+                let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+                let (raw_val, bind_source) =
+                    if let ValueView::Capture { positional, named } = raw_val.view() {
+                        if positional.is_empty() {
+                            if let (Some(ValueView::Str(source_name)), Some(inner)) = (
+                                named.get("__mutsu_varref_name").map(Value::view),
+                                named.get("__mutsu_varref_value"),
+                            ) {
+                                (inner.clone(), Some(source_name.to_string()))
+                            } else {
+                                (raw_val, None)
+                            }
                         } else {
                             (raw_val, None)
                         }
                     } else {
                         (raw_val, None)
-                    }
-                } else {
-                    (raw_val, None)
-                };
+                    };
                 let mut val = if raw_mode && name.starts_with('@') {
                     // Constants with @ sigil coerce to List (not Array).
                     // `constant @x = 42` gives `(42,)`, not `[42]`.
                     // Explicit Arrays ([1,2,3]) are preserved.
                     // Instance objects that do Positional are kept as-is
                     // (they already went through CoerceToList).
-                    match raw_val {
-                        Value::Array(items, kind) if kind.is_real_array() => {
-                            Value::Array(items, kind)
+                    match raw_val.view() {
+                        ValueView::Array(_, kind) if kind.is_real_array() => raw_val,
+                        ValueView::Array(items, _) => {
+                            Value::array_with_kind(items.clone(), crate::value::ArrayKind::List)
                         }
-                        Value::Array(items, _) => {
-                            Value::Array(items, crate::value::ArrayKind::List)
-                        }
-                        Value::Instance { ref class_name, .. } => {
+                        ValueView::Instance { class_name, .. } => {
                             let cn = class_name.resolve();
                             let does_positional = matches!(
                                 cn.as_str(),
@@ -881,14 +895,14 @@ impl Interpreter {
                             if does_positional {
                                 raw_val
                             } else {
-                                Value::Array(
+                                Value::array_with_kind(
                                     crate::gc::Gc::new(crate::value::ArrayData::new(vec![raw_val])),
                                     crate::value::ArrayKind::List,
                                 )
                             }
                         }
-                        other => Value::Array(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
+                        _ => Value::array_with_kind(
+                            crate::gc::Gc::new(crate::value::ArrayData::new(vec![raw_val])),
                             crate::value::ArrayKind::List,
                         ),
                     }
@@ -916,7 +930,7 @@ impl Interpreter {
                     && name.len() > 1
                     && !name.contains("__")
                     && loan_env!(self, var_type_constraint(&name)).is_none()
-                    && matches!(&val, Value::Array(d, _) if d.value_type.is_none() && d.declared_type.is_none())
+                    && matches!(val.view(), ValueView::Array(d, _) if d.value_type.is_none() && d.declared_type.is_none())
                 {
                     // `@a = list` where `@a` has no *declared* element type but is
                     // an alias / for-loop binding of an element-typed array
@@ -929,8 +943,12 @@ impl Interpreter {
                     // already carries a type (e.g. a `DeitemizeForBind` chunk
                     // element), that type wins — reading a possibly-stale slot here
                     // would clobber it (the cross-type for-loop contamination).
-                    let old_info = match self.get_env_with_main_alias(&name) {
-                        Some(Value::Array(old, _))
+                    let old_info = match self
+                        .get_env_with_main_alias(&name)
+                        .as_ref()
+                        .map(Value::view)
+                    {
+                        Some(ValueView::Array(old, _))
                             if old.value_type.is_some() || old.declared_type.is_some() =>
                         {
                             Some(crate::runtime::ContainerTypeInfo {
@@ -949,10 +967,10 @@ impl Interpreter {
                     && !name.starts_with('%')
                     && !name.starts_with('@')
                 {
-                    if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, &val) {
+                    if !val.is_nil() && !self.type_matches_value(&constraint, &val) {
                         // When assigning an unhandled Failure to a typed variable
                         // that can't hold it, explode the Failure first (Raku behavior)
-                        if let Value::Instance { class_name, .. } = &val
+                        if let ValueView::Instance { class_name, .. } = val.view()
                             && class_name.resolve() == "Failure"
                             && !val.is_failure_handled()
                             && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
@@ -965,7 +983,7 @@ impl Interpreter {
                             &val,
                         ));
                     }
-                    if !matches!(val, Value::Nil) {
+                    if !val.is_nil() {
                         val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
                     }
                     // Wrap native integer values on assignment (overflow wrapping)
@@ -979,9 +997,13 @@ impl Interpreter {
                 }
                 let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
                 let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-                if matches!(self.env().get(&readonly_key), Some(Value::Bool(true)))
-                    && !matches!(self.env().get(&alias_key), Some(Value::Str(_)))
-                {
+                if matches!(
+                    self.env().get(&readonly_key).map(Value::view),
+                    Some(ValueView::Bool(true))
+                ) && !matches!(
+                    self.env().get(&alias_key).map(Value::view),
+                    Some(ValueView::Str(_))
+                ) {
                     return Err(RuntimeError::assignment_ro(None));
                 }
                 if let Some(source_name) = bind_source.as_ref() {
@@ -989,7 +1011,8 @@ impl Interpreter {
                     let mut seen = std::collections::HashSet::new();
                     while seen.insert(resolved_source.clone()) {
                         let key = format!("__mutsu_sigilless_alias::{}", resolved_source);
-                        let Some(Value::Str(next)) = self.env().get(&key) else {
+                        let Some(ValueView::Str(next)) = self.env().get(&key).map(Value::view)
+                        else {
                             break;
                         };
                         resolved_source = next.to_string();
@@ -1001,7 +1024,7 @@ impl Interpreter {
                     // readonly as well (persisted in env for cross-scope survival).
                     let source_readonly = self.is_readonly(source_name);
                     self.env_mut()
-                        .insert(readonly_key.clone(), Value::Bool(source_readonly));
+                        .insert(readonly_key.clone(), Value::truth(source_readonly));
                     if source_readonly {
                         self.mark_readonly(&name);
                     }
@@ -1011,8 +1034,8 @@ impl Interpreter {
                         && !name.starts_with('&')
                         && !source_readonly
                     {
-                        let container = if let Value::ContainerRef(ref arc) = val {
-                            Value::ContainerRef(arc.clone())
+                        let container = if let ValueView::ContainerRef(arc) = val.view() {
+                            Value::container_ref(arc.clone())
                         } else {
                             val.clone().into_container_ref()
                         };
@@ -1027,8 +1050,8 @@ impl Interpreter {
                         // `__mutsu_sigilless_alias::!x` → `"x"`.
                         {
                             let reverse_key = format!("__mutsu_sigilless_alias::!{}", name);
-                            if let Some(Value::Str(ref target)) =
-                                self.env().get(&reverse_key).cloned()
+                            if let Some(reverse_val) = self.env().get(&reverse_key).cloned()
+                                && let ValueView::Str(target) = reverse_val.view()
                                 && target.as_str() == name
                             {
                                 let priv_key = format!("!{}", name);
@@ -1092,17 +1115,19 @@ impl Interpreter {
                 // Return early to avoid overwriting the ContainerRef in env with a plain value.
                 if !is_rebind && !raw_mode {
                     // Check env directly (not through alias resolution to avoid circular lookups)
-                    if let Some(Value::ContainerRef(arc)) = self.env().get(&name).cloned() {
+                    if let Some(cell_val) = self.env().get(&name).cloned()
+                        && let ValueView::ContainerRef(arc) = cell_val.view()
+                    {
                         arc.lock().unwrap().clone_from(&val);
                         *ip += 1;
                         return Ok(());
                     }
                     // Also check alias target for sigilless attributes
                     let alias_key_check = format!("__mutsu_sigilless_alias::{}", name);
-                    if let Some(Value::Str(alias_target)) =
-                        self.env().get(&alias_key_check).cloned()
-                        && let Some(Value::ContainerRef(arc)) =
-                            self.env().get(alias_target.as_str()).cloned()
+                    if let Some(alias_val) = self.env().get(&alias_key_check).cloned()
+                        && let ValueView::Str(alias_target) = alias_val.view()
+                        && let Some(cell_val) = self.env().get(alias_target.as_str()).cloned()
+                        && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
                         arc.lock().unwrap().clone_from(&val);
                         *ip += 1;
@@ -1147,7 +1172,7 @@ impl Interpreter {
                     && !is_rebind
                     && bind_source.is_none()
                     && (name.starts_with('@') || name.starts_with('%'))
-                    && matches!(val, Value::Array(..) | Value::Hash(..))
+                    && matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..))
                 {
                     // Fresh `my @a`/`my %h` declaration: own a DISTINCT container
                     // (Raku `=` copy semantics), never reuse the prior iteration's
@@ -1163,14 +1188,14 @@ impl Interpreter {
                     && !name.contains("__ANON")
                     && (name.starts_with('@') || name.starts_with('%'))
                 {
-                    match (self.env().get(&name), &val) {
-                        (Some(Value::Array(old_gc, _)), Value::Array(new_gc, kind))
+                    match (self.env().get(&name).map(Value::view), val.view()) {
+                        (Some(ValueView::Array(old_gc, _)), ValueView::Array(new_gc, kind))
                             if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
                         {
-                            let (old_gc, new_gc, kind) = (old_gc.clone(), new_gc.clone(), *kind);
+                            let (old_gc, new_gc, kind) = (old_gc.clone(), new_gc.clone(), kind);
                             val = Self::array_inplace_reassign(&old_gc, &new_gc, kind);
                         }
-                        (Some(Value::Hash(old_gc)), Value::Hash(new_gc))
+                        (Some(ValueView::Hash(old_gc)), ValueView::Hash(new_gc))
                             if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
                         {
                             let (old_gc, new_gc) = (old_gc.clone(), new_gc.clone());
@@ -1180,10 +1205,10 @@ impl Interpreter {
                         // name (a first assignment): the `@`/`%` var must own a
                         // DISTINCT container per Raku `=` copy semantics, so detach
                         // from any shared backing `Gc`.
-                        (existing, Value::Array(..) | Value::Hash(..))
+                        (existing, ValueView::Array(..) | ValueView::Hash(..))
                             if !matches!(
                                 existing,
-                                Some(Value::Array(..)) | Some(Value::Hash(..))
+                                Some(ValueView::Array(..)) | Some(ValueView::Hash(..))
                             ) =>
                         {
                             val = Self::detach_shared_container(val);
@@ -1237,7 +1262,7 @@ impl Interpreter {
                     loan_env!(self, set_shared_var(&name, val.clone()));
                 }
                 let mut alias_name = self.env().get(&alias_key).and_then(|v| {
-                    if let Value::Str(name) = v {
+                    if let ValueView::Str(name) = v.view() {
                         Some(name.to_string())
                     } else {
                         None
@@ -1256,7 +1281,7 @@ impl Interpreter {
                     self.write_self_attr_cell(&current_alias, val.clone());
                     let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
                     alias_name = self.env().get(&next_key).and_then(|v| {
-                        if let Value::Str(name) = v {
+                        if let ValueView::Str(name) = v.view() {
                             Some(name.to_string())
                         } else {
                             None
@@ -1283,7 +1308,7 @@ impl Interpreter {
                         .iter()
                         .filter_map(|(k, v)| {
                             if let Some(var_name) = k.strip_prefix_str(prefix)
-                                && let Value::Str(target) = v
+                                && let ValueView::Str(target) = v.view()
                                 && target.as_str() == name
                             {
                                 Some(var_name)
@@ -1322,21 +1347,24 @@ impl Interpreter {
                 }
                 self.vm_set_var_type_constraint(&name, Some(constraint.clone()));
                 // For scalar variables, if the current value is Nil, set it to the type object.
-                // Exception: if the constraint is "Nil", keep the value as Value::Nil
-                // (the Nil type object is Value::Nil, not Value::Package("Nil")).
+                // Exception: if the constraint is "Nil", keep the value as Nil
+                // (the Nil type object is Nil itself, not the Package "Nil").
                 if !name.starts_with('@') && !name.starts_with('%') && constraint != "Nil" {
-                    let is_nil = matches!(self.env().get(&name), Some(Value::Nil) | None);
+                    let is_nil = matches!(
+                        self.env().get(&name).map(Value::view),
+                        Some(ValueView::Nil) | None
+                    );
                     if is_nil {
                         // Native types get zero/empty defaults instead of type objects.
                         let init_val =
                             if crate::runtime::native_types::is_native_int_type(&constraint) {
-                                Value::Int(0)
+                                Value::int(0)
                             } else if matches!(constraint.as_str(), "num" | "num32" | "num64") {
-                                Value::Num(0.0)
+                                Value::num(0.0)
                             } else if constraint == "str" {
-                                Value::Str(String::new().into())
+                                Value::str(String::new())
                             } else {
-                                Value::Package(Symbol::intern(
+                                Value::package(Symbol::intern(
                                     &loan_env!(self, var_type_constraint(&name))
                                         .unwrap_or(constraint.clone()),
                                 ))
@@ -1364,23 +1392,23 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::SetTopic => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.last_topic_value = Some(val.clone());
                 self.env_mut().insert("_".to_string(), val);
                 *ip += 1;
             }
             OpCode::PushEnterResult => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.enter_result_stack.push(val);
                 *ip += 1;
             }
             OpCode::LoadEnterResult => {
-                let val = self.enter_result_stack.pop().unwrap_or(Value::Nil);
+                let val = self.enter_result_stack.pop().unwrap_or(Value::NIL);
                 self.stack.push(val);
                 *ip += 1;
             }
             OpCode::SaveTopic => {
-                let current = self.env().get("_").cloned().unwrap_or(Value::Nil);
+                let current = self.env().get("_").cloned().unwrap_or(Value::NIL);
                 self.topic_save_stack.push(current);
                 *ip += 1;
             }
@@ -1441,12 +1469,12 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::Itemize => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.stack.push(Self::itemize_value(val));
                 *ip += 1;
             }
             OpCode::DeitemizeForBind => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 let deitemized = self.deitemize_for_bind(val)?;
                 self.stack.push(deitemized);
                 *ip += 1;
@@ -1455,21 +1483,24 @@ impl Interpreter {
                 // Itemize a scalar variable's value for `@a = $var`, UNLESS the
                 // scalar was bound (`:=`) to a Positional. A bound scalar is not
                 // a Scalar container, so its value must flatten on `@`-assignment.
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 let is_bound_decont = if self.bound_decont_active {
-                    let var_name = match &code.constants[*name_idx as usize] {
-                        Value::Str(s) => s.as_str(),
+                    let var_name = match code.constants[*name_idx as usize].view() {
+                        ValueView::Str(s) => s.as_str(),
                         _ => "",
                     };
                     let key = format!("__mutsu_bound_decont::{}", var_name);
-                    matches!(self.env().get(&key), Some(Value::Bool(true)))
+                    matches!(
+                        self.env().get(&key).map(Value::view),
+                        Some(ValueView::Bool(true))
+                    )
                 } else {
                     false
                 };
                 let result = if is_bound_decont {
                     val
                 } else {
-                    match val {
+                    match val.view() {
                         // A scalar holding a Set/Bag/Mix assigned to an `@`
                         // variable stays a single item (`my $h = set(...); my @a
                         // = $h` -> `@a.elems == 1`). These have no itemized
@@ -1477,31 +1508,31 @@ impl Interpreter {
                         // this `@`-assignment path, not in general `$(...)`
                         // itemization (which must not leak the wrapper into set
                         // ops). A Hash uses its `itemized` flag (no wrapper).
-                        v @ (Value::Set(..) | Value::Bag(..) | Value::Mix(..)) => {
-                            Value::Scalar(Box::new(v))
+                        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                            Value::scalar(val)
                         }
                         // A scalar holding a Range assigned to an `@` variable
                         // stays a single item (`my $r = 1..5; my @a = $r` ->
                         // `@a.raku eq "[1..5,]"`). Like Set/Bag/Mix, a Range has
                         // no itemized container kind, so wrap it in a Scalar on
                         // this `@`-assignment path so it does not flatten.
-                        v @ (Value::Range(..)
-                        | Value::RangeExcl(..)
-                        | Value::RangeExclStart(..)
-                        | Value::RangeExclBoth(..)
-                        | Value::GenericRange { .. }) => Value::Scalar(Box::new(v)),
-                        other => Self::itemize_value(other),
+                        ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. } => Value::scalar(val),
+                        _ => Self::itemize_value(val),
                     }
                 };
                 self.stack.push(result);
                 *ip += 1;
             }
             OpCode::WrapScalar => {
-                // Wrap the top-of-stack value in a Value::Scalar container.
+                // Wrap the top-of-stack value in a Scalar container.
                 // Used for `my $ = expr` (anonymous scalar) in argument position
                 // so the container is preserved when stored in an immutable List.
-                let val = self.stack.pop().unwrap_or(Value::Nil);
-                self.stack.push(Value::Scalar(Box::new(val)));
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                self.stack.push(Value::scalar(val));
                 *ip += 1;
             }
             OpCode::WrapTypedContainer(type_idx) => {
@@ -1509,14 +1540,14 @@ impl Interpreter {
                 // and record its `of`-type, so the constraint travels with the
                 // value (e.g. into a Pair value) and is enforced on assignment.
                 let type_name = Self::const_str(code, *type_idx).to_string();
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 let cell = crate::gc::Gc::new(std::sync::Mutex::new(val));
                 crate::value::register_container_constraint(&cell, &type_name);
-                self.stack.push(Value::ContainerRef(cell));
+                self.stack.push(Value::container_ref(cell));
                 *ip += 1;
             }
             OpCode::FlattenSlurpy => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 let mut items = Vec::new();
                 Self::flatten_value_for_slurpy(&val, &mut items);
                 self.stack.push(Value::real_array(items));
@@ -1814,9 +1845,9 @@ impl Interpreter {
             }
             OpCode::ContainerizePair => {
                 let val = self.stack.pop().unwrap();
-                let containerized = match val {
-                    Value::Pair(k, v) => Value::ValuePair(Box::new(Value::str(k)), v),
-                    other => other,
+                let containerized = match val.view() {
+                    ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
+                    _ => val,
                 };
                 self.stack.push(containerized);
                 *ip += 1;
@@ -1964,7 +1995,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::Goto => {
-                let target = self.stack.pop().unwrap_or(Value::Nil).to_string_value();
+                let target = self.stack.pop().unwrap_or(Value::NIL).to_string_value();
                 if let Some(target_ip) = self.find_label_target(code, &target) {
                     *ip = target_ip;
                 } else {
@@ -2008,9 +2039,9 @@ impl Interpreter {
             OpCode::CallDefined => {
                 let val = self.stack.pop().unwrap();
                 // Check if the value has a user-defined .defined method
-                let class_name = match &val {
-                    Value::Package(name) => Some(*name),
-                    Value::Instance { class_name, .. } => Some(*class_name),
+                let class_name = match val.view() {
+                    ValueView::Package(name) => Some(name),
+                    ValueView::Instance { class_name, .. } => Some(class_name),
                     _ => None,
                 };
                 let has_user_defined = class_name
@@ -2041,8 +2072,8 @@ impl Interpreter {
                 let defined = if has_user_defined {
                     // Call user method directly, bypassing native method dispatch
                     let cn = class_name.unwrap();
-                    let attrs = match &val {
-                        Value::Instance { attributes, .. } => attributes.to_map(),
+                    let attrs = match val.view() {
+                        ValueView::Instance { attributes, .. } => attributes.to_map(),
                         _ => std::collections::HashMap::new(),
                     };
                     match self.vm_run_instance_method(
@@ -2053,10 +2084,10 @@ impl Interpreter {
                         Some(val.clone()),
                     ) {
                         Ok((result, _)) => result,
-                        Err(_) => Value::Bool(runtime::types::value_is_defined(&val)),
+                        Err(_) => Value::truth(runtime::types::value_is_defined(&val)),
                     }
                 } else {
-                    Value::Bool(runtime::types::value_is_defined(&val))
+                    Value::truth(runtime::types::value_is_defined(&val))
                 };
                 // Stage 3: a user-defined `.defined` (dispatched above for
                 // `andthen`/`notandthen`) runs interpreter code that can mutate a
@@ -2067,7 +2098,7 @@ impl Interpreter {
                 if armed {
                     for (i, name) in code.locals.iter().enumerate() {
                         if name.starts_with('!')
-                            || matches!(self.locals[i], Value::HashEntryRef { .. })
+                            || matches!(self.locals[i].view(), ValueView::HashEntryRef { .. })
                         {
                             continue;
                         }
@@ -2100,7 +2131,7 @@ impl Interpreter {
                 } else if !a_truthy && b_truthy {
                     b
                 } else if a_truthy && b_truthy {
-                    Value::Nil
+                    Value::NIL
                 } else {
                     // both falsy: return the last falsy value
                     b
@@ -2114,30 +2145,32 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::CoerceToList => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
-                let list_val = match val {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                let list_val = match val.view() {
                     // Explicit Arrays ([1,2,3]) are preserved as-is.
-                    Value::Array(_, kind) if kind.is_real_array() => val,
+                    ValueView::Array(_, kind) if kind.is_real_array() => val,
                     // Comma lists and other non-real arrays become Lists.
-                    Value::Array(items, _) => Value::Array(items, crate::value::ArrayKind::List),
-                    Value::Seq(items) => Value::Array(
+                    ValueView::Array(items, _) => {
+                        Value::array_with_kind(items.clone(), crate::value::ArrayKind::List)
+                    }
+                    ValueView::Seq(items) => Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
                         crate::value::ArrayKind::List,
                     ),
                     // Hash values are flattened to pairs for constant @.
-                    Value::Hash(ref map) => {
+                    ValueView::Hash(map) => {
                         let pairs: Vec<Value> = map
                             .iter()
-                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                            .map(|(k, v)| Value::pair(k.clone(), v.clone()))
                             .collect();
-                        Value::Array(
+                        Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(pairs)),
                             crate::value::ArrayKind::List,
                         )
                     }
                     // Instance objects: check if Positional; if so keep as-is,
                     // otherwise call .cache for coercion (constant @ semantics).
-                    Value::Instance { ref class_name, .. } => {
+                    ValueView::Instance { class_name, .. } => {
                         let cn = class_name.resolve();
                         let does_positional = matches!(
                             cn.as_str(),
@@ -2162,15 +2195,15 @@ impl Interpreter {
                             // Skip native methods so user-defined .cache is called.
                             let cached =
                                 self.call_method_all_with_fallback(&val, "cache", &[], true)?;
-                            let cached_val = cached.into_iter().next().unwrap_or(Value::Nil);
+                            let cached_val = cached.into_iter().next().unwrap_or(Value::NIL);
                             // Check that .cache returned a Positional
                             let is_pos = matches!(
-                                &cached_val,
-                                Value::Array(..)
-                                    | Value::Seq(_)
-                                    | Value::Slip(_)
-                                    | Value::LazyList(_)
-                                    | Value::LazyIoLines { .. }
+                                cached_val.view(),
+                                ValueView::Array(..)
+                                    | ValueView::Seq(_)
+                                    | ValueView::Slip(_)
+                                    | ValueView::LazyList(_)
+                                    | ValueView::LazyIoLines { .. }
                             );
                             if !is_pos {
                                 let got_type = crate::runtime::utils::value_type_name(&cached_val);
@@ -2178,7 +2211,7 @@ impl Interpreter {
                                 attrs.insert("got".to_string(), cached_val);
                                 attrs.insert(
                                     "expected".to_string(),
-                                    Value::Package(crate::symbol::Symbol::intern("Positional")),
+                                    Value::package(crate::symbol::Symbol::intern("Positional")),
                                 );
                                 attrs.insert(
                                     "message".to_string(),
@@ -2199,25 +2232,28 @@ impl Interpreter {
                                 return Err(err);
                             }
                             // Coerce cached result to List
-                            match cached_val {
-                                Value::Array(items, _) => {
-                                    Value::Array(items, crate::value::ArrayKind::List)
-                                }
-                                Value::Seq(items) => Value::Array(
+                            match cached_val.view() {
+                                ValueView::Array(items, _) => Value::array_with_kind(
+                                    items.clone(),
+                                    crate::value::ArrayKind::List,
+                                ),
+                                ValueView::Seq(items) => Value::array_with_kind(
                                     crate::gc::Gc::new(crate::value::ArrayData::new(
                                         items.to_vec(),
                                     )),
                                     crate::value::ArrayKind::List,
                                 ),
-                                other => Value::Array(
-                                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
+                                _ => Value::array_with_kind(
+                                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![
+                                        cached_val,
+                                    ])),
                                     crate::value::ArrayKind::List,
                                 ),
                             }
                         }
                     }
-                    other => Value::Array(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
+                    _ => Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![val])),
                         crate::value::ArrayKind::List,
                     ),
                 };
@@ -2225,9 +2261,11 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::Pop => {
-                if let Some(Value::LazyList(list)) = self.stack.pop() {
+                if let Some(popped) = self.stack.pop()
+                    && let ValueView::LazyList(list) = popped.view()
+                {
                     // Sink context must realize lazy gathers for side effects.
-                    self.force_lazy_list_vm(&list)?;
+                    self.force_lazy_list_vm(list)?;
                 }
                 *ip += 1;
             }
@@ -2296,7 +2334,7 @@ impl Interpreter {
                     // not auto-sunk.
                     let sink_class = if !user_sink {
                         None
-                    } else if let Value::Instance { class_name, .. } = &val {
+                    } else if let ValueView::Instance { class_name, .. } = val.view() {
                         let cn = class_name.resolve();
                         if self.has_user_method(&cn, "sink") && !self.has_user_method(&cn, "STORE")
                         {
@@ -2308,8 +2346,8 @@ impl Interpreter {
                         None
                     };
                     if let Some(cn) = sink_class {
-                        let attrs = match &val {
-                            Value::Instance { attributes, .. } => attributes.to_map(),
+                        let attrs = match val.view() {
+                            ValueView::Instance { attributes, .. } => attributes.to_map(),
                             _ => std::collections::HashMap::new(),
                         };
                         // `sink` can mutate a captured-outer caller lexical by
@@ -2339,7 +2377,7 @@ impl Interpreter {
                         );
                         for (i, name) in code.locals.iter().enumerate() {
                             if name.starts_with('!')
-                                || matches!(self.locals[i], Value::HashEntryRef { .. })
+                                || matches!(self.locals[i].view(), ValueView::HashEntryRef { .. })
                             {
                                 continue;
                             }
@@ -2359,20 +2397,20 @@ impl Interpreter {
                         *ip += 1;
                         return Ok(());
                     }
-                    match &val {
+                    match val.view() {
                         // A `.cache`-returned view is a cached, re-iterable list;
                         // sinking it is a no-op and must NOT drain the underlying
                         // source (e.g. `(my $l = $cat.lines).cache;` keeps the cat
                         // unread). A bare lazy Seq still drains below.
-                        Value::LazyList(list) if list.is_cached_no_sink() => {}
-                        Value::LazyList(list) => {
+                        ValueView::LazyList(list) if list.is_cached_no_sink() => {}
+                        ValueView::LazyList(list) => {
                             self.force_lazy_list_vm(list)?;
                         }
-                        Value::LazyIoLines { handle, words, .. } => {
+                        ValueView::LazyIoLines { handle, words, .. } => {
                             // Sinking a lazy IO lines iterator must drain the
                             // underlying handle so that side effects (read
                             // position, .eof) are observable.
-                            loan_env!(self, force_lazy_io_lines(handle, *words))?;
+                            loan_env!(self, force_lazy_io_lines(handle, words))?;
                         }
                         _ => {
                             // Sinking an unhandled Failure always throws (Raku behavior)
@@ -2390,29 +2428,31 @@ impl Interpreter {
                                 return Err(err);
                             }
                             // Sinking a Proc with non-zero exitcode throws X::Proc::Unsuccessful
-                            if let Value::Instance {
+                            if let ValueView::Instance {
                                 class_name,
                                 attributes,
                                 ..
-                            } = &val
+                            } = val.view()
                                 && class_name.resolve() == "Proc"
                             {
-                                let exitcode = match attributes.as_map().get("exitcode") {
-                                    Some(Value::Int(i)) => *i,
-                                    _ => 0,
-                                };
+                                let exitcode =
+                                    match attributes.as_map().get("exitcode").map(Value::view) {
+                                        Some(ValueView::Int(i)) => i,
+                                        _ => 0,
+                                    };
                                 // A still-"live" Proc (from `run(:in, ...)`)
                                 // carries a placeholder exitcode of -1 until it
                                 // is finalized; sinking it must not throw.
                                 let is_live = matches!(
-                                    attributes.as_map().get("live"),
-                                    Some(Value::Bool(true))
+                                    attributes.as_map().get("live").map(Value::view),
+                                    Some(ValueView::Bool(true))
                                 );
                                 if exitcode != 0 && !is_live {
-                                    let signal = match attributes.as_map().get("signal") {
-                                        Some(Value::Int(i)) => *i,
-                                        _ => 0,
-                                    };
+                                    let signal =
+                                        match attributes.as_map().get("signal").map(Value::view) {
+                                            Some(ValueView::Int(i)) => i,
+                                            _ => 0,
+                                        };
                                     let command = attributes
                                         .as_map()
                                         .get("command")
@@ -2884,13 +2924,13 @@ impl Interpreter {
             } => {
                 let container = Self::const_str(code, *container_idx).to_string();
                 let positional = *positional;
-                let index = self.stack.pop().unwrap_or(Value::Nil);
+                let index = self.stack.pop().unwrap_or(Value::NIL);
                 // Read the element value `container[index]` and push it as the
                 // topic, reusing the standard index op so all container shapes
                 // (Array/Hash/ContainerRef/typed) are handled uniformly.
                 let cval = self
                     .get_env_with_main_alias(&container)
-                    .unwrap_or(Value::Nil);
+                    .unwrap_or(Value::NIL);
                 self.stack.push(cval);
                 self.stack.push(index.clone());
                 self.exec_index_op_with_positional(positional)?;
@@ -2901,42 +2941,42 @@ impl Interpreter {
             OpCode::UndefineAggregate(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 if let Some(val) = self.get_env_with_main_alias(name) {
-                    match &val {
-                        Value::Array(arc, _) => {
+                    match val.view() {
+                        ValueView::Array(arc, _) => {
                             // SAFETY: aliased in-place clear of a shared container;
                             // see `arc_contents_mut`.
                             unsafe { crate::value::gc_contents_mut(arc).items.clear() };
                         }
-                        Value::Hash(arc) => {
+                        ValueView::Hash(arc) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
                             unsafe { crate::value::gc_contents_mut(arc).map.clear() };
                         }
                         // Slice 2a: a `=`-array-shared source (`my $r = @ary`) holds
                         // the aggregate inside a shared `ContainerRef` cell; clear it
                         // through the cell so every alias (`$r`) observes the empty.
-                        Value::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
+                        ValueView::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
                         _ => {}
                     }
                 }
                 // Also update locals if present
                 if let Some(slot) = self.find_local_slot(code, name) {
-                    match &self.locals[slot] {
-                        Value::Array(arc, _) => {
+                    match self.locals[slot].view() {
+                        ValueView::Array(arc, _) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
                             unsafe { crate::value::gc_contents_mut(arc).items.clear() };
                         }
-                        Value::Hash(arc) => {
+                        ValueView::Hash(arc) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
                             unsafe { crate::value::gc_contents_mut(arc).map.clear() };
                         }
-                        Value::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
+                        ValueView::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
                         _ => {
-                            self.locals[slot] = Value::Nil;
+                            self.locals[slot] = Value::NIL;
                             self.flush_local_to_env(code, slot);
                         }
                     }
                 }
-                self.stack.push(Value::Nil);
+                self.stack.push(Value::NIL);
                 *ip += 1;
             }
 
@@ -3171,19 +3211,19 @@ impl Interpreter {
 
             // -- Error handling --
             OpCode::Die => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 // Store the resume point (instruction after Die) for .resume support
                 self.resume_ip = Some(*ip + 1);
                 // die() with empty array (from parsing die() with parens) should
                 // check $! first, falling back to "Died" default
-                let val = if matches!(&val, Value::Array(items, _) if items.is_empty()) {
+                let val = if matches!(val.view(), ValueView::Array(items, _) if items.is_empty()) {
                     let current = self.env().get("!").cloned();
                     if let Some(ref c) = current
-                        && !matches!(c, Value::Nil)
+                        && !c.is_nil()
                     {
                         current.unwrap()
                     } else {
-                        Value::Nil
+                        Value::NIL
                     }
                 } else {
                     val
@@ -3197,12 +3237,12 @@ impl Interpreter {
                     err.set_backtrace(Some(backtrace_str));
                 }
                 // Attach backtrace, line, and file to the exception value
-                if let Some(ref mut exc_box) = err.exception
-                    && let Value::Instance { attributes, .. } = exc_box.as_mut()
+                if let Some(ref exc_box) = err.exception
+                    && let ValueView::Instance { attributes, .. } = exc_box.view()
                 {
                     attributes.insert("backtrace".to_string(), backtrace_val);
                     if let Some(line) = current_line {
-                        attributes.insert_if_absent("line".to_string(), Value::Int(line as i64));
+                        attributes.insert_if_absent("line".to_string(), Value::int(line as i64));
                     }
                     if let Some(ref file) = current_file {
                         attributes.insert_if_absent("file".to_string(), Value::str_from(file));
@@ -3211,14 +3251,14 @@ impl Interpreter {
                 return Err(err);
             }
             OpCode::Fail => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 // When fail() receives a Failure:D, extract the inner exception
                 // and re-arm it (Raku behavior: fail(Failure:D) re-arms)
-                let val = if let Value::Instance {
+                let val = if let ValueView::Instance {
                     class_name,
                     attributes,
                     ..
-                } = &val
+                } = val.view()
                     && class_name.resolve() == "Failure"
                 {
                     if let Some(exc) = attributes.as_map().get("exception") {
@@ -3234,14 +3274,14 @@ impl Interpreter {
                 let backtrace_val = self.build_backtrace_value();
                 let current_line = self.current_source_line();
                 let current_file = self.current_source_file();
-                let mut err = self.runtime_error_from_exception_value(val, "Failed", true);
+                let err = self.runtime_error_from_exception_value(val, "Failed", true);
                 // Attach backtrace, line, and file to the exception value
-                if let Some(ref mut exc_box) = err.exception
-                    && let Value::Instance { attributes, .. } = exc_box.as_mut()
+                if let Some(ref exc_box) = err.exception
+                    && let ValueView::Instance { attributes, .. } = exc_box.view()
                 {
                     attributes.insert("backtrace".to_string(), backtrace_val);
                     if let Some(line) = current_line {
-                        attributes.insert_if_absent("line".to_string(), Value::Int(line as i64));
+                        attributes.insert_if_absent("line".to_string(), Value::int(line as i64));
                     }
                     if let Some(ref file) = current_file {
                         attributes.insert_if_absent("file".to_string(), Value::str_from(file));
@@ -3250,13 +3290,13 @@ impl Interpreter {
                 return Err(err);
             }
             OpCode::Return => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 // Check if &return has been lexically rebound; if so, call
                 // the rebound function instead of performing a built-in return.
                 if let Some(rebound) = self.env().get("&return").cloned()
                     && matches!(
-                        &rebound,
-                        Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                        rebound.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
                     )
                 {
                     let result = self.vm_call_on_value(rebound, vec![val], None)?;
@@ -3267,7 +3307,7 @@ impl Interpreter {
                 return Err(RuntimeError::return_signal(val));
             }
             OpCode::ReturnFromNonRoutine(lexically_in_routine) => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 if *lexically_in_routine {
                     // Closure/block lexically inside a routine: propagate a
                     // CX::Return signal up to the enclosing routine boundary.
@@ -3410,7 +3450,7 @@ impl Interpreter {
             OpCode::RegisterPackage { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.shadow_suppressed_type_with_package(&name);
-                let pkg_val = Value::Package(Symbol::intern(&name));
+                let pkg_val = Value::package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
                 self.chain_declared_packages.insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
@@ -3419,7 +3459,7 @@ impl Interpreter {
             OpCode::RegisterPackageMy { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.shadow_suppressed_type_with_package(&name);
-                let pkg_val = Value::Package(Symbol::intern(&name));
+                let pkg_val = Value::package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
                 self.chain_declared_packages.insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
@@ -3588,9 +3628,9 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::SetPragma(name_idx) => {
-                let value = self.stack.pop().unwrap_or(Value::Nil);
+                let value = self.stack.pop().unwrap_or(Value::NIL);
                 let name = Self::const_str(code, *name_idx);
-                if let Value::Str(ref s) = value {
+                if let ValueView::Str(s) = value.view() {
                     if name == "variables" {
                         loan_env!(self, set_variables_pragma(s));
                     } else if name == "attributes" {
@@ -3630,7 +3670,7 @@ impl Interpreter {
                     // State already initialized: push a placeholder value on the
                     // stack (StateVarInit will discard it and use the stored value)
                     // and skip the RHS initializer.
-                    self.stack.push(Value::Nil);
+                    self.stack.push(Value::NIL);
                     *ip = *jump_to as usize;
                 } else {
                     // State not yet initialized: fall through to compile RHS
@@ -3710,9 +3750,9 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::Eager => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
-                let result = match val {
-                    Value::LazyList(ref ll) => {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                let result = match val.view() {
+                    ValueView::LazyList(ll) => {
                         let items = self.force_lazy_list_vm(ll)?;
                         // Sync interpreter env changes back to Interpreter locals.
                         // This ensures side effects from gather bodies propagate
@@ -3726,15 +3766,13 @@ impl Interpreter {
                         }
                         Value::array(items)
                     }
-                    Value::Seq(items) => {
+                    ValueView::Seq(items) => {
                         // Consuming the Seq via eager marks it as consumed.
-                        crate::value::seq_sink(&items);
+                        crate::value::seq_sink(items);
                         Value::array(items.to_vec())
                     }
-                    ref other if other.is_range() => {
-                        Value::array(crate::runtime::utils::value_to_list(&val))
-                    }
-                    other => other,
+                    _ if val.is_range() => Value::array(crate::runtime::utils::value_to_list(&val)),
+                    _ => val,
                 };
                 self.stack.push(result);
                 *ip += 1;
@@ -3874,7 +3912,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::SetCallerVar { name_idx, depth } => {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
                 let name = Self::const_str(code, *name_idx);
                 loan_env!(self, set_caller_var(name, *depth as usize, val))?;
                 *ip += 1;
@@ -3915,7 +3953,10 @@ impl Interpreter {
                 // — it writes through to the bound source. The `__mutsu_bound::`
                 // marker distinguishes it from a genuinely immutable `constant`.
                 let bound_key = format!("__mutsu_bound::{}", name);
-                if matches!(self.env().get(&bound_key), Some(Value::Bool(true))) {
+                if matches!(
+                    self.env().get(&bound_key).map(Value::view),
+                    Some(ValueView::Bool(true))
+                ) {
                     *ip += 1;
                     return Ok(());
                 }
@@ -3925,7 +3966,10 @@ impl Interpreter {
                 // in a closure).  The readonly_vars set is scope-local
                 // and gets restored on frame pop, but the env key persists.
                 let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
-                if matches!(self.env().get(&readonly_key), Some(Value::Bool(true))) {
+                if matches!(
+                    self.env().get(&readonly_key).map(Value::view),
+                    Some(ValueView::Bool(true))
+                ) {
                     return Err(RuntimeError::assignment_ro(Some(name)));
                 }
                 *ip += 1;
@@ -3951,7 +3995,7 @@ impl Interpreter {
             }
             OpCode::SetSourceLine(line) => {
                 self.env_mut()
-                    .insert("?LINE".to_string(), Value::Int(*line));
+                    .insert("?LINE".to_string(), Value::int(*line));
                 *ip += 1;
             }
         }

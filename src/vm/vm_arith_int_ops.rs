@@ -68,7 +68,7 @@ impl Interpreter {
             .get(&arr_key)
             .or_else(|| self.env().get(&var_name))
             .cloned();
-        let Value::Array(arc_items, kind) = target_val.unwrap_or(Value::Nil) else {
+        let Some((arc_items, kind)) = target_val.unwrap_or(Value::NIL).into_array() else {
             return Ok(None);
         };
         if !kind.is_real_array() {
@@ -95,7 +95,7 @@ impl Interpreter {
         };
         self.env_mut().insert(
             lookup_key.to_string(),
-            Value::Array(crate::gc::Gc::new(items), kind),
+            Value::array_with_kind(crate::gc::Gc::new(items), kind),
         );
         Ok(Some(result.items))
     }
@@ -117,8 +117,10 @@ impl Interpreter {
 
         // Install captured env
         for (k, v) in data.env.iter() {
-            if matches!(self.env().get_sym(*k), Some(Value::Array(..)))
-                && matches!(v, Value::Array(..))
+            if matches!(
+                self.env().get_sym(*k).map(Value::view),
+                Some(ValueView::Array(..))
+            ) && matches!(v.view(), ValueView::Array(..))
             {
                 continue;
             }
@@ -138,7 +140,7 @@ impl Interpreter {
         for _ in 0..n {
             match self.run_reuse(&code, &compiled_fns) {
                 Ok(()) => {
-                    let val = self.env().get("_").cloned().unwrap_or(Value::Nil);
+                    let val = self.env().get("_").cloned().unwrap_or(Value::NIL);
                     out.push(val);
                 }
                 Err(e) => {
@@ -169,8 +171,11 @@ impl Interpreter {
             // keep the mutated version instead of restoring the original.
             let current = self.env().get(&k).cloned();
             let should_keep_current = matches!(
-                (&orig, &current),
-                (Some(Value::Array(..)), Some(Value::Array(..)))
+                (
+                    orig.as_ref().map(Value::view),
+                    current.as_ref().map(Value::view)
+                ),
+                (Some(ValueView::Array(..)), Some(ValueView::Array(..)))
             );
             if should_keep_current {
                 continue;
@@ -191,22 +196,26 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            let val = match (&l, &r) {
-                (Value::Int(a), Value::Int(b)) if *b != 0 => {
-                    Value::Int(num_integer::Integer::div_floor(a, b))
+            let val = match (l.view(), r.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) if b != 0 => {
+                    Value::int(num_integer::Integer::div_floor(&a, &b))
                 }
-                (Value::Int(a), Value::Int(_)) => {
-                    RuntimeError::divide_by_zero_failure(Some(Value::Int(*a)), Some("div"))
+                (ValueView::Int(a), ValueView::Int(_)) => {
+                    RuntimeError::divide_by_zero_failure(Some(Value::int(a)), Some("div"))
                 }
-                (Value::BigInt(a), Value::BigInt(b)) if **b != num_bigint::BigInt::from(0i64) => {
+                (ValueView::BigInt(a), ValueView::BigInt(b))
+                    if **b != num_bigint::BigInt::from(0i64) =>
+                {
                     Value::from_bigint(num_integer::Integer::div_floor(a.as_ref(), b.as_ref()))
                 }
-                (Value::BigInt(a), Value::Int(b)) if *b != 0 => {
-                    let bb = num_bigint::BigInt::from(*b);
+                (ValueView::BigInt(a), ValueView::Int(b)) if b != 0 => {
+                    let bb = num_bigint::BigInt::from(b);
                     Value::from_bigint(num_integer::Integer::div_floor(a.as_ref(), &bb))
                 }
-                (Value::Int(a), Value::BigInt(b)) if **b != num_bigint::BigInt::from(0i64) => {
-                    let aa = num_bigint::BigInt::from(*a);
+                (ValueView::Int(a), ValueView::BigInt(b))
+                    if **b != num_bigint::BigInt::from(0i64) =>
+                {
+                    let aa = num_bigint::BigInt::from(a);
                     Value::from_bigint(num_integer::Integer::div_floor(&aa, b.as_ref()))
                 }
                 _ => {
@@ -214,11 +223,11 @@ impl Interpreter {
                     let b = runtime::to_int(&r);
                     if b == 0 {
                         return Ok(RuntimeError::divide_by_zero_failure(
-                            Some(Value::Int(a)),
+                            Some(Value::int(a)),
                             Some("div"),
                         ));
                     }
-                    Value::Int(num_integer::Integer::div_floor(&a, &b))
+                    Value::int(num_integer::Integer::div_floor(&a, &b))
                 }
             };
             Ok(val)
@@ -231,22 +240,22 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            let val = match (&l, &r) {
-                (Value::Int(a), Value::Int(b)) if *b != 0 => {
-                    Value::Int(num_integer::Integer::mod_floor(a, b))
+            let val = match (l.view(), r.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) if b != 0 => {
+                    Value::int(num_integer::Integer::mod_floor(&a, &b))
                 }
-                (Value::Int(a), Value::Int(_)) => {
-                    RuntimeError::divide_by_zero_failure(Some(Value::Int(*a)), Some("%"))
+                (ValueView::Int(a), ValueView::Int(_)) => {
+                    RuntimeError::divide_by_zero_failure(Some(Value::int(a)), Some("%"))
                 }
-                (Value::BigInt(a), Value::BigInt(b)) if !b.is_zero() => {
+                (ValueView::BigInt(a), ValueView::BigInt(b)) if !b.is_zero() => {
                     Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
                 }
-                (Value::BigInt(a), Value::Int(b)) if *b != 0 => {
-                    let bb = num_bigint::BigInt::from(*b);
+                (ValueView::BigInt(a), ValueView::Int(b)) if b != 0 => {
+                    let bb = num_bigint::BigInt::from(b);
                     Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), &bb))
                 }
-                (Value::Int(a), Value::BigInt(b)) if !b.is_zero() => {
-                    let aa = num_bigint::BigInt::from(*a);
+                (ValueView::Int(a), ValueView::BigInt(b)) if !b.is_zero() => {
+                    let aa = num_bigint::BigInt::from(a);
                     Value::from_bigint(num_integer::Integer::mod_floor(&aa, b.as_ref()))
                 }
                 _ => {
@@ -254,11 +263,11 @@ impl Interpreter {
                     let b = runtime::to_int(&r);
                     if b == 0 {
                         return Ok(RuntimeError::divide_by_zero_failure(
-                            Some(Value::Int(a)),
+                            Some(Value::int(a)),
                             Some("%"),
                         ));
                     }
-                    Value::Int(num_integer::Integer::mod_floor(&a, &b))
+                    Value::int(num_integer::Integer::mod_floor(&a, &b))
                 }
             };
             Ok(val)
@@ -282,7 +291,7 @@ impl Interpreter {
         let a = left.to_bigint().abs();
         let b = right.to_bigint().abs();
         let result = if a.is_zero() && b.is_zero() {
-            Value::Int(0)
+            Value::int(0)
         } else {
             let g = num_integer::Integer::gcd(&a, &b);
             Value::from_bigint(&a / &g * &b)
@@ -293,18 +302,16 @@ impl Interpreter {
     pub(super) fn exec_infix_min_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        if matches!(&left, Value::Package(name) if name == "Any") {
+        if matches!(left.view(), ValueView::Package(name) if name == "Any") {
             self.stack.push(right);
             return;
         }
-        if matches!(&right, Value::Package(name) if name == "Any") {
+        if matches!(right.view(), ValueView::Package(name) if name == "Any") {
             self.stack.push(left);
             return;
         }
-        let left_is_failure =
-            matches!(&left, Value::Instance { class_name, .. } if class_name == "Failure");
-        let right_is_failure =
-            matches!(&right, Value::Instance { class_name, .. } if class_name == "Failure");
+        let left_is_failure = matches!(left.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
+        let right_is_failure = matches!(right.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
         if left_is_failure {
             self.stack.push(left);
             return;
@@ -320,18 +327,16 @@ impl Interpreter {
     pub(super) fn exec_infix_max_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        if matches!(&left, Value::Package(name) if name == "Any") {
+        if matches!(left.view(), ValueView::Package(name) if name == "Any") {
             self.stack.push(right);
             return;
         }
-        if matches!(&right, Value::Package(name) if name == "Any") {
+        if matches!(right.view(), ValueView::Package(name) if name == "Any") {
             self.stack.push(left);
             return;
         }
-        let left_is_failure =
-            matches!(&left, Value::Instance { class_name, .. } if class_name == "Failure");
-        let right_is_failure =
-            matches!(&right, Value::Instance { class_name, .. } if class_name == "Failure");
+        let left_is_failure = matches!(left.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
+        let right_is_failure = matches!(right.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
         if left_is_failure {
             self.stack.push(left);
             return;
@@ -349,7 +354,7 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
 
         // Warn on uninitialized type object used as repeat count
-        if let Value::Package(name) = &right
+        if let ValueView::Package(name) = right.view()
             && name == "Int"
             && !self.warning_suppressed()
         {
@@ -360,7 +365,7 @@ impl Interpreter {
         }
 
         // Whatever on RHS produces a WhateverCode closure
-        if matches!(&right, Value::Whatever) {
+        if matches!(right.view(), ValueView::Whatever) {
             self.stack.push(self.make_x_whatevercode(left));
             return Ok(());
         }
@@ -404,27 +409,27 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
 
         // Fast path for xx-reeval thunks (compiler-generated repeat blocks)
-        let thunk = match &left {
-            Value::Sub(data) => Some(data.clone()),
-            Value::WeakSub(weak) => weak.upgrade(),
+        let thunk = match left.view() {
+            ValueView::Sub(data) => Some(data.clone()),
+            ValueView::WeakSub(weak) => weak.upgrade(),
             _ => None,
         };
         if let Some(data) = thunk.filter(|data| Self::is_xx_reeval_thunk(data.as_ref()))
-            && let Value::Int(n) = right
+            && let ValueView::Int(n) = right.view()
         {
             let n = n.max(0) as usize;
             // Fast path: @var.shift xx N or @var.pop xx N — bulk drain
             if let Some(items) = self.try_bulk_shift_pop(&data, n)? {
-                self.stack.push(Value::Seq(Arc::new(items)));
+                self.stack.push(Value::seq(items));
                 return Ok(());
             }
             let items = self.vm_xx_repeat_thunk(data.as_ref(), n)?;
-            self.stack.push(Value::Seq(Arc::new(items)));
+            self.stack.push(Value::seq(items));
             return Ok(());
         }
 
         // Warn on uninitialized type object used as repeat count
-        if let Value::Package(name) = &right
+        if let ValueView::Package(name) = right.view()
             && name == "Int"
             && !self.warning_suppressed()
         {
@@ -439,8 +444,8 @@ impl Interpreter {
         const LAZY_CACHE_CALLABLE: usize = 256;
 
         let is_callable = matches!(
-            left,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            left.view(),
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
         );
         let lazy_cache = if is_callable {
             LAZY_CACHE_CALLABLE
@@ -457,9 +462,9 @@ impl Interpreter {
         };
 
         let mut items = Vec::with_capacity(repeat);
-        if let Value::Slip(slip_items) = &left {
+        if let ValueView::Slip(slip_items) = left.view() {
             if slip_items.is_empty() {
-                items.extend(std::iter::repeat_n(Value::Nil, repeat));
+                items.extend(std::iter::repeat_n(Value::NIL, repeat));
             } else {
                 for _ in 0..repeat {
                     items.extend(slip_items.iter().cloned());
@@ -475,7 +480,7 @@ impl Interpreter {
             let count = crate::runtime::Interpreter::repeat_logical_count(&right);
             crate::runtime::Interpreter::make_repeat_lazy_cache_counted(items, count)
         } else {
-            Value::Seq(Arc::new(items))
+            Value::seq(items)
         };
         self.stack.push(result);
         Ok(())

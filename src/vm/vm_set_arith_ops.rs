@@ -7,10 +7,10 @@ impl Interpreter {
     /// Determine the set type level, including Package type objects.
     /// 0 = Set/SetHash, 1 = Bag/BagHash, 2 = Mix/MixHash
     fn set_type_level_full(val: &Value) -> u8 {
-        match val {
-            Value::Mix(_, _) => 2,
-            Value::Bag(_, _) => 1,
-            Value::Package(sym) => {
+        match val.view() {
+            ValueView::Mix(_, _) => 2,
+            ValueView::Bag(_, _) => 1,
+            ValueView::Package(sym) => {
                 let name = sym.resolve();
                 match name.as_str() {
                     "Mix" | "MixHash" => 2,
@@ -68,14 +68,14 @@ impl Interpreter {
         // `__baggy_data__` attribute (see `construct_baggy_instance`); rewrap the
         // finished Bag-level union under the same class so both `isa-ok` and the
         // delegated element access (`$u<k>`, `.elems`, `.keys`) keep working.
-        let result = match (&left, &right) {
+        let result = match (left.view(), right.view()) {
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name: lc,
                     attributes: la,
                     ..
                 },
-                Value::Instance {
+                ValueView::Instance {
                     class_name: rc,
                     attributes: ra,
                     ..
@@ -87,7 +87,7 @@ impl Interpreter {
             {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("__baggy_data__".to_string(), result);
-                Value::make_instance(*lc, attrs)
+                Value::make_instance(lc, attrs)
             }
             _ => result,
         };
@@ -96,15 +96,15 @@ impl Interpreter {
     }
 
     fn is_lazy_value(value: &Value) -> bool {
-        match value {
-            Value::LazyList(_) => true,
-            Value::Range(_, end)
-            | Value::RangeExcl(_, end)
-            | Value::RangeExclStart(_, end)
-            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
-            Value::GenericRange { end, .. } => match end.as_ref() {
-                Value::HyperWhatever => true,
-                Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
+        match value.view() {
+            ValueView::LazyList(_) => true,
+            ValueView::Range(_, end)
+            | ValueView::RangeExcl(_, end)
+            | ValueView::RangeExclStart(_, end)
+            | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
+            ValueView::GenericRange { end, .. } => match end.as_ref().view() {
+                ValueView::HyperWhatever => true,
+                ValueView::Num(n) => n.is_infinite() && n.is_sign_positive(),
                 _ => {
                     let n = end.to_f64();
                     n.is_infinite() && n.is_sign_positive()
@@ -116,17 +116,17 @@ impl Interpreter {
 
     /// Helper: extract bag-like weights from a list item (Pair or plain value)
     fn bag_insert_item(result: &mut HashMap<String, i64>, item: &Value) {
-        match item {
-            Value::Pair(k, v) => {
+        match item.view() {
+            ValueView::Pair(k, v) => {
                 let weight = v.to_f64() as i64;
                 *result.entry(k.clone()).or_insert(0) += weight;
             }
-            Value::ValuePair(k, v) => {
+            ValueView::ValuePair(k, v) => {
                 let weight = v.to_f64() as i64;
                 *result.entry(k.to_string_value()).or_insert(0) += weight;
             }
-            other => {
-                let key = other.to_string_value();
+            _ => {
+                let key = item.to_string_value();
                 if !key.is_empty() {
                     *result.entry(key).or_insert(0) += 1;
                 }
@@ -136,17 +136,17 @@ impl Interpreter {
 
     /// Helper: extract mix-like weights from a list item (Pair or plain value)
     fn mix_insert_item(result: &mut HashMap<String, f64>, item: &Value) {
-        match item {
-            Value::Pair(k, v) => {
+        match item.view() {
+            ValueView::Pair(k, v) => {
                 let weight = v.to_f64();
                 *result.entry(k.clone()).or_insert(0.0) += weight;
             }
-            Value::ValuePair(k, v) => {
+            ValueView::ValuePair(k, v) => {
                 let weight = v.to_f64();
                 *result.entry(k.to_string_value()).or_insert(0.0) += weight;
             }
-            other => {
-                let key = other.to_string_value();
+            _ => {
+                let key = item.to_string_value();
                 if !key.is_empty() {
                     *result.entry(key).or_insert(0.0) += 1.0;
                 }
@@ -156,20 +156,20 @@ impl Interpreter {
 
     /// Coerce a value to a Bag (HashMap<String, i64>)
     fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
-        match val {
+        match val.view() {
             // A Bag/Set/Mix subclass instance (`class Foo is Bag`) carries its real
             // quantified collection in `__baggy_data__`; unwrap it so a set/baggy op
             // sees the elements, not the opaque instance as a single element.
-            Value::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
+            ValueView::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
                 match attributes.as_map().get("__baggy_data__") {
                     Some(inner) => Self::coerce_to_bag(inner),
                     None => HashMap::new(),
                 }
             }
-            Value::Bag(b, _) => crate::runtime::utils::bag_counts_as_i64(&b.counts),
-            Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
-            Value::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
-            Value::Hash(map) => {
+            ValueView::Bag(b, _) => crate::runtime::utils::bag_counts_as_i64(&b.counts),
+            ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
+            ValueView::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
+            ValueView::Hash(map) => {
                 let mut result = HashMap::new();
                 for (k, v) in map.iter() {
                     let weight = v.to_f64() as i64;
@@ -188,7 +188,7 @@ impl Interpreter {
                 result.retain(|_, v| *v != 0);
                 result
             }
-            Value::Pair(k, v) => {
+            ValueView::Pair(k, v) => {
                 let mut result = HashMap::new();
                 let weight = v.to_f64() as i64;
                 if weight != 0 {
@@ -205,20 +205,20 @@ impl Interpreter {
 
     /// Coerce a value to a Mix (HashMap<String, f64>)
     fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
-        match val {
-            Value::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
+        match val.view() {
+            ValueView::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
                 match attributes.as_map().get("__baggy_data__") {
                     Some(inner) => Self::coerce_to_mix(inner),
                     None => HashMap::new(),
                 }
             }
-            Value::Mix(m, _) => m.weights.clone(),
-            Value::Bag(b, _) => b
+            ValueView::Mix(m, _) => m.weights.clone(),
+            ValueView::Bag(b, _) => b
                 .iter()
                 .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
                 .collect(),
-            Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
-            Value::Hash(map) => {
+            ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+            ValueView::Hash(map) => {
                 let mut result = HashMap::new();
                 for (k, v) in map.iter() {
                     let weight = v.to_f64();
@@ -237,7 +237,7 @@ impl Interpreter {
                 result.retain(|_, v| *v != 0.0);
                 result
             }
-            Value::Pair(k, v) => {
+            ValueView::Pair(k, v) => {
                 let mut result = HashMap::new();
                 let weight = v.to_f64();
                 if weight != 0.0 {
@@ -255,9 +255,9 @@ impl Interpreter {
     /// Determine the result type level for set operations:
     /// 0 = Set, 1 = Bag, 2 = Mix
     fn set_type_level(val: &Value) -> u8 {
-        match val {
-            Value::Mix(_, _) => 2,
-            Value::Bag(_, _) => 1,
+        match val.view() {
+            ValueView::Mix(_, _) => 2,
+            ValueView::Bag(_, _) => 1,
             _ => 0,
         }
     }
@@ -375,28 +375,28 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         self.stack
-            .push(Value::Bool(Self::quant_hash_subset(&left, &right)));
+            .push(Value::truth(Self::quant_hash_subset(&left, &right)));
     }
 
     pub(super) fn exec_set_superset_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         self.stack
-            .push(Value::Bool(Self::quant_hash_subset(&right, &left)));
+            .push(Value::truth(Self::quant_hash_subset(&right, &left)));
     }
 
     pub(super) fn exec_set_strict_subset_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         self.stack
-            .push(Value::Bool(Self::quant_hash_strict_subset(&left, &right)));
+            .push(Value::truth(Self::quant_hash_strict_subset(&left, &right)));
     }
 
     pub(super) fn exec_set_strict_superset_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         self.stack
-            .push(Value::Bool(Self::quant_hash_strict_subset(&right, &left)));
+            .push(Value::truth(Self::quant_hash_strict_subset(&right, &left)));
     }
 
     pub(super) fn exec_junction_any_op(&mut self) {
@@ -433,7 +433,7 @@ impl Interpreter {
         let n = count as usize;
         let mut values: Vec<Value> = Vec::with_capacity(n);
         for _ in 0..n {
-            values.push(self.stack.pop().unwrap_or(Value::Nil));
+            values.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         values.reverse();
 
@@ -446,10 +446,7 @@ impl Interpreter {
         }
 
         // No user override: build junction from all values
-        let result = Value::Junction {
-            kind,
-            values: values.into(),
-        };
+        let result = Value::junction(kind, values);
         self.stack.push(result);
         Ok(())
     }

@@ -121,17 +121,17 @@ impl Interpreter {
                 // (a successful try with a non-Failure result resets `$!` to Nil).
                 let mut failure_exception = None;
                 if let Some(top) = self.stack.last()
-                    && matches!(top, Value::Instance { class_name, .. } if class_name == "Failure")
+                    && matches!(top.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
                 {
                     top.mark_failure_handled();
-                    if let Value::Instance { attributes, .. } = top
+                    if let ValueView::Instance { attributes, .. } = top.view()
                         && let Some(exc) = attributes.as_map().get("exception")
                     {
                         failure_exception = Some(exc.clone());
                     }
                 }
                 self.env_mut()
-                    .insert("!".to_string(), failure_exception.unwrap_or(Value::Nil));
+                    .insert("!".to_string(), failure_exception.unwrap_or(Value::NIL));
                 *ip = end;
                 Ok(())
             }
@@ -148,11 +148,11 @@ impl Interpreter {
                     match self.run_range(code, control_begin, end, compiled_fns) {
                         Ok(()) => {
                             self.stack.truncate(saved_depth);
-                            self.stack.push(Value::Nil);
+                            self.stack.push(Value::NIL);
                         }
                         Err(control_err) if control_err.is_succeed() => {
                             self.stack.truncate(saved_depth);
-                            self.stack.push(Value::Nil);
+                            self.stack.push(Value::NIL);
                         }
                         Err(control_err) => return Err(control_err),
                     }
@@ -342,7 +342,7 @@ impl Interpreter {
                     let mut exc_attrs = std::collections::HashMap::new();
                     exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
                     if let Some(line) = e.line() {
-                        exc_attrs.insert("line".to_string(), Value::Int(line as i64));
+                        exc_attrs.insert("line".to_string(), Value::int(line as i64));
                     }
                     if let Some(bt) = e.backtrace() {
                         // Build a Backtrace object from the string for
@@ -370,7 +370,7 @@ impl Interpreter {
                             // Truncate values left by default body, then push Nil
                             // (Raku: try { die; CATCH { default { "caught" } } } returns Nil)
                             self.stack.truncate(catch_stack_base);
-                            self.stack.push(Value::Nil);
+                            self.stack.push(Value::NIL);
                             true
                         }
                         // .resume called inside CATCH: resume execution after the die

@@ -95,7 +95,7 @@ impl Interpreter {
                 // accumulate across takes without forking `list.env`.
                 ip = 0;
                 *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
-                self.locals = vec![Value::Nil; cc.locals.len()];
+                self.locals = vec![Value::NIL; cc.locals.len()];
                 for (i, name) in cc.locals.iter().enumerate() {
                     if let Some(val) = self.env().get(name) {
                         self.locals[i] = val.clone();
@@ -108,7 +108,7 @@ impl Interpreter {
             // Fresh start (no coroutine slot yet)
             ip = 0;
             *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
-            self.locals = vec![Value::Nil; cc.locals.len()];
+            self.locals = vec![Value::NIL; cc.locals.len()];
             for (i, name) in cc.locals.iter().enumerate() {
                 if let Some(val) = self.env().get(name) {
                     self.locals[i] = val.clone();
@@ -315,13 +315,13 @@ impl Interpreter {
                     // `.pairs`/`.antipairs`/`.kv` over a lazy source: emit the
                     // index-based transform using the source position as the key,
                     // bypassing the map/grep callback entirely.
-                    let idx = Value::Int(source_idx as i64);
+                    let idx = Value::int(source_idx as i64);
                     let produced: Vec<Value> = match index_transform.unwrap() {
                         crate::value::IndexTransform::Pairs => {
-                            vec![Value::ValuePair(Box::new(idx), Box::new(elem))]
+                            vec![Value::value_pair(idx, elem)]
                         }
                         crate::value::IndexTransform::AntiPairs => {
-                            vec![Value::ValuePair(Box::new(elem), Box::new(idx))]
+                            vec![Value::value_pair(elem, idx)]
                         }
                         crate::value::IndexTransform::Kv => vec![idx, elem],
                     };
@@ -351,9 +351,9 @@ impl Interpreter {
                         }
                     } else {
                         self.vm_call_on_value(func, vec![elem], None)
-                            .map(|v| match v {
-                                Value::Slip(items) => items.as_ref().clone(),
-                                v => vec![v],
+                            .map(|v| match v.view() {
+                                ValueView::Slip(items) => items.as_ref().clone(),
+                                _ => vec![v],
                             })
                     };
                     let produced: Vec<Value> = match applied {
@@ -434,13 +434,13 @@ impl Interpreter {
                     // `.path` ensures the first source is opened if nothing has
                     // been read yet, then we read the live active handle.
                     let _ = self.call_method_with_values(cat.clone(), "path", vec![]);
-                    match &cat {
-                        Value::Instance { attributes, .. } => attributes
+                    match cat.view() {
+                        ValueView::Instance { attributes, .. } => attributes
                             .as_map()
                             .get("active")
                             .cloned()
-                            .unwrap_or(Value::Nil),
-                        _ => Value::Nil,
+                            .unwrap_or(Value::NIL),
+                        _ => Value::NIL,
                     }
                 }
                 CatPullMode::Handles => {
@@ -448,7 +448,7 @@ impl Interpreter {
                 }
             };
 
-            if matches!(pulled, Value::Nil) {
+            if pulled.is_nil() {
                 let mut spec = list.cat_pull.as_ref().unwrap().lock().unwrap();
                 spec.done = true;
                 drop(spec);

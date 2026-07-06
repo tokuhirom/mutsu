@@ -75,12 +75,7 @@ impl Interpreter {
 
         // Handle lazy IO lines: iterate by pulling one line at a time
         // so that $fh.tell reflects the current read position.
-        if let Value::LazyIoLines {
-            ref handle,
-            kv,
-            words,
-        } = iterable
-        {
+        if let ValueView::LazyIoLines { handle, kv, words } = iterable.view() {
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;
             self.exec_for_loop_lazy_io_lines(
@@ -101,11 +96,11 @@ impl Interpreter {
         // Applies when the range is simple (arity 1, not threaded, no writeback, no collect).
         if !spec.threaded && !spec.collect && !spec.do_writeback && spec.arity <= 1 && !spec.kv_mode
         {
-            let int_range = match &iterable {
-                Value::Range(a, b) => Some((*a, *b, true)), // a..b (inclusive)
-                Value::RangeExcl(a, b) => Some((*a, *b, false)), // a..^b (exclusive end)
-                Value::RangeExclStart(a, b) => Some((*a + 1, *b, true)),
-                Value::RangeExclBoth(a, b) => Some((*a + 1, *b, false)),
+            let int_range = match iterable.view() {
+                ValueView::Range(a, b) => Some((a, b, true)), // a..b (inclusive)
+                ValueView::RangeExcl(a, b) => Some((a, b, false)), // a..^b (exclusive end)
+                ValueView::RangeExclStart(a, b) => Some((a + 1, b, true)),
+                ValueView::RangeExclBoth(a, b) => Some((a + 1, b, false)),
                 _ => None,
             };
             if let Some((start, end_val, inclusive)) = int_range {
@@ -129,7 +124,7 @@ impl Interpreter {
         // For gather-based, sequence-spec, or lazy map/grep pipeline LazyList
         // iterables, iterate lazily by pulling items one at a time. This avoids
         // materializing infinite sequences.
-        if let Value::LazyList(ref ll) = iterable
+        if let ValueView::LazyList(ll) = iterable.view()
             && (ll.coroutine.is_some()
                 || ll.sequence_spec.is_some()
                 || ll.lazy_pipe.is_some()
@@ -150,19 +145,19 @@ impl Interpreter {
         // second iteration of the SAME Seq throws X::Seq::Consumed (Rakudo). A Seq
         // assigned into an `@`-array is reified there and stays re-iterable, so
         // this only fires for a Seq iterated directly (`my \s = …Seq; for s {…}`).
-        if let Value::Seq(ref arc) = iterable {
+        if let ValueView::Seq(arc) = iterable.view() {
             crate::value::seq_consume(arc)?;
         }
-        let raw_items = if let Value::LazyList(ref ll) = iterable {
+        let raw_items = if let ValueView::LazyList(ll) = iterable.view() {
             self.force_lazy_list_vm(ll)?
-        } else if let Value::Channel(ref ch) = iterable {
+        } else if let ValueView::Channel(ch) = iterable.view() {
             // Drain the channel synchronously, blocking on receive until the
             // channel is closed. Propagate any failure as an exception so the
             // surrounding `start { }` / `try` can observe it.
             let mut items = Vec::new();
             loop {
                 match ch.receive_result() {
-                    Ok(Value::Nil) => break,
+                    Ok(v) if v.is_nil() => break,
                     Ok(v) => items.push(v),
                     Err(cause) => {
                         let ex = crate::runtime::Interpreter::as_exception_value(cause);
@@ -190,7 +185,7 @@ impl Interpreter {
         let items = if spec.autothread_junctions {
             let mut expanded = Vec::new();
             for item in raw_items {
-                if let Value::Junction { values, .. } = &item {
+                if let ValueView::Junction { values, .. } = item.view() {
                     for v in values.iter() {
                         expanded.push(v.clone());
                     }
@@ -253,7 +248,7 @@ impl Interpreter {
                 // those on the single-pass path (live-array growth in a collect
                 // context is not exercised by roast and needs cross-pass accum.).
                 && !spec.collect
-                && matches!(iterable, Value::Array(..))
+                && matches!(iterable.view(), ValueView::Array(..))
         });
         let mut all_items = items;
         let mut resume = 0usize;
@@ -280,8 +275,8 @@ impl Interpreter {
                 .or_else(|| self.find_local_slot(code, &format!("@{name}")))
                 .map(|s| self.locals[s].clone())
                 .or_else(|| self.env().get(name).cloned());
-            let grown = match live {
-                Some(Value::Array(arc, _)) if arc.len() > all_items.len() => {
+            let grown = match live.as_ref().map(Value::view) {
+                Some(ValueView::Array(arc, _)) if arc.len() > all_items.len() => {
                     arc.as_slice().to_vec()
                 }
                 _ => break,

@@ -8,17 +8,17 @@ impl Interpreter {
     /// `Hash` is intentionally excluded — callers that also accept it
     /// (`.sort` / `.first`) test for it separately.
     pub(super) fn is_plain_eager_list(target: &crate::value::Value) -> bool {
-        use crate::value::{ArrayKind, Value};
+        use crate::value::ArrayKind;
         matches!(
-            target,
-            Value::Array(_, ArrayKind::Array | ArrayKind::List)
-                | Value::Seq(_)
-                | Value::Slip(_)
-                | Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. }
+            target.view(),
+            ValueView::Array(_, ArrayKind::Array | ArrayKind::List)
+                | ValueView::Seq(_)
+                | ValueView::Slip(_)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
         )
     }
 
@@ -70,9 +70,9 @@ impl Interpreter {
             let len = left_list.len().min(right_list.len());
             let mut results = Vec::new();
             for i in 0..len {
-                let mut tuple = match &left_list[i] {
-                    Value::Array(items, kind) if !kind.is_itemized() => items.to_vec(),
-                    other => vec![other.clone()],
+                let mut tuple = match left_list[i].view() {
+                    ValueView::Array(items, kind) if !kind.is_itemized() => items.to_vec(),
+                    _ => vec![left_list[i].clone()],
                 };
                 tuple.push(right_list[i].clone());
                 results.push(Value::array(tuple));
@@ -94,7 +94,7 @@ impl Interpreter {
                     &right_list[i],
                 )?);
             }
-            return Ok(Value::Seq(std::sync::Arc::new(results)));
+            return Ok(Value::seq_arc(std::sync::Arc::new(results)));
         }
         // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
         // Apply inner op element-wise to two lists.
@@ -115,12 +115,12 @@ impl Interpreter {
             let mut results = Vec::with_capacity(len);
             for i in 0..len {
                 let l = if left_list.is_empty() {
-                    &Value::Int(0.into())
+                    &Value::int(0.into())
                 } else {
                     &left_list[i % left_list.len()]
                 };
                 let r = if right_list.is_empty() {
-                    &Value::Int(0.into())
+                    &Value::int(0.into())
                 } else {
                     &right_list[i % right_list.len()]
                 };
@@ -129,7 +129,9 @@ impl Interpreter {
             return Ok(Value::array(results));
         }
         // Thread junctions through arithmetic/comparison reduction ops
-        if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
+        if matches!(left.view(), ValueView::Junction { .. })
+            || matches!(right.view(), ValueView::Junction { .. })
+        {
             return self.eval_reduction_op_with_junctions(op, left.clone(), right.clone());
         }
         // Normalize Unicode operator aliases to their ASCII forms so they work
@@ -153,11 +155,11 @@ impl Interpreter {
                 if let Some(name) = normalized_op.strip_prefix('&') {
                     let callable = loan_env!(self, resolve_code_var(name));
                     if matches!(
-                        callable,
-                        Value::Sub(_)
-                            | Value::WeakSub(_)
-                            | Value::Routine { .. }
-                            | Value::Instance { .. }
+                        callable.view(),
+                        ValueView::Sub(_)
+                            | ValueView::WeakSub(_)
+                            | ValueView::Routine { .. }
+                            | ValueView::Instance { .. }
                     ) {
                         return self.vm_call_on_value(callable, args, None);
                     }
@@ -236,8 +238,8 @@ impl Interpreter {
     /// For Package (type objects) and Instance values, checks if the class defines
     /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.
     pub(super) fn eval_truthy(&mut self, val: &Value) -> bool {
-        match val {
-            Value::Package(name) => {
+        match val.view() {
+            ValueView::Package(name) => {
                 let class_name = name.resolve().to_string();
                 if loan_env!(self, resolve_method_with_owner(&class_name, "Bool", &[])).is_some() {
                     // Slice F: a user `Bool` method run by this internal coercion
@@ -252,7 +254,7 @@ impl Interpreter {
                 }
                 val.truthy()
             }
-            Value::Instance { class_name, .. } => {
+            ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve().to_string();
                 if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some() {
                     let caller_code = self.current_code;
@@ -268,7 +270,7 @@ impl Interpreter {
             // the mixed-in `Bool` method, exactly like a class with a user `Bool`.
             // Without this, `?$mixin` / `if $mixin` ignored the role's `Bool` and
             // used the base value's truthiness.
-            Value::Mixin(..) if self.mixin_role_has_method(val, "Bool") => {
+            ValueView::Mixin(..) if self.mixin_role_has_method(val, "Bool") => {
                 let caller_code = self.current_code;
                 let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
                 self.reconcile_caller_after_internal_dispatch(caller_code);
@@ -277,17 +279,17 @@ impl Interpreter {
                     Err(_) => val.truthy(),
                 }
             }
-            Value::Regex(_)
-            | Value::RegexWithAdverbs { .. }
-            | Value::Routine { is_regex: true, .. } => {
-                let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
+            ValueView::Regex(_)
+            | ValueView::RegexWithAdverbs { .. }
+            | ValueView::Routine { is_regex: true, .. } => {
+                let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
                 self.vm_smart_match(&topic, val)
             }
             _ => val.truthy(),
         }
     }
 
-    /// Call a plain `Value::Sub` map block, optionally with an explicit topic
+    /// Call a plain `Sub` map block, optionally with an explicit topic
     /// (Pair elements) and/or rw-topic capture (`$_`-mutating blocks).
     ///
     /// Used by the native `.map` loop (see [`Self::call_compiled_closure_with_topic`]).
@@ -302,7 +304,7 @@ impl Interpreter {
         explicit_topic: Option<Value>,
         capture_rw_topic: bool,
     ) -> Result<Value, RuntimeError> {
-        let Value::Sub(data) = block else {
+        let ValueView::Sub(data) = block.view() else {
             return self.vm_call_on_value(block.clone(), args, None);
         };
         let empty_fns = HashMap::new();
@@ -337,11 +339,11 @@ impl Interpreter {
     /// Interpreter-native dispatch for calling a value (Sub, Routine, Junction, etc.).
     ///
     /// This avoids the interpreter's `eval_call_on_value` for common cases:
-    /// - Value::Sub with compiled_code -> call_compiled_closure
-    /// - Value::Sub without compiled_code -> compile on-the-fly, then call_compiled_closure
-    /// - Value::Routine -> resolve to function name and dispatch
-    /// - Value::Junction -> thread over values
-    /// - Value::WeakSub -> upgrade to Sub and recurse
+    /// - a Sub with compiled_code -> call_compiled_closure
+    /// - a Sub without compiled_code -> compile on-the-fly, then call_compiled_closure
+    /// - a Routine -> resolve to function name and dispatch
+    /// - a Junction -> thread over values
+    /// - a WeakSub -> upgrade to Sub and recurse
     ///
     /// Falls back to interpreter for Mixin (CALL-ME from roles) and Instance (CALL-ME).
     pub(super) fn vm_call_on_value(
@@ -351,9 +353,9 @@ impl Interpreter {
         compiled_fns: Option<&HashMap<String, CompiledFunction>>,
     ) -> Result<Value, RuntimeError> {
         // Upgrade WeakSub to Sub transparently
-        let target = if let Value::WeakSub(ref weak) = target {
+        let target = if let ValueView::WeakSub(weak) = target.view() {
             match weak.upgrade() {
-                Some(strong) => Value::Sub(strong),
+                Some(strong) => Value::sub_value(strong),
                 None => return Err(RuntimeError::new("Callable has been freed")),
             }
         } else {
@@ -362,7 +364,7 @@ impl Interpreter {
 
         // A WalkList is invoked (`$x.WALK(...)()`) by calling each candidate on
         // the original invocant, forwarding any arguments.
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name.resolve() == "WalkList"
         {
             return self.walk_list_invoke_direct(&target, args);
@@ -373,7 +375,7 @@ impl Interpreter {
         // the wrap chain, so route such a Sub through `call_sub_value` (which
         // checks `wrap_chains`). Skip when already dispatching this sub's chain
         // to avoid re-entering the wrappers from the original-sub leg.
-        if let Value::Sub(ref data) = target
+        if let ValueView::Sub(data) = target.view()
             && self.has_wrap_chain(data.id)
             && !self.is_wrap_dispatching(data.id)
         {
@@ -381,7 +383,7 @@ impl Interpreter {
         }
 
         // Fast path: Sub with compiled_code
-        if let Value::Sub(ref data) = target
+        if let ValueView::Sub(data) = target.view()
             && let Some(ref cc) = data.compiled_code
         {
             let cc = cc.clone();
@@ -392,7 +394,7 @@ impl Interpreter {
         }
 
         // Sub without compiled_code: compile on-the-fly then dispatch via Interpreter
-        if let Value::Sub(ref data) = target
+        if let ValueView::Sub(data) = target.view()
             && !data.body.is_empty()
         {
             let cc = {
@@ -415,7 +417,7 @@ impl Interpreter {
         // priority is preserved because a bare builtin Routine (e.g. `&SETTING::not`
         // -> Routine{GLOBAL, "not"}) is not a declared user function, so it skips the
         // `has_function` branches and resolves natively in compiled-first.
-        if let Value::Routine { package, name, .. } = &target {
+        if let ValueView::Routine { package, name, .. } = target.view() {
             let pkg = package.resolve();
             let name_str = name.resolve();
             let empty_fns = HashMap::new();
@@ -434,7 +436,7 @@ impl Interpreter {
                 // resolves to Routine{GLOBAL, "not"}, accessors.rs) intentionally
                 // refers to the builtin, not a user sub that shadows the name. Keep
                 // builtin priority via `call_function` for those (a plain user `&not`
-                // is a `Value::Sub` and never reaches this Routine branch). Otherwise
+                // is a plain `Sub` value and never reaches this Routine branch). Otherwise
                 // route user subs/multi/proto through compiled-first.
                 if crate::runtime::Interpreter::is_builtin_function(&name_str) {
                     return self.vm_call_function(&name_str, args);
@@ -454,7 +456,9 @@ impl Interpreter {
         }
 
         // Junction: thread over values
-        if let Value::Junction { kind, values } = target {
+        if let ValueView::Junction { kind, values } = target.view() {
+            let kind = kind.clone();
+            let values = values.clone();
             let mut results = Vec::with_capacity(values.len());
             for callable in values.iter() {
                 results.push(self.vm_call_on_value(
@@ -467,7 +471,9 @@ impl Interpreter {
         }
 
         // Mixin wrapping a Sub/Routine: try inner callable first
-        if let Value::Mixin(ref inner, ref mixins) = target {
+        if let ValueView::Mixin(inner, mixins) = target.view() {
+            let inner = inner.clone();
+            let mixins = mixins.clone();
             // Check if any mixed-in role provides CALL-ME
             for key in mixins.keys() {
                 if let Some(role_name) = key.strip_prefix("__mutsu_role__")
@@ -482,14 +488,17 @@ impl Interpreter {
         }
 
         // Instance or Package (type object): CALL-ME -- try compiled method path first
-        if matches!(target, Value::Instance { .. } | Value::Package(_)) {
+        if matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) {
             return self.try_compiled_method_or_interpret(target, "CALL-ME", args);
         }
 
         // Sub with empty body (no-op closure): call directly via interpreter's
         // call_sub_value, avoiding the eval_call_on_value indirection since we
         // already know the target is a Sub.
-        if matches!(target, Value::Sub(_)) {
+        if matches!(target.view(), ValueView::Sub(_)) {
             return self.vm_call_sub_value(target, args, true);
         }
 
@@ -529,7 +538,9 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Junction { kind, values } = left {
+        if let ValueView::Junction { kind, values } = left.view() {
+            let kind = kind.clone();
+            let values = values.clone();
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
                 .cloned()
@@ -537,7 +548,9 @@ impl Interpreter {
                 .collect();
             return Ok(Value::junction(kind, results?));
         }
-        if let Value::Junction { kind, values } = right {
+        if let ValueView::Junction { kind, values } = right.view() {
+            let kind = kind.clone();
+            let values = values.clone();
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
                 .cloned()

@@ -2,24 +2,24 @@ use super::*;
 
 impl Interpreter {
     fn integral_bigint(value: &Value) -> Option<num_bigint::BigInt> {
-        match value {
-            Value::Int(i) => Some(num_bigint::BigInt::from(*i)),
-            Value::BigInt(i) => Some((**i).clone()),
-            Value::Num(n)
+        match value.view() {
+            ValueView::Int(i) => Some(num_bigint::BigInt::from(i)),
+            ValueView::BigInt(i) => Some((**i).clone()),
+            ValueView::Num(n)
                 if n.fract() == 0.0
                     && n.is_finite()
-                    && *n >= i64::MIN as f64
-                    && *n <= i64::MAX as f64 =>
+                    && n >= i64::MIN as f64
+                    && n <= i64::MAX as f64 =>
             {
-                Some(num_bigint::BigInt::from(*n as i64))
+                Some(num_bigint::BigInt::from(n as i64))
             }
-            Value::Rat(n, d) if *d != 0 && *n % *d == 0 => Some(num_bigint::BigInt::from(*n / *d)),
+            ValueView::Rat(n, d) if d != 0 && n % d == 0 => Some(num_bigint::BigInt::from(n / d)),
             _ => None,
         }
     }
 
     pub(crate) fn is_failure_value(value: &Value) -> bool {
-        matches!(value, Value::Instance { class_name, .. } if class_name == "Failure")
+        matches!(value.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
     }
 
     fn value_matches_key(value: &Value, key: &str) -> bool {
@@ -27,62 +27,63 @@ impl Interpreter {
     }
 
     fn range_contains(range: &Value, needle: &Value) -> bool {
-        match range {
-            Value::Range(start, end) => {
+        match range.view() {
+            ValueView::Range(start, end) => {
                 if let Some(v) = Self::integral_bigint(needle) {
-                    let min = num_bigint::BigInt::from(*start);
-                    let max = num_bigint::BigInt::from(*end);
+                    let min = num_bigint::BigInt::from(start);
+                    let max = num_bigint::BigInt::from(end);
                     v >= min && v <= max
                 } else {
                     false
                 }
             }
-            Value::RangeExcl(start, end) => {
+            ValueView::RangeExcl(start, end) => {
                 if let Some(v) = Self::integral_bigint(needle) {
-                    let min = num_bigint::BigInt::from(*start);
-                    let max = num_bigint::BigInt::from(*end);
+                    let min = num_bigint::BigInt::from(start);
+                    let max = num_bigint::BigInt::from(end);
                     v >= min && v < max
                 } else {
                     false
                 }
             }
-            Value::RangeExclStart(start, end) => {
+            ValueView::RangeExclStart(start, end) => {
                 if let Some(v) = Self::integral_bigint(needle) {
-                    let min = num_bigint::BigInt::from(*start);
-                    let max = num_bigint::BigInt::from(*end);
+                    let min = num_bigint::BigInt::from(start);
+                    let max = num_bigint::BigInt::from(end);
                     v > min && v <= max
                 } else {
                     false
                 }
             }
-            Value::RangeExclBoth(start, end) => {
+            ValueView::RangeExclBoth(start, end) => {
                 if let Some(v) = Self::integral_bigint(needle) {
-                    let min = num_bigint::BigInt::from(*start);
-                    let max = num_bigint::BigInt::from(*end);
+                    let min = num_bigint::BigInt::from(start);
+                    let max = num_bigint::BigInt::from(end);
                     v > min && v < max
                 } else {
                     false
                 }
             }
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
                 excl_end,
             } => {
-                if matches!(start.as_ref(), Value::Str(_)) || matches!(end.as_ref(), Value::Str(_))
+                if matches!(start.view(), ValueView::Str(_))
+                    || matches!(end.view(), ValueView::Str(_))
                 {
                     let v = needle.to_string_value();
                     let min = start.to_string_value();
                     let max = end.to_string_value();
-                    let min_ok = if *excl_start { v > min } else { v >= min };
-                    let max_ok = if *excl_end { v < max } else { v <= max };
+                    let min_ok = if excl_start { v > min } else { v >= min };
+                    let max_ok = if excl_end { v < max } else { v <= max };
                     min_ok && max_ok
                 } else if matches!(
-                    (start.as_ref(), end.as_ref()),
+                    (start.view(), end.view()),
                     (
-                        Value::Int(_) | Value::BigInt(_),
-                        Value::Int(_) | Value::BigInt(_)
+                        ValueView::Int(_) | ValueView::BigInt(_),
+                        ValueView::Int(_) | ValueView::BigInt(_)
                     )
                 ) {
                     let Some(v) = Self::integral_bigint(needle) else {
@@ -90,15 +91,15 @@ impl Interpreter {
                     };
                     let min = start.to_bigint();
                     let max = end.to_bigint();
-                    let min_ok = if *excl_start { v > min } else { v >= min };
-                    let max_ok = if *excl_end { v < max } else { v <= max };
+                    let min_ok = if excl_start { v > min } else { v >= min };
+                    let max_ok = if excl_end { v < max } else { v <= max };
                     min_ok && max_ok
                 } else {
                     let v = needle.to_f64();
                     let min = start.to_f64();
                     let max = end.to_f64();
-                    let min_ok = if *excl_start { v > min } else { v >= min };
-                    let max_ok = if *excl_end { v < max } else { v <= max };
+                    let min_ok = if excl_start { v > min } else { v >= min };
+                    let max_ok = if excl_end { v < max } else { v <= max };
                     min_ok && max_ok
                 }
             }
@@ -115,7 +116,7 @@ impl Interpreter {
         if let Some(info) = self.container_type_metadata(whole) {
             if let Some(key_type) = info.key_type {
                 if (key_type == "Any" || key_type == "Mu")
-                    && matches!(needle, Value::Str(s) if s.parse::<i128>().is_ok())
+                    && matches!(needle.view(), ValueView::Str(s) if s.parse::<i128>().is_ok())
                 {
                     // Heuristic for typed hashes: numeric-looking string keys should
                     // not alias numeric keys.
@@ -128,7 +129,7 @@ impl Interpreter {
                     return false;
                 }
             }
-        } else if !matches!(needle, Value::Str(_)) {
+        } else if !matches!(needle.view(), ValueView::Str(_)) {
             // Plain Hash keys are Str by default.
             return false;
         }
@@ -137,29 +138,30 @@ impl Interpreter {
 
     fn set_contains(&mut self, container: &Value, needle: &Value) -> bool {
         let key = needle.to_string_value();
-        match container {
-            Value::Set(s, _) => s.contains(&key),
-            Value::Bag(b, _) => b.get(&key).is_some_and(num_traits::Signed::is_positive),
-            Value::Mix(m, _) => m.get(&key).is_some_and(|weight| *weight != 0.0),
-            Value::Hash(h) => self.hash_contains(h, needle, container),
-            v if v.as_list_items().is_some() => v
+        match container.view() {
+            ValueView::Set(s, _) => s.contains(&key),
+            ValueView::Bag(b, _) => b.get(&key).is_some_and(num_traits::Signed::is_positive),
+            ValueView::Mix(m, _) => m.get(&key).is_some_and(|weight| *weight != 0.0),
+            ValueView::Hash(h) => self.hash_contains(h, needle, container),
+            _ if container.as_list_items().is_some() => container
                 .as_list_items()
                 .unwrap()
                 .iter()
                 .any(|item| Self::value_matches_key(item, &key)),
-            range if range.is_range() => Self::range_contains(range, needle),
+            _ if container.is_range() => Self::range_contains(container, needle),
             _ => false,
         }
     }
 
     fn quant_hash_weights(value: &Value) -> HashMap<String, f64> {
-        match runtime::coerce_value_to_quanthash(value) {
-            Value::Set(items, _) => items.iter().map(|k| (k.clone(), 1.0)).collect(),
-            Value::Bag(items, _) => items
+        let coerced = runtime::coerce_value_to_quanthash(value);
+        match coerced.view() {
+            ValueView::Set(items, _) => items.iter().map(|k| (k.clone(), 1.0)).collect(),
+            ValueView::Bag(items, _) => items
                 .iter()
                 .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
                 .collect(),
-            Value::Mix(items, _) => items.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+            ValueView::Mix(items, _) => items.iter().map(|(k, v)| (k.clone(), *v)).collect(),
             _ => HashMap::new(),
         }
     }
@@ -200,18 +202,18 @@ impl Interpreter {
     }
 
     fn is_infinite_bound(value: &Value) -> bool {
-        match value {
-            Value::Num(n) => n.is_infinite(),
-            Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
-            Value::Mixin(inner, _) => Self::is_infinite_bound(inner),
+        match value.view() {
+            ValueView::Num(n) => n.is_infinite(),
+            ValueView::Rat(_, d) | ValueView::FatRat(_, d) => d == 0,
+            ValueView::Mixin(inner, _) => Self::is_infinite_bound(inner),
             _ => false,
         }
     }
 
     fn is_lazy_union_input(value: &Value) -> bool {
-        match value {
-            Value::LazyList(_) => true,
-            Value::GenericRange { start, end, .. } => {
+        match value.view() {
+            ValueView::LazyList(_) => true,
+            ValueView::GenericRange { start, end, .. } => {
                 Self::is_infinite_bound(start) || Self::is_infinite_bound(end)
             }
             _ => false,
@@ -219,54 +221,54 @@ impl Interpreter {
     }
 
     pub(crate) fn union_insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
-        let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
-        match value {
-            Value::Set(items, _) => {
+        let pair_selected = |weight: &Value| weight.truthy() || weight.is_nil();
+        match value.view() {
+            ValueView::Set(items, _) => {
                 elems.extend(items.iter().cloned());
             }
-            Value::Bag(items, _) => {
+            ValueView::Bag(items, _) => {
                 for (k, v) in items.iter() {
                     if num_traits::Signed::is_positive(v) {
                         elems.insert(k.clone());
                     }
                 }
             }
-            Value::Mix(items, _) => {
+            ValueView::Mix(items, _) => {
                 for (k, v) in items.iter() {
                     if *v != 0.0 {
                         elems.insert(k.clone());
                     }
                 }
             }
-            Value::Hash(items) => {
+            ValueView::Hash(items) => {
                 for (k, v) in items.iter() {
-                    if v.truthy() || matches!(v, Value::Nil) {
+                    if v.truthy() || v.is_nil() {
                         elems.insert(k.clone());
                     }
                 }
             }
-            v if v.as_list_items().is_some() => {
-                for item in v.as_list_items().unwrap().iter() {
+            _ if value.as_list_items().is_some() => {
+                for item in value.as_list_items().unwrap().iter() {
                     Self::union_insert_set_elem(elems, item);
                 }
             }
-            range if range.is_range() => {
-                for item in runtime::value_to_list(range) {
+            _ if value.is_range() => {
+                for item in runtime::value_to_list(value) {
                     Self::union_insert_set_elem(elems, &item);
                 }
             }
-            Value::Pair(key, weight) => {
+            ValueView::Pair(key, weight) => {
                 if pair_selected(weight) {
                     elems.insert(key.clone());
                 }
             }
-            Value::ValuePair(key, weight) => {
+            ValueView::ValuePair(key, weight) => {
                 if pair_selected(weight) {
                     elems.insert(key.to_string_value());
                 }
             }
-            other => {
-                let sv = other.to_string_value();
+            _ => {
+                let sv = value.to_string_value();
                 if !sv.is_empty() {
                     elems.insert(sv);
                 }
@@ -278,42 +280,42 @@ impl Interpreter {
         if Self::is_lazy_union_input(value) {
             return Err(Self::lazy_list_error());
         }
-        match value {
-            Value::Set(s, _) => Ok(s.elements.clone()),
-            Value::Bag(b, _) => Ok(b.keys().cloned().collect()),
-            Value::Mix(m, _) => Ok(m.keys().cloned().collect()),
-            Value::Hash(h) => Ok(h
+        match value.view() {
+            ValueView::Set(s, _) => Ok(s.elements.clone()),
+            ValueView::Bag(b, _) => Ok(b.keys().cloned().collect()),
+            ValueView::Mix(m, _) => Ok(m.keys().cloned().collect()),
+            ValueView::Hash(h) => Ok(h
                 .iter()
                 .filter_map(|(k, v)| {
-                    if v.truthy() || matches!(v, Value::Nil) {
+                    if v.truthy() || v.is_nil() {
                         Some(k.clone())
                     } else {
                         None
                     }
                 })
                 .collect()),
-            v if v.as_list_items().is_some() => {
+            _ if value.as_list_items().is_some() => {
                 let mut elems = HashSet::new();
-                for item in v.as_list_items().unwrap().iter() {
+                for item in value.as_list_items().unwrap().iter() {
                     Self::union_insert_set_elem(&mut elems, item);
                 }
                 Ok(elems)
             }
-            range if range.is_range() => {
+            _ if value.is_range() => {
                 let mut elems = HashSet::new();
-                for item in runtime::value_to_list(range) {
+                for item in runtime::value_to_list(value) {
                     Self::union_insert_set_elem(&mut elems, &item);
                 }
                 Ok(elems)
             }
-            Value::Pair(_, _) | Value::ValuePair(_, _) => {
+            ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
                 let mut elems = HashSet::new();
                 Self::union_insert_set_elem(&mut elems, value);
                 Ok(elems)
             }
-            other => {
+            _ => {
                 let mut elems = HashSet::new();
-                let sv = other.to_string_value();
+                let sv = value.to_string_value();
                 if !sv.is_empty() {
                     elems.insert(sv);
                 }
@@ -326,9 +328,9 @@ impl Interpreter {
         if Self::is_lazy_union_input(value) {
             return Err(Self::lazy_list_error());
         }
-        match value {
-            Value::Bag(b, _) => Ok(crate::runtime::utils::bag_counts_as_i64(&b.counts)),
-            Value::Mix(m, _) => Ok(m
+        match value.view() {
+            ValueView::Bag(b, _) => Ok(crate::runtime::utils::bag_counts_as_i64(&b.counts)),
+            ValueView::Mix(m, _) => Ok(m
                 .iter()
                 .filter_map(|(k, w)| {
                     if *w != 0.0 {
@@ -338,8 +340,8 @@ impl Interpreter {
                     }
                 })
                 .collect()),
-            other => {
-                let set = Self::value_to_set_keys(other)?;
+            _ => {
+                let set = Self::value_to_set_keys(value)?;
                 Ok(set.into_iter().map(|k| (k, 1)).collect())
             }
         }
@@ -349,14 +351,14 @@ impl Interpreter {
         if Self::is_lazy_union_input(value) {
             return Err(Self::lazy_list_error());
         }
-        match value {
-            Value::Mix(m, _) => Ok(m.weights.clone()),
-            Value::Bag(b, _) => Ok(b
+        match value.view() {
+            ValueView::Mix(m, _) => Ok(m.weights.clone()),
+            ValueView::Bag(b, _) => Ok(b
                 .iter()
                 .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
                 .collect()),
-            other => {
-                let set = Self::value_to_set_keys(other)?;
+            _ => {
+                let set = Self::value_to_set_keys(value)?;
                 Ok(set.into_iter().map(|k| (k, 1.0)).collect())
             }
         }
@@ -369,7 +371,7 @@ impl Interpreter {
             return Err(RuntimeError::new("Exception"));
         }
         let result = self.set_contains(&right, &left);
-        self.stack.push(Value::Bool(result));
+        self.stack.push(Value::truth(result));
         Ok(())
     }
 
@@ -380,7 +382,7 @@ impl Interpreter {
             return Err(RuntimeError::new("Exception"));
         }
         let result = self.set_contains(&left, &right);
-        self.stack.push(Value::Bool(result));
+        self.stack.push(Value::truth(result));
         Ok(())
     }
 
@@ -392,8 +394,8 @@ impl Interpreter {
         }
         let result_mutable = runtime::set_result_mutability(&left);
 
-        let result = match (left, right) {
-            (Value::Mix(a, _), Value::Mix(b, _)) => {
+        let result = match (left.view(), right.view()) {
+            (ValueView::Mix(a, _), ValueView::Mix(b, _)) => {
                 let mut result = a.weights.clone();
                 for (k, v) in b.iter() {
                     // For union: if key exists in both, take max; if only in one side, take that value
@@ -405,7 +407,7 @@ impl Interpreter {
                 }
                 Value::mix(result)
             }
-            (Value::Bag(a, _), Value::Bag(b, _)) => {
+            (ValueView::Bag(a, _), ValueView::Bag(b, _)) => {
                 let mut result = a.counts.clone();
                 for (k, v) in b.iter() {
                     let e = result.entry(k.clone()).or_default();
@@ -415,16 +417,19 @@ impl Interpreter {
                 }
                 Value::bag_big(result)
             }
-            (Value::Set(a, _), Value::Set(b, _)) => {
+            (ValueView::Set(a, _), ValueView::Set(b, _)) => {
                 let mut result = a.elements.clone();
                 for elem in b.iter() {
                     result.insert(elem.clone());
                 }
                 Value::set(result)
             }
-            (l, r) if matches!(l, Value::Mix(_, _)) || matches!(r, Value::Mix(_, _)) => {
-                let mut left_mix = Self::value_to_mix_weights(&l)?;
-                let right_mix = Self::value_to_mix_weights(&r)?;
+            (_, _)
+                if matches!(left.view(), ValueView::Mix(_, _))
+                    || matches!(right.view(), ValueView::Mix(_, _)) =>
+            {
+                let mut left_mix = Self::value_to_mix_weights(&left)?;
+                let right_mix = Self::value_to_mix_weights(&right)?;
                 for (k, v) in right_mix {
                     if let Some(e) = left_mix.get_mut(&k) {
                         *e = e.max(v);
@@ -434,18 +439,21 @@ impl Interpreter {
                 }
                 Value::mix(left_mix)
             }
-            (l, r) if matches!(l, Value::Bag(_, _)) || matches!(r, Value::Bag(_, _)) => {
-                let mut left_bag = Self::value_to_bag_counts(&l)?;
-                let right_bag = Self::value_to_bag_counts(&r)?;
+            (_, _)
+                if matches!(left.view(), ValueView::Bag(_, _))
+                    || matches!(right.view(), ValueView::Bag(_, _)) =>
+            {
+                let mut left_bag = Self::value_to_bag_counts(&left)?;
+                let right_bag = Self::value_to_bag_counts(&right)?;
                 for (k, v) in right_bag {
                     let e = left_bag.entry(k).or_insert(0);
                     *e = (*e).max(v);
                 }
                 Value::bag(left_bag)
             }
-            (l, r) => {
-                let mut left_set = Self::value_to_set_keys(&l)?;
-                let right_set = Self::value_to_set_keys(&r)?;
+            (_, _) => {
+                let mut left_set = Self::value_to_set_keys(&left)?;
+                let right_set = Self::value_to_set_keys(&right)?;
                 for elem in right_set {
                     left_set.insert(elem);
                 }
