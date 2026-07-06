@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.2.24](https://github.com/tokuhirom/mutsu/compare/v0.2.23...v0.2.24) - 2026-07-05
+
+- docs(analysis): rev8 — whole-VM quality re-evaluation after GC layer 3a by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4281
+- docs(plan): register ANALYSIS rev8 findings as tasks + fix stale gate/status notes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4283
+- fix(collation): order noncharacters by codepoint in unicmp/coll by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4282
+
 ## [v0.2.23](https://github.com/tokuhirom/mutsu/compare/v0.2.22...v0.2.23) - 2026-07-05
 
 - perf(vm): shrink OpCode 192->48 bytes, add per-opcode stats, drop dead opcodes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4279
