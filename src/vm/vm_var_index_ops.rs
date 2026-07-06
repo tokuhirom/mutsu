@@ -1363,28 +1363,47 @@ impl Interpreter {
                 *self.env_mut() = sub_env;
                 let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                 *self.env_mut() = saved_env;
-                let i = match &idx {
-                    Value::Int(i) => Some(*i),
-                    Value::Num(n) => Some(*n as i64),
-                    _ => None,
-                };
-                match i {
-                    Some(i) if i >= 0 => {
-                        if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
-                            let actual_end = if excl_end { end - 1 } else { end };
-                            let val = start + i;
-                            if val > actual_end {
-                                Value::Nil
+                // A block returning a Range or a list of indices (e.g. `{0,1}`)
+                // slices the range's materialized elements.
+                if idx.is_range() || idx.as_list_items().is_some() {
+                    let elems = crate::runtime::utils::value_to_list(range);
+                    let indices = crate::runtime::utils::value_to_list(&idx);
+                    let result: Vec<Value> = indices
+                        .iter()
+                        .map(|v| {
+                            let i = crate::runtime::utils::to_int(v);
+                            if i >= 0 && (i as usize) < elems.len() {
+                                elems[i as usize].clone()
                             } else {
-                                Value::Int(val)
+                                Value::NIL
                             }
-                        } else {
-                            let items = crate::runtime::utils::value_to_list(range);
-                            items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        })
+                        .collect();
+                    Value::array(result)
+                } else {
+                    let i = match &idx {
+                        Value::Int(i) => Some(*i),
+                        Value::Num(n) => Some(*n as i64),
+                        _ => None,
+                    };
+                    match i {
+                        Some(i) if i >= 0 => {
+                            if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
+                                let actual_end = if excl_end { end - 1 } else { end };
+                                let val = start + i;
+                                if val > actual_end {
+                                    Value::Nil
+                                } else {
+                                    Value::Int(val)
+                                }
+                            } else {
+                                let items = crate::runtime::utils::value_to_list(range);
+                                items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                            }
                         }
+                        Some(i) if i < 0 => Self::make_out_of_range_failure(i),
+                        _ => Value::Nil,
                     }
-                    Some(i) if i < 0 => Self::make_out_of_range_failure(i),
-                    _ => Value::Nil,
                 }
             }
             (ref range, Value::RangeExcl(a, b)) if range.is_range() => {
@@ -1531,8 +1550,9 @@ impl Interpreter {
                 *self.env_mut() = sub_env;
                 let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
                 *self.env_mut() = saved_env;
-                // If the WhateverCode returned a Range, use it to slice the array
-                if idx.is_range() {
+                // If the block returned a Range or a list of indices (e.g. `{0,1}`
+                // returns the List `(0,1)`), use every element as a slice index.
+                if idx.is_range() || idx.as_list_items().is_some() {
                     let indices = crate::runtime::utils::value_to_list(&idx);
                     let result: Vec<Value> = indices
                         .iter()
