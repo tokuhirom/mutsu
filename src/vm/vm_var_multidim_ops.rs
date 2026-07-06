@@ -261,8 +261,12 @@ impl Interpreter {
                 };
                 let has_more_multi = rest.iter().any(|v| {
                     matches!(
-                        Self::normalize_multidim_dim(v),
-                        Value::Whatever | Value::Array(..)
+                        Self::normalize_multidim_dim(v).view(),
+                        // A block dimension (`{0,1}`) may resolve to a list of
+                        // indices, so it too can produce a flattenable slice.
+                        crate::value::ValueView::Whatever
+                            | crate::value::ValueView::Array(..)
+                            | crate::value::ValueView::Sub(..)
                     )
                 });
                 let mut out = Vec::with_capacity(items.len());
@@ -289,8 +293,12 @@ impl Interpreter {
                 };
                 let has_more_multi = rest.iter().any(|v| {
                     matches!(
-                        Self::normalize_multidim_dim(v),
-                        Value::Whatever | Value::Array(..)
+                        Self::normalize_multidim_dim(v).view(),
+                        // A block dimension (`{0,1}`) may resolve to a list of
+                        // indices, so it too can produce a flattenable slice.
+                        crate::value::ValueView::Whatever
+                            | crate::value::ValueView::Array(..)
+                            | crate::value::ValueView::Sub(..)
                     )
                 });
                 let mut out = Vec::with_capacity(indices.len());
@@ -317,8 +325,20 @@ impl Interpreter {
                 Ok(Value::array(out))
             }
             _ => {
-                // Scalar index — resolve WhateverCode first
+                // Scalar index — resolve WhateverCode / block first
                 let resolved = self.resolve_whatever_code_index(dim, target);
+                // A block subscript may return a Range or a list of indices
+                // (e.g. `{0,1}` returns the List `(0,1)`). Re-dispatch such a
+                // result as a slice dimension instead of a single scalar index.
+                if let Some(r) = &resolved {
+                    let norm = Self::normalize_multidim_dim(r);
+                    if norm.as_list_items().is_some() {
+                        let mut new_dims = Vec::with_capacity(rest.len() + 1);
+                        new_dims.push(norm);
+                        new_dims.extend_from_slice(rest);
+                        return self.multi_dim_index_read(target, &new_dims);
+                    }
+                }
                 let idx = resolved.as_ref().unwrap_or(dim);
                 if let Some(i) = Self::index_to_usize(idx) {
                     let items = match target {
@@ -384,8 +404,12 @@ impl Interpreter {
             Value::Whatever => {
                 let has_more_multi = rest.iter().any(|v| {
                     matches!(
-                        Self::normalize_multidim_dim(v),
-                        Value::Whatever | Value::Array(..)
+                        Self::normalize_multidim_dim(v).view(),
+                        // A block dimension (`{0,1}`) may resolve to a list of
+                        // indices, so it too can produce a flattenable slice.
+                        crate::value::ValueView::Whatever
+                            | crate::value::ValueView::Array(..)
+                            | crate::value::ValueView::Sub(..)
                     )
                 });
                 let mut out = Vec::with_capacity(map.len());
@@ -407,8 +431,12 @@ impl Interpreter {
             Value::Array(keys, ..) => {
                 let has_more_multi = rest.iter().any(|v| {
                     matches!(
-                        Self::normalize_multidim_dim(v),
-                        Value::Whatever | Value::Array(..)
+                        Self::normalize_multidim_dim(v).view(),
+                        // A block dimension (`{0,1}`) may resolve to a list of
+                        // indices, so it too can produce a flattenable slice.
+                        crate::value::ValueView::Whatever
+                            | crate::value::ValueView::Array(..)
+                            | crate::value::ValueView::Sub(..)
                     )
                 });
                 let mut out = Vec::with_capacity(keys.len());
