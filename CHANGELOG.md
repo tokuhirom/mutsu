@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.31](https://github.com/tokuhirom/mutsu/compare/v0.2.30...v0.2.31) - 2026-07-06
+
+- fix(sprintf): exact rational rounding for %e/%E (match Rakudo) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4297
+
 ## [v0.2.30](https://github.com/tokuhirom/mutsu/compare/v0.2.29...v0.2.30) - 2026-07-06
 
 - fix(our-sub): route inc/dec of an escaped `our` sub's captured lexical through its persisted cell by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4295
