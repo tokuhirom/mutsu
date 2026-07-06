@@ -3,7 +3,7 @@ use num_bigint::BigInt;
 
 use super::sprintf_helpers::{
     apply_float_minus_zero, apply_width, format_float_fixed, format_g, format_inf_nan,
-    format_rat_fixed, normalize_sci_exponent, sign_prefix,
+    format_rat_fixed, format_rat_sci, normalize_sci_exponent, sign_prefix,
 };
 pub(crate) use super::sprintf_validate::{
     directives_count_message, sprintf_arg_specs, sprintf_directive_count,
@@ -376,20 +376,28 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                 }
             }
             'e' | 'E' => {
-                let f = float_val();
-                if f.is_infinite() || f.is_nan() {
-                    format_inf_nan(f, plus_sign, space_flag)
+                let p = prec_num.unwrap_or(6);
+                // Use exact rational formatting (exponent from the original
+                // value, mantissa rounded half-away-from-zero and NOT re-
+                // normalized on carry) for numeric args, matching Rakudo; fall
+                // back to float only for non-numeric arguments and inf/nan.
+                if let Some(rendered) = format_rat_sci(arg, p, plus_sign, space_flag, spec == 'E') {
+                    rendered
                 } else {
-                    let p = prec_num.unwrap_or(6);
-                    let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
-                    let prefix = sign_prefix(is_neg, plus_sign, space_flag);
-                    let abs = f.abs();
-                    let formatted = if spec == 'e' {
-                        normalize_sci_exponent(&format!("{:.*e}", p, abs))
+                    let f = float_val();
+                    if f.is_infinite() || f.is_nan() {
+                        format_inf_nan(f, plus_sign, space_flag)
                     } else {
-                        normalize_sci_exponent(&format!("{:.*E}", p, abs))
-                    };
-                    format!("{}{}", prefix, formatted)
+                        let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
+                        let prefix = sign_prefix(is_neg, plus_sign, space_flag);
+                        let abs = f.abs();
+                        let formatted = if spec == 'e' {
+                            normalize_sci_exponent(&format!("{:.*e}", p, abs))
+                        } else {
+                            normalize_sci_exponent(&format!("{:.*E}", p, abs))
+                        };
+                        format!("{}{}", prefix, formatted)
+                    }
                 }
             }
             'g' | 'G' => {

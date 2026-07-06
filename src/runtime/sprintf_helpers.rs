@@ -37,17 +37,11 @@ fn f64_to_rational(f: f64) -> (BigInt, BigInt) {
     (numer, denom)
 }
 
-/// Format a numeric value for %f with exact precision (avoids f64 half-to-even
-/// rounding). Uses round-half-away-from-zero like Rakudo. For Num arguments the
-/// f64 is first converted to its exact shortest-decimal rational so that e.g.
-/// `sprintf("%.2f", 1.005e0)` yields `1.01`, matching Rakudo.
-/// Returns None if the argument is not numeric.
-pub(super) fn format_rat_fixed(
-    arg: Option<&Value>,
-    p: usize,
-    plus_sign: bool,
-    space_flag: bool,
-) -> Option<String> {
+/// Extract an exact rational `(numer, denom)` from a numeric sprintf argument,
+/// together with a `neg_zero` flag (for `-0.0` / a `"-..."` string whose value
+/// rounds to zero). Returns None for non-numeric arguments. Shared by the `%f`
+/// and `%e` exact-rounding paths.
+fn extract_rational(arg: Option<&Value>) -> Option<(BigInt, BigInt, bool)> {
     let (numer, denom) = match arg {
         Some(Value::Rat(n, d)) if *d != 0 => (BigInt::from(*n), BigInt::from(*d)),
         Some(Value::FatRat(n, d)) if *d != 0 => (BigInt::from(*n), BigInt::from(*d)),
@@ -62,33 +56,64 @@ pub(super) fn format_rat_fixed(
         },
         _ => return None,
     };
-    // Detect a negatively-signed zero (e.g. -0.0e0) so its sign is preserved.
     let neg_zero = matches!(arg, Some(Value::Num(f)) if f.is_sign_negative())
         || matches!(arg, Some(Value::Str(s)) if s.trim().starts_with('-'));
-    let is_neg = numer < BigInt::from(0) || (numer == BigInt::from(0) && neg_zero);
-    let prefix = sign_prefix(is_neg, plus_sign, space_flag);
-    let abs_numer = if is_neg { -&numer } else { numer };
-    // Compute integer and fractional parts using BigInt arithmetic
-    let int_part = &abs_numer / &denom;
-    let remainder = &abs_numer % &denom;
+    Some((numer, denom, neg_zero))
+}
+
+/// Number of decimal digits in a non-negative `BigInt` (`0` has 1 digit).
+fn ndigits(x: &BigInt) -> i32 {
+    x.to_string().trim_start_matches('-').len() as i32
+}
+
+/// Compare `numer/denom` (with `numer, denom > 0`) against `10^e`, returning the
+/// `Ordering` of the value relative to that power of ten. Uses cross-
+/// multiplication so no fractional powers are needed.
+fn cmp_value_pow10(numer: &BigInt, denom: &BigInt, e: i32) -> std::cmp::Ordering {
+    if e >= 0 {
+        numer.cmp(&(denom * num_traits::pow::pow(BigInt::from(10), e as usize)))
+    } else {
+        (numer * num_traits::pow::pow(BigInt::from(10), (-e) as usize)).cmp(denom)
+    }
+}
+
+/// `floor(log10(numer/denom))` for a strictly-positive rational, computed
+/// exactly with `BigInt` arithmetic.
+fn floor_log10(numer: &BigInt, denom: &BigInt) -> i32 {
+    let mut e = ndigits(numer) - ndigits(denom);
+    while cmp_value_pow10(numer, denom, e) == std::cmp::Ordering::Less {
+        e -= 1;
+    }
+    while cmp_value_pow10(numer, denom, e + 1) != std::cmp::Ordering::Less {
+        e += 1;
+    }
+    e
+}
+
+/// Render `abs_numer/denom` (a non-negative rational) as a fixed-point string
+/// with exactly `p` fractional digits, rounding half away from zero. A carry out
+/// of the fractional part propagates into the integer part (so
+/// `9.995` with `p == 2` becomes `"10.00"`, not `"9.99"`), but the result is
+/// never re-normalized — the caller decides what to do with a mantissa that grew
+/// past its expected range (the `%e` path deliberately keeps `10.00e+00`).
+fn format_rational_fixed_abs(abs_numer: &BigInt, denom: &BigInt, p: usize) -> String {
+    let int_part = abs_numer / denom;
+    let remainder = abs_numer % denom;
     if p == 0 {
-        // Round to integer
         let doubled = &remainder * BigInt::from(2);
-        let rounded = if doubled >= denom {
+        let rounded = if doubled >= *denom {
             &int_part + BigInt::from(1)
         } else {
             int_part
         };
-        return Some(format!("{}{}", prefix, rounded));
+        return rounded.to_string();
     }
-    // Compute p decimal digits of the fractional part
     let scale = num_traits::pow::pow(BigInt::from(10), p);
     let scaled_remainder = &remainder * &scale;
-    // Divide and round
-    let frac_digits = &scaled_remainder / &denom;
-    let frac_remainder = &scaled_remainder % &denom;
+    let frac_digits = &scaled_remainder / denom;
+    let frac_remainder = &scaled_remainder % denom;
     let doubled_frac = &frac_remainder * BigInt::from(2);
-    let (final_int, final_frac) = if doubled_frac >= denom {
+    let (final_int, final_frac) = if doubled_frac >= *denom {
         let rounded_frac = &frac_digits + BigInt::from(1);
         if rounded_frac >= scale {
             (&int_part + BigInt::from(1), BigInt::from(0))
@@ -99,7 +124,74 @@ pub(super) fn format_rat_fixed(
         (int_part, frac_digits)
     };
     let frac_str = format!("{:0>width$}", final_frac, width = p);
-    Some(format!("{}{}.{}", prefix, final_int, frac_str))
+    format!("{final_int}.{frac_str}")
+}
+
+/// Format a numeric value for %f with exact precision (avoids f64 half-to-even
+/// rounding). Uses round-half-away-from-zero like Rakudo. For Num arguments the
+/// f64 is first converted to its exact shortest-decimal rational so that e.g.
+/// `sprintf("%.2f", 1.005e0)` yields `1.01`, matching Rakudo.
+/// Returns None if the argument is not numeric.
+pub(super) fn format_rat_fixed(
+    arg: Option<&Value>,
+    p: usize,
+    plus_sign: bool,
+    space_flag: bool,
+) -> Option<String> {
+    let (numer, denom, neg_zero) = extract_rational(arg)?;
+    let is_neg = numer < BigInt::from(0) || (numer == BigInt::from(0) && neg_zero);
+    let prefix = sign_prefix(is_neg, plus_sign, space_flag);
+    let abs_numer = if is_neg { -&numer } else { numer };
+    let body = format_rational_fixed_abs(&abs_numer, &denom, p);
+    Some(format!("{prefix}{body}"))
+}
+
+/// Format a numeric value for %e/%E with exact precision, matching Rakudo's
+/// scientific formatting. The exponent is `floor(log10(|value|))` of the
+/// *original* value; the mantissa is `|value| / 10^exp` rendered as a
+/// fixed-point number with `p` fractional digits, rounded half away from zero.
+/// Crucially, Rakudo does NOT re-normalize a mantissa that a rounding carry
+/// pushed to `10` or beyond, so `sprintf("%.2e", 9.995)` is `"10.00e+00"`, not
+/// `"1.00e+01"`. Returns None if the argument is not numeric.
+pub(super) fn format_rat_sci(
+    arg: Option<&Value>,
+    p: usize,
+    plus_sign: bool,
+    space_flag: bool,
+    upper: bool,
+) -> Option<String> {
+    let (numer, denom, neg_zero) = extract_rational(arg)?;
+    let is_neg = numer < BigInt::from(0) || (numer == BigInt::from(0) && neg_zero);
+    let prefix = sign_prefix(is_neg, plus_sign, space_flag);
+    let abs_numer = if is_neg { -&numer } else { numer };
+    let e_char = if upper { 'E' } else { 'e' };
+    if abs_numer == BigInt::from(0) {
+        let mantissa = if p == 0 {
+            "0".to_string()
+        } else {
+            format!("0.{}", "0".repeat(p))
+        };
+        return Some(format!("{prefix}{mantissa}{e_char}+00"));
+    }
+    let exp = floor_log10(&abs_numer, &denom);
+    // mantissa = |value| / 10^exp, kept exact as a rational.
+    let (mant_numer, mant_denom) = if exp >= 0 {
+        (
+            abs_numer,
+            &denom * num_traits::pow::pow(BigInt::from(10), exp as usize),
+        )
+    } else {
+        (
+            &abs_numer * num_traits::pow::pow(BigInt::from(10), (-exp) as usize),
+            denom,
+        )
+    };
+    let mantissa = format_rational_fixed_abs(&mant_numer, &mant_denom, p);
+    let exp_sign = if exp >= 0 { '+' } else { '-' };
+    Some(format!(
+        "{prefix}{mantissa}{e_char}{exp_sign}{:02}",
+        exp.unsigned_abs()
+    ))
 }
 
 /// Format a non-negative float using %g/%G rules:
