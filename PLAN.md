@@ -267,6 +267,10 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       int-arith 2x・fib ~30% 狙い。`value_size_guard` テストでサイズ監視中。スライス計画
       （3b-0 API 壁 → 3b-1 表現スイッチ → 3b-2 交通量刈り）とゲートは
       [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §3。
+      **3b-0 着手済み**: 壁 API（`ValueView`/`view()`/accessor/constructor、
+      [docs/nanbox-3b0-api-wall.md](docs/nanbox-3b0-api-wall.md)）と ratchet
+      （`scripts/check-value-wall.sh`・`make test` 組込・baseline 17757）が landed。
+      残り = 直接 variant 参照の機械的移行（ディレクトリ単位スライス・並列可）→ 0 で封印 → 3b-1。
 - **Lever 3: threaded dispatch — 凍結**（2026-07-06 ユーザー承認・[ADR-0004](docs/adr/0004-jit-strategy.md) §2.5 J0）:
       JIT Tier A が dispatch ループ除去で同じ利得をより大きく取るため二重投資を避ける。
       JIT が頓挫した場合のみ復活。

@@ -13,19 +13,19 @@ impl Interpreter {
             && self.user_declared_infix_ops.contains("infix:<+>");
         // Fast path: Int + Int (most common case in numeric loops)
         if !has_override
-            && let Value::Int(a) = &left
-            && let Value::Int(b) = &right
-            && let Some(result) = a.checked_add(*b)
+            && let Some(a) = left.as_int()
+            && let Some(b) = right.as_int()
+            && let Some(result) = a.checked_add(b)
         {
-            self.stack.push(Value::Int(result));
+            self.stack.push(Value::int(result));
             return Ok(());
         }
         // Fast path: Num + Num
         if !has_override
-            && let Value::Num(a) = &left
-            && let Value::Num(b) = &right
+            && let Some(a) = left.as_num()
+            && let Some(b) = right.as_num()
         {
-            self.stack.push(Value::Num(a + b));
+            self.stack.push(Value::num(a + b));
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
@@ -48,18 +48,18 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         // Fast path: Int - Int
-        if let Value::Int(a) = &left
-            && let Value::Int(b) = &right
-            && let Some(result) = a.checked_sub(*b)
+        if let Some(a) = left.as_int()
+            && let Some(b) = right.as_int()
+            && let Some(result) = a.checked_sub(b)
         {
-            self.stack.push(Value::Int(result));
+            self.stack.push(Value::int(result));
             return Ok(());
         }
         // Fast path: Num - Num
-        if let Value::Num(a) = &left
-            && let Value::Num(b) = &right
+        if let Some(a) = left.as_num()
+            && let Some(b) = right.as_num()
         {
-            self.stack.push(Value::Num(a - b));
+            self.stack.push(Value::num(a - b));
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
@@ -135,18 +135,18 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         // Fast path: Int * Int
-        if let Value::Int(a) = &left
-            && let Value::Int(b) = &right
-            && let Some(result) = a.checked_mul(*b)
+        if let Some(a) = left.as_int()
+            && let Some(b) = right.as_int()
+            && let Some(result) = a.checked_mul(b)
         {
-            self.stack.push(Value::Int(result));
+            self.stack.push(Value::int(result));
             return Ok(());
         }
         // Fast path: Num * Num
-        if let Value::Num(a) = &left
-            && let Value::Num(b) = &right
+        if let Some(a) = left.as_num()
+            && let Some(b) = right.as_num()
         {
-            self.stack.push(Value::Num(a * b));
+            self.stack.push(Value::num(a * b));
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
@@ -188,15 +188,14 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         // Fast path: Int ** small non-negative Int
-        if let Value::Int(base) = &left
-            && let Value::Int(exp) = &right
-            && *exp >= 0
-            && *exp <= 30
+        if let Some(base) = left.as_int()
+            && let Some(exp) = right.as_int()
+            && (0..=30).contains(&exp)
         {
             let mut result: i64 = 1;
             let mut overflow = false;
-            for _ in 0..*exp {
-                if let Some(r) = result.checked_mul(*base) {
+            for _ in 0..exp {
+                if let Some(r) = result.checked_mul(base) {
                     result = r;
                 } else {
                     overflow = true;
@@ -204,7 +203,7 @@ impl Interpreter {
                 }
             }
             if !overflow {
-                self.stack.push(Value::Int(result));
+                self.stack.push(Value::int(result));
                 return Ok(());
             }
         }
@@ -219,7 +218,7 @@ impl Interpreter {
     pub(super) fn exec_negate_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         // Type objects (Mu, Any, etc.) cannot be negated
-        if let Value::Package(name) = &val
+        if let ValueView::Package(name) = val.view()
             && matches!(name.resolve().as_str(), "Mu" | "Any")
         {
             return Err(RuntimeError::new(format!(
@@ -229,10 +228,10 @@ impl Interpreter {
         }
         // For strings, first coerce to numeric (preserving Rat/Complex types and
         // producing X::Str::Numeric for invalid strings), then negate the result.
-        if let Value::Str(ref s) = val {
+        if let Some(s) = val.as_str() {
             let trimmed = s.trim();
             if trimmed.is_empty() {
-                self.stack.push(Value::Int(0));
+                self.stack.push(Value::int(0));
                 return Ok(());
             }
             if let Some(numeric) = crate::runtime::str_numeric::parse_raku_str_to_numeric(trimmed) {
@@ -255,29 +254,28 @@ impl Interpreter {
 
     pub(super) fn exec_int_bit_neg_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        match val {
-            Value::Int(n) => self.stack.push(Value::Int(!n)),
-            other => {
-                let n = other.to_bigint();
-                self.stack.push(Value::from_bigint(!n));
-            }
+        if let Some(n) = val.as_int() {
+            self.stack.push(Value::int(!n));
+        } else {
+            let n = val.to_bigint();
+            self.stack.push(Value::from_bigint(!n));
         }
     }
 
     pub(super) fn exec_bool_bit_neg_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(!val.truthy()));
+        self.stack.push(Value::truth(!val.truthy()));
     }
 
     pub(super) fn exec_str_bit_neg_op(&mut self) {
         let val = self.stack.pop().unwrap();
         if Self::is_buf_value(&val) {
             let bytes = Self::extract_buf_bytes(&val);
-            let negated: Vec<Value> = bytes.iter().map(|b| Value::Int((!b) as i64)).collect();
+            let negated: Vec<Value> = bytes.iter().map(|b| Value::int((!b) as i64)).collect();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("bytes".to_string(), Value::array(negated));
             // Determine result type: if input is utf8, result is utf8; otherwise Buf
-            let result_type = if let Value::Instance { class_name, .. } = &val {
+            let result_type = if let ValueView::Instance { class_name, .. } = val.view() {
                 class_name.resolve().to_string()
             } else {
                 "Buf".to_string()
