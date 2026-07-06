@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.28](https://github.com/tokuhirom/mutsu/compare/v0.2.27...v0.2.28) - 2026-07-06
+
+- fix(map): batch source by block count for full-binding blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4291
+
 ## [v0.2.27](https://github.com/tokuhirom/mutsu/compare/v0.2.26...v0.2.27) - 2026-07-06
 
 - fix(proc-async): encoding-aware stdout/stderr and quit-on-decode-error by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4289
