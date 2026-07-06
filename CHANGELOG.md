@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.27](https://github.com/tokuhirom/mutsu/compare/v0.2.26...v0.2.27) - 2026-07-06
+
+- fix(proc-async): encoding-aware stdout/stderr and quit-on-decode-error by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4289
+
 ## [v0.2.26](https://github.com/tokuhirom/mutsu/compare/v0.2.25...v0.2.26) - 2026-07-06
 
 - refactor(value): start 3b-0 API wall — ValueView, accessors, ratchet (slice a) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4287
