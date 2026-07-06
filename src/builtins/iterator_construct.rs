@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Build the `Iterator` instance for a `.iterator` call on a plain receiver.
 /// Mirrors the pure tail of `Interpreter::dispatch_iterator_method`.
@@ -23,8 +23,8 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
     // A lazy list with a known logical element count (`42 xx 10**9`, `42 xx ∞`)
     // carries that count so `.count-only` can report it without materializing —
     // the cached `items` are only a bounded prefix.
-    let known_count = match target {
-        Value::LazyList(ll) => ll.elems_count.clone(),
+    let known_count = match target.view() {
+        ValueView::LazyList(ll) => ll.elems_count.clone(),
         _ => None,
     };
     let items = if crate::runtime::utils::is_shaped_array(target) {
@@ -34,9 +34,9 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
     };
     let mut attrs = HashMap::new();
     attrs.insert("items".to_string(), Value::array(items));
-    attrs.insert("index".to_string(), Value::Int(0));
+    attrs.insert("index".to_string(), Value::int(0));
     if lazy {
-        attrs.insert("is_lazy".to_string(), Value::Bool(true));
+        attrs.insert("is_lazy".to_string(), Value::TRUE);
     }
     if let Some(count) = known_count {
         attrs.insert("known_count".to_string(), count);

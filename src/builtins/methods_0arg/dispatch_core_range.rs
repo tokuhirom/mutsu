@@ -3,7 +3,7 @@
 /// is-int, minmax, infinite, of, keyof
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 use super::raku_repr::hash_pick_item;
 use super::{is_infinite_range, sample_weighted_bag_key, sample_weighted_mix_key};
@@ -11,47 +11,47 @@ use super::{is_infinite_range, sample_weighted_bag_key, sample_weighted_mix_key}
 /// Efficiently sample one random element from a Range without enumerating all elements.
 /// Uses raw u64 entropy for full bit coverage on large ranges.
 fn sample_one_from_range(target: &Value) -> Option<Value> {
-    match target {
-        Value::Range(start, end) => {
-            if *end < *start {
-                Some(Value::Nil)
+    match target.view() {
+        ValueView::Range(start, end) => {
+            if end < start {
+                Some(Value::NIL)
             } else {
-                Some(range_pick_one_i64(*start, *end))
+                Some(range_pick_one_i64(start, end))
             }
         }
-        Value::RangeExcl(start, end) => {
+        ValueView::RangeExcl(start, end) => {
             let hi = end.saturating_sub(1);
-            if *start > hi {
-                Some(Value::Nil)
+            if start > hi {
+                Some(Value::NIL)
             } else {
-                Some(range_pick_one_i64(*start, hi))
+                Some(range_pick_one_i64(start, hi))
             }
         }
-        Value::RangeExclStart(start, end) => {
+        ValueView::RangeExclStart(start, end) => {
             let lo = start.saturating_add(1);
-            if lo > *end {
-                Some(Value::Nil)
+            if lo > end {
+                Some(Value::NIL)
             } else {
-                Some(range_pick_one_i64(lo, *end))
+                Some(range_pick_one_i64(lo, end))
             }
         }
-        Value::RangeExclBoth(start, end) => {
+        ValueView::RangeExclBoth(start, end) => {
             let lo = start.saturating_add(1);
             let hi = end.saturating_sub(1);
             if lo > hi {
-                Some(Value::Nil)
+                Some(Value::NIL)
             } else {
                 Some(range_pick_one_i64(lo, hi))
             }
         }
-        Value::GenericRange {
+        ValueView::GenericRange {
             start,
             end,
             excl_start,
             excl_end,
         } => {
             // Try integer (Int/BigInt) endpoints first
-            if let Some(result) = generic_range_pick_one(start, end, *excl_start, *excl_end) {
+            if let Some(result) = generic_range_pick_one(start, end, excl_start, excl_end) {
                 return Some(result);
             }
             // Float endpoints
@@ -60,15 +60,15 @@ fn sample_one_from_range(target: &Value) -> Option<Value> {
                 && s.is_finite()
                 && e.is_finite()
             {
-                let lo = if *excl_start { s + 1.0 } else { s };
-                let hi = if *excl_end { e - 1.0 } else { e };
+                let lo = if excl_start { s + 1.0 } else { s };
+                let hi = if excl_end { e - 1.0 } else { e };
                 if lo > hi {
-                    return Some(Value::Nil);
+                    return Some(Value::NIL);
                 }
                 let span = hi - lo + 1.0;
                 let idx = (crate::builtins::rng::builtin_rand() * span) as i64;
                 let idx = idx.min((span - 1.0) as i64);
-                return Some(Value::Num(lo + idx as f64));
+                return Some(Value::num(lo + idx as f64));
             }
             None
         }
@@ -81,51 +81,51 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
-        "head" => Some(match target {
+        "head" => Some(match target.view() {
             // User-defined class instances may have a `head` attribute or
             // method — defer to runtime dispatch so the user accessor wins
             // over the list-like fallback.
-            Value::Instance { .. } => return None,
-            Value::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
-            Value::Range(start, end) => {
+            ValueView::Instance { .. } => return None,
+            ValueView::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::NIL))),
+            ValueView::Range(start, end) => {
                 if start > end {
-                    Some(Ok(Value::Nil))
+                    Some(Ok(Value::NIL))
                 } else {
-                    Some(Ok(Value::Int(*start)))
+                    Some(Ok(Value::int(start)))
                 }
             }
-            Value::RangeExcl(start, end) => {
+            ValueView::RangeExcl(start, end) => {
                 if start >= end {
-                    Some(Ok(Value::Nil))
+                    Some(Ok(Value::NIL))
                 } else {
-                    Some(Ok(Value::Int(*start)))
+                    Some(Ok(Value::int(start)))
                 }
             }
-            Value::RangeExclBoth(start, end) => {
-                if start + 1 >= *end {
-                    Some(Ok(Value::Nil))
+            ValueView::RangeExclBoth(start, end) => {
+                if start + 1 >= end {
+                    Some(Ok(Value::NIL))
                 } else {
-                    Some(Ok(Value::Int(*start + 1)))
+                    Some(Ok(Value::int(start + 1)))
                 }
             }
-            Value::RangeExclStart(start, end) => {
+            ValueView::RangeExclStart(start, end) => {
                 if start >= end {
-                    Some(Ok(Value::Nil))
+                    Some(Ok(Value::NIL))
                 } else {
-                    Some(Ok(Value::Int(*start + 1)))
+                    Some(Ok(Value::int(start + 1)))
                 }
             }
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start, excl_start, ..
             } => {
                 let items = runtime::value_to_list(target);
                 if items.is_empty() {
-                    Some(Ok(Value::Nil))
-                } else if *excl_start {
-                    if let Value::Int(n) = &**start {
-                        Some(Ok(Value::Int(n + 1)))
+                    Some(Ok(Value::NIL))
+                } else if excl_start {
+                    if let ValueView::Int(n) = start.view() {
+                        Some(Ok(Value::int(n + 1)))
                     } else {
-                        Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
+                        Some(Ok(items.first().cloned().unwrap_or(Value::NIL)))
                     }
                 } else {
                     Some(Ok((**start).clone()))
@@ -133,28 +133,30 @@ pub(super) fn dispatch(
             }
             _ => {
                 let items = runtime::value_to_list(target);
-                Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
+                Some(Ok(items.first().cloned().unwrap_or(Value::NIL)))
             }
         }),
-        "tail" => Some(match target {
+        "tail" => Some(match target.view() {
             // User-defined class instances may have a `tail` attribute or
             // method — defer to runtime dispatch so the user accessor wins
             // over the list-like fallback.
-            Value::Instance { .. } => return None,
-            Value::Array(items, ..) => Some(Ok(items.last().cloned().unwrap_or(Value::Nil))),
+            ValueView::Instance { .. } => return None,
+            ValueView::Array(items, ..) => Some(Ok(items.last().cloned().unwrap_or(Value::NIL))),
             _ => {
                 let items = runtime::value_to_list(target);
-                Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
+                Some(Ok(items.last().cloned().unwrap_or(Value::NIL)))
             }
         }),
-        "pick" => Some(match target {
-            Value::Mix(_, _) => Some(Err(RuntimeError::new(
+        "pick" => Some(match target.view() {
+            ValueView::Mix(_, _) => Some(Err(RuntimeError::new(
                 "Cannot call .pick on a Mix (immutable)",
             ))),
-            Value::Bag(items, _) => Some(Ok(sample_weighted_bag_key(items).unwrap_or(Value::Nil))),
-            Value::Set(items, _) => {
+            ValueView::Bag(items, _) => {
+                Some(Ok(sample_weighted_bag_key(items).unwrap_or(Value::NIL)))
+            }
+            ValueView::Set(items, _) => {
                 if items.is_empty() {
-                    Some(Ok(Value::Nil))
+                    Some(Ok(Value::NIL))
                 } else {
                     let keys: Vec<&String> = items.iter().collect();
                     let mut idx =
@@ -165,9 +167,9 @@ pub(super) fn dispatch(
                     Some(Ok(Value::str(keys[idx].clone())))
                 }
             }
-            Value::Hash(items) => {
+            ValueView::Hash(items) => {
                 if items.is_empty() {
-                    Some(Ok(Value::Nil))
+                    Some(Ok(Value::NIL))
                 } else {
                     let mut idx =
                         (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
@@ -189,7 +191,7 @@ pub(super) fn dispatch(
                     runtime::value_to_list(target)
                 };
                 if items.is_empty() {
-                    Some(Ok(Value::Nil))
+                    Some(Ok(Value::NIL))
                 } else {
                     let mut idx =
                         (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
@@ -201,19 +203,19 @@ pub(super) fn dispatch(
             }
         }),
         "roll" => {
-            if let Value::Mix(items, _) = target {
+            if let ValueView::Mix(items, _) = target.view() {
                 return Some(Some(Ok(
-                    sample_weighted_mix_key(items).unwrap_or(Value::Nil)
+                    sample_weighted_mix_key(items).unwrap_or(Value::NIL)
                 )));
             }
-            if let Value::Bag(items, _) = target {
+            if let ValueView::Bag(items, _) = target.view() {
                 return Some(Some(Ok(
-                    sample_weighted_bag_key(items).unwrap_or(Value::Nil)
+                    sample_weighted_bag_key(items).unwrap_or(Value::NIL)
                 )));
             }
-            if let Value::Set(items, _) = target {
+            if let ValueView::Set(items, _) = target.view() {
                 if items.is_empty() {
-                    return Some(Some(Ok(Value::Nil)));
+                    return Some(Some(Ok(Value::NIL)));
                 }
                 let keys: Vec<&String> = items.iter().collect();
                 let mut idx = (crate::builtins::rng::builtin_rand() * keys.len() as f64) as usize;
@@ -232,7 +234,7 @@ pub(super) fn dispatch(
                 runtime::value_to_list(target)
             };
             if items.is_empty() {
-                Some(Some(Ok(Value::Nil)))
+                Some(Some(Ok(Value::NIL)))
             } else {
                 let mut idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
                 if idx >= items.len() {
@@ -241,10 +243,10 @@ pub(super) fn dispatch(
                 Some(Some(Ok(items[idx].clone())))
             }
         }
-        "pickpairs" => Some(match target {
-            Value::Bag(items, _) => {
+        "pickpairs" => Some(match target.view() {
+            ValueView::Bag(items, _) => {
                 if items.is_empty() {
-                    Some(Ok(Value::Nil))
+                    Some(Ok(Value::NIL))
                 } else {
                     let mut idx =
                         (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
@@ -252,15 +254,15 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let (key, count) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::Pair(
+                    Some(Ok(Value::pair(
                         key.clone(),
-                        Box::new(Value::from_bigint(count.clone())),
+                        Value::from_bigint(count.clone()),
                     )))
                 }
             }
-            Value::Set(items, _) => {
+            ValueView::Set(items, _) => {
                 if items.is_empty() {
-                    Some(Ok(Value::Nil))
+                    Some(Ok(Value::NIL))
                 } else {
                     let mut idx =
                         (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
@@ -268,12 +270,12 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let key = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::Pair(key.clone(), Box::new(Value::Bool(true)))))
+                    Some(Ok(Value::pair(key.clone(), Value::TRUE)))
                 }
             }
-            Value::Mix(items, _) => {
+            ValueView::Mix(items, _) => {
                 if items.is_empty() {
-                    Some(Ok(Value::Nil))
+                    Some(Ok(Value::NIL))
                 } else {
                     let mut idx =
                         (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
@@ -281,26 +283,26 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let (key, weight) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::Pair(
+                    Some(Ok(Value::pair(
                         key.clone(),
-                        Box::new(crate::value::mix_weight_to_value(*weight)),
+                        crate::value::mix_weight_to_value(*weight),
                     )))
                 }
             }
             _ => None,
         }),
-        "grab" | "grabpairs" => Some(match target {
-            Value::Bag(_, false) => Some(Err(RuntimeError::immutable("Bag", method))),
-            Value::Set(_, false) => Some(Err(RuntimeError::immutable("Set", method))),
-            Value::Mix(_, false) => Some(Err(RuntimeError::immutable("Mix", method))),
+        "grab" | "grabpairs" => Some(match target.view() {
+            ValueView::Bag(_, false) => Some(Err(RuntimeError::immutable("Bag", method))),
+            ValueView::Set(_, false) => Some(Err(RuntimeError::immutable("Set", method))),
+            ValueView::Mix(_, false) => Some(Err(RuntimeError::immutable("Mix", method))),
             _ => None,
         }),
-        "first" => Some(match target {
-            Value::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
+        "first" => Some(match target.view() {
+            ValueView::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::NIL))),
             _ => None,
         }),
-        "min" => Some(match target {
-            Value::Array(items, ..) => Some(Ok(items
+        "min" => Some(match target.view() {
+            ValueView::Array(items, ..) => Some(Ok(items
                 .iter()
                 .filter(|v| crate::runtime::types::value_is_defined(v))
                 .cloned()
@@ -314,44 +316,44 @@ pub(super) fn dispatch(
                         std::cmp::Ordering::Equal
                     }
                 })
-                .unwrap_or(Value::Num(f64::INFINITY)))),
-            Value::Range(a, _) => Some(Ok(if *a == i64::MIN {
-                Value::Num(f64::NEG_INFINITY)
+                .unwrap_or(Value::num(f64::INFINITY)))),
+            ValueView::Range(a, _) => Some(Ok(if a == i64::MIN {
+                Value::num(f64::NEG_INFINITY)
             } else {
-                Value::Int(*a)
+                Value::int(a)
             })),
-            Value::RangeExcl(a, _) => Some(Ok(if *a == i64::MIN {
-                Value::Num(f64::NEG_INFINITY)
+            ValueView::RangeExcl(a, _) => Some(Ok(if a == i64::MIN {
+                Value::num(f64::NEG_INFINITY)
             } else {
-                Value::Int(*a)
+                Value::int(a)
             })),
-            Value::RangeExclStart(a, _) => Some(Ok(if *a == i64::MIN {
-                Value::Num(f64::NEG_INFINITY)
+            ValueView::RangeExclStart(a, _) => Some(Ok(if a == i64::MIN {
+                Value::num(f64::NEG_INFINITY)
             } else {
-                Value::Int(*a)
+                Value::int(a)
             })),
-            Value::RangeExclBoth(a, _) => Some(Ok(if *a == i64::MIN {
-                Value::Num(f64::NEG_INFINITY)
+            ValueView::RangeExclBoth(a, _) => Some(Ok(if a == i64::MIN {
+                Value::num(f64::NEG_INFINITY)
             } else {
-                Value::Int(*a)
+                Value::int(a)
             })),
-            Value::GenericRange { start, .. } => {
+            ValueView::GenericRange { start, .. } => {
                 let s = start.as_ref();
-                Some(Ok(match s {
-                    Value::Whatever | Value::HyperWhatever => Value::Num(f64::NEG_INFINITY),
+                Some(Ok(match s.view() {
+                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::NEG_INFINITY),
                     _ => s.clone(),
                 }))
             }
-            Value::Hash(_) => None,
-            Value::Package(_) | Value::Instance { .. } => None,
+            ValueView::Hash(_) => None,
+            ValueView::Package(_) | ValueView::Instance { .. } => None,
             // A Seq/Slip is a materialized list; defer to the interpreter,
             // which re-dispatches its elements as an Array so min/max compute
             // over them. (The `_` arm below would return the Seq itself.)
-            Value::Seq(..) | Value::Slip(..) => None,
+            ValueView::Seq(..) | ValueView::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
-        "max" => Some(match target {
-            Value::Array(items, ..) => Some(Ok(items
+        "max" => Some(match target.view() {
+            ValueView::Array(items, ..) => Some(Ok(items
                 .iter()
                 .filter(|v| crate::runtime::types::value_is_defined(v))
                 .cloned()
@@ -365,168 +367,181 @@ pub(super) fn dispatch(
                         std::cmp::Ordering::Equal
                     }
                 })
-                .unwrap_or(Value::Num(f64::NEG_INFINITY)))),
-            Value::Range(_, b) => Some(Ok(if *b == i64::MAX {
-                Value::Num(f64::INFINITY)
+                .unwrap_or(Value::num(f64::NEG_INFINITY)))),
+            ValueView::Range(_, b) => Some(Ok(if b == i64::MAX {
+                Value::num(f64::INFINITY)
             } else {
-                Value::Int(*b)
+                Value::int(b)
             })),
-            Value::RangeExcl(_, b) | Value::RangeExclStart(_, b) | Value::RangeExclBoth(_, b) => {
-                Some(Ok(if *b == i64::MAX {
-                    Value::Num(f64::INFINITY)
-                } else {
-                    Value::Int(*b)
-                }))
-            }
-            Value::GenericRange { end, .. } => {
+            ValueView::RangeExcl(_, b)
+            | ValueView::RangeExclStart(_, b)
+            | ValueView::RangeExclBoth(_, b) => Some(Ok(if b == i64::MAX {
+                Value::num(f64::INFINITY)
+            } else {
+                Value::int(b)
+            })),
+            ValueView::GenericRange { end, .. } => {
                 let e = end.as_ref();
-                Some(Ok(match e {
-                    Value::Whatever | Value::HyperWhatever => Value::Num(f64::INFINITY),
+                Some(Ok(match e.view() {
+                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
                     _ => e.clone(),
                 }))
             }
-            Value::Hash(_) => None,
-            Value::Package(_) | Value::Instance { .. } => None,
+            ValueView::Hash(_) => None,
+            ValueView::Package(_) | ValueView::Instance { .. } => None,
             // A Seq/Slip is a materialized list; defer to the interpreter,
             // which re-dispatches its elements as an Array so min/max compute
             // over them. (The `_` arm below would return the Seq itself.)
-            Value::Seq(..) | Value::Slip(..) => None,
+            ValueView::Seq(..) | ValueView::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
-        "excludes-min" => Some(match target {
-            Value::Range(..) => Some(Ok(Value::Bool(false))),
-            Value::RangeExcl(..) => Some(Ok(Value::Bool(false))),
-            Value::RangeExclStart(..) => Some(Ok(Value::Bool(true))),
-            Value::RangeExclBoth(..) => Some(Ok(Value::Bool(true))),
-            Value::GenericRange { excl_start, .. } => Some(Ok(Value::Bool(*excl_start))),
+        "excludes-min" => Some(match target.view() {
+            ValueView::Range(..) => Some(Ok(Value::FALSE)),
+            ValueView::RangeExcl(..) => Some(Ok(Value::FALSE)),
+            ValueView::RangeExclStart(..) => Some(Ok(Value::TRUE)),
+            ValueView::RangeExclBoth(..) => Some(Ok(Value::TRUE)),
+            ValueView::GenericRange { excl_start, .. } => Some(Ok(Value::truth(excl_start))),
             _ => None,
         }),
-        "excludes-max" => Some(match target {
-            Value::Range(..) => Some(Ok(Value::Bool(false))),
-            Value::RangeExcl(..) => Some(Ok(Value::Bool(true))),
-            Value::RangeExclStart(..) => Some(Ok(Value::Bool(false))),
-            Value::RangeExclBoth(..) => Some(Ok(Value::Bool(true))),
-            Value::GenericRange { excl_end, .. } => Some(Ok(Value::Bool(*excl_end))),
+        "excludes-max" => Some(match target.view() {
+            ValueView::Range(..) => Some(Ok(Value::FALSE)),
+            ValueView::RangeExcl(..) => Some(Ok(Value::TRUE)),
+            ValueView::RangeExclStart(..) => Some(Ok(Value::FALSE)),
+            ValueView::RangeExclBoth(..) => Some(Ok(Value::TRUE)),
+            ValueView::GenericRange { excl_end, .. } => Some(Ok(Value::truth(excl_end))),
             _ => None,
         }),
-        "bounds" => Some(match target {
-            Value::Range(a, b)
-            | Value::RangeExcl(a, b)
-            | Value::RangeExclStart(a, b)
-            | Value::RangeExclBoth(a, b) => Some(Ok(Value::array(vec![
-                if *a == i64::MIN {
-                    Value::Num(f64::NEG_INFINITY)
+        "bounds" => Some(match target.view() {
+            ValueView::Range(a, b)
+            | ValueView::RangeExcl(a, b)
+            | ValueView::RangeExclStart(a, b)
+            | ValueView::RangeExclBoth(a, b) => Some(Ok(Value::array(vec![
+                if a == i64::MIN {
+                    Value::num(f64::NEG_INFINITY)
                 } else {
-                    Value::Int(*a)
+                    Value::int(a)
                 },
-                if *b == i64::MAX {
-                    Value::Num(f64::INFINITY)
+                if b == i64::MAX {
+                    Value::num(f64::INFINITY)
                 } else {
-                    Value::Int(*b)
+                    Value::int(b)
                 },
             ]))),
-            Value::GenericRange { start, end, .. } => {
-                let s = match start.as_ref() {
-                    Value::Whatever | Value::HyperWhatever => Value::Num(f64::NEG_INFINITY),
-                    v => v.clone(),
+            ValueView::GenericRange { start, end, .. } => {
+                let s = match start.as_ref().view() {
+                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::NEG_INFINITY),
+                    _ => start.as_ref().clone(),
                 };
-                let e = match end.as_ref() {
-                    Value::Whatever | Value::HyperWhatever => Value::Num(f64::INFINITY),
-                    v => v.clone(),
+                let e = match end.as_ref().view() {
+                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
+                    _ => end.as_ref().clone(),
                 };
                 Some(Ok(Value::array(vec![s, e])))
             }
             _ => None,
         }),
-        "is-int" => Some(match target {
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..) => Some(Ok(Value::Bool(true))),
-            Value::GenericRange { start, end, .. } => {
+        "is-int" => Some(match target.view() {
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..) => Some(Ok(Value::TRUE)),
+            ValueView::GenericRange { start, end, .. } => {
                 let s_int = matches!(
-                    start.as_ref(),
-                    Value::Int(_) | Value::Bool(_) | Value::Whatever | Value::HyperWhatever
+                    start.as_ref().view(),
+                    ValueView::Int(_)
+                        | ValueView::Bool(_)
+                        | ValueView::Whatever
+                        | ValueView::HyperWhatever
                 );
                 let e_int = matches!(
-                    end.as_ref(),
-                    Value::Int(_) | Value::Bool(_) | Value::Whatever | Value::HyperWhatever
+                    end.as_ref().view(),
+                    ValueView::Int(_)
+                        | ValueView::Bool(_)
+                        | ValueView::Whatever
+                        | ValueView::HyperWhatever
                 );
-                Some(Ok(Value::Bool(s_int && e_int)))
+                Some(Ok(Value::truth(s_int && e_int)))
             }
             _ => None,
         }),
-        "minmax" => Some(match target {
-            Value::Range(a, b) => Some(Ok(Value::array(vec![Value::Int(*a), Value::Int(*b)]))),
-            Value::RangeExcl(a, b) => {
-                Some(Ok(Value::array(vec![Value::Int(*a), Value::Int(*b - 1)])))
+        "minmax" => Some(match target.view() {
+            ValueView::Range(a, b) => Some(Ok(Value::array(vec![Value::int(a), Value::int(b)]))),
+            ValueView::RangeExcl(a, b) => {
+                Some(Ok(Value::array(vec![Value::int(a), Value::int(b - 1)])))
             }
-            Value::RangeExclStart(a, b) => {
-                Some(Ok(Value::array(vec![Value::Int(*a + 1), Value::Int(*b)])))
+            ValueView::RangeExclStart(a, b) => {
+                Some(Ok(Value::array(vec![Value::int(a + 1), Value::int(b)])))
             }
-            Value::RangeExclBoth(a, b) => Some(Ok(Value::array(vec![
-                Value::Int(*a + 1),
-                Value::Int(*b - 1),
-            ]))),
-            Value::GenericRange {
+            ValueView::RangeExclBoth(a, b) => {
+                Some(Ok(Value::array(vec![Value::int(a + 1), Value::int(b - 1)])))
+            }
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
                 excl_end,
             } => {
-                let s_is_special = matches!(start.as_ref(), Value::Num(f) if f.is_infinite() || f.is_nan())
-                    || matches!(start.as_ref(), Value::Whatever | Value::HyperWhatever);
-                let e_is_special = matches!(end.as_ref(), Value::Num(f) if f.is_infinite() || f.is_nan())
-                    || matches!(end.as_ref(), Value::Whatever | Value::HyperWhatever);
-                if (*excl_start && s_is_special) || (*excl_end && e_is_special) {
+                let s_is_special = matches!(start.as_ref().view(), ValueView::Num(f) if f.is_infinite() || f.is_nan())
+                    || matches!(
+                        start.as_ref().view(),
+                        ValueView::Whatever | ValueView::HyperWhatever
+                    );
+                let e_is_special = matches!(end.as_ref().view(), ValueView::Num(f) if f.is_infinite() || f.is_nan())
+                    || matches!(
+                        end.as_ref().view(),
+                        ValueView::Whatever | ValueView::HyperWhatever
+                    );
+                if (excl_start && s_is_special) || (excl_end && e_is_special) {
                     return Some(Some(Err(RuntimeError::new(
                         "Cannot determine minmax with excluded infinite endpoints",
                     ))));
                 }
-                let min_val = if *excl_start {
-                    match start.as_ref() {
-                        Value::Int(i) => Value::Int(*i + 1),
+                let min_val = if excl_start {
+                    match start.as_ref().view() {
+                        ValueView::Int(i) => Value::int(i + 1),
                         _ => start.as_ref().clone(),
                     }
                 } else {
-                    match start.as_ref() {
-                        Value::Whatever | Value::HyperWhatever => Value::Num(f64::NEG_INFINITY),
+                    match start.as_ref().view() {
+                        ValueView::Whatever | ValueView::HyperWhatever => {
+                            Value::num(f64::NEG_INFINITY)
+                        }
                         _ => start.as_ref().clone(),
                     }
                 };
-                let max_val = if *excl_end {
-                    match end.as_ref() {
-                        Value::Int(i) => Value::Int(*i - 1),
+                let max_val = if excl_end {
+                    match end.as_ref().view() {
+                        ValueView::Int(i) => Value::int(i - 1),
                         _ => end.as_ref().clone(),
                     }
                 } else {
-                    match end.as_ref() {
-                        Value::Whatever | Value::HyperWhatever => Value::Num(f64::INFINITY),
+                    match end.as_ref().view() {
+                        ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
                         _ => end.as_ref().clone(),
                     }
                 };
                 Some(Ok(Value::array(vec![min_val, max_val])))
             }
-            Value::Array(..) | Value::Hash(_) => None,
+            ValueView::Array(..) | ValueView::Hash(_) => None,
             _ => None,
         }),
-        "infinite" => Some(match target {
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => Some(Ok(Value::Bool(is_infinite_range(target)))),
+        "infinite" => Some(match target.view() {
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => Some(Ok(Value::truth(is_infinite_range(target)))),
             _ => None,
         }),
-        "of" => Some(match target {
-            Value::Hash(_) | Value::Array(..) => None,
-            Value::Package(name) if name.resolve() == "Hash" || name.resolve() == "Array" => {
-                Some(Ok(Value::Package(Symbol::intern("Mu"))))
+        "of" => Some(match target.view() {
+            ValueView::Hash(_) | ValueView::Array(..) => None,
+            ValueView::Package(name) if name.resolve() == "Hash" || name.resolve() == "Array" => {
+                Some(Ok(Value::package(Symbol::intern("Mu"))))
             }
-            Value::Package(_) | Value::CustomType(_) => {
-                let name = match target {
-                    Value::Package(name) => *name,
-                    Value::CustomType(c) => c.name,
+            ValueView::Package(_) | ValueView::CustomType(_) => {
+                let name = match target.view() {
+                    ValueView::Package(name) => name,
+                    ValueView::CustomType(c) => c.name,
                     _ => unreachable!(),
                 };
                 let n = name.resolve();
@@ -534,37 +549,37 @@ pub(super) fn dispatch(
                     || n.starts_with("Bag[")
                     || n.starts_with("BagHash[")
                 {
-                    Some(Ok(Value::Package(Symbol::intern("UInt"))))
+                    Some(Ok(Value::package(Symbol::intern("UInt"))))
                 } else if matches!(n.as_ref(), "Set" | "SetHash")
                     || n.starts_with("Set[")
                     || n.starts_with("SetHash[")
                 {
-                    Some(Ok(Value::Package(Symbol::intern("Bool"))))
+                    Some(Ok(Value::package(Symbol::intern("Bool"))))
                 } else if matches!(n.as_ref(), "Mix" | "MixHash")
                     || n.starts_with("Mix[")
                     || n.starts_with("MixHash[")
                 {
-                    Some(Ok(Value::Package(Symbol::intern("Real"))))
+                    Some(Ok(Value::package(Symbol::intern("Real"))))
                 } else {
                     None
                 }
             }
-            Value::Bag(_, _) => Some(Ok(Value::Package(Symbol::intern("UInt")))),
-            Value::Set(_, _) => Some(Ok(Value::Package(Symbol::intern("Bool")))),
-            Value::Mix(_, _) => Some(Ok(Value::Package(Symbol::intern("Real")))),
+            ValueView::Bag(_, _) => Some(Ok(Value::package(Symbol::intern("UInt")))),
+            ValueView::Set(_, _) => Some(Ok(Value::package(Symbol::intern("Bool")))),
+            ValueView::Mix(_, _) => Some(Ok(Value::package(Symbol::intern("Real")))),
             _ => None,
         }),
-        "keyof" => Some(match target {
-            Value::Bag(_, _) | Value::Set(_, _) | Value::Mix(_, _) => {
+        "keyof" => Some(match target.view() {
+            ValueView::Bag(_, _) | ValueView::Set(_, _) | ValueView::Mix(_, _) => {
                 // Fall through to runtime to check container type metadata
                 // for parameterized types (e.g., Mix[Int])
                 None
             }
-            Value::Hash(_) => None,
-            Value::Package(_) | Value::CustomType(_) => {
-                let name = match target {
-                    Value::Package(name) => *name,
-                    Value::CustomType(c) => c.name,
+            ValueView::Hash(_) => None,
+            ValueView::Package(_) | ValueView::CustomType(_) => {
+                let name = match target.view() {
+                    ValueView::Package(name) => name,
+                    ValueView::CustomType(c) => c.name,
                     _ => unreachable!(),
                 };
                 let n = name.resolve();
@@ -575,7 +590,7 @@ pub(super) fn dispatch(
                         "Bag" | "Set" | "Mix" | "BagHash" | "SetHash" | "MixHash" | "Hash"
                     ) {
                         let param = n[bracket_pos + 1..].trim_end_matches(']');
-                        Some(Ok(Value::Package(Symbol::intern(param))))
+                        Some(Ok(Value::package(Symbol::intern(param))))
                     } else {
                         None
                     }
@@ -583,14 +598,14 @@ pub(super) fn dispatch(
                     n.as_ref(),
                     "Bag" | "Set" | "Mix" | "BagHash" | "SetHash" | "MixHash"
                 ) {
-                    Some(Ok(Value::Package(Symbol::intern("Mu"))))
+                    Some(Ok(Value::package(Symbol::intern("Mu"))))
                 } else if n == "Hash" {
-                    Some(Ok(Value::Package(Symbol::intern("Str(Any)"))))
+                    Some(Ok(Value::package(Symbol::intern("Str(Any)"))))
                 } else {
                     None
                 }
             }
-            Value::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -606,7 +621,7 @@ pub(super) fn dispatch(
                     || cn == "SetHash"
                     || cn == "MixHash"
                 {
-                    Some(Ok(Value::Package(Symbol::intern("Mu"))))
+                    Some(Ok(Value::package(Symbol::intern("Mu"))))
                 } else {
                     None
                 }
@@ -626,7 +641,7 @@ pub(crate) fn range_pick_one_i64_pub(start: i64, end: i64) -> Value {
 fn range_pick_one_i64(start: i64, end: i64) -> Value {
     let range_size = (end as u128).wrapping_sub(start as u128).wrapping_add(1);
     let idx = random_u128_in_range(range_size);
-    Value::Int(start.wrapping_add(idx as i64))
+    Value::int(start.wrapping_add(idx as i64))
 }
 
 /// Generate a random u128 in [0, range_size) with full bit coverage.
@@ -675,7 +690,7 @@ fn generic_range_pick_one(
     let effective_end = if excl_end { e - 1_i64 } else { e };
 
     if effective_end < effective_start {
-        return Some(Value::Nil);
+        return Some(Value::NIL);
     }
 
     let range_size = &effective_end - &effective_start + 1_i64;
@@ -687,10 +702,10 @@ fn generic_range_pick_one(
 /// Convert a Value to BigInt if it represents an integer.
 fn value_to_bigint(v: &Value) -> Option<num_bigint::BigInt> {
     use num_bigint::BigInt as NumBigInt;
-    match v {
-        Value::Int(n) => Some(NumBigInt::from(*n)),
-        Value::BigInt(n) => Some((**n).clone()),
-        Value::Bool(b) => Some(NumBigInt::from(*b as i64)),
+    match v.view() {
+        ValueView::Int(n) => Some(NumBigInt::from(n)),
+        ValueView::BigInt(n) => Some((**n).clone()),
+        ValueView::Bool(b) => Some(NumBigInt::from(b as i64)),
         _ => None,
     }
 }
@@ -742,7 +757,7 @@ fn random_bigint_in_range(range_size: &num_bigint::BigInt) -> num_bigint::BigInt
 fn bigint_to_value(n: num_bigint::BigInt) -> Value {
     use num_traits::ToPrimitive;
     if let Some(i) = n.to_i64() {
-        Value::Int(i)
+        Value::int(i)
     } else {
         Value::bigint(n)
     }
@@ -769,7 +784,7 @@ pub(crate) fn range_pick_n_i64(start: i64, end: i64, count: usize) -> Vec<Value>
             indices.swap(i, j);
         }
         indices.truncate(actual_count);
-        return indices.into_iter().map(Value::Int).collect();
+        return indices.into_iter().map(Value::int).collect();
     }
 
     // For large ranges, use rejection sampling with a HashSet
@@ -779,7 +794,7 @@ pub(crate) fn range_pick_n_i64(start: i64, end: i64, count: usize) -> Vec<Value>
         let idx = random_u128_in_range(range_size);
         let val = start.wrapping_add(idx as i64);
         if seen.insert(val) {
-            result.push(Value::Int(val));
+            result.push(Value::int(val));
         }
     }
     result

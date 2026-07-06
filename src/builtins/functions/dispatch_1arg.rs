@@ -4,7 +4,7 @@ use super::uniparse::uniparse_impl;
 use crate::builtins::rng::builtin_srand;
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
@@ -20,41 +20,41 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         "combinations" => {
             // combinations($n) where $n is Int => (^$n).combinations (powerset)
             // combinations($iterable) => $iterable.combinations
-            let items = match arg {
-                Value::Int(n) => {
-                    if *n < 0 {
-                        return Some(Ok(Value::Seq(Vec::new().into())));
+            let items = match arg.view() {
+                ValueView::Int(n) => {
+                    if n < 0 {
+                        return Some(Ok(Value::seq(Vec::new())));
                     }
-                    let items: Vec<Value> = (0..*n).map(Value::Int).collect();
-                    return Some(Ok(Value::Seq(
-                        crate::builtins::methods_0arg::collection::combinations_all(&items).into(),
+                    let items: Vec<Value> = (0..n).map(Value::int).collect();
+                    return Some(Ok(Value::seq(
+                        crate::builtins::methods_0arg::collection::combinations_all(&items),
                     )));
                 }
                 _ => runtime::value_to_list(arg),
             };
-            Some(Ok(Value::Seq(
-                crate::builtins::methods_0arg::collection::combinations_all(&items).into(),
+            Some(Ok(Value::seq(
+                crate::builtins::methods_0arg::collection::combinations_all(&items),
             )))
         }
         "permutations" => {
             // permutations($n) where $n is Int => (0, 1, ..., $n-1).permutations
             // permutations($iterable) => $iterable.permutations
-            let items = match arg {
-                Value::Int(n) => {
-                    if *n <= 0 {
-                        return Some(Ok(Value::Seq(vec![Value::array(Vec::new())].into())));
+            let items = match arg.view() {
+                ValueView::Int(n) => {
+                    if n <= 0 {
+                        return Some(Ok(Value::seq(vec![Value::array(Vec::new())])));
                     }
-                    if *n > 20 {
+                    if n > 20 {
                         // For large n, return a lazy list that knows its count (n!)
                         // without actually generating all permutations.
-                        let factorial = factorial_bigint(*n as u64);
+                        let factorial = factorial_bigint(n as u64);
                         let ll = crate::value::LazyList {
                             body: Vec::new(),
                             env: crate::env::Env::new(),
                             cache: std::sync::Mutex::new(None),
                             compiled_code: None,
                             compiled_fns: None,
-                            elems_count: Some(Value::BigInt(factorial)),
+                            elems_count: Some(Value::bigint_arc(factorial)),
                             scan_spec: None,
                             sequence_spec: None,
                             coroutine: None,
@@ -63,11 +63,11 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                             walk_pending: None,
                             cat_pull: None,
                         };
-                        return Some(Ok(Value::LazyList(crate::gc::Gc::new(ll))));
+                        return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
                     }
-                    let items: Vec<Value> = (0..*n).map(Value::Int).collect();
-                    return Some(Ok(Value::Seq(
-                        crate::builtins::methods_0arg::collection::all_permutations(&items).into(),
+                    let items: Vec<Value> = (0..n).map(Value::int).collect();
+                    return Some(Ok(Value::seq(
+                        crate::builtins::methods_0arg::collection::all_permutations(&items),
                     )));
                 }
                 _ => runtime::value_to_list(arg),
@@ -81,7 +81,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     cache: std::sync::Mutex::new(None),
                     compiled_code: None,
                     compiled_fns: None,
-                    elems_count: Some(Value::BigInt(factorial)),
+                    elems_count: Some(Value::bigint_arc(factorial)),
                     scan_spec: None,
                     sequence_spec: None,
                     coroutine: None,
@@ -90,20 +90,20 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     walk_pending: None,
                     cat_pull: None,
                 };
-                return Some(Ok(Value::LazyList(crate::gc::Gc::new(ll))));
+                return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
             }
-            Some(Ok(Value::Seq(
-                crate::builtins::methods_0arg::collection::all_permutations(&items).into(),
+            Some(Ok(Value::seq(
+                crate::builtins::methods_0arg::collection::all_permutations(&items),
             )))
         }
         "srand" => {
-            let seed = match arg {
-                Value::Int(n) => *n as u64,
-                Value::Num(n) => *n as u64,
+            let seed = match arg.view() {
+                ValueView::Int(n) => n as u64,
+                ValueView::Num(n) => n as u64,
                 _ => arg.to_string_value().parse::<u64>().unwrap_or(0),
             };
             builtin_srand(seed);
-            Some(Ok(Value::Nil))
+            Some(Ok(Value::NIL))
         }
         "uc" => Some(Ok(Value::str(
             crate::builtins::unicode::grapheme_uppercase(&arg.to_string_value()),
@@ -128,7 +128,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         )))),
         "chop" => {
             // Type objects (Package) should throw
-            if let Value::Package(type_name) = arg {
+            if let ValueView::Package(type_name) = arg.view() {
                 return Some(Err(RuntimeError::new(format!(
                     "Cannot resolve caller chop({}:U)",
                     type_name,
@@ -154,22 +154,22 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 .split_whitespace()
                 .map(|p| Value::str(p.to_string()))
                 .collect();
-            Some(Ok(Value::Seq(std::sync::Arc::new(parts))))
+            Some(Ok(Value::seq(parts)))
         }
-        "chars" => Some(Ok(Value::Int(
+        "chars" => Some(Ok(Value::int(
             arg.to_string_value().graphemes(true).count() as i64,
         ))),
         "chr" => {
-            let (code, display) = match arg {
-                Value::Int(i) => (*i, format!("{}", i)),
-                Value::BigInt(n) => {
+            let (code, display) = match arg.view() {
+                ValueView::Int(i) => (i, format!("{}", i)),
+                ValueView::BigInt(n) => {
                     let hex = format!("{:X}", &**n);
                     return Some(Err(RuntimeError::new(format!(
                         "Codepoint {} (0x{}) is out of bounds in 'chr'",
                         n, hex
                     ))));
                 }
-                Value::Num(f) => (*f as i64, format!("{}", *f as i64)),
+                ValueView::Num(f) => (f as i64, format!("{}", f as i64)),
                 _ => {
                     let s = arg.to_string_value();
                     let trimmed = s.trim();
@@ -216,18 +216,18 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         }
         "ord" => {
             if let Some(ch) = arg.to_string_value().chars().next() {
-                Some(Ok(Value::Int(ch as u32 as i64)))
+                Some(Ok(Value::int(ch as u32 as i64)))
             } else {
-                Some(Ok(Value::Nil))
+                Some(Ok(Value::NIL))
             }
         }
         "uniname" => {
-            match arg {
-                Value::Int(i) => match crate::builtins::unicode::uniname_from_int(*i) {
+            match arg.view() {
+                ValueView::Int(i) => match crate::builtins::unicode::uniname_from_int(i) {
                     Ok(name) => Some(Ok(Value::str(name))),
                     Err(e) => Some(Err(e)),
                 },
-                Value::Package(name) => {
+                ValueView::Package(name) => {
                     // Type objects like Str, Int should throw X::Multi::NoMatch
                     let msg = format!(
                         "Cannot resolve caller uniname({}); none of these signatures matches:\n    (\\what)",
@@ -243,13 +243,13 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 _ => {
                     let s = arg.to_string_value();
                     if s.is_empty() {
-                        return Some(Ok(Value::Nil));
+                        return Some(Ok(Value::NIL));
                     }
                     if let Some(ch) = s.chars().next() {
                         let name = crate::builtins::unicode::unicode_char_name(ch);
                         Some(Ok(Value::str(name)))
                     } else {
-                        Some(Ok(Value::Nil))
+                        Some(Ok(Value::NIL))
                     }
                 }
             }
@@ -268,14 +268,14 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         }
         "uniprop" => {
             // uniprop(target) — returns General_Category
-            match arg {
-                Value::Int(i) => {
-                    let cp = *i as u32;
+            match arg.view() {
+                ValueView::Int(i) => {
+                    let cp = i as u32;
                     Some(Ok(
                         crate::builtins::uniprop::unicode_property_value_for_codepoint(cp, None),
                     ))
                 }
-                Value::Package(_) => {
+                ValueView::Package(_) => {
                     // uniprop(Str) or uniprop(Int) — type object, not instance
                     let msg = "Cannot resolve caller uniprop".to_string();
                     let mut attrs = std::collections::HashMap::new();
@@ -291,7 +291,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 _ => {
                     let s = arg.to_string_value();
                     if s.is_empty() {
-                        return Some(Ok(Value::Nil));
+                        return Some(Ok(Value::NIL));
                     }
                     let ch = s.chars().next().unwrap();
                     Some(Ok(Value::str(
@@ -312,90 +312,90 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         "lsb" => crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("lsb")),
         "msb" => crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("msb")),
         "sign" => {
-            if matches!(arg, Value::Instance { .. }) {
+            if matches!(arg.view(), ValueView::Instance { .. }) {
                 return None;
             }
             // Delegate to the .sign method implementation
             crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("sign"))
         }
-        "abs" => Some(Ok(match arg {
-            Value::Int(i) => Value::Int(i.abs()),
-            Value::Num(f) => Value::Num(f.abs()),
-            Value::Rat(n, d) => Value::Rat(n.abs(), *d),
-            Value::Complex(re, im) => Value::Num((re * re + im * im).sqrt()),
-            Value::Str(s) => {
+        "abs" => Some(Ok(match arg.view() {
+            ValueView::Int(i) => Value::int(i.abs()),
+            ValueView::Num(f) => Value::num(f.abs()),
+            ValueView::Rat(n, d) => Value::rat_raw(n.abs(), d),
+            ValueView::Complex(re, im) => Value::num((re * re + im * im).sqrt()),
+            ValueView::Str(s) => {
                 if let Ok(i) = s.parse::<i64>() {
-                    Value::Int(i.abs())
+                    Value::int(i.abs())
                 } else if let Ok(f) = s.parse::<f64>() {
-                    Value::Num(f.abs())
+                    Value::num(f.abs())
                 } else {
-                    Value::Int(0)
+                    Value::int(0)
                 }
             }
-            _ => Value::Int(0),
+            _ => Value::int(0),
         })),
-        "sqrt" => Some(Ok(match arg {
-            Value::Int(i) => Value::Num((*i as f64).sqrt()),
-            Value::Num(f) => Value::Num(f.sqrt()),
-            Value::Rat(n, d) if *d != 0 => Value::Num((*n as f64 / *d as f64).sqrt()),
-            Value::Complex(r, i) => {
+        "sqrt" => Some(Ok(match arg.view() {
+            ValueView::Int(i) => Value::num((i as f64).sqrt()),
+            ValueView::Num(f) => Value::num(f.sqrt()),
+            ValueView::Rat(n, d) if d != 0 => Value::num((n as f64 / d as f64).sqrt()),
+            ValueView::Complex(r, i) => {
                 // sqrt(a+bi) = sqrt((|z|+a)/2) + i*sign(b)*sqrt((|z|-a)/2)
                 let mag = (r * r + i * i).sqrt();
                 let re = ((mag + r) / 2.0).sqrt();
                 let im = i.signum() * ((mag - r) / 2.0).sqrt();
-                Value::Complex(re, im)
+                Value::complex(re, im)
             }
-            _ => Value::Num(f64::NAN),
+            _ => Value::num(f64::NAN),
         })),
         "floor" => {
-            if matches!(arg, Value::Instance { .. }) {
+            if matches!(arg.view(), ValueView::Instance { .. }) {
                 return None;
             }
-            Some(Ok(match arg {
-                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-                Value::Num(f) => Value::Num(f.floor()),
-                Value::Int(i) => Value::Int(*i),
-                Value::Rat(n, d) if *d != 0 => {
-                    let q = *n / *d;
-                    let r = *n % *d;
-                    if r != 0 && (*n < 0) != (*d < 0) {
-                        Value::Int(q - 1)
+            Some(Ok(match arg.view() {
+                ValueView::Num(f) if f.is_nan() || f.is_infinite() => Value::num(f),
+                ValueView::Num(f) => Value::num(f.floor()),
+                ValueView::Int(i) => Value::int(i),
+                ValueView::Rat(n, d) if d != 0 => {
+                    let q = n / d;
+                    let r = n % d;
+                    if r != 0 && (n < 0) != (d < 0) {
+                        Value::int(q - 1)
                     } else {
-                        Value::Int(q)
+                        Value::int(q)
                     }
                 }
-                _ => Value::Int(0),
+                _ => Value::int(0),
             }))
         }
         "ceiling" | "ceil" => {
-            if matches!(arg, Value::Instance { .. }) {
+            if matches!(arg.view(), ValueView::Instance { .. }) {
                 return None;
             }
-            Some(Ok(match arg {
-                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-                Value::Num(f) => Value::Num(f.ceil()),
-                Value::Int(i) => Value::Int(*i),
-                Value::Rat(n, d) if *d != 0 => {
-                    let q = *n / *d;
-                    let r = *n % *d;
-                    if r != 0 && (*n < 0) == (*d < 0) {
-                        Value::Int(q + 1)
+            Some(Ok(match arg.view() {
+                ValueView::Num(f) if f.is_nan() || f.is_infinite() => Value::num(f),
+                ValueView::Num(f) => Value::num(f.ceil()),
+                ValueView::Int(i) => Value::int(i),
+                ValueView::Rat(n, d) if d != 0 => {
+                    let q = n / d;
+                    let r = n % d;
+                    if r != 0 && (n < 0) == (d < 0) {
+                        Value::int(q + 1)
                     } else {
-                        Value::Int(q)
+                        Value::int(q)
                     }
                 }
-                _ => Value::Int(0),
+                _ => Value::int(0),
             }))
         }
         "round" => {
-            if matches!(arg, Value::Instance { .. }) {
+            if matches!(arg.view(), ValueView::Instance { .. }) {
                 return None;
             }
             // Raku-style rounding: (x + 0.5).floor() — round half toward +Inf
             fn raku_round_to_value(f: f64) -> Value {
                 let rounded = (f + 0.5).floor();
                 if rounded >= i64::MIN as f64 && rounded <= i64::MAX as f64 {
-                    Value::Int(rounded as i64)
+                    Value::int(rounded as i64)
                 } else {
                     // Use BigInt for values outside i64 range
                     use num_bigint::BigInt;
@@ -404,85 +404,85 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     let s = format!("{:.0}", rounded);
                     if let Ok(bi) = s.parse::<BigInt>() {
                         if let Some(i) = bi.to_i64() {
-                            Value::Int(i)
+                            Value::int(i)
                         } else {
                             Value::bigint(bi)
                         }
                     } else {
-                        Value::Num(rounded)
+                        Value::num(rounded)
                     }
                 }
             }
-            Some(Ok(match arg {
-                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-                Value::Num(f) => raku_round_to_value(*f),
-                Value::Int(i) => Value::Int(*i),
-                Value::Rat(n, d) if *d != 0 => {
-                    let f = *n as f64 / *d as f64;
+            Some(Ok(match arg.view() {
+                ValueView::Num(f) if f.is_nan() || f.is_infinite() => Value::num(f),
+                ValueView::Num(f) => raku_round_to_value(f),
+                ValueView::Int(i) => Value::int(i),
+                ValueView::Rat(n, d) if d != 0 => {
+                    let f = n as f64 / d as f64;
                     raku_round_to_value(f)
                 }
-                _ => Value::Int(0),
+                _ => Value::int(0),
             }))
         }
-        "exp" => Some(Ok(match arg {
-            Value::Instance { .. } => return None,
-            Value::Int(i) => Value::Num((*i as f64).exp()),
-            Value::Num(f) => Value::Num(f.exp()),
-            Value::Rat(n, d) if *d != 0 => Value::Num((*n as f64 / *d as f64).exp()),
-            Value::Complex(r, i) => {
+        "exp" => Some(Ok(match arg.view() {
+            ValueView::Instance { .. } => return None,
+            ValueView::Int(i) => Value::num((i as f64).exp()),
+            ValueView::Num(f) => Value::num(f.exp()),
+            ValueView::Rat(n, d) if d != 0 => Value::num((n as f64 / d as f64).exp()),
+            ValueView::Complex(r, i) => {
                 let ea = r.exp();
-                Value::Complex(ea * i.cos(), ea * i.sin())
+                Value::complex(ea * i.cos(), ea * i.sin())
             }
-            _ => Value::Num(f64::NAN),
+            _ => Value::num(f64::NAN),
         })),
-        "log" => match arg {
-            Value::Instance { .. } => None,
-            Value::Complex(r, i) => {
+        "log" => match arg.view() {
+            ValueView::Instance { .. } => None,
+            ValueView::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
-                let phase = i.atan2(*r);
-                Some(Ok(Value::Complex(mag, phase)))
+                let phase = i.atan2(r);
+                Some(Ok(Value::complex(mag, phase)))
             }
             _ => {
                 let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
-                Some(Ok(Value::Num(x.ln())))
+                Some(Ok(Value::num(x.ln())))
             }
         },
-        "log2" => match arg {
-            Value::Instance { .. } => None,
-            Value::Complex(r, i) => {
+        "log2" => match arg.view() {
+            ValueView::Instance { .. } => None,
+            ValueView::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
-                let phase = i.atan2(*r);
+                let phase = i.atan2(r);
                 let ln2 = 2.0f64.ln();
-                Some(Ok(Value::Complex(mag / ln2, phase / ln2)))
+                Some(Ok(Value::complex(mag / ln2, phase / ln2)))
             }
             _ => {
                 let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
-                Some(Ok(Value::Num(x.log2())))
+                Some(Ok(Value::num(x.log2())))
             }
         },
-        "log10" => match arg {
-            Value::Instance { .. } => None,
-            Value::Complex(r, i) => {
+        "log10" => match arg.view() {
+            ValueView::Instance { .. } => None,
+            ValueView::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
-                let phase = i.atan2(*r);
+                let phase = i.atan2(r);
                 let ln10 = 10.0f64.ln();
-                Some(Ok(Value::Complex(mag / ln10, phase / ln10)))
+                Some(Ok(Value::complex(mag / ln10, phase / ln10)))
             }
             _ => {
                 let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
-                Some(Ok(Value::Num(x.log10())))
+                Some(Ok(Value::num(x.log10())))
             }
         },
         "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sec" | "cosec" | "cotan" | "asec"
         | "acosec" | "acotan" | "sinh" | "cosh" | "tanh" | "sech" | "cosech" | "cotanh"
         | "asinh" | "acosh" | "atanh" | "asech" | "acosech" | "acotanh" => {
             // Complex arguments use complex trig
-            if let Value::Complex(re, im) = arg {
-                let result = crate::builtins::methods_0arg::complex_trig(name, *re, *im);
-                return Some(Ok(Value::Complex(result.0, result.1)));
+            if let ValueView::Complex(re, im) = arg.view() {
+                let result = crate::builtins::methods_0arg::complex_trig(name, re, im);
+                return Some(Ok(Value::complex(result.0, result.1)));
             }
             // User-defined types need runtime coercion via .Numeric/.Bridge
-            if matches!(arg, Value::Instance { .. }) {
+            if matches!(arg.view(), ValueView::Instance { .. }) {
                 return None;
             }
             let x = runtime::to_float_value(arg).unwrap_or(0.0);
@@ -535,61 +535,61 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 "acotanh" => (1.0 / x).atanh(),
                 _ => 0.0,
             };
-            Some(Ok(Value::Num(result)))
+            Some(Ok(Value::num(result)))
         }
         "atan2" => {
             // atan2(y) — defaults to x=1
-            if matches!(arg, Value::Instance { .. }) {
+            if matches!(arg.view(), ValueView::Instance { .. }) {
                 return None;
             }
             let y = runtime::to_float_value(arg).unwrap_or(0.0);
-            Some(Ok(Value::Num(y.atan2(1.0))))
+            Some(Ok(Value::num(y.atan2(1.0))))
         }
         "cis" => {
-            if matches!(arg, Value::Instance { .. }) {
+            if matches!(arg.view(), ValueView::Instance { .. }) {
                 return None;
             }
             let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
-            Some(Ok(Value::Complex(x.cos(), x.sin())))
+            Some(Ok(Value::complex(x.cos(), x.sin())))
         }
         "truncate" => {
-            if matches!(arg, Value::Instance { .. }) {
+            if matches!(arg.view(), ValueView::Instance { .. }) {
                 return None;
             }
             // Bool.truncate preserves Bool type
-            if let Value::Bool(b) = arg {
-                return Some(Ok(Value::Bool(*b)));
+            if let ValueView::Bool(b) = arg.view() {
+                return Some(Ok(Value::truth(b)));
             }
             // Delegate to the .truncate method for proper type handling
             crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("truncate"))
                 .or_else(|| {
                     if let Some(num) = runtime::to_float_value(arg) {
                         if num.is_nan() || num.is_infinite() {
-                            Some(Ok(Value::Num(num)))
+                            Some(Ok(Value::num(num)))
                         } else {
-                            Some(Ok(Value::Int(num.trunc() as i64)))
+                            Some(Ok(Value::int(num.trunc() as i64)))
                         }
                     } else {
-                        Some(Ok(Value::Int(runtime::to_int(arg))))
+                        Some(Ok(Value::int(runtime::to_int(arg))))
                     }
                 })
         }
         "defined" => {
             // For junctions, autothread .defined and collapse to Bool
-            if let Value::Junction { .. } = arg {
+            if let ValueView::Junction { .. } = arg.view() {
                 if let Some(Ok(result)) = crate::builtins::methods_0arg::native_method_0arg(
                     arg,
                     crate::symbol::Symbol::intern("defined"),
                 ) {
                     Some(Ok(result))
                 } else {
-                    Some(Ok(Value::Bool(true)))
+                    Some(Ok(Value::TRUE))
                 }
             } else {
-                Some(Ok(Value::Bool(match arg {
-                    Value::Nil | Value::Package(_) => false,
-                    Value::Slip(items) if items.is_empty() => false,
-                    Value::Instance { class_name, .. } if class_name == "Failure" => false,
+                Some(Ok(Value::truth(match arg.view() {
+                    ValueView::Nil | ValueView::Package(_) => false,
+                    ValueView::Slip(items) if items.is_empty() => false,
+                    ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
                     _ => true,
                 })))
             }
@@ -602,7 +602,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         "elems" => crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("elems")),
         "reverse" => {
             // LazyIoLines needs the interpreter to materialize — fall through
-            if matches!(arg, Value::LazyIoLines { .. }) {
+            if matches!(arg.view(), ValueView::LazyIoLines { .. }) {
                 return None;
             }
             if let Some(shape) = crate::runtime::utils::shaped_array_shape(arg) {
@@ -614,59 +614,59 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 // 1D shaped array: reverse the leaves
                 let mut leaves = crate::runtime::utils::shaped_array_leaves(arg);
                 leaves.reverse();
-                return Some(Ok(Value::Seq(std::sync::Arc::new(leaves))));
+                return Some(Ok(Value::seq(leaves)));
             }
-            Some(Ok(match arg {
-                Value::Array(items, ..) => {
+            Some(Ok(match arg.view() {
+                ValueView::Array(items, ..) => {
                     let mut reversed = (**items).clone();
                     reversed.reverse();
-                    Value::Seq(std::sync::Arc::new(reversed.items))
+                    Value::seq(reversed.items)
                 }
-                Value::Seq(items) | Value::Slip(items) => {
+                ValueView::Seq(items) | ValueView::Slip(items) => {
                     let mut reversed = (**items).clone();
                     reversed.reverse();
-                    Value::Seq(std::sync::Arc::new(reversed))
+                    Value::seq(reversed)
                 }
-                Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. } => {
+                ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. } => {
                     let mut items = crate::runtime::Interpreter::value_to_list(arg);
                     items.reverse();
-                    Value::Seq(std::sync::Arc::new(items))
+                    Value::seq(items)
                 }
                 // reverse() on a string returns a single-element Seq (not a flip)
-                other => Value::Seq(std::sync::Arc::new(vec![other.clone()])),
+                _ => Value::seq(vec![arg.clone()]),
             }))
         }
         "sort" => {
             if crate::runtime::utils::is_shaped_array(arg) {
                 let mut leaves = crate::runtime::utils::shaped_array_leaves(arg);
                 leaves.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                return Some(Ok(Value::Seq(std::sync::Arc::new(leaves))));
+                return Some(Ok(Value::seq(leaves)));
             }
-            Some(Ok(match arg {
-                Value::Array(items, ..) => {
+            Some(Ok(match arg.view() {
+                ValueView::Array(items, ..) => {
                     let mut sorted = (**items).clone();
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                    Value::Seq(std::sync::Arc::new(sorted.items))
+                    Value::seq(sorted.items)
                 }
-                Value::Seq(items) | Value::Slip(items) => {
+                ValueView::Seq(items) | ValueView::Slip(items) => {
                     let mut sorted = (**items).clone();
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                    Value::Seq(std::sync::Arc::new(sorted))
+                    Value::seq(sorted)
                 }
-                Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. } => {
+                ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. } => {
                     let mut sorted = crate::runtime::Interpreter::value_to_list(arg);
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                    Value::Seq(std::sync::Arc::new(sorted))
+                    Value::seq(sorted)
                 }
-                _ => Value::Nil,
+                _ => Value::NIL,
             }))
         }
         "rotate" => {
@@ -680,23 +680,23 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 let leaves = crate::runtime::utils::shaped_array_leaves(arg);
                 let len = leaves.len();
                 if len == 0 {
-                    return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
+                    return Some(Ok(Value::seq(Vec::new())));
                 }
                 let n = 1usize % len;
                 let mut rotated = Vec::with_capacity(len);
                 rotated.extend_from_slice(&leaves[n..]);
                 rotated.extend_from_slice(&leaves[..n]);
-                return Some(Ok(Value::Seq(std::sync::Arc::new(rotated))));
+                return Some(Ok(Value::seq(rotated)));
             }
             // rotate with no count defaults to 1; returns a Seq (raku semantics).
-            let items: Option<Vec<Value>> = match arg {
-                Value::Array(items, ..) => Some(items.iter().cloned().collect()),
-                Value::Seq(items) | Value::Slip(items) => Some((**items).clone()),
-                Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. } => {
+            let items: Option<Vec<Value>> = match arg.view() {
+                ValueView::Array(items, ..) => Some(items.iter().cloned().collect()),
+                ValueView::Seq(items) | ValueView::Slip(items) => Some((**items).clone()),
+                ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. } => {
                     Some(crate::runtime::Interpreter::value_to_list(arg))
                 }
                 _ => None,
@@ -707,16 +707,16 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     let mut rotated = Vec::with_capacity(items.len());
                     rotated.extend_from_slice(&items[n..]);
                     rotated.extend_from_slice(&items[..n]);
-                    Value::Seq(std::sync::Arc::new(rotated))
+                    Value::seq(rotated)
                 }
-                Some(_) => Value::Seq(std::sync::Arc::new(Vec::new())),
-                None => Value::Nil,
+                Some(_) => Value::seq(Vec::new()),
+                None => Value::NIL,
             }))
         }
         "flat" => {
             if crate::runtime::utils::is_shaped_array(arg) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(arg);
-                return Some(Ok(Value::Seq(std::sync::Arc::new(leaves))));
+                return Some(Ok(Value::seq(leaves)));
             }
             if is_infinite_range(arg) {
                 return Some(Ok(arg.clone()));
@@ -728,49 +728,49 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             // The top-level operand is de-itemized first so `$(1,2,3).flat`
             // descends (Raku un-itemizes the receiver before flattening).
             flat_val(&deitemize_flat_operand(arg), &mut flat, true);
-            Some(Ok(Value::Seq(std::sync::Arc::new(flat))))
+            Some(Ok(Value::seq(flat)))
         }
-        "first" => Some(Ok(match arg {
-            Value::Array(items, ..) => items.first().cloned().unwrap_or(Value::Nil),
+        "first" => Some(Ok(match arg.view() {
+            ValueView::Array(items, ..) => items.first().cloned().unwrap_or(Value::NIL),
             _ => arg.clone(),
         })),
-        "min" => Some(Ok(match arg {
-            Value::Hash(items) => items
+        "min" => Some(Ok(match arg.view() {
+            ValueView::Hash(items) => items
                 .iter()
                 .min_by(|(ak, _), (bk, _)| ak.cmp(bk))
                 .map(|(k, v)| items.typed_pair(k, v.clone()))
-                .unwrap_or(Value::Nil),
-            Value::Array(items, ..) => items
+                .unwrap_or(Value::NIL),
+            ValueView::Array(items, ..) => items
                 .iter()
                 .cloned()
-                .min_by(|a, b| match (a, b) {
-                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                .min_by(|a, b| match (a.view(), b.view()) {
+                    (ValueView::Int(x), ValueView::Int(y)) => x.cmp(&y),
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
-                .unwrap_or(Value::Nil),
+                .unwrap_or(Value::NIL),
             _ => arg.clone(),
         })),
-        "max" => Some(Ok(match arg {
-            Value::Hash(items) => items
+        "max" => Some(Ok(match arg.view() {
+            ValueView::Hash(items) => items
                 .iter()
                 .max_by(|(ak, _), (bk, _)| ak.cmp(bk))
                 .map(|(k, v)| items.typed_pair(k, v.clone()))
-                .unwrap_or(Value::Nil),
-            Value::Array(items, ..) => items
+                .unwrap_or(Value::NIL),
+            ValueView::Array(items, ..) => items
                 .iter()
                 .cloned()
-                .max_by(|a, b| match (a, b) {
-                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                .max_by(|a, b| match (a.view(), b.view()) {
+                    (ValueView::Int(x), ValueView::Int(y)) => x.cmp(&y),
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
-                .unwrap_or(Value::Nil),
+                .unwrap_or(Value::NIL),
             _ => arg.clone(),
         })),
         "ords" => {
             let s = arg.to_string_value();
-            let codes: Vec<Value> = s.chars().map(|ch| Value::Int(ch as u32 as i64)).collect();
+            let codes: Vec<Value> = s.chars().map(|ch| Value::int(ch as u32 as i64)).collect();
             // `ords` returns a Seq (like `comb`), not a List.
-            Some(Ok(Value::Seq(std::sync::Arc::new(codes))))
+            Some(Ok(Value::seq(codes)))
         }
         "gist" => Some(Ok(Value::str(arg.to_string_value()))),
         _ => None,

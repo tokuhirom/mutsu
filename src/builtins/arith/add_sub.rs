@@ -10,7 +10,7 @@ use super::temporal::{
     instance_instant_value, make_duration, value_sub,
 };
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, make_big_fat_rat, make_big_rat_arith};
+use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat_arith};
 
 // ── Arithmetic operators ─────────────────────────────────────────────
 pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError> {
@@ -20,8 +20,8 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
     // A bare Whatever value reaching `+` is NOT a curry point (those are wrapped
     // into a WhateverCode at parse time). Numifying it dies in Raku, e.g.
     // `&infix:<+>(*, 42)` invokes `+` with a Whatever argument.
-    if matches!(left, Value::Whatever | Value::HyperWhatever)
-        || matches!(right, Value::Whatever | Value::HyperWhatever)
+    if matches!(left.view(), ValueView::Whatever | ValueView::HyperWhatever)
+        || matches!(right.view(), ValueView::Whatever | ValueView::HyperWhatever)
     {
         return Err(RuntimeError::new(
             "Cannot resolve caller Numeric(Whatever:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)".to_string(),
@@ -34,7 +34,7 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
         return result;
     }
     // Range + Real (commutative): shift both bounds, preserving exclusivity.
-    let add_endpoint = |a: Value, b: Value| arith_add(a, b).unwrap_or(Value::Int(0));
+    let add_endpoint = |a: Value, b: Value| arith_add(a, b).unwrap_or(Value::int(0));
     if let Some(range) = range_offset(&left, &right, add_endpoint)
         .or_else(|| range_offset(&right, &left, add_endpoint))
     {
@@ -42,7 +42,7 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
     }
     // Date + Int: add days
     if let Some(days) = instance_days(&left)
-        && let Value::Int(delta) = &right
+        && let ValueView::Int(delta) = right.view()
     {
         use crate::builtins::methods_0arg::temporal;
         let new_days = days + delta;
@@ -50,7 +50,7 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
         return Ok(temporal::make_date(y, m, d));
     }
     if let Some(days) = instance_days(&right)
-        && let Value::Int(delta) = &left
+        && let ValueView::Int(delta) = left.view()
     {
         use crate::builtins::methods_0arg::temporal;
         let new_days = days + delta;
@@ -68,14 +68,14 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
         && let Some(dur) = instance_duration_value(&right)
     {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), Value::Num(tai + dur));
+        attrs.insert("value".to_string(), Value::num(tai + dur));
         return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
     }
     if let Some(tai) = instance_instant_value(&right)
         && let Some(dur) = instance_duration_value(&left)
     {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), Value::Num(tai + dur));
+        attrs.insert("value".to_string(), Value::num(tai + dur));
         return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
     }
     // Instant + Numeric => Instant (add to TAI value)
@@ -84,7 +84,7 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
     {
         let delta = crate::runtime::to_float_value(&right).unwrap_or(0.0);
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), Value::Num(tai + delta));
+        attrs.insert("value".to_string(), Value::num(tai + delta));
         return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
     }
     if let Some(tai) = instance_instant_value(&right)
@@ -92,7 +92,7 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
     {
         let delta = crate::runtime::to_float_value(&left).unwrap_or(0.0);
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), Value::Num(tai + delta));
+        attrs.insert("value".to_string(), Value::num(tai + delta));
         return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
     }
     // Duration + Numeric => Duration
@@ -132,11 +132,12 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
 }
 
 fn arith_add_coerced(l: Value, r: Value) -> Value {
-    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+    if matches!(l.view(), ValueView::Complex(_, _)) || matches!(r.view(), ValueView::Complex(_, _))
+    {
         let (ar, ai) = crate::runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = crate::runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
-        Value::Complex(ar + br, ai + bi)
-    } else if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+        Value::complex(ar + br, ai + bi)
+    } else if (matches!(l.view(), ValueView::BigInt(_)) || matches!(r.view(), ValueView::BigInt(_)))
         && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
     {
         Value::from_bigint(a + b)
@@ -145,9 +146,11 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
     {
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
         if has_fat_rat {
-            match make_big_fat_rat(an * bd.clone() + bn * ad.clone(), ad * bd) {
-                Value::Rat(n, d) => Value::FatRat(n, d),
-                other => other,
+            let tmp = make_big_fat_rat(an * bd.clone() + bn * ad.clone(), ad * bd);
+            if let ValueView::Rat(n, d) = tmp.view() {
+                Value::fat_rat_raw(n, d)
+            } else {
+                tmp
             }
         } else {
             make_big_rat_arith(an * bd.clone() + bn * ad.clone(), ad * bd)
@@ -156,8 +159,8 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
         crate::runtime::to_rat_parts(&l),
         crate::runtime::to_rat_parts(&r),
     ) {
-        let has_rat = matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
-            || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
+        let has_rat = matches!(l.view(), ValueView::Rat(_, _) | ValueView::FatRat(_, _))
+            || matches!(r.view(), ValueView::Rat(_, _) | ValueView::FatRat(_, _));
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
         if has_rat {
             if has_fat_rat {
@@ -168,36 +171,36 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
                 rat_add_checked(an, ad, bn, bd)
             }
         } else {
-            match (l, r) {
-                (Value::Int(a), Value::Int(b)) => match a.checked_add(b) {
-                    Some(sum) => Value::Int(sum),
+            match (l.view(), r.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) => match a.checked_add(b) {
+                    Some(sum) => Value::int(sum),
                     None => Value::from_bigint(
                         num_bigint::BigInt::from(a) + num_bigint::BigInt::from(b),
                     ),
                 },
-                (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
-                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
-                (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
-                _ => Value::Int(0),
+                (ValueView::Num(a), ValueView::Num(b)) => Value::num(a + b),
+                (ValueView::Int(a), ValueView::Num(b)) => Value::num(a as f64 + b),
+                (ValueView::Num(a), ValueView::Int(b)) => Value::num(a + b as f64),
+                _ => Value::int(0),
             }
         }
     } else {
         let lf = crate::runtime::to_float_value(&l);
         let rf = crate::runtime::to_float_value(&r);
         if let (Some(a), Some(b)) = (lf, rf) {
-            Value::Num(a + b)
+            Value::num(a + b)
         } else {
-            match (l, r) {
-                (Value::Int(a), Value::Int(b)) => match a.checked_add(b) {
-                    Some(sum) => Value::Int(sum),
+            match (l.view(), r.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) => match a.checked_add(b) {
+                    Some(sum) => Value::int(sum),
                     None => Value::from_bigint(
                         num_bigint::BigInt::from(a) + num_bigint::BigInt::from(b),
                     ),
                 },
-                (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
-                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
-                (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
-                _ => Value::Int(0),
+                (ValueView::Num(a), ValueView::Num(b)) => Value::num(a + b),
+                (ValueView::Int(a), ValueView::Num(b)) => Value::num(a as f64 + b),
+                (ValueView::Num(a), ValueView::Int(b)) => Value::num(a + b as f64),
+                _ => Value::int(0),
             }
         }
     }
@@ -212,7 +215,7 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         && let Some(dur) = instance_duration_value(&right)
     {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), value_sub(a, Value::Num(dur)));
+        attrs.insert("value".to_string(), value_sub(a, Value::num(dur)));
         return Value::make_instance(Symbol::intern("Instant"), attrs);
     }
     if let Some(a) = instance_instant_raw(&left)
@@ -258,10 +261,10 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         return temporal::make_datetime(ny, nm, nd, nh, nmi, ns, tz);
     }
     if let (Some(a), Some(b)) = (instance_days(&left), instance_days(&right)) {
-        return Value::Int(a - b);
+        return Value::int(a - b);
     }
     if let Some(days) = instance_days(&left)
-        && let Value::Int(delta) = right
+        && let ValueView::Int(delta) = right.view()
     {
         use crate::builtins::methods_0arg::temporal;
         let new_days = days - delta;
@@ -278,11 +281,12 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         return range;
     }
     let (l, r) = crate::runtime::coerce_numeric(left, right);
-    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+    if matches!(l.view(), ValueView::Complex(_, _)) || matches!(r.view(), ValueView::Complex(_, _))
+    {
         let (ar, ai) = crate::runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = crate::runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
-        Value::Complex(ar - br, ai - bi)
-    } else if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+        Value::complex(ar - br, ai - bi)
+    } else if (matches!(l.view(), ValueView::BigInt(_)) || matches!(r.view(), ValueView::BigInt(_)))
         && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
     {
         Value::from_bigint(a - b)
@@ -291,9 +295,11 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
     {
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
         if has_fat_rat {
-            match make_big_fat_rat(an * bd.clone() - bn * ad.clone(), ad * bd) {
-                Value::Rat(n, d) => Value::FatRat(n, d),
-                other => other,
+            let tmp = make_big_fat_rat(an * bd.clone() - bn * ad.clone(), ad * bd);
+            if let ValueView::Rat(n, d) = tmp.view() {
+                Value::fat_rat_raw(n, d)
+            } else {
+                tmp
             }
         } else {
             make_big_rat_arith(an * bd.clone() - bn * ad.clone(), ad * bd)
@@ -302,8 +308,8 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         crate::runtime::to_rat_parts(&l),
         crate::runtime::to_rat_parts(&r),
     ) {
-        let has_rat = matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
-            || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
+        let has_rat = matches!(l.view(), ValueView::Rat(_, _) | ValueView::FatRat(_, _))
+            || matches!(r.view(), ValueView::Rat(_, _) | ValueView::FatRat(_, _));
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
         if has_rat {
             if has_fat_rat {
@@ -314,20 +320,20 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
                 rat_sub_checked(an, ad, bn, bd)
             }
         } else {
-            match (l, r) {
-                (Value::Int(a), Value::Int(b)) => match a.checked_sub(b) {
-                    Some(diff) => Value::Int(diff),
+            match (l.view(), r.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) => match a.checked_sub(b) {
+                    Some(diff) => Value::int(diff),
                     None => Value::from_bigint(
                         num_bigint::BigInt::from(a) - num_bigint::BigInt::from(b),
                     ),
                 },
-                (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
-                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
-                (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
-                _ => Value::Int(0),
+                (ValueView::Num(a), ValueView::Num(b)) => Value::num(a - b),
+                (ValueView::Int(a), ValueView::Num(b)) => Value::num(a as f64 - b),
+                (ValueView::Num(a), ValueView::Int(b)) => Value::num(a - b as f64),
+                _ => Value::int(0),
             }
         }
-    } else if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+    } else if (matches!(l.view(), ValueView::BigInt(_)) || matches!(r.view(), ValueView::BigInt(_)))
         && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
     {
         Value::from_bigint(a - b)
@@ -335,19 +341,19 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         let lf = crate::runtime::to_float_value(&l);
         let rf = crate::runtime::to_float_value(&r);
         if let (Some(a), Some(b)) = (lf, rf) {
-            Value::Num(a - b)
+            Value::num(a - b)
         } else {
-            match (l, r) {
-                (Value::Int(a), Value::Int(b)) => match a.checked_sub(b) {
-                    Some(diff) => Value::Int(diff),
+            match (l.view(), r.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) => match a.checked_sub(b) {
+                    Some(diff) => Value::int(diff),
                     None => Value::from_bigint(
                         num_bigint::BigInt::from(a) - num_bigint::BigInt::from(b),
                     ),
                 },
-                (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
-                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
-                (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
-                _ => Value::Int(0),
+                (ValueView::Num(a), ValueView::Num(b)) => Value::num(a - b),
+                (ValueView::Int(a), ValueView::Num(b)) => Value::num(a as f64 - b),
+                (ValueView::Num(a), ValueView::Int(b)) => Value::num(a - b as f64),
+                _ => Value::int(0),
             }
         }
     }

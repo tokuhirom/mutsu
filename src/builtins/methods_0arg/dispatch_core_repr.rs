@@ -1,6 +1,6 @@
 /// Representation methods: gist, raku, perl
 use crate::runtime;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 use super::raku_repr::raku_value;
 use super::{format_temporal_num, gist_array_wrap, range_gist_string};
@@ -12,7 +12,7 @@ const GIST_ELEM_CAP: usize = 100;
 /// Leaf-value gist for a list/array element: a WhateverCode (`*+1`) gists as
 /// `WhateverCode.new`; everything else uses its string value.
 fn leaf_gist(v: &Value) -> String {
-    if let Value::Uni(u) = v {
+    if let ValueView::Uni(u) = v.view() {
         // A Uni / normalization form gists as e.g. NFKC:0x<0066 0066>.
         let cps: Vec<String> = u
             .text
@@ -26,10 +26,10 @@ fn leaf_gist(v: &Value) -> String {
         };
         return format!("{}:0x<{}>", form, cps.join(" "));
     }
-    if let Value::Sub(data) = v
+    if let ValueView::Sub(data) = v.view()
         && matches!(
-            data.env.get("__mutsu_callable_type"),
-            Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+            data.env.get("__mutsu_callable_type").map(Value::view),
+            Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
         )
     {
         return "WhateverCode.new".to_string();
@@ -44,16 +44,18 @@ fn leaf_gist(v: &Value) -> String {
 /// excluded: a Mixin wrapping a List/Array renders via its inner value, so the
 /// pure path is correct and dispatching `.gist` would add a spurious paren.)
 fn gist_needs_method_dispatch(v: &Value) -> bool {
-    match v {
-        Value::Instance { .. }
-        | Value::CustomType { .. }
-        | Value::CustomTypeInstance(_)
-        | Value::Package(..) => true,
-        Value::Array(items, _) => items.iter().any(gist_needs_method_dispatch),
-        Value::Seq(items) | Value::Slip(items) => items.iter().any(gist_needs_method_dispatch),
-        Value::Hash(map) => map.values().any(gist_needs_method_dispatch),
-        Value::Pair(_, val) => gist_needs_method_dispatch(val),
-        Value::ValuePair(k, val) => {
+    match v.view() {
+        ValueView::Instance { .. }
+        | ValueView::CustomType(..)
+        | ValueView::CustomTypeInstance(_)
+        | ValueView::Package(..) => true,
+        ValueView::Array(items, _) => items.iter().any(gist_needs_method_dispatch),
+        ValueView::Seq(items) | ValueView::Slip(items) => {
+            items.iter().any(gist_needs_method_dispatch)
+        }
+        ValueView::Hash(map) => map.values().any(gist_needs_method_dispatch),
+        ValueView::Pair(_, val) => gist_needs_method_dispatch(val),
+        ValueView::ValuePair(k, val) => {
             gist_needs_method_dispatch(k) || gist_needs_method_dispatch(val)
         }
         _ => false,
@@ -72,45 +74,43 @@ pub(super) fn dispatch(
     // instances are excluded: their list gist is handled purely below.
     if method == "gist"
         && matches!(
-            target,
-            Value::Array(..)
-                | Value::Seq(..)
-                | Value::Slip(..)
-                | Value::Hash(..)
-                | Value::Pair(..)
-                | Value::ValuePair(..)
+            target.view(),
+            ValueView::Array(..)
+                | ValueView::Seq(..)
+                | ValueView::Slip(..)
+                | ValueView::Hash(..)
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
         )
         && gist_needs_method_dispatch(target)
     {
         return Some(None);
     }
-    Some(match target {
-        Value::Bool(b) => {
+    Some(match target.view() {
+        ValueView::Bool(b) => {
             if method == "gist" {
-                Some(Ok(Value::str(
-                    if *b { "True" } else { "False" }.to_string(),
-                )))
+                Some(Ok(Value::str(if b { "True" } else { "False" }.to_string())))
             } else {
                 Some(Ok(Value::str(
-                    if *b { "Bool::True" } else { "Bool::False" }.to_string(),
+                    if b { "Bool::True" } else { "Bool::False" }.to_string(),
                 )))
             }
         }
-        Value::Nil => {
+        ValueView::Nil => {
             if method == "raku" || method == "perl" {
                 Some(Ok(Value::str_from("Nil")))
             } else {
-                // gist returns "(Any)" because mutsu uses Value::Nil
-                // for uninitialized variables (which are actually Any).
+                // gist returns "(Any)" because mutsu uses the Nil
+                // value for uninitialized variables (which are actually Any).
                 // The literal `Nil.gist` case is handled by compile-time
                 // folding in the compiler (see compiler/expr.rs).
                 Some(Ok(Value::str_from("(Any)")))
             }
         }
-        Value::FatRat(n, d) => {
-            if *d == 0 && (method == "gist" || method == "Str") {
+        ValueView::FatRat(n, d) => {
+            if d == 0 && (method == "gist" || method == "Str") {
                 Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
-                    Value::Int(*n),
+                    Value::int(n),
                 ))))
             } else if method == "gist" {
                 Some(Ok(Value::str(target.to_string_value())))
@@ -118,11 +118,11 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("FatRat.new({}, {})", n, d))))
             }
         }
-        Value::BigRat(n, d) => {
+        ValueView::BigRat(n, d) => {
             use num_traits::Zero;
             if d.is_zero() && (method == "gist" || method == "Str") {
                 Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
-                    Value::from_bigint((**n).clone()),
+                    Value::from_bigint(n.clone()),
                 ))))
             } else if method == "gist" {
                 Some(Ok(Value::str(target.to_string_value())))
@@ -130,27 +130,27 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(raku_value(target))))
             }
         }
-        Value::Rat(n, d) => {
-            if *d == 0 {
+        ValueView::Rat(n, d) => {
+            if d == 0 {
                 if method == "raku" || method == "perl" {
                     Some(Ok(Value::str(format!("<{}/0>", n))))
                 } else {
                     Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
-                        Value::Int(*n),
+                        Value::int(n),
                     ))))
                 }
-            } else if *n % *d == 0 {
+            } else if n % d == 0 {
                 if method == "raku" || method == "perl" {
                     // .raku on Rat always shows decimal: 27.0, not 27
-                    Some(Ok(Value::str(format!("{}.0", *n / *d))))
+                    Some(Ok(Value::str(format!("{}.0", n / d))))
                 } else {
-                    Some(Ok(Value::str(format!("{}", *n / *d))))
+                    Some(Ok(Value::str(format!("{}", n / d))))
                 }
             } else {
                 if method == "gist" {
                     return Some(Some(Ok(Value::str(target.to_string_value()))));
                 }
-                let mut dd = *d;
+                let mut dd = d;
                 while dd % 2 == 0 {
                     dd /= 2;
                 }
@@ -158,14 +158,14 @@ pub(super) fn dispatch(
                     dd /= 5;
                 }
                 if dd == 1 {
-                    let val = *n as f64 / *d as f64;
+                    let val = n as f64 / d as f64;
                     Some(Ok(Value::str(format!("{}", val))))
                 } else {
                     Some(Ok(Value::str(format!("<{}/{}>", n, d))))
                 }
             }
         }
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -177,7 +177,7 @@ pub(super) fn dispatch(
                 .cloned()
                 .unwrap_or_else(|| Value::str(format!("{}()", class_name)))))
         }
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -186,7 +186,7 @@ pub(super) fn dispatch(
                 &(attributes).as_map(),
             ))))
         }
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -217,7 +217,7 @@ pub(super) fn dispatch(
                 }
             }
         }
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -252,17 +252,19 @@ pub(super) fn dispatch(
                 ))))
             }
         }
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
         } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-            if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
+            if let Some(ValueView::Array(bytes, ..)) =
+                attributes.as_map().get("bytes").map(Value::view)
+            {
                 if method == "raku" || method == "perl" {
                     let elems: Vec<String> = bytes
                         .iter()
-                        .map(|b| match b {
-                            Value::Int(i) => i.to_string(),
+                        .map(|b| match b.view() {
+                            ValueView::Int(i) => i.to_string(),
                             _ => "0".to_string(),
                         })
                         .collect();
@@ -303,12 +305,12 @@ pub(super) fn dispatch(
                         let display_bytes = if truncated { &bytes[..100] } else { &bytes[..] };
                         let mut hex: Vec<String> = display_bytes
                             .iter()
-                            .map(|b| match b {
-                                Value::Int(i) => match hex_width {
-                                    16 => format!("{:016X}", *i as u64),
-                                    8 => format!("{:08X}", *i as u32),
-                                    4 => format!("{:04X}", *i as u16),
-                                    _ => format!("{:02X}", *i as u8),
+                            .map(|b| match b.view() {
+                                ValueView::Int(i) => match hex_width {
+                                    16 => format!("{:016X}", i as u64),
+                                    8 => format!("{:08X}", i as u32),
+                                    4 => format!("{:04X}", i as u16),
+                                    _ => format!("{:02X}", i as u8),
                                 },
                                 _ => "0".repeat(hex_width),
                             })
@@ -327,7 +329,7 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("{}()", class_name))))
             }
         }
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -349,7 +351,7 @@ pub(super) fn dispatch(
                 ))))
             }
         }
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -361,14 +363,14 @@ pub(super) fn dispatch(
                     .as_map()
                     .get("value")
                     .cloned()
-                    .unwrap_or(Value::Num(0.0));
+                    .unwrap_or(Value::num(0.0));
                 Some(Ok(Value::str(format!(
                     "Duration.new({})",
                     format_temporal_num(val.to_f64())
                 ))))
             }
         }
-        Value::Bag(_, _) => {
+        ValueView::Bag(_, _) => {
             if method == "raku" || method == "perl" {
                 Some(Ok(Value::str(
                     super::raku_repr::setbagmix_raku(target).unwrap(),
@@ -380,7 +382,7 @@ pub(super) fn dispatch(
                 )))
             }
         }
-        Value::Set(_, _) => {
+        ValueView::Set(_, _) => {
             if method == "raku" || method == "perl" {
                 Some(Ok(Value::str(
                     super::raku_repr::setbagmix_raku(target).unwrap(),
@@ -392,7 +394,7 @@ pub(super) fn dispatch(
                 )))
             }
         }
-        Value::Mix(_, _) => {
+        ValueView::Mix(_, _) => {
             if method == "raku" || method == "perl" {
                 Some(Ok(Value::str(
                     super::raku_repr::setbagmix_raku(target).unwrap(),
@@ -404,7 +406,7 @@ pub(super) fn dispatch(
                 )))
             }
         }
-        Value::Package(name) => {
+        ValueView::Package(name) => {
             let resolved = name.resolve();
             let full = crate::value::user_facing_type_name(&resolved);
             if method == "gist" {
@@ -415,79 +417,75 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(full.to_string())))
             }
         }
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
         } if class_name == "Stash" && (method == "gist" || method == "Str") => {
             // Stash.gist and Stash.Str return the package name
-            if let Some(Value::Str(name)) = attributes.as_map().get("name") {
+            if let Some(ValueView::Str(name)) = attributes.as_map().get("name").map(Value::view) {
                 Some(Ok(Value::str(name.to_string())))
             } else {
                 Some(Ok(Value::str(String::new())))
             }
         }
-        Value::Instance { .. } | Value::Enum { .. } => None,
-        Value::Version {
-            parts, plus, minus, ..
-        } => {
+        ValueView::Instance { .. } | ValueView::Enum { .. } => None,
+        ValueView::Version { parts, plus, minus } => {
             let s = Value::version_parts_to_string(parts);
-            let suffix = if *plus {
+            let suffix = if plus {
                 "+"
-            } else if *minus {
+            } else if minus {
                 "-"
             } else {
                 ""
             };
             Some(Ok(Value::str(format!("v{}{}", s, suffix))))
         }
-        Value::Str(s) => {
+        ValueView::Str(s) => {
             if method == "raku" || method == "perl" {
                 // .raku wraps strings in quotes and escapes special chars
                 Some(Ok(Value::str(super::raku_repr::escape_raku_str(s))))
             } else {
-                Some(Ok(Value::Str(s.clone())))
+                Some(Ok(Value::str_arc(s.clone())))
             }
         }
-        Value::Array(_, kind) if method == "raku" || method == "perl" => {
-            if *kind == crate::value::ArrayKind::Lazy {
+        ValueView::Array(_, kind) if method == "raku" || method == "perl" => {
+            if kind == crate::value::ArrayKind::Lazy {
                 Some(Ok(Value::str_from("[...]")))
             } else {
                 Some(Ok(Value::str(raku_value(target))))
             }
         }
-        Value::Seq(_) if method == "raku" || method == "perl" => {
+        ValueView::Seq(_) if method == "raku" || method == "perl" => {
             Some(Ok(Value::str(raku_value(target))))
         }
-        Value::Array(_, kind) if method == "gist" && *kind == crate::value::ArrayKind::Lazy => {
+        ValueView::Array(_, kind) if method == "gist" && kind == crate::value::ArrayKind::Lazy => {
             // A lazy (infinite-backed) array renders a bounded placeholder
             // rather than materializing its (possibly capped 100k) backing,
             // matching Rakudo's `[...]`.
             Some(Ok(Value::str_from("[...]")))
         }
-        Value::Array(items, kind) if method == "gist" => {
+        ValueView::Array(items, kind) if method == "gist" => {
             fn gist_item(v: &Value) -> String {
-                match v {
-                    Value::Nil => "Nil".to_string(),
-                    Value::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
+                match v.view() {
+                    ValueView::Nil => "Nil".to_string(),
+                    ValueView::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
                     // `$(...)` itemized element: `.gist` drops the itemization
                     // sigil, so it gists like its inner value.
-                    Value::Scalar(inner) => gist_item(inner),
-                    Value::Array(_, k) if *k == crate::value::ArrayKind::Lazy => {
-                        "[...]".to_string()
-                    }
-                    Value::LazyList(ll) if ll.is_genuinely_lazy() => {
+                    ValueView::Scalar(inner) => gist_item(inner),
+                    ValueView::Array(_, crate::value::ArrayKind::Lazy) => "[...]".to_string(),
+                    ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
                         crate::value::lazy_list_placeholder("gist", ll.in_array_context())
                     }
-                    Value::Array(inner, kind) => {
+                    ValueView::Array(inner, kind) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
-                        gist_array_wrap(&elems, *kind)
+                        gist_array_wrap(&elems, kind)
                     }
-                    Value::Seq(inner) | Value::Slip(inner) => {
+                    ValueView::Seq(inner) | ValueView::Slip(inner) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         format!("({})", elems)
                     }
-                    Value::Hash(map) => {
+                    ValueView::Hash(map) => {
                         let mut sorted_keys: Vec<&String> = map.keys().collect();
                         sorted_keys.sort();
                         let parts: Vec<String> = sorted_keys
@@ -496,9 +494,9 @@ pub(super) fn dispatch(
                             .collect();
                         format!("{{{}}}", parts.join(", "))
                     }
-                    Value::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
-                    Value::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
-                    Value::Junction { kind, values } => {
+                    ValueView::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
+                    ValueView::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
+                    ValueView::Junction { kind, values } => {
                         let kind_str = match kind {
                             crate::value::JunctionKind::Any => "any",
                             crate::value::JunctionKind::All => "all",
@@ -511,27 +509,29 @@ pub(super) fn dispatch(
                     // A Match nested in a list/seq gist renders as its full
                     // `Match.gist` (corner-quoted text + sub-captures), not the
                     // bare matched string.
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name,
                         attributes,
                         ..
                     } if class_name == "Match" => {
                         crate::runtime::utils::match_gist(&(attributes).as_map(), 0)
                     }
-                    Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+                    ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
                         // A Set/Bag/Mix nested in a list/array gist keeps its
                         // type-name wrapper (`Set(a b c)`), like the say/gist
                         // fast path, rather than its bare-element `.Str` form.
                         crate::runtime::utils::setbagmix_gist(v)
                             .unwrap_or_else(|| v.to_string_value())
                     }
-                    other if other.is_range() => range_gist_string(other),
-                    other => leaf_gist(other),
+                    _ if v.is_range() => range_gist_string(v),
+                    _ => leaf_gist(v),
                 }
             }
             // Shaped arrays: format with newlines between rows
-            if *kind == crate::value::ArrayKind::Shaped
-                && items.iter().any(|v| matches!(v, Value::Array(..)))
+            if kind == crate::value::ArrayKind::Shaped
+                && items
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Array(..)))
             {
                 let rows: Vec<String> = items.iter().map(gist_item).collect();
                 let inner = rows.join("\n ");
@@ -551,31 +551,29 @@ pub(super) fn dispatch(
             } else {
                 items.iter().map(gist_item).collect::<Vec<_>>().join(" ")
             };
-            Some(Ok(Value::str(gist_array_wrap(&inner, *kind))))
+            Some(Ok(Value::str(gist_array_wrap(&inner, kind))))
         }
-        Value::Seq(items) | Value::Slip(items) if method == "gist" => {
+        ValueView::Seq(items) | ValueView::Slip(items) if method == "gist" => {
             fn gist_item(v: &Value) -> String {
-                match v {
-                    Value::Nil => "Nil".to_string(),
-                    Value::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
+                match v.view() {
+                    ValueView::Nil => "Nil".to_string(),
+                    ValueView::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
                     // `$(...)` itemized element: `.gist` drops the itemization
                     // sigil, so it gists like its inner value.
-                    Value::Scalar(inner) => gist_item(inner),
-                    Value::Array(_, k) if *k == crate::value::ArrayKind::Lazy => {
-                        "[...]".to_string()
-                    }
-                    Value::LazyList(ll) if ll.is_genuinely_lazy() => {
+                    ValueView::Scalar(inner) => gist_item(inner),
+                    ValueView::Array(_, crate::value::ArrayKind::Lazy) => "[...]".to_string(),
+                    ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
                         crate::value::lazy_list_placeholder("gist", ll.in_array_context())
                     }
-                    Value::Array(inner, kind) => {
+                    ValueView::Array(inner, kind) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
-                        gist_array_wrap(&elems, *kind)
+                        gist_array_wrap(&elems, kind)
                     }
-                    Value::Seq(inner) | Value::Slip(inner) => {
+                    ValueView::Seq(inner) | ValueView::Slip(inner) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         format!("({})", elems)
                     }
-                    Value::Hash(map) => {
+                    ValueView::Hash(map) => {
                         let mut sorted_keys: Vec<&String> = map.keys().collect();
                         sorted_keys.sort();
                         let parts: Vec<String> = sorted_keys
@@ -584,9 +582,9 @@ pub(super) fn dispatch(
                             .collect();
                         format!("{{{}}}", parts.join(", "))
                     }
-                    Value::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
-                    Value::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
-                    Value::Junction { kind, values } => {
+                    ValueView::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
+                    ValueView::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
+                    ValueView::Junction { kind, values } => {
                         let kind_str = match kind {
                             crate::value::JunctionKind::Any => "any",
                             crate::value::JunctionKind::All => "all",
@@ -599,22 +597,22 @@ pub(super) fn dispatch(
                     // A Match nested in a list/seq gist renders as its full
                     // `Match.gist` (corner-quoted text + sub-captures), not the
                     // bare matched string.
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name,
                         attributes,
                         ..
                     } if class_name == "Match" => {
                         crate::runtime::utils::match_gist(&(attributes).as_map(), 0)
                     }
-                    Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+                    ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
                         // A Set/Bag/Mix nested in a list/array gist keeps its
                         // type-name wrapper (`Set(a b c)`), like the say/gist
                         // fast path, rather than its bare-element `.Str` form.
                         crate::runtime::utils::setbagmix_gist(v)
                             .unwrap_or_else(|| v.to_string_value())
                     }
-                    other if other.is_range() => range_gist_string(other),
-                    other => leaf_gist(other),
+                    _ if v.is_range() => range_gist_string(v),
+                    _ => leaf_gist(v),
                 }
             }
             // Like the Array path: a Seq/List gist shows at most the first 100
@@ -632,7 +630,7 @@ pub(super) fn dispatch(
             };
             Some(Ok(Value::str(format!("({})", inner))))
         }
-        Value::Slip(items) if method == "raku" || method == "perl" => {
+        ValueView::Slip(items) if method == "raku" || method == "perl" => {
             if items.is_empty() {
                 // Empty slip is represented as "Empty" in Raku
                 Some(Ok(Value::str_from("Empty")))
@@ -641,21 +639,21 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("slip({})", inner))))
             }
         }
-        Value::Junction { .. } if method == "raku" || method == "perl" => None,
+        ValueView::Junction { .. } if method == "raku" || method == "perl" => None,
         // A WhateverCode (`*+1`, `*.abs`) renders as `WhateverCode.new` for
         // `.gist`/`.raku`/`.perl`, not the generic closure form.
-        Value::Sub(data)
+        ValueView::Sub(data)
             if (method == "raku" || method == "perl" || method == "gist")
                 && matches!(
-                    data.env.get("__mutsu_callable_type"),
-                    Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+                    data.env.get("__mutsu_callable_type").map(Value::view),
+                    Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
                 ) =>
         {
             Some(Ok(Value::str_from("WhateverCode.new")))
         }
         // Sub/Routine/WeakSub: delegate to interpreter for proper raku/gist/Str
-        Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => None,
-        Value::Pair(k, v) => {
+        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => None,
+        ValueView::Pair(k, v) => {
             if method == "raku" || method == "perl" {
                 Some(Ok(Value::str(raku_value(target))))
             } else {
@@ -667,7 +665,7 @@ pub(super) fn dispatch(
                 ))))
             }
         }
-        Value::ValuePair(k, v) => {
+        ValueView::ValuePair(k, v) => {
             if method == "raku" || method == "perl" {
                 Some(Ok(Value::str(raku_value(target))))
             } else {
@@ -679,14 +677,14 @@ pub(super) fn dispatch(
                 ))))
             }
         }
-        Value::BigInt(i) => {
+        ValueView::BigInt(i) => {
             // A BigInt is an integer (its `.^name` is `Int`); `.raku` must render
             // the plain integer, not a float (`100000000000000000000`, not
             // `100000000000000000000.0`), so it round-trips as an Int.
             Some(Ok(Value::str(i.to_string())))
         }
-        Value::Int(i) => Some(Ok(Value::str(format!("{}", i)))),
-        Value::Num(_f) => {
+        ValueView::Int(i) => Some(Ok(Value::str(format!("{}", i)))),
+        ValueView::Num(_f) => {
             if method == "raku" || method == "perl" {
                 Some(Ok(Value::str(raku_value(target))))
             } else {
@@ -699,17 +697,17 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(target.to_string_value())))
             }
         }
-        Value::Complex(r, i) => {
+        ValueView::Complex(r, i) => {
             if method == "raku" || method == "perl" {
                 Some(Ok(Value::str(format!(
                     "<{}>",
-                    crate::value::format_complex(*r, *i)
+                    crate::value::format_complex(r, i)
                 ))))
             } else {
-                Some(Ok(Value::str(crate::value::format_complex(*r, *i))))
+                Some(Ok(Value::str(crate::value::format_complex(r, i))))
             }
         }
-        Value::Hash(map) => {
+        ValueView::Hash(map) => {
             if method == "raku" || method == "perl" {
                 // Delegate to raku_value which has cycle detection for
                 // self-referencing hashes (e.g. %h<b> = %h).
@@ -740,7 +738,7 @@ pub(super) fn dispatch(
         // A genuinely-lazy (infinite) list renders a `(...)`/`[...]`/`...`
         // placeholder rather than materializing — e.g. `[2,3].roll(*).gist`
         // (raku: `(...)`). Finite/`cat_pull` lazy lists fall through to force.
-        Value::LazyList(ll)
+        ValueView::LazyList(ll)
             if (method == "gist" || method == "raku" || method == "perl")
                 && ll.renders_lazy_placeholder() =>
         {
@@ -749,7 +747,7 @@ pub(super) fn dispatch(
                 ll.in_array_context(),
             ))))
         }
-        Value::LazyList(_) => None, // fall through to runtime to force
+        ValueView::LazyList(_) => None, // fall through to runtime to force
         _ => Some(Ok(Value::str(target.to_string_value()))),
     })
 }

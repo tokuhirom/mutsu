@@ -13,7 +13,7 @@
 //! — stays in the interpreter's `dispatch_substr`. This helper returns `None`
 //! for all of those so the caller defers, exactly as the four copies did.
 
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// Pure `substr` slice for a non-negative integer `start` and optional
 /// non-negative integer `len`. Returns `None` (defer to the interpreter) when
@@ -24,15 +24,15 @@ pub(crate) fn native_substr_slice(
     start: &Value,
     len: Option<&Value>,
 ) -> Option<Result<Value, RuntimeError>> {
-    let start = match start {
-        Value::Int(i) if *i >= 0 => *i as usize,
-        Value::Int(_) => return None, // negative: let the interpreter handle
+    let start = match start.view() {
+        ValueView::Int(i) if i >= 0 => i as usize,
+        ValueView::Int(_) => return None, // negative: let the interpreter handle
         _ => return None,
     };
-    let len = match len {
-        Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
-        Some(Value::Int(_)) => return None, // negative length
-        Some(_) => return None,             // WhateverCode / Num / etc.
+    let len = match len.map(Value::view) {
+        Some(ValueView::Int(i)) if i >= 0 => Some(i as usize),
+        Some(ValueView::Int(_)) => return None, // negative length
+        Some(_) => return None,                 // WhateverCode / Num / etc.
         None => None,
     };
 

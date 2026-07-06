@@ -2,16 +2,16 @@ use super::flat::join_flat;
 use super::math::is_extrema_named_pair;
 use crate::builtins::rng::builtin_rand;
 use crate::runtime;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 fn failure_exception(value: &Value) -> Option<Value> {
-    match value {
-        Value::Instance {
+    match value.view() {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
         } if class_name == "Failure" => attributes.as_map().get("exception").cloned(),
-        Value::Mixin(inner, mixins) => {
+        ValueView::Mixin(inner, mixins) => {
             if let Some(mixed) = mixins.get("Failure")
                 && let Some(ex) = failure_exception(mixed)
             {
@@ -27,7 +27,7 @@ fn minmax_two(arg1: &Value, arg2: &Value, want_max: bool) -> Result<Value, Runti
     let ex1 = failure_exception(arg1);
     let ex2 = failure_exception(arg2);
     if ex1.is_some() && ex2.is_some() {
-        let ex = ex1.unwrap_or(Value::Nil);
+        let ex = ex1.unwrap_or(Value::NIL);
         let mut err = RuntimeError::new(ex.to_string_value());
         err.exception = Some(Box::new(ex));
         return Err(err);
@@ -38,10 +38,10 @@ fn minmax_two(arg1: &Value, arg2: &Value, want_max: bool) -> Result<Value, Runti
     if ex2.is_some() {
         return Ok(arg2.clone());
     }
-    if matches!(arg1, Value::Package(name) if name == "Any") {
+    if matches!(arg1.view(), ValueView::Package(name) if name == "Any") {
         return Ok(arg2.clone());
     }
-    if matches!(arg2, Value::Package(name) if name == "Any") {
+    if matches!(arg2.view(), ValueView::Package(name) if name == "Any") {
         return Ok(arg1.clone());
     }
 
@@ -62,22 +62,22 @@ pub(crate) fn native_function_2arg(
         "combinations" => {
             // combinations($n_or_iterable, $k_or_range)
             // If first arg is an iterable, use its elements; otherwise treat as numeric n
-            let items = match arg1 {
-                Value::Array(..)
-                | Value::Seq(..)
-                | Value::Slip(..)
-                | Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. }
-                | Value::Hash(..) => runtime::value_to_list(arg1),
+            let items = match arg1.view() {
+                ValueView::Array(..)
+                | ValueView::Seq(..)
+                | ValueView::Slip(..)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+                | ValueView::Hash(..) => runtime::value_to_list(arg1),
                 _ => {
                     let n = runtime::to_int(arg1);
                     if n <= 0 {
                         Vec::new()
                     } else {
-                        (0..n).map(Value::Int).collect()
+                        (0..n).map(Value::int).collect()
                     }
                 }
             };
@@ -89,12 +89,12 @@ pub(crate) fn native_function_2arg(
             )
         }
         "roll" => {
-            let count = match arg1 {
-                Value::Int(i) if *i > 0 => Some(*i as usize),
-                Value::Int(_) => Some(0),
-                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
-                Value::Whatever => None,
-                Value::Str(s) => {
+            let count = match arg1.view() {
+                ValueView::Int(i) if i > 0 => Some(i as usize),
+                ValueView::Int(_) => Some(0),
+                ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                ValueView::Whatever => None,
+                ValueView::Str(s) => {
                     let parsed = s.trim().parse::<i64>().ok()?;
                     Some(parsed.max(0) as usize)
                 }
@@ -114,7 +114,7 @@ pub(crate) fn native_function_2arg(
                     }
                     out.push(items[idx].clone());
                 }
-                return Some(Ok(Value::LazyList(crate::gc::Gc::new(
+                return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
                     crate::value::LazyList::new_cached(out),
                 ))));
             }
@@ -139,12 +139,14 @@ pub(crate) fn native_function_2arg(
         }
         "atan2" => {
             // atan2(y, x)
-            if matches!(arg1, Value::Instance { .. }) || matches!(arg2, Value::Instance { .. }) {
+            if matches!(arg1.view(), ValueView::Instance { .. })
+                || matches!(arg2.view(), ValueView::Instance { .. })
+            {
                 return None;
             }
             let y = runtime::to_float_value(arg1).unwrap_or(0.0);
             let x = runtime::to_float_value(arg2).unwrap_or(0.0);
-            Some(Ok(Value::Num(y.atan2(x))))
+            Some(Ok(Value::num(y.atan2(x))))
         }
         "roots" => {
             // roots($number, $n) — compute nth roots of $number
@@ -152,20 +154,20 @@ pub(crate) fn native_function_2arg(
         }
         "chop" => {
             // Type objects (Package) should throw
-            if let Value::Package(type_name) = arg1 {
+            if let ValueView::Package(type_name) = arg1.view() {
                 return Some(Err(RuntimeError::new(format!(
                     "Cannot resolve caller chop({}:U)",
                     type_name,
                 ))));
             }
             let s = arg1.to_string_value();
-            let n = match arg2 {
-                Value::Int(i) => (*i).max(0) as usize,
-                Value::BigInt(bi) => {
+            let n = match arg2.view() {
+                ValueView::Int(i) => i.max(0) as usize,
+                ValueView::BigInt(bi) => {
                     use num_traits::ToPrimitive;
                     bi.to_usize().unwrap_or(usize::MAX)
                 }
-                Value::Num(f) => (*f as i64).max(0) as usize,
+                ValueView::Num(f) => (f as i64).max(0) as usize,
                 _ => arg2.to_string_value().parse::<usize>().unwrap_or(1),
             };
             let char_count = s.chars().count();
@@ -200,8 +202,8 @@ pub(crate) fn native_function_2arg(
                 rotated.extend_from_slice(&leaves[..n]);
                 return Some(Ok(Value::array(rotated)));
             }
-            match arg1 {
-                Value::Array(items, ..) => {
+            match arg1.view() {
+                ValueView::Array(items, ..) => {
                     let count = runtime::to_int(arg2);
                     let len = items.len() as i64;
                     if len == 0 {
@@ -214,19 +216,21 @@ pub(crate) fn native_function_2arg(
                     rotated.extend_from_slice(&items[..n]);
                     Some(Ok(Value::array(rotated)))
                 }
-                _ => Some(Ok(Value::Nil)),
+                _ => Some(Ok(Value::NIL)),
             }
         }
         "index" => {
             // Skip native path for junctions — fall through to interpreter for auto-threading
-            if matches!(arg1, Value::Junction { .. }) || matches!(arg2, Value::Junction { .. }) {
+            if matches!(arg1.view(), ValueView::Junction { .. })
+                || matches!(arg2.view(), ValueView::Junction { .. })
+            {
                 return None;
             }
             let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
             Some(Ok(match s.find(&needle) {
-                Some(pos) => Value::Int(s[..pos].chars().count() as i64),
-                None => Value::Nil,
+                Some(pos) => Value::int(s[..pos].chars().count() as i64),
+                None => Value::NIL,
             }))
         }
         "indices" => {
@@ -235,18 +239,20 @@ pub(crate) fn native_function_2arg(
         }
         "rindex" => {
             // Fall through to runtime for arrays (list of needles)
-            if matches!(arg2, Value::Array(..)) {
+            if matches!(arg2.view(), ValueView::Array(..)) {
                 return None;
             }
             let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
             Some(Ok(match s.rfind(&needle) {
-                Some(pos) => Value::Int(s[..pos].chars().count() as i64),
-                None => Value::Nil,
+                Some(pos) => Value::int(s[..pos].chars().count() as i64),
+                None => Value::NIL,
             }))
         }
         "substr" => {
-            if matches!(arg1, Value::Junction { .. }) || matches!(arg2, Value::Junction { .. }) {
+            if matches!(arg1.view(), ValueView::Junction { .. })
+                || matches!(arg2.view(), ValueView::Junction { .. })
+            {
                 return None;
             }
             crate::builtins::substr::native_substr_slice(&arg1.to_string_value(), arg2, None)
@@ -266,37 +272,41 @@ pub(crate) fn native_function_2arg(
             ))))
         }
         "log" => {
-            if matches!(arg1, Value::Instance { .. }) || matches!(arg2, Value::Instance { .. }) {
+            if matches!(arg1.view(), ValueView::Instance { .. })
+                || matches!(arg2.view(), ValueView::Instance { .. })
+            {
                 return None;
             }
             let x = runtime::to_float_value(arg1).unwrap_or(f64::NAN);
             let base_val = runtime::to_float_value(arg2).unwrap_or(f64::NAN);
             if base_val.is_finite() && base_val > 0.0 && base_val != 1.0 && x > 0.0 {
-                Some(Ok(Value::Num(x.ln() / base_val.ln())))
+                Some(Ok(Value::num(x.ln() / base_val.ln())))
             } else {
-                Some(Ok(Value::Num(f64::NAN)))
+                Some(Ok(Value::num(f64::NAN)))
             }
         }
         "exp" => {
             // exp($x, $base) = $base ** $x
             // Fast path for real args
-            if !matches!(arg1, Value::Complex(..)) && !matches!(arg2, Value::Complex(..)) {
+            if !matches!(arg1.view(), ValueView::Complex(..))
+                && !matches!(arg2.view(), ValueView::Complex(..))
+            {
                 let x = runtime::to_float_value(arg1).unwrap_or(f64::NAN);
                 let base = runtime::to_float_value(arg2).unwrap_or(f64::NAN);
-                return Some(Ok(Value::Num(base.powf(x))));
+                return Some(Ok(Value::num(base.powf(x))));
             }
-            let (base_r, base_i) = match arg2 {
-                Value::Int(i) => (*i as f64, 0.0),
-                Value::Num(f) => (*f, 0.0),
-                Value::Rat(n, d) if *d != 0 => (*n as f64 / *d as f64, 0.0),
-                Value::Complex(r, i) => (*r, *i),
+            let (base_r, base_i) = match arg2.view() {
+                ValueView::Int(i) => (i as f64, 0.0),
+                ValueView::Num(f) => (f, 0.0),
+                ValueView::Rat(n, d) if d != 0 => (n as f64 / d as f64, 0.0),
+                ValueView::Complex(r, i) => (r, i),
                 _ => return None,
             };
-            let (exp_r, exp_i) = match arg1 {
-                Value::Int(i) => (*i as f64, 0.0),
-                Value::Num(f) => (*f, 0.0),
-                Value::Rat(n, d) if *d != 0 => (*n as f64 / *d as f64, 0.0),
-                Value::Complex(r, i) => (*r, *i),
+            let (exp_r, exp_i) = match arg1.view() {
+                ValueView::Int(i) => (i as f64, 0.0),
+                ValueView::Num(f) => (f, 0.0),
+                ValueView::Rat(n, d) if d != 0 => (n as f64 / d as f64, 0.0),
+                ValueView::Complex(r, i) => (r, i),
                 _ => return None,
             };
             let ln_r = (base_r * base_r + base_i * base_i).sqrt().ln();
@@ -306,7 +316,7 @@ pub(crate) fn native_function_2arg(
             let ea = prod_r.exp();
             let result_r = ea * prod_i.cos();
             let result_i = ea * prod_i.sin();
-            Some(Ok(Value::Complex(result_r, result_i)))
+            Some(Ok(Value::complex(result_r, result_i)))
         }
         "round" => {
             let x = runtime::to_float_value(arg1)?;
@@ -316,10 +326,10 @@ pub(crate) fn native_function_2arg(
                 (x + 0.5).floor()
             }
             if scale == 0.0 {
-                Some(Ok(Value::Int(raku_round_f64(x) as i64)))
+                Some(Ok(Value::int(raku_round_f64(x) as i64)))
             } else {
                 let factor = (1.0 / scale).abs();
-                Some(Ok(Value::Num(raku_round_f64(x * factor) / factor)))
+                Some(Ok(Value::num(raku_round_f64(x * factor) / factor)))
             }
         }
         "min" => {
@@ -336,16 +346,16 @@ pub(crate) fn native_function_2arg(
         }
         "words" => {
             let s = arg1.to_string_value();
-            let limit = match arg2 {
-                Value::Int(i) => Some((*i).max(0) as usize),
-                Value::BigInt(bi) => {
+            let limit = match arg2.view() {
+                ValueView::Int(i) => Some(i.max(0) as usize),
+                ValueView::BigInt(bi) => {
                     use num_traits::ToPrimitive;
                     Some(bi.to_usize().unwrap_or(usize::MAX))
                 }
-                Value::Whatever => None,
-                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
-                Value::Num(f) if *f >= 0.0 => Some(*f as usize),
-                Value::Rat(n, d) if *d == 0 && *n > 0 => None,
+                ValueView::Whatever => None,
+                ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                ValueView::Num(f) if f >= 0.0 => Some(f as usize),
+                ValueView::Rat(n, d) if d == 0 && n > 0 => None,
                 _ => return None,
             };
             let mut words: Vec<Value> = s
@@ -355,14 +365,14 @@ pub(crate) fn native_function_2arg(
             if let Some(n) = limit {
                 words.truncate(n);
             }
-            Some(Ok(Value::Seq(std::sync::Arc::new(words))))
+            Some(Ok(Value::seq(words)))
         }
         "uniprop" => {
             // uniprop(target, property_name)
             let prop_name = arg2.to_string_value();
-            match arg1 {
-                Value::Int(i) => {
-                    let cp = *i as u32;
+            match arg1.view() {
+                ValueView::Int(i) => {
+                    let cp = i as u32;
                     Some(Ok(
                         crate::builtins::uniprop::unicode_property_value_for_codepoint(
                             cp,
@@ -373,7 +383,7 @@ pub(crate) fn native_function_2arg(
                 _ => {
                     let s = arg1.to_string_value();
                     if s.is_empty() {
-                        return Some(Ok(Value::Nil));
+                        return Some(Ok(Value::NIL));
                     }
                     let ch = s.chars().next().unwrap();
                     Some(Ok(crate::builtins::uniprop::unicode_property_value(
@@ -385,8 +395,8 @@ pub(crate) fn native_function_2arg(
         "unimatch" => {
             // unimatch(target, property_value)
             let prop_value = arg2.to_string_value();
-            match arg1 {
-                Value::Package(_) => {
+            match arg1.view() {
+                ValueView::Package(_) => {
                     let msg = "Cannot resolve caller unimatch".to_string();
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -398,8 +408,8 @@ pub(crate) fn native_function_2arg(
                     err.exception = Some(Box::new(ex));
                     Some(Err(err))
                 }
-                Value::Int(i) => {
-                    let cp = *i as u32;
+                ValueView::Int(i) => {
+                    let cp = i as u32;
                     Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
                         cp,
                         &prop_value,
@@ -409,10 +419,10 @@ pub(crate) fn native_function_2arg(
                 _ => {
                     let s = arg1.to_string_value();
                     if s.is_empty() {
-                        return Some(Ok(Value::Nil));
+                        return Some(Ok(Value::NIL));
                     }
                     let ch = s.chars().next().unwrap();
-                    Some(Ok(Value::Bool(crate::builtins::uniprop::unimatch(
+                    Some(Ok(Value::truth(crate::builtins::uniprop::unimatch(
                         ch,
                         &prop_value,
                         None,

@@ -1,6 +1,6 @@
 use super::temporal::*;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
 /// Convert an f64 to a Rat by using its decimal string representation.
@@ -18,10 +18,10 @@ fn f64_to_decimal_rat(f: f64) -> Value {
         if let Ok(num) = num_str.parse::<i64>() {
             // Simplify the fraction
             let g = gcd_i64(num.abs(), den);
-            return Value::Rat(num / g, den / g);
+            return Value::rat_raw(num / g, den / g);
         }
     }
-    Value::Num(f)
+    Value::num(f)
 }
 
 pub(crate) fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
@@ -42,17 +42,19 @@ pub fn date_method_0arg(
     let days = civil_to_epoch_days(year, month, day);
 
     match method {
-        "year" => Some(Ok(Value::Int(year))),
-        "month" => Some(Ok(Value::Int(month))),
-        "day" | "day-of-month" => Some(Ok(Value::Int(day))),
-        "day-of-week" | "weekday" => Some(Ok(Value::Int(day_of_week(days)))),
-        "day-of-year" => Some(Ok(Value::Int(day_of_year(year, month, day)))),
-        "is-leap-year" => Some(Ok(Value::Bool(is_leap_year(year)))),
-        "days-in-month" => Some(Ok(Value::Int(days_in_month(year, month)))),
-        "daycount" => Some(Ok(Value::Int(daycount(year, month, day)))),
+        "year" => Some(Ok(Value::int(year))),
+        "month" => Some(Ok(Value::int(month))),
+        "day" | "day-of-month" => Some(Ok(Value::int(day))),
+        "day-of-week" | "weekday" => Some(Ok(Value::int(day_of_week(days)))),
+        "day-of-year" => Some(Ok(Value::int(day_of_year(year, month, day)))),
+        "is-leap-year" => Some(Ok(Value::truth(is_leap_year(year)))),
+        "days-in-month" => Some(Ok(Value::int(days_in_month(year, month)))),
+        "daycount" => Some(Ok(Value::int(daycount(year, month, day)))),
         "Str" | "gist" => {
             // If a formatter was applied and rendered, use that
-            if let Some(Value::Str(rendered)) = attributes.get("__formatter_rendered") {
+            if let Some(ValueView::Str(rendered)) =
+                attributes.get("__formatter_rendered").map(Value::view)
+            {
                 return Some(Ok(Value::str(rendered.to_string())));
             }
             // If there's a formatter but no rendered output, fall through to runtime
@@ -80,26 +82,26 @@ pub fn date_method_0arg(
         }
         "week-year" => {
             let (wy, _) = iso_week(year, month, day);
-            Some(Ok(Value::Int(wy)))
+            Some(Ok(Value::int(wy)))
         }
         "week-number" => {
             let (_, wn) = iso_week(year, month, day);
-            Some(Ok(Value::Int(wn)))
+            Some(Ok(Value::int(wn)))
         }
         "week" => {
             let (wy, wn) = iso_week(year, month, day);
-            Some(Ok(Value::array(vec![Value::Int(wy), Value::Int(wn)])))
+            Some(Ok(Value::array(vec![Value::int(wy), Value::int(wn)])))
         }
-        "weekday-of-month" => Some(Ok(Value::Int((day - 1) / 7 + 1))),
+        "weekday-of-month" => Some(Ok(Value::int((day - 1) / 7 + 1))),
         "posix" | "Numeric" | "Int" => {
             let epoch = civil_to_epoch_days(year, month, day) as f64 * 86400.0;
-            Some(Ok(Value::Int(epoch as i64)))
+            Some(Ok(Value::int(epoch as i64)))
         }
         "DateTime" => Some(Ok(make_datetime(year, month, day, 0, 0, 0.0, 0))),
         "Instant" => {
             let (int_part, _) = datetime_to_instant_parts(year, month, day, 0, 0, 0.0, 0);
             let mut attrs = HashMap::new();
-            attrs.insert("value".to_string(), Value::Int(int_part));
+            attrs.insert("value".to_string(), Value::int(int_part));
             Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)))
         }
         "raku" | "perl" => Some(Ok(Value::str(format!(
@@ -128,22 +130,22 @@ pub fn datetime_method_0arg(
     let days = civil_to_epoch_days(year, month, day);
 
     match method {
-        "year" => Some(Ok(Value::Int(year))),
-        "month" => Some(Ok(Value::Int(month))),
-        "day" | "day-of-month" => Some(Ok(Value::Int(day))),
-        "hour" => Some(Ok(Value::Int(hour))),
-        "minute" => Some(Ok(Value::Int(minute))),
+        "year" => Some(Ok(Value::int(year))),
+        "month" => Some(Ok(Value::int(month))),
+        "day" | "day-of-month" => Some(Ok(Value::int(day))),
+        "hour" => Some(Ok(Value::int(hour))),
+        "minute" => Some(Ok(Value::int(minute))),
         "second" => {
             if second == second.floor() {
-                Some(Ok(Value::Int(second as i64)))
+                Some(Ok(Value::int(second as i64)))
             } else {
                 // Raku's .second returns a Rat for fractional seconds.
                 // Convert f64 via its decimal representation to preserve precision.
                 Some(Ok(f64_to_decimal_rat(second)))
             }
         }
-        "timezone" => Some(Ok(Value::Int(timezone))),
-        "offset" => Some(Ok(Value::Int(timezone))),
+        "timezone" => Some(Ok(Value::int(timezone))),
+        "offset" => Some(Ok(Value::int(timezone))),
         "offset-in-hours" => {
             let mut num = timezone;
             let mut den = 3600i64;
@@ -157,14 +159,14 @@ pub fn datetime_method_0arg(
             let gcd = a.max(1);
             num /= gcd;
             den /= gcd;
-            Some(Ok(Value::Rat(num, den)))
+            Some(Ok(Value::rat_raw(num, den)))
         }
-        "day-of-week" | "weekday" => Some(Ok(Value::Int(day_of_week(days)))),
-        "day-of-year" => Some(Ok(Value::Int(day_of_year(year, month, day)))),
-        "is-leap-year" => Some(Ok(Value::Bool(is_leap_year(year)))),
-        "days-in-month" => Some(Ok(Value::Int(days_in_month(year, month)))),
-        "daycount" => Some(Ok(Value::Int(daycount(year, month, day)))),
-        "whole-second" => Some(Ok(Value::Int(second.floor() as i64))),
+        "day-of-week" | "weekday" => Some(Ok(Value::int(day_of_week(days)))),
+        "day-of-year" => Some(Ok(Value::int(day_of_year(year, month, day)))),
+        "is-leap-year" => Some(Ok(Value::truth(is_leap_year(year)))),
+        "days-in-month" => Some(Ok(Value::int(days_in_month(year, month)))),
+        "daycount" => Some(Ok(Value::int(daycount(year, month, day)))),
+        "whole-second" => Some(Ok(Value::int(second.floor() as i64))),
         "hh-mm-ss" => Some(Ok(Value::str(format!(
             "{:02}:{:02}:{:02}",
             hour,
@@ -178,15 +180,15 @@ pub fn datetime_method_0arg(
         "posix" => {
             let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
             // Raku's .posix always returns Int (truncating fractional seconds)
-            Some(Ok(Value::Int(posix.floor() as i64)))
+            Some(Ok(Value::int(posix.floor() as i64)))
         }
         "Numeric" => {
             let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
-            Some(Ok(Value::Num(posix)))
+            Some(Ok(Value::num(posix)))
         }
         "Int" => {
             let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
-            Some(Ok(Value::Int(posix as i64)))
+            Some(Ok(Value::int(posix as i64)))
         }
         "utc" => {
             // Keep the same instant, convert representation to UTC timezone.
@@ -200,21 +202,21 @@ pub fn datetime_method_0arg(
         }
         "week-year" => {
             let (wy, _) = iso_week(year, month, day);
-            Some(Ok(Value::Int(wy)))
+            Some(Ok(Value::int(wy)))
         }
         "week-number" => {
             let (_, wn) = iso_week(year, month, day);
-            Some(Ok(Value::Int(wn)))
+            Some(Ok(Value::int(wn)))
         }
         "week" => {
             let (wy, wn) = iso_week(year, month, day);
-            Some(Ok(Value::array(vec![Value::Int(wy), Value::Int(wn)])))
+            Some(Ok(Value::array(vec![Value::int(wy), Value::int(wn)])))
         }
-        "weekday-of-month" => Some(Ok(Value::Int((day - 1) / 7 + 1))),
-        "julian-date" => Some(Ok(Value::Num(julian_date(
+        "weekday-of-month" => Some(Ok(Value::int((day - 1) / 7 + 1))),
+        "julian-date" => Some(Ok(Value::num(julian_date(
             year, month, day, hour, minute, second,
         )))),
-        "modified-julian-date" => Some(Ok(Value::Num(modified_julian_date(
+        "modified-julian-date" => Some(Ok(Value::num(modified_julian_date(
             year, month, day, hour, minute, second,
         )))),
         "day-fraction" => {
@@ -226,13 +228,13 @@ pub fn datetime_method_0arg(
                 datetime_to_instant_parts(year, month, day, hour, minute, second, timezone);
             let mut attrs = HashMap::new();
             if frac == 0.0 {
-                attrs.insert("value".to_string(), Value::Int(int_part));
+                attrs.insert("value".to_string(), Value::int(int_part));
             } else {
                 let scale = 1_000_000_000i64;
                 let frac_num = (frac * scale as f64).round() as i64;
                 let num = int_part * scale + frac_num;
                 let g = gcd_i64(num.abs(), scale);
-                attrs.insert("value".to_string(), Value::Rat(num / g, scale / g));
+                attrs.insert("value".to_string(), Value::rat_raw(num / g, scale / g));
             }
             Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)))
         }

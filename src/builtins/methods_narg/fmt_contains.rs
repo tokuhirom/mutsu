@@ -1,26 +1,26 @@
 use super::str_match::is_str_or_match_receiver;
 use crate::runtime;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 pub(crate) fn fmt_joinable_target(target: &Value) -> bool {
     matches!(
-        target,
-        Value::Array(..)
-            | Value::Seq(..)
-            | Value::Slip(..)
-            | Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. }
+        target.view(),
+        ValueView::Array(..)
+            | ValueView::Seq(..)
+            | ValueView::Slip(..)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. }
     )
 }
 
 /// Extract key and value from a Pair or ValuePair.
 pub(crate) fn pair_key_value(val: &Value) -> Option<(Value, Value)> {
-    match val {
-        Value::Pair(k, v) => Some((Value::str(k.to_string()), *v.clone())),
-        Value::ValuePair(k, v) => Some((*k.clone(), *v.clone())),
+    match val.view() {
+        ValueView::Pair(k, v) => Some((Value::str(k.to_string()), v.clone())),
+        ValueView::ValuePair(k, v) => Some((k.clone(), v.clone())),
         _ => None,
     }
 }
@@ -37,28 +37,28 @@ pub(crate) fn fmt_single_or_pair(fmt: &str, item: &Value) -> String {
 }
 
 pub(crate) fn contains_value_recursive(hay: &str, needle: &Value) -> Value {
-    match needle {
-        Value::Junction { kind, values } => {
+    match needle.view() {
+        ValueView::Junction { kind, values } => {
             let mapped = values
                 .iter()
                 .map(|v| contains_value_recursive(hay, v))
                 .collect::<Vec<_>>();
             Value::junction(kind.clone(), mapped)
         }
-        _ => Value::Bool(hay.contains(&needle.to_string_value())),
+        _ => Value::truth(hay.contains(&needle.to_string_value())),
     }
 }
 
 fn contains_value_recursive_ci(hay_lc: &str, needle: &Value) -> Value {
-    match needle {
-        Value::Junction { kind, values } => {
+    match needle.view() {
+        ValueView::Junction { kind, values } => {
             let mapped = values
                 .iter()
                 .map(|v| contains_value_recursive_ci(hay_lc, v))
                 .collect::<Vec<_>>();
             Value::junction(kind.clone(), mapped)
         }
-        _ => Value::Bool(hay_lc.contains(&needle.to_string_value().to_lowercase())),
+        _ => Value::truth(hay_lc.contains(&needle.to_string_value().to_lowercase())),
     }
 }
 
@@ -84,7 +84,7 @@ pub(crate) fn native_contains_with_options(
     let mut positional: Vec<&Value> = Vec::new();
     let mut ignore_case = false;
     for arg in args {
-        if let Value::Pair(key, value) = arg {
+        if let ValueView::Pair(key, value) = arg.view() {
             if matches!(key.as_str(), "i" | "ignorecase" | "m" | "ignoremark") {
                 ignore_case = value.truthy();
             } else {
@@ -101,13 +101,13 @@ pub(crate) fn native_contains_with_options(
     if positional.len() == 1 && args.len() == 1 {
         return None;
     }
-    if let Value::Package(_) = needle {
+    if let ValueView::Package(_) = needle.view() {
         return None;
     }
-    let start = match positional.get(1).copied() {
-        Some(Value::Int(i)) => *i,
-        Some(Value::Num(f)) => *f as i64,
-        Some(Value::Str(s)) => s.parse::<i64>().ok()?,
+    let start = match positional.get(1).copied().map(Value::view) {
+        Some(ValueView::Int(i)) => i,
+        Some(ValueView::Num(f)) => f as i64,
+        Some(ValueView::Str(s)) => s.parse::<i64>().ok()?,
         Some(_) => return None,
         None => 0,
     };

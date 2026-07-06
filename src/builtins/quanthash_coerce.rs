@@ -17,7 +17,7 @@
 
 use crate::runtime::Interpreter;
 use crate::runtime::utils::value_to_list;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::Signed;
 use std::collections::{HashMap, HashSet};
@@ -44,42 +44,42 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
         item: &Value,
         flatten: bool,
     ) {
-        match item {
-            Value::Pair(k, v) => {
+        match item.view() {
+            ValueView::Pair(k, v) => {
                 if v.truthy() {
                     elems.insert(k.clone());
                 }
             }
-            Value::ValuePair(k, v) => {
+            ValueView::ValuePair(k, v) => {
                 if v.truthy() {
                     let str_key = k.to_string_value();
-                    if !matches!(k.as_ref(), Value::Str(_)) {
+                    if k.as_str().is_none() {
                         *has_non_str = true;
                         original_keys
                             .entry(str_key.clone())
-                            .or_insert_with(|| k.as_ref().clone());
+                            .or_insert_with(|| k.clone());
                     }
                     elems.insert(str_key);
                 }
             }
-            Value::Hash(h) if flatten => {
+            ValueView::Hash(h) if flatten => {
                 for (k, v) in h.iter() {
                     if v.truthy() {
                         elems.insert(k.clone());
                     }
                 }
             }
-            Value::Array(inner, kind) if flatten && !kind.is_itemized() => {
+            ValueView::Array(inner, kind) if flatten && !kind.is_itemized() => {
                 for inner_item in inner.iter() {
                     add_item(elems, original_keys, has_non_str, inner_item, true);
                 }
             }
-            Value::Seq(inner) | Value::Slip(inner) if flatten => {
+            ValueView::Seq(inner) | ValueView::Slip(inner) if flatten => {
                 for inner_item in inner.iter() {
                     add_item(elems, original_keys, has_non_str, inner_item, true);
                 }
             }
-            Value::Str(_) => {
+            ValueView::Str(_) => {
                 elems.insert(item.to_string_value());
             }
             _ => {
@@ -92,17 +92,17 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
             }
         }
     }
-    match target {
+    match target.view() {
         // Always return the immutable variant; the caller flips it for `.SetHash`.
-        Value::Set(s, _) => return Ok(Value::Set(s, false)),
+        ValueView::Set(s, _) => return Ok(Value::set_parts(s.clone(), false)),
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
-        Value::Array(items, crate::value::ArrayKind::List) => {
+        ValueView::Array(items, crate::value::ArrayKind::List) => {
             for item in items.iter() {
                 add_item(&mut elems, &mut original_keys, &mut has_non_str, item, true);
             }
         }
-        Value::Array(items, ..) => {
+        ValueView::Array(items, ..) => {
             for item in items.iter() {
                 add_item(
                     &mut elems,
@@ -113,52 +113,52 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 );
             }
         }
-        Value::Seq(items) | Value::Slip(items) => {
+        ValueView::Seq(items) | ValueView::Slip(items) => {
             for item in items.iter() {
                 add_item(&mut elems, &mut original_keys, &mut has_non_str, item, true);
             }
         }
-        Value::Hash(items) => {
+        ValueView::Hash(items) => {
             for (k, v) in items.iter() {
                 if v.truthy() {
                     elems.insert(k.clone());
                 }
             }
         }
-        Value::Bag(b, _) => {
+        ValueView::Bag(b, _) => {
             for k in b.keys() {
                 elems.insert(k.clone());
             }
         }
-        Value::Mix(m, _) => {
+        ValueView::Mix(m, _) => {
             for k in m.keys() {
                 elems.insert(k.clone());
             }
         }
-        Value::Pair(k, v) => {
+        ValueView::Pair(k, v) => {
             if v.truthy() {
-                elems.insert(k);
+                elems.insert(k.clone());
             }
         }
-        Value::ValuePair(k, v) => {
+        ValueView::ValuePair(k, v) => {
             if v.truthy() {
                 let str_key = k.to_string_value();
-                if !matches!(k.as_ref(), Value::Str(_)) {
+                if k.as_str().is_none() {
                     has_non_str = true;
                     original_keys
                         .entry(str_key.clone())
-                        .or_insert_with(|| k.as_ref().clone());
+                        .or_insert_with(|| k.clone());
                 }
                 elems.insert(str_key);
             }
         }
         // Instance types composing Baggy: delegate to internal bag data
-        Value::Instance { ref attributes, .. } if attributes.contains_key("__baggy_data__") => {
+        ValueView::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
             let bag_data = attributes.as_map().get("__baggy_data__").unwrap().clone();
             return to_set(bag_data, what);
         }
-        other if other.is_range() => {
-            for item in value_to_list(&other) {
+        _ if target.is_range() => {
+            for item in value_to_list(&target) {
                 add_item(
                     &mut elems,
                     &mut original_keys,
@@ -168,13 +168,13 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 );
             }
         }
-        other => {
-            let str_key = other.to_string_value();
-            if !matches!(&other, Value::Str(_)) {
+        _ => {
+            let str_key = target.to_string_value();
+            if target.as_str().is_none() {
                 has_non_str = true;
                 original_keys
                     .entry(str_key.clone())
-                    .or_insert_with(|| other.clone());
+                    .or_insert_with(|| target.clone());
             }
             elems.insert(str_key);
         }
@@ -190,27 +190,27 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
 /// or string weight is coerced to an `Int`. `what` only affects which lazy error
 /// is raised by the caller.
 fn pair_weight(v: &Value) -> Result<BigInt, RuntimeError> {
-    match v {
-        Value::Int(i) => Ok(BigInt::from(*i)),
+    match v.view() {
+        ValueView::Int(i) => Ok(BigInt::from(i)),
         // Weights can exceed i64::MAX (e.g. `{a => 10**20}.Bag`); a BigInt weight
         // is preserved verbatim rather than truncated.
-        Value::BigInt(n) => Ok((**n).clone()),
-        Value::Num(n) => {
+        ValueView::BigInt(n) => Ok((**n).clone()),
+        ValueView::Num(n) => {
             if n.is_nan() || n.is_infinite() {
                 return Err(RuntimeError::new(format!(
                     "X::Numeric::CannotConvert: Cannot convert {} to Int",
                     v.to_string_value()
                 )));
             }
-            Ok(BigInt::from(*n as i64))
+            Ok(BigInt::from(n as i64))
         }
-        Value::Rat(n, d) if *d != 0 => Ok(BigInt::from(n / d)),
-        Value::FatRat(n, d) if *d != 0 => Ok(BigInt::from(n / d)),
-        Value::Bool(b) => Ok(BigInt::from(i64::from(*b))),
-        Value::Complex(_, _) => Err(RuntimeError::new(
+        ValueView::Rat(n, d) if d != 0 => Ok(BigInt::from(n / d)),
+        ValueView::FatRat(n, d) if d != 0 => Ok(BigInt::from(n / d)),
+        ValueView::Bool(b) => Ok(BigInt::from(i64::from(b))),
+        ValueView::Complex(_, _) => Err(RuntimeError::new(
             "X::Numeric::CannotConvert: Cannot convert Complex to Int".to_string(),
         )),
-        Value::Str(s) => {
+        ValueView::Str(s) => {
             // Strings must be numeric to be valid bag weights
             match s.parse::<BigInt>() {
                 Ok(i) => Ok(i),
@@ -242,20 +242,20 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
         has_non_str_keys: &mut bool,
         item: &Value,
     ) -> Result<(), RuntimeError> {
-        match item {
-            Value::Pair(k, v) => {
+        match item.view() {
+            ValueView::Pair(k, v) => {
                 let weight = pair_weight(v)?;
                 if weight.is_positive() {
                     *counts.entry(k.clone()).or_default() += weight;
                 }
             }
-            Value::ValuePair(k, v) => {
+            ValueView::ValuePair(k, v) => {
                 let str_key = k.to_string_value();
-                if !matches!(k.as_ref(), Value::Str(_)) {
+                if k.as_str().is_none() {
                     *has_non_str_keys = true;
                     original_keys
                         .entry(str_key.clone())
-                        .or_insert_with(|| k.as_ref().clone());
+                        .or_insert_with(|| k.clone());
                 }
                 let weight = pair_weight(v)?;
                 if weight.is_positive() {
@@ -264,7 +264,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
             }
             _ => {
                 let str_key = item.to_string_value();
-                if !matches!(item, Value::Str(_)) {
+                if item.as_str().is_none() {
                     *has_non_str_keys = true;
                     original_keys
                         .entry(str_key.clone())
@@ -289,18 +289,18 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
         value: &Value,
         flatten: bool,
     ) -> Result<(), RuntimeError> {
-        match value {
-            Value::Array(items, kind) if flatten && !kind.is_itemized() => {
+        match value.view() {
+            ValueView::Array(items, kind) if flatten && !kind.is_itemized() => {
                 for item in items.iter() {
                     flatten_into(counts, original_keys, has_non_str_keys, item, true)?;
                 }
             }
-            Value::Seq(items) | Value::Slip(items) if flatten => {
+            ValueView::Seq(items) | ValueView::Slip(items) if flatten => {
                 for item in items.iter() {
                     flatten_into(counts, original_keys, has_non_str_keys, item, true)?;
                 }
             }
-            Value::Hash(h) if flatten => {
+            ValueView::Hash(h) if flatten => {
                 for (k, v) in h.iter() {
                     let weight = pair_weight(v)?;
                     if weight.is_positive() {
@@ -308,32 +308,32 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                     }
                 }
             }
-            Value::Set(s, _) if flatten => {
+            ValueView::Set(s, _) if flatten => {
                 for k in s.iter() {
                     counts.insert(k.clone(), BigInt::from(1));
                 }
             }
-            Value::Mix(m, _) if flatten => {
+            ValueView::Mix(m, _) if flatten => {
                 for (k, v) in m.iter() {
                     counts.insert(k.clone(), BigInt::from(*v as i64));
                 }
             }
-            Value::Bag(b, _) if flatten => {
+            ValueView::Bag(b, _) if flatten => {
                 for (k, v) in b.iter() {
                     *counts.entry(k.clone()).or_default() += v.clone();
                 }
             }
-            other => {
-                add_item(counts, original_keys, has_non_str_keys, other)?;
+            _ => {
+                add_item(counts, original_keys, has_non_str_keys, value)?;
             }
         }
         Ok(())
     }
 
-    match target {
+    match target.view() {
         // Always return the immutable variant; the caller flips it for `.BagHash`.
-        Value::Bag(b, _) => return Ok(Value::Bag(b, false)),
-        Value::Pair(_, _) | Value::ValuePair(_, _) => {
+        ValueView::Bag(b, _) => return Ok(Value::bag_parts(b.clone(), false)),
+        ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
             add_item(
                 &mut counts,
                 &mut original_keys,
@@ -341,10 +341,10 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 &target,
             )?;
         }
-        ref other if other.is_range() => {
-            for item in value_to_list(other) {
+        _ if target.is_range() => {
+            for item in value_to_list(&target) {
                 let str_key = item.to_string_value();
-                if !matches!(item, Value::Str(_)) {
+                if item.as_str().is_none() {
                     has_non_str_keys = true;
                     original_keys
                         .entry(str_key.clone())
@@ -355,7 +355,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
         }
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
-        Value::Array(ref items, crate::value::ArrayKind::List) => {
+        ValueView::Array(items, crate::value::ArrayKind::List) => {
             for item in items.iter() {
                 flatten_into(
                     &mut counts,
@@ -366,7 +366,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 )?;
             }
         }
-        Value::Seq(ref items) => {
+        ValueView::Seq(items) => {
             for item in items.iter() {
                 flatten_into(
                     &mut counts,
@@ -377,7 +377,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 )?;
             }
         }
-        Value::Array(ref items, _) => {
+        ValueView::Array(items, _) => {
             for item in items.iter() {
                 flatten_into(
                     &mut counts,
@@ -393,7 +393,9 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
             // This handles tuples/lists like (@a, %x).Bag where arrays
             // and hashes need to be expanded.
             let items = value_to_list(&target);
-            if items.is_empty() && !matches!(target, Value::Array(_, _) | Value::Hash(_)) {
+            if items.is_empty()
+                && !matches!(target.view(), ValueView::Array(_, _) | ValueView::Hash(_))
+            {
                 // Single non-collection value
                 add_item(
                     &mut counts,
@@ -425,19 +427,19 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
 /// `Real` weight (and raises `X::OutOfRange`/`X::Numeric::Real`/`X::Str::Numeric`
 /// for Inf/NaN/Complex/non-numeric strings, matching Raku).
 pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
-    match v {
-        Value::Int(i) => Ok(*i as f64),
-        Value::Num(n) => {
+    match v.view() {
+        ValueView::Int(i) => Ok(i as f64),
+        ValueView::Num(n) => {
             if n.is_infinite() {
                 let mut err = RuntimeError::new(format!(
                     "Value out of range. Is: {}, should be in -Inf^..^Inf",
-                    if *n > 0.0 { "Inf" } else { "-Inf" }
+                    if n > 0.0 { "Inf" } else { "-Inf" }
                 ));
                 err.exception = Some(Box::new(Value::make_instance(
                     crate::symbol::Symbol::intern("X::OutOfRange"),
                     [
                         ("what".to_string(), Value::str_from("Value")),
-                        ("got".to_string(), Value::Num(*n)),
+                        ("got".to_string(), Value::num(n)),
                         ("range".to_string(), Value::str_from("-Inf^..^Inf")),
                     ]
                     .into_iter()
@@ -451,7 +453,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
                     crate::symbol::Symbol::intern("X::OutOfRange"),
                     [
                         ("what".to_string(), Value::str_from("Value")),
-                        ("got".to_string(), Value::Num(*n)),
+                        ("got".to_string(), Value::num(n)),
                         ("range".to_string(), Value::str_from("-Inf^..^Inf")),
                     ]
                     .into_iter()
@@ -459,12 +461,12 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
                 )));
                 Err(err)
             } else {
-                Ok(*n)
+                Ok(n)
             }
         }
-        Value::Rat(n, d) if *d != 0 => Ok(*n as f64 / *d as f64),
-        Value::Bool(b) => Ok(if *b { 1.0 } else { 0.0 }),
-        Value::Complex(_, _) => {
+        ValueView::Rat(n, d) if d != 0 => Ok(n as f64 / d as f64),
+        ValueView::Bool(b) => Ok(if b { 1.0 } else { 0.0 }),
+        ValueView::Complex(_, _) => {
             let mut err = RuntimeError::new(
                 "Cannot convert Complex to Real; use .re or .im to extract components",
             );
@@ -483,7 +485,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
             )));
             Err(err)
         }
-        Value::Str(s) => {
+        ValueView::Str(s) => {
             // Try to parse the string as a number
             if let Ok(n) = s.parse::<f64>() {
                 if n.is_infinite() || n.is_nan() {
@@ -544,22 +546,22 @@ fn mix_add_item_with_keys(
     item: &Value,
     flatten: bool,
 ) -> Result<(), RuntimeError> {
-    match item {
-        Value::Pair(k, v) => {
+    match item.view() {
+        ValueView::Pair(k, v) => {
             let w = mix_pair_weight(v)?;
             *weights.entry(k.clone()).or_insert(0.0) += w;
         }
-        Value::ValuePair(k, v) => {
+        ValueView::ValuePair(k, v) => {
             let w = mix_pair_weight(v)?;
             let str_key = k.to_string_value();
             if let Some(ref mut orig) = original_keys
-                && !matches!(&**k, Value::Str(_))
+                && k.as_str().is_none()
             {
-                orig.entry(str_key.clone()).or_insert_with(|| (**k).clone());
+                orig.entry(str_key.clone()).or_insert_with(|| k.clone());
             }
             *weights.entry(str_key).or_insert(0.0) += w;
         }
-        Value::Hash(h) if flatten => {
+        ValueView::Hash(h) if flatten => {
             for (k, v) in h.iter() {
                 let w = mix_pair_weight(v)?;
                 if w != 0.0 {
@@ -570,32 +572,32 @@ fn mix_add_item_with_keys(
         // A nested non-itemized array / seq flattens one level in
         // list-context (List `(...)` invocant); an Array `[...]` invocant
         // element (flatten == false) is kept whole.
-        Value::Array(items, kind) if flatten && !kind.is_itemized() => {
+        ValueView::Array(items, kind) if flatten && !kind.is_itemized() => {
             for sub_item in items.iter() {
                 mix_add_item_with_keys(weights, original_keys.as_deref_mut(), sub_item, true)?;
             }
         }
-        Value::Seq(items) | Value::Slip(items) if flatten => {
+        ValueView::Seq(items) | ValueView::Slip(items) if flatten => {
             for sub_item in items.iter() {
                 mix_add_item_with_keys(weights, original_keys.as_deref_mut(), sub_item, true)?;
             }
         }
-        Value::Set(s, _) if flatten => {
+        ValueView::Set(s, _) if flatten => {
             for k in s.iter() {
                 let typed = s.typed_key(k);
                 if let Some(ref mut orig) = original_keys
-                    && !matches!(&typed, Value::Str(sv) if sv.as_ref() == k)
+                    && !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k)
                 {
                     orig.entry(k.clone()).or_insert(typed);
                 }
                 *weights.entry(k.clone()).or_insert(0.0) += 1.0;
             }
         }
-        Value::Bag(b, _) if flatten => {
+        ValueView::Bag(b, _) if flatten => {
             for (k, v) in b.iter() {
                 let typed = b.typed_key(k);
                 if let Some(ref mut orig) = original_keys
-                    && !matches!(&typed, Value::Str(sv) if sv.as_ref() == k)
+                    && !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k)
                 {
                     orig.entry(k.clone()).or_insert(typed);
                 }
@@ -603,11 +605,11 @@ fn mix_add_item_with_keys(
                     crate::runtime::utils::bigint_to_f64_sat(v);
             }
         }
-        Value::Mix(m, _) if flatten => {
+        ValueView::Mix(m, _) if flatten => {
             for (k, v) in m.iter() {
                 let typed = m.typed_key(k);
                 if let Some(ref mut orig) = original_keys
-                    && !matches!(&typed, Value::Str(sv) if sv.as_ref() == k)
+                    && !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k)
                 {
                     orig.entry(k.clone()).or_insert(typed);
                 }
@@ -617,7 +619,7 @@ fn mix_add_item_with_keys(
         _ => {
             let str_key = item.to_string_value();
             if let Some(ref mut orig) = original_keys
-                && !matches!(item, Value::Str(_))
+                && item.as_str().is_none()
             {
                 orig.entry(str_key.clone()).or_insert_with(|| item.clone());
             }
@@ -643,44 +645,48 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
     }
     let mut weights: HashMap<String, f64> = HashMap::new();
     let mut original_keys: HashMap<String, Value> = HashMap::new();
-    match target {
+    match target.view() {
         // Always return the immutable variant; the caller flips it for `.MixHash`.
-        Value::Mix(m, _) => return Ok(Value::Mix(m, false)),
+        ValueView::Mix(m, _) => return Ok(Value::mix_parts(m.clone(), false)),
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
-        Value::Array(items, crate::value::ArrayKind::List) => {
+        ValueView::Array(items, crate::value::ArrayKind::List) => {
             for item in items.iter() {
                 mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item, true)?;
             }
         }
-        Value::Seq(items) | Value::Slip(items) => {
+        ValueView::Seq(items) | ValueView::Slip(items) => {
             for item in items.iter() {
                 mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item, true)?;
             }
         }
-        Value::Array(items, ..) => {
+        ValueView::Array(items, ..) => {
             for item in items.iter() {
                 mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item, false)?;
             }
         }
-        ref other @ (Value::Set(_, _)
-        | Value::Bag(_, _)
-        | Value::Pair(..)
-        | Value::ValuePair(..)
-        | Value::Hash(_)) => {
-            mix_add_item_with_keys(&mut weights, Some(&mut original_keys), other, true)?;
+        _ if matches!(
+            target.view(),
+            ValueView::Set(_, _)
+                | ValueView::Bag(_, _)
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
+                | ValueView::Hash(_)
+        ) =>
+        {
+            mix_add_item_with_keys(&mut weights, Some(&mut original_keys), &target, true)?;
         }
-        other if other.is_range() => {
-            for item in value_to_list(&other) {
+        _ if target.is_range() => {
+            for item in value_to_list(&target) {
                 *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
             }
         }
-        other => {
-            let str_key = other.to_string_value();
-            if !matches!(&other, Value::Str(_)) {
+        _ => {
+            let str_key = target.to_string_value();
+            if target.as_str().is_none() {
                 original_keys
                     .entry(str_key.clone())
-                    .or_insert_with(|| other.clone());
+                    .or_insert_with(|| target.clone());
             }
             weights.insert(str_key, 1.0);
         }
@@ -694,22 +700,23 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
 
 /// Coerce `target` to a mutable `MixHash`. This is `.Mix` plus the mutable flag
 /// and the embedded `MixHash` type metadata (`value_type = Real`,
-/// `declared_type = MixHash`). The metadata lives *in* the `Value::Mix` Arc (not
+/// `declared_type = MixHash`). The metadata lives *in* the Mix backing store (not
 /// in any interpreter-owned side table — container type metadata has been
 /// embedded in the value since #2952), so this is a pure value operation with no
 /// interpreter state, mirroring the interpreter's `dispatch_to_mix_with_what` +
 /// `tag_container_metadata` path exactly. Single authoritative impl shared by the
 /// VM native dispatch and the interpreter fallback.
 pub(crate) fn to_mixhash(target: Value) -> Result<Value, RuntimeError> {
-    let coerced = to_mix(target, "MixHash")?;
-    let Value::Mix(mut arc, _) = coerced else {
-        // `to_mix` always returns a `Value::Mix` for the receivers we coerce; if
-        // that ever changes, hand the value back unmodified rather than panic.
-        return Ok(coerced);
-    };
-    let data = crate::gc::Gc::make_mut(&mut arc);
-    data.value_type = Some("Real".to_string());
-    data.key_type = None;
-    data.declared_type = Some("MixHash".to_string());
-    Ok(Value::Mix(arc, true))
+    let mut coerced = to_mix(target, "MixHash")?;
+    // `to_mix` always returns a Mix for the receivers we coerce; if that
+    // ever changes, `with_mix_mut` runs no closure and hands the value back
+    // unmodified rather than panic.
+    coerced.with_mix_mut(|arc, is_mut| {
+        let data = crate::gc::Gc::make_mut(arc);
+        data.value_type = Some("Real".to_string());
+        data.key_type = None;
+        data.declared_type = Some("MixHash".to_string());
+        *is_mut = true;
+    });
+    Ok(coerced)
 }

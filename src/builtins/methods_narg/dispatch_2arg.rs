@@ -10,7 +10,7 @@ use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::{fmt_joinable_target, fmt_single_or_pair};
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::Zero;
 
@@ -48,36 +48,36 @@ pub(crate) fn native_method_2arg(
     // (`:i`/`:m`, which arrive as an extra Pair argument) keep the interpreter's
     // position resolution + Failure semantics (runtime/methods_string.rs).
     if method == "substr-eq"
-        && let Value::Str(_) = &target
+        && let ValueView::Str(_) = target.view()
     {
-        if let Value::Package(type_name) = arg1 {
+        if let ValueView::Package(type_name) = arg1.view() {
             return Some(Err(RuntimeError::new(format!(
                 "Cannot resolve caller substr-eq({}:U)",
                 type_name
             ))));
         }
-        let Value::Int(pos) = arg2.descalarize() else {
+        let ValueView::Int(pos) = arg2.descalarize().view() else {
             return None;
         };
-        if *pos < 0 {
+        if pos < 0 {
             return None;
         }
         let text = target.to_string_value();
         let len = text.chars().count() as i64;
-        if *pos > len {
+        if pos > len {
             return None;
         }
         let needle = arg1.to_string_value();
         let substr: String = text
             .chars()
-            .skip(*pos as usize)
+            .skip(pos as usize)
             .take(needle.chars().count())
             .collect();
-        return Some(Ok(Value::Bool(substr == needle)));
+        return Some(Ok(Value::truth(substr == needle)));
     }
 
     if method == "split" {
-        if let Value::Instance { class_name, .. } = target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && (class_name == "Supply"
                 || class_name == "IO::Handle"
                 || class_name == "IO::Pipe"
@@ -85,7 +85,7 @@ pub(crate) fn native_method_2arg(
         {
             return None;
         }
-        if let Value::Package(name) = target
+        if let ValueView::Package(name) = target.view()
             && name.resolve().starts_with("IO::Spec")
         {
             return None;
@@ -95,7 +95,7 @@ pub(crate) fn native_method_2arg(
 
     if method == "comb" {
         // Supply/IO targets keep their interpreter comb semantics.
-        if let Value::Instance { class_name, .. } = target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && (class_name == "Supply"
                 || class_name == "IO::Handle"
                 || class_name == "IO::Path"
@@ -115,9 +115,9 @@ pub(crate) fn native_method_2arg(
             // target.unimatch(prop_value, prop_name)
             let prop_value = arg1.to_string_value();
             let prop_name = arg2.to_string_value();
-            match target {
-                Value::Int(i) => {
-                    let cp = *i as u32;
+            match target.view() {
+                ValueView::Int(i) => {
+                    let cp = i as u32;
                     Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
                         cp,
                         &prop_value,
@@ -127,10 +127,10 @@ pub(crate) fn native_method_2arg(
                 _ => {
                     let s = target.to_string_value();
                     if s.is_empty() {
-                        return Some(Ok(Value::Nil));
+                        return Some(Ok(Value::NIL));
                     }
                     let ch = s.chars().next().unwrap();
-                    Some(Ok(Value::Bool(crate::builtins::uniprop::unimatch(
+                    Some(Ok(Value::truth(crate::builtins::uniprop::unimatch(
                         ch,
                         &prop_value,
                         Some(&prop_name),
@@ -140,13 +140,13 @@ pub(crate) fn native_method_2arg(
         }
         "fmt" => {
             // A Format object argument is handled by the slow-path Format dispatch.
-            if matches!(arg1, Value::Instance { class_name, .. } if class_name.resolve() == "Format")
+            if matches!(arg1.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Format")
             {
                 return None;
             }
             let fmt_str = arg1.to_string_value();
             let sep = arg2.to_string_value();
-            if let Value::Hash(items) = target {
+            if let ValueView::Hash(items) = target.view() {
                 // Hash.fmt(format, separator)
                 let rendered = items
                     .iter()
@@ -159,7 +159,7 @@ pub(crate) fn native_method_2arg(
                     .collect::<Vec<_>>()
                     .join(&sep);
                 Some(Ok(Value::str(rendered)))
-            } else if let Value::Bag(items, _) = target {
+            } else if let ValueView::Bag(items, _) = target.view() {
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {
@@ -171,25 +171,25 @@ pub(crate) fn native_method_2arg(
                     .collect::<Vec<_>>()
                     .join(&sep);
                 Some(Ok(Value::str(rendered)))
-            } else if let Value::Set(items, _) = target {
+            } else if let ValueView::Set(items, _) = target.view() {
                 let rendered = items
                     .iter()
                     .map(|k| {
                         runtime::format_sprintf_args(
                             &fmt_str,
-                            &[Value::str(k.clone()), Value::Bool(true)],
+                            &[Value::str(k.clone()), Value::TRUE],
                         )
                     })
                     .collect::<Vec<_>>()
                     .join(&sep);
                 Some(Ok(Value::str(rendered)))
-            } else if let Value::Mix(items, _) = target {
+            } else if let ValueView::Mix(items, _) = target.view() {
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {
                         runtime::format_sprintf_args(
                             &fmt_str,
-                            &[Value::str(k.clone()), Value::Num(*v)],
+                            &[Value::str(k.clone()), Value::num(*v)],
                         )
                     })
                     .collect::<Vec<_>>()
@@ -219,9 +219,9 @@ pub(crate) fn native_method_2arg(
             Some(arg2),
         ),
         "base" => {
-            let radix = match arg1 {
-                Value::Int(r) if (2..=36).contains(r) => *r as u32,
-                Value::Str(s) => match s.parse::<u32>() {
+            let radix = match arg1.view() {
+                ValueView::Int(r) if (2..=36).contains(&r) => r as u32,
+                ValueView::Str(s) => match s.parse::<u32>() {
                     Ok(r) if (2..=36).contains(&r) => r,
                     _ => {
                         return Some(Ok(out_of_range_failure("base requires radix 2..36")));
@@ -231,34 +231,34 @@ pub(crate) fn native_method_2arg(
                     return Some(Ok(out_of_range_failure("base requires radix 2..36")));
                 }
             };
-            let digits_mode = match arg2 {
-                Value::Int(d) if *d < 0 => {
+            let digits_mode = match arg2.view() {
+                ValueView::Int(d) if d < 0 => {
                     return Some(Ok(out_of_range_failure("digits must be non-negative")));
                 }
-                Value::Int(d) => BaseDigits::Fixed(*d as u32),
-                Value::Whatever => BaseDigits::Whatever,
+                ValueView::Int(d) => BaseDigits::Fixed(d as u32),
+                ValueView::Whatever => BaseDigits::Whatever,
                 _ => None?,
             };
-            match target {
-                Value::Int(i) => Some(Ok(Value::str(rat_to_base(*i, 1, radix, digits_mode)))),
-                Value::Num(f) => {
-                    let (n, d) = f64_to_rat(*f);
+            match target.view() {
+                ValueView::Int(i) => Some(Ok(Value::str(rat_to_base(i, 1, radix, digits_mode)))),
+                ValueView::Num(f) => {
+                    let (n, d) = f64_to_rat(f);
                     Some(Ok(Value::str(rat_to_base(n, d, radix, digits_mode))))
                 }
-                Value::Rat(n, d) | Value::FatRat(n, d) => {
-                    Some(Ok(Value::str(rat_to_base(*n, *d, radix, digits_mode))))
+                ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
+                    Some(Ok(Value::str(rat_to_base(n, d, radix, digits_mode))))
                 }
-                Value::Instance { attributes, .. } => {
+                ValueView::Instance { attributes, .. } => {
                     if let Some(val) = attributes.as_map().get("value") {
-                        match val {
-                            Value::Int(i) => {
-                                Some(Ok(Value::str(rat_to_base(*i, 1, radix, digits_mode))))
+                        match val.view() {
+                            ValueView::Int(i) => {
+                                Some(Ok(Value::str(rat_to_base(i, 1, radix, digits_mode))))
                             }
-                            Value::Rat(n, d) | Value::FatRat(n, d) => {
-                                Some(Ok(Value::str(rat_to_base(*n, *d, radix, digits_mode))))
+                            ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
+                                Some(Ok(Value::str(rat_to_base(n, d, radix, digits_mode))))
                             }
-                            Value::Num(f) => {
-                                let (n, d) = f64_to_rat(*f);
+                            ValueView::Num(f) => {
+                                let (n, d) = f64_to_rat(f);
                                 Some(Ok(Value::str(rat_to_base(n, d, radix, digits_mode))))
                             }
                             _ => None,
@@ -302,7 +302,7 @@ pub(crate) fn native_method_2arg(
         }
         // Buf/Blob read-num methods (2 args: offset + endian)
         "read-num32" | "read-num64" => {
-            if let Value::Package(type_name) = target {
+            if let ValueView::Package(type_name) = target.view() {
                 return Some(Err(RuntimeError::new(format!(
                     "Cannot resolve caller {}({}:U)",
                     method, type_name,
@@ -310,9 +310,9 @@ pub(crate) fn native_method_2arg(
             }
             let bytes = buf_get_bytes(target)?;
             let offset_i64 = to_int_val(arg1);
-            let endian_val = match arg2 {
-                Value::Enum { value, .. } => value.as_i64(),
-                Value::Int(i) => *i,
+            let endian_val = match arg2.view() {
+                ValueView::Enum { value, .. } => value.as_i64(),
+                ValueView::Int(i) => i,
                 _ => 0, // NativeEndian
             };
             let size: usize = if method == "read-num32" { 4 } else { 8 };
@@ -333,12 +333,12 @@ pub(crate) fn native_method_2arg(
             } else {
                 read_f64_endian(&bytes[offset..offset + 8], endian_val)
             };
-            Some(Ok(Value::Num(result)))
+            Some(Ok(Value::num(result)))
         }
         // Buf/Blob read-int/uint methods (2 args: offset + endian)
         "read-uint8" | "read-int8" | "read-uint16" | "read-int16" | "read-uint32"
         | "read-int32" | "read-uint64" | "read-int64" | "read-uint128" | "read-int128" => {
-            if let Value::Package(type_name) = target {
+            if let ValueView::Package(type_name) = target.view() {
                 return Some(Err(RuntimeError::new(format!(
                     "Cannot resolve caller {}({}:U)",
                     method, type_name,
@@ -346,9 +346,9 @@ pub(crate) fn native_method_2arg(
             }
             let bytes = buf_get_bytes(target)?;
             let offset_i64 = to_int_val(arg1);
-            let endian_val = match arg2 {
-                Value::Enum { value, .. } => value.as_i64(),
-                Value::Int(i) => *i,
+            let endian_val = match arg2.view() {
+                ValueView::Enum { value, .. } => value.as_i64(),
+                ValueView::Int(i) => i,
                 _ => 0, // NativeEndian
             };
             let (size, signed) = read_int_method_info(method);

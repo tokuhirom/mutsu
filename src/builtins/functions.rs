@@ -11,7 +11,7 @@ mod time;
 mod uniparse;
 
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use dispatch_0arg::native_function_0arg;
 use dispatch_1arg::native_function_1arg;
 use dispatch_2arg::native_function_2arg;
@@ -56,7 +56,7 @@ pub(crate) fn native_function(
     if name == "zip" {
         if args
             .iter()
-            .any(|a| matches!(a, Value::Pair(k, _) if k == "with"))
+            .any(|a| matches!(a.view(), ValueView::Pair(k, _) if k == "with"))
         {
             return None;
         }

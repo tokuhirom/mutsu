@@ -2,22 +2,22 @@
 
 use super::rat::to_big_rat_parts;
 use crate::symbol::Symbol;
-use crate::value::{Value, make_big_rat_arith};
+use crate::value::{Value, ValueView, make_big_rat_arith};
 
 /// Check if a value is a Date, Instant, or Duration instance (temporal operand for arithmetic).
 pub(crate) fn is_temporal_operand(value: &Value) -> bool {
-    matches!(value, Value::Instance { class_name, .. }
+    matches!(value.view(), ValueView::Instance { class_name, .. }
         if class_name == "Date" || class_name == "Instant" || class_name == "Duration")
 }
 
 pub(crate) fn instance_days(value: &Value) -> Option<i64> {
-    match value {
-        Value::Instance {
+    match value.view() {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
-        } if class_name == "Date" => match attributes.as_map().get("days") {
-            Some(Value::Int(days)) => Some(*days),
+        } if class_name == "Date" => match attributes.as_map().get("days").map(Value::view) {
+            Some(ValueView::Int(days)) => Some(days),
             _ => None,
         },
         _ => None,
@@ -25,8 +25,8 @@ pub(crate) fn instance_days(value: &Value) -> Option<i64> {
 }
 
 pub(crate) fn instance_instant_value(value: &Value) -> Option<f64> {
-    match value {
-        Value::Instance {
+    match value.view() {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -39,8 +39,8 @@ pub(crate) fn instance_instant_value(value: &Value) -> Option<f64> {
 }
 
 pub(crate) fn instance_instant_raw(value: &Value) -> Option<Value> {
-    match value {
-        Value::Instance {
+    match value.view() {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -54,15 +54,15 @@ pub(crate) fn value_sub(a: Value, b: Value) -> Value {
     if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r)) {
         return make_big_rat_arith(an * &bd - bn * &ad, ad * bd);
     }
-    Value::Num(
+    Value::num(
         crate::runtime::to_float_value(&l).unwrap_or(0.0)
             - crate::runtime::to_float_value(&r).unwrap_or(0.0),
     )
 }
 
 pub(crate) fn instance_duration_value(value: &Value) -> Option<f64> {
-    match value {
-        Value::Instance {
+    match value.view() {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -76,8 +76,8 @@ pub(crate) fn instance_duration_value(value: &Value) -> Option<f64> {
 
 /// Return the raw stored `value` of a Duration instance (a Rational), if any.
 pub(crate) fn instance_duration_raw_value(value: &Value) -> Option<Value> {
-    match value {
-        Value::Instance {
+    match value.view() {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -96,8 +96,8 @@ pub(crate) fn make_duration_from_value(val: Value) -> Value {
 pub(crate) fn instance_datetime_parts(
     value: &Value,
 ) -> Option<(i64, i64, i64, i64, i64, f64, i64)> {
-    match value {
-        Value::Instance { attributes, .. }
+    match value.view() {
+        ValueView::Instance { attributes, .. }
             if attributes.contains_key("year")
                 && attributes.contains_key("month")
                 && attributes.contains_key("day")
@@ -120,6 +120,6 @@ pub(crate) fn make_duration_value(secs: f64) -> Value {
 
 pub(crate) fn make_duration(secs: f64) -> Value {
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("value".to_string(), Value::Num(secs));
+    attrs.insert("value".to_string(), Value::num(secs));
     Value::make_instance(Symbol::intern("Duration"), attrs)
 }

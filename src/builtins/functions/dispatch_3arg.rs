@@ -1,4 +1,4 @@
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 pub(crate) fn native_function_3arg(
     name: &str,
@@ -12,9 +12,9 @@ pub(crate) fn native_function_3arg(
             // unimatch(target, property_value, property_name)
             let prop_value = arg2.to_string_value();
             let prop_name = arg3.to_string_value();
-            match arg1 {
-                Value::Int(i) => {
-                    let cp = *i as u32;
+            match arg1.view() {
+                ValueView::Int(i) => {
+                    let cp = i as u32;
                     Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
                         cp,
                         &prop_value,
@@ -24,10 +24,10 @@ pub(crate) fn native_function_3arg(
                 _ => {
                     let s = arg1.to_string_value();
                     if s.is_empty() {
-                        return Some(Ok(Value::Nil));
+                        return Some(Ok(Value::NIL));
                     }
                     let ch = s.chars().next().unwrap();
-                    Some(Ok(Value::Bool(crate::builtins::uniprop::unimatch(
+                    Some(Ok(Value::truth(crate::builtins::uniprop::unimatch(
                         ch,
                         &prop_value,
                         Some(&prop_name),
@@ -36,9 +36,9 @@ pub(crate) fn native_function_3arg(
             }
         }
         "substr" => {
-            if matches!(arg1, Value::Junction { .. })
-                || matches!(arg2, Value::Junction { .. })
-                || matches!(arg3, Value::Junction { .. })
+            if matches!(arg1.view(), ValueView::Junction { .. })
+                || matches!(arg2.view(), ValueView::Junction { .. })
+                || matches!(arg3.view(), ValueView::Junction { .. })
             {
                 return None;
             }

@@ -1,18 +1,17 @@
-use crate::value::{RuntimeError, Value};
-use std::sync::Arc;
+use crate::value::{RuntimeError, Value, ValueView};
 
 pub(crate) fn parse_radix_checked(arg: &Value) -> Option<Result<u32, RuntimeError>> {
-    match arg {
-        Value::Int(r) => {
-            if (2..=36).contains(r) {
-                Some(Ok(*r as u32))
+    match arg.view() {
+        ValueView::Int(r) => {
+            if (2..=36).contains(&r) {
+                Some(Ok(r as u32))
             } else {
                 Some(Err(RuntimeError::new(
                     "X::OutOfRange: base requires radix 2..36",
                 )))
             }
         }
-        Value::Str(s) => match s.parse::<u32>() {
+        ValueView::Str(s) => match s.parse::<u32>() {
             Ok(r) if (2..=36).contains(&r) => Some(Ok(r)),
             Ok(_) => Some(Err(RuntimeError::new(
                 "X::OutOfRange: base requires radix 2..36",
@@ -296,42 +295,43 @@ pub(crate) fn range_pick_n_fast(target: &Value, arg: &Value) -> Option<Value> {
     };
 
     // Determine effective inclusive bounds
-    let (start, end, is_generic, generic_start, generic_end, excl_start, excl_end) = match target {
-        Value::Range(a, b) => (*a, *b, false, None, None, false, false),
-        Value::RangeExcl(a, b) => (*a, *b - 1, false, None, None, false, false),
-        Value::RangeExclStart(a, b) => (*a + 1, *b, false, None, None, false, false),
-        Value::RangeExclBoth(a, b) => (*a + 1, *b - 1, false, None, None, false, false),
-        Value::GenericRange {
-            start,
-            end,
-            excl_start,
-            excl_end,
-        } => (
-            0,
-            0,
-            true,
-            Some(start.clone()),
-            Some(end.clone()),
-            *excl_start,
-            *excl_end,
-        ),
-        _ => return None,
-    };
+    let (start, end, is_generic, generic_start, generic_end, excl_start, excl_end) =
+        match target.view() {
+            ValueView::Range(a, b) => (a, b, false, None, None, false, false),
+            ValueView::RangeExcl(a, b) => (a, b - 1, false, None, None, false, false),
+            ValueView::RangeExclStart(a, b) => (a + 1, b, false, None, None, false, false),
+            ValueView::RangeExclBoth(a, b) => (a + 1, b - 1, false, None, None, false, false),
+            ValueView::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => (
+                0,
+                0,
+                true,
+                Some(start.clone()),
+                Some(end.clone()),
+                excl_start,
+                excl_end,
+            ),
+            _ => return None,
+        };
 
     // Determine count from arg
-    let is_whatever = matches!(arg, Value::Whatever)
-        || matches!(arg, Value::Num(f) if f.is_infinite() && f.is_sign_positive());
+    let is_whatever = matches!(arg.view(), ValueView::Whatever)
+        || matches!(arg.view(), ValueView::Num(f) if f.is_infinite() && f.is_sign_positive());
 
     if is_generic {
         let gs = generic_start.as_ref().unwrap();
         let ge = generic_end.as_ref().unwrap();
         // Check if endpoints are integer-like
         if !matches!(
-            gs.as_ref(),
-            Value::Int(_) | Value::BigInt(_) | Value::Bool(_)
+            gs.as_ref().view(),
+            ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Bool(_)
         ) || !matches!(
-            ge.as_ref(),
-            Value::Int(_) | Value::BigInt(_) | Value::Bool(_)
+            ge.as_ref().view(),
+            ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Bool(_)
         ) {
             return None;
         }
@@ -343,23 +343,23 @@ pub(crate) fn range_pick_n_fast(target: &Value, arg: &Value) -> Option<Value> {
             return None;
         }
 
-        let count = match arg {
-            Value::Int(n) => (*n).max(0) as usize,
-            Value::Num(f) => (*f as i64).max(0) as usize,
-            Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as usize,
-            Value::Str(s) => s.trim().parse::<i64>().unwrap_or(0).max(0) as usize,
+        let count = match arg.view() {
+            ValueView::Int(n) => n.max(0) as usize,
+            ValueView::Num(f) => (f as i64).max(0) as usize,
+            ValueView::Rat(n, d) if d != 0 => (n / d).max(0) as usize,
+            ValueView::Str(s) => s.trim().parse::<i64>().unwrap_or(0).max(0) as usize,
             _ => return None,
         };
 
         if count == 0 {
-            return Some(Value::Seq(Arc::new(Vec::new())));
+            return Some(Value::seq(Vec::new()));
         }
 
         let items = generic_range_pick_n(gs, ge, excl_start, excl_end, count)?;
-        Some(Value::Seq(Arc::new(items)))
+        Some(Value::seq(items))
     } else {
         if end < start {
-            return Some(Value::Seq(Arc::new(Vec::new())));
+            return Some(Value::seq(Vec::new()));
         }
 
         if is_whatever {
@@ -371,22 +371,22 @@ pub(crate) fn range_pick_n_fast(target: &Value, arg: &Value) -> Option<Value> {
                 return None;
             }
             let items = range_pick_n_i64(start, end, range_size as usize);
-            return Some(Value::Seq(Arc::new(items)));
+            return Some(Value::seq(items));
         }
 
-        let count = match arg {
-            Value::Int(n) => (*n).max(0) as usize,
-            Value::Num(f) => (*f as i64).max(0) as usize,
-            Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as usize,
-            Value::Str(s) => s.trim().parse::<i64>().unwrap_or(0).max(0) as usize,
+        let count = match arg.view() {
+            ValueView::Int(n) => n.max(0) as usize,
+            ValueView::Num(f) => (f as i64).max(0) as usize,
+            ValueView::Rat(n, d) if d != 0 => (n / d).max(0) as usize,
+            ValueView::Str(s) => s.trim().parse::<i64>().unwrap_or(0).max(0) as usize,
             _ => return None,
         };
 
         if count == 0 {
-            return Some(Value::Seq(Arc::new(Vec::new())));
+            return Some(Value::seq(Vec::new()));
         }
 
         let items = range_pick_n_i64(start, end, count);
-        Some(Value::Seq(Arc::new(items)))
+        Some(Value::seq(items))
     }
 }

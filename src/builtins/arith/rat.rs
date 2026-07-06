@@ -1,6 +1,6 @@
 //! Rational-number and BigNum helper utilities used by arith ops.
 
-use crate::value::{Value, make_rat};
+use crate::value::{Value, ValueView, make_rat};
 use num_bigint::BigInt as NumBigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 
@@ -40,11 +40,11 @@ pub(crate) fn rat_div_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
 pub(crate) fn rat_from_i128_or_num(n: i128, d: i128) -> Value {
     if d == 0 {
         return if n == 0 {
-            Value::Rat(0, 0)
+            Value::rat_raw(0, 0)
         } else if n > 0 {
-            Value::Rat(1, 0)
+            Value::rat_raw(1, 0)
         } else {
-            Value::Rat(-1, 0)
+            Value::rat_raw(-1, 0)
         };
     }
     // Normalize sign
@@ -67,35 +67,35 @@ pub(crate) fn rat_from_i128_or_num(n: i128, d: i128) -> Value {
     }
     // Check if result fits in i64 (denominator must also fit in uint64 per Raku spec)
     if let (Ok(n64), Ok(d64)) = (i64::try_from(n), i64::try_from(d)) {
-        return Value::Rat(n64, d64);
+        return Value::rat_raw(n64, d64);
     }
     // Overflow: degrade to Num
-    Value::Num(n as f64 / d as f64)
+    Value::num(n as f64 / d as f64)
 }
 
 /// Check if BigRat arithmetic is needed: at least one operand requires BigInt precision
 /// (BigRat or BigInt) AND at least one operand is rational (Rat/FatRat/BigRat).
 /// Plain Rat-vs-Rat operations use the i128-based overflow-to-Num path instead.
 pub(crate) fn needs_bigrat_path(l: &Value, r: &Value) -> bool {
-    let has_big = matches!(l, Value::BigRat(_, _) | Value::BigInt(_))
-        || matches!(r, Value::BigRat(_, _) | Value::BigInt(_));
+    let has_big = matches!(l.view(), ValueView::BigRat(_, _) | ValueView::BigInt(_))
+        || matches!(r.view(), ValueView::BigRat(_, _) | ValueView::BigInt(_));
     let has_rat = matches!(
-        l,
-        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        l.view(),
+        ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
     ) || matches!(
-        r,
-        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        r.view(),
+        ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
     );
     has_big && has_rat
 }
 
 /// Check if a value should be treated as FatRat for arithmetic.
-/// This includes Value::FatRat and Value::BigRat when the denominator exceeds u64,
+/// This includes FatRat and BigRat values when the denominator exceeds u64,
 /// since only FatRat operations can produce such values (regular Rat degrades to Num).
 pub(crate) fn is_fat_rat_like(v: &Value) -> bool {
-    match v {
-        Value::FatRat(_, _) => true,
-        Value::BigRat(_, d) => d.to_u64().is_none(),
+    match v.view() {
+        ValueView::FatRat(_, _) => true,
+        ValueView::BigRat(_, d) => d.to_u64().is_none(),
         _ => false,
     }
 }
@@ -143,28 +143,31 @@ pub(crate) fn float_mod_floor(a: f64, b: f64) -> f64 {
 }
 
 pub(crate) fn as_bigint(value: &Value) -> Option<NumBigInt> {
-    match value {
-        Value::Int(i) => Some(NumBigInt::from(*i)),
-        Value::BigInt(i) => Some((**i).clone()),
+    match value.view() {
+        ValueView::Int(i) => Some(NumBigInt::from(i)),
+        ValueView::BigInt(i) => Some((**i).clone()),
         _ => None,
     }
 }
 
 pub(crate) fn to_big_rat_parts(value: &Value) -> Option<(NumBigInt, NumBigInt)> {
-    match value {
-        Value::Int(i) => Some((NumBigInt::from(*i), NumBigInt::from(1))),
-        Value::BigInt(i) => Some(((**i).clone(), NumBigInt::from(1))),
-        Value::Rat(n, d) | Value::FatRat(n, d) => Some((NumBigInt::from(*n), NumBigInt::from(*d))),
-        Value::BigRat(n, d) => Some(((**n).clone(), (**d).clone())),
+    match value.view() {
+        ValueView::Int(i) => Some((NumBigInt::from(i), NumBigInt::from(1))),
+        ValueView::BigInt(i) => Some(((**i).clone(), NumBigInt::from(1))),
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
+            Some((NumBigInt::from(n), NumBigInt::from(d)))
+        }
+        ValueView::BigRat(n, d) => Some((n.clone(), d.clone())),
         _ => None,
     }
 }
 
 pub(crate) fn make_fat_rat(num: i64, den: i64) -> Value {
-    match make_rat(num, den) {
-        Value::Rat(n, d) => Value::FatRat(n, d),
-        other => other,
+    let r = make_rat(num, den);
+    if let ValueView::Rat(n, d) = r.view() {
+        return Value::fat_rat_raw(n, d);
     }
+    r
 }
 
 /// Coerce a Real value to a Rational, matching Rakudo's Duration which always
@@ -172,35 +175,35 @@ pub(crate) fn make_fat_rat(num: i64, den: i64) -> Value {
 /// are kept; Inf/NaN map to the degenerate Rats `1/0`/`0/0`; floats use the
 /// standard epsilon conversion.
 pub(crate) fn real_to_rat(v: &Value) -> Value {
-    match v {
-        Value::Rat(..) | Value::BigRat(..) | Value::FatRat(..) => v.clone(),
-        Value::Int(i) => crate::value::make_rat(*i, 1),
-        Value::Bool(b) => crate::value::make_rat(*b as i64, 1),
+    match v.view() {
+        ValueView::Rat(..) | ValueView::BigRat(..) | ValueView::FatRat(..) => v.clone(),
+        ValueView::Int(i) => crate::value::make_rat(i, 1),
+        ValueView::Bool(b) => crate::value::make_rat(b as i64, 1),
         // Preserve large integers exactly as a (big) Rat with denominator 1.
-        Value::BigInt(b) => crate::value::make_big_rat_arith((**b).clone(), NumBigInt::from(1)),
-        Value::Num(f) => {
+        ValueView::BigInt(b) => crate::value::make_big_rat_arith((**b).clone(), NumBigInt::from(1)),
+        ValueView::Num(f) => {
             if f.is_nan() {
-                Value::Rat(0, 0)
+                Value::rat_raw(0, 0)
             } else if f.is_infinite() {
-                if *f > 0.0 {
-                    Value::Rat(1, 0)
+                if f > 0.0 {
+                    Value::rat_raw(1, 0)
                 } else {
-                    Value::Rat(-1, 0)
+                    Value::rat_raw(-1, 0)
                 }
             } else {
-                crate::builtins::num_to_rat_with_epsilon(*f, 1e-6)
+                crate::builtins::num_to_rat_with_epsilon(f, 1e-6)
             }
         }
         // Anything else (e.g. Str, allomorphs): fall back through f64.
         _ => {
             let f = crate::runtime::to_float_value(v).unwrap_or(0.0);
             if f.is_nan() {
-                Value::Rat(0, 0)
+                Value::rat_raw(0, 0)
             } else if f.is_infinite() {
                 if f > 0.0 {
-                    Value::Rat(1, 0)
+                    Value::rat_raw(1, 0)
                 } else {
-                    Value::Rat(-1, 0)
+                    Value::rat_raw(-1, 0)
                 }
             } else {
                 crate::builtins::num_to_rat_with_epsilon(f, 1e-6)

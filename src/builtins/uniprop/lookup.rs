@@ -184,7 +184,7 @@ fn is_emoji_all(ch: char) -> bool {
 pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
     // Check binary properties first
     if let Some(b) = super::binary_props::try_binary_property(ch, prop) {
-        return Value::Bool(b);
+        return Value::truth(b);
     }
 
     match prop {
@@ -204,7 +204,7 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
         "Unicode_1_Name" | "na1" => {
             // Unicode 1.0 names are mostly the same; some differ
             // For now return 0 (same as MoarVM behavior for most chars)
-            Value::Int(0)
+            Value::int(0)
         }
         // Numeric properties
         "Numeric_Value" | "nv" => super::char_props::unicode_numeric_value(ch),
@@ -286,10 +286,10 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
         // Jamo_Short_Name
         "Jamo_Short_Name" | "JSN" => Value::str(super::char_props::unicode_jamo_short_name(ch)),
         // Emoji properties
-        "Emoji" => Value::Bool(is_emoji(ch)),
-        "Emoji_Modifier" => Value::Bool(is_emoji_modifier(ch)),
-        "Emoji_Presentation" => Value::Bool(is_emoji_presentation(ch)),
-        "Emoji_All" => Value::Bool(is_emoji_all(ch)),
+        "Emoji" => Value::truth(is_emoji(ch)),
+        "Emoji_Modifier" => Value::truth(is_emoji_modifier(ch)),
+        "Emoji_Presentation" => Value::truth(is_emoji_presentation(ch)),
+        "Emoji_All" => Value::truth(is_emoji_all(ch)),
         // Default: general category
         _ => Value::str(crate::builtins::unicode::unicode_general_category(ch)),
     }
@@ -449,7 +449,7 @@ fn block_matches(block: &str, target: &str) -> bool {
 /// unimatch for a codepoint (u32), handling invalid chars.
 pub(crate) fn unimatch_for_codepoint(cp: u32, prop_value: &str, prop_name: Option<&str>) -> Value {
     match char::from_u32(cp) {
-        Some(ch) => Value::Bool(unimatch(ch, prop_value, prop_name)),
-        None => Value::Bool(false),
+        Some(ch) => Value::truth(unimatch(ch, prop_value, prop_name)),
+        None => Value::truth(false),
     }
 }

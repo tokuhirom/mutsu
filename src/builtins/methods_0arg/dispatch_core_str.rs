@@ -1,9 +1,7 @@
 /// String and text methods: words, codes, lines, trim, trim-leading, trim-trailing,
 /// flip, so, not, is-lazy, lazy, chomp, chop, comb, fmt, join
-use std::sync::Arc;
-
 use crate::runtime;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::{fmt_0arg_item, is_value_lazy};
@@ -19,15 +17,15 @@ pub(super) fn dispatch(
                 .split_whitespace()
                 .map(|w| Value::str(w.to_string()))
                 .collect();
-            Some(Some(Ok(Value::Seq(std::sync::Arc::new(words)))))
+            Some(Some(Ok(Value::seq(words))))
         }
         "codes" => {
             let s = target.to_string_value();
-            Some(Some(Ok(Value::Int(s.chars().count() as i64))))
+            Some(Some(Ok(Value::int(s.chars().count() as i64))))
         }
         "lines" => {
             // Skip for Supply instances -- handled by native Supply.lines
-            if let Value::Instance { class_name, .. } = target
+            if let ValueView::Instance { class_name, .. } = target.view()
                 && (class_name == "Supply"
                     || class_name == "IO::Handle"
                     || class_name == "IO::Path"
@@ -40,20 +38,20 @@ pub(super) fn dispatch(
                 .into_iter()
                 .map(Value::str)
                 .collect();
-            Some(Some(Ok(Value::Seq(Arc::new(lines)))))
+            Some(Some(Ok(Value::seq(lines))))
         }
         // `Str.Date` / `Str.DateTime` coerce an ISO-formatted string to a
         // Date / DateTime (documented on Str). Str-only — `Int.Date` etc. are
         // method-not-found in raku. Invalid/out-of-range strings surface the
         // same X::Temporal::InvalidFormat / X::OutOfRange the constructors throw.
-        "Date" if matches!(target, Value::Str(_)) => {
+        "Date" if matches!(target.view(), ValueView::Str(_)) => {
             let s = target.to_string_value();
             Some(Some(
                 super::temporal::parse_date_string(&s)
                     .map(|(y, m, d)| super::temporal::make_date(y, m, d)),
             ))
         }
-        "DateTime" if matches!(target, Value::Str(_)) => {
+        "DateTime" if matches!(target.view(), ValueView::Str(_)) => {
             let s = target.to_string_value();
             // A bare `yyyy-mm-dd` (no time component) becomes midnight UTC.
             let result = if s.contains(['T', 't']) {
@@ -83,53 +81,56 @@ pub(super) fn dispatch(
         }
         "so" => {
             // Calling .so on a Failure marks it as handled
-            if let Value::Instance { class_name, .. } = target
+            if let ValueView::Instance { class_name, .. } = target.view()
                 && class_name == "Failure"
             {
                 target.mark_failure_handled();
             }
-            Some(Some(Ok(Value::Bool(target.truthy()))))
+            Some(Some(Ok(Value::truth(target.truthy()))))
         }
         "not" => {
             // Calling .not on a Failure marks it as handled
-            if let Value::Instance { class_name, .. } = target
+            if let ValueView::Instance { class_name, .. } = target.view()
                 && class_name == "Failure"
             {
                 target.mark_failure_handled();
             }
-            Some(Some(Ok(Value::Bool(!target.truthy()))))
+            Some(Some(Ok(Value::truth(!target.truthy()))))
         }
         "is-lazy" => {
             // For Iterator instances, check the stored is_lazy attribute
-            if let Value::Instance {
+            if let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = target
+            } = target.view()
                 && class_name == "Iterator"
             {
-                let lazy = matches!(attributes.as_map().get("is_lazy"), Some(Value::Bool(true)));
-                return Some(Some(Ok(Value::Bool(lazy))));
+                let lazy = matches!(
+                    attributes.as_map().get("is_lazy").map(Value::view),
+                    Some(ValueView::Bool(true))
+                );
+                return Some(Some(Ok(Value::truth(lazy))));
             }
             // A consumed gather-based LazyList throws X::Seq::Consumed on .is-lazy
-            if let Value::LazyList(ll) = target {
+            if let ValueView::LazyList(ll) = target.view() {
                 let is_gather = ll.env.get("__mutsu_lazylist_from_gather").is_some();
                 if is_gather && crate::value::lazylist_is_consumed(ll) {
                     return Some(Some(Err(crate::value::seq_consumed_error())));
                 }
             }
-            Some(Some(Ok(Value::Bool(is_value_lazy(target)))))
+            Some(Some(Ok(Value::truth(is_value_lazy(target)))))
         }
         "lazy" => {
             if is_value_lazy(target) {
-                if let Value::LazyList(list) = target {
+                if let ValueView::LazyList(list) = target.view() {
                     let mut env = list.env.clone();
                     env.insert(
                         "__mutsu_preserve_lazy_on_array_assign".to_string(),
-                        Value::Bool(true),
+                        Value::TRUE,
                     );
                     let cache = list.cache.lock().unwrap().clone();
-                    return Some(Some(Ok(Value::LazyList(crate::gc::Gc::new(
+                    return Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
                         crate::value::LazyList {
                             body: list.body.clone(),
                             env,
@@ -170,17 +171,17 @@ pub(super) fn dispatch(
             let items = if let Some(items) = target.as_list_items() {
                 items.to_vec()
             } else if matches!(
-                target,
-                Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. }
+                target.view(),
+                ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
             ) {
                 crate::runtime::utils::value_to_list(target)
-            } else if matches!(target, Value::Sub(..)) {
+            } else if matches!(target.view(), ValueView::Sub(..)) {
                 // lazy { block } -- create a lazy thunk that evaluates the block on first access
-                return Some(Some(Ok(Value::LazyThunk(std::sync::Arc::new(
+                return Some(Some(Ok(Value::lazy_thunk(std::sync::Arc::new(
                     crate::value::LazyThunkData {
                         thunk: target.clone(),
                         cache: std::sync::Mutex::new(None),
@@ -192,9 +193,9 @@ pub(super) fn dispatch(
             let mut env = crate::env::Env::new();
             env.insert(
                 "__mutsu_preserve_lazy_on_array_assign".to_string(),
-                Value::Bool(true),
+                Value::TRUE,
             );
-            Some(Some(Ok(Value::LazyList(crate::gc::Gc::new(
+            Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
                 crate::value::LazyList {
                     body: vec![],
                     env,
@@ -214,7 +215,8 @@ pub(super) fn dispatch(
         }
         "chomp" => {
             // IO::Handle.chomp is an attribute accessor, not the Str method
-            if matches!(target, Value::Instance { class_name, .. } if class_name == "IO::Handle") {
+            if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
+            {
                 return Some(None);
             }
             Some(Some(Ok(Value::str(crate::builtins::chomp_one(
@@ -222,7 +224,7 @@ pub(super) fn dispatch(
             )))))
         }
         "chop" => {
-            if let Value::Package(type_name) = target {
+            if let ValueView::Package(type_name) = target.view() {
                 return Some(Some(Err(RuntimeError::new(format!(
                     "Cannot resolve caller chop({}:U)",
                     type_name,
@@ -238,12 +240,12 @@ pub(super) fn dispatch(
                 .graphemes(true)
                 .map(|g| Value::str(g.to_string()))
                 .collect();
-            Some(Some(Ok(Value::Seq(std::sync::Arc::new(parts)))))
+            Some(Some(Ok(Value::seq(parts))))
         }
         "fmt" => {
             // .fmt() with no arguments: use default format and separator
-            Some(match target {
-                Value::Hash(items) => {
+            Some(match target.view() {
+                ValueView::Hash(items) => {
                     let rendered = items
                         .iter()
                         .map(|(k, v)| {
@@ -256,16 +258,15 @@ pub(super) fn dispatch(
                         .join("\n");
                     Some(Ok(Value::str(rendered)))
                 }
-                Value::Pair(k, v) => {
+                ValueView::Pair(k, v) => {
                     let rendered = runtime::format_sprintf_args(
                         "%s\t%s",
-                        &[Value::str(k.to_string()), *v.clone()],
+                        &[Value::str(k.to_string()), v.clone()],
                     );
                     Some(Ok(Value::str(rendered)))
                 }
-                Value::ValuePair(k, v) => {
-                    let rendered =
-                        runtime::format_sprintf_args("%s\t%s", &[*k.clone(), *v.clone()]);
+                ValueView::ValuePair(k, v) => {
+                    let rendered = runtime::format_sprintf_args("%s\t%s", &[k.clone(), v.clone()]);
                     Some(Ok(Value::str(rendered)))
                 }
                 _ if super::super::methods_narg::fmt_joinable_target(target) => {
@@ -283,10 +284,10 @@ pub(super) fn dispatch(
             })
         }
         "join" => {
-            if matches!(target, Value::LazyList(_)) {
+            if matches!(target.view(), ValueView::LazyList(_)) {
                 return Some(None); // fall through to runtime to force
             }
-            if let Value::Seq(items) = target
+            if let ValueView::Seq(items) = target.view()
                 && crate::value::seq_is_consumed(items)
                 && !crate::value::seq_is_cached(items)
             {
@@ -306,10 +307,9 @@ pub(super) fn dispatch(
                 // so user-defined Str() methods can be called. A `ContainerRef`
                 // element (grep rw alias / `:=`-bound slot) is decontainerized
                 // first so a cell-wrapped Instance is also routed to runtime.
-                if items
-                    .iter()
-                    .any(|v| v.with_deref(|inner| matches!(inner, Value::Instance { .. })))
-                {
+                if items.iter().any(|v| {
+                    v.with_deref(|inner| matches!(inner.view(), ValueView::Instance { .. }))
+                }) {
                     return Some(None);
                 }
                 let joined = items
@@ -325,7 +325,10 @@ pub(super) fn dispatch(
                 // which renders the Range with space-separated gist semantics
                 // (`(1..5).join` must be "12345", not "1 2 3 4 5").
                 let items = crate::runtime::utils::value_to_list(target);
-                if items.iter().any(|v| matches!(v, Value::Instance { .. })) {
+                if items
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Instance { .. }))
+                {
                     return Some(None);
                 }
                 let joined = items
@@ -334,7 +337,7 @@ pub(super) fn dispatch(
                     .collect::<Vec<_>>()
                     .join("");
                 Some(Some(Ok(Value::str(joined))))
-            } else if matches!(target, Value::Instance { class_name, .. } if class_name == "Thread")
+            } else if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Thread")
             {
                 // `.join` on a Thread is the thread-join primitive (block until the
                 // thread finishes), NOT list-join stringification. Fall through to

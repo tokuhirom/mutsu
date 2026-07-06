@@ -467,24 +467,24 @@ pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
 pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
     Some(match type_name {
         "Str" => Value::str_from("abc"),
-        "Int" => Value::Int(2),
-        "Num" => Value::Num(1.5),
+        "Int" => Value::int(2),
+        "Num" => Value::num(1.5),
         "Rat" | "FatRat" => crate::value::make_rat(1, 2),
-        "Complex" => Value::Complex(1.0, 2.0),
-        "Bool" => Value::Bool(true),
-        "List" => Value::array(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
-        "Array" => Value::Array(
+        "Complex" => Value::complex(1.0, 2.0),
+        "Bool" => Value::TRUE,
+        "List" => Value::array(vec![Value::int(1), Value::int(2), Value::int(3)]),
+        "Array" => Value::array_with_kind(
             crate::gc::Gc::new(crate::value::ArrayData::new(vec![
-                Value::Int(1),
-                Value::Int(2),
+                Value::int(1),
+                Value::int(2),
             ])),
             crate::value::ArrayKind::Array,
         ),
         "Hash" => Value::hash(std::collections::HashMap::from([(
             "a".to_string(),
-            Value::Int(1),
+            Value::int(1),
         )])),
-        "Range" => Value::Range(1, 3),
+        "Range" => Value::range(1, 3),
         _ => return None,
     })
 }
@@ -506,7 +506,7 @@ pub(crate) fn native_responds_to(value: &Value, method_name: &str) -> bool {
     // the call (e.g. `index`/`indices` want a Str), so a single dummy can miss
     // them. Try a small spread of representative arguments — recognition just
     // needs ONE arity/arg shape to return `Some`.
-    let dummies = [Value::Nil, Value::Int(0), Value::str_from("")];
+    let dummies = [Value::NIL, Value::int(0), Value::str_from("")];
     dummies
         .iter()
         .any(|a| crate::builtins::native_method_1arg(value, sym, a).is_some())

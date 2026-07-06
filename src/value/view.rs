@@ -482,6 +482,24 @@ impl Value {
         Value::HashEntryRef { hash, path }
     }
 
+    /// Construct a `LazyIoLines` iterator over a file handle (boxing the
+    /// handle internally, mirroring `Value::pair`/`Value::scalar`).
+    #[inline]
+    pub(crate) fn lazy_io_lines(handle: Value, kv: bool, words: bool) -> Self {
+        Value::LazyIoLines {
+            handle: Box::new(handle),
+            kv,
+            words,
+        }
+    }
+
+    /// Construct a `LazyThunk` from an existing shared thunk payload
+    /// (a raw pass-through mirroring `seq_arc`).
+    #[inline]
+    pub(crate) fn lazy_thunk(data: Arc<LazyThunkData>) -> Self {
+        Value::LazyThunk(data)
+    }
+
     /// Construct a `Mixin` from its parts, preserving the inner value's
     /// `Arc` identity (unlike `Value::mixin`, which re-wraps).
     #[inline]

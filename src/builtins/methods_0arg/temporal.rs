@@ -1,5 +1,5 @@
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
 /// Check if a year is a leap year.
@@ -188,13 +188,13 @@ pub fn make_date_with_formatter(
     formatter: Option<Value>,
 ) -> Value {
     let mut attrs = HashMap::new();
-    attrs.insert("year".to_string(), Value::Int(year));
-    attrs.insert("month".to_string(), Value::Int(month));
-    attrs.insert("day".to_string(), Value::Int(day));
+    attrs.insert("year".to_string(), Value::int(year));
+    attrs.insert("month".to_string(), Value::int(month));
+    attrs.insert("day".to_string(), Value::int(day));
     // Also store epoch days for backward compat and arithmetic
     attrs.insert(
         "days".to_string(),
-        Value::Int(civil_to_epoch_days(year, month, day)),
+        Value::int(civil_to_epoch_days(year, month, day)),
     );
     if let Some(f) = formatter {
         attrs.insert("formatter".to_string(), f);
@@ -213,19 +213,19 @@ pub fn make_datetime(
     timezone: i64,
 ) -> Value {
     let mut attrs = HashMap::new();
-    attrs.insert("year".to_string(), Value::Int(year));
-    attrs.insert("month".to_string(), Value::Int(month));
-    attrs.insert("day".to_string(), Value::Int(day));
-    attrs.insert("hour".to_string(), Value::Int(hour));
-    attrs.insert("minute".to_string(), Value::Int(minute));
-    attrs.insert("second".to_string(), Value::Num(second));
-    attrs.insert("timezone".to_string(), Value::Int(timezone));
+    attrs.insert("year".to_string(), Value::int(year));
+    attrs.insert("month".to_string(), Value::int(month));
+    attrs.insert("day".to_string(), Value::int(day));
+    attrs.insert("hour".to_string(), Value::int(hour));
+    attrs.insert("minute".to_string(), Value::int(minute));
+    attrs.insert("second".to_string(), Value::num(second));
+    attrs.insert("timezone".to_string(), Value::int(timezone));
     // Store epoch for backward compat
     let epoch_days = civil_to_epoch_days(year, month, day);
     let epoch_secs =
         epoch_days as f64 * 86400.0 + hour as f64 * 3600.0 + minute as f64 * 60.0 + second
             - timezone as f64;
-    attrs.insert("epoch".to_string(), Value::Num(epoch_secs));
+    attrs.insert("epoch".to_string(), Value::num(epoch_secs));
     Value::make_instance(Symbol::intern("DateTime"), attrs)
 }
 
@@ -482,53 +482,53 @@ fn parse_tz_offset(s: &str) -> Result<i64, RuntimeError> {
 /// Extract (year, month, day) from a Date instance's attributes.
 pub fn date_attrs(attributes: &HashMap<String, Value>) -> (i64, i64, i64) {
     // New format: year/month/day as separate attributes
-    if let Some(Value::Int(y)) = attributes.get("year") {
-        let m = match attributes.get("month") {
-            Some(Value::Int(m)) => *m,
+    if let Some(ValueView::Int(y)) = attributes.get("year").map(Value::view) {
+        let m = match attributes.get("month").map(Value::view) {
+            Some(ValueView::Int(m)) => m,
             _ => 1,
         };
-        let d = match attributes.get("day") {
-            Some(Value::Int(d)) => *d,
+        let d = match attributes.get("day").map(Value::view) {
+            Some(ValueView::Int(d)) => d,
             _ => 1,
         };
-        return (*y, m, d);
+        return (y, m, d);
     }
     // Legacy format: days as epoch days
-    if let Some(Value::Int(days)) = attributes.get("days") {
-        return epoch_days_to_civil(*days);
+    if let Some(ValueView::Int(days)) = attributes.get("days").map(Value::view) {
+        return epoch_days_to_civil(days);
     }
     (1970, 1, 1)
 }
 
 /// Extract DateTime components from attributes.
 pub fn datetime_attrs(attributes: &HashMap<String, Value>) -> (i64, i64, i64, i64, i64, f64, i64) {
-    let year = match attributes.get("year") {
-        Some(Value::Int(y)) => *y,
+    let year = match attributes.get("year").map(Value::view) {
+        Some(ValueView::Int(y)) => y,
         _ => 1970,
     };
-    let month = match attributes.get("month") {
-        Some(Value::Int(m)) => *m,
+    let month = match attributes.get("month").map(Value::view) {
+        Some(ValueView::Int(m)) => m,
         _ => 1,
     };
-    let day = match attributes.get("day") {
-        Some(Value::Int(d)) => *d,
+    let day = match attributes.get("day").map(Value::view) {
+        Some(ValueView::Int(d)) => d,
         _ => 1,
     };
-    let hour = match attributes.get("hour") {
-        Some(Value::Int(h)) => *h,
+    let hour = match attributes.get("hour").map(Value::view) {
+        Some(ValueView::Int(h)) => h,
         _ => 0,
     };
-    let minute = match attributes.get("minute") {
-        Some(Value::Int(m)) => *m,
+    let minute = match attributes.get("minute").map(Value::view) {
+        Some(ValueView::Int(m)) => m,
         _ => 0,
     };
-    let second = match attributes.get("second") {
-        Some(Value::Num(s)) => *s,
-        Some(Value::Int(s)) => *s as f64,
+    let second = match attributes.get("second").map(Value::view) {
+        Some(ValueView::Num(s)) => s,
+        Some(ValueView::Int(s)) => s as f64,
         _ => 0.0,
     };
-    let timezone = match attributes.get("timezone") {
-        Some(Value::Int(tz)) => *tz,
+    let timezone = match attributes.get("timezone").map(Value::view) {
+        Some(ValueView::Int(tz)) => tz,
         _ => 0,
     };
     (year, month, day, hour, minute, second, timezone)

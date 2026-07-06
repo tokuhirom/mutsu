@@ -2,7 +2,7 @@ use super::dispatch_2arg::native_function_2arg;
 use super::flat::{deitemize_flat_operand, flat_val, is_infinite_range};
 use super::math::{gcd_u64, generic_range_as_bigint, is_extrema_named_pair};
 use crate::runtime;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt as NumBigInt;
 
 pub(crate) fn native_function_variadic(
@@ -31,7 +31,7 @@ pub(crate) fn native_function_variadic(
         }
         "min" => {
             if args.is_empty() {
-                return Some(Ok(Value::Nil));
+                return Some(Ok(Value::NIL));
             }
             if args.iter().any(is_extrema_named_pair) {
                 return None;
@@ -48,7 +48,7 @@ pub(crate) fn native_function_variadic(
         }
         "max" => {
             if args.is_empty() {
-                return Some(Ok(Value::Nil));
+                return Some(Ok(Value::NIL));
             }
             if args.iter().any(is_extrema_named_pair) {
                 return None;
@@ -66,9 +66,9 @@ pub(crate) fn native_function_variadic(
         "chrs" => {
             let mut result = String::new();
             let push_chr = |result: &mut String, v: &Value| {
-                let code = match v {
-                    Value::Int(i) => *i,
-                    Value::Num(f) => *f as i64,
+                let code = match v.view() {
+                    ValueView::Int(i) => i,
+                    ValueView::Num(f) => f as i64,
                     _ => v.to_string_value().parse::<i64>().unwrap_or(-1),
                 };
                 if code >= 0
@@ -90,8 +90,9 @@ pub(crate) fn native_function_variadic(
             // zip([@a], [@b], ...) — interleave elements from each list
             // zip takes a single list-of-lists argument; each sub-list is a
             // "column" and zip transposes them into rows.
-            let is_lazy_input =
-                |v: &Value| -> bool { matches!(v, Value::LazyList(_)) || is_infinite_range(v) };
+            let is_lazy_input = |v: &Value| -> bool {
+                matches!(v.view(), ValueView::LazyList(_)) || is_infinite_range(v)
+            };
             let (raw_inputs, single_arg) = if args.len() == 1 {
                 (runtime::value_to_list(&args[0]), true)
             } else {
@@ -105,7 +106,7 @@ pub(crate) fn native_function_variadic(
             };
             let lists: Vec<Vec<Value>> = raw_inputs.iter().map(runtime::value_to_list).collect();
             if lists.is_empty() {
-                return Some(Ok(Value::Seq(std::sync::Arc::new(vec![]))));
+                return Some(Ok(Value::seq(vec![])));
             }
             let max_expand: usize = 1_000;
             let min_len = lists
@@ -120,13 +121,13 @@ pub(crate) fn native_function_variadic(
                 result.push(Value::array(row));
             }
             if all_lazy {
-                Some(Ok(Value::LazyList(crate::gc::Gc::new(
+                Some(Ok(Value::lazy_list(crate::gc::Gc::new(
                     crate::value::LazyList::new_cached(result),
                 ))))
             } else {
                 // `zip` returns a Seq (so `.^name` is Seq, `.raku` shows `.Seq`),
                 // matching Rakudo and the `Z` metaop n-ary path.
-                Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+                Some(Ok(Value::seq(result)))
             }
         }
         "flat" => {
@@ -145,30 +146,32 @@ pub(crate) fn native_function_variadic(
                     flat_val(arg, &mut result, true);
                 }
             }
-            Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+            Some(Ok(Value::seq(result)))
         }
         "sum" => {
             // If any argument (or element inside an array arg) is a Junction,
             // fold with junction-aware addition
-            let has_junction = args.iter().any(|a| match a {
-                Value::Junction { .. } => true,
-                Value::Array(items, ..) => {
-                    items.iter().any(|v| matches!(v, Value::Junction { .. }))
-                }
-                Value::Seq(items) => items.iter().any(|v| matches!(v, Value::Junction { .. })),
+            let has_junction = args.iter().any(|a| match a.view() {
+                ValueView::Junction { .. } => true,
+                ValueView::Array(items, ..) => items
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Junction { .. })),
+                ValueView::Seq(items) => items
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Junction { .. })),
                 _ => false,
             });
             if has_junction {
                 let items: Vec<Value> = args
                     .iter()
-                    .flat_map(|a| match a {
-                        Value::Array(items, ..) => items.iter().cloned().collect::<Vec<_>>(),
-                        Value::Seq(items) => items.iter().cloned().collect::<Vec<_>>(),
-                        other => vec![other.clone()],
+                    .flat_map(|a| match a.view() {
+                        ValueView::Array(items, ..) => items.iter().cloned().collect::<Vec<_>>(),
+                        ValueView::Seq(items) => items.iter().cloned().collect::<Vec<_>>(),
+                        _ => vec![a.clone()],
                     })
                     .collect();
                 let result = items.into_iter().try_fold(
-                    Value::Int(0),
+                    Value::int(0),
                     |acc, item| -> Result<Value, RuntimeError> {
                         crate::builtins::methods_0arg::collection::add_with_junction_threading(
                             acc, item,
@@ -181,22 +184,22 @@ pub(crate) fn native_function_variadic(
             let mut has_num = false;
             let mut total_f: f64 = 0.0;
             for arg in args {
-                match arg {
-                    Value::Int(i) => {
+                match arg.view() {
+                    ValueView::Int(i) => {
                         if has_num {
-                            total_f += *i as f64;
+                            total_f += i as f64;
                         } else {
                             total += i;
                         }
                     }
-                    Value::Num(f) => {
+                    ValueView::Num(f) => {
                         if !has_num {
                             total_f = total as f64;
                             has_num = true;
                         }
                         total_f += f;
                     }
-                    Value::Range(a, b) => {
+                    ValueView::Range(a, b) => {
                         let n = b - a + 1;
                         if n > 0 {
                             let s = n * (a + b) / 2;
@@ -207,7 +210,7 @@ pub(crate) fn native_function_variadic(
                             }
                         }
                     }
-                    Value::RangeExcl(a, b) => {
+                    ValueView::RangeExcl(a, b) => {
                         let n = b - a;
                         if n > 0 {
                             let b_adj = b - 1;
@@ -219,9 +222,9 @@ pub(crate) fn native_function_variadic(
                             }
                         }
                     }
-                    Value::RangeExclStart(a, b) => {
+                    ValueView::RangeExclStart(a, b) => {
                         let start = a + 1;
-                        if start <= *b {
+                        if start <= b {
                             let n = b - start + 1;
                             let s = n * (start + b) / 2;
                             if has_num {
@@ -231,7 +234,7 @@ pub(crate) fn native_function_variadic(
                             }
                         }
                     }
-                    Value::RangeExclBoth(a, b) => {
+                    ValueView::RangeExclBoth(a, b) => {
                         let start = a + 1;
                         let end = b - 1;
                         if start <= end {
@@ -244,7 +247,7 @@ pub(crate) fn native_function_variadic(
                             }
                         }
                     }
-                    Value::GenericRange {
+                    ValueView::GenericRange {
                         start,
                         end,
                         excl_start,
@@ -257,8 +260,8 @@ pub(crate) fn native_function_variadic(
                             let one = NumBigInt::from(1);
                             let two = NumBigInt::from(2);
                             let zero = NumBigInt::from(0);
-                            let eff_start = if *excl_start { &a + &one } else { a };
-                            let eff_end = if *excl_end { &b - &one } else { b };
+                            let eff_start = if excl_start { &a + &one } else { a };
+                            let eff_end = if excl_end { &b - &one } else { b };
                             if eff_start <= eff_end {
                                 let n = &eff_end - &eff_start + &one;
                                 let s_plus = &eff_start + &eff_end;
@@ -275,22 +278,23 @@ pub(crate) fn native_function_variadic(
                                     }
                                 } else {
                                     // Result is too large for i64, return BigInt directly
-                                    return Some(Ok(Value::BigInt(std::sync::Arc::new(s))));
+                                    return Some(Ok(Value::bigint_arc(std::sync::Arc::new(s))));
                                 }
                             }
                         } else {
                             // Non-integer range: sum via list with Rat support
                             let items = crate::runtime::utils::value_to_list(arg);
-                            let items_have_rat =
-                                items.iter().any(|v| matches!(v, Value::Rat(_, _)));
+                            let items_have_rat = items
+                                .iter()
+                                .any(|v| matches!(v.view(), ValueView::Rat(_, _)));
                             if items_have_rat {
                                 // Use rational arithmetic for the entire result
                                 let mut rat_num: i64 = total;
                                 let mut rat_den: i64 = 1;
                                 for item in &items {
-                                    let (in_num, in_den) = match item {
-                                        Value::Rat(n, d) => (*n, *d),
-                                        Value::Int(n) => (*n, 1),
+                                    let (in_num, in_den) = match item.view() {
+                                        ValueView::Rat(n, d) => (n, d),
+                                        ValueView::Int(n) => (n, 1),
                                         _ => (crate::runtime::to_int(item), 1),
                                     };
                                     rat_num = rat_num * in_den + in_num * rat_den;
@@ -304,21 +308,21 @@ pub(crate) fn native_function_variadic(
                                 }
                                 // Return Rat result directly
                                 return if rat_den == 1 {
-                                    Some(Ok(Value::Int(rat_num)))
+                                    Some(Ok(Value::int(rat_num)))
                                 } else {
-                                    Some(Ok(Value::Rat(rat_num, rat_den)))
+                                    Some(Ok(Value::rat_raw(rat_num, rat_den)))
                                 };
                             }
                             for item in &items {
-                                match item {
-                                    Value::Int(i) => {
+                                match item.view() {
+                                    ValueView::Int(i) => {
                                         if has_num {
-                                            total_f += *i as f64;
+                                            total_f += i as f64;
                                         } else {
                                             total += i;
                                         }
                                     }
-                                    Value::Num(f) => {
+                                    ValueView::Num(f) => {
                                         if !has_num {
                                             total_f = total as f64;
                                             has_num = true;
@@ -336,11 +340,11 @@ pub(crate) fn native_function_variadic(
                             }
                         }
                     }
-                    Value::Array(items, ..) => {
+                    ValueView::Array(items, ..) => {
                         for item in items.iter() {
                             if has_num {
                                 total_f += item.to_f64();
-                            } else if let Value::Num(_) = item {
+                            } else if let ValueView::Num(_) = item.view() {
                                 total_f = total as f64 + item.to_f64();
                                 has_num = true;
                             } else {
@@ -348,11 +352,11 @@ pub(crate) fn native_function_variadic(
                             }
                         }
                     }
-                    Value::Seq(items) => {
+                    ValueView::Seq(items) => {
                         for item in items.iter() {
                             if has_num {
                                 total_f += item.to_f64();
-                            } else if let Value::Num(_) = item {
+                            } else if let ValueView::Num(_) = item.view() {
                                 total_f = total as f64 + item.to_f64();
                                 has_num = true;
                             } else {
@@ -370,9 +374,9 @@ pub(crate) fn native_function_variadic(
                 }
             }
             if has_num {
-                Some(Ok(Value::Num(total_f)))
+                Some(Ok(Value::num(total_f)))
             } else {
-                Some(Ok(Value::Int(total)))
+                Some(Ok(Value::int(total)))
             }
         }
         _ => None,

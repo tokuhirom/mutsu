@@ -2,7 +2,7 @@
 /// Num, Real, Numeric, Bridge
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ fn str_numeric_exception_attrs(s: &str) -> std::collections::HashMap<String, Val
     let mut ex_attrs = std::collections::HashMap::new();
     ex_attrs.insert("source".to_string(), Value::str(s.to_string()));
     ex_attrs.insert("reason".to_string(), Value::str(reason.clone()));
-    ex_attrs.insert("pos".to_string(), Value::Int(pos as i64));
+    ex_attrs.insert("pos".to_string(), Value::int(pos as i64));
     let source_indicator = crate::runtime::str_numeric::build_source_indicator(s, pos);
     ex_attrs.insert(
         "source-indicator".to_string(),
@@ -49,7 +49,7 @@ pub(crate) fn str_numeric_failure(s: &str) -> Value {
     );
     let mut failure_attrs = std::collections::HashMap::new();
     failure_attrs.insert("exception".to_string(), ex);
-    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+    failure_attrs.insert("handled".to_string(), Value::FALSE);
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
@@ -81,25 +81,25 @@ fn cannot_convert_to_int_failure(source: &Value, f: f64) -> Value {
 /// (radix `:16<ff>`, rational `3/4`, ...) through the full numeric grammar,
 /// mirroring raku's "numify then truncate" semantics.
 fn numeric_to_int(target: &Value) -> Option<Value> {
-    Some(match target {
-        Value::Int(i) => Value::Int(*i),
-        Value::BigInt(_) => target.clone(),
-        Value::Num(f) => {
+    Some(match target.view() {
+        ValueView::Int(i) => Value::int(i),
+        ValueView::BigInt(_) => target.clone(),
+        ValueView::Num(f) => {
             if f.is_nan() || f.is_infinite() {
-                cannot_convert_to_int_failure(target, *f)
+                cannot_convert_to_int_failure(target, f)
             } else {
-                Value::Int(*f as i64)
+                Value::int(f as i64)
             }
         }
-        Value::Rat(_, 0) | Value::FatRat(_, 0) => {
+        ValueView::Rat(_, 0) | ValueView::FatRat(_, 0) => {
             RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
         }
-        Value::Rat(n, d) | Value::FatRat(n, d) => Value::Int(*n / *d),
-        Value::BigRat(_, d) if d.is_zero() => {
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => Value::int(n / d),
+        ValueView::BigRat(_, d) if d.is_zero() => {
             RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
         }
-        Value::BigRat(n, d) => Value::Int((n.as_ref() / d.as_ref()).to_i64().unwrap_or(i64::MAX)),
-        Value::Complex(r, _) => Value::Int(*r as i64),
+        ValueView::BigRat(n, d) => Value::int((n / d).to_i64().unwrap_or(i64::MAX)),
+        ValueView::Complex(r, _) => Value::int(r as i64),
         _ => return None,
     })
 }
@@ -130,11 +130,11 @@ pub(super) fn dispatch(
     // as a plain `Buf[uint8]` / `Blob[uint8]`. Humming-Bird's HTTPServer uses
     // `"\r\n".encode.Buf` to build its constant delimiters.
     if matches!(method, "Buf" | "Blob")
-        && let Value::Instance {
+        && let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = target
+        } = target.view()
         && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
     {
         let bytes = attributes
@@ -153,11 +153,11 @@ pub(super) fn dispatch(
     match method {
         "self" => {
             // For unhandled Failures, .self throws the exception
-            if let Value::Instance {
+            if let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = target
+            } = target.view()
                 && class_name == "Failure"
                 && !target.is_failure_handled()
                 && let Some(ex) = attributes.as_map().get("exception")
@@ -170,62 +170,63 @@ pub(super) fn dispatch(
             Some(Some(Ok(target.clone())))
         }
         "clone" => {
-            match target {
-                Value::Package(_) | Value::Nil => Some(Some(Ok(target.clone()))),
+            match target.view() {
+                ValueView::Package(_) | ValueView::Nil => Some(Some(Ok(target.clone()))),
                 // Clone the whole `ArrayData`, not just its elements, so
                 // per-slot metadata (`initialized` deletion holes, `default`,
                 // `shape`, element type) survives the copy — e.g.
                 // `@a[3]:delete; my @b := @a.clone` keeps `@b[3]:exists` False
                 // (S02-types/array.t test 108). Elements are `Value`-cloned
                 // (shared handles), matching a shallow `.clone`.
-                Value::Array(items, kind) => Some(Some(Ok(Value::Array(
+                ValueView::Array(items, kind) => Some(Some(Ok(Value::array_with_kind(
                     crate::gc::Gc::new((**items).clone()),
-                    *kind,
+                    kind,
                 )))),
-                Value::Hash(map) => Some(Some(Ok(Value::Hash(Value::hash_arc((**map).clone()))))),
-                Value::Set(data, mutable) => Some(Some(Ok(Value::Set(
+                ValueView::Hash(map) => Some(Some(Ok(Value::hash_with_data(Value::hash_arc(
+                    (**map).clone(),
+                ))))),
+                ValueView::Set(data, mutable) => Some(Some(Ok(Value::set_parts(
                     crate::gc::Gc::new((**data).clone()),
-                    *mutable,
+                    mutable,
                 )))),
-                Value::Bag(data, mutable) => Some(Some(Ok(Value::Bag(
+                ValueView::Bag(data, mutable) => Some(Some(Ok(Value::bag_parts(
                     crate::gc::Gc::new((**data).clone()),
-                    *mutable,
+                    mutable,
                 )))),
-                Value::Mix(data, mutable) => Some(Some(Ok(Value::Mix(
+                ValueView::Mix(data, mutable) => Some(Some(Ok(Value::mix_parts(
                     crate::gc::Gc::new((**data).clone()),
-                    *mutable,
+                    mutable,
                 )))),
-                Value::Sub(data) => {
+                ValueView::Sub(data) => {
                     // Clone the sub with a new id so state variables are independent
                     let mut new_data = (**data).clone();
                     new_data.id = crate::value::next_instance_id();
-                    Some(Some(Ok(Value::Sub(crate::gc::Gc::new(new_data)))))
+                    Some(Some(Ok(Value::sub_value(crate::gc::Gc::new(new_data)))))
                 }
-                Value::Pair(key, value) => {
-                    Some(Some(Ok(Value::Pair(key.clone(), Box::new(*value.clone())))))
+                ValueView::Pair(key, value) => {
+                    Some(Some(Ok(Value::pair(key.clone(), value.clone()))))
                 }
-                Value::ValuePair(key, value) => Some(Some(Ok(Value::ValuePair(
-                    Box::new(*key.clone()),
-                    Box::new(*value.clone()),
-                )))),
+                ValueView::ValuePair(key, value) => {
+                    Some(Some(Ok(Value::value_pair(key.clone(), value.clone()))))
+                }
                 _ => Some(None), // fall through to slow path for instances etc.
             }
         }
         "defined" => {
             // Calling .defined on a Failure marks it as handled
-            if let Value::Instance { class_name, .. } = target
+            if let ValueView::Instance { class_name, .. } = target.view()
                 && class_name == "Failure"
             {
                 target.mark_failure_handled();
             }
             // For junctions, autothread .defined over eigenstates and collapse
-            if let Value::Junction { kind, values } = target {
+            if let ValueView::Junction { kind, values } = target.view() {
                 fn value_defined(v: &Value) -> bool {
-                    match v {
-                        Value::Nil | Value::Package(_) => false,
-                        Value::Slip(items) if items.is_empty() => false,
-                        Value::Instance { class_name, .. } if class_name == "Failure" => false,
-                        Value::Junction { kind, values } => {
+                    match v.view() {
+                        ValueView::Nil | ValueView::Package(_) => false,
+                        ValueView::Slip(items) if items.is_empty() => false,
+                        ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
+                        ValueView::Junction { kind, values } => {
                             let results: Vec<bool> = values.iter().map(value_defined).collect();
                             collapse_junction(kind, &results)
                         }
@@ -243,56 +244,56 @@ pub(super) fn dispatch(
                 }
                 let results: Vec<bool> = values.iter().map(value_defined).collect();
                 let collapsed = collapse_junction(kind, &results);
-                Some(Some(Ok(Value::Bool(collapsed))))
+                Some(Some(Ok(Value::truth(collapsed))))
             } else {
-                Some(Some(Ok(Value::Bool(match target {
-                    Value::Nil | Value::Package(_) => false,
-                    Value::Slip(items) if items.is_empty() => false,
-                    Value::Instance { class_name, .. } if class_name == "Failure" => false,
+                Some(Some(Ok(Value::truth(match target.view() {
+                    ValueView::Nil | ValueView::Package(_) => false,
+                    ValueView::Slip(items) if items.is_empty() => false,
+                    ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
                     _ => true,
                 }))))
             }
         }
-        "DEFINITE" => Some(Some(Ok(Value::Bool(match target {
-            Value::Nil | Value::Package(_) | Value::CustomType { .. } => false,
-            Value::Slip(items) if items.is_empty() => false,
-            Value::Instance { class_name, .. } if class_name == "Failure" => false,
+        "DEFINITE" => Some(Some(Ok(Value::truth(match target.view() {
+            ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..) => false,
+            ValueView::Slip(items) if items.is_empty() => false,
+            ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
             _ => true,
         })))),
         "WHICH" => {
             // Determine if this is a value type (ValueObjAt) or reference type (ObjAt)
             let is_value_type = matches!(
-                target,
-                Value::Int(_)
-                    | Value::BigInt(_)
-                    | Value::Num(_)
-                    | Value::Str(_)
-                    | Value::Bool(_)
-                    | Value::Rat(_, _)
-                    | Value::BigRat(_, _)
-                    | Value::FatRat(_, _)
-                    | Value::Complex(_, _)
-                    | Value::Set(_, _)
-                    | Value::Bag(_, _)
-                    | Value::Mix(_, _)
-                    | Value::Junction { .. }
-                    | Value::Nil
+                target.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(_, _)
+                    | ValueView::BigRat(_, _)
+                    | ValueView::FatRat(_, _)
+                    | ValueView::Complex(_, _)
+                    | ValueView::Set(_, _)
+                    | ValueView::Bag(_, _)
+                    | ValueView::Mix(_, _)
+                    | ValueView::Junction { .. }
+                    | ValueView::Nil
             );
-            let which_str = match target {
-                Value::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
-                Value::CustomType(c) => {
+            let which_str = match target.view() {
+                ValueView::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
+                ValueView::CustomType(c) => {
                     format!("{}|U{}", c.name.resolve(), c.id)
                 }
-                Value::Int(n) => format!("Int|{}", n),
-                Value::BigInt(n) => format!("Int|{}", n),
-                Value::Num(n) => format!("Num|{}", n),
-                Value::Str(s) => format!("Str|{}", s),
-                Value::Bool(b) => format!("Bool|{}", if *b { 1 } else { 0 }),
-                Value::Rat(n, d) => format!("Rat|{}/{}", n, d),
-                Value::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
-                Value::Complex(r, i) => format!("Complex|{}+{}i", r, i),
-                Value::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
-                Value::Set(set, _) => {
+                ValueView::Int(n) => format!("Int|{}", n),
+                ValueView::BigInt(n) => format!("Int|{}", n),
+                ValueView::Num(n) => format!("Num|{}", n),
+                ValueView::Str(s) => format!("Str|{}", s),
+                ValueView::Bool(b) => format!("Bool|{}", if b { 1 } else { 0 }),
+                ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
+                ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
+                ValueView::Complex(r, i) => format!("Complex|{}+{}i", r, i),
+                ValueView::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
+                ValueView::Set(set, _) => {
                     let mut keys: Vec<&String> = set.iter().collect();
                     keys.sort();
                     use std::hash::{Hash, Hasher};
@@ -302,7 +303,7 @@ pub(super) fn dispatch(
                     }
                     format!("Set|{:016X}", hasher.finish())
                 }
-                Value::Bag(bag, _) => {
+                ValueView::Bag(bag, _) => {
                     let mut pairs: Vec<(&String, &num_bigint::BigInt)> = bag.iter().collect();
                     pairs.sort_by(|a, b| a.0.cmp(b.0));
                     use std::hash::{Hash, Hasher};
@@ -313,7 +314,7 @@ pub(super) fn dispatch(
                     }
                     format!("Bag|{:016X}", hasher.finish())
                 }
-                Value::Mix(mix, _) => {
+                ValueView::Mix(mix, _) => {
                     let mut pairs: Vec<(&String, &f64)> = mix.iter().collect();
                     pairs.sort_by(|a, b| a.0.cmp(b.0));
                     use std::hash::{Hash, Hasher};
@@ -324,23 +325,23 @@ pub(super) fn dispatch(
                     }
                     format!("Mix|{:016X}", hasher.finish())
                 }
-                Value::Sub(sub_data) => {
+                ValueView::Sub(sub_data) => {
                     format!(
                         "{}|{}",
                         runtime::utils::value_type_name(target),
                         sub_data.id
                     )
                 }
-                Value::Regex(pattern) => {
+                ValueView::Regex(pattern) => {
                     format!("Regex|{:p}", Arc::as_ptr(pattern))
                 }
-                Value::RegexWithAdverbs(a) => {
+                ValueView::RegexWithAdverbs(a) => {
                     format!("Regex|{:p}", Arc::as_ptr(&a.pattern))
                 }
-                Value::Instance { id, .. } => {
+                ValueView::Instance { id, .. } => {
                     format!("{}|{}", runtime::utils::value_type_name(target), id)
                 }
-                Value::Junction { kind, values } => {
+                ValueView::Junction { kind, values } => {
                     use std::hash::{Hash, Hasher};
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
                     // Hash the kind
@@ -356,25 +357,25 @@ pub(super) fn dispatch(
                     }
                     format!("Junction|{:016X}", hasher.finish())
                 }
-                Value::Seq(items) => {
+                ValueView::Seq(items) => {
                     format!("Seq|{:p}", Arc::as_ptr(items))
                 }
-                Value::Slip(items) => {
+                ValueView::Slip(items) => {
                     format!("Slip|{:p}", Arc::as_ptr(items))
                 }
-                Value::Array(items, ..) => {
+                ValueView::Array(items, ..) => {
                     format!("Array|{:p}", crate::gc::Gc::as_ptr(items))
                 }
-                Value::Hash(map) => {
+                ValueView::Hash(map) => {
                     format!("Hash|{:p}", crate::gc::Gc::as_ptr(map))
                 }
-                Value::Promise(p) => {
+                ValueView::Promise(p) => {
                     format!("Promise|{:p}", p.arc_ptr())
                 }
-                Value::Channel(c) => {
+                ValueView::Channel(c) => {
                     format!("Channel|{:p}", c.arc_ptr())
                 }
-                Value::Whatever => {
+                ValueView::Whatever => {
                     use std::sync::atomic::{AtomicU64, Ordering};
                     static WHATEVER_ID: AtomicU64 = AtomicU64::new(0);
                     // Whatever is a type object singleton
@@ -406,31 +407,31 @@ pub(super) fn dispatch(
             ))))
         }
         "Bool" => {
-            if matches!(target, Value::Instance { .. })
+            if matches!(target.view(), ValueView::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric"))
             {
                 Some(None)
             } else if matches!(
-                target,
-                Value::Regex(_)
-                    | Value::RegexWithAdverbs { .. }
-                    | Value::Routine { is_regex: true, .. }
+                target.view(),
+                ValueView::Regex(_)
+                    | ValueView::RegexWithAdverbs(..)
+                    | ValueView::Routine { is_regex: true, .. }
             ) {
                 // Regex.Bool needs to smartmatch against $_, which requires
                 // runtime context. Fall through to the runtime handler.
                 Some(None)
             } else {
                 // Calling .Bool on a Failure marks it as handled
-                if let Value::Instance { class_name, .. } = target
+                if let ValueView::Instance { class_name, .. } = target.view()
                     && class_name == "Failure"
                 {
                     target.mark_failure_handled();
                 }
-                Some(Some(Ok(Value::Bool(target.truthy()))))
+                Some(Some(Ok(Value::truth(target.truthy()))))
             }
         }
-        "Str" | "Stringy" => Some(match target {
-            Value::Instance {
+        "Str" | "Stringy" => Some(match target.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -445,31 +446,29 @@ pub(super) fn dispatch(
             // Instant/Duration `.Str` is the same pure rendering as their gist
             // (`value/display.rs::to_string_value`), so handle it natively
             // instead of falling through to the interpreter.
-            Value::Instance { class_name, .. }
+            ValueView::Instance { class_name, .. }
                 if class_name == "Instant" || class_name == "Duration" =>
             {
                 Some(Ok(Value::str(target.to_string_value())))
             }
-            Value::Package(_) | Value::Instance { .. } => None,
-            Value::LazyList(_) => None, // fall through to runtime to force the list
+            ValueView::Package(_) | ValueView::Instance { .. } => None,
+            ValueView::LazyList(_) => None, // fall through to runtime to force the list
             // A lazy (infinite-backed) array stringifies to a bounded `...`
             // placeholder rather than materializing its capped backing.
-            Value::Array(_, kind) if *kind == crate::value::ArrayKind::Lazy => {
-                Some(Ok(Value::str_from("...")))
-            }
-            Value::Enum { .. } => None, // fall through to enum dispatch for string enum support
-            Value::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
-            Value::Rat(_, 0) | Value::FatRat(_, 0) => {
+            ValueView::Array(_, crate::value::ArrayKind::Lazy) => Some(Ok(Value::str_from("..."))),
+            ValueView::Enum { .. } => None, // fall through to enum dispatch for string enum support
+            ValueView::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
+            ValueView::Rat(_, 0) | ValueView::FatRat(_, 0) => {
                 // Zero-denominator Rat/FatRat .Str throws X::Numeric::DivideByZero
                 None // fall through to runtime for exception with proper context
             }
             _ => Some(Ok(Value::str(target.to_string_value()))),
         }),
         "Int" => {
-            let result = match target {
-                Value::Int(i) => Value::Int(*i),
-                Value::BigInt(_) => target.clone(),
-                Value::Num(f) => {
+            let result = match target.view() {
+                ValueView::Int(i) => Value::int(i),
+                ValueView::BigInt(_) => target.clone(),
+                ValueView::Num(f) => {
                     if f.is_nan() || f.is_infinite() {
                         let msg = format!(
                             "Cannot convert {} to Int: not a finite number",
@@ -496,9 +495,9 @@ pub(super) fn dispatch(
                             failure_attrs,
                         ))));
                     }
-                    Value::Int(*f as i64)
+                    Value::int(f as i64)
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -506,46 +505,46 @@ pub(super) fn dispatch(
                     let numeric = attributes
                         .as_map()
                         .get("value")
-                        .and_then(|v| match v {
-                            Value::Int(i) => Some(*i as f64),
-                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            Value::Num(f) => Some(*f),
-                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-                            Value::BigRat(n, d) if !d.is_zero() => {
+                        .and_then(|v| match v.view() {
+                            ValueView::Int(i) => Some(i as f64),
+                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            ValueView::Num(f) => Some(f),
+                            ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::FatRat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::BigRat(n, d) if !d.is_zero() => {
                                 Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
                             }
                             _ => None,
                         })
                         .unwrap_or(0.0);
-                    Value::Int(numeric as i64)
+                    Value::int(numeric as i64)
                 }
-                Value::Rat(_, d) if *d == 0 => {
+                ValueView::Rat(_, 0) => {
                     return Some(Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
                         "Int", "Rational",
                     ))));
                 }
-                Value::FatRat(_, d) if *d == 0 => {
+                ValueView::FatRat(_, 0) => {
                     return Some(Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
                         "Int", "Rational",
                     ))));
                 }
-                Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
-                Value::FatRat(n, d) if *d != 0 => Value::Int(*n / *d),
-                Value::BigRat(_, d) if d.is_zero() => {
+                ValueView::Rat(n, d) if d != 0 => Value::int(n / d),
+                ValueView::FatRat(n, d) if d != 0 => Value::int(n / d),
+                ValueView::BigRat(_, d) if d.is_zero() => {
                     return Some(Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
                         "Int", "Rational",
                     ))));
                 }
-                Value::BigRat(n, d) if !d.is_zero() => {
+                ValueView::BigRat(n, d) if !d.is_zero() => {
                     use num_traits::ToPrimitive;
-                    Value::Int((n.as_ref() / d.as_ref()).to_i64().unwrap_or(i64::MAX))
+                    Value::int((n / d).to_i64().unwrap_or(i64::MAX))
                 }
-                Value::Str(s) => {
+                ValueView::Str(s) => {
                     if s.trim().is_empty() {
                         // An empty or whitespace-only string coerces to 0, like
                         // `"".Numeric` (a defined-but-empty string, no warning).
-                        Value::Int(0)
+                        Value::int(0)
                     } else if let Some(v) = parse_raku_int_from_str(s) {
                         v
                     } else if let Some(v) =
@@ -563,19 +562,21 @@ pub(super) fn dispatch(
                         return Some(Some(Ok(str_numeric_failure(s))));
                     }
                 }
-                Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
-                Value::Complex(r, _) => Value::Int(*r as i64),
-                Value::Hash(h) => Value::Int(h.len() as i64),
-                Value::Array(items, ..) => Value::Int(items.len() as i64),
-                Value::Instance {
+                ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
+                ValueView::Complex(r, _) => Value::int(r as i64),
+                ValueView::Hash(h) => Value::int(h.len() as i64),
+                ValueView::Array(items, ..) => Value::int(items.len() as i64),
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
-                        Value::Int(bytes.len() as i64)
+                    if let Some(ValueView::Array(bytes, ..)) =
+                        attributes.as_map().get("bytes").map(Value::view)
+                    {
+                        Value::int(bytes.len() as i64)
                     } else {
-                        Value::Int(0)
+                        Value::int(0)
                     }
                 }
                 _ => return Some(None),
@@ -584,14 +585,14 @@ pub(super) fn dispatch(
         }
         "UInt" => {
             // First coerce to Int, then check non-negative
-            let int_result = match target {
-                Value::Int(i) => Some(Value::Int(*i)),
-                Value::BigInt(_) => Some(target.clone()),
-                Value::Num(f) if f.is_finite() => Some(Value::Int(f.trunc() as i64)),
-                Value::Rat(n, d) if *d != 0 => Some(Value::Int(*n / *d)),
-                Value::Bool(b) => Some(Value::Int(if *b { 1 } else { 0 })),
-                Value::Str(s) if s.trim().is_empty() => Some(Value::Int(0)),
-                Value::Str(s) => {
+            let int_result = match target.view() {
+                ValueView::Int(i) => Some(Value::int(i)),
+                ValueView::BigInt(_) => Some(target.clone()),
+                ValueView::Num(f) if f.is_finite() => Some(Value::int(f.trunc() as i64)),
+                ValueView::Rat(n, d) if d != 0 => Some(Value::int(n / d)),
+                ValueView::Bool(b) => Some(Value::int(if b { 1 } else { 0 })),
+                ValueView::Str(s) if s.trim().is_empty() => Some(Value::int(0)),
+                ValueView::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(s) {
                         Some(v)
                     } else if let Some(v) =
@@ -614,9 +615,9 @@ pub(super) fn dispatch(
             };
             if let Some(int_val) = int_result {
                 // Check non-negative
-                let is_neg = match &int_val {
-                    Value::Int(i) => *i < 0,
-                    Value::BigInt(n) => n.sign() == num_bigint::Sign::Minus,
+                let is_neg = match int_val.view() {
+                    ValueView::Int(i) => i < 0,
+                    ValueView::BigInt(n) => n.sign() == num_bigint::Sign::Minus,
                     _ => false,
                 };
                 if is_neg {
@@ -631,14 +632,14 @@ pub(super) fn dispatch(
             }
         }
         "Num" => {
-            let result = match target {
-                Value::Int(i) => Value::Num(*i as f64),
-                Value::BigInt(n) => {
+            let result = match target.view() {
+                ValueView::Int(i) => Value::num(i as f64),
+                ValueView::BigInt(n) => {
                     use num_traits::ToPrimitive;
-                    Value::Num(n.to_f64().unwrap_or(f64::INFINITY))
+                    Value::num(n.to_f64().unwrap_or(f64::INFINITY))
                 }
-                Value::Num(f) => Value::Num(*f),
-                Value::Instance {
+                ValueView::Num(f) => Value::num(f),
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -646,41 +647,41 @@ pub(super) fn dispatch(
                     let numeric = attributes
                         .as_map()
                         .get("value")
-                        .and_then(|v| match v {
-                            Value::Int(i) => Some(*i as f64),
-                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            Value::Num(f) => Some(*f),
-                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-                            Value::BigRat(n, d) if !d.is_zero() => {
+                        .and_then(|v| match v.view() {
+                            ValueView::Int(i) => Some(i as f64),
+                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            ValueView::Num(f) => Some(f),
+                            ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::FatRat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::BigRat(n, d) if !d.is_zero() => {
                                 Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
                             }
                             _ => None,
                         })
                         .unwrap_or(0.0);
-                    Value::Num(numeric)
+                    Value::num(numeric)
                 }
-                Value::Rat(n, d) | Value::FatRat(n, d) if *d == 0 => Value::Num(if *n == 0 {
+                ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d == 0 => Value::num(if n == 0 {
                     f64::NAN
-                } else if *n > 0 {
+                } else if n > 0 {
                     f64::INFINITY
                 } else {
                     f64::NEG_INFINITY
                 }),
-                Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
-                Value::FatRat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
-                Value::BigRat(n, d) if !d.is_zero() => {
+                ValueView::Rat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
+                ValueView::FatRat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
+                ValueView::BigRat(n, d) if !d.is_zero() => {
                     use num_traits::ToPrimitive;
                     let num = n.to_f64().unwrap_or(0.0);
                     let den = d.to_f64().unwrap_or(1.0);
-                    Value::Num(num / den)
+                    Value::num(num / den)
                 }
-                Value::Str(s) => {
+                ValueView::Str(s) => {
                     let trimmed = s.trim();
                     if trimmed.is_empty() {
                         // An empty or whitespace-only string coerces to 0, like
                         // `"".Numeric`.
-                        Value::Num(0.0)
+                        Value::num(0.0)
                     } else {
                         // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus, then use
                         // the canonical Raku numeric parser (radix prefixes,
@@ -705,7 +706,7 @@ pub(super) fn dispatch(
                             } else {
                                 f
                             };
-                            Value::Num(f)
+                            Value::num(f)
                         } else {
                             // An invalid string yields a lazy X::Str::Numeric Failure,
                             // mirroring `.Int` (not an eager X::AdHoc RuntimeError).
@@ -713,22 +714,22 @@ pub(super) fn dispatch(
                         }
                     }
                 }
-                Value::Bool(b) => Value::Num(if *b { 1.0 } else { 0.0 }),
-                Value::Complex(_, _) => return Some(None), // fall through to runtime for $*TOLERANCE check
-                Value::Array(items, ..) => Value::Num(items.len() as f64),
-                Value::Seq(items) | Value::Slip(items) => Value::Num(items.len() as f64),
+                ValueView::Bool(b) => Value::num(if b { 1.0 } else { 0.0 }),
+                ValueView::Complex(_, _) => return Some(None), // fall through to runtime for $*TOLERANCE check
+                ValueView::Array(items, ..) => Value::num(items.len() as f64),
+                ValueView::Seq(items) | ValueView::Slip(items) => Value::num(items.len() as f64),
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))
         }
         "Real" => {
             // Calling .Real on a type object (Package) should warn and return zero
-            if let Value::Package(name) = target {
+            if let ValueView::Package(name) = target.view() {
                 let type_name = name.resolve();
                 let zero = match type_name.as_str() {
-                    "Int" | "IntStr" => Value::Int(0),
-                    "Rat" | "FatRat" | "RatStr" => Value::Rat(0, 1),
-                    "Num" | "NumStr" | "Complex" | "ComplexStr" => Value::Num(0.0),
+                    "Int" | "IntStr" => Value::int(0),
+                    "Rat" | "FatRat" | "RatStr" => Value::rat_raw(0, 1),
+                    "Num" | "NumStr" | "Complex" | "ComplexStr" => Value::num(0.0),
                     _ => return Some(None),
                 };
                 let msg = format!(
@@ -737,17 +738,17 @@ pub(super) fn dispatch(
                 );
                 return Some(Some(Err(RuntimeError::warn_signal_with_resume(msg, zero))));
             }
-            let result = match target {
-                Value::Int(i) => Value::Int(*i),
-                Value::BigInt(_) => target.clone(),
-                Value::Num(f) => Value::Num(*f),
-                Value::Rat(n, d) => Value::Rat(*n, *d),
-                Value::FatRat(n, d) => Value::FatRat(*n, *d),
-                Value::BigRat(n, d) => Value::BigRat(n.clone(), d.clone()),
-                Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
-                Value::Complex(r, im) => {
+            let result = match target.view() {
+                ValueView::Int(i) => Value::int(i),
+                ValueView::BigInt(_) => target.clone(),
+                ValueView::Num(f) => Value::num(f),
+                ValueView::Rat(n, d) => Value::rat_raw(n, d),
+                ValueView::FatRat(n, d) => Value::fat_rat_raw(n, d),
+                ValueView::BigRat(n, d) => Value::bigrat(n.clone(), d.clone()),
+                ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
+                ValueView::Complex(r, im) => {
                     if im.abs() <= 1e-15 {
-                        Value::Num(*r)
+                        Value::num(r)
                     } else {
                         let mut ex_attrs = std::collections::HashMap::new();
                         ex_attrs.insert(
@@ -757,7 +758,7 @@ pub(super) fn dispatch(
                             ),
                         );
                         ex_attrs
-                            .insert("target".to_string(), Value::Package(Symbol::intern("Real")));
+                            .insert("target".to_string(), Value::package(Symbol::intern("Real")));
                         ex_attrs.insert("source".to_string(), target.clone());
                         let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), ex_attrs);
                         let mut failure_attrs = std::collections::HashMap::new();
@@ -768,7 +769,7 @@ pub(super) fn dispatch(
                         ))));
                     }
                 }
-                Value::Str(s) => {
+                ValueView::Str(s) => {
                     // `.Real` yields the natural numeric type (Int/Rat/Num); use the
                     // canonical parser so radix prefixes and underscores work and the
                     // result agrees with `.Numeric`.
@@ -782,23 +783,23 @@ pub(super) fn dispatch(
                         return Some(Some(Ok(str_numeric_failure(s))));
                     }
                 }
-                Value::Array(items, ..) => Value::Int(items.len() as i64),
-                Value::Hash(h) => Value::Int(h.len() as i64),
-                Value::Seq(items) => Value::Int(items.len() as i64),
+                ValueView::Array(items, ..) => Value::int(items.len() as i64),
+                ValueView::Hash(h) => Value::int(h.len() as i64),
+                ValueView::Seq(items) => Value::int(items.len() as i64),
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))
         }
         "Numeric" => {
             // Calling .Numeric on a type object (Package) should warn and return zero
-            if let Value::Package(name) = target {
+            if let ValueView::Package(name) = target.view() {
                 let type_name = name.resolve();
                 let zero = match type_name.as_str() {
-                    "Int" | "IntStr" => Value::Int(0),
-                    "Rat" | "RatStr" => Value::Rat(0, 1),
-                    "FatRat" => Value::FatRat(0, 1),
-                    "Num" | "NumStr" => Value::Num(0.0),
-                    "Complex" | "ComplexStr" => Value::Complex(0.0, 0.0),
+                    "Int" | "IntStr" => Value::int(0),
+                    "Rat" | "RatStr" => Value::rat_raw(0, 1),
+                    "FatRat" => Value::fat_rat_raw(0, 1),
+                    "Num" | "NumStr" => Value::num(0.0),
+                    "Complex" | "ComplexStr" => Value::complex(0.0, 0.0),
                     _ => return Some(None),
                 };
                 let msg = format!(
@@ -807,11 +808,11 @@ pub(super) fn dispatch(
                 );
                 return Some(Some(Err(RuntimeError::warn_signal_with_resume(msg, zero))));
             }
-            let result = match target {
-                Value::Int(i) => Value::Int(*i),
-                Value::BigInt(_) => target.clone(),
-                Value::Num(f) => Value::Num(*f),
-                Value::Instance {
+            let result = match target.view() {
+                ValueView::Int(i) => Value::int(i),
+                ValueView::BigInt(_) => target.clone(),
+                ValueView::Num(f) => Value::num(f),
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -819,22 +820,22 @@ pub(super) fn dispatch(
                     let numeric = attributes
                         .as_map()
                         .get("value")
-                        .and_then(|v| match v {
-                            Value::Int(i) => Some(*i as f64),
-                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            Value::Num(f) => Some(*f),
-                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-                            Value::BigRat(n, d) if !d.is_zero() => {
+                        .and_then(|v| match v.view() {
+                            ValueView::Int(i) => Some(i as f64),
+                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            ValueView::Num(f) => Some(f),
+                            ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::FatRat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::BigRat(n, d) if !d.is_zero() => {
                                 Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
                             }
                             _ => None,
                         })
                         .unwrap_or(0.0);
-                    Value::Num(numeric)
+                    Value::num(numeric)
                 }
-                Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
-                Value::Str(s) => {
+                ValueView::Rat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
+                ValueView::Str(s) => {
                     if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
                         v
                     } else {
@@ -843,46 +844,48 @@ pub(super) fn dispatch(
                         return Some(Some(Ok(str_numeric_failure(s))));
                     }
                 }
-                Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
-                Value::Complex(r, _) => Value::Num(*r),
-                Value::Array(items, ..) => Value::Int(items.len() as i64),
-                Value::Hash(h) => Value::Int(h.len() as i64),
-                Value::Instance {
+                ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
+                ValueView::Complex(r, _) => Value::num(r),
+                ValueView::Array(items, ..) => Value::int(items.len() as i64),
+                ValueView::Hash(h) => Value::int(h.len() as i64),
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
-                        Value::Int(bytes.len() as i64)
+                    if let Some(ValueView::Array(bytes, ..)) =
+                        attributes.as_map().get("bytes").map(Value::view)
+                    {
+                        Value::int(bytes.len() as i64)
                     } else {
-                        Value::Int(0)
+                        Value::int(0)
                     }
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 } if class_name == "Stash" => {
-                    let count = match attributes.as_map().get("symbols") {
-                        Some(Value::Hash(map)) => map.len() as i64,
+                    let count = match attributes.as_map().get("symbols").map(Value::view) {
+                        Some(ValueView::Hash(map)) => map.len() as i64,
                         _ => 0,
                     };
-                    Value::Int(count)
+                    Value::int(count)
                 }
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))
         }
         "Bridge" => {
-            let result = match target {
-                Value::Int(i) => Value::Num(*i as f64),
-                Value::BigInt(n) => Value::Num(n.to_f64().unwrap_or(f64::INFINITY)),
-                Value::Num(f) => Value::Num(*f),
-                Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
-                Value::FatRat(n, d) if *d != 0 => {
-                    Value::Num(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+            let result = match target.view() {
+                ValueView::Int(i) => Value::num(i as f64),
+                ValueView::BigInt(n) => Value::num(n.to_f64().unwrap_or(f64::INFINITY)),
+                ValueView::Num(f) => Value::num(f),
+                ValueView::Rat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
+                ValueView::FatRat(n, d) if d != 0 => {
+                    Value::num(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -890,18 +893,18 @@ pub(super) fn dispatch(
                     let bridged = attributes
                         .as_map()
                         .get("value")
-                        .and_then(|v| match v {
-                            Value::Int(i) => Some(*i as f64),
-                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            Value::Num(f) => Some(*f),
-                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-                            Value::FatRat(n, d) if *d != 0 => {
+                        .and_then(|v| match v.view() {
+                            ValueView::Int(i) => Some(i as f64),
+                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            ValueView::Num(f) => Some(f),
+                            ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::FatRat(n, d) if d != 0 => {
                                 Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
                             }
                             _ => None,
                         })
                         .unwrap_or(0.0);
-                    Value::Num(bridged)
+                    Value::num(bridged)
                 }
                 _ => return Some(None),
             };
@@ -920,20 +923,20 @@ fn range_numeric_coercion(target: &Value, method: &str) -> Result<Value, Runtime
         return if method == "Int" {
             Err(RuntimeError::new("Cannot convert Inf to Int".to_string()))
         } else {
-            Ok(Value::Num(f64::INFINITY))
+            Ok(Value::num(f64::INFINITY))
         };
     }
-    let count = match target {
-        Value::Range(s, e) => (*e - *s + 1).max(0),
-        Value::RangeExcl(s, e) | Value::RangeExclStart(s, e) => (*e - *s).max(0),
-        Value::RangeExclBoth(s, e) => (*e - *s - 1).max(0),
+    let count = match target.view() {
+        ValueView::Range(s, e) => (e - s + 1).max(0),
+        ValueView::RangeExcl(s, e) | ValueView::RangeExclStart(s, e) => (e - s).max(0),
+        ValueView::RangeExclBoth(s, e) => (e - s - 1).max(0),
         // GenericRange (e.g. Rat endpoints `1.5..5.5`) has no closed-form count;
         // materialize it the same way `.elems` does.
         _ => crate::runtime::utils::value_to_list(target).len() as i64,
     };
     Ok(if method == "Num" {
-        Value::Num(count as f64)
+        Value::num(count as f64)
     } else {
-        Value::Int(count)
+        Value::int(count)
     })
 }

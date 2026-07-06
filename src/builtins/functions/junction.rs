@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Build a `Junction` for the `any`/`all`/`one`/`none` constructors.
 ///
@@ -19,15 +19,21 @@ pub(crate) fn build_junction(name: &str, args: Vec<Value>) -> Value {
     };
     let elems = if args.len() == 1 {
         let arg = args.into_iter().next().unwrap();
-        match arg {
-            Value::Array(items, ..) => items.to_vec(),
-            Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-            range @ (Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. }) => crate::runtime::utils::value_to_list(&range),
-            other => vec![other],
+        if let ValueView::Array(items, ..) = arg.view() {
+            items.to_vec()
+        } else if let ValueView::Seq(items) | ValueView::Slip(items) = arg.view() {
+            items.to_vec()
+        } else if matches!(
+            arg.view(),
+            ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+        ) {
+            crate::runtime::utils::value_to_list(&arg)
+        } else {
+            vec![arg]
         }
     } else {
         args

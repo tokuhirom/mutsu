@@ -21,7 +21,7 @@ fn radix_out_of_range(radix: i64) -> RuntimeError {
         radix, radix
     );
     let mut attrs = HashMap::new();
-    attrs.insert("radix".to_string(), Value::Int(radix));
+    attrs.insert("radix".to_string(), Value::int(radix));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Syntax::Number::RadixOutOfRange"), attrs);
     let mut err = RuntimeError::new(&msg);
@@ -34,7 +34,7 @@ fn str_numeric_error(source: &str, pos: usize, radix: i64) -> RuntimeError {
     let msg = format!("Cannot convert string to number: {}", reason);
     let mut attrs = HashMap::new();
     attrs.insert("source".to_string(), Value::str(source.to_string()));
-    attrs.insert("pos".to_string(), Value::Int(pos as i64));
+    attrs.insert("pos".to_string(), Value::int(pos as i64));
     attrs.insert("reason".to_string(), Value::str(reason.clone()));
     attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -154,9 +154,9 @@ pub(crate) fn parse_base(s: &str, radix: i64) -> Result<Value, RuntimeError> {
         // Try to represent as Int (i64) if it fits, otherwise BigInt
         use num_traits::ToPrimitive;
         if let Some(n) = val.to_i64() {
-            Ok(Value::Int(n))
+            Ok(Value::int(n))
         } else {
-            Ok(Value::BigInt(std::sync::Arc::new(val)))
+            Ok(Value::bigint_arc(std::sync::Arc::new(val)))
         }
     }
 }

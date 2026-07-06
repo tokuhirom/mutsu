@@ -13,7 +13,7 @@
 //! `Match` objects), so those cases stay in `runtime/` — [`comb_pure`] returns
 //! `None` for them, signalling the caller to defer.
 
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// Apply a `comb` limit to a result vector: `Some(n)` keeps the first `n`
@@ -43,9 +43,9 @@ pub(crate) fn comb_pure(
         return Some(Vec::new());
     }
 
-    match matcher {
-        Some(Value::Int(n)) => {
-            let chunk_size = if *n <= 0 { 1usize } else { *n as usize };
+    match matcher.map(Value::view) {
+        Some(ValueView::Int(n)) => {
+            let chunk_size = if n <= 0 { 1usize } else { n as usize };
             let graphemes: Vec<&str> = text.graphemes(true).collect();
             let result: Vec<Value> = graphemes
                 .chunks(chunk_size)
@@ -53,7 +53,7 @@ pub(crate) fn comb_pure(
                 .collect();
             Some(apply_limit(result, limit))
         }
-        Some(Value::Str(needle)) => {
+        Some(ValueView::Str(needle)) => {
             if needle.is_empty() {
                 let chars: Vec<Value> = text
                     .graphemes(true)
@@ -96,7 +96,7 @@ pub(crate) fn native_comb_method(
     // Separate positional args from the `:match` named pair (regex-only).
     let mut positional: Vec<&Value> = Vec::new();
     for arg in args {
-        if let Value::Pair(key, _) = arg
+        if let ValueView::Pair(key, _) = arg.view()
             && key == "match"
         {
             continue;
@@ -111,5 +111,5 @@ pub(crate) fn native_comb_method(
     };
     let matcher = positional.first().copied();
 
-    comb_pure(&text, matcher, limit).map(|items| Ok(Value::Seq(std::sync::Arc::new(items))))
+    comb_pure(&text, matcher, limit).map(|items| Ok(Value::seq(items)))
 }

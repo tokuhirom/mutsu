@@ -1,5 +1,5 @@
 use crate::runtime;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::collections::HashMap;
@@ -97,17 +97,17 @@ pub(crate) fn int_to_subscript(n: i64) -> String {
 /// `roots()` builtin function. Handles edge cases: n <= 0 returns [NaN],
 /// NaN/Inf inputs with n=1 return the input as Complex.
 pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
-    let n_int = match n_arg {
-        Value::Int(i) => *i,
-        Value::Num(f) => *f as i64,
-        Value::Rat(n, d) if *d != 0 => *n / *d,
-        Value::BigInt(bi) => {
+    let n_int = match n_arg.view() {
+        ValueView::Int(i) => i,
+        ValueView::Num(f) => f as i64,
+        ValueView::Rat(n, d) if d != 0 => n / d,
+        ValueView::BigInt(bi) => {
             use num_traits::ToPrimitive;
             bi.to_i64().unwrap_or(0)
         }
-        Value::Str(s) => s.parse::<i64>().unwrap_or(0),
-        Value::Bool(b) => {
-            if *b {
+        ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
+        ValueView::Bool(b) => {
+            if b {
                 1
             } else {
                 0
@@ -118,7 +118,7 @@ pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
 
     // n <= 0: return [NaN]
     if n_int <= 0 {
-        return Value::array(vec![Value::Num(f64::NAN)]);
+        return Value::array(vec![Value::num(f64::NAN)]);
     }
 
     let n = n_int as usize;
@@ -137,7 +137,7 @@ pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
     if re.is_nan() || im.is_nan() {
         let mut roots = Vec::with_capacity(n);
         for _ in 0..n {
-            roots.push(Value::Complex(f64::NAN, 0.0));
+            roots.push(Value::complex(f64::NAN, 0.0));
         }
         return Value::array(roots);
     }
@@ -149,7 +149,7 @@ pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
         // For n>1, the roots involve Inf which is complex
         for k in 0..n {
             if n == 1 {
-                roots.push(Value::Complex(re, im));
+                roots.push(Value::complex(re, im));
             } else {
                 // Infinity roots: magnitude is Inf, angles vary
                 let theta = im.atan2(re);
@@ -157,9 +157,9 @@ pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
                 let rr = f64::INFINITY * angle.cos();
                 let ii = f64::INFINITY * angle.sin();
                 if ii.abs() < 1e-12 {
-                    roots.push(Value::Num(rr));
+                    roots.push(Value::num(rr));
                 } else {
-                    roots.push(Value::Complex(rr, ii));
+                    roots.push(Value::complex(rr, ii));
                 }
             }
         }
@@ -170,7 +170,7 @@ pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
     if re == 0.0 && im == 0.0 {
         let mut roots = Vec::with_capacity(n);
         for _ in 0..n {
-            roots.push(Value::Complex(0.0, 0.0));
+            roots.push(Value::complex(0.0, 0.0));
         }
         return Value::array(roots);
     }
@@ -185,9 +185,9 @@ pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
         let rr = mag * angle.cos();
         let ii = mag * angle.sin();
         if ii.abs() < 1e-12 {
-            roots.push(Value::Num(rr));
+            roots.push(Value::num(rr));
         } else {
-            roots.push(Value::Complex(rr, ii));
+            roots.push(Value::complex(rr, ii));
         }
     }
     Value::array(roots)

@@ -4,7 +4,7 @@
 //   method write-num32(::T:U: $offset, num32 $value, $endian = NativeEndian --> Buf:D)
 //   method write-num32(Buf:D: $offset, num32 $value, $endian = NativeEndian --> Buf:D)
 
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// Returns Some(size_in_bytes) if the method is a write-num method.
 pub(crate) fn write_num_size(method: &str) -> Option<usize> {
@@ -17,28 +17,28 @@ pub(crate) fn write_num_size(method: &str) -> Option<usize> {
 
 /// Decode an Endian enum / int into the canonical 0=Native / 1=LE / 2=BE.
 pub(crate) fn decode_endian(value: &Value) -> i64 {
-    match value {
-        Value::Enum { value, .. } => value.as_i64(),
-        Value::Int(i) => *i,
+    match value.view() {
+        ValueView::Enum { value, .. } => value.as_i64(),
+        ValueView::Int(i) => i,
         _ => 0,
     }
 }
 
 /// Convert an arbitrary numeric Value into f64. Used for write-num input.
 pub(crate) fn to_f64_value(value: &Value) -> f64 {
-    match value {
-        Value::Num(f) => *f,
-        Value::Int(i) => *i as f64,
-        Value::Rat(n, d) | Value::FatRat(n, d) => {
-            if *d == 0 {
+    match value.view() {
+        ValueView::Num(f) => f,
+        ValueView::Int(i) => i as f64,
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
+            if d == 0 {
                 0.0
             } else {
-                *n as f64 / *d as f64
+                n as f64 / d as f64
             }
         }
-        Value::BigInt(bi) => num_traits::ToPrimitive::to_f64(bi.as_ref()).unwrap_or(0.0),
-        Value::Bool(b) => i64::from(*b) as f64,
-        Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+        ValueView::BigInt(bi) => num_traits::ToPrimitive::to_f64(bi.as_ref()).unwrap_or(0.0),
+        ValueView::Bool(b) => i64::from(b) as f64,
+        ValueView::Str(s) => s.parse::<f64>().unwrap_or(0.0),
         _ => 0.0,
     }
 }
@@ -89,7 +89,7 @@ pub(crate) fn apply_write_num(
 pub(crate) fn make_buf_value(class_name: &str, bytes: Vec<u8>) -> Value {
     use crate::symbol::Symbol;
     use std::collections::HashMap;
-    let items: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+    let items: Vec<Value> = bytes.into_iter().map(|b| Value::int(b as i64)).collect();
     let mut attrs = HashMap::new();
     attrs.insert("bytes".to_string(), Value::array(items));
     Value::make_instance(Symbol::intern(class_name), attrs)
