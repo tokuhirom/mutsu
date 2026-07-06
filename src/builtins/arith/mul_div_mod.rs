@@ -6,7 +6,7 @@ use super::rat::{
     real_to_rat, to_big_rat_parts,
 };
 use super::temporal::{instance_duration_raw_value, make_duration_from_value};
-use crate::value::{RuntimeError, Value, make_big_fat_rat, make_big_rat_arith};
+use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat_arith};
 use num_bigint::BigInt as NumBigInt;
 use num_traits::Zero;
 
@@ -23,11 +23,12 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
         return range;
     }
     let (l, r) = crate::runtime::coerce_numeric(left, right);
-    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+    if matches!(l.view(), ValueView::Complex(_, _)) || matches!(r.view(), ValueView::Complex(_, _))
+    {
         let (ar, ai) = crate::runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = crate::runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
-        Value::Complex(ar * br - ai * bi, ar * bi + ai * br)
-    } else if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+        Value::complex(ar * br - ai * bi, ar * bi + ai * br)
+    } else if (matches!(l.view(), ValueView::BigInt(_)) || matches!(r.view(), ValueView::BigInt(_)))
         && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
     {
         Value::from_bigint(a * b)
@@ -36,9 +37,11 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
     {
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
         if has_fat_rat {
-            match make_big_fat_rat(an * bn, ad * bd) {
-                Value::Rat(n, d) => Value::FatRat(n, d),
-                other => other,
+            let tmp = make_big_fat_rat(an * bn, ad * bd);
+            if let ValueView::Rat(n, d) = tmp.view() {
+                Value::fat_rat_raw(n, d)
+            } else {
+                tmp
             }
         } else {
             make_big_rat_arith(an * bn, ad * bd)
@@ -47,8 +50,8 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
         crate::runtime::to_rat_parts(&l),
         crate::runtime::to_rat_parts(&r),
     ) {
-        let has_rat = matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
-            || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
+        let has_rat = matches!(l.view(), ValueView::Rat(_, _) | ValueView::FatRat(_, _))
+            || matches!(r.view(), ValueView::Rat(_, _) | ValueView::FatRat(_, _));
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
         if has_rat {
             if has_fat_rat {
@@ -59,18 +62,18 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
                 rat_mul_checked(an, ad, bn, bd)
             }
         } else {
-            match (l, r) {
-                (Value::Int(a), Value::Int(b)) => {
+            match (l.view(), r.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) => {
                     if let Some(product) = a.checked_mul(b) {
-                        Value::Int(product)
+                        Value::int(product)
                     } else {
                         Value::bigint(NumBigInt::from(a) * NumBigInt::from(b))
                     }
                 }
-                (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
-                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 * b),
-                (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
-                _ => Value::Int(0),
+                (ValueView::Num(a), ValueView::Num(b)) => Value::num(a * b),
+                (ValueView::Int(a), ValueView::Num(b)) => Value::num(a as f64 * b),
+                (ValueView::Num(a), ValueView::Int(b)) => Value::num(a * b as f64),
+                _ => Value::int(0),
             }
         }
     } else {
@@ -78,20 +81,20 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
         let lf = crate::runtime::to_float_value(&l);
         let rf = crate::runtime::to_float_value(&r);
         if let (Some(a), Some(b)) = (lf, rf) {
-            Value::Num(a * b)
+            Value::num(a * b)
         } else {
-            match (l, r) {
-                (Value::Int(a), Value::Int(b)) => {
+            match (l.view(), r.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) => {
                     if let Some(product) = a.checked_mul(b) {
-                        Value::Int(product)
+                        Value::int(product)
                     } else {
                         Value::bigint(NumBigInt::from(a) * NumBigInt::from(b))
                     }
                 }
-                (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
-                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 * b),
-                (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
-                _ => Value::Int(0),
+                (ValueView::Num(a), ValueView::Num(b)) => Value::num(a * b),
+                (ValueView::Int(a), ValueView::Num(b)) => Value::num(a as f64 * b),
+                (ValueView::Num(a), ValueView::Int(b)) => Value::num(a * b as f64),
+                _ => Value::int(0),
             }
         }
     }
@@ -108,32 +111,35 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
         return Ok(range);
     }
     let (l, r) = crate::runtime::coerce_numeric(left, right);
-    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+    if matches!(l.view(), ValueView::Complex(_, _)) || matches!(r.view(), ValueView::Complex(_, _))
+    {
         let (ar, ai) = crate::runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = crate::runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         let denom = br * br + bi * bi;
         if denom == 0.0 {
             return Err(RuntimeError::numeric_divide_by_zero());
         }
-        Ok(Value::Complex(
+        Ok(Value::complex(
             (ar * br + ai * bi) / denom,
             (ai * br - ar * bi) / denom,
         ))
     } else {
         // When mixing Num with Rat/FatRat, convert to float
-        let has_num = matches!(l, Value::Num(_)) || matches!(r, Value::Num(_));
-        let has_rat = matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
-            || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
+        let has_num =
+            matches!(l.view(), ValueView::Num(_)) || matches!(r.view(), ValueView::Num(_));
+        let has_rat = matches!(l.view(), ValueView::Rat(_, _) | ValueView::FatRat(_, _))
+            || matches!(r.view(), ValueView::Rat(_, _) | ValueView::FatRat(_, _));
         if has_num && has_rat {
             let lf = crate::runtime::to_float_value(&l).unwrap_or(0.0);
             let rf = crate::runtime::to_float_value(&r).unwrap_or(1.0);
             if rf == 0.0 {
                 return Ok(RuntimeError::divide_by_zero_failure(None, None));
             }
-            return Ok(Value::Num(lf / rf));
+            return Ok(Value::num(lf / rf));
         }
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
-        let has_big_rat = matches!(l, Value::BigRat(_, _)) || matches!(r, Value::BigRat(_, _));
+        let has_big_rat = matches!(l.view(), ValueView::BigRat(_, _))
+            || matches!(r.view(), ValueView::BigRat(_, _));
         if (has_fat_rat || has_big_rat)
             && let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
         {
@@ -142,12 +148,17 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             } else {
                 make_big_rat_arith(an * bd, ad * bn)
             };
-            return Ok(match result {
-                Value::Rat(n, d) if has_fat_rat => Value::FatRat(n, d),
-                other => other,
-            });
+            return Ok(
+                if let ValueView::Rat(n, d) = result.view()
+                    && has_fat_rat
+                {
+                    Value::fat_rat_raw(n, d)
+                } else {
+                    result
+                },
+            );
         }
-        if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+        if (matches!(l.view(), ValueView::BigInt(_)) || matches!(r.view(), ValueView::BigInt(_)))
             && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
         {
             if b.is_zero() {
@@ -163,10 +174,10 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             crate::runtime::to_rat_parts(&l),
             crate::runtime::to_rat_parts(&r),
         ) {
-            let has_rat = matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
-                || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
+            let has_rat = matches!(l.view(), ValueView::Rat(_, _) | ValueView::FatRat(_, _))
+                || matches!(r.view(), ValueView::Rat(_, _) | ValueView::FatRat(_, _));
             let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
-            if has_rat || matches!((&l, &r), (Value::Int(_), Value::Int(_))) {
+            if has_rat || matches!((l.view(), r.view()), (ValueView::Int(_), ValueView::Int(_))) {
                 return Ok(if has_fat_rat {
                     if let (Some(n), Some(d)) = (an.checked_mul(bd), ad.checked_mul(bn)) {
                         make_fat_rat(n, d)
@@ -174,9 +185,10 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
                         let n = NumBigInt::from(an) * NumBigInt::from(bd);
                         let d = NumBigInt::from(ad) * NumBigInt::from(bn);
                         let result = make_big_fat_rat(n, d);
-                        match result {
-                            Value::Rat(n, d) => Value::FatRat(n, d),
-                            other => other,
+                        if let ValueView::Rat(n, d) = result.view() {
+                            Value::fat_rat_raw(n, d)
+                        } else {
+                            result
                         }
                     }
                 } else {
@@ -184,49 +196,51 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
                 });
             }
         }
-        Ok(match (&l, &r) {
-            (Value::Num(a), Value::Num(b)) if *b == 0.0 => {
+        Ok(match (l.view(), r.view()) {
+            (ValueView::Num(a), ValueView::Num(0.0)) => {
                 return Ok(RuntimeError::divide_by_zero_failure(
-                    Some(Value::Num(*a)),
+                    Some(Value::num(a)),
                     Some("/"),
                 ));
             }
-            (Value::Int(a), Value::Num(b)) if *b == 0.0 => {
+            (ValueView::Int(a), ValueView::Num(0.0)) => {
                 return Ok(RuntimeError::divide_by_zero_failure(
-                    Some(Value::Int(*a)),
+                    Some(Value::int(a)),
                     Some("/"),
                 ));
             }
-            (Value::Num(_), Value::Int(b)) if *b == 0 => {
+            (ValueView::Num(_), ValueView::Int(0)) => {
                 return Ok(RuntimeError::divide_by_zero_failure(
                     Some(l.clone()),
                     Some("/"),
                 ));
             }
-            (Value::Num(a), Value::Num(b)) => Value::Num(a / b),
-            (Value::Int(a), Value::Num(b)) => Value::Num(*a as f64 / b),
-            (Value::Num(a), Value::Int(b)) => Value::Num(a / *b as f64),
-            (Value::Num(a), Value::BigInt(b)) => {
-                let bf = crate::runtime::to_float_value(&Value::BigInt(b.clone())).unwrap_or(1.0);
+            (ValueView::Num(a), ValueView::Num(b)) => Value::num(a / b),
+            (ValueView::Int(a), ValueView::Num(b)) => Value::num(a as f64 / b),
+            (ValueView::Num(a), ValueView::Int(b)) => Value::num(a / b as f64),
+            (ValueView::Num(a), ValueView::BigInt(b)) => {
+                let bf =
+                    crate::runtime::to_float_value(&Value::bigint_arc(b.clone())).unwrap_or(1.0);
                 if bf == 0.0 {
                     return Ok(RuntimeError::divide_by_zero_failure(
-                        Some(Value::Num(*a)),
+                        Some(Value::num(a)),
                         Some("/"),
                     ));
                 }
-                Value::Num(a / bf)
+                Value::num(a / bf)
             }
-            (Value::BigInt(a), Value::Num(b)) => {
-                if *b == 0.0 {
+            (ValueView::BigInt(a), ValueView::Num(b)) => {
+                if b == 0.0 {
                     return Ok(RuntimeError::divide_by_zero_failure(
-                        Some(Value::BigInt(a.clone())),
+                        Some(Value::bigint_arc(a.clone())),
                         Some("/"),
                     ));
                 }
-                let af = crate::runtime::to_float_value(&Value::BigInt(a.clone())).unwrap_or(0.0);
-                Value::Num(af / b)
+                let af =
+                    crate::runtime::to_float_value(&Value::bigint_arc(a.clone())).unwrap_or(0.0);
+                Value::num(af / b)
             }
-            _ => Value::Int(0),
+            _ => Value::int(0),
         })
     }
 }
@@ -247,31 +261,31 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
     // Mixed Num/Rat modulo should use floating semantics; routing through
     // exact-rational reduction loses expected precision behavior for cases like
     // 1.01 % 0.2 (should be ~0.01).
-    if matches!(l, Value::Num(_))
+    if matches!(l.view(), ValueView::Num(_))
         && matches!(
-            r,
-            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+            r.view(),
+            ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
         )
     {
-        r = Value::Num(crate::runtime::to_float_value(&r).unwrap_or(f64::NAN));
-    } else if matches!(r, Value::Num(_))
+        r = Value::num(crate::runtime::to_float_value(&r).unwrap_or(f64::NAN));
+    } else if matches!(r.view(), ValueView::Num(_))
         && matches!(
-            l,
-            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+            l.view(),
+            ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
         )
     {
-        l = Value::Num(crate::runtime::to_float_value(&l).unwrap_or(f64::NAN));
+        l = Value::num(crate::runtime::to_float_value(&l).unwrap_or(f64::NAN));
     }
     // Exact rational modulo (divisor-sign semantics) via big-rational parts so
     // that large operands such as `(7/1) % (2**66)` are handled exactly instead
     // of falling through to a 0 result.
     let l_is_rat = matches!(
-        l,
-        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        l.view(),
+        ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
     );
     let r_is_rat = matches!(
-        r,
-        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        r.view(),
+        ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
     );
     if (l_is_rat || r_is_rat)
         && let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
@@ -285,9 +299,11 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
         return Ok(if has_fat_rat {
             // FatRat % ... stays a FatRat. make_big_fat_rat normalizes small
             // results down to Rat, so re-tag those as FatRat.
-            match crate::value::make_big_fat_rat(num, den) {
-                Value::Rat(n, d) => Value::FatRat(n, d),
-                other => other,
+            let tmp = crate::value::make_big_fat_rat(num, den);
+            if let ValueView::Rat(n, d) = tmp.view() {
+                Value::fat_rat_raw(n, d)
+            } else {
+                tmp
             }
         } else {
             crate::value::make_big_rat_arith(num, den)
@@ -299,47 +315,49 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
         let mod_div0 = |dividend: &Value| {
             RuntimeError::numeric_divide_by_zero_full(Some(dividend.clone()), Some("%"))
         };
-        Ok(match (l, r) {
-            (Value::Int(a), Value::Int(0)) => {
-                return Err(mod_div0(&Value::Int(a)));
+        Ok(match (l.view(), r.view()) {
+            (ValueView::Int(a), ValueView::Int(0)) => {
+                return Err(mod_div0(&Value::int(a)));
             }
-            (Value::BigInt(a), Value::Int(0)) => {
-                return Err(mod_div0(&Value::from_bigint((*a).clone())));
+            (ValueView::BigInt(a), ValueView::Int(0)) => {
+                return Err(mod_div0(&Value::from_bigint((**a).clone())));
             }
-            (Value::Int(a), Value::BigInt(b)) if b.is_zero() => {
-                return Err(mod_div0(&Value::Int(a)));
+            (ValueView::Int(a), ValueView::BigInt(b)) if b.is_zero() => {
+                return Err(mod_div0(&Value::int(a)));
             }
-            (Value::BigInt(a), Value::BigInt(b)) if b.is_zero() => {
-                return Err(mod_div0(&Value::from_bigint((*a).clone())));
+            (ValueView::BigInt(a), ValueView::BigInt(b)) if b.is_zero() => {
+                return Err(mod_div0(&Value::from_bigint((**a).clone())));
             }
-            (Value::Int(a), Value::Int(b)) => Value::Int(num_integer::Integer::mod_floor(&a, &b)),
-            (Value::BigInt(a), Value::Int(b)) => {
+            (ValueView::Int(a), ValueView::Int(b)) => {
+                Value::int(num_integer::Integer::mod_floor(&a, &b))
+            }
+            (ValueView::BigInt(a), ValueView::Int(b)) => {
                 let bb = num_bigint::BigInt::from(b);
                 Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), &bb))
             }
-            (Value::Int(a), Value::BigInt(b)) => {
+            (ValueView::Int(a), ValueView::BigInt(b)) => {
                 let aa = num_bigint::BigInt::from(a);
                 Value::from_bigint(num_integer::Integer::mod_floor(&aa, b.as_ref()))
             }
-            (Value::BigInt(a), Value::BigInt(b)) => {
+            (ValueView::BigInt(a), ValueView::BigInt(b)) => {
                 Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
             }
-            (Value::Num(a), Value::Num(0.0)) => {
+            (ValueView::Num(a), ValueView::Num(0.0)) => {
                 return Ok(RuntimeError::divide_by_zero_failure(
-                    Some(Value::Num(a)),
+                    Some(Value::num(a)),
                     Some("%"),
                 ));
             }
-            (Value::Num(a), Value::Num(b)) => Value::Num(float_mod_floor(a, b)),
-            (ref lv, Value::Num(0.0)) => {
+            (ValueView::Num(a), ValueView::Num(b)) => Value::num(float_mod_floor(a, b)),
+            (_, ValueView::Num(0.0)) => {
                 return Ok(RuntimeError::divide_by_zero_failure(
-                    Some(lv.clone()),
+                    Some(l.clone()),
                     Some("%"),
                 ));
             }
-            (Value::Int(a), Value::Num(b)) => Value::Num(float_mod_floor(a as f64, b)),
-            (Value::Num(a), Value::Int(b)) => Value::Num(float_mod_floor(a, b as f64)),
-            _ => Value::Int(0),
+            (ValueView::Int(a), ValueView::Num(b)) => Value::num(float_mod_floor(a as f64, b)),
+            (ValueView::Num(a), ValueView::Int(b)) => Value::num(float_mod_floor(a, b as f64)),
+            _ => Value::int(0),
         })
     }
 }

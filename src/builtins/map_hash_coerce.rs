@@ -3,7 +3,7 @@
 // Like `quanthash_coerce`, these carry no interpreter state (env / registry /
 // type-metadata side table): they fold a value's elements into a Hash purely
 // from the input. `.Map` additionally embeds the `Map` declared-type *in the
-// `Value::Hash` Arc* (container metadata has travelled in the value since
+// `Hash` Arc* (container metadata has travelled in the value since
 // #2952, not in the pointer-keyed `instance_type_metadata` side table), so it is
 // a pure value op too. Single authoritative impl shared by the bytecode VM
 // (native dispatch) and the tree-walking interpreter fallback.
@@ -13,7 +13,7 @@
 use crate::runtime::Interpreter;
 use crate::runtime::utils::set_hash_original_keys;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
 /// Build an `X::Hash::Store::OddNumber` error for an odd element count.
@@ -50,7 +50,7 @@ fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError
     if check_odd {
         let non_pair_count = items
             .iter()
-            .filter(|v| !matches!(v, Value::Pair(..) | Value::ValuePair(..)))
+            .filter(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             .count();
         if non_pair_count % 2 != 0 {
             return Err(make_odd_number_error(items));
@@ -59,16 +59,16 @@ fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError
     let mut map = HashMap::new();
     let mut iter = items.iter();
     while let Some(item) = iter.next() {
-        match item {
-            Value::Pair(k, v) => {
-                map.insert(k.clone(), *v.clone());
+        match item.view() {
+            ValueView::Pair(k, v) => {
+                map.insert(k.clone(), v.clone());
             }
-            Value::ValuePair(k, v) => {
-                map.insert(k.to_string_value(), *v.clone());
+            ValueView::ValuePair(k, v) => {
+                map.insert(k.to_string_value(), v.clone());
             }
-            other => {
-                let key = other.to_string_value();
-                let value = iter.next().cloned().unwrap_or(Value::Nil);
+            _ => {
+                let key = item.to_string_value();
+                let value = iter.next().cloned().unwrap_or(Value::NIL);
                 map.insert(key, value);
             }
         }
@@ -87,14 +87,14 @@ where
     let mut has_typed = false;
     for (k, weight, typed) in entries {
         map.insert(k.clone(), value_for(&weight));
-        if !matches!(&typed, Value::Str(sv) if sv.as_ref() == &k) {
+        if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == &k) {
             has_typed = true;
             original_keys.insert(k, typed);
         }
     }
     let mut result = Value::hash(map);
     if has_typed {
-        original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+        original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
         result = set_hash_original_keys(result, original_keys);
     }
     result
@@ -103,21 +103,20 @@ where
 /// Coerce `target` to a `Hash`. `check_odd` controls the odd-element check for
 /// flat list receivers. Mirrors the interpreter's `dispatch_to_hash_impl`.
 pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeError> {
-    match target {
-        Value::Hash(_) => Ok(target),
-        Value::Array(items, ..) => items_to_hash(items.as_ref(), check_odd),
-        Value::Seq(items) | Value::Slip(items) => items_to_hash(items.as_ref(), check_odd),
-        Value::Set(s, _) => Ok(quanthash_to_hash(
-            s.iter()
-                .map(|k| (k.clone(), Value::Bool(true), s.typed_key(k))),
-            |_| Value::Bool(true),
+    match target.view() {
+        ValueView::Hash(_) => Ok(target.clone()),
+        ValueView::Array(items, ..) => items_to_hash(items.as_ref(), check_odd),
+        ValueView::Seq(items) | ValueView::Slip(items) => items_to_hash(items.as_ref(), check_odd),
+        ValueView::Set(s, _) => Ok(quanthash_to_hash(
+            s.iter().map(|k| (k.clone(), Value::TRUE, s.typed_key(k))),
+            |_| Value::TRUE,
         )),
-        Value::Bag(b, _) => Ok(quanthash_to_hash(
+        ValueView::Bag(b, _) => Ok(quanthash_to_hash(
             b.iter()
                 .map(|(k, v)| (k.clone(), Value::from_bigint(v.clone()), b.typed_key(k))),
             |w| w.clone(),
         )),
-        Value::Mix(m, _) => Ok(quanthash_to_hash(
+        ValueView::Mix(m, _) => Ok(quanthash_to_hash(
             m.iter().map(|(k, v)| {
                 (
                     k.clone(),
@@ -127,9 +126,9 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
             }),
             |w| w.clone(),
         )),
-        Value::Instance {
-            ref class_name,
-            ref attributes,
+        ValueView::Instance {
+            class_name,
+            attributes,
             ..
         } if class_name == "Match" => {
             // %($/) returns the named captures hash.
@@ -139,17 +138,17 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
                 Ok(Value::hash(HashMap::new()))
             }
         }
-        other => {
+        _ => {
             if check_odd {
-                if let Value::Pair(k, v) = other {
+                if let ValueView::Pair(k, v) = target.view() {
                     let mut map = HashMap::new();
-                    map.insert(k.to_string(), *v);
+                    map.insert(k.to_string(), v.clone());
                     return Ok(Value::hash(map));
                 }
-                return Err(make_odd_number_error(&[other]));
+                return Err(make_odd_number_error(std::slice::from_ref(&target)));
             }
             let mut map = HashMap::new();
-            map.insert(other.to_string_value(), Value::Bool(true));
+            map.insert(target.to_string_value(), Value::TRUE);
             Ok(Value::hash(map))
         }
     }
@@ -157,42 +156,40 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
 
 /// Coerce `target` to a `Map`: decontainerize a Hash's values (or fold any other
 /// receiver to a Hash) and embed the `Map` declared-type in the resulting
-/// `Value::Hash` Arc. An already-`Map` Hash is returned by identity (its
+/// `Hash` Arc. An already-`Map` Hash is returned by identity (its
 /// pointer-based `.WHICH` is preserved). Mirrors the interpreter's
 /// `dispatch_to_map` + `tag_container_metadata(..., declared_type="Map")`.
 pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
-    let result = match target {
-        Value::Hash(ref map) => {
+    let mut result = 'hash: {
+        if let ValueView::Hash(map) = target.view() {
             // Already a Map (embedded declared-type): identity, no re-tag.
             if Interpreter::hashdata_type_info(map)
                 .and_then(|info| info.declared_type)
                 .is_some_and(|dt| dt == "Map")
             {
-                return Ok(target);
+                return Ok(target.clone());
             }
             // Decontainerize values (Map values are not wrapped in Scalar).
             let deconted: HashMap<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let deconted = match v {
-                        Value::Scalar(inner) => (**inner).clone(),
-                        other => other.clone(),
+                    let deconted = match v.view() {
+                        ValueView::Scalar(inner) => inner.clone(),
+                        _ => v.clone(),
                     };
                     (k.clone(), deconted)
                 })
                 .collect();
-            Value::hash(deconted)
+            break 'hash Value::hash(deconted);
         }
-        _ => to_hash(target, true)?,
+        to_hash(target, true)?
     };
     // Embed the `Map` declared-type in the Hash Arc (pure; no side table).
-    if let Value::Hash(mut arc) = result {
+    result.with_hash_mut(|arc| {
         if arc.declared_type.as_deref() != Some("Map") {
-            let data = crate::gc::Gc::make_mut(&mut arc);
+            let data = crate::gc::Gc::make_mut(arc);
             data.declared_type = Some("Map".to_string());
         }
-        Ok(Value::Hash(arc))
-    } else {
-        Ok(result)
-    }
+    });
+    Ok(result)
 }

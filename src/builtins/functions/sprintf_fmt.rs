@@ -1,5 +1,5 @@
 use crate::runtime;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// Native (interpreter-free) `sprintf` / `zprintf`.
 ///
@@ -14,18 +14,21 @@ use crate::value::{RuntimeError, Value};
 /// value rendering. `try_native_function` has already excluded `Instance` args,
 /// so object stringification likewise still routes through the interpreter.
 pub(crate) fn native_sprintf(args: &[Value], z_mode: bool) -> Option<Result<Value, RuntimeError>> {
-    if matches!(args.first(), Some(Value::Junction { .. })) {
+    if matches!(
+        args.first().map(Value::view),
+        Some(ValueView::Junction { .. })
+    ) {
         return None;
     }
-    let fmt = match args.first() {
-        Some(Value::Str(s)) => s.to_string(),
+    let fmt = match args.first().map(Value::view) {
+        Some(ValueView::Str(s)) => s.to_string(),
         _ => String::new(),
     };
     let rest: &[Value] = if args.is_empty() { &[] } else { &args[1..] };
     // Raku: sprintf("%d", [42]) treats the single array's elements as args.
     let flattened: Vec<Value>;
     let actual_args = if rest.len() == 1 {
-        if let Value::Array(items, ..) = &rest[0] {
+        if let ValueView::Array(items, ..) = rest[0].view() {
             flattened = items.as_ref().clone().items;
             &flattened[..]
         } else {

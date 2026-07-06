@@ -10,21 +10,21 @@ pub(crate) fn builtin_times() -> Result<Value, RuntimeError> {
             let usage = unsafe { usage.assume_init() };
             let user = usage.ru_utime.tv_sec as f64 + usage.ru_utime.tv_usec as f64 / 1_000_000.0;
             let sys = usage.ru_stime.tv_sec as f64 + usage.ru_stime.tv_usec as f64 / 1_000_000.0;
-            Ok(Value::Array(
-                crate::value::Value::array_arc(vec![Value::Num(user), Value::Num(sys)]),
+            Ok(Value::array_with_kind(
+                crate::value::Value::array_arc(vec![Value::num(user), Value::num(sys)]),
                 ArrayKind::List,
             ))
         } else {
-            Ok(Value::Array(
-                crate::value::Value::array_arc(vec![Value::Num(0.0), Value::Num(0.0)]),
+            Ok(Value::array_with_kind(
+                crate::value::Value::array_arc(vec![Value::num(0.0), Value::num(0.0)]),
                 ArrayKind::List,
             ))
         }
     }
     #[cfg(not(unix))]
     {
-        Ok(Value::Array(
-            crate::value::Value::array_arc(vec![Value::Num(0.0), Value::Num(0.0)]),
+        Ok(Value::array_with_kind(
+            crate::value::Value::array_arc(vec![Value::num(0.0), Value::num(0.0)]),
             ArrayKind::List,
         ))
     }
@@ -86,17 +86,17 @@ pub(crate) fn builtin_localtime_gmtime(name: &str, args: &[Value]) -> Result<Val
             Ok(Value::str(scalar_str))
         } else {
             // List context: return the 9-element list
-            Ok(Value::Array(
+            Ok(Value::array_with_kind(
                 crate::value::Value::array_arc(vec![
-                    Value::Int(sec as i64),
-                    Value::Int(min as i64),
-                    Value::Int(hour as i64),
-                    Value::Int(mday as i64),
-                    Value::Int(mon as i64),
-                    Value::Int(year as i64),
-                    Value::Int(wday as i64),
-                    Value::Int(yday as i64),
-                    Value::Int(isdst as i64),
+                    Value::int(sec as i64),
+                    Value::int(min as i64),
+                    Value::int(hour as i64),
+                    Value::int(mday as i64),
+                    Value::int(mon as i64),
+                    Value::int(year as i64),
+                    Value::int(wday as i64),
+                    Value::int(yday as i64),
+                    Value::int(isdst as i64),
                 ]),
                 ArrayKind::List,
             ))

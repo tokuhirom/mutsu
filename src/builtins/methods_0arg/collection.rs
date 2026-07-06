@@ -1,33 +1,32 @@
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt as NumBigInt;
-use std::sync::Arc;
 
 /// If the value represents an integer (even as Num, Rat, Str, or BigInt), return as BigInt.
 fn value_as_bigint(v: &Value) -> Option<NumBigInt> {
-    match v {
-        Value::Int(i) => Some(NumBigInt::from(*i)),
-        Value::BigInt(n) => Some((**n).clone()),
-        Value::Num(f) => {
-            if f.is_finite() && *f == f.trunc() && f.abs() < i64::MAX as f64 {
-                Some(NumBigInt::from(*f as i64))
+    match v.view() {
+        ValueView::Int(i) => Some(NumBigInt::from(i)),
+        ValueView::BigInt(n) => Some((**n).clone()),
+        ValueView::Num(f) => {
+            if f.is_finite() && f == f.trunc() && f.abs() < i64::MAX as f64 {
+                Some(NumBigInt::from(f as i64))
             } else {
                 None
             }
         }
-        Value::Rat(n, d) => {
-            if *d != 0 && *n % *d == 0 {
-                Some(NumBigInt::from(*n / *d))
+        ValueView::Rat(n, d) => {
+            if d != 0 && n % d == 0 {
+                Some(NumBigInt::from(n / d))
             } else {
                 None
             }
         }
-        Value::Str(s) => {
+        ValueView::Str(s) => {
             let trimmed = s.trim();
             trimmed.parse::<i64>().ok().map(NumBigInt::from)
         }
-        Value::Bool(b) => Some(NumBigInt::from(if *b { 1 } else { 0 })),
+        ValueView::Bool(b) => Some(NumBigInt::from(if b { 1 } else { 0 })),
         _ => None,
     }
 }
@@ -70,9 +69,7 @@ fn positional_pairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
         .enumerate()
-        .map(|(idx, value)| {
-            Value::ValuePair(Box::new(Value::Int(idx as i64)), Box::new(value.clone()))
-        })
+        .map(|(idx, value)| Value::value_pair(Value::int(idx as i64), value.clone()))
         .collect()
 }
 
@@ -80,14 +77,14 @@ fn positional_keys(values: &[Value]) -> Vec<Value> {
     values
         .iter()
         .enumerate()
-        .map(|(idx, _)| Value::Int(idx as i64))
+        .map(|(idx, _)| Value::int(idx as i64))
         .collect()
 }
 
 fn positional_kv(values: &[Value]) -> Vec<Value> {
     let mut kv = Vec::with_capacity(values.len() * 2);
     for (idx, value) in values.iter().enumerate() {
-        kv.push(Value::Int(idx as i64));
+        kv.push(Value::int(idx as i64));
         kv.push(value.clone());
     }
     kv
@@ -97,37 +94,35 @@ fn positional_antipairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
         .enumerate()
-        .map(|(idx, value)| {
-            Value::ValuePair(Box::new(value.clone()), Box::new(Value::Int(idx as i64)))
-        })
+        .map(|(idx, value)| Value::value_pair(value.clone(), Value::int(idx as i64)))
         .collect()
 }
 
 fn make_inverted_pair(key: Value, value: Value) -> Value {
-    match key {
-        Value::Str(s) => Value::Pair((*s).clone(), Box::new(value)),
-        other => Value::ValuePair(Box::new(other), Box::new(value)),
+    if let ValueView::Str(s) = key.view() {
+        return Value::pair((**s).clone(), value);
     }
+    Value::value_pair(key, value)
 }
 
 fn should_expand_invert_value(value: &Value) -> bool {
     matches!(
-        value,
-        Value::Array(_, _)
-            | Value::Seq(_)
-            | Value::Slip(_)
-            | Value::Hash(_)
-            | Value::Set(_, _)
-            | Value::Bag(_, _)
-            | Value::Mix(_, _)
+        value.view(),
+        ValueView::Array(_, _)
+            | ValueView::Seq(_)
+            | ValueView::Slip(_)
+            | ValueView::Hash(_)
+            | ValueView::Set(_, _)
+            | ValueView::Bag(_, _)
+            | ValueView::Mix(_, _)
     ) || value.is_range()
 }
 
 fn extend_inverted_pairs(out: &mut Vec<Value>, key: Value, value: &Value) {
-    let values = match value {
-        Value::Str(_) => vec![value.clone()],
-        other if should_expand_invert_value(other) => crate::runtime::utils::value_to_list(other),
-        other => vec![other.clone()],
+    let values = match value.view() {
+        ValueView::Str(_) => vec![value.clone()],
+        _ if should_expand_invert_value(value) => crate::runtime::utils::value_to_list(value),
+        _ => vec![value.clone()],
     };
     for item in values {
         out.push(make_inverted_pair(item, key.clone()));
@@ -136,14 +131,14 @@ fn extend_inverted_pairs(out: &mut Vec<Value>, key: Value, value: &Value) {
 
 fn invert_value(target: &Value) -> Option<Value> {
     let mut result = Vec::new();
-    match target {
-        Value::Hash(items) => {
+    match target.view() {
+        ValueView::Hash(items) => {
             for (k, v) in items.iter() {
                 let orig_key = crate::runtime::utils::hash_typed_key(target, k);
                 extend_inverted_pairs(&mut result, orig_key, v);
             }
         }
-        Value::Bag(items, _) => {
+        ValueView::Bag(items, _) => {
             for (k, count) in items.iter() {
                 result.push(make_inverted_pair(
                     Value::from_bigint(count.clone()),
@@ -151,12 +146,12 @@ fn invert_value(target: &Value) -> Option<Value> {
                 ));
             }
         }
-        Value::Set(items, _) => {
+        ValueView::Set(items, _) => {
             for k in items.iter() {
-                result.push(make_inverted_pair(Value::Bool(true), Value::str(k.clone())));
+                result.push(make_inverted_pair(Value::TRUE, Value::str(k.clone())));
             }
         }
-        Value::Mix(items, _) => {
+        ValueView::Mix(items, _) => {
             for (k, weight) in items.iter() {
                 result.push(make_inverted_pair(
                     crate::value::mix_weight_to_value(*weight),
@@ -165,26 +160,30 @@ fn invert_value(target: &Value) -> Option<Value> {
             }
         }
         // Instance types that compose Baggy: delegate to internal bag data
-        Value::Instance { attributes, .. } => {
+        ValueView::Instance { attributes, .. } => {
             if let Some(bag_data) = attributes.as_map().get("__baggy_data__") {
                 return invert_value(bag_data);
             }
             return None;
         }
-        Value::Pair(key, value) => {
+        ValueView::Pair(key, value) => {
             extend_inverted_pairs(&mut result, Value::str(key.clone()), value);
         }
-        Value::ValuePair(key, value) => {
-            extend_inverted_pairs(&mut result, *key.clone(), value);
+        ValueView::ValuePair(key, value) => {
+            extend_inverted_pairs(&mut result, key.clone(), value);
         }
-        Value::Array(_, _) | Value::Seq(_) | Value::Slip(_) => {
+        ValueView::Array(_, _) | ValueView::Seq(_) | ValueView::Slip(_) => {
             for item in crate::runtime::utils::value_to_list(target) {
-                match item {
-                    Value::Pair(key, value) => {
+                match item.view() {
+                    ValueView::Pair(key, value) => {
+                        let key = key.clone();
+                        let value = value.clone();
                         extend_inverted_pairs(&mut result, Value::str(key), &value);
                     }
-                    Value::ValuePair(key, value) => {
-                        extend_inverted_pairs(&mut result, *key, &value);
+                    ValueView::ValuePair(key, value) => {
+                        let key = key.clone();
+                        let value = value.clone();
+                        extend_inverted_pairs(&mut result, key, &value);
                     }
                     _ => return None,
                 }
@@ -192,7 +191,7 @@ fn invert_value(target: &Value) -> Option<Value> {
         }
         _ => return None,
     }
-    Some(Value::Seq(result.into()))
+    Some(Value::seq(result))
 }
 
 fn push_permutations(
@@ -287,15 +286,15 @@ pub(crate) fn combinations_range(items: &[Value], min_k: i64, max_k: i64) -> Vec
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
-        "hash" => match target {
-            Value::Set(s, _) => {
+        "hash" => match target.view() {
+            ValueView::Set(s, _) => {
                 let mut map = std::collections::HashMap::new();
                 let mut original_keys = std::collections::HashMap::new();
                 let mut has_typed = false;
                 for k in s.iter() {
-                    map.insert(k.clone(), Value::Bool(true));
+                    map.insert(k.clone(), Value::TRUE);
                     let typed = s.typed_key(k);
-                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                    if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k) {
                         has_typed = true;
                         original_keys.insert(k.clone(), typed);
                     }
@@ -303,56 +302,56 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let mut result = Value::hash(map);
                 if has_typed {
                     // Tag so .keys can distinguish setty-origin hashes
-                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
                     result = crate::runtime::utils::set_hash_original_keys(result, original_keys);
                 }
                 Some(Ok(result))
             }
-            Value::Bag(b, _) => {
+            ValueView::Bag(b, _) => {
                 let mut map = std::collections::HashMap::new();
                 let mut original_keys = std::collections::HashMap::new();
                 let mut has_typed = false;
                 for (k, v) in b.iter() {
                     map.insert(k.clone(), Value::from_bigint(v.clone()));
                     let typed = b.typed_key(k);
-                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                    if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k) {
                         has_typed = true;
                         original_keys.insert(k.clone(), typed);
                     }
                 }
                 let mut result = Value::hash(map);
                 if has_typed {
-                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
                     result = crate::runtime::utils::set_hash_original_keys(result, original_keys);
                 }
                 Some(Ok(result))
             }
-            Value::Mix(m, _) => {
+            ValueView::Mix(m, _) => {
                 let mut map = std::collections::HashMap::new();
                 let mut original_keys = std::collections::HashMap::new();
                 let mut has_typed = false;
                 for (k, v) in m.iter() {
                     map.insert(k.clone(), crate::value::mix_weight_to_value(*v));
                     let typed = m.typed_key(k);
-                    if !matches!(&typed, Value::Str(sv) if sv.as_ref() == k) {
+                    if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k) {
                         has_typed = true;
                         original_keys.insert(k.clone(), typed);
                     }
                 }
                 let mut result = Value::hash(map);
                 if has_typed {
-                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
                     result = crate::runtime::utils::set_hash_original_keys(result, original_keys);
                 }
                 Some(Ok(result))
             }
-            Value::Instance { .. } => {
+            ValueView::Instance { .. } => {
                 // Instance types should fall through to accessor dispatch,
                 // not be coerced via .hash builtin
                 None
             }
             // Type objects for setty/baggy types: .hash returns empty hash
-            Value::Package(name)
+            ValueView::Package(name)
                 if matches!(
                     name.resolve().as_str(),
                     "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
@@ -366,9 +365,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // `value_to_list` would treat an itemized list as one opaque
                 // element and wrongly raise "Odd number of elements". This mirrors
                 // the `my %h = $list` assignment path.
-                let items = match target {
-                    Value::Array(items, _) => items.iter().cloned().collect(),
-                    Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
+                let items = match target.view() {
+                    ValueView::Array(items, _) => items.iter().cloned().collect(),
+                    ValueView::Seq(items) | ValueView::Slip(items) => {
+                        items.iter().cloned().collect()
+                    }
                     _ => crate::runtime::utils::value_to_list(target),
                 };
                 Some(crate::runtime::utils::build_hash_from_items(items))
@@ -381,16 +382,16 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .into_iter()
                     .map(|(idx, _)| {
                         if idx.len() == 1 {
-                            Value::Int(idx[0])
+                            Value::int(idx[0])
                         } else {
-                            Value::array(idx.into_iter().map(Value::Int).collect())
+                            Value::array(idx.into_iter().map(Value::int).collect())
                         }
                     })
                     .collect();
-                return Some(Ok(Value::Seq(Arc::new(keys))));
+                return Some(Ok(Value::seq(keys)));
             }
-            match target {
-                Value::Hash(map) => {
+            match target.view() {
+                ValueView::Hash(map) => {
                     // Object hashes (`.WHICH`-keyed: `my %h{Any}`, a Set/Bag/Mix
                     // `.hash`, or a `classify` keyed by non-Str values) yield their
                     // real key objects; a plain hash yields decoded Str keys.
@@ -401,67 +402,63 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     } else {
                         map.keys().map(|k| Value::hash_key_decode(k)).collect()
                     };
-                    Some(Ok(Value::Seq(Arc::new(keys))))
+                    Some(Ok(Value::seq(keys)))
                 }
-                Value::Pair(key, _) => {
-                    Some(Ok(Value::Seq(Arc::new(vec![Value::str(key.clone())]))))
+                ValueView::Pair(key, _) => Some(Ok(Value::seq(vec![Value::str(key.clone())]))),
+                ValueView::ValuePair(key, _) => Some(Ok(Value::seq(vec![key.clone()]))),
+                ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
+                ValueView::Set(s, _) => {
+                    Some(Ok(Value::seq(s.iter().map(|k| s.typed_key(k)).collect())))
                 }
-                Value::ValuePair(key, _) => Some(Ok(Value::Seq(Arc::new(vec![*key.clone()])))),
-                Value::Nil => Some(Ok(Value::Seq(Arc::new(Vec::new())))),
-                Value::Set(s, _) => Some(Ok(Value::Seq(Arc::new(
-                    s.iter().map(|k| s.typed_key(k)).collect(),
+                ValueView::Bag(b, _) => {
+                    Some(Ok(Value::seq(b.keys().map(|k| b.typed_key(k)).collect())))
+                }
+                ValueView::Mix(m, _) => {
+                    Some(Ok(Value::seq(m.keys().map(|k| m.typed_key(k)).collect())))
+                }
+                ValueView::Package(_) => None, // let runtime handle (may be enum type)
+                _ if target.is_range() => Some(Ok(Value::seq(positional_keys(
+                    &crate::runtime::utils::value_to_list(target),
                 )))),
-                Value::Bag(b, _) => Some(Ok(Value::Seq(Arc::new(
-                    b.keys().map(|k| b.typed_key(k)).collect(),
+                _ => Some(Ok(Value::seq(positional_keys(
+                    &crate::runtime::utils::value_to_list(target),
                 )))),
-                Value::Mix(m, _) => Some(Ok(Value::Seq(Arc::new(
-                    m.keys().map(|k| m.typed_key(k)).collect(),
-                )))),
-                Value::Package(_) => None, // let runtime handle (may be enum type)
-                v if v.is_range() => Some(Ok(Value::Seq(Arc::new(positional_keys(
-                    &crate::runtime::utils::value_to_list(v),
-                ))))),
-                other => Some(Ok(Value::Seq(Arc::new(positional_keys(
-                    &crate::runtime::utils::value_to_list(other),
-                ))))),
             }
         }
         "values" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
-                return Some(Ok(Value::Seq(Arc::new(leaves))));
+                return Some(Ok(Value::seq(leaves)));
             }
-            match target {
-                Value::Hash(map) => {
+            match target.view() {
+                ValueView::Hash(map) => {
                     // Decontainerize `:=`-bound element cells (Phase 2): a bound
                     // hash element is a `ContainerRef`, and `.values` must yield
                     // the inner value, not the cell (else sort/compare leak).
                     let values: Vec<Value> = map.values().map(|v| v.deref_container()).collect();
-                    Some(Ok(Value::Seq(Arc::new(values))))
+                    Some(Ok(Value::seq(values)))
                 }
-                Value::Pair(_, value) | Value::ValuePair(_, value) => {
-                    Some(Ok(Value::Seq(Arc::new(vec![*value.clone()]))))
+                ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
+                    Some(Ok(Value::seq(vec![value.clone()])))
                 }
-                Value::Nil => Some(Ok(Value::Seq(Arc::new(Vec::new())))),
-                Value::Set(s, _) => Some(Ok(Value::Seq(Arc::new(
-                    s.iter().map(|_| Value::Bool(true)).collect(),
-                )))),
-                Value::Bag(b, _) => Some(Ok(Value::Seq(Arc::new(
+                ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
+                ValueView::Set(s, _) => {
+                    Some(Ok(Value::seq(s.iter().map(|_| Value::TRUE).collect())))
+                }
+                ValueView::Bag(b, _) => Some(Ok(Value::seq(
                     b.values().map(|v| Value::from_bigint(v.clone())).collect(),
-                )))),
-                Value::Mix(m, _) => Some(Ok(Value::Seq(Arc::new(
+                ))),
+                ValueView::Mix(m, _) => Some(Ok(Value::seq(
                     m.values()
                         .map(|v| crate::value::mix_weight_to_value(*v))
                         .collect(),
-                )))),
-                Value::Package(_) => None, // let runtime handle (may be enum type)
-                v if v.is_range() => Some(Ok(Value::Seq(Arc::new(
-                    crate::runtime::utils::value_to_list(v),
-                )))),
-                Value::LazyList(_) => None, // fall through to runtime to force
-                other => Some(Ok(Value::Seq(Arc::new(
-                    crate::runtime::utils::value_to_list(other),
-                )))),
+                ))),
+                ValueView::Package(_) => None, // let runtime handle (may be enum type)
+                _ if target.is_range() => {
+                    Some(Ok(Value::seq(crate::runtime::utils::value_to_list(target))))
+                }
+                ValueView::LazyList(_) => None, // fall through to runtime to force
+                _ => Some(Ok(Value::seq(crate::runtime::utils::value_to_list(target)))),
             }
         }
         "kv" => {
@@ -470,16 +467,16 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let mut kv = Vec::with_capacity(indexed.len() * 2);
                 for (idx, val) in indexed {
                     if idx.len() == 1 {
-                        kv.push(Value::Int(idx[0]));
+                        kv.push(Value::int(idx[0]));
                     } else {
-                        kv.push(Value::array(idx.into_iter().map(Value::Int).collect()));
+                        kv.push(Value::array(idx.into_iter().map(Value::int).collect()));
                     }
                     kv.push(val);
                 }
-                return Some(Ok(Value::Seq(Arc::new(kv))));
+                return Some(Ok(Value::seq(kv)));
             }
-            match target {
-                Value::Hash(items) => {
+            match target.view() {
+                ValueView::Hash(items) => {
                     let has_orig = crate::runtime::utils::hash_uses_typed_keys(target);
                     let mut kv = Vec::new();
                     for (k, v) in items.iter() {
@@ -491,60 +488,55 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         // Decontainerize element cells (see t/bind-hash-value-pairs.t).
                         kv.push(v.deref_container());
                     }
-                    Some(Ok(Value::Seq(Arc::new(kv))))
+                    Some(Ok(Value::seq(kv)))
                 }
-                Value::Pair(key, value) => Some(Ok(Value::Seq(Arc::new(vec![
-                    Value::str(key.clone()),
-                    *value.clone(),
-                ])))),
-                Value::ValuePair(key, value) => {
-                    Some(Ok(Value::Seq(Arc::new(vec![*key.clone(), *value.clone()]))))
+                ValueView::Pair(key, value) => {
+                    Some(Ok(Value::seq(vec![Value::str(key.clone()), value.clone()])))
                 }
-                Value::Nil => Some(Ok(Value::Seq(Arc::new(Vec::new())))),
-                Value::Set(s, _) => {
+                ValueView::ValuePair(key, value) => {
+                    Some(Ok(Value::seq(vec![key.clone(), value.clone()])))
+                }
+                ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
+                ValueView::Set(s, _) => {
                     let mut kv = Vec::new();
                     for k in s.iter() {
                         kv.push(Value::str(k.clone()));
-                        kv.push(Value::Bool(true));
+                        kv.push(Value::TRUE);
                     }
-                    Some(Ok(Value::Seq(Arc::new(kv))))
+                    Some(Ok(Value::seq(kv)))
                 }
-                Value::Bag(b, _) => {
+                ValueView::Bag(b, _) => {
                     let mut kv = Vec::new();
                     for (k, v) in b.iter() {
                         kv.push(Value::str(k.clone()));
                         kv.push(Value::from_bigint(v.clone()));
                     }
-                    Some(Ok(Value::Seq(Arc::new(kv))))
+                    Some(Ok(Value::seq(kv)))
                 }
-                Value::Mix(m, _) => {
+                ValueView::Mix(m, _) => {
                     let mut kv = Vec::new();
                     for (k, v) in m.iter() {
                         kv.push(Value::str(k.clone()));
                         kv.push(crate::value::mix_weight_to_value(*v));
                     }
-                    Some(Ok(Value::Seq(Arc::new(kv))))
+                    Some(Ok(Value::seq(kv)))
                 }
-                Value::Enum { key, value, .. } => Some(Ok(Value::Seq(Arc::new(vec![
+                ValueView::Enum { key, value, .. } => Some(Ok(Value::seq(vec![
                     Value::str(key.resolve()),
                     value.to_value(),
-                ])))),
-                Value::Package(_) => None, // let runtime handle (may be enum type)
-                Value::LazyIoLines { handle, words, .. } => {
+                ]))),
+                ValueView::Package(_) => None, // let runtime handle (may be enum type)
+                ValueView::LazyIoLines { handle, words, .. } => {
                     // Wrap the lazy IO lines with kv flag so the for-loop can
                     // iterate lazily producing index-value pairs.
-                    Some(Ok(Value::LazyIoLines {
-                        handle: handle.clone(),
-                        kv: true,
-                        words: *words,
-                    }))
+                    Some(Ok(Value::lazy_io_lines(handle.clone(), true, words)))
                 }
-                v if v.is_range() => Some(Ok(Value::Seq(Arc::new(positional_kv(
-                    &crate::runtime::utils::value_to_list(v),
-                ))))),
-                other => Some(Ok(Value::Seq(Arc::new(positional_kv(
-                    &crate::runtime::utils::value_to_list(other),
-                ))))),
+                _ if target.is_range() => Some(Ok(Value::seq(positional_kv(
+                    &crate::runtime::utils::value_to_list(target),
+                )))),
+                _ => Some(Ok(Value::seq(positional_kv(
+                    &crate::runtime::utils::value_to_list(target),
+                )))),
             }
         }
         "pairs" => {
@@ -554,17 +546,17 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .into_iter()
                     .map(|(idx, val)| {
                         let key = if idx.len() == 1 {
-                            Value::Int(idx[0])
+                            Value::int(idx[0])
                         } else {
-                            Value::array(idx.into_iter().map(Value::Int).collect())
+                            Value::array(idx.into_iter().map(Value::int).collect())
                         };
-                        Value::ValuePair(Box::new(key), Box::new(val))
+                        Value::value_pair(key, val)
                     })
                     .collect();
-                return Some(Ok(Value::Seq(Arc::new(pairs))));
+                return Some(Ok(Value::seq(pairs)));
             }
-            match target {
-                Value::Hash(items) => {
+            match target.view() {
+                ValueView::Hash(items) => {
                     let has_orig = crate::runtime::utils::hash_uses_typed_keys(target);
                     // Decontainerize element cells so the pair value matches a
                     // `%h<k>` read / `.values` (see t/bind-hash-value-pairs.t).
@@ -573,55 +565,51 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             .iter()
                             .map(|(k, v)| {
                                 let typed_k = crate::runtime::utils::hash_typed_key(target, k);
-                                Value::ValuePair(Box::new(typed_k), Box::new(v.deref_container()))
+                                Value::value_pair(typed_k, v.deref_container())
                             })
                             .collect()
                     } else {
                         items
                             .iter()
-                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.deref_container())))
+                            .map(|(k, v)| Value::pair(k.clone(), v.deref_container()))
                             .collect()
                     };
-                    Some(Ok(Value::Seq(Arc::new(pairs))))
+                    Some(Ok(Value::seq(pairs)))
                 }
-                Value::Set(s, _) => Some(Ok(Value::Seq(Arc::new(
+                ValueView::Set(s, _) => Some(Ok(Value::seq(
                     s.iter()
-                        .map(|k| Value::Pair(k.clone(), Box::new(Value::Bool(true))))
+                        .map(|k| Value::pair(k.clone(), Value::TRUE))
                         .collect(),
-                )))),
-                Value::Bag(b, _) => Some(Ok(Value::Seq(Arc::new(
+                ))),
+                ValueView::Bag(b, _) => Some(Ok(Value::seq(
                     b.iter()
-                        .map(|(k, v)| {
-                            Value::Pair(k.clone(), Box::new(Value::from_bigint(v.clone())))
-                        })
+                        .map(|(k, v)| Value::pair(k.clone(), Value::from_bigint(v.clone())))
                         .collect(),
-                )))),
-                Value::Mix(m, _) => Some(Ok(Value::Seq(Arc::new(
+                ))),
+                ValueView::Mix(m, _) => Some(Ok(Value::seq(
                     m.iter()
-                        .map(|(k, v)| {
-                            Value::Pair(k.clone(), Box::new(crate::value::mix_weight_to_value(*v)))
-                        })
+                        .map(|(k, v)| Value::pair(k.clone(), crate::value::mix_weight_to_value(*v)))
                         .collect(),
-                )))),
-                Value::Pair(_, _) | Value::ValuePair(_, _) => {
-                    Some(Ok(Value::Seq(Arc::new(vec![target.clone()]))))
+                ))),
+                ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
+                    Some(Ok(Value::seq(vec![target.clone()])))
                 }
-                Value::Package(_) => None, // let runtime handle (may be enum type)
-                v if v.is_range() => Some(Ok(Value::Seq(Arc::new(positional_pairs(
-                    &crate::runtime::utils::value_to_list(v),
-                ))))),
-                other => Some(Ok(Value::Seq(Arc::new(positional_pairs(
-                    &crate::runtime::utils::value_to_list(other),
-                ))))),
+                ValueView::Package(_) => None, // let runtime handle (may be enum type)
+                _ if target.is_range() => Some(Ok(Value::seq(positional_pairs(
+                    &crate::runtime::utils::value_to_list(target),
+                )))),
+                _ => Some(Ok(Value::seq(positional_pairs(
+                    &crate::runtime::utils::value_to_list(target),
+                )))),
             }
         }
-        "pairup" => match target {
-            Value::Package(name) if name == "Any" => Some(Ok(Value::Seq(Vec::new().into()))),
+        "pairup" => match target.view() {
+            ValueView::Package(name) if name == "Any" => Some(Ok(Value::seq(Vec::new()))),
             _ => {
                 let items = crate::runtime::utils::value_to_list(target);
                 if !items.len().is_multiple_of(2) {
                     let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("got".to_string(), Value::Int(items.len() as i64));
+                    attrs.insert("got".to_string(), Value::int(items.len() as i64));
                     attrs.insert(
                         "message".to_string(),
                         Value::str(format!(
@@ -639,11 +627,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 let pairs: Vec<Value> = items
                     .chunks_exact(2)
-                    .map(|chunk| {
-                        Value::ValuePair(Box::new(chunk[0].clone()), Box::new(chunk[1].clone()))
-                    })
+                    .map(|chunk| Value::value_pair(chunk[0].clone(), chunk[1].clone()))
                     .collect();
-                Some(Ok(Value::Seq(pairs.into())))
+                Some(Ok(Value::seq(pairs)))
             }
         },
         "antipairs" => {
@@ -653,95 +639,81 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .into_iter()
                     .map(|(idx, val)| {
                         let key = if idx.len() == 1 {
-                            Value::Int(idx[0])
+                            Value::int(idx[0])
                         } else {
-                            Value::array(idx.into_iter().map(Value::Int).collect())
+                            Value::array(idx.into_iter().map(Value::int).collect())
                         };
                         make_inverted_pair(val, key)
                     })
                     .collect();
-                return Some(Ok(Value::Seq(Arc::new(pairs))));
+                return Some(Ok(Value::seq(pairs)));
             }
-            match target {
-                Value::Hash(items) => {
+            match target.view() {
+                ValueView::Hash(items) => {
                     let pairs: Vec<Value> = items
                         .iter()
                         .map(|(k, v)| {
                             let orig_key = crate::runtime::utils::hash_typed_key(target, k);
                             // Decontainerize element cells (see t/bind-hash-value-pairs.t).
-                            match v.deref_container() {
-                                Value::Str(s) => Value::Pair(s.to_string(), Box::new(orig_key)),
-                                dv => Value::ValuePair(Box::new(dv), Box::new(orig_key)),
+                            let dv = v.deref_container();
+                            if let ValueView::Str(s) = dv.view() {
+                                Value::pair(s.to_string(), orig_key)
+                            } else {
+                                Value::value_pair(dv, orig_key)
                             }
                         })
                         .collect();
-                    Some(Ok(Value::Seq(Arc::new(pairs))))
+                    Some(Ok(Value::seq(pairs)))
                 }
-                Value::Bag(items, _) => Some(Ok(Value::Seq(Arc::new(
+                ValueView::Bag(items, _) => Some(Ok(Value::seq(
                     items
                         .iter()
                         .map(|(k, v)| {
-                            Value::ValuePair(
-                                Box::new(Value::from_bigint(v.clone())),
-                                Box::new(Value::str(k.clone())),
-                            )
+                            Value::value_pair(Value::from_bigint(v.clone()), Value::str(k.clone()))
                         })
                         .collect(),
-                )))),
-                Value::Set(items, _) => Some(Ok(Value::Seq(Arc::new(
+                ))),
+                ValueView::Set(items, _) => Some(Ok(Value::seq(
                     items
                         .iter()
-                        .map(|k| {
-                            Value::ValuePair(
-                                Box::new(Value::Bool(true)),
-                                Box::new(Value::str(k.clone())),
-                            )
-                        })
+                        .map(|k| Value::value_pair(Value::TRUE, Value::str(k.clone())))
                         .collect(),
-                )))),
-                Value::Mix(items, _) => Some(Ok(Value::Seq(Arc::new(
+                ))),
+                ValueView::Mix(items, _) => Some(Ok(Value::seq(
                     items
                         .iter()
                         .map(|(k, v)| {
-                            Value::ValuePair(
-                                Box::new(crate::value::mix_weight_to_value(*v)),
-                                Box::new(Value::str(k.clone())),
+                            Value::value_pair(
+                                crate::value::mix_weight_to_value(*v),
+                                Value::str(k.clone()),
                             )
                         })
                         .collect(),
-                )))),
-                Value::Capture { positional, named } => {
+                ))),
+                ValueView::Capture { positional, named } => {
                     let mut pairs: Vec<Value> = positional
                         .iter()
                         .enumerate()
-                        .map(|(idx, val)| {
-                            Value::ValuePair(
-                                Box::new(val.clone()),
-                                Box::new(Value::Int(idx as i64)),
-                            )
-                        })
+                        .map(|(idx, val)| Value::value_pair(val.clone(), Value::int(idx as i64)))
                         .collect();
                     for (k, v) in named.iter() {
-                        pairs.push(Value::ValuePair(
-                            Box::new(v.clone()),
-                            Box::new(Value::str(k.clone())),
-                        ));
+                        pairs.push(Value::value_pair(v.clone(), Value::str(k.clone())));
                     }
-                    Some(Ok(Value::Seq(Arc::new(pairs))))
+                    Some(Ok(Value::seq(pairs)))
                 }
-                Value::Package(_) => None, // let runtime handle (may be enum type)
-                v if v.is_range() => {
-                    let values = crate::runtime::utils::value_to_list(v);
-                    Some(Ok(Value::Seq(Arc::new(positional_antipairs(&values)))))
+                ValueView::Package(_) => None, // let runtime handle (may be enum type)
+                _ if target.is_range() => {
+                    let values = crate::runtime::utils::value_to_list(target);
+                    Some(Ok(Value::seq(positional_antipairs(&values))))
                 }
-                other => {
-                    let values = crate::runtime::utils::value_to_list(other);
-                    Some(Ok(Value::Seq(Arc::new(positional_antipairs(&values)))))
+                _ => {
+                    let values = crate::runtime::utils::value_to_list(target);
+                    Some(Ok(Value::seq(positional_antipairs(&values))))
                 }
             }
         }
-        "kxxv" => match target {
-            Value::Bag(items, _) => {
+        "kxxv" => match target.view() {
+            ValueView::Bag(items, _) => {
                 let mut result = Vec::new();
                 for (k, count) in items.iter() {
                     let count = crate::runtime::utils::bigint_to_i64_sat(count);
@@ -751,7 +723,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Some(Ok(Value::array(result)))
             }
-            Value::Mix(items, _) => {
+            ValueView::Mix(items, _) => {
                 let mut result = Vec::new();
                 for (k, weight) in items.iter() {
                     let count = weight.floor() as i64;
@@ -761,17 +733,17 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Some(Ok(Value::array(result)))
             }
-            Value::Set(items, _) => {
+            ValueView::Set(items, _) => {
                 // Set is like Bag with all counts = 1
                 Some(Ok(Value::array(
                     items.iter().map(|k| Value::str(k.clone())).collect(),
                 )))
             }
-            Value::Hash(items) => {
+            ValueView::Hash(items) => {
                 let mut result = Vec::new();
                 for (k, v) in items.iter() {
-                    let count = match v {
-                        Value::Int(i) => *i,
+                    let count = match v.view() {
+                        ValueView::Int(i) => i,
                         _ => v.to_f64() as i64,
                     };
                     for _ in 0..count.max(0) {
@@ -785,17 +757,22 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "invert" => match invert_value(target) {
             Some(v) => Some(Ok(v)),
             None => {
-                if matches!(target, Value::Array(..) | Value::Seq(..) | Value::Slip(..)) {
+                if matches!(
+                    target.view(),
+                    ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..)
+                ) {
                     let got_val = crate::runtime::utils::value_to_list(target)
                         .into_iter()
-                        .find(|item| !matches!(item, Value::Pair(..) | Value::ValuePair(..)))
-                        .unwrap_or(Value::Nil);
+                        .find(|item| {
+                            !matches!(item.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                        })
+                        .unwrap_or(Value::NIL);
                     let got_type = crate::value::types::what_type_name(&got_val);
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("operation".to_string(), Value::str_from("invert"));
                     attrs.insert(
                         "expected".to_string(),
-                        Value::Package(crate::symbol::Symbol::intern("Pair")),
+                        Value::package(crate::symbol::Symbol::intern("Pair")),
                     );
                     attrs.insert("got".to_string(), got_val);
                     attrs.insert(
@@ -814,12 +791,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             }
         },
-        "total" => match target {
-            Value::Set(s, _) => Some(Ok(Value::Int(s.len() as i64))),
-            Value::Bag(b, _) => Some(Ok(Value::from_bigint(
+        "total" => match target.view() {
+            ValueView::Set(s, _) => Some(Ok(Value::int(s.len() as i64))),
+            ValueView::Bag(b, _) => Some(Ok(Value::from_bigint(
                 b.values().sum::<num_bigint::BigInt>(),
             ))),
-            Value::Mix(m, _) => {
+            ValueView::Mix(m, _) => {
                 // Sort values before summing to ensure deterministic results
                 // regardless of HashMap iteration order, avoiding f64
                 // non-associativity issues (e.g. 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
@@ -830,8 +807,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
-        "minmax" => match target {
-            Value::Array(items, ..) if !items.is_empty() => {
+        "minmax" => match target.view() {
+            ValueView::Array(items, ..) if !items.is_empty() => {
                 // Collect all candidates, extracting Range endpoints
                 let mut candidates = Vec::new();
                 for item in items.iter() {
@@ -841,12 +818,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     );
                 }
                 if candidates.is_empty() {
-                    Some(Ok(Value::GenericRange {
-                        start: Arc::new(Value::Num(f64::INFINITY)),
-                        end: Arc::new(Value::Num(f64::NEG_INFINITY)),
-                        excl_start: false,
-                        excl_end: false,
-                    }))
+                    Some(Ok(Value::generic_range(
+                        Value::num(f64::INFINITY),
+                        Value::num(f64::NEG_INFINITY),
+                        false,
+                        false,
+                    )))
                 } else {
                     let mut min = &candidates[0];
                     let mut max = &candidates[0];
@@ -866,23 +843,26 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     ))
                 }
             }
-            Value::Array(..) => {
+            ValueView::Array(..) => {
                 // Empty array: return Inf..-Inf
-                Some(Ok(Value::GenericRange {
-                    start: Arc::new(Value::Num(f64::INFINITY)),
-                    end: Arc::new(Value::Num(f64::NEG_INFINITY)),
-                    excl_start: false,
-                    excl_end: false,
-                }))
+                Some(Ok(Value::generic_range(
+                    Value::num(f64::INFINITY),
+                    Value::num(f64::NEG_INFINITY),
+                    false,
+                    false,
+                )))
             }
             _ => None,
         },
-        "sum" => match target {
-            Value::Array(items, ..) => {
+        "sum" => match target.view() {
+            ValueView::Array(items, ..) => {
                 // If any item is a Junction, fold with junction-aware addition
-                if items.iter().any(|v| matches!(v, Value::Junction { .. })) {
+                if items
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Junction { .. }))
+                {
                     let result = items.iter().cloned().try_fold(
-                        Value::Int(0),
+                        Value::int(0),
                         |acc, item| -> Result<Value, RuntimeError> {
                             add_with_junction_threading(acc, item)
                         },
@@ -891,7 +871,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 // Check for non-numeric strings first
                 for item in items.iter() {
-                    if let Value::Str(s) = item {
+                    if let ValueView::Str(s) = item.view() {
                         let trimmed = s.trim();
                         if trimmed.parse::<f64>().is_err() {
                             let reason =
@@ -901,7 +881,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             let mut attrs = std::collections::HashMap::new();
                             attrs.insert("source".to_string(), Value::str(s.to_string()));
                             attrs.insert("reason".to_string(), Value::str(reason));
-                            attrs.insert("pos".to_string(), Value::Int(0));
+                            attrs.insert("pos".to_string(), Value::int(0));
                             attrs.insert(
                                 "target-name".to_string(),
                                 Value::str("Numeric".to_string()),
@@ -922,60 +902,60 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let result = items
                     .iter()
                     .cloned()
-                    .try_fold(Value::Int(0), crate::builtins::arith_add);
+                    .try_fold(Value::int(0), crate::builtins::arith_add);
                 Some(result)
             }
             // Integer ranges: use Gauss formula for O(1) sum
-            Value::Range(a, b) => {
+            ValueView::Range(a, b) => {
                 if a > b {
-                    Some(Ok(Value::Int(0)))
+                    Some(Ok(Value::int(0)))
                 } else {
-                    let n = *b - *a + 1;
+                    let n = b - a + 1;
                     // n * (a + b) / 2, but careful about overflow
-                    let sum = if (*a + *b) % 2 == 0 {
-                        ((*a + *b) / 2) * n
+                    let sum = if (a + b) % 2 == 0 {
+                        ((a + b) / 2) * n
                     } else {
-                        (*a + *b) * (n / 2)
+                        (a + b) * (n / 2)
                     };
-                    Some(Ok(Value::Int(sum)))
+                    Some(Ok(Value::int(sum)))
                 }
             }
-            Value::RangeExcl(a, b) => {
+            ValueView::RangeExcl(a, b) => {
                 // a ..^ b means a to b-1 inclusive
                 if a >= b {
-                    Some(Ok(Value::Int(0)))
+                    Some(Ok(Value::int(0)))
                 } else {
-                    let end = *b - 1;
-                    let n = end - *a + 1;
-                    let sum = if (*a + end) % 2 == 0 {
-                        ((*a + end) / 2) * n
+                    let end = b - 1;
+                    let n = end - a + 1;
+                    let sum = if (a + end) % 2 == 0 {
+                        ((a + end) / 2) * n
                     } else {
-                        (*a + end) * (n / 2)
+                        (a + end) * (n / 2)
                     };
-                    Some(Ok(Value::Int(sum)))
+                    Some(Ok(Value::int(sum)))
                 }
             }
-            Value::RangeExclStart(a, b) => {
+            ValueView::RangeExclStart(a, b) => {
                 // a ^.. b means a+1 to b inclusive
-                let start = *a + 1;
-                if start > *b {
-                    Some(Ok(Value::Int(0)))
+                let start = a + 1;
+                if start > b {
+                    Some(Ok(Value::int(0)))
                 } else {
-                    let n = *b - start + 1;
-                    let sum = if (start + *b) % 2 == 0 {
-                        ((start + *b) / 2) * n
+                    let n = b - start + 1;
+                    let sum = if (start + b) % 2 == 0 {
+                        ((start + b) / 2) * n
                     } else {
-                        (start + *b) * (n / 2)
+                        (start + b) * (n / 2)
                     };
-                    Some(Ok(Value::Int(sum)))
+                    Some(Ok(Value::int(sum)))
                 }
             }
-            Value::RangeExclBoth(a, b) => {
+            ValueView::RangeExclBoth(a, b) => {
                 // a ^..^ b means a+1 to b-1 inclusive
-                let start = *a + 1;
-                let end = *b - 1;
+                let start = a + 1;
+                let end = b - 1;
                 if start > end {
-                    Some(Ok(Value::Int(0)))
+                    Some(Ok(Value::int(0)))
                 } else {
                     let n = end - start + 1;
                     let sum = if (start + end) % 2 == 0 {
@@ -983,10 +963,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     } else {
                         (start + end) * (n / 2)
                     };
-                    Some(Ok(Value::Int(sum)))
+                    Some(Ok(Value::int(sum)))
                 }
             }
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
@@ -1001,10 +981,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     let one = NumBigInt::from(1);
                     let two = NumBigInt::from(2);
                     let zero = NumBigInt::from(0);
-                    let effective_start = if *excl_start { &a + &one } else { a };
-                    let effective_end = if *excl_end { &b - &one } else { b };
+                    let effective_start = if excl_start { &a + &one } else { a };
+                    let effective_end = if excl_end { &b - &one } else { b };
                     if effective_start > effective_end {
-                        Some(Ok(Value::Int(0)))
+                        Some(Ok(Value::int(0)))
                     } else {
                         let n = &effective_end - &effective_start + &one;
                         let s_plus = &effective_start + &effective_end;
@@ -1015,22 +995,24 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         };
                         // Try to fit in i64, otherwise return BigInt
                         if let Ok(val) = i64::try_from(&sum) {
-                            Some(Ok(Value::Int(val)))
+                            Some(Ok(Value::int(val)))
                         } else {
-                            Some(Ok(Value::BigInt(Arc::new(sum))))
+                            Some(Ok(Value::bigint(sum)))
                         }
                     }
                 } else {
                     // Non-integer range: convert to list and sum
                     let items = runtime::value_to_list(target);
-                    let has_rat = items.iter().any(|v| matches!(v, Value::Rat(_, _)));
+                    let has_rat = items
+                        .iter()
+                        .any(|v| matches!(v.view(), ValueView::Rat(_, _)));
                     if has_rat {
                         let mut num: i64 = 0;
                         let mut den: i64 = 1;
                         for item in &items {
-                            let (in_num, in_den) = match item {
-                                Value::Rat(n, d) => (*n, *d),
-                                Value::Int(n) => (*n, 1),
+                            let (in_num, in_den) = match item.view() {
+                                ValueView::Rat(n, d) => (n, d),
+                                ValueView::Int(n) => (n, 1),
                                 _ => (runtime::to_int(item), 1),
                             };
                             num = num * in_den + in_num * den;
@@ -1042,24 +1024,24 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             }
                         }
                         if den == 1 {
-                            Some(Ok(Value::Int(num)))
+                            Some(Ok(Value::int(num)))
                         } else {
-                            Some(Ok(Value::Rat(num, den)))
+                            Some(Ok(Value::rat_raw(num, den)))
                         }
                     } else {
                         let total: i64 = items.iter().map(runtime::to_int).sum();
-                        Some(Ok(Value::Int(total)))
+                        Some(Ok(Value::int(total)))
                     }
                 }
             }
             // Scalar .sum returns the numeric value of the invocant
-            Value::Int(_) | Value::Num(_) | Value::Rat(..) | Value::BigInt(_) => {
+            ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..) | ValueView::BigInt(_) => {
                 Some(Ok(target.clone()))
             }
             _ => None,
         },
-        "squish" => match target {
-            Value::Array(items, ..) => {
+        "squish" => match target.view() {
+            ValueView::Array(items, ..) => {
                 let mut result = Vec::new();
                 let mut last: Option<String> = None;
                 for item in items.iter() {
@@ -1069,7 +1051,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         result.push(item.clone());
                     }
                 }
-                Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+                Some(Ok(Value::seq(result)))
             }
             _ => None,
         },
@@ -1092,7 +1074,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     cache: std::sync::Mutex::new(None),
                     compiled_code: None,
                     compiled_fns: None,
-                    elems_count: Some(Value::BigInt(factorial)),
+                    elems_count: Some(Value::bigint_arc(factorial)),
                     scan_spec: None,
                     sequence_spec: None,
                     coroutine: None,
@@ -1101,9 +1083,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     walk_pending: None,
                     cat_pull: None,
                 };
-                return Some(Ok(Value::LazyList(crate::gc::Gc::new(ll))));
+                return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
             }
-            Some(Ok(Value::Seq(all_permutations(&items).into())))
+            Some(Ok(Value::seq(all_permutations(&items))))
         }
         "combinations" => {
             let items = if crate::runtime::utils::is_shaped_array(target) {
@@ -1114,7 +1096,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .map(|items| items.to_vec())
                     .unwrap_or_else(|| runtime::value_to_list(target))
             };
-            Some(Ok(Value::Seq(combinations_all(&items).into())))
+            Some(Ok(Value::seq(combinations_all(&items))))
         }
         "cache" => {
             // A genuinely-lazy list (infinite sequence, lazy pipe, cat-handle
@@ -1122,10 +1104,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // and caches elements on demand, it does not force the whole list.
             // Forcing here would defeat e.g. `(my $l = $cat.lines).cache` whose
             // later `$l[2,3]` must reflect mid-iteration attribute changes.
-            if let Value::LazyList(ll) = target
+            if let ValueView::LazyList(ll) = target.view()
                 && ll.is_genuinely_lazy()
             {
-                return Some(Ok(Value::LazyList(crate::gc::Gc::new(
+                return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
                     ll.with_cached_no_sink(),
                 ))));
             }
@@ -1145,21 +1127,21 @@ pub(crate) fn add_with_junction_threading(
     left: Value,
     right: Value,
 ) -> Result<Value, RuntimeError> {
-    if let Value::Junction { kind, values } = left {
+    if let ValueView::Junction { kind, values } = left.view() {
         let results: Result<Vec<Value>, RuntimeError> = values
             .iter()
             .cloned()
             .map(|v| add_with_junction_threading(v, right.clone()))
             .collect();
-        return Ok(Value::junction(kind, results?));
+        return Ok(Value::junction(kind.clone(), results?));
     }
-    if let Value::Junction { kind, values } = right {
+    if let ValueView::Junction { kind, values } = right.view() {
         let results: Result<Vec<Value>, RuntimeError> = values
             .iter()
             .cloned()
             .map(|v| add_with_junction_threading(left.clone(), v))
             .collect();
-        return Ok(Value::junction(kind, results?));
+        return Ok(Value::junction(kind.clone(), results?));
     }
     crate::builtins::arith_add(left, right)
 }

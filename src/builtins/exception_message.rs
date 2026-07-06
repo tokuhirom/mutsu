@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use std::collections::HashMap;
 
 /// Construct the `.message` string for a structured exception from its class
@@ -175,11 +175,11 @@ fn attr_str_or(attrs: &HashMap<String, Value>, key: &str, default: &str) -> Stri
 
 /// Extract a list of suggestion strings from a Value.
 fn suggestion_list(v: &Value) -> Vec<String> {
-    match v {
-        Value::Array(items, _) => items.iter().map(|item| item.to_string_value()).collect(),
-        Value::Nil => Vec::new(),
-        other => {
-            let s = other.to_string_value();
+    match v.view() {
+        ValueView::Array(items, _) => items.iter().map(|item| item.to_string_value()).collect(),
+        ValueView::Nil => Vec::new(),
+        _ => {
+            let s = v.to_string_value();
             if s.is_empty() { Vec::new() } else { vec![s] }
         }
     }
@@ -187,14 +187,14 @@ fn suggestion_list(v: &Value) -> Vec<String> {
 
 /// Get a human-readable type label for a value (used by X::Assignment::RO).
 fn value_type_label(v: &Value) -> String {
-    match v {
-        Value::Int(_) => "Int".to_string(),
-        Value::Num(_) => "Num".to_string(),
-        Value::Str(_) => "Str".to_string(),
-        Value::Bool(_) => "Bool".to_string(),
-        Value::Rat(_, _) => "Rat".to_string(),
-        Value::Complex(_, _) => "Complex".to_string(),
-        Value::Instance { class_name, .. } => class_name.resolve(),
+    match v.view() {
+        ValueView::Int(_) => "Int".to_string(),
+        ValueView::Num(_) => "Num".to_string(),
+        ValueView::Str(_) => "Str".to_string(),
+        ValueView::Bool(_) => "Bool".to_string(),
+        ValueView::Rat(_, _) => "Rat".to_string(),
+        ValueView::Complex(_, _) => "Complex".to_string(),
+        ValueView::Instance { class_name, .. } => class_name.resolve(),
         _ => "Any".to_string(),
     }
 }

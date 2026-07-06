@@ -8,7 +8,7 @@ use icu_collator::options::{CollatorOptions, Strength};
 use icu_collator::{Collator, CollatorPreferences};
 
 use crate::runtime::utils::make_order;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Collation settings from `$*COLLATION`.
 /// Each level is -1 (reversed), 0 (disabled), or 1 (normal).
@@ -34,16 +34,16 @@ impl Default for CollationSettings {
 impl CollationSettings {
     /// Extract collation settings from a `$*COLLATION` Value (Instance).
     pub fn from_value(val: &Value) -> Self {
-        match val {
-            Value::Instance { attributes, .. } => {
+        match val.view() {
+            ValueView::Instance { attributes, .. } => {
                 let get_i64 = |name: &str| -> i64 {
                     attributes
                         .as_map()
                         .get(name)
-                        .map(|v| match v {
-                            Value::Int(n) => *n,
-                            Value::Bool(b) => {
-                                if *b {
+                        .map(|v| match v.view() {
+                            ValueView::Int(n) => n,
+                            ValueView::Bool(b) => {
+                                if b {
                                     1
                                 } else {
                                     0

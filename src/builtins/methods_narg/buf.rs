@@ -1,10 +1,10 @@
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 pub(crate) fn is_buf_like(val: &Value) -> bool {
-    if let Value::Instance { class_name, .. } = val {
+    if let ValueView::Instance { class_name, .. } = val.view() {
         let cn = class_name.resolve();
         cn == "Buf"
             || cn == "Blob"
@@ -20,7 +20,7 @@ pub(crate) fn is_buf_like(val: &Value) -> bool {
 }
 
 pub(crate) fn buf_class_name(val: &Value) -> String {
-    if let Value::Instance { class_name, .. } = val {
+    if let ValueView::Instance { class_name, .. } = val.view() {
         class_name.resolve().to_string()
     } else {
         "Buf".to_string()
@@ -28,8 +28,8 @@ pub(crate) fn buf_class_name(val: &Value) -> String {
 }
 
 pub(crate) fn buf_get_int_items(target: &Value) -> Option<Vec<Value>> {
-    if let Value::Instance { attributes, .. } = target
-        && let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
+    if let ValueView::Instance { attributes, .. } = target.view()
+        && let Some(ValueView::Array(items, ..)) = attributes.as_map().get("bytes").map(Value::view)
     {
         Some(items.to_vec())
     } else {
@@ -50,13 +50,13 @@ pub(crate) fn eval_whatever_code(sub_data: &crate::gc::Gc<crate::value::SubData>
         .map(|s: &String| s.as_str())
         .unwrap_or("_");
     let mut sub_env = sub_data.env.clone();
-    sub_env.insert(param.to_string(), Value::Int(arg));
+    sub_env.insert(param.to_string(), Value::int(arg));
     let mut interpreter = crate::runtime::Interpreter::new();
     *interpreter.env_mut() = sub_env;
     if let Ok(result) = interpreter.eval_block_value(&sub_data.body) {
-        match result {
-            Value::Int(n) => n,
-            Value::Num(f) => f as i64,
+        match result.view() {
+            ValueView::Int(n) => n,
+            ValueView::Num(f) => f as i64,
             _ => 0,
         }
     } else {
@@ -65,41 +65,41 @@ pub(crate) fn eval_whatever_code(sub_data: &crate::gc::Gc<crate::value::SubData>
 }
 
 pub(crate) fn resolve_buf_index(arg: &Value, len: usize) -> i64 {
-    match arg {
-        Value::Int(n) => *n,
-        Value::Num(f) => *f as i64,
-        Value::Rat(n, d) => {
-            if *d != 0 {
-                *n / *d
+    match arg.view() {
+        ValueView::Int(n) => n,
+        ValueView::Num(f) => f as i64,
+        ValueView::Rat(n, d) => {
+            if d != 0 {
+                n / d
             } else {
                 0
             }
         }
-        Value::Sub(data) => eval_whatever_code(data, len as i64),
-        Value::Whatever => len as i64,
+        ValueView::Sub(data) => eval_whatever_code(data, len as i64),
+        ValueView::Whatever => len as i64,
         _ => 0,
     }
 }
 
 pub(crate) fn resolve_buf_len(arg: &Value, total_len: usize, start: usize) -> i64 {
-    match arg {
-        Value::Int(n) => *n,
-        Value::Num(f) => {
-            if f.is_infinite() && *f > 0.0 {
+    match arg.view() {
+        ValueView::Int(n) => n,
+        ValueView::Num(f) => {
+            if f.is_infinite() && f > 0.0 {
                 (total_len - start) as i64
             } else {
-                *f as i64
+                f as i64
             }
         }
-        Value::Rat(n, d) => {
-            if *d != 0 {
-                *n / *d
+        ValueView::Rat(n, d) => {
+            if d != 0 {
+                n / d
             } else {
                 0
             }
         }
-        Value::Whatever => (total_len - start) as i64,
-        Value::Sub(data) => {
+        ValueView::Whatever => (total_len - start) as i64,
+        ValueView::Sub(data) => {
             // WhateverCode receives total_len and returns an end index (inclusive).
             // Length = max(0, end_index - start + 1)
             let end_idx = eval_whatever_code(data, total_len as i64);
@@ -111,9 +111,9 @@ pub(crate) fn resolve_buf_len(arg: &Value, total_len: usize, start: usize) -> i6
 }
 
 pub(crate) fn range_bounds(arg: &Value) -> Option<(i64, i64)> {
-    match arg {
-        Value::Range(start, end) => Some((*start, *end + 1)),
-        Value::RangeExcl(start, end) => Some((*start, *end)),
+    match arg.view() {
+        ValueView::Range(start, end) => Some((start, end + 1)),
+        ValueView::RangeExcl(start, end) => Some((start, end)),
         _ => None,
     }
 }
@@ -125,7 +125,7 @@ pub(crate) fn out_of_range_error(got: i64, min: i64, max: i64) -> RuntimeError {
         got, min, max
     );
     attrs.insert("message".to_string(), Value::str(msg.clone()));
-    attrs.insert("got".to_string(), Value::Int(got));
+    attrs.insert("got".to_string(), Value::int(got));
     attrs.insert("range".to_string(), Value::str(format!("{}..{}", min, max)));
     let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
     let mut err = RuntimeError::new(msg);
@@ -135,19 +135,19 @@ pub(crate) fn out_of_range_error(got: i64, min: i64, max: i64) -> RuntimeError {
 
 /// Extract byte array from a Buf/Blob instance.
 pub(crate) fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
-    if let Value::Instance {
+    if let ValueView::Instance {
         class_name,
         attributes,
         ..
-    } = target
+    } = target.view()
         && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
-        && let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
+        && let Some(ValueView::Array(items, ..)) = attributes.as_map().get("bytes").map(Value::view)
     {
         return Some(
             items
                 .iter()
-                .map(|v| match v {
-                    Value::Int(i) => *i as u8,
+                .map(|v| match v.view() {
+                    ValueView::Int(i) => i as u8,
                     _ => 0,
                 })
                 .collect(),
@@ -157,9 +157,9 @@ pub(crate) fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
 }
 
 pub(crate) fn to_int_val(v: &Value) -> i64 {
-    match v {
-        Value::Int(i) => *i,
-        Value::Num(f) => *f as i64,
+    match v.view() {
+        ValueView::Int(i) => i,
+        ValueView::Num(f) => f as i64,
         _ => 0,
     }
 }
@@ -177,7 +177,7 @@ pub(crate) fn read_ubits_from_bytes(bytes: &[u8], from: usize, bits: usize) -> B
 
 pub(crate) fn bigint_to_value(value: BigInt) -> Value {
     if let Some(i) = value.to_i64() {
-        Value::Int(i)
+        Value::int(i)
     } else {
         Value::bigint(value)
     }

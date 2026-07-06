@@ -1,7 +1,9 @@
 //! Power (exponentiation) and unary negation operators.
 
 use super::rat::{bigint_ratio_to_f64, is_fat_rat_like, make_fat_rat};
-use crate::value::{RuntimeError, Value, make_big_fat_rat, make_big_rat_arith, make_rat};
+use crate::value::{
+    RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat_arith, make_rat,
+};
 use num_bigint::{BigInt as NumBigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
 
@@ -9,8 +11,8 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
     let (left, right) = (left.into_deref(), right.into_deref());
     let (l, r) = crate::runtime::coerce_numeric(left, right);
     let to_pow_f64 = |v: &Value| -> Option<f64> {
-        crate::runtime::to_float_value(v).or_else(|| match v {
-            Value::BigRat(n, d) => {
+        crate::runtime::to_float_value(v).or_else(|| match v.view() {
+            ValueView::BigRat(n, d) => {
                 if d.is_zero() {
                     if n.is_zero() {
                         Some(f64::NAN)
@@ -28,19 +30,20 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
     };
     let powf_or_zero = |base: &Value, exp: &Value| -> Value {
         match (to_pow_f64(base), to_pow_f64(exp)) {
-            (Some(a), Some(b)) => Value::Num(a.powf(b)),
-            _ => Value::Int(0),
+            (Some(a), Some(b)) => Value::num(a.powf(b)),
+            _ => Value::int(0),
         }
     };
-    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+    if matches!(l.view(), ValueView::Complex(_, _)) || matches!(r.view(), ValueView::Complex(_, _))
+    {
         let (ar, ai) = crate::runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = crate::runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         // Special case: 0 ** anything = 0+0i (except 0**0 = 1+0i)
         if ar == 0.0 && ai == 0.0 {
             return if br == 0.0 && bi == 0.0 {
-                Value::Complex(1.0, 0.0)
+                Value::complex(1.0, 0.0)
             } else {
-                Value::Complex(0.0, 0.0)
+                Value::complex(0.0, 0.0)
             };
         }
         // Integer real exponent: compute by repeated multiplication
@@ -68,21 +71,21 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
             if br < 0.0 {
                 // Reciprocal: 1 / (rr + ri·i) = (rr - ri·i) / (rr² + ri²).
                 let denom = rr * rr + ri * ri;
-                return Value::Complex(rr / denom, -ri / denom);
+                return Value::complex(rr / denom, -ri / denom);
             }
-            return Value::Complex(rr, ri);
+            return Value::complex(rr, ri);
         }
         let ln_r = (ar * ar + ai * ai).sqrt().ln();
         let ln_i = ai.atan2(ar);
         let wr = br * ln_r - bi * ln_i;
         let wi = br * ln_i + bi * ln_r;
         let mag = wr.exp();
-        Value::Complex(mag * wi.cos(), mag * wi.sin())
+        Value::complex(mag * wi.cos(), mag * wi.sin())
     } else {
-        match (l, r) {
-            (Value::Int(a), Value::Int(b)) if b >= 0 => {
+        match (l.view(), r.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) if b >= 0 => {
                 if let Some(result) = a.checked_pow(b as u32) {
-                    Value::Int(result)
+                    Value::int(result)
                 } else {
                     // Overflow: use BigInt
                     use num_bigint::BigInt;
@@ -90,15 +93,15 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     Value::bigint(base.pow(b as u32))
                 }
             }
-            (Value::Int(a), Value::Int(b)) => {
+            (ValueView::Int(a), ValueView::Int(b)) => {
                 let pos = (-b) as u32;
                 if let Some(base) = a.checked_pow(pos) {
                     make_rat(1, base)
                 } else {
-                    Value::Num(1.0 / (a as f64).powi(pos as i32))
+                    Value::num(1.0 / (a as f64).powi(pos as i32))
                 }
             }
-            (Value::Rat(n, d), Value::Int(b)) if b >= 0 => {
+            (ValueView::Rat(n, d), ValueView::Int(b)) if b >= 0 => {
                 let p = b as u32;
                 if let (Some(np), Some(dp)) = (n.checked_pow(p), d.checked_pow(p)) {
                     make_rat(np, dp)
@@ -106,105 +109,111 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     // Overflow in i64: use BigInt, then check if denom fits
                     let nn = NumBigInt::from(n).pow(p);
                     let dd = NumBigInt::from(d).pow(p);
-                    match make_big_rat_arith(nn, dd) {
-                        // If make_big_rat reduced it to fit in i64, keep as Rat
-                        Value::Rat(rn, rd) => Value::Rat(rn, rd),
+                    let tmp = make_big_rat_arith(nn, dd);
+                    // If make_big_rat reduced it to fit in i64, keep as Rat
+                    if let ValueView::Rat(rn, rd) = tmp.view() {
+                        Value::rat_raw(rn, rd)
+                    } else if let ValueView::BigRat(bn, bd) = tmp.view() {
                         // BigRat means denom exceeds i64: degrade to Num
-                        Value::BigRat(bn, bd) => {
-                            // Check if denom fits in i64 (numerator can be big)
-                            if let Some(d64) = bd.to_i64() {
-                                Value::bigrat(*bn, NumBigInt::from(d64))
-                            } else {
-                                Value::Num(bigint_ratio_to_f64(bn.as_ref(), bd.as_ref()))
-                            }
+                        // Check if denom fits in i64 (numerator can be big)
+                        if let Some(d64) = bd.to_i64() {
+                            Value::bigrat(bn.clone(), NumBigInt::from(d64))
+                        } else {
+                            Value::num(bigint_ratio_to_f64(bn, bd))
                         }
-                        other => other,
+                    } else {
+                        tmp
                     }
                 }
             }
-            (Value::Rat(n, d), Value::Int(b)) => {
+            (ValueView::Rat(n, d), ValueView::Int(b)) => {
                 let p = (-b) as u32;
                 if let (Some(dp), Some(np)) = (d.checked_pow(p), n.checked_pow(p)) {
                     make_rat(dp, np)
                 } else {
                     let nn = NumBigInt::from(d).pow(p);
                     let dd = NumBigInt::from(n).pow(p);
-                    match make_big_rat_arith(nn, dd) {
-                        Value::Rat(rn, rd) => Value::Rat(rn, rd),
-                        Value::BigRat(bn, bd) => {
-                            if let Some(d64) = bd.to_i64() {
-                                Value::bigrat(*bn, NumBigInt::from(d64))
-                            } else {
-                                Value::Num(bigint_ratio_to_f64(bn.as_ref(), bd.as_ref()))
-                            }
+                    let tmp = make_big_rat_arith(nn, dd);
+                    if let ValueView::Rat(rn, rd) = tmp.view() {
+                        Value::rat_raw(rn, rd)
+                    } else if let ValueView::BigRat(bn, bd) = tmp.view() {
+                        if let Some(d64) = bd.to_i64() {
+                            Value::bigrat(bn.clone(), NumBigInt::from(d64))
+                        } else {
+                            Value::num(bigint_ratio_to_f64(bn, bd))
                         }
-                        other => other,
+                    } else {
+                        tmp
                     }
                 }
             }
-            (Value::FatRat(n, d), Value::Int(b)) if b >= 0 => {
+            (ValueView::FatRat(n, d), ValueView::Int(b)) if b >= 0 => {
                 let p = b as u32;
                 if let (Some(np), Some(dp)) = (n.checked_pow(p), d.checked_pow(p)) {
                     make_fat_rat(np, dp)
                 } else {
                     let nn = NumBigInt::from(n).pow(p);
                     let dd = NumBigInt::from(d).pow(p);
-                    match make_big_fat_rat(nn, dd) {
-                        Value::Rat(nn, dd) => Value::FatRat(nn, dd),
-                        other => other,
+                    let tmp = make_big_fat_rat(nn, dd);
+                    if let ValueView::Rat(nn, dd) = tmp.view() {
+                        Value::fat_rat_raw(nn, dd)
+                    } else {
+                        tmp
                     }
                 }
             }
-            (Value::FatRat(n, d), Value::Int(b)) => {
+            (ValueView::FatRat(n, d), ValueView::Int(b)) => {
                 let p = (-b) as u32;
                 if let (Some(dp), Some(np)) = (d.checked_pow(p), n.checked_pow(p)) {
                     make_fat_rat(dp, np)
                 } else {
                     let nn = NumBigInt::from(d).pow(p);
                     let dd = NumBigInt::from(n).pow(p);
-                    match make_big_fat_rat(nn, dd) {
-                        Value::Rat(nn, dd) => Value::FatRat(nn, dd),
-                        other => other,
+                    let tmp = make_big_fat_rat(nn, dd);
+                    if let ValueView::Rat(nn, dd) = tmp.view() {
+                        Value::fat_rat_raw(nn, dd)
+                    } else {
+                        tmp
                     }
                 }
             }
-            (Value::BigRat(n, d), Value::Int(b)) if b >= 0 => {
+            (ValueView::BigRat(n, d), ValueView::Int(b)) if b >= 0 => {
                 let p = b as u32;
                 make_big_rat_arith(n.pow(p), d.pow(p))
             }
-            (Value::BigRat(n, d), Value::Int(b)) => {
+            (ValueView::BigRat(n, d), ValueView::Int(b)) => {
                 let p = (-b) as u32;
                 make_big_rat_arith(d.pow(p), n.pow(p))
             }
-            (Value::Num(a), Value::Int(b)) => Value::Num(a.powi(b as i32)),
-            (Value::BigInt(a), Value::Int(b)) if b >= 0 => {
+            (ValueView::Num(a), ValueView::Int(b)) => Value::num(a.powi(b as i32)),
+            (ValueView::BigInt(a), ValueView::Int(b)) if b >= 0 => {
                 if let Ok(exp_u) = u32::try_from(b) {
-                    Value::bigint((*a).clone().pow(exp_u))
+                    Value::bigint((**a).clone().pow(exp_u))
                 } else {
-                    Value::Num(a.as_ref().to_f64().unwrap_or(0.0).powf(b as f64))
+                    Value::num(a.as_ref().to_f64().unwrap_or(0.0).powf(b as f64))
                 }
             }
-            (Value::BigInt(a), Value::Int(b)) => {
-                if *a == NumBigInt::from(1) {
-                    Value::Int(1)
-                } else if *a == NumBigInt::from(-1) {
+            (ValueView::BigInt(a), ValueView::Int(b)) => {
+                if **a == NumBigInt::from(1) {
+                    Value::int(1)
+                } else if **a == NumBigInt::from(-1) {
                     if (-b) % 2 == 0 {
-                        Value::Int(1)
+                        Value::int(1)
                     } else {
-                        Value::Int(-1)
+                        Value::int(-1)
                     }
                 } else {
-                    Value::Num(a.as_ref().to_f64().unwrap_or(0.0).powf(b as f64))
+                    Value::num(a.as_ref().to_f64().unwrap_or(0.0).powf(b as f64))
                 }
             }
-            (Value::Int(a), Value::Num(b)) => {
+            (ValueView::Int(a), ValueView::Num(b)) => {
                 if b.is_finite() && b.fract() == 0.0 && b >= i32::MIN as f64 && b <= i32::MAX as f64
                 {
                     let exp_i = b as i32;
                     if exp_i >= 0 {
                         let exp_u = exp_i as u32;
                         if let Some(result) = a.checked_pow(exp_u) {
-                            Value::Int(result)
+                            Value::int(result)
                         } else {
                             use num_bigint::BigInt;
                             Value::bigint(BigInt::from(a).pow(exp_u))
@@ -214,105 +223,105 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                         if let Some(base) = a.checked_pow(pos) {
                             make_rat(1, base)
                         } else {
-                            Value::Num(1.0 / (a as f64).powi(pos as i32))
+                            Value::num(1.0 / (a as f64).powi(pos as i32))
                         }
                     }
                 } else {
-                    Value::Num((a as f64).powf(b))
+                    Value::num((a as f64).powf(b))
                 }
             }
-            (Value::Int(a), Value::BigInt(b)) => {
+            (ValueView::Int(a), ValueView::BigInt(b)) => {
                 let is_even = (b.as_ref() % 2u8) == NumBigInt::from(0u8);
                 if b.is_zero() || a == 1 {
-                    Value::Int(1)
+                    Value::int(1)
                 } else if a == -1 {
-                    Value::Int(if is_even { 1 } else { -1 })
+                    Value::int(if is_even { 1 } else { -1 })
                 } else if a == 0 && b.sign() != Sign::Minus {
-                    Value::Int(0)
+                    Value::int(0)
                 } else if let Some(exp_u) = b.as_ref().to_u32() {
                     if let Some(result) = a.checked_pow(exp_u) {
-                        Value::Int(result)
+                        Value::int(result)
                     } else {
                         Value::bigint(NumBigInt::from(a).pow(exp_u))
                     }
                 } else {
-                    Value::Num((a as f64).powf(b.as_ref().to_f64().unwrap_or(f64::INFINITY)))
+                    Value::num((a as f64).powf(b.as_ref().to_f64().unwrap_or(f64::INFINITY)))
                 }
             }
-            (Value::Num(a), Value::BigInt(b)) => {
+            (ValueView::Num(a), ValueView::BigInt(b)) => {
                 let is_even = (b.as_ref() % 2u8) == NumBigInt::from(0u8);
                 if b.is_zero() || a == 1.0 {
-                    Value::Num(1.0)
+                    Value::num(1.0)
                 } else if a == -1.0 {
-                    Value::Num(if is_even { 1.0 } else { -1.0 })
+                    Value::num(if is_even { 1.0 } else { -1.0 })
                 } else if a == 0.0 && b.sign() != Sign::Minus {
-                    Value::Num(0.0)
+                    Value::num(0.0)
                 } else {
-                    Value::Num(a.powf(b.as_ref().to_f64().unwrap_or(f64::INFINITY)))
+                    Value::num(a.powf(b.as_ref().to_f64().unwrap_or(f64::INFINITY)))
                 }
             }
-            (Value::Num(a), Value::Num(b)) => {
+            (ValueView::Num(a), ValueView::Num(b)) => {
                 let result = a.powf(b);
                 if result == 0.0 && a != 0.0 && b.is_finite() && b < 0.0 {
                     RuntimeError::numeric_underflow_failure()
                 } else {
-                    Value::Num(result)
+                    Value::num(result)
                 }
             }
-            (base, exp) => powf_or_zero(&base, &exp),
+            _ => powf_or_zero(&l, &r),
         }
     }
 }
 
 pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
-    match val {
-        Value::Bool(b) => Ok(Value::Int(if b { -1 } else { 0 })),
-        Value::Int(i) => {
+    match val.view() {
+        ValueView::Bool(b) => Ok(Value::int(if b { -1 } else { 0 })),
+        ValueView::Int(i) => {
             if let Some(neg) = i.checked_neg() {
-                Ok(Value::Int(neg))
+                Ok(Value::int(neg))
             } else {
                 // i64::MIN overflow: promote to Num
-                Ok(Value::Num(-(i as f64)))
+                Ok(Value::num(-(i as f64)))
             }
         }
-        Value::BigInt(i) => Ok(Value::bigint(-(*i).clone())),
-        Value::Num(f) => Ok(Value::Num(-f)),
-        Value::Rat(n, d) => {
+        ValueView::BigInt(i) => Ok(Value::bigint(-(**i).clone())),
+        ValueView::Num(f) => Ok(Value::num(-f)),
+        ValueView::Rat(n, d) => {
             if let Some(neg) = n.checked_neg() {
-                Ok(Value::Rat(neg, d))
+                Ok(Value::rat_raw(neg, d))
             } else {
-                Ok(Value::Num(-(n as f64) / d as f64))
+                Ok(Value::num(-(n as f64) / d as f64))
             }
         }
-        Value::FatRat(n, d) => {
+        ValueView::FatRat(n, d) => {
             if let Some(neg) = n.checked_neg() {
                 Ok(make_fat_rat(neg, d))
             } else {
-                Ok(Value::Num(-(n as f64) / d as f64))
+                Ok(Value::num(-(n as f64) / d as f64))
             }
         }
-        Value::BigRat(ref n, ref d) => {
+        ValueView::BigRat(n, d) => {
             if is_fat_rat_like(&val) {
-                Ok(make_big_fat_rat(-(**n).clone(), (**d).clone()))
+                Ok(make_big_fat_rat(-n.clone(), d.clone()))
             } else {
-                Ok(make_big_rat_arith(-(**n).clone(), (**d).clone()))
+                Ok(make_big_rat_arith(-n.clone(), d.clone()))
             }
         }
-        Value::Complex(r, i) => {
+        ValueView::Complex(r, i) => {
             // Canonicalize -0.0 to 0.0 so that e.g. (-i).reals gives (0e0, -1e0)
             let nr = if r == 0.0 { 0.0 } else { -r };
             let ni = if i == 0.0 { 0.0 } else { -i };
-            Ok(Value::Complex(nr, ni))
+            Ok(Value::complex(nr, ni))
         }
-        Value::Str(ref s) => {
+        ValueView::Str(s) => {
             if let Ok(i) = s.trim().parse::<i64>() {
-                Ok(Value::Int(-i))
+                Ok(Value::int(-i))
             } else if let Ok(f) = s.trim().parse::<f64>() {
-                Ok(Value::Num(-f))
+                Ok(Value::num(-f))
             } else {
-                Ok(Value::Int(0))
+                Ok(Value::int(0))
             }
         }
-        other => Ok(Value::Int(-crate::runtime::to_int(&other))),
+        _ => Ok(Value::int(-crate::runtime::to_int(&val))),
     }
 }

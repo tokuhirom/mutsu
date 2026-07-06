@@ -1,26 +1,26 @@
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use num_traits::ToPrimitive;
 
 pub(crate) fn str_indent(s: &str, arg: &Value) -> (String, Option<String>) {
     const TABSTOP: usize = 8;
 
     // Determine the indent amount
-    let is_whatever = matches!(arg, Value::Whatever);
+    let is_whatever = matches!(arg.view(), ValueView::Whatever);
     let steps: i64 = if is_whatever {
         0 // will be computed below
     } else {
-        match arg {
-            Value::Int(i) => *i,
-            Value::BigInt(bi) => bi.to_i64().unwrap_or(0),
-            Value::Num(f) => *f as i64,
-            Value::Bool(b) => {
-                if *b {
+        match arg.view() {
+            ValueView::Int(i) => i,
+            ValueView::BigInt(bi) => bi.to_i64().unwrap_or(0),
+            ValueView::Num(f) => f as i64,
+            ValueView::Bool(b) => {
+                if b {
                     1
                 } else {
                     0
                 }
             }
-            Value::Str(sv) => {
+            ValueView::Str(sv) => {
                 // Coerce string to Int: supports "0x10", "0e0", etc.
                 if let Some(stripped) = sv.strip_prefix("0x").or_else(|| sv.strip_prefix("0X")) {
                     i64::from_str_radix(stripped, 16).unwrap_or(0)

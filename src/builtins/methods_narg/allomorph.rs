@@ -1,5 +1,5 @@
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use num_traits::{ToPrimitive, Zero};
 use std::collections::HashMap;
 
@@ -21,7 +21,7 @@ pub(crate) fn out_of_range_failure(message: &str) -> Value {
 /// - arg is allomorphic: numeric parts are equal (==)
 /// - arg has .Numeric (custom class): numeric parts are equal (==)
 pub(crate) fn allomorph_accepts(target: &Value, arg: &Value) -> Option<bool> {
-    let Value::Mixin(target_inner, target_mixins) = target else {
+    let ValueView::Mixin(target_inner, target_mixins) = target.view() else {
         return Some(false);
     };
     let target_str = target_mixins
@@ -30,29 +30,29 @@ pub(crate) fn allomorph_accepts(target: &Value, arg: &Value) -> Option<bool> {
         .unwrap_or_default();
 
     // Unwrap Scalar
-    let arg = match arg {
-        Value::Scalar(inner) => inner.as_ref(),
-        other => other,
+    let arg = match arg.view() {
+        ValueView::Scalar(inner) => inner,
+        _ => arg,
     };
 
-    match arg {
+    match arg.view() {
         // Plain string: compare with the Str part
-        Value::Str(s) => Some(**s == target_str),
+        ValueView::Str(s) => Some(**s == target_str),
         // Allomorphic argument: compare numeric parts
-        Value::Mixin(arg_inner, arg_mixins) if arg_mixins.contains_key("Str") => {
+        ValueView::Mixin(arg_inner, arg_mixins) if arg_mixins.contains_key("Str") => {
             Some(allomorph_values_numerically_equal(target_inner, arg_inner))
         }
         // Numeric types: compare with the numeric part
-        Value::Int(_)
-        | Value::BigInt(_)
-        | Value::Num(_)
-        | Value::Rat(_, _)
-        | Value::FatRat(_, _)
-        | Value::BigRat(_, _)
-        | Value::Complex(_, _)
-        | Value::Bool(_) => Some(allomorph_values_numerically_equal(target_inner, arg)),
+        ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Num(_)
+        | ValueView::Rat(_, _)
+        | ValueView::FatRat(_, _)
+        | ValueView::BigRat(_, _)
+        | ValueView::Complex(_, _)
+        | ValueView::Bool(_) => Some(allomorph_values_numerically_equal(target_inner, arg)),
         // Instance (custom class with .Numeric): needs interpreter to call methods
-        Value::Instance { .. } => None,
+        ValueView::Instance { .. } => None,
         _ => Some(false),
     }
 }
@@ -64,14 +64,14 @@ fn allomorph_values_numerically_equal(a: &Value, b: &Value) -> bool {
     match (a_f, b_f) {
         (Some(af), Some(bf)) => {
             // Handle Complex: both real and imaginary must match
-            if let (Value::Complex(ar, ai), Value::Complex(br, bi)) = (a, b) {
+            if let (ValueView::Complex(ar, ai), ValueView::Complex(br, bi)) = (a.view(), b.view()) {
                 return (ar - br).abs() < 1e-15 && (ai - bi).abs() < 1e-15;
             }
             // For Complex vs non-Complex
-            if let Value::Complex(ar, ai) = a {
+            if let ValueView::Complex(ar, ai) = a.view() {
                 return (ar - bf).abs() < 1e-15 && ai.abs() < 1e-15;
             }
-            if let Value::Complex(br, bi) = b {
+            if let ValueView::Complex(br, bi) = b.view() {
                 return (af - br).abs() < 1e-15 && bi.abs() < 1e-15;
             }
             (af - bf).abs() < 1e-15
@@ -81,18 +81,18 @@ fn allomorph_values_numerically_equal(a: &Value, b: &Value) -> bool {
 }
 
 fn allomorph_value_to_f64(v: &Value) -> Option<f64> {
-    match v {
-        Value::Int(i) => Some(*i as f64),
-        Value::BigInt(n) => n.to_f64(),
-        Value::Num(f) => Some(*f),
-        Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-        Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-        Value::BigRat(n, d) if !d.is_zero() => {
+    match v.view() {
+        ValueView::Int(i) => Some(i as f64),
+        ValueView::BigInt(n) => n.to_f64(),
+        ValueView::Num(f) => Some(f),
+        ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+        ValueView::FatRat(n, d) if d != 0 => Some(n as f64 / d as f64),
+        ValueView::BigRat(n, d) if !d.is_zero() => {
             Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
         }
-        Value::Complex(r, _) => Some(*r),
-        Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
-        Value::Mixin(inner, _) => allomorph_value_to_f64(inner),
+        ValueView::Complex(r, _) => Some(r),
+        ValueView::Bool(b) => Some(if b { 1.0 } else { 0.0 }),
+        ValueView::Mixin(inner, _) => allomorph_value_to_f64(inner),
         _ => None,
     }
 }

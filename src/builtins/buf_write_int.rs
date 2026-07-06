@@ -6,7 +6,7 @@
 //   (similarly for write-int8, write-uint16, ..., write-int128)
 
 use crate::symbol::Symbol;
-use crate::value::{InstanceAttrs, RuntimeError, Value};
+use crate::value::{InstanceAttrs, RuntimeError, Value, ValueView};
 
 /// Returns Some((byte_size, is_signed)) if the method is a write-int/uint method.
 pub(crate) fn write_int_info(method: &str) -> Option<(usize, bool)> {
@@ -28,10 +28,10 @@ pub(crate) fn write_int_info(method: &str) -> Option<(usize, bool)> {
 /// Convert a Value to a u128 for writing.
 /// Handles BigInt values that exceed i128 range by extracting low 128 bits.
 fn to_u128_value(value: &Value) -> u128 {
-    match value {
-        Value::Int(i) => *i as u128,
-        Value::Num(f) => *f as i128 as u128,
-        Value::BigInt(bi) => {
+    match value.view() {
+        ValueView::Int(i) => i as u128,
+        ValueView::Num(f) => f as i128 as u128,
+        ValueView::BigInt(bi) => {
             // Extract the low 128 bits of the BigInt
             use num_bigint::BigInt;
             use num_traits::ToPrimitive;
@@ -39,15 +39,15 @@ fn to_u128_value(value: &Value) -> u128 {
             let masked: BigInt = ((bi.as_ref() % &mask) + &mask) % &mask;
             masked.to_u128().unwrap_or(0)
         }
-        Value::Bool(b) => i64::from(*b) as u128,
-        Value::Str(s) => s
+        ValueView::Bool(b) => i64::from(b) as u128,
+        ValueView::Str(s) => s
             .parse::<u128>()
             .unwrap_or_else(|_| s.parse::<i128>().map(|i| i as u128).unwrap_or(0)),
-        Value::Rat(n, d) | Value::FatRat(n, d) => {
-            if *d == 0 {
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
+            if d == 0 {
                 0
             } else {
-                ((*n as i128) / (*d as i128)) as u128
+                ((n as i128) / (d as i128)) as u128
             }
         }
         _ => 0,
@@ -168,15 +168,15 @@ pub(crate) fn try_native_buf_write(
     let cn: String;
     let mut bytes: Vec<u8> = Vec::new();
     let inst: Option<BufWriteCell>;
-    match target {
-        Value::Package(name) => {
+    match target.view() {
+        ValueView::Package(name) => {
             cn = name.resolve();
             if !crate::runtime::utils::is_buf_or_blob_class(&cn) {
                 return None;
             }
             inst = None;
         }
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             id,
@@ -185,20 +185,22 @@ pub(crate) fn try_native_buf_write(
             if !crate::runtime::utils::is_buf_or_blob_class(&cn) {
                 return None;
             }
-            if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+            if let Some(ValueView::Array(items, ..)) =
+                attributes.as_map().get("bytes").map(Value::view)
+            {
                 bytes.reserve(items.len());
                 for it in items.iter() {
-                    bytes.push(match it {
-                        Value::Int(i) => (*i).clamp(0, 255) as u8,
-                        Value::Num(f) => (*f as i64).clamp(0, 255) as u8,
+                    bytes.push(match it.view() {
+                        ValueView::Int(i) => i.clamp(0, 255) as u8,
+                        ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
                         _ => 0,
                     });
                 }
             }
             inst = Some(BufWriteCell {
                 attributes,
-                class_sym: *class_name,
-                id: *id,
+                class_sym: class_name,
+                id,
             });
         }
         _ => return None,
@@ -211,9 +213,9 @@ pub(crate) fn try_native_buf_write(
     if args.len() < 2 || args.len() > 3 {
         return None;
     }
-    let offset_i64 = match &args[0] {
-        Value::Int(i) => *i,
-        Value::Num(f) => *f as i64,
+    let offset_i64 = match args[0].view() {
+        ValueView::Int(i) => i,
+        ValueView::Num(f) => f as i64,
         _ => return None,
     };
     let endian_val = if args.len() == 3 {
@@ -236,7 +238,7 @@ pub(crate) fn try_native_buf_write(
             let mut updated_map = cell.attributes.to_map();
             updated_map.insert(
                 "bytes".to_string(),
-                Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
+                Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
             );
             Some(Ok(Value::write_back_sharing(
                 cell.attributes,

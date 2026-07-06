@@ -4,7 +4,7 @@ use crate::builtins::rng::builtin_rand;
 /// uc, lc, fc, tc, sign
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::Signed;
 
 /// Check if a Package type object is calling a :D-requiring numeric method.
@@ -13,7 +13,7 @@ fn check_numeric_type_object_method(
     target: &Value,
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
-    if let Value::Package(pkg_name) = target {
+    if let ValueView::Package(pkg_name) = target.view() {
         let name = pkg_name.resolve();
         // Numeric types whose instances have these methods
         let is_numeric_type = matches!(
@@ -73,10 +73,12 @@ pub(super) fn dispatch(
     }
     match method {
         "elems" => {
-            if let Value::LazyList(list) = target {
+            if let ValueView::LazyList(list) = target.view() {
                 if matches!(
-                    list.env.get("__mutsu_lazylist_from_gather"),
-                    Some(Value::Bool(true))
+                    list.env
+                        .get("__mutsu_lazylist_from_gather")
+                        .map(Value::view),
+                    Some(ValueView::Bool(true))
                 ) {
                     return Some(None);
                 }
@@ -88,7 +90,7 @@ pub(super) fn dispatch(
                 let exception = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
                 let mut failure_attrs = std::collections::HashMap::new();
                 failure_attrs.insert("exception".to_string(), exception);
-                failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                failure_attrs.insert("handled".to_string(), Value::FALSE);
                 return Some(Some(Ok(Value::make_instance(
                     Symbol::intern("Failure"),
                     failure_attrs,
@@ -97,94 +99,100 @@ pub(super) fn dispatch(
             // A lazy (infinite-backed) array cannot report its element count;
             // raku throws X::Cannot::Lazy. Check before `as_list_items`, which
             // would otherwise return the capped backing length.
-            if let Value::Array(_, kind) = target
+            if let ValueView::Array(_, kind) = target.view()
                 && kind.is_lazy()
             {
                 return Some(range_elems_lazy_failure("elems"));
             }
             if let Some(items) = target.as_list_items() {
-                return Some(Some(Ok(Value::Int(items.len() as i64))));
+                return Some(Some(Ok(Value::int(items.len() as i64))));
             }
-            let result = match target {
-                Value::Hash(items) => Value::Int(items.len() as i64),
-                Value::Set(items, _) => Value::Int(items.len() as i64),
-                Value::Bag(items, _) => Value::Int(items.len() as i64),
-                Value::Mix(items, _) => Value::Int(items.len() as i64),
-                Value::Junction { values, .. } => Value::Int(values.len() as i64),
-                Value::Instance {
+            let result = match target.view() {
+                ValueView::Hash(items) => Value::int(items.len() as i64),
+                ValueView::Set(items, _) => Value::int(items.len() as i64),
+                ValueView::Bag(items, _) => Value::int(items.len() as i64),
+                ValueView::Mix(items, _) => Value::int(items.len() as i64),
+                ValueView::Junction { values, .. } => Value::int(values.len() as i64),
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
-                        Value::Int(bytes.len() as i64)
+                    if let Some(ValueView::Array(bytes, ..)) =
+                        attributes.as_map().get("bytes").map(Value::view)
+                    {
+                        Value::int(bytes.len() as i64)
                     } else {
-                        Value::Int(0)
+                        Value::int(0)
                     }
                 }
-                Value::Channel(_) => {
+                ValueView::Channel(_) => {
                     return Some(Some(Err(RuntimeError::new(
                         "Cannot call '.elems' on a Channel instance".to_string(),
                     ))));
                 }
-                Value::Range(start, end) if *start == i64::MIN || *end == i64::MAX => {
+                ValueView::Range(start, end) if start == i64::MIN || end == i64::MAX => {
                     return Some(range_elems_lazy_failure("elems"));
                 }
-                Value::Range(start, end) => Value::Int((*end - *start + 1).max(0)),
-                Value::RangeExcl(start, end) if *start == i64::MIN || *end == i64::MAX => {
+                ValueView::Range(start, end) => Value::int((end - start + 1).max(0)),
+                ValueView::RangeExcl(start, end) if start == i64::MIN || end == i64::MAX => {
                     return Some(range_elems_lazy_failure("elems"));
                 }
-                Value::RangeExcl(start, end) => Value::Int((*end - *start).max(0)),
-                Value::RangeExclStart(start, end) if *start == i64::MIN || *end == i64::MAX => {
+                ValueView::RangeExcl(start, end) => Value::int((end - start).max(0)),
+                ValueView::RangeExclStart(start, end) if start == i64::MIN || end == i64::MAX => {
                     return Some(range_elems_lazy_failure("elems"));
                 }
-                Value::RangeExclStart(start, end) => Value::Int((*end - *start).max(0)),
-                Value::RangeExclBoth(start, end) if *start == i64::MIN || *end == i64::MAX => {
+                ValueView::RangeExclStart(start, end) => Value::int((end - start).max(0)),
+                ValueView::RangeExclBoth(start, end) if start == i64::MIN || end == i64::MAX => {
                     return Some(range_elems_lazy_failure("elems"));
                 }
-                Value::RangeExclBoth(start, end) => Value::Int((*end - *start - 1).max(0)),
-                Value::GenericRange { .. } if is_infinite_range(target) => {
+                ValueView::RangeExclBoth(start, end) => Value::int((end - start - 1).max(0)),
+                ValueView::GenericRange { .. } if is_infinite_range(target) => {
                     return Some(range_elems_lazy_failure("elems"));
                 }
-                Value::GenericRange { .. } => {
+                ValueView::GenericRange { .. } => {
                     let list = crate::runtime::utils::value_to_list(target);
-                    Value::Int(list.len() as i64)
+                    Value::int(list.len() as i64)
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Stash" => match attributes.as_map().get("symbols") {
-                    Some(Value::Hash(map)) => Value::Int(map.len() as i64),
-                    _ => Value::Int(0),
-                },
-                _ => Value::Int(1),
+                } if class_name == "Stash" => {
+                    match attributes.as_map().get("symbols").map(Value::view) {
+                        Some(ValueView::Hash(map)) => Value::int(map.len() as i64),
+                        _ => Value::int(0),
+                    }
+                }
+                _ => Value::int(1),
             };
             Some(Some(Ok(result)))
         }
         "default" => {
-            let result = match target {
+            let result = match target.view() {
                 // A value-carried `is default(...)` (embedded in HashData/
                 // ArrayData) takes priority over the type default, so it survives
                 // raw-parameter binding and list construction.
-                Value::Array(a, _) if a.default.is_some() => a.default.as_deref().cloned().unwrap(),
-                Value::Hash(h) if h.default.is_some() => h.default.as_deref().cloned().unwrap(),
-                Value::Array(..) | Value::Hash(..) => Value::Package(Symbol::intern("Any")),
-                Value::Set(..) => Value::Bool(false),
-                Value::Bag(..) | Value::Mix(..) => Value::Int(0),
+                ValueView::Array(a, _) if a.default.is_some() => {
+                    a.default.as_deref().cloned().unwrap()
+                }
+                ValueView::Hash(h) if h.default.is_some() => h.default.as_deref().cloned().unwrap(),
+                ValueView::Array(..) | ValueView::Hash(..) => Value::package(Symbol::intern("Any")),
+                ValueView::Set(..) => Value::FALSE,
+                ValueView::Bag(..) | ValueView::Mix(..) => Value::int(0),
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))
         }
         "abs" => {
-            let result = match target {
-                Value::Int(i) => Value::Int(i.abs()),
-                Value::BigInt(n) => Value::bigint(n.as_ref().abs()),
-                Value::Num(f) => Value::Num(f.abs()),
-                Value::Rat(n, d) => Value::Rat(n.abs(), *d),
-                Value::FatRat(n, d) => Value::FatRat(n.abs(), *d),
-                Value::Complex(r, i) => Value::Num((r * r + i * i).sqrt()),
-                Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
+            let result = match target.view() {
+                ValueView::Int(i) => Value::int(i.abs()),
+                ValueView::BigInt(n) => Value::bigint(n.as_ref().abs()),
+                ValueView::Num(f) => Value::num(f.abs()),
+                ValueView::Rat(n, d) => Value::rat_raw(n.abs(), d),
+                ValueView::FatRat(n, d) => Value::fat_rat_raw(n.abs(), d),
+                ValueView::Complex(r, i) => Value::num((r * r + i * i).sqrt()),
+                ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))
@@ -192,21 +200,21 @@ pub(super) fn dispatch(
         "lsb" => Some(int_lsb_value(target).map(Ok)),
         "msb" => Some(int_msb_value(target).map(Ok)),
         "rand" => {
-            let max = match target {
-                Value::Int(n) => *n as f64,
-                Value::Num(n) => *n,
-                Value::Rat(n, d) => *n as f64 / *d as f64,
-                Value::Range(start, end) => {
-                    let from = *start as f64;
-                    let to = *end as f64;
+            let max = match target.view() {
+                ValueView::Int(n) => n as f64,
+                ValueView::Num(n) => n,
+                ValueView::Rat(n, d) => n as f64 / d as f64,
+                ValueView::Range(start, end) => {
+                    let from = start as f64;
+                    let to = end as f64;
                     let v = from + builtin_rand() * (to - from);
-                    return Some(Some(Ok(Value::Num(v))));
+                    return Some(Some(Ok(Value::num(v))));
                 }
-                Value::RangeExcl(start, end) => {
-                    let from = *start as f64;
-                    let to = *end as f64;
+                ValueView::RangeExcl(start, end) => {
+                    let from = start as f64;
+                    let to = end as f64;
                     if from >= to {
-                        return Some(Some(Ok(Value::Nil)));
+                        return Some(Some(Ok(Value::NIL)));
                     }
                     let v = from + builtin_rand() * (to - from);
                     // Ensure we don't generate the excluded endpoint
@@ -215,13 +223,13 @@ pub(super) fn dispatch(
                     } else {
                         v
                     };
-                    return Some(Some(Ok(Value::Num(v))));
+                    return Some(Some(Ok(Value::num(v))));
                 }
-                Value::RangeExclStart(start, end) => {
-                    let from = *start as f64;
-                    let to = *end as f64;
+                ValueView::RangeExclStart(start, end) => {
+                    let from = start as f64;
+                    let to = end as f64;
                     if from >= to {
-                        return Some(Some(Ok(Value::Nil)));
+                        return Some(Some(Ok(Value::NIL)));
                     }
                     let v = from + builtin_rand() * (to - from);
                     // Ensure we don't generate the excluded endpoint
@@ -230,13 +238,13 @@ pub(super) fn dispatch(
                     } else {
                         v
                     };
-                    return Some(Some(Ok(Value::Num(v))));
+                    return Some(Some(Ok(Value::num(v))));
                 }
-                Value::RangeExclBoth(start, end) => {
-                    let from = *start as f64;
-                    let to = *end as f64;
+                ValueView::RangeExclBoth(start, end) => {
+                    let from = start as f64;
+                    let to = end as f64;
                     if from >= to {
-                        return Some(Some(Ok(Value::Nil)));
+                        return Some(Some(Ok(Value::NIL)));
                     }
                     let v = from + builtin_rand() * (to - from);
                     // Ensure we don't generate either excluded endpoint
@@ -250,9 +258,9 @@ pub(super) fn dispatch(
                     } else {
                         v
                     };
-                    return Some(Some(Ok(Value::Num(v))));
+                    return Some(Some(Ok(Value::num(v))));
                 }
-                Value::GenericRange {
+                ValueView::GenericRange {
                     start,
                     end,
                     excl_start,
@@ -283,24 +291,24 @@ pub(super) fn dispatch(
                     let Some(mut to) = runtime::to_float_value(end) else {
                         return Some(Some(Ok(make_rand_failure())));
                     };
-                    if *excl_start {
+                    if excl_start {
                         from = f64::from_bits(from.to_bits().saturating_add(1));
                     }
-                    if *excl_end {
+                    if excl_end {
                         to = f64::from_bits(to.to_bits().saturating_sub(1));
                     }
                     if !from.is_finite() || !to.is_finite() || from > to {
-                        return Some(Some(Ok(Value::Nil)));
+                        return Some(Some(Ok(Value::NIL)));
                     }
                     let v = from + builtin_rand() * (to - from);
-                    return Some(Some(Ok(Value::Num(v))));
+                    return Some(Some(Ok(Value::num(v))));
                 }
                 // Cool types: numify first (e.g., List.rand returns rand in 0..^elems)
-                Value::Array(items, ..) => items.len() as f64,
-                Value::Seq(items) => items.len() as f64,
-                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
-                Value::Bool(b) => {
-                    if *b {
+                ValueView::Array(items, ..) => items.len() as f64,
+                ValueView::Seq(items) => items.len() as f64,
+                ValueView::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+                ValueView::Bool(b) => {
+                    if b {
                         1.0
                     } else {
                         0.0
@@ -308,7 +316,7 @@ pub(super) fn dispatch(
                 }
                 _ => return Some(None),
             };
-            Some(Some(Ok(Value::Num(builtin_rand() * max))))
+            Some(Some(Ok(Value::num(builtin_rand() * max))))
         }
         "uc" => Some(Some(Ok(Value::str(
             crate::builtins::unicode::grapheme_uppercase(&target.to_string_value()),
@@ -323,66 +331,66 @@ pub(super) fn dispatch(
             crate::builtins::unicode::titlecase_string(&target.to_string_value()),
         )))),
         "sign" => {
-            let result = match target {
-                Value::Int(i) => Value::Int(i.signum()),
-                Value::Num(f) => {
+            let result = match target.view() {
+                ValueView::Int(i) => Value::int(i.signum()),
+                ValueView::Num(f) => {
                     if f.is_nan() {
-                        Value::Num(f64::NAN)
+                        Value::num(f64::NAN)
                     } else {
-                        Value::Int(if *f > 0.0 {
+                        Value::int(if f > 0.0 {
                             1
-                        } else if *f < 0.0 {
+                        } else if f < 0.0 {
                             -1
                         } else {
                             0
                         })
                     }
                 }
-                Value::Rat(n, d) => {
-                    if *d == 0 {
-                        if *n > 0 {
-                            Value::Int(1)
-                        } else if *n < 0 {
-                            Value::Int(-1)
+                ValueView::Rat(n, d) => {
+                    if d == 0 {
+                        if n > 0 {
+                            Value::int(1)
+                        } else if n < 0 {
+                            Value::int(-1)
                         } else {
-                            Value::Num(f64::NAN)
+                            Value::num(f64::NAN)
                         }
                     } else {
                         // sign is determined by n/d
                         let sign = n.signum() * d.signum();
-                        Value::Int(sign)
+                        Value::int(sign)
                     }
                 }
-                Value::FatRat(n, d) => {
-                    if *d == 0 {
-                        if *n > 0 {
-                            Value::Int(1)
-                        } else if *n < 0 {
-                            Value::Int(-1)
+                ValueView::FatRat(n, d) => {
+                    if d == 0 {
+                        if n > 0 {
+                            Value::int(1)
+                        } else if n < 0 {
+                            Value::int(-1)
                         } else {
-                            Value::Num(f64::NAN)
+                            Value::num(f64::NAN)
                         }
                     } else {
                         let sign = n.signum() * d.signum();
-                        Value::Int(sign)
+                        Value::int(sign)
                     }
                 }
-                Value::BigInt(n) => {
+                ValueView::BigInt(n) => {
                     use num_bigint::Sign;
-                    Value::Int(match n.sign() {
+                    Value::int(match n.sign() {
                         Sign::Plus => 1,
                         Sign::Minus => -1,
                         Sign::NoSign => 0,
                     })
                 }
-                Value::Complex(re, im) => {
+                ValueView::Complex(re, im) => {
                     // `sign` requires a Real. A Complex with a non-zero imaginary
                     // part cannot be coerced to Real, so it throws X::Numeric::Real
                     // (matching `.Int`/`.Real` coercion). A purely real Complex
                     // yields the Int sign of its real part.
-                    if *im != 0.0 {
+                    if im != 0.0 {
                         let mut attrs = std::collections::HashMap::new();
-                        let rendered = if *im >= 0.0 {
+                        let rendered = if im >= 0.0 {
                             format!("{re}+{im}i")
                         } else {
                             format!("{re}{im}i")
@@ -393,7 +401,7 @@ pub(super) fn dispatch(
                                 "Cannot convert {rendered} to Real: imaginary part not zero"
                             )),
                         );
-                        attrs.insert("target".to_string(), Value::Package(Symbol::intern("Real")));
+                        attrs.insert("target".to_string(), Value::package(Symbol::intern("Real")));
                         attrs.insert("source".to_string(), target.clone());
                         let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs);
                         let mut err = RuntimeError::new(
@@ -402,15 +410,15 @@ pub(super) fn dispatch(
                         err.exception = Some(Box::new(ex));
                         return Some(Some(Err(err)));
                     }
-                    Value::Int(if *re > 0.0 {
+                    Value::int(if re > 0.0 {
                         1
-                    } else if *re < 0.0 {
+                    } else if re < 0.0 {
                         -1
                     } else {
                         0
                     })
                 }
-                Value::Enum { value, .. } => Value::Int(value.as_i64().signum()),
+                ValueView::Enum { value, .. } => Value::int(value.as_i64().signum()),
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))

@@ -1,8 +1,8 @@
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 pub(crate) fn is_str_or_match_receiver(target: &Value) -> bool {
-    matches!(target, Value::Str(_))
-        || matches!(target, Value::Instance { class_name, .. } if class_name == "Match")
+    matches!(target.view(), ValueView::Str(_))
+        || matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Match")
 }
 
 /// Separate `(needle, …)`-style positional args from the `:i`/`:ignorecase`/
@@ -16,7 +16,7 @@ fn split_string_match_args(args: &[Value]) -> Option<(Vec<&Value>, bool, bool)> 
     let mut ignore_case = false;
     let mut ignore_mark = false;
     for arg in args {
-        if let Value::Pair(key, value) = arg {
+        if let ValueView::Pair(key, value) = arg.view() {
             match key.as_str() {
                 "i" | "ignorecase" => ignore_case = value.truthy(),
                 "m" | "ignoremark" => ignore_mark = value.truthy(),
@@ -55,7 +55,7 @@ pub(crate) fn native_prefix_suffix_with_options(
     if positional.len() == args.len() {
         return None;
     }
-    if let Value::Package(_) = needle_val {
+    if let ValueView::Package(_) = needle_val.view() {
         return None;
     }
     let text = target.to_string_value();
@@ -70,7 +70,7 @@ pub(crate) fn native_prefix_suffix_with_options(
     } else {
         t.ends_with(n.as_str())
     };
-    Some(Ok(Value::Bool(ok)))
+    Some(Ok(Value::truth(ok)))
 }
 
 /// `.substr-eq($needle, $pos?, :i?)` on a `Str` receiver — the case-insensitive and/or
@@ -99,12 +99,12 @@ pub(crate) fn native_substr_eq_with_options(
         return None;
     }
     let needle_val: &Value = positional.first().copied()?;
-    if let Value::Package(_) = needle_val {
+    if let ValueView::Package(_) = needle_val.view() {
         return None;
     }
-    let start = match positional.get(1).copied() {
-        Some(Value::Int(i)) => *i,
-        Some(Value::Str(s)) => s.parse::<i64>().ok()?,
+    let start = match positional.get(1).copied().map(Value::view) {
+        Some(ValueView::Int(i)) => i,
+        Some(ValueView::Str(s)) => s.parse::<i64>().ok()?,
         Some(_) => return None,
         None => 0,
     };
@@ -124,5 +124,5 @@ pub(crate) fn native_substr_eq_with_options(
     } else {
         substr == needle
     };
-    Some(Ok(Value::Bool(eq)))
+    Some(Ok(Value::truth(eq)))
 }

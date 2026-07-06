@@ -243,7 +243,7 @@ fn unpack_ints(
                 val |= (bytes[*pos + i] as u64) << (8 * i);
             }
         }
-        out.push(Value::Int(val as i64));
+        out.push(Value::int(val as i64));
         *pos += width;
         remaining -= 1;
     }

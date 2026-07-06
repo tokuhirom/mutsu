@@ -25,7 +25,7 @@ pub(crate) mod unicode;
 pub(crate) mod unicode_numval_table;
 pub(crate) mod uniprop;
 mod uniprop_tables;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 
@@ -270,11 +270,11 @@ fn decode_bytes_with_builtin_encoding(
 }
 
 fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8>> {
-    let Value::Instance {
+    let ValueView::Instance {
         class_name,
         attributes,
         ..
-    } = target
+    } = target.view()
     else {
         return None;
     };
@@ -284,7 +284,7 @@ fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8
     }
 
     let map = attributes.as_map();
-    let Value::Array(items, ..) = map.get("bytes")? else {
+    let ValueView::Array(items, ..) = map.get("bytes")?.view() else {
         return Some(Vec::new());
     };
 
@@ -295,8 +295,8 @@ fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8
         let use_be = encoding_name == "utf-16be";
         let mut out = Vec::with_capacity(items.len() * 2);
         for item in items.iter() {
-            let unit = match item {
-                Value::Int(i) => *i as u16,
+            let unit = match item.view() {
+                ValueView::Int(i) => i as u16,
                 _ => 0u16,
             };
             let pair = if use_be {
@@ -311,8 +311,8 @@ fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8
         Some(
             items
                 .iter()
-                .map(|v| match v {
-                    Value::Int(i) => *i as u8,
+                .map(|v| match v.view() {
+                    ValueView::Int(i) => i as u8,
                     _ => 0,
                 })
                 .collect(),
@@ -324,7 +324,7 @@ pub(crate) fn decode_buf_method(
     target: &Value,
     encoding: Option<&str>,
 ) -> Option<Result<Value, RuntimeError>> {
-    let Value::Instance { class_name, .. } = target else {
+    let ValueView::Instance { class_name, .. } = target.view() else {
         return None;
     };
     if !crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
@@ -405,7 +405,7 @@ pub(crate) fn expmod(
 
     let modulus_abs = modulus.abs();
     if modulus_abs.is_one() {
-        return Ok(Value::Int(0));
+        return Ok(Value::int(0));
     }
 
     let result = if exponent.is_negative() {

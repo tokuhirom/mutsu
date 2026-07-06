@@ -1,6 +1,5 @@
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
-use std::sync::Arc;
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// Named parameters for split
 #[derive(Default)]
@@ -19,12 +18,12 @@ impl SplitOpts {
         let mut opts = SplitOpts::default();
         let mut positional = Vec::new();
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "v" => opts.v = value.truthy(),
-                Value::Pair(key, value) if key == "k" => opts.k = value.truthy(),
-                Value::Pair(key, value) if key == "kv" => opts.kv = value.truthy(),
-                Value::Pair(key, value) if key == "p" => opts.p = value.truthy(),
-                Value::Pair(key, value) if key == "skip-empty" || key == "skip_empty" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "v" => opts.v = value.truthy(),
+                ValueView::Pair(key, value) if key == "k" => opts.k = value.truthy(),
+                ValueView::Pair(key, value) if key == "kv" => opts.kv = value.truthy(),
+                ValueView::Pair(key, value) if key == "p" => opts.p = value.truthy(),
+                ValueView::Pair(key, value) if key == "skip-empty" || key == "skip_empty" => {
                     opts.skip_empty = value.truthy()
                 }
                 _ => positional.push(arg),
@@ -55,7 +54,7 @@ impl SplitOpts {
             let mut attrs = HashMap::new();
             attrs.insert("what".to_string(), Value::str("split".to_string()));
             attrs.insert("source".to_string(), Value::str(source.to_string()));
-            attrs.insert("nogo".to_string(), Value::Seq(Arc::new(nogo)));
+            attrs.insert("nogo".to_string(), Value::seq(nogo));
             let msg = format!(
                 "Only one of :v, :k, :kv, :p may be specified on {}.split",
                 source
@@ -71,8 +70,8 @@ impl SplitOpts {
 }
 
 pub(crate) fn parse_split_limit(value: &Value) -> Result<Option<usize>, RuntimeError> {
-    match value {
-        Value::Whatever | Value::HyperWhatever => return Ok(None),
+    match value.view() {
+        ValueView::Whatever | ValueView::HyperWhatever => return Ok(None),
         _ => {}
     }
 
@@ -337,14 +336,14 @@ fn push_separator_info(result: &mut Vec<Value>, m: &SplitMatch, opts: &SplitOpts
     if opts.v {
         result.push(separator_value(m));
     } else if opts.k {
-        result.push(Value::Int(m.splitter_index as i64));
+        result.push(Value::int(m.splitter_index as i64));
     } else if opts.kv {
-        result.push(Value::Int(m.splitter_index as i64));
+        result.push(Value::int(m.splitter_index as i64));
         result.push(separator_value(m));
     } else if opts.p {
-        result.push(Value::ValuePair(
-            Box::new(Value::Int(m.splitter_index as i64)),
-            Box::new(separator_value(m)),
+        result.push(Value::value_pair(
+            Value::int(m.splitter_index as i64),
+            separator_value(m),
         ));
     }
 }
@@ -377,21 +376,21 @@ pub(crate) fn apply_split_opts(
 /// Get the list of string splitters from a value (single string or array of strings).
 /// Returns None if the splitter is a regex or contains regexes.
 fn get_string_splitters(splitter: &Value) -> Option<Vec<String>> {
-    match splitter {
-        Value::Regex(_) | Value::RegexWithAdverbs { .. } | Value::Sub { .. } => None,
-        Value::Array(items, _) => {
+    match splitter.view() {
+        ValueView::Regex(_) | ValueView::RegexWithAdverbs(..) | ValueView::Sub(..) => None,
+        ValueView::Array(items, _) => {
             let mut strings = Vec::new();
             for item in items.iter() {
-                match item {
-                    Value::Regex(_) | Value::RegexWithAdverbs { .. } | Value::Sub { .. } => {
+                match item.view() {
+                    ValueView::Regex(_) | ValueView::RegexWithAdverbs(..) | ValueView::Sub(..) => {
                         return None;
                     }
-                    other => strings.push(other.to_string_value()),
+                    _ => strings.push(item.to_string_value()),
                 }
             }
             Some(strings)
         }
-        other => Some(vec![other.to_string_value()]),
+        _ => Some(vec![splitter.to_string_value()]),
     }
 }
 
@@ -424,7 +423,7 @@ pub(crate) fn native_split_method(
     };
 
     let result = apply_split_opts(parts, &opts);
-    Some(Ok(Value::Seq(Arc::new(result))))
+    Some(Ok(Value::seq(result)))
 }
 
 /// Perform string split as function: split($splitter, $string, ...).
@@ -456,5 +455,5 @@ pub(crate) fn native_split_function(args: &[Value]) -> Option<Result<Value, Runt
     };
 
     let result = apply_split_opts(parts, &opts);
-    Some(Ok(Value::Seq(Arc::new(result))))
+    Some(Ok(Value::seq(result)))
 }

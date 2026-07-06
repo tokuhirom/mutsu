@@ -1,8 +1,7 @@
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{ArrayKind, EnumValue, RuntimeError, Value};
+use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, ValueView};
 use num_traits::{Signed, ToPrimitive, Zero};
-use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
 use super::rng::builtin_rand;
@@ -45,19 +44,19 @@ fn raku_round(x: f64) -> f64 {
 fn raku_round_to_value(f: f64) -> Value {
     let rounded = raku_round(f);
     if rounded >= i64::MIN as f64 && rounded <= i64::MAX as f64 {
-        Value::Int(rounded as i64)
+        Value::int(rounded as i64)
     } else {
         use num_bigint::BigInt;
         use num_traits::ToPrimitive;
         let s = format!("{:.0}", rounded);
         if let Ok(bi) = s.parse::<BigInt>() {
             if let Some(i) = bi.to_i64() {
-                Value::Int(i)
+                Value::int(i)
             } else {
                 Value::bigint(bi)
             }
         } else {
-            Value::Num(rounded)
+            Value::num(rounded)
         }
     }
 }
@@ -216,17 +215,17 @@ fn parse_raku_int_from_str(s: &str) -> Option<Value> {
 }
 
 fn int_lsb_value(target: &Value) -> Option<Value> {
-    match target {
-        Value::Int(i) => {
-            if *i == 0 {
-                Some(Value::Nil)
+    match target.view() {
+        ValueView::Int(i) => {
+            if i == 0 {
+                Some(Value::NIL)
             } else {
-                Some(Value::Int(i.unsigned_abs().trailing_zeros() as i64))
+                Some(Value::int(i.unsigned_abs().trailing_zeros() as i64))
             }
         }
-        Value::BigInt(n) => {
+        ValueView::BigInt(n) => {
             if n.is_zero() {
-                return Some(Value::Nil);
+                return Some(Value::NIL);
             }
             let one = num_bigint::BigInt::from(1u8);
             let mut x = n.as_ref().abs();
@@ -235,35 +234,35 @@ fn int_lsb_value(target: &Value) -> Option<Value> {
                 x >>= 1;
                 pos += 1;
             }
-            Some(Value::Int(pos))
+            Some(Value::int(pos))
         }
         _ => None,
     }
 }
 
 fn int_msb_value(target: &Value) -> Option<Value> {
-    match target {
-        Value::Int(i) => {
-            if *i == 0 {
-                return Some(Value::Nil);
+    match target.view() {
+        ValueView::Int(i) => {
+            if i == 0 {
+                return Some(Value::NIL);
             }
-            if *i > 0 {
-                return Some(Value::Int((63 - i.leading_zeros()) as i64));
+            if i > 0 {
+                return Some(Value::int((63 - i.leading_zeros()) as i64));
             }
-            if *i == -1 {
-                return Some(Value::Int(0));
+            if i == -1 {
+                return Some(Value::int(0));
             }
             let m = i.unsigned_abs().saturating_sub(1);
             let bitlen = (64 - m.leading_zeros()) as i64;
-            Some(Value::Int(bitlen))
+            Some(Value::int(bitlen))
         }
-        Value::BigInt(n) => {
+        ValueView::BigInt(n) => {
             if n.is_zero() {
-                return Some(Value::Nil);
+                return Some(Value::NIL);
             }
             if n.sign() == num_bigint::Sign::Minus {
                 if **n == num_bigint::BigInt::from(-1i8) {
-                    return Some(Value::Int(0));
+                    return Some(Value::int(0));
                 }
                 let mut x = n.as_ref().abs() - num_bigint::BigInt::from(1u8);
                 let mut bitlen = 0_i64;
@@ -271,7 +270,7 @@ fn int_msb_value(target: &Value) -> Option<Value> {
                     x >>= 1;
                     bitlen += 1;
                 }
-                return Some(Value::Int(bitlen));
+                return Some(Value::int(bitlen));
             }
             let mut x = n.as_ref().clone();
             let mut msb = -1_i64;
@@ -279,7 +278,7 @@ fn int_msb_value(target: &Value) -> Option<Value> {
                 x >>= 1;
                 msb += 1;
             }
-            Some(Value::Int(msb))
+            Some(Value::int(msb))
         }
         _ => None,
     }
@@ -288,11 +287,13 @@ fn int_msb_value(target: &Value) -> Option<Value> {
 /// Format a single item for 0-arg `.fmt()` on lists.
 /// Pairs format as "%s\t%s", other values as "%s".
 fn fmt_0arg_item(item: &Value) -> String {
-    match item {
-        Value::Pair(k, v) => {
-            runtime::format_sprintf_args("%s\t%s", &[Value::str(k.to_string()), *v.clone()])
+    match item.view() {
+        ValueView::Pair(k, v) => {
+            runtime::format_sprintf_args("%s\t%s", &[Value::str(k.to_string()), v.clone()])
         }
-        Value::ValuePair(k, v) => runtime::format_sprintf_args("%s\t%s", &[*k.clone(), *v.clone()]),
+        ValueView::ValuePair(k, v) => {
+            runtime::format_sprintf_args("%s\t%s", &[k.clone(), v.clone()])
+        }
         _ => runtime::format_sprintf("%s", Some(item)),
     }
 }
@@ -312,9 +313,9 @@ pub(crate) fn native_method_0arg(
     // aggregate shows its `$` sigil (`${a=>1}.raku` → `${:a(1)}`); decontainer-
     // izing first would strip it. `.gist` never shows the sigil, so delegating
     // to the inner value is already correct.
-    if let Value::Scalar(inner) = target {
+    if let ValueView::Scalar(inner) = target.view() {
         if method == "VAR" {
-            return Some(Ok(Value::Package(crate::symbol::Symbol::intern("Scalar"))));
+            return Some(Ok(Value::package(crate::symbol::Symbol::intern("Scalar"))));
         }
         if method == "raku" || method == "perl" {
             return Some(Ok(Value::str(raku_repr::raku_value(target))));
@@ -327,7 +328,7 @@ pub(crate) fn native_method_0arg(
     // Do NOT pre-check methods that fall through to the runtime (like "iterator"),
     // because native_method_0arg is called from both the VM and the interpreter,
     // and consuming twice would throw.
-    if let Value::Seq(items) = target {
+    if let ValueView::Seq(items) = target.view() {
         if method == "cache" {
             // .cache marks as cached; handled fully here (the actual cache impl is
             // in the per-method handler below, this just marks state).
@@ -340,7 +341,7 @@ pub(crate) fn native_method_0arg(
 
     // Instance with __baggy_data__: delegate Bag-like methods to the inner Bag/Set
     // so that subclasses of Bag/Set (e.g. `my class MyBag is Bag {}`) work correctly.
-    if let Value::Instance { attributes, .. } = target
+    if let ValueView::Instance { attributes, .. } = target.view()
         && let Some(inner) = attributes.as_map().get("__baggy_data__")
         && !matches!(
             method,
@@ -353,7 +354,7 @@ pub(crate) fn native_method_0arg(
     // $!.pending returns a list of all tracked Failure values (S04 spec).
     if method == "pending" {
         let failures = crate::value::get_pending_failures();
-        return Some(Ok(Value::Array(
+        return Some(Ok(Value::array_with_kind(
             crate::gc::Gc::new(crate::value::ArrayData::new(failures)),
             crate::value::ArrayKind::List,
         )));
@@ -361,13 +362,13 @@ pub(crate) fn native_method_0arg(
 
     // Nil absorber for common methods: Nil.message, Nil.payload, etc.
     // In Raku, calling most methods on Nil returns Nil.
-    if matches!(target, Value::Nil)
+    if target.is_nil()
         && matches!(
             method,
             "message" | "payload" | "backtrace" | "exception" | "handled" | "line" | "file"
         )
     {
-        return Some(Ok(Value::Nil));
+        return Some(Ok(Value::NIL));
     }
 
     // Failure safe accessors: `.exception` (the stored exception object) and
@@ -377,11 +378,11 @@ pub(crate) fn native_method_0arg(
     // returns `None` and reaches the interpreter, which explodes an unhandled
     // Failure. (The `.handled = ...` setter is the 1-arg form, handled
     // elsewhere; this only covers the 0-arg read.)
-    if let Value::Instance {
+    if let ValueView::Instance {
         class_name,
         attributes,
         ..
-    } = target
+    } = target.view()
         && class_name == "Failure"
     {
         match method {
@@ -390,17 +391,17 @@ pub(crate) fn native_method_0arg(
                     .as_map()
                     .get("exception")
                     .cloned()
-                    .unwrap_or(Value::Nil)));
+                    .unwrap_or(Value::NIL)));
             }
             "handled" => {
-                return Some(Ok(Value::Bool(target.is_failure_handled())));
+                return Some(Ok(Value::truth(target.is_failure_handled())));
             }
             _ => {}
         }
     }
 
     // For Mixin values, handle Bool/WHICH method specially, then delegate to inner.
-    if let Value::Mixin(inner, mixins) = target {
+    if let ValueView::Mixin(inner, mixins) = target.view() {
         if method == "Bool"
             && let Some(bool_val) = mixins.get("Bool")
         {
@@ -414,19 +415,17 @@ pub(crate) fn native_method_0arg(
         // A Bool with a mixed-in Bool override (`True but False`) renders its
         // Str/gist/raku from the *effective* boolean — `Bool.Str` is
         // `self ?? 'True' !! 'False'`, so it follows `.Bool`, not the base bool.
-        if matches!(inner.as_ref(), Value::Bool(_))
+        if matches!(inner.as_ref().view(), ValueView::Bool(_))
             && mixins.get("Str").is_none()
-            && let Some(Value::Bool(b)) = mixins.get("Bool")
+            && let Some(ValueView::Bool(b)) = mixins.get("Bool").map(Value::view)
         {
             match method {
                 "Str" | "~" | "gist" => {
-                    return Some(Ok(Value::str(
-                        if *b { "True" } else { "False" }.to_string(),
-                    )));
+                    return Some(Ok(Value::str(if b { "True" } else { "False" }.to_string())));
                 }
                 "raku" | "perl" => {
                     return Some(Ok(Value::str(
-                        if *b { "Bool::True" } else { "Bool::False" }.to_string(),
+                        if b { "Bool::True" } else { "Bool::False" }.to_string(),
                     )));
                 }
                 _ => {}
@@ -444,13 +443,13 @@ pub(crate) fn native_method_0arg(
         if method == "WHICH"
             && let Some(allo_name) = crate::value::types::allomorph_type_name(inner, mixins)
         {
-            let inner_which = match inner.as_ref() {
-                Value::Int(n) => format!("Int|{}", n),
-                Value::BigInt(n) => format!("Int|{}", n),
-                Value::Num(n) => format!("Num|{}", n),
-                Value::Rat(n, d) => format!("Rat|{}/{}", n, d),
-                Value::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
-                Value::Complex(r, i) => format!("Complex|{}+{}i", r, i),
+            let inner_which = match inner.as_ref().view() {
+                ValueView::Int(n) => format!("Int|{}", n),
+                ValueView::BigInt(n) => format!("Int|{}", n),
+                ValueView::Num(n) => format!("Num|{}", n),
+                ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
+                ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
+                ValueView::Complex(r, i) => format!("Complex|{}+{}i", r, i),
                 _ => format!("{:?}", inner),
             };
             let str_part = mixins
@@ -496,7 +495,7 @@ pub(crate) fn native_method_0arg(
     }
     // Cool numeric coercion: when a Str calls a numeric method, coerce to numeric first.
     // In Raku, Cool types (including Str) coerce to Numeric for numeric operations.
-    if let Value::Str(s) = target {
+    if let ValueView::Str(s) = target.view() {
         match method {
             "abs" | "sign" | "exp" | "log" | "log2" | "log10" | "sqrt" | "ceiling" | "floor"
             | "truncate" | "round" | "conj" | "cis" | "rand" | "sin" | "cos" | "tan" | "asin"
@@ -505,9 +504,9 @@ pub(crate) fn native_method_0arg(
             | "acotanh" | "atan2" | "narrow" | "polymod" | "base" | "chr" | "expmod" | "lsb"
             | "msb" | "is-int" => {
                 let coerced = if let Ok(i) = s.parse::<i64>() {
-                    Value::Int(i)
+                    Value::int(i)
                 } else if let Ok(f) = s.parse::<f64>() {
-                    Value::Num(f)
+                    Value::num(f)
                 } else {
                     parse_raku_int_from_str(s)?
                 };
@@ -525,29 +524,29 @@ pub(crate) fn native_method_0arg(
         return Some(raku_repr::native_int_coerce_method(target, method));
     }
     // Uni types: override .chars, .codes, .comb to work on codepoints
-    if let Value::Uni(u) = target {
+    if let ValueView::Uni(u) = target.view() {
         let text = &u.text;
         match method {
             "chars" | "codes" => {
-                return Some(Ok(Value::Int(text.chars().count() as i64)));
+                return Some(Ok(Value::int(text.chars().count() as i64)));
             }
             "comb" => {
                 let parts: Vec<Value> = text.chars().map(|c| Value::str(c.to_string())).collect();
-                return Some(Ok(Value::Seq(std::sync::Arc::new(parts))));
+                return Some(Ok(Value::seq(parts)));
             }
             "Str" => {
                 use unicode_normalization::UnicodeNormalization;
                 return Some(Ok(Value::str(text.nfc().collect::<String>())));
             }
             "Int" | "Numeric" => {
-                return Some(Ok(Value::Int(text.chars().count() as i64)));
+                return Some(Ok(Value::int(text.chars().count() as i64)));
             }
             "list" => {
-                let codepoints: Vec<Value> = text.chars().map(|c| Value::Int(c as i64)).collect();
+                let codepoints: Vec<Value> = text.chars().map(|c| Value::int(c as i64)).collect();
                 return Some(Ok(Value::array(codepoints)));
             }
             "elems" => {
-                return Some(Ok(Value::Int(text.chars().count() as i64)));
+                return Some(Ok(Value::int(text.chars().count() as i64)));
             }
             "raku" | "perl" => {
                 let codepoints: Vec<String> = text
@@ -593,18 +592,18 @@ pub(crate) fn native_method_0arg(
         }
     }
     // CompUnit::DependencySpecification methods
-    if let Value::CompUnitDepSpec { short_name } = target {
+    if let ValueView::CompUnitDepSpec { short_name } = target.view() {
         return match method {
             "short-name" => Some(Ok(Value::str(short_name.resolve()))),
-            "version-matcher" => Some(Ok(Value::Bool(true))),
-            "auth-matcher" => Some(Ok(Value::Bool(true))),
-            "api-matcher" => Some(Ok(Value::Bool(true))),
+            "version-matcher" => Some(Ok(Value::TRUE)),
+            "auth-matcher" => Some(Ok(Value::TRUE)),
+            "api-matcher" => Some(Ok(Value::TRUE)),
             "Str" | "gist" => Some(Ok(Value::str(short_name.resolve()))),
             _ => None,
         };
     }
     // Capture methods
-    if let Value::Capture { positional, named } = target
+    if let ValueView::Capture { positional, named } = target.view()
         && let result @ Some(_) = dispatch_capture(positional, named, method)
     {
         return result;
@@ -635,11 +634,11 @@ fn dispatch_capture(
             // Capture.hash returns an immutable Map, not a mutable Hash.
             let mut data = crate::value::HashData::new(map);
             data.declared_type = Some("Map".to_string());
-            Some(Ok(Value::Hash(crate::gc::Gc::new(data))))
+            Some(Ok(Value::hash_with_data(crate::gc::Gc::new(data))))
         }
         "list" => Some(Ok(Value::array(positional.to_vec()))),
-        "elems" => Some(Ok(Value::Int(positional.len() as i64))),
-        "is-lazy" => Some(Ok(Value::Bool(false))),
+        "elems" => Some(Ok(Value::int(positional.len() as i64))),
+        "is-lazy" => Some(Ok(Value::FALSE)),
         "keys" => Some(Ok(Value::array(
             named.keys().map(|k| Value::str(k.clone())).collect(),
         ))),
@@ -647,21 +646,21 @@ fn dispatch_capture(
         "pairs" => Some(Ok(Value::array(
             named
                 .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .map(|(k, v)| Value::pair(k.clone(), v.clone()))
                 .collect(),
         ))),
         "raku" | "perl" => {
             let mut parts = Vec::new();
             for v in positional {
-                match v {
-                    Value::Pair(k, val) => {
+                match v.view() {
+                    ValueView::Pair(k, val) => {
                         parts.push(format!(
                             "{} => {}",
                             raku_repr::raku_value(&Value::str(k.clone())),
                             raku_repr::raku_value(val)
                         ));
                     }
-                    Value::ValuePair(k, val) => {
+                    ValueView::ValuePair(k, val) => {
                         parts.push(format!(
                             "{} => {}",
                             raku_repr::raku_value(k),
@@ -675,9 +674,9 @@ fn dispatch_capture(
             named_keys.sort();
             for k in named_keys {
                 let v = &named[k];
-                if let Value::Bool(true) = v {
+                if let ValueView::Bool(true) = v.view() {
                     parts.push(format!(":{}", k));
-                } else if let Value::Bool(false) = v {
+                } else if let ValueView::Bool(false) = v.view() {
                     parts.push(format!(":!{}", k));
                 } else {
                     parts.push(format!(":{}({})", k, raku_repr::raku_value(v)));
@@ -689,15 +688,17 @@ fn dispatch_capture(
             let target = Value::capture(positional.to_vec(), named.clone());
             Some(Ok(Value::str(target.to_string_value())))
         }
-        "Bool" => Some(Ok(Value::Bool(!positional.is_empty() || !named.is_empty()))),
-        "WHAT" => Some(Ok(Value::Package(Symbol::intern("Capture")))),
+        "Bool" => Some(Ok(Value::truth(
+            !positional.is_empty() || !named.is_empty(),
+        ))),
+        "WHAT" => Some(Ok(Value::package(Symbol::intern("Capture")))),
         "flat" => {
             let cap = Value::capture(positional.to_vec(), named.clone());
-            Some(Ok(Value::Seq(Arc::new(vec![cap]))))
+            Some(Ok(Value::seq(vec![cap])))
         }
         "Seq" | "List" => {
             let cap = Value::capture(positional.to_vec(), named.clone());
-            Some(Ok(Value::Seq(Arc::new(vec![cap]))))
+            Some(Ok(Value::seq(vec![cap])))
         }
         _ => None,
     }
@@ -713,21 +714,21 @@ fn range_elems_lazy_failure(action: &str) -> Option<Result<Value, RuntimeError>>
 /// `X::Cannot::Lazy`: a lazy-backed Array or a genuinely-lazy `LazyList`
 /// (infinite sequence/closure/pipe or a `lazy`-marked gather).
 pub(crate) fn is_lazy_count_source(target: &Value) -> bool {
-    match target {
-        Value::Array(_, kind) => kind.is_lazy(),
-        Value::LazyList(ll) => ll.is_genuinely_lazy(),
+    match target.view() {
+        ValueView::Array(_, kind) => kind.is_lazy(),
+        ValueView::LazyList(ll) => ll.is_genuinely_lazy(),
         _ => false,
     }
 }
 
 fn is_infinite_endpoint(v: &Value) -> bool {
-    match v {
-        Value::Whatever | Value::HyperWhatever => true,
-        Value::Num(n) => n.is_infinite(),
-        Value::Rat(n, d) => *d == 0 && *n != 0,
-        Value::FatRat(n, d) => *d == 0 && *n != 0,
-        other => {
-            let n = other.to_f64();
+    match v.view() {
+        ValueView::Whatever | ValueView::HyperWhatever => true,
+        ValueView::Num(n) => n.is_infinite(),
+        ValueView::Rat(n, d) => d == 0 && n != 0,
+        ValueView::FatRat(n, d) => d == 0 && n != 0,
+        _ => {
+            let n = v.to_f64();
             n.is_infinite()
         }
     }
@@ -736,8 +737,8 @@ fn is_infinite_endpoint(v: &Value) -> bool {
 /// f64 value of a Range *start* endpoint for emptiness checks. A `Whatever`
 /// start is an open lower bound (`*..1` is `-Inf..1`), so it maps to -Inf.
 fn range_start_f64(v: &Value) -> f64 {
-    match v {
-        Value::Whatever | Value::HyperWhatever => f64::NEG_INFINITY,
+    match v.view() {
+        ValueView::Whatever | ValueView::HyperWhatever => f64::NEG_INFINITY,
         _ => v.to_f64(),
     }
 }
@@ -745,19 +746,19 @@ fn range_start_f64(v: &Value) -> f64 {
 /// f64 value of a Range *end* endpoint for emptiness checks. A `Whatever` end
 /// is an open upper bound (`1..*` is `1..Inf`), so it maps to +Inf.
 fn range_end_f64(v: &Value) -> f64 {
-    match v {
-        Value::Whatever | Value::HyperWhatever => f64::INFINITY,
+    match v.view() {
+        ValueView::Whatever | ValueView::HyperWhatever => f64::INFINITY,
         _ => v.to_f64(),
     }
 }
 
 fn is_infinite_range(value: &Value) -> bool {
-    match value {
-        Value::Range(start, end)
-        | Value::RangeExcl(start, end)
-        | Value::RangeExclStart(start, end)
-        | Value::RangeExclBoth(start, end) => *end == i64::MAX || *start == i64::MIN,
-        Value::GenericRange { start, end, .. } => {
+    match value.view() {
+        ValueView::Range(start, end)
+        | ValueView::RangeExcl(start, end)
+        | ValueView::RangeExclStart(start, end)
+        | ValueView::RangeExclBoth(start, end) => end == i64::MAX || start == i64::MIN,
+        ValueView::GenericRange { start, end, .. } => {
             if !(is_infinite_endpoint(start) || is_infinite_endpoint(end)) {
                 return false;
             }
@@ -777,10 +778,10 @@ fn is_infinite_range(value: &Value) -> bool {
 }
 
 pub(crate) fn is_value_lazy(value: &Value) -> bool {
-    matches!(value, Value::LazyList(_))
-        || matches!(value, Value::Array(_, kind) if kind.is_lazy())
+    matches!(value.view(), ValueView::LazyList(_))
+        || matches!(value.view(), ValueView::Array(_, kind) if kind.is_lazy())
         || is_infinite_range(value)
-        || matches!(value, Value::Seq(items) if crate::value::seq_is_lazy(items))
+        || matches!(value.view(), ValueView::Seq(items) if crate::value::seq_is_lazy(items))
 }
 
 /// Format a range endpoint for display, converting i64::MAX to Inf and i64::MIN to -Inf.
@@ -924,15 +925,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
 
     // Date/DateTime 0-arg methods
-    match target {
-        Value::Instance { attributes, .. } if has_datetime_attrs(attributes) => {
+    match target.view() {
+        ValueView::Instance { attributes, .. } if has_datetime_attrs(attributes) => {
             if let Some(result) =
                 temporal_dispatch::datetime_method_0arg(&(attributes).as_map(), method)
             {
                 return Some(result);
             }
         }
-        Value::Instance { attributes, .. } if has_date_attrs(attributes) => {
+        ValueView::Instance { attributes, .. } if has_date_attrs(attributes) => {
             if let Some(result) =
                 temporal_dispatch::date_method_0arg(&(attributes).as_map(), method)
             {
@@ -944,11 +945,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
 
     // Instant.Instant returns self (identity coercion)
     if method == "Instant" {
-        match target {
-            Value::Instance { class_name, .. } if class_name == "Instant" => {
+        match target.view() {
+            ValueView::Instance { class_name, .. } if class_name == "Instant" => {
                 return Some(Ok(target.clone()));
             }
-            Value::Package(name) if name == "Instant" => {
+            ValueView::Package(name) if name == "Instant" => {
                 return Some(Ok(target.clone()));
             }
             _ => {}
@@ -956,11 +957,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
 
     // Instant methods: to-posix, DateTime, Date, tai
-    if let Value::Instance {
+    if let ValueView::Instance {
         class_name,
         attributes,
         ..
-    } = target
+    } = target.view()
     {
         if class_name == "Instant" {
             use crate::builtins::methods_0arg::temporal;
@@ -970,7 +971,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .as_map()
                         .get("value")
                         .cloned()
-                        .unwrap_or(Value::Int(0));
+                        .unwrap_or(Value::int(0));
                     let tai = crate::runtime::to_float_value(&val).unwrap_or(0.0);
                     let tai_int = tai.floor() as i64;
                     let mut is_leap = false;
@@ -982,20 +983,20 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                     let posix = temporal::instant_to_posix(tai);
                     let posix_val = if posix == posix.floor() {
-                        Value::Int(posix as i64)
+                        Value::int(posix as i64)
                     } else {
-                        Value::Num(posix)
+                        Value::num(posix)
                     };
-                    return Some(Ok(Value::array(vec![posix_val, Value::Bool(is_leap)])));
+                    return Some(Ok(Value::array(vec![posix_val, Value::truth(is_leap)])));
                 }
                 "DateTime" => {
                     let val = attributes
                         .as_map()
                         .get("value")
                         .cloned()
-                        .unwrap_or(Value::Int(0));
-                    let (tai_int, tai_frac) = match &val {
-                        Value::Rat(n, d) if *d != 0 => (*n / *d, (*n % *d) as f64 / *d as f64),
+                        .unwrap_or(Value::int(0));
+                    let (tai_int, tai_frac) = match val.view() {
+                        ValueView::Rat(n, d) if d != 0 => (n / d, (n % d) as f64 / d as f64),
                         _ => {
                             let f = crate::runtime::to_float_value(&val).unwrap_or(0.0);
                             (f.floor() as i64, f - f.floor())
@@ -1010,7 +1011,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .as_map()
                         .get("value")
                         .cloned()
-                        .unwrap_or(Value::Int(0));
+                        .unwrap_or(Value::int(0));
                     let tai = crate::runtime::to_float_value(&val).unwrap_or(0.0);
                     let posix = temporal::instant_to_posix(tai);
                     let (y, m, d) = temporal::epoch_days_to_civil((posix / 86400.0).floor() as i64);
@@ -1021,7 +1022,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .as_map()
                         .get("value")
                         .cloned()
-                        .unwrap_or(Value::Int(0))));
+                        .unwrap_or(Value::int(0))));
                 }
                 _ => {}
             }
@@ -1033,15 +1034,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .as_map()
                         .get("value")
                         .cloned()
-                        .unwrap_or(Value::Num(0.0));
+                        .unwrap_or(Value::num(0.0));
                     // Delegate narrow to the inner numeric value
-                    match val {
-                        Value::Num(f) if f.is_finite() => {
+                    match val.view() {
+                        ValueView::Num(f) if f.is_finite() => {
                             let rounded = f.round();
                             if (f - rounded).abs() <= f.abs().max(rounded.abs()) * 1e-15
                                 || (f == 0.0 && rounded == 0.0)
                             {
-                                return Some(Ok(Value::Int(rounded as i64)));
+                                return Some(Ok(Value::int(rounded as i64)));
                             }
                             // Convert Num to Rat for narrow
                             let s = format!("{}", f);
@@ -1062,18 +1063,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                                         }
                                         a.max(1)
                                     };
-                                    return Some(Ok(Value::Rat(num / g, den / g)));
+                                    return Some(Ok(Value::rat_raw(num / g, den / g)));
                                 }
                             }
-                            return Some(Ok(Value::Num(f)));
+                            return Some(Ok(Value::num(f)));
                         }
-                        Value::Num(f) => return Some(Ok(Value::Num(f))),
-                        Value::Rat(n, d) if d != 0 && n % d == 0 => {
-                            return Some(Ok(Value::Int(n / d)));
+                        ValueView::Num(f) => return Some(Ok(Value::num(f))),
+                        ValueView::Rat(n, d) if d != 0 && n % d == 0 => {
+                            return Some(Ok(Value::int(n / d)));
                         }
-                        Value::Rat(n, d) => return Some(Ok(Value::Rat(n, d))),
-                        Value::Int(i) => return Some(Ok(Value::Int(i))),
-                        _ => return Some(Ok(val)),
+                        ValueView::Rat(n, d) => return Some(Ok(Value::rat_raw(n, d))),
+                        ValueView::Int(i) => return Some(Ok(Value::int(i))),
+                        _ => return Some(Ok(val.clone())),
                     }
                 }
                 "tai" => {
@@ -1081,7 +1082,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .as_map()
                         .get("value")
                         .cloned()
-                        .unwrap_or(Value::Num(0.0))));
+                        .unwrap_or(Value::num(0.0))));
                 }
                 _ => {}
             }
@@ -1090,7 +1091,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
 
     // Buf/Blob.Str throws X::Buf::AsStr
     if (method == "Str" || method == "Stringy")
-        && let Value::Instance { class_name, .. } = target
+        && let ValueView::Instance { class_name, .. } = target.view()
         && crate::runtime::Interpreter::is_buf_value(target)
     {
         let cn = class_name.resolve();
@@ -1109,21 +1110,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
 
     // Buf/Blob .values and .list return the byte values as integers
     if (method == "values" || method == "list")
-        && let Value::Instance { attributes, .. } = target
+        && let ValueView::Instance { attributes, .. } = target.view()
         && crate::runtime::Interpreter::is_buf_value(target)
     {
-        if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
+        if let Some(ValueView::Array(bytes, ..)) = attributes.as_map().get("bytes").map(Value::view)
+        {
             return Some(Ok(Value::array(bytes.to_vec())));
         }
         return Some(Ok(Value::array(Vec::new())));
     }
 
     // CX::Warn methods: message, resume
-    if let Value::Instance {
+    if let ValueView::Instance {
         class_name,
         attributes,
         ..
-    } = target
+    } = target.view()
         && class_name == "CX::Warn"
     {
         match method {
@@ -1147,33 +1149,33 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
 
     // Distribution methods: meta, Str, gist, defined
-    if let Value::Instance {
+    if let ValueView::Instance {
         class_name,
         attributes,
         ..
-    } = target
+    } = target.view()
         && class_name == "Distribution"
     {
         match method {
             "meta" => {
                 return Some(Ok(attributes.as_map().get("$!meta").cloned().unwrap_or(
-                    Value::Hash(Value::hash_arc(std::collections::HashMap::new())),
+                    Value::hash_with_data(Value::hash_arc(std::collections::HashMap::new())),
                 )));
             }
             "Str" | "gist" => {
                 return Some(Ok(Value::str(format!("Distribution<{}>", class_name))));
             }
-            "defined" => return Some(Ok(Value::Bool(true))),
+            "defined" => return Some(Ok(Value::TRUE)),
             _ => {}
         }
     }
 
     // Exception/X:: methods: gist, Str, message
-    if let Value::Instance {
+    if let ValueView::Instance {
         class_name,
         attributes,
         ..
-    } = target
+    } = target.view()
     {
         let cn = class_name.resolve();
         if cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::") {
@@ -1279,13 +1281,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     if let Some(line) = attributes.as_map().get("line") {
                         return Some(Ok(line.clone()));
                     }
-                    return Some(Ok(Value::Nil));
+                    return Some(Ok(Value::NIL));
                 }
                 "file" => {
                     if let Some(file) = attributes.as_map().get("file") {
                         return Some(Ok(file.clone()));
                     }
-                    return Some(Ok(Value::Nil));
+                    return Some(Ok(Value::NIL));
                 }
                 "backtrace" => {
                     if let Some(bt) = attributes.as_map().get("backtrace") {
@@ -1299,11 +1301,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
 
     // Backtrace methods: .Str, .gist, .list, .elems
-    if let Value::Instance {
+    if let ValueView::Instance {
         class_name,
         attributes,
         ..
-    } = target
+    } = target.view()
     {
         let cn = class_name.resolve();
         if cn == "Backtrace" {
@@ -1339,7 +1341,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     let want_summary = method == "summary";
                     let mut out = String::new();
                     for frame in &frames {
-                        if let Value::Instance { attributes: fa, .. } = frame {
+                        if let ValueView::Instance { attributes: fa, .. } = frame.view() {
                             let is_routine = backtrace_frame_is_routine(fa);
                             // is-hidden / is-setting are always false here (mutsu
                             // does not track hidden or CORE-setting frames).
@@ -1357,9 +1359,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 "elems" => {
                     if let Some(frames) = attributes.as_map().get("frames") {
                         let count = crate::runtime::utils::value_to_list(frames).len();
-                        return Some(Ok(Value::Int(count as i64)));
+                        return Some(Ok(Value::int(count as i64)));
                     }
-                    return Some(Ok(Value::Int(0)));
+                    return Some(Ok(Value::int(0)));
                 }
                 _ => {}
             }
@@ -1384,7 +1386,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .as_map()
                         .get("line")
                         .cloned()
-                        .unwrap_or(Value::Int(0))));
+                        .unwrap_or(Value::int(0))));
                 }
                 "Str" | "gist" => {
                     return Some(Ok(Value::str(backtrace_frame_str(attributes))));
@@ -1398,11 +1400,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .get("subname")
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
-                    return Some(Ok(Value::Routine {
-                        package: Symbol::intern("GLOBAL"),
-                        name: Symbol::intern(&subname),
-                        is_regex: false,
-                    }));
+                    return Some(Ok(Value::routine_parts(
+                        Symbol::intern("GLOBAL"),
+                        Symbol::intern(&subname),
+                        false,
+                    )));
                 }
                 "name" => {
                     return Some(Ok(attributes
@@ -1412,11 +1414,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .unwrap_or(Value::str(String::new()))));
                 }
                 "is-routine" => {
-                    return Some(Ok(Value::Bool(backtrace_frame_is_routine(attributes))));
+                    return Some(Ok(Value::truth(backtrace_frame_is_routine(attributes))));
                 }
                 "is-hidden" | "is-setting" => {
                     // mutsu does not track hidden or CORE-setting frames.
-                    return Some(Ok(Value::Bool(false)));
+                    return Some(Ok(Value::FALSE));
                 }
                 _ => {}
             }
@@ -1425,7 +1427,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
 
     // .resume on exception objects
     if method == "resume"
-        && let Value::Instance { class_name, .. } = target
+        && let ValueView::Instance { class_name, .. } = target.view()
     {
         let cn = class_name.resolve();
         if cn == "Exception" || cn.starts_with("X::") || cn == "Failure" || cn == "CX::Warn" {
@@ -1435,11 +1437,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
 
     // .throw on exception objects
     if method == "throw"
-        && let Value::Instance {
+        && let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = target
+        } = target.view()
     {
         let cn = class_name.resolve();
         // Only the core exception classes use the fast path. For CX::* we
@@ -1482,36 +1484,36 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
 
     // Array of Match objects: .to/.from/.ast
-    if let Value::Array(arr, _) = target {
+    if let ValueView::Array(arr, _) = target.view() {
         match method {
             "to" | "pos" => {
                 if let Some(last) = arr.last() {
                     return native_method_0arg(last, Symbol::intern(method));
                 }
-                return Some(Ok(Value::Int(0)));
+                return Some(Ok(Value::int(0)));
             }
             "from" => {
                 if let Some(first) = arr.first() {
                     return native_method_0arg(first, Symbol::intern(method));
                 }
-                return Some(Ok(Value::Int(0)));
+                return Some(Ok(Value::int(0)));
             }
             "ast" => {
                 if let Some(last) = arr.last() {
                     return native_method_0arg(last, Symbol::intern("ast"));
                 }
-                return Some(Ok(Value::Nil));
+                return Some(Ok(Value::NIL));
             }
             _ => {}
         }
     }
 
     // IO::Path::Parts — .hash returns attributes as a Hash
-    if let Value::Instance {
+    if let ValueView::Instance {
         class_name,
         attributes,
         ..
-    } = target
+    } = target.view()
         && class_name.resolve() == "IO::Path::Parts"
         && (method == "hash" || method == "Hash")
     {
@@ -1524,11 +1526,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
 
     // Match object methods
-    if let Value::Instance {
+    if let ValueView::Instance {
         class_name,
         attributes,
         ..
-    } = target
+    } = target.view()
         && class_name == "Match"
     {
         match method {
@@ -1537,14 +1539,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .as_map()
                     .get("from")
                     .cloned()
-                    .unwrap_or(Value::Int(0))));
+                    .unwrap_or(Value::int(0))));
             }
             "to" | "pos" => {
                 return Some(Ok(attributes
                     .as_map()
                     .get("to")
                     .cloned()
-                    .unwrap_or(Value::Int(0))));
+                    .unwrap_or(Value::int(0))));
             }
             "gist" => {
                 // Full Match gist: corner-quoted text plus positional/named
@@ -1559,7 +1561,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .cloned()
                     .unwrap_or(Value::str(String::new()))));
             }
-            "Bool" => return Some(Ok(Value::Bool(true))),
+            "Bool" => return Some(Ok(Value::TRUE)),
             "orig" => {
                 return Some(Ok(attributes
                     .as_map()
@@ -1588,12 +1590,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "keys" => {
                 let mut keys = Vec::new();
-                if let Some(Value::Array(list, _)) = attributes.as_map().get("list") {
+                if let Some(ValueView::Array(list, _)) =
+                    attributes.as_map().get("list").map(Value::view)
+                {
                     for i in 0..list.len() {
-                        keys.push(Value::Int(i as i64));
+                        keys.push(Value::int(i as i64));
                     }
                 }
-                if let Some(Value::Hash(named)) = attributes.as_map().get("named") {
+                if let Some(ValueView::Hash(named)) =
+                    attributes.as_map().get("named").map(Value::view)
+                {
                     let mut sorted: Vec<&String> = named.keys().collect();
                     sorted.sort();
                     for k in sorted {
@@ -1604,10 +1610,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "values" => {
                 let mut vals = Vec::new();
-                if let Some(Value::Array(list, _)) = attributes.as_map().get("list") {
+                if let Some(ValueView::Array(list, _)) =
+                    attributes.as_map().get("list").map(Value::view)
+                {
                     vals.extend(list.iter().cloned());
                 }
-                if let Some(Value::Hash(named)) = attributes.as_map().get("named") {
+                if let Some(ValueView::Hash(named)) =
+                    attributes.as_map().get("named").map(Value::view)
+                {
                     let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
                     sorted.sort_by_key(|(k, _)| (*k).clone());
                     for (_, v) in sorted {
@@ -1618,29 +1628,37 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "pairs" => {
                 let mut pairs = Vec::new();
-                if let Some(Value::Array(list, _)) = attributes.as_map().get("list") {
+                if let Some(ValueView::Array(list, _)) =
+                    attributes.as_map().get("list").map(Value::view)
+                {
                     for (i, v) in list.iter().enumerate() {
-                        pairs.push(Value::Pair(i.to_string(), Box::new(v.clone())));
+                        pairs.push(Value::pair(i.to_string(), v.clone()));
                     }
                 }
-                if let Some(Value::Hash(named)) = attributes.as_map().get("named") {
+                if let Some(ValueView::Hash(named)) =
+                    attributes.as_map().get("named").map(Value::view)
+                {
                     let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
                     sorted.sort_by_key(|(k, _)| (*k).clone());
                     for (k, v) in sorted {
-                        pairs.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                        pairs.push(Value::pair(k.clone(), v.clone()));
                     }
                 }
                 return Some(Ok(Value::array(pairs)));
             }
             "kv" => {
                 let mut kv = Vec::new();
-                if let Some(Value::Array(list, _)) = attributes.as_map().get("list") {
+                if let Some(ValueView::Array(list, _)) =
+                    attributes.as_map().get("list").map(Value::view)
+                {
                     for (i, v) in list.iter().enumerate() {
-                        kv.push(Value::Int(i as i64));
+                        kv.push(Value::int(i as i64));
                         kv.push(v.clone());
                     }
                 }
-                if let Some(Value::Hash(named)) = attributes.as_map().get("named") {
+                if let Some(ValueView::Hash(named)) =
+                    attributes.as_map().get("named").map(Value::view)
+                {
                     let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
                     sorted.sort_by_key(|(k, _)| (*k).clone());
                     for (k, v) in sorted {
@@ -1651,24 +1669,24 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::array(kv)));
             }
             "elems" => {
-                let count = match attributes.as_map().get("list") {
-                    Some(Value::Array(list, _)) => list.len(),
+                let count = match attributes.as_map().get("list").map(Value::view) {
+                    Some(ValueView::Array(list, _)) => list.len(),
                     _ => 0,
                 };
-                return Some(Ok(Value::Int(count as i64)));
+                return Some(Ok(Value::int(count as i64)));
             }
             "ast" | "made" => {
                 return Some(Ok(attributes
                     .as_map()
                     .get("ast")
                     .cloned()
-                    .unwrap_or(Value::Nil)));
+                    .unwrap_or(Value::NIL)));
             }
             "prematch" => {
                 if let Some(orig_val) = attributes.as_map().get("orig") {
                     let orig = orig_val.to_string_value();
-                    let from = match attributes.as_map().get("from") {
-                        Some(Value::Int(n)) => *n as usize,
+                    let from = match attributes.as_map().get("from").map(Value::view) {
+                        Some(ValueView::Int(n)) => n as usize,
                         _ => 0,
                     };
                     let chars: Vec<char> = orig.chars().collect();
@@ -1680,8 +1698,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             "postmatch" => {
                 if let Some(orig_val) = attributes.as_map().get("orig") {
                     let orig = orig_val.to_string_value();
-                    let to = match attributes.as_map().get("to") {
-                        Some(Value::Int(n)) => *n as usize,
+                    let to = match attributes.as_map().get("to").map(Value::view) {
+                        Some(ValueView::Int(n)) => n as usize,
                         _ => 0,
                     };
                     let chars: Vec<char> = orig.chars().collect();
@@ -1695,7 +1713,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .as_map()
                     .get("actions")
                     .cloned()
-                    .unwrap_or(Value::Nil)));
+                    .unwrap_or(Value::NIL)));
             }
             "caps" => {
                 return Some(Ok(match_helpers::match_caps(&(attributes).as_map())));
@@ -1715,32 +1733,32 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
 
     // Numeric type object .Range methods
-    if let Value::Package(name) = target
+    if let ValueView::Package(name) = target.view()
         && method == "Range"
         && matches!(
             name.resolve().as_str(),
             "Real" | "Num" | "Rational" | "Rat" | "FatRat" | "BigRat"
         )
     {
-        return Some(Ok(Value::GenericRange {
-            start: Arc::new(Value::Num(f64::NEG_INFINITY)),
-            end: Arc::new(Value::Num(f64::INFINITY)),
-            excl_start: false,
-            excl_end: false,
-        }));
+        return Some(Ok(Value::generic_range(
+            Value::num(f64::NEG_INFINITY),
+            Value::num(f64::INFINITY),
+            false,
+            false,
+        )));
     }
-    if let Value::Package(name) = target
+    if let ValueView::Package(name) = target.view()
         && name.resolve() == "Int"
         && method == "Range"
     {
-        return Some(Ok(Value::GenericRange {
-            start: Arc::new(Value::Num(f64::NEG_INFINITY)),
-            end: Arc::new(Value::Num(f64::INFINITY)),
-            excl_start: true,
-            excl_end: true,
-        }));
+        return Some(Ok(Value::generic_range(
+            Value::num(f64::NEG_INFINITY),
+            Value::num(f64::INFINITY),
+            true,
+            true,
+        )));
     }
-    if let Value::Package(name) = target
+    if let ValueView::Package(name) = target.view()
         && crate::runtime::native_types::is_native_int_type(&name.resolve())
         && method == "Range"
         && let Some((min_big, max_big)) =
@@ -1749,20 +1767,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         let min_i64 = min_big.to_i64();
         let max_i64 = max_big.to_i64();
         if let (Some(min_v), Some(max_v)) = (min_i64, max_i64) {
-            return Some(Ok(Value::Range(min_v, max_v)));
+            return Some(Ok(Value::range(min_v, max_v)));
         } else {
             let min_val = min_i64
-                .map(Value::Int)
+                .map(Value::int)
                 .unwrap_or_else(|| Value::bigint(min_big));
             let max_val = max_i64
-                .map(Value::Int)
+                .map(Value::int)
                 .unwrap_or_else(|| Value::bigint(max_big));
-            return Some(Ok(Value::GenericRange {
-                start: Arc::new(min_val),
-                end: Arc::new(max_val),
-                excl_start: false,
-                excl_end: false,
-            }));
+            return Some(Ok(Value::generic_range(min_val, max_val, false, false)));
         }
     }
     // .int-bounds on Range values
@@ -1778,40 +1791,40 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         // end. When BOTH extremes are present the range is the genuine full-i64
         // bound (`int64.Range` is `-9223372036854775808..9223372036854775807`),
         // so it has concrete bounds and must NOT throw. Hence the XOR.
-        if let Value::Range(s, e)
-        | Value::RangeExcl(s, e)
-        | Value::RangeExclStart(s, e)
-        | Value::RangeExclBoth(s, e) = target
-            && ((*s == i64::MIN) ^ (*e == i64::MAX))
+        if let ValueView::Range(s, e)
+        | ValueView::RangeExcl(s, e)
+        | ValueView::RangeExclStart(s, e)
+        | ValueView::RangeExclBoth(s, e) = target.view()
+            && ((s == i64::MIN) ^ (e == i64::MAX))
         {
             let range_repr = crate::runtime::utils::gist_value(target);
             return Some(Err(crate::value::RuntimeError::new(format!(
                 "Cannot determine integer bounds of {range_repr}"
             ))));
         }
-        match target {
-            Value::Range(start, end) => {
-                return Some(Ok(Value::array(vec![Value::Int(*start), Value::Int(*end)])));
+        match target.view() {
+            ValueView::Range(start, end) => {
+                return Some(Ok(Value::array(vec![Value::int(start), Value::int(end)])));
             }
-            Value::RangeExcl(start, end) => {
+            ValueView::RangeExcl(start, end) => {
                 return Some(Ok(Value::array(vec![
-                    Value::Int(*start),
-                    Value::Int(*end - 1),
+                    Value::int(start),
+                    Value::int(end - 1),
                 ])));
             }
-            Value::RangeExclStart(start, end) => {
+            ValueView::RangeExclStart(start, end) => {
                 return Some(Ok(Value::array(vec![
-                    Value::Int(*start + 1),
-                    Value::Int(*end),
+                    Value::int(start + 1),
+                    Value::int(end),
                 ])));
             }
-            Value::RangeExclBoth(start, end) => {
+            ValueView::RangeExclBoth(start, end) => {
                 return Some(Ok(Value::array(vec![
-                    Value::Int(*start + 1),
-                    Value::Int(*end - 1),
+                    Value::int(start + 1),
+                    Value::int(end - 1),
                 ])));
             }
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
@@ -1820,9 +1833,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 // Check if endpoints contain Inf, -Inf, or NaN — these cannot
                 // have integer bounds.
                 let has_non_int_endpoint = |v: &Value| -> bool {
-                    match v {
-                        Value::Num(f) => f.is_infinite() || f.is_nan(),
-                        Value::Str(_) => true,
+                    match v.view() {
+                        ValueView::Num(f) => f.is_infinite() || f.is_nan(),
+                        ValueView::Str(_) => true,
                         _ => false,
                     }
                 };
@@ -1832,40 +1845,42 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         "Cannot determine integer bounds of {range_repr}"
                     ))));
                 }
-                let s = if *excl_start {
-                    match start.as_ref() {
-                        Value::Int(n) => Value::Int(n + 1),
-                        Value::BigInt(n) => Value::bigint(n.as_ref() + 1),
-                        Value::Rat(n, d) => {
-                            Value::Int(((*n as f64 / *d as f64).floor() as i64) + 1)
+                let s = if excl_start {
+                    match start.as_ref().view() {
+                        ValueView::Int(n) => Value::int(n + 1),
+                        ValueView::BigInt(n) => Value::bigint(n.as_ref() + 1),
+                        ValueView::Rat(n, d) => {
+                            Value::int(((n as f64 / d as f64).floor() as i64) + 1)
                         }
-                        other => Value::Int(other.to_f64() as i64 + 1),
+                        _ => Value::int(start.as_ref().to_f64() as i64 + 1),
                     }
                 } else {
-                    match start.as_ref() {
-                        Value::Int(_) | Value::BigInt(_) => start.as_ref().clone(),
-                        Value::Rat(n, d) => {
-                            let f = *n as f64 / *d as f64;
-                            Value::Int(f.ceil() as i64)
+                    match start.as_ref().view() {
+                        ValueView::Int(_) | ValueView::BigInt(_) => start.as_ref().clone(),
+                        ValueView::Rat(n, d) => {
+                            let f = n as f64 / d as f64;
+                            Value::int(f.ceil() as i64)
                         }
-                        other => Value::Int(other.to_f64().ceil() as i64),
+                        _ => Value::int(start.as_ref().to_f64().ceil() as i64),
                     }
                 };
-                let e = if *excl_end {
-                    match end.as_ref() {
-                        Value::Int(n) => Value::Int(n - 1),
-                        Value::BigInt(n) => Value::bigint(n.as_ref() - 1),
-                        Value::Rat(n, d) => Value::Int(((*n as f64 / *d as f64).ceil() as i64) - 1),
-                        other => Value::Int(other.to_f64() as i64 - 1),
+                let e = if excl_end {
+                    match end.as_ref().view() {
+                        ValueView::Int(n) => Value::int(n - 1),
+                        ValueView::BigInt(n) => Value::bigint(n.as_ref() - 1),
+                        ValueView::Rat(n, d) => {
+                            Value::int(((n as f64 / d as f64).ceil() as i64) - 1)
+                        }
+                        _ => Value::int(end.as_ref().to_f64() as i64 - 1),
                     }
                 } else {
-                    match end.as_ref() {
-                        Value::Int(_) | Value::BigInt(_) => end.as_ref().clone(),
-                        Value::Rat(n, d) => {
-                            let f = *n as f64 / *d as f64;
-                            Value::Int(f.floor() as i64)
+                    match end.as_ref().view() {
+                        ValueView::Int(_) | ValueView::BigInt(_) => end.as_ref().clone(),
+                        ValueView::Rat(n, d) => {
+                            let f = n as f64 / d as f64;
+                            Value::int(f.floor() as i64)
                         }
-                        other => Value::Int(other.to_f64().floor() as i64),
+                        _ => Value::int(end.as_ref().to_f64().floor() as i64),
                     }
                 };
                 return Some(Ok(Value::array(vec![s, e])));
@@ -1874,20 +1889,20 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
     // Kernel type object methods
-    if let Value::Package(name) = target
+    if let ValueView::Package(name) = target.view()
         && name == "Kernel"
         && method == "endian"
     {
-        return Some(Ok(Value::Enum {
-            enum_type: Symbol::intern("Endian"),
-            key: Symbol::intern(if cfg!(target_endian = "little") {
+        return Some(Ok(Value::enum_parts(
+            Symbol::intern("Endian"),
+            Symbol::intern(if cfg!(target_endian = "little") {
                 "LittleEndian"
             } else {
                 "BigEndian"
             }),
-            value: EnumValue::Int(if cfg!(target_endian = "little") { 1 } else { 2 }),
-            index: if cfg!(target_endian = "little") { 1 } else { 2 },
-        }));
+            EnumValue::Int(if cfg!(target_endian = "little") { 1 } else { 2 }),
+            if cfg!(target_endian = "little") { 1 } else { 2 },
+        )));
     }
 
     // Delegate to sub-dispatch functions.

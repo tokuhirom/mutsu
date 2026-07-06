@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use std::sync::OnceLock;
 
 /// Unicode Block lookup — delegates to the tables module.
@@ -15,7 +15,7 @@ pub(crate) fn unicode_jamo_short_name(ch: char) -> String {
 pub(crate) fn unicode_numeric_value(ch: char) -> Value {
     // Check if it's a digit (Nd)
     if let Some(d) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
-        return Value::Int(d as i64);
+        return Value::int(d as i64);
     }
     // Check if it's a fraction
     if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
@@ -23,9 +23,9 @@ pub(crate) fn unicode_numeric_value(ch: char) -> Value {
     }
     // Check if it's an integer numeric
     if let Some(i) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
-        return Value::Int(i);
+        return Value::int(i);
     }
-    Value::Num(f64::NAN)
+    Value::num(f64::NAN)
 }
 
 /// Look up Numeric_Type for uniprop.
@@ -70,7 +70,7 @@ pub(crate) fn unicode_numeric_type(ch: char) -> String {
     // Ideographs and other letters that carry a numeric value (e.g. the CJK
     // numerals 一 二 三 十 百 千 万) have Numeric_Type=Numeric even though their
     // General_Category is Lo rather than a Number category.
-    if !matches!(unicode_numeric_value(ch), Value::Num(n) if n.is_nan()) {
+    if !matches!(unicode_numeric_value(ch).view(), ValueView::Num(n) if n.is_nan()) {
         return "Numeric".to_string();
     }
     "None".to_string()

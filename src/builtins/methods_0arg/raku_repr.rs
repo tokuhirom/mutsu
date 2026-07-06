@@ -1,4 +1,4 @@
-use crate::value::{ArrayKind, RuntimeError, Value};
+use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 use num_traits::{Signed, Zero};
 
 use super::range_endpoint_display;
@@ -161,7 +161,7 @@ pub(crate) fn format_num_str(f: f64) -> String {
 
 /// Helper for .raku representation of a value
 fn is_self_array_ref_marker(v: &Value) -> bool {
-    matches!(v, Value::Pair(name, _) if name == "__mutsu_self_array_ref")
+    matches!(v.view(), ValueView::Pair(name, _) if name == "__mutsu_self_array_ref")
 }
 
 /// Whether a string key may be rendered in the adverbial pair form
@@ -198,20 +198,20 @@ pub(crate) fn is_adverbial_pair_key(s: &str) -> bool {
 /// (Range, List/Array, Seq, Hash/Map). Pair, Set/Bag/Mix (rendered as
 /// constructor calls), scalars, and type objects do NOT get a comma.
 fn element_needs_trailing_comma(v: &Value) -> bool {
-    match v {
-        Value::ContainerRef(cell) => {
+    match v.view() {
+        ValueView::ContainerRef(cell) => {
             let inner = cell.lock().unwrap().clone();
             element_needs_trailing_comma(&inner)
         }
-        Value::Scalar(inner) => element_needs_trailing_comma(inner),
-        Value::Range(..)
-        | Value::RangeExcl(..)
-        | Value::RangeExclStart(..)
-        | Value::RangeExclBoth(..)
-        | Value::GenericRange { .. }
-        | Value::Array(..)
-        | Value::Seq(..)
-        | Value::Hash(_) => true,
+        ValueView::Scalar(inner) => element_needs_trailing_comma(inner),
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. }
+        | ValueView::Array(..)
+        | ValueView::Seq(..)
+        | ValueView::Hash(_) => true,
         _ => false,
     }
 }
@@ -275,27 +275,27 @@ fn raku_hash_value(v: &Value) -> String {
     // A `:=`-bound hash element holds a `ContainerRef` cell; itemize based on the
     // aggregate it *holds* so it renders like a plain hash value — `{:a($[1, 2])}`,
     // not `{:a([1, 2])}` (Phase 5 leak hardening, `docs/element-element-bind-plan.md`).
-    let effective = match v {
-        Value::ContainerRef(cell) => cell.lock().unwrap().clone(),
-        other => other.clone(),
+    let effective = match v.view() {
+        ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+        _ => v.clone(),
     };
-    match &effective {
-        Value::Array(..) | Value::Hash(_) => format!("${base}"),
-        Value::Seq(_) => format!("$({base})"),
+    match effective.view() {
+        ValueView::Array(..) | ValueView::Hash(_) => format!("${base}"),
+        ValueView::Seq(_) => format!("$({base})"),
         _ => base,
     }
 }
 
 fn raku_value_as_element(v: &Value) -> String {
-    match v {
-        Value::Array(items, kind) => {
+    match v.view() {
+        ValueView::Array(items, kind) => {
             let decontainerized = match kind {
                 ArrayKind::ItemArray => ArrayKind::Array,
                 ArrayKind::ItemList => ArrayKind::List,
-                other => *other,
+                other => other,
             };
             // Re-wrap the value with de-itemized kind for rendering
-            let decontainerized_val = Value::Array(items.clone(), decontainerized);
+            let decontainerized_val = Value::array_with_kind(items.clone(), decontainerized);
             raku_value(&decontainerized_val)
         }
         _ => raku_value(v),
@@ -397,17 +397,17 @@ pub fn raku_value(v: &Value) -> String {
         static SEEN_PTRS: std::cell::RefCell<Vec<(usize, String)>> = const { std::cell::RefCell::new(Vec::new()) };
         static ARRAY_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
-    match v {
+    match v.view() {
         // A `:=`-bound element holds a `ContainerRef` cell; render the held
         // value so a bound element inside a hash/array renders like a plain one
         // (Phase 5 leak hardening).
-        Value::ContainerRef(cell) => {
+        ValueView::ContainerRef(cell) => {
             let inner = cell.lock().unwrap().clone();
             raku_value(&inner)
         }
-        Value::Array(items, kind) => {
+        ValueView::Array(items, kind) => {
             // Lazy arrays should not be materialized
-            if *kind == crate::value::ArrayKind::Lazy {
+            if kind == crate::value::ArrayKind::Lazy {
                 return "[...]".to_string();
             }
             let ptr = crate::gc::Gc::as_ptr(items) as usize;
@@ -428,7 +428,7 @@ pub fn raku_value(v: &Value) -> String {
             if is_top {
                 ARRAY_CYCLE_FOUND.with(|f| f.set(false));
             }
-            let result = raku_value_array(items, *kind, v);
+            let result = raku_value_array(items, kind, v);
             let had_cycle = ARRAY_CYCLE_FOUND.with(|f| f.get());
             SEEN_PTRS.with(|seen| {
                 let mut s = seen.borrow_mut();
@@ -442,7 +442,7 @@ pub fn raku_value(v: &Value) -> String {
                 result
             }
         }
-        Value::Seq(items) => {
+        ValueView::Seq(items) => {
             // A consumed Seq is represented as Seq.new() so that EVALing it
             // produces a pre-consumed Seq (matching Raku's behavior).
             if crate::value::seq_is_consumed(items) {
@@ -455,26 +455,26 @@ pub fn raku_value(v: &Value) -> String {
                 format!("({}).Seq", inner)
             }
         }
-        Value::Slip(items) => {
+        ValueView::Slip(items) => {
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
             format!("slip({})", inner)
         }
-        Value::Str(s) => escape_raku_str(s),
-        Value::Int(i) => i.to_string(),
-        Value::Rat(n, d) => {
-            if *d == 0 {
-                if *n == 0 {
+        ValueView::Str(s) => escape_raku_str(s),
+        ValueView::Int(i) => i.to_string(),
+        ValueView::Rat(n, d) => {
+            if d == 0 {
+                if n == 0 {
                     "NaN".to_string()
-                } else if *n > 0 {
+                } else if n > 0 {
                     "Inf".to_string()
                 } else {
                     "-Inf".to_string()
                 }
-            } else if *n % *d == 0 {
-                format!("{}.0", *n / *d)
+            } else if n % d == 0 {
+                format!("{}.0", n / d)
             } else {
                 // Non-integer rat: check if it's a simple decimal
-                let whole = *n as f64 / *d as f64;
+                let whole = n as f64 / d as f64;
                 let mut dd = d.abs();
                 while dd % 2 == 0 {
                     dd /= 2;
@@ -494,8 +494,7 @@ pub fn raku_value(v: &Value) -> String {
                 }
             }
         }
-        Value::BigRat(n, d) => {
-            let (n, d) = (n.as_ref(), d.as_ref());
+        ValueView::BigRat(n, d) => {
             if d == &num_bigint::BigInt::from(0) {
                 if n == &num_bigint::BigInt::from(0) {
                     "NaN".to_string()
@@ -530,13 +529,13 @@ pub fn raku_value(v: &Value) -> String {
                 }
             }
         }
-        Value::FatRat(n, d) => format!("FatRat.new({}, {})", n, d),
-        Value::Bool(b) => if *b { "Bool::True" } else { "Bool::False" }.to_string(),
-        Value::Num(f) => {
+        ValueView::FatRat(n, d) => format!("FatRat.new({}, {})", n, d),
+        ValueView::Bool(b) => if b { "Bool::True" } else { "Bool::False" }.to_string(),
+        ValueView::Num(f) => {
             if f.is_nan() {
                 "NaN".to_string()
             } else if f.is_infinite() {
-                if *f > 0.0 {
+                if f > 0.0 {
                     "Inf".to_string()
                 } else {
                     "-Inf".to_string()
@@ -544,16 +543,16 @@ pub fn raku_value(v: &Value) -> String {
             } else {
                 // Num.raku must include 'e' so it round-trips as Num, not Rat.
                 // Use Raku's format: significand + 'e' + exponent.
-                format_num_raku(*f)
+                format_num_raku(f)
             }
         }
-        Value::Complex(r, i) => format!("<{}>", crate::value::format_complex(*r, *i)),
-        Value::Pair(key, value) => {
+        ValueView::Complex(r, i) => format!("<{}>", crate::value::format_complex(r, i)),
+        ValueView::Pair(key, value) => {
             let ident_like = is_adverbial_pair_key(key);
             if ident_like {
-                match value.as_ref() {
-                    Value::Bool(true) => format!(":{}", key),
-                    Value::Bool(false) => format!(":!{}", key),
+                match value.view() {
+                    ValueView::Bool(true) => format!(":{}", key),
+                    ValueView::Bool(false) => format!(":!{}", key),
                     _ => format!(":{}({})", key, raku_value(value)),
                 }
             } else {
@@ -564,29 +563,32 @@ pub fn raku_value(v: &Value) -> String {
                 )
             }
         }
-        Value::ValuePair(key, value) => {
-            if let Value::Str(key_str) = key.as_ref() {
+        ValueView::ValuePair(key, value) => {
+            if let ValueView::Str(key_str) = key.view() {
                 let ident_like = is_adverbial_pair_key(key_str);
                 if ident_like {
-                    return match value.as_ref() {
-                        Value::Bool(true) => format!(":{}", key_str),
-                        Value::Bool(false) => format!(":!{}", key_str),
+                    return match value.view() {
+                        ValueView::Bool(true) => format!(":{}", key_str),
+                        ValueView::Bool(false) => format!(":!{}", key_str),
                         _ => format!(":{}({})", key_str, raku_value(value)),
                     };
                 }
             }
-            let key_repr = match key.as_ref() {
+            let key_repr = match key.view() {
                 // Non-string keys that would be ambiguous as barewords need parens.
                 // A Bool key is NOT wrapped: `Bool::True` already renders
                 // unambiguously (raku prints `Bool::True => "a"`, not `(...)`).
-                Value::Pair(_, _) | Value::ValuePair(_, _) | Value::Package(_) | Value::Nil => {
+                ValueView::Pair(_, _)
+                | ValueView::ValuePair(_, _)
+                | ValueView::Package(_)
+                | ValueView::Nil => {
                     format!("({})", raku_value(key))
                 }
                 _ => raku_value(key),
             };
             format!("{} => {}", key_repr, raku_value(value))
         }
-        Value::Hash(map) => {
+        ValueView::Hash(map) => {
             // An immutable Map renders as `Map.new((:k(v), ...))`.
             if map.declared_type.as_deref() == Some("Map") {
                 let mut sorted_keys: Vec<&String> = map.keys().collect();
@@ -595,14 +597,14 @@ pub fn raku_value(v: &Value) -> String {
                     .iter()
                     .map(|k| {
                         let v = &map[*k];
-                        let repr = if matches!(v, Value::Nil) {
+                        let repr = if v.is_nil() {
                             "Any".to_string()
                         } else {
                             raku_hash_value(v)
                         };
                         let typed = map.typed_key(k);
-                        match &typed {
-                            Value::Str(s) if is_adverbial_pair_key(s) => {
+                        match typed.view() {
+                            ValueView::Str(s) if is_adverbial_pair_key(s) => {
                                 format!(":{}({})", s, repr)
                             }
                             _ => format!("{} => {}", raku_value(&typed), repr),
@@ -646,8 +648,8 @@ pub fn raku_value(v: &Value) -> String {
                     // the colon-pair / ident logic; a non-`Str` key (object hash)
                     // uses the general `key => value` form.
                     let typed = map.typed_key(k);
-                    let key_str: Option<String> = match &typed {
-                        Value::Str(s) => Some((**s).clone()),
+                    let key_str: Option<String> = match typed.view() {
+                        ValueView::Str(s) => Some((**s).clone()),
                         _ => None,
                     };
                     let is_ident = key_str.as_deref().is_some_and(is_adverbial_pair_key);
@@ -656,7 +658,7 @@ pub fn raku_value(v: &Value) -> String {
                         // form `:key(value.raku)` — including Bool, which shows
                         // as `:a(Bool::True)`, not the adverbial `:a` / `:!a`.
                         let k = key_str.as_deref().unwrap();
-                        let repr = if matches!(v, Value::Nil) {
+                        let repr = if v.is_nil() {
                             "Any".to_string()
                         } else {
                             raku_hash_value(v)
@@ -664,7 +666,7 @@ pub fn raku_value(v: &Value) -> String {
                         format!(":{}({})", k, repr)
                     } else {
                         // Non-identifier keys: use "key" => value format
-                        let repr = if matches!(v, Value::Nil) {
+                        let repr = if v.is_nil() {
                             "Any".to_string()
                         } else {
                             raku_hash_value(v)
@@ -692,59 +694,59 @@ pub fn raku_value(v: &Value) -> String {
                 hash_repr
             }
         }
-        Value::Nil => "Nil".to_string(),
-        Value::Package(name) => name.resolve().to_string(),
-        Value::Range(a, b) => {
+        ValueView::Nil => "Nil".to_string(),
+        ValueView::Package(name) => name.resolve().to_string(),
+        ValueView::Range(a, b) => {
             format!(
                 "{}..{}",
-                range_endpoint_display(*a),
-                range_endpoint_display(*b)
+                range_endpoint_display(a),
+                range_endpoint_display(b)
             )
         }
-        Value::RangeExcl(a, b) => {
-            if *a == 0 {
-                format!("^{}", range_endpoint_display(*b))
+        ValueView::RangeExcl(a, b) => {
+            if a == 0 {
+                format!("^{}", range_endpoint_display(b))
             } else {
                 format!(
                     "{}..^{}",
-                    range_endpoint_display(*a),
-                    range_endpoint_display(*b)
+                    range_endpoint_display(a),
+                    range_endpoint_display(b)
                 )
             }
         }
-        Value::RangeExclStart(a, b) => {
+        ValueView::RangeExclStart(a, b) => {
             format!(
                 "{}^..{}",
-                range_endpoint_display(*a),
-                range_endpoint_display(*b)
+                range_endpoint_display(a),
+                range_endpoint_display(b)
             )
         }
-        Value::RangeExclBoth(a, b) => {
+        ValueView::RangeExclBoth(a, b) => {
             format!(
                 "{}^..^{}",
-                range_endpoint_display(*a),
-                range_endpoint_display(*b)
+                range_endpoint_display(a),
+                range_endpoint_display(b)
             )
         }
-        Value::GenericRange {
+        ValueView::GenericRange {
             start,
             end,
             excl_start,
             excl_end,
         } => {
-            let start_repr = match start.as_ref() {
-                Value::Whatever | Value::HyperWhatever => "-Inf".to_string(),
+            let start_repr = match start.view() {
+                ValueView::Whatever | ValueView::HyperWhatever => "-Inf".to_string(),
                 _ => raku_value(start),
             };
-            let end_repr = match end.as_ref() {
-                Value::Whatever | Value::HyperWhatever => "Inf".to_string(),
+            let end_repr = match end.view() {
+                ValueView::Whatever | ValueView::HyperWhatever => "Inf".to_string(),
                 _ => raku_value(end),
             };
-            let start_sep = if *excl_start { "^.." } else { ".." };
-            let end_sep = if *excl_end { "^" } else { "" };
+            let start_sep = if excl_start { "^.." } else { ".." };
+            let end_sep = if excl_end { "^" } else { "" };
             format!("{}{}{}{}", start_repr, start_sep, end_sep, end_repr)
         }
-        Value::Scalar(inner) => {
+        ValueView::Scalar(inner) => {
             // $(expr) — itemized container. `.raku` shows the itemization sigil
             // shaped to the inner value: a Hash → `${...}`, an Array → `$[...]`,
             // a List/Seq → `$(...)`, and a plain scalar (Int/Str/Range/…) renders
@@ -752,21 +754,21 @@ pub fn raku_value(v: &Value) -> String {
             // `$(1).raku` → `1`). This is exactly the hash-value itemization rule.
             raku_hash_value(inner)
         }
-        Value::Capture { positional, named } => {
+        ValueView::Capture { positional, named } => {
             let mut parts = Vec::new();
             for v in positional.iter() {
                 // Pairs appearing as positional items in a Capture are rendered
                 // with quoted key syntax ("key" => value) to distinguish them
                 // from named arguments which use colonpair syntax (:key(value)).
-                match v {
-                    Value::Pair(k, val) => {
+                match v.view() {
+                    ValueView::Pair(k, val) => {
                         parts.push(format!(
                             "{} => {}",
                             raku_value(&Value::str(k.clone())),
                             raku_value(val)
                         ));
                     }
-                    Value::ValuePair(k, val) => {
+                    ValueView::ValuePair(k, val) => {
                         parts.push(format!("{} => {}", raku_value(k), raku_value(val)));
                     }
                     _ => parts.push(raku_value(v)),
@@ -776,9 +778,9 @@ pub fn raku_value(v: &Value) -> String {
             named_keys.sort();
             for k in named_keys {
                 let v = &named[k];
-                if let Value::Bool(true) = v {
+                if let ValueView::Bool(true) = v.view() {
                     parts.push(format!(":{}", k));
-                } else if let Value::Bool(false) = v {
+                } else if let ValueView::Bool(false) = v.view() {
                     parts.push(format!(":!{}", k));
                 } else {
                     parts.push(format!(":{}({})", k, raku_value(v)));
@@ -786,7 +788,7 @@ pub fn raku_value(v: &Value) -> String {
             }
             format!("\\({})", parts.join(", "))
         }
-        Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
             setbagmix_raku(v).unwrap_or_else(|| v.to_string_value())
         }
         // An ObjAt / ValueObjAt (from `.WHICH`) renders its `.raku` as the
@@ -796,12 +798,12 @@ pub fn raku_value(v: &Value) -> String {
         // `Match.new(...)` form, the same as a direct `$/.raku`. Without this,
         // `$/.list.raku` / `$/.caps.raku` / an array holding a Match stringified
         // the Match to its matched text instead.
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
         } if class_name == "Match" => super::match_helpers::match_raku_repr(&attributes.as_map()),
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -813,7 +815,7 @@ pub fn raku_value(v: &Value) -> String {
                 .unwrap_or_default();
             format!("{}.new(\"{}\")", class_name.resolve(), which)
         }
-        Value::Mixin(inner, mixins) => {
+        ValueView::Mixin(inner, mixins) => {
             // An allomorphic value (IntStr/RatStr/NumStr/ComplexStr) renders as
             // `TypeStr.new(<numeric>, "<original string>")` — e.g. `<42>.raku`
             // → `IntStr.new(42, "42")`, `<1e3>.raku` → `NumStr.new(1000e0, "1e3")`
@@ -832,15 +834,15 @@ pub fn raku_value(v: &Value) -> String {
         }
         // A WhateverCode (`*+1`) renders as `WhateverCode.new`, including when it
         // appears as an element of an array/list being `.raku`-rendered.
-        Value::Sub(data)
+        ValueView::Sub(data)
             if matches!(
-                data.env.get("__mutsu_callable_type"),
-                Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+                data.env.get("__mutsu_callable_type").map(Value::view),
+                Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
             ) =>
         {
             "WhateverCode.new".to_string()
         }
-        other => other.to_string_value(),
+        _ => v.to_string_value(),
     }
 }
 
@@ -851,16 +853,16 @@ pub fn raku_value(v: &Value) -> String {
 /// `raku_value` (recursive element rendering) and the `.raku` method dispatch
 /// so both render identically.
 pub(crate) fn setbagmix_raku(v: &Value) -> Option<String> {
-    match v {
+    match v.view() {
         // An empty *immutable* Set/Bag/Mix renders via its lowercase coercer
         // (`set()`/`bag()`/`mix()`) in Raku, not the non-empty form. The empty
         // mutable variants keep their non-empty form (`SetHash.new()` /
         // `().BagHash` / `().MixHash`), so only special-case the immutable ones.
-        Value::Set(s, false) if s.is_empty() => Some("set()".to_string()),
-        Value::Bag(b, false) if b.is_empty() => Some("bag()".to_string()),
-        Value::Mix(m, false) if m.is_empty() => Some("mix()".to_string()),
-        Value::Set(s, mutable) => {
-            let type_name = if *mutable { "SetHash" } else { "Set" };
+        ValueView::Set(s, false) if s.is_empty() => Some("set()".to_string()),
+        ValueView::Bag(b, false) if b.is_empty() => Some("bag()".to_string()),
+        ValueView::Mix(m, false) if m.is_empty() => Some("mix()".to_string()),
+        ValueView::Set(s, mutable) => {
+            let type_name = if mutable { "SetHash" } else { "Set" };
             let mut keys: Vec<&String> = s.iter().collect();
             keys.sort();
             let elems = keys
@@ -870,8 +872,8 @@ pub(crate) fn setbagmix_raku(v: &Value) -> Option<String> {
                 .join(",");
             Some(format!("{}.new({})", type_name, elems))
         }
-        Value::Bag(b, mutable) => {
-            let type_name = if *mutable { "BagHash" } else { "Bag" };
+        ValueView::Bag(b, mutable) => {
+            let type_name = if mutable { "BagHash" } else { "Bag" };
             let mut keys: Vec<(&String, &num_bigint::BigInt)> = b.iter().collect();
             keys.sort_by_key(|(k, _)| (*k).clone());
             let pairs = keys
@@ -881,8 +883,8 @@ pub(crate) fn setbagmix_raku(v: &Value) -> Option<String> {
                 .join(",");
             Some(format!("({}).{}", pairs, type_name))
         }
-        Value::Mix(m, mutable) => {
-            let type_name = if *mutable { "MixHash" } else { "Mix" };
+        ValueView::Mix(m, mutable) => {
+            let type_name = if mutable { "MixHash" } else { "Mix" };
             let mut keys: Vec<(&String, &f64)> = m.iter().collect();
             keys.sort_by_key(|(k, _)| (*k).clone());
             let pairs = keys
@@ -905,13 +907,13 @@ pub(crate) fn setbagmix_raku(v: &Value) -> Option<String> {
 
 pub(super) fn hash_pick_item(key: &str, value: &Value) -> Value {
     match key {
-        "True" => Value::ValuePair(Box::new(Value::Bool(true)), Box::new(value.clone())),
-        "False" => Value::ValuePair(Box::new(Value::Bool(false)), Box::new(value.clone())),
+        "True" => Value::value_pair(Value::TRUE, value.clone()),
+        "False" => Value::value_pair(Value::FALSE, value.clone()),
         _ => {
             if let Ok(n) = key.parse::<f64>() {
-                return Value::ValuePair(Box::new(Value::Num(n)), Box::new(value.clone()));
+                return Value::value_pair(Value::num(n), value.clone());
             }
-            Value::Pair(key.to_string(), Box::new(value.clone()))
+            Value::pair(key.to_string(), value.clone())
         }
     }
 }
@@ -925,19 +927,19 @@ pub(super) fn native_int_coerce_method(
     use num_bigint::BigInt as NumBigInt;
     use num_traits::ToPrimitive;
 
-    let big_val: NumBigInt = match target {
-        Value::Int(i) => NumBigInt::from(*i),
-        Value::BigInt(n) => (**n).clone(),
-        Value::Num(f) => {
+    let big_val: NumBigInt = match target.view() {
+        ValueView::Int(i) => NumBigInt::from(i),
+        ValueView::BigInt(n) => (**n).clone(),
+        ValueView::Num(f) => {
             if f.is_nan() || f.is_infinite() {
                 return Err(RuntimeError::new(format!(
                     "Cannot coerce {} to {}",
                     f, type_name
                 )));
             }
-            NumBigInt::from(*f as i128)
+            NumBigInt::from(f as i128)
         }
-        Value::Str(s) => {
+        ValueView::Str(s) => {
             if let Ok(i) = s.parse::<i128>() {
                 NumBigInt::from(i)
             } else if let Ok(f) = s.parse::<f64>() {
@@ -949,12 +951,12 @@ pub(super) fn native_int_coerce_method(
                 )));
             }
         }
-        Value::Bool(b) => NumBigInt::from(if *b { 1 } else { 0 }),
-        Value::Rat(n, d) => {
-            if *d == 0 {
+        ValueView::Bool(b) => NumBigInt::from(if b { 1 } else { 0 }),
+        ValueView::Rat(n, d) => {
+            if d == 0 {
                 return Err(RuntimeError::new("Division by zero in Rat coercion"));
             }
-            NumBigInt::from(*n / *d)
+            NumBigInt::from(n / d)
         }
         _ => {
             // Try to coerce through string -> parse
@@ -971,7 +973,7 @@ pub(super) fn native_int_coerce_method(
 
     // Convert back to Value
     if let Some(i) = wrapped.to_i64() {
-        Ok(Value::Int(i))
+        Ok(Value::int(i))
     } else {
         Ok(Value::bigint(wrapped))
     }
