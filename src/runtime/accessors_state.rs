@@ -199,7 +199,8 @@ impl Interpreter {
         // Only intercept when a real persisted cell exists (a `ContainerRef`);
         // `escaping_our_read` otherwise yields `Nil` (pre-block call), which must
         // fall through to the normal env chain untouched.
-        self.escaping_our_read(name).filter(|v| v.is_container_ref())
+        self.escaping_our_read(name)
+            .filter(|v| v.is_container_ref())
     }
 
     /// Get a cloned copy of the persisted closure env for a given closure id.
