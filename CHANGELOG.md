@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.30](https://github.com/tokuhirom/mutsu/compare/v0.2.29...v0.2.30) - 2026-07-06
+
+- fix(our-sub): route inc/dec of an escaped `our` sub's captured lexical through its persisted cell by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4295
+
 ## [v0.2.29](https://github.com/tokuhirom/mutsu/compare/v0.2.28...v0.2.29) - 2026-07-06
 
 - fix(subscript): use a block's list return as slice indices by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4293
