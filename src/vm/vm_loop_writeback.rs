@@ -57,10 +57,10 @@ impl Interpreter {
         let Some(current) = current else {
             return;
         };
-        let key = match index {
-            Value::Int(i) => i.to_string(),
-            Value::Str(s) => s.as_ref().clone(),
-            other => other.to_string_value(),
+        let key = match index.view() {
+            ValueView::Int(i) => i.to_string(),
+            ValueView::Str(s) => s.as_ref().clone(),
+            _ => index.to_string_value(),
         };
         let Some(mut cval) = self.get_env_with_main_alias(container) else {
             return;
@@ -80,13 +80,13 @@ impl Interpreter {
     /// Anything else returns `false` and falls through to the full writeback.
     pub(super) fn loop_var_unchanged(current: &Value, source_elem: &Value) -> bool {
         use std::sync::Arc;
-        match (current, source_elem) {
-            (Value::Array(a, _), Value::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
-            (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
-            (Value::Str(a), Value::Str(b)) => Arc::ptr_eq(a, b) || a == b,
-            (Value::Int(a), Value::Int(b)) => a == b,
-            (Value::Num(a), Value::Num(b)) => a == b,
-            (Value::Bool(a), Value::Bool(b)) => a == b,
+        match (current.view(), source_elem.view()) {
+            (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
+            (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
+            (ValueView::Str(a), ValueView::Str(b)) => Arc::ptr_eq(a, b) || a == b,
+            (ValueView::Int(a), ValueView::Int(b)) => a == b,
+            (ValueView::Num(a), ValueView::Num(b)) => a == b,
+            (ValueView::Bool(a), ValueView::Bool(b)) => a == b,
             _ => false,
         }
     }
@@ -106,7 +106,7 @@ impl Interpreter {
         let changed =
             |name: &str, bound: &Value| self.env().get(name).is_some_and(|cur| cur != bound);
         if !multi_param_names.is_empty() {
-            if let Value::Array(chunk, _) = item {
+            if let ValueView::Array(chunk, _) = item.view() {
                 for (i, name) in multi_param_names.iter().enumerate() {
                     if let Some(bound) = chunk.items.get(i)
                         && changed(name, bound)
@@ -137,7 +137,7 @@ impl Interpreter {
         raw_source: &Option<Value>,
         updated_value: Value,
     ) {
-        if let Some(Value::ContainerRef(arc)) = raw_source {
+        if let Some(ValueView::ContainerRef(arc)) = raw_source.as_ref().map(Value::view) {
             arc.lock().unwrap().clone_from(&updated_value);
         } else {
             self.set_env_with_main_alias(source, updated_value.clone());
@@ -191,10 +191,10 @@ impl Interpreter {
         // the inner Array; when present, the rebuilt array must be written THROUGH
         // the cell so the bound source (`@b`) observes the topic mutation.
         let raw_source = self.get_env_with_main_alias(source);
-        let Some((items, kind)) = raw_source.as_ref().and_then(|v| match v.deref_container() {
-            Value::Array(items, kind) => Some((items, kind)),
-            _ => None,
-        }) else {
+        let Some((items, kind)) = raw_source
+            .as_ref()
+            .and_then(|v| v.deref_container().into_array())
+        else {
             return;
         };
         let actual_idx = if reversed && total_items > 0 {
@@ -222,7 +222,7 @@ impl Interpreter {
         // `.raku`, and shaped `:delete`-dies behaviour).
         let mut new_data = (*items).clone();
         new_data.items[actual_idx] = current_topic;
-        let updated_value = Value::Array(crate::gc::Gc::new(new_data), kind);
+        let updated_value = Value::array_with_kind(crate::gc::Gc::new(new_data), kind);
         self.write_back_container_source(code, source, &raw_source, updated_value);
     }
 }

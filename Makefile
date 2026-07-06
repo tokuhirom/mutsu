@@ -1,4 +1,4 @@
-.PHONY: test roast check-roast-whitelist
+.PHONY: test roast check-roast-whitelist check-value-wall
 
 CARGO_TARGET_DIR ?= target
 MUTSU_BIN ?= $(CARGO_TARGET_DIR)/release/mutsu
@@ -10,9 +10,12 @@ MUTSU_BIN ?= $(CARGO_TARGET_DIR)/release/mutsu
 # Override locally with `make roast PROVE_JOBS=8` if you know your box can take it.
 PROVE_JOBS ?= 4
 
-test:
+test: check-value-wall
 	@mkdir -p tmp
 	(cargo build && cargo test && cargo build --release && prove -e '$(MUTSU_BIN)' t/) 2>&1 | tee tmp/make-test.log
+
+check-value-wall:
+	scripts/check-value-wall.sh
 
 roast:
 	@mkdir -p tmp

@@ -9,7 +9,7 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{
     ArrayKind, EnumValue, GatherCoroutineState, JunctionKind, LazyList, RuntimeError, Value,
-    make_rat,
+    ValueView, make_rat,
 };
 use num_traits::{Signed, Zero};
 

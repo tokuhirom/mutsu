@@ -43,7 +43,7 @@ impl Interpreter {
         if args.len() != 1 {
             return None;
         }
-        let Value::Sub(data) = &args[0] else {
+        let ValueView::Sub(data) = args[0].view() else {
             return None;
         };
         // Only a plain concrete array (`my @a = ...`, `ArrayKind::Array`). On
@@ -54,8 +54,8 @@ impl Interpreter {
         // and ranges/seqs have their own one-arg-rule / Seq-returning semantics.
         // (`ArrayKind::is_real_array()` is too broad — it also matches Shaped,
         // Lazy and ItemArray — so match the kind explicitly.)
-        let items = match target {
-            Value::Array(items, ArrayKind::Array) => items.clone(),
+        let items = match target.view() {
+            ValueView::Array(items, ArrayKind::Array) => items.clone(),
             _ => return None,
         };
         // A `Pair`/`ValuePair` element passed positionally to the block is bound
@@ -67,7 +67,7 @@ impl Interpreter {
         // a single override topic is ambiguous, so still fall back there.
         let has_pairs = items
             .iter()
-            .any(|v| matches!(v, Value::Pair(..) | Value::ValuePair(..)));
+            .any(|v| matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
         // The block must be a plain single-arity closure with no signature
         // complexity and no `.assuming`/compose wrapping.
         if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
@@ -166,12 +166,15 @@ impl Interpreter {
             let chunk: Vec<Value> = items[i..i + arity].to_vec();
             // For a Pair element (arity == 1) the general call machinery would
             // bind it as a named arg and skip `$_`; force it as the topic.
-            let explicit_topic =
-                if has_pairs && matches!(chunk[0], Value::Pair(..) | Value::ValuePair(..)) {
-                    Some(chunk[0].clone())
-                } else {
-                    None
-                };
+            let explicit_topic = if has_pairs
+                && matches!(
+                    chunk[0].view(),
+                    ValueView::Pair(..) | ValueView::ValuePair(..)
+                ) {
+                Some(chunk[0].clone())
+            } else {
+                None
+            };
             let call = if explicit_topic.is_some() || writeback_name.is_some() {
                 if writeback_name.is_some() {
                     self.rw_map_topic_capture = None;
@@ -190,9 +193,10 @@ impl Interpreter {
             {
                 source_after[i] = mutated;
             }
-            match value {
-                Value::Slip(elems) => result.extend(elems.iter().cloned()),
-                v => result.push(v),
+            if let ValueView::Slip(elems) = value.view() {
+                result.extend(elems.iter().cloned());
+            } else {
+                result.push(value);
             }
             i += arity;
         }
@@ -214,7 +218,7 @@ impl Interpreter {
         // `.map` returns a Seq (matching Rakudo and the interpreter's
         // `dispatch_map_method`). The rw writeback above is independent of this
         // return value, so `@a.map({ $_++ })` still mutates `@a`.
-        Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+        Some(Ok(Value::seq(result)))
     }
 }
 
