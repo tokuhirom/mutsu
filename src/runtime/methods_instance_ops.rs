@@ -668,6 +668,7 @@ impl Interpreter {
                         | "bind-stderr"
                         | "ready"
                         | "print"
+                        | "put"
                         | "say"
                         | "stdout"
                         | "stderr"

@@ -159,6 +159,7 @@ impl Interpreter {
                         | "bind-stderr"
                         | "ready"
                         | "print"
+                        | "put"
                         | "say"
                         | "command"
                         | "started"

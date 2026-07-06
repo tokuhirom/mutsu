@@ -64,7 +64,7 @@ fn feed_utf8_incremental(
 
 /// The exception value sent on a `SupplyEvent::Quit` when a Proc::Async output
 /// stream contains malformed UTF-8.
-fn malformed_utf8_quit_value() -> Value {
+pub(in crate::runtime) fn malformed_utf8_quit_value() -> Value {
     let mut attrs = HashMap::new();
     attrs.insert(
         "message".to_string(),
@@ -356,12 +356,14 @@ impl Interpreter {
                     let stdout_handle = child_stdout.map(|stdout| {
                         let tx = stdout_channel;
                         let bin_mode = stdout_bin;
+                        let sid = stdout_supply_id;
                         // Emits Buf `Value`s (Gc nodes): registered mutator,
                         // pipe reads quiescent.
                         crate::runtime::builtins_system::spawn_user_thread(move || {
                             use std::io::Read;
                             let mut stdout = stdout;
                             let mut collected = String::new();
+                            let mut raw: Vec<u8> = Vec::new();
                             let mut buf = [0u8; 4096];
                             let mut pending: Vec<u8> = Vec::new();
                             let mut quit = false;
@@ -369,6 +371,7 @@ impl Interpreter {
                                 match crate::gc::block_quiescent(|| stdout.read(&mut buf)) {
                                     Ok(0) => break,
                                     Ok(n) => {
+                                        raw.extend_from_slice(&buf[..n]);
                                         if bin_mode {
                                             if let Some(ref tx) = tx {
                                                 let buf_val = make_buf_value(&buf[..n]);
@@ -394,6 +397,13 @@ impl Interpreter {
                             }
                             if !quit && let Some(ref tx) = tx {
                                 let _ = tx.send(SupplyEvent::Done);
+                            }
+                            // Retain the raw bytes so the await-time replay can
+                            // decode them with the stream's effective encoding
+                            // (the channel/`collected` path above only handles the
+                            // default UTF-8 case).
+                            if let Some(sid) = sid {
+                                set_supply_collected_bytes(sid, raw);
                             }
                             collected
                         })
@@ -403,11 +413,13 @@ impl Interpreter {
                     let stderr_handle = child_stderr.map(|stderr| {
                         let tx = stderr_channel;
                         let bin_mode = stderr_bin;
+                        let sid = stderr_supply_id;
                         // Same as the stdout reader: registered + quiescent reads.
                         crate::runtime::builtins_system::spawn_user_thread(move || {
                             use std::io::Read;
                             let mut stderr = stderr;
                             let mut collected = String::new();
+                            let mut raw: Vec<u8> = Vec::new();
                             let mut buf = [0u8; 4096];
                             let mut pending: Vec<u8> = Vec::new();
                             let mut quit = false;
@@ -415,6 +427,7 @@ impl Interpreter {
                                 match crate::gc::block_quiescent(|| stderr.read(&mut buf)) {
                                     Ok(0) => break,
                                     Ok(n) => {
+                                        raw.extend_from_slice(&buf[..n]);
                                         if bin_mode {
                                             if let Some(ref tx) = tx {
                                                 let buf_val = make_buf_value(&buf[..n]);
@@ -440,6 +453,9 @@ impl Interpreter {
                             }
                             if !quit && let Some(ref tx) = tx {
                                 let _ = tx.send(SupplyEvent::Done);
+                            }
+                            if let Some(sid) = sid {
+                                set_supply_collected_bytes(sid, raw);
                             }
                             collected
                         })
@@ -625,7 +641,14 @@ impl Interpreter {
                             Vec::new()
                         }
                     }
-                    Value::Str(s) => s.as_bytes().to_vec(),
+                    Value::Str(s) => {
+                        let enc = attrs
+                            .get("enc")
+                            .map(Value::to_string_value)
+                            .unwrap_or_else(|| "utf-8".to_string());
+                        self.encode_with_encoding(s.as_str(), &enc)
+                            .unwrap_or_else(|_| s.as_bytes().to_vec())
+                    }
                     _ => Vec::new(),
                 };
 
@@ -776,7 +799,29 @@ impl Interpreter {
                         &[("handle", Value::str_from(method))],
                     ));
                 }
+                // A per-tap `:enc` (e.g. `$proc.stdout(:enc('latin-1'))`) overrides
+                // the constructor `:enc` for this stream's decode. Return a Supply
+                // whose `enc` attribute carries the override so the tap records it.
                 let value = attrs.get(method).cloned().unwrap_or(Value::Nil);
+                let value = if let Some(enc_pair) = args.iter().find_map(|arg| match arg {
+                    Value::Pair(key, v) if key == "enc" => Some(v.to_string_value()),
+                    _ => None,
+                }) {
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = &value
+                    {
+                        let mut new_attrs = attributes.as_map().clone();
+                        new_attrs.insert("enc".to_string(), Value::str(enc_pair));
+                        Value::make_instance(*class_name, new_attrs)
+                    } else {
+                        value
+                    }
+                } else {
+                    value
+                };
                 Ok((value, attrs))
             }
             "Supply" => {
@@ -806,7 +851,7 @@ impl Interpreter {
                 attrs.insert("supply_selected".to_string(), Value::Bool(true));
                 Ok((attrs.get("supply").cloned().unwrap_or(Value::Nil), attrs))
             }
-            "print" | "say" => {
+            "print" | "put" | "say" => {
                 if !attrs.get("w").is_some_and(|v| v.truthy()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::OpenForWriting",
@@ -827,12 +872,20 @@ impl Interpreter {
                     p.break_with(err, String::new(), String::new());
                     return Ok((Value::Promise(p), attrs));
                 }
-                // Write string to stdin of process
+                // Write string to stdin of process, encoded with the constructor
+                // `:enc` (`say`/`put` add a trailing newline).
                 let data = args.first().cloned().unwrap_or(Value::Nil);
                 let mut s = data.to_string_value();
-                if method == "say" {
+                if method == "say" || method == "put" {
                     s.push('\n');
                 }
+                let enc = attrs
+                    .get("enc")
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| "utf-8".to_string());
+                let bytes = self
+                    .encode_with_encoding(&s, &enc)
+                    .unwrap_or_else(|_| s.as_bytes().to_vec());
                 if let Some(Value::Int(pid)) = attrs.get("pid") {
                     let pid = *pid as u32;
                     if let Ok(map) = proc_stdin_map().lock()
@@ -843,7 +896,7 @@ impl Interpreter {
                             && let Some(ref mut stdin) = *guard
                         {
                             use std::io::Write;
-                            let _ = stdin.write_all(s.as_bytes());
+                            let _ = stdin.write_all(&bytes);
                             let _ = stdin.flush();
                         }
                     }

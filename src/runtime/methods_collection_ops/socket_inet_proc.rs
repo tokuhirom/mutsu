@@ -296,24 +296,18 @@ impl Interpreter {
             _ => format!("{}{}", collected_stdout, collected_stderr),
         };
 
-        if !collected_stdout.is_empty() && !stdout_taps.is_empty() {
-            for tap in &stdout_taps {
-                let _ = self.call_sub_value(
-                    tap.clone(),
-                    vec![Value::str(collected_stdout.clone())],
-                    true,
-                );
-            }
-        }
-        if !collected_stderr.is_empty() && !stderr_taps.is_empty() {
-            for tap in &stderr_taps {
-                let _ = self.call_sub_value(
-                    tap.clone(),
-                    vec![Value::str(collected_stderr.clone())],
-                    true,
-                );
-            }
-        }
+        let stdout_sid = match attributes.as_map().get("stdout_supply_id") {
+            Some(Value::Int(sid)) => Some(*sid as u64),
+            _ => None,
+        };
+        let stderr_sid = match attributes.as_map().get("stderr_supply_id") {
+            Some(Value::Int(sid)) => Some(*sid as u64),
+            _ => None,
+        };
+
+        self.replay_proc_output(stdout_sid, &stdout_taps, collected_stdout);
+        self.replay_proc_output(stderr_sid, &stderr_taps, collected_stderr);
+
         if !collected_merged.is_empty() && !supply_taps.is_empty() {
             for tap in &supply_taps {
                 let _ = self.call_sub_value(
@@ -321,6 +315,71 @@ impl Interpreter {
                     vec![Value::str(collected_merged.clone())],
                     true,
                 );
+            }
+        }
+    }
+
+    /// Replay one Proc::Async output stream (stdout or stderr) to its value and
+    /// `quit` taps. The raw bytes captured by the reader thread are decoded with
+    /// the stream's effective encoding (`get_supply_enc`); on a decode error the
+    /// registered `quit =>` handlers fire, matching Rakudo's "Supply quit on
+    /// encoding error" behaviour (roast S17-procasync/encoding.t).
+    fn replay_proc_output(&mut self, sid: Option<u64>, value_taps: &[Value], fallback: String) {
+        use super::super::native_methods::{
+            get_supply_enc, get_supply_quit_taps, take_supply_collected_bytes,
+        };
+        let (text, quit_reason) = match sid {
+            Some(sid) => {
+                let enc = get_supply_enc(sid).unwrap_or_else(|| "utf-8".to_string());
+                match take_supply_collected_bytes(sid) {
+                    Some(raw) => self.decode_proc_stream(&raw, &enc),
+                    // No raw bytes captured (e.g. binary mode): use the string the
+                    // reader thread already collected.
+                    None => (fallback, None),
+                }
+            }
+            None => (fallback, None),
+        };
+        if !text.is_empty() {
+            for tap in value_taps {
+                let _ = self.call_sub_value(tap.clone(), vec![Value::str(text.clone())], true);
+            }
+        }
+        if let Some(reason) = quit_reason
+            && let Some(sid) = sid
+        {
+            for quit_tap in get_supply_quit_taps(sid) {
+                let _ = self.call_supply_quit_handler(quit_tap, reason.clone());
+            }
+        }
+    }
+
+    /// Decode a Proc::Async output stream's raw bytes. Returns the decoded text
+    /// (the valid prefix, if a decode error interrupts it) and an optional quit
+    /// reason when the stream contains bytes that are invalid for its encoding.
+    fn decode_proc_stream(&self, raw: &[u8], enc: &str) -> (String, Option<Value>) {
+        let normalized = enc.to_ascii_lowercase();
+        let is_utf8 = matches!(normalized.as_str(), "utf-8" | "utf8" | "");
+        if is_utf8 {
+            match std::str::from_utf8(raw) {
+                Ok(s) => (s.replace("\r\n", "\n"), None),
+                Err(e) => {
+                    let valid = std::str::from_utf8(&raw[..e.valid_up_to()])
+                        .unwrap_or("")
+                        .replace("\r\n", "\n");
+                    (
+                        valid,
+                        Some(super::super::native_proc_async::malformed_utf8_quit_value()),
+                    )
+                }
+            }
+        } else {
+            match self.decode_with_encoding(raw, enc) {
+                Ok(s) => (s.replace("\r\n", "\n"), None),
+                Err(_) => (
+                    String::new(),
+                    Some(super::super::native_proc_async::malformed_utf8_quit_value()),
+                ),
             }
         }
     }
