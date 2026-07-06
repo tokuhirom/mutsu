@@ -346,6 +346,7 @@ impl Interpreter {
                     "close-stdin",
                     "ready",
                     "print",
+                    "put",
                     "say",
                 ]
                 .iter()

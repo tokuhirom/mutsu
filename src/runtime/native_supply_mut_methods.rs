@@ -137,10 +137,23 @@ impl Interpreter {
 
                 // If this Supply has a supply_id (belongs to Proc::Async),
                 // register tap in the global registry so .start can find it
-                if let Some(Value::Int(sid)) = attrs.get("supply_id")
-                    && Self::supply_has_active_callback(&tap_cb)
-                {
-                    register_supply_tap(*sid as u64, tap_cb.clone());
+                if let Some(Value::Int(sid)) = attrs.get("supply_id") {
+                    let sid = *sid as u64;
+                    if Self::supply_has_active_callback(&tap_cb) {
+                        register_supply_tap(sid, tap_cb.clone());
+                    }
+                    // A `quit =>` handler on a Proc::Async output Supply fires only
+                    // when the stream ends in a decode error; record it so the
+                    // await-time replay can invoke it.
+                    if let Some(ref qf) = quit_cb {
+                        register_supply_quit_tap(sid, qf.clone());
+                    }
+                    // Remember the effective decode encoding (a per-tap
+                    // `stdout(:enc(...))` overrides the constructor `:enc`), so the
+                    // replay decodes the raw bytes correctly.
+                    if let Some(enc) = attrs.get("enc").map(Value::to_string_value) {
+                        set_supply_enc(sid, enc);
+                    }
                 }
 
                 // For live/async supplies (e.g., signal), spawn a background thread

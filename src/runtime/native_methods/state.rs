@@ -26,6 +26,27 @@ fn supply_collected_map() -> &'static SupplyCollectedMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+type SupplyCollectedBytesMap = std::sync::Mutex<HashMap<u64, Vec<u8>>>;
+
+fn supply_collected_bytes_map() -> &'static SupplyCollectedBytesMap {
+    static MAP: OnceLock<SupplyCollectedBytesMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+type SupplyQuitTapsMap = std::sync::Mutex<HashMap<u64, Vec<Value>>>;
+
+fn supply_quit_taps_map() -> &'static SupplyQuitTapsMap {
+    static MAP: OnceLock<SupplyQuitTapsMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+type SupplyEncMap = std::sync::Mutex<HashMap<u64, String>>;
+
+fn supply_enc_map() -> &'static SupplyEncMap {
+    static MAP: OnceLock<SupplyEncMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 type PromiseCombinatorMap = std::sync::Mutex<HashMap<usize, Vec<SharedPromise>>>;
 
 fn promise_combinator_map() -> &'static PromiseCombinatorMap {
@@ -555,6 +576,54 @@ pub(in crate::runtime) fn set_supply_collected_output(supply_id: u64, output: St
 
 pub(in crate::runtime) fn get_supply_collected_output(supply_id: u64) -> Option<String> {
     supply_collected_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&supply_id).cloned())
+}
+
+/// Store the raw (undecoded) bytes read from a Proc::Async output stream, so the
+/// `await`-time replay can decode them with the stream's effective encoding
+/// (which may be `latin-1`/`utf-8` set on the constructor or per-`stdout`/`stderr`
+/// tap). Keyed by the output Supply's `supply_id`.
+pub(in crate::runtime) fn set_supply_collected_bytes(supply_id: u64, bytes: Vec<u8>) {
+    if let Ok(mut map) = supply_collected_bytes_map().lock() {
+        map.insert(supply_id, bytes);
+    }
+}
+
+pub(in crate::runtime) fn take_supply_collected_bytes(supply_id: u64) -> Option<Vec<u8>> {
+    supply_collected_bytes_map()
+        .lock()
+        .ok()
+        .and_then(|mut map| map.remove(&supply_id))
+}
+
+/// Register a `quit =>` handler on a Proc::Async output Supply. Unlike ordinary
+/// value taps these fire only when the stream ends in an encoding error.
+pub(in crate::runtime) fn register_supply_quit_tap(supply_id: u64, tap: Value) {
+    if let Ok(mut map) = supply_quit_taps_map().lock() {
+        map.entry(supply_id).or_default().push(tap);
+    }
+}
+
+pub(in crate::runtime) fn get_supply_quit_taps(supply_id: u64) -> Vec<Value> {
+    if let Ok(map) = supply_quit_taps_map().lock() {
+        map.get(&supply_id).cloned().unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Record the effective decode encoding for a Proc::Async output Supply, as seen
+/// at tap time (per-tap `:enc` overrides the constructor `:enc`).
+pub(in crate::runtime) fn set_supply_enc(supply_id: u64, enc: String) {
+    if let Ok(mut map) = supply_enc_map().lock() {
+        map.insert(supply_id, enc);
+    }
+}
+
+pub(in crate::runtime) fn get_supply_enc(supply_id: u64) -> Option<String> {
+    supply_enc_map()
         .lock()
         .ok()
         .and_then(|map| map.get(&supply_id).cloned())
