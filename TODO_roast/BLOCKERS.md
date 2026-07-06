@@ -194,22 +194,27 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
   list へ by-value 捕捉した参照は cell 更新を追えない（＝ sub の外で捕捉参照を読む
   `ident4` 系）。これは return-writeback / cell スナップショット問題で、[[project_declaration_model_hoisted_cell_clobber]]
   と同族。splice.t は sub 内で捕捉参照を読むため影響を受けず PASS。
-- `S26-documentation/12-non-breaking-space.t`（1/2、test 2 が失敗）
-  — 2026-07-02 に root-cause 確定＝**BEGIN が compile-time でなく source 順 runtime 実行**される問題。
-  test は末尾 `BEGIN { @nbchars = [...]; @bchars = [...] }` で配列を設定し、冒頭 line 8
-  `my $nbchar-count = @nbchars.elems` で読む。raku は BEGIN を compile-time 実行するので line 8 が読む時
-  @nbchars は既に 4 要素だが、mutsu は BEGIN を line 108 の位置で実行→line 8 の read が pre-BEGIN(空)を見て
-  `$nbchar-count = 0`→`plan 0+1`＝`plan 1`＋`for 0..^0`＝0 反復で subtest が 0 test 実行→fail。
-  最小再現: `my @a; my $c = @a.elems; BEGIN { @a = 1,2,3 }; say $c` が mutsu=0/raku=4。
-  ★注意: `my @a; BEGIN { @a = 1,2,3 }; say @a.elems`（read が BEGIN の**後**）は mutsu も 3 で正しい
-  ＝問題は read が BEGIN より**前**の時のみ。
-  **試行と blocker**: 冒頭 `compile()` に「top-level BEGIN と bare `my` decl を front に hoist」する
-  `hoist_begin_phasers` を実装したが、**identity reorder（順序保持の to_vec）は 3 で正しいのに、
-  bucket-reorder（bare_decls+begins+rest に分割再結合）は interspersed した `SetLine` 等も動かすため
-  以前 pass していた `my @a; BEGIN` すら 0 に壊す**（compile-order / local-slot / SetLine 依存が判明）→revert。
-  正攻法は AST 再配置でなく **BEGIN body を compile-time に sub-interpreter で eval して初期状態に反映**
-  （raku 準拠）か bytecode-level の BEGIN prelude。declaration-model と同じ深い層で、専用セッション要。
-  [[project_declaration_model_hoisted_cell_clobber]] / [[project_begin_compile_time_timing]] と同族。
+- ~~`S26-documentation/12-non-breaking-space.t`（1/2、test 2 が失敗）~~ — **DONE・whitelist 済み
+  （2026-07-06）**。root-cause＝**top-level BEGIN が compile-time でなく source 順 runtime 実行**される
+  問題（`my @a; my $c = @a.elems; BEGIN { @a = 1,2,3 }; say $c` が mutsu=0/raku=3）。
+  修正（`run_toplevel_begin_phasers`・`src/runtime/run_prelude.rs`）は AST 再配置ではなく BLOCKERS が推す
+  「**BEGIN body を compile-time に sub-interpreter（`eval_block_value`）で eval → 共有 env に反映**」方式:
+  1. `run()` 内で `reorder_phasers` の**前**（`preregister_top_level_subs` の後）に top-level の
+     hoistable な `Stmt::Phaser{Begin}` を `eval_block_value` で実行し `body_main` から除去。
+     `eval_block_value` は plain lexical 書き込みを共有 `env` に残す（`&`-callable キーのみ隔離）ので
+     seed が永続する。reorder より前に消すことで「`my $c = @a.elems` init が BEGIN より前に
+     bucket される」旧 revert の破綻を回避。
+  2. hoist 後、seed された変数の no-init `my` 宣言（`Literal(Array/Hash 空)`・`Literal(Nil)`）を
+     `body_main` から drop（`drop_seeded_noinit_decls`、`my (@a,@b)` の SyntheticBlock も 1 段降下）—
+     raku 同様「container は compile-time に 1 度だけ作られ、runtime の宣言は再初期化しない」を再現。
+  3. **hoistable gate は保守的**（`begin_body_is_hoistable`）: body に宣言・BareWord・Call のいずれも
+     無いこと。理由＝`eval_block_value` は name 解決と sink-context のエラー forcing で mainline VM と
+     意味論が乖離するため、シンボル解決や例外を起こしうる BEGIN（class 参照 / forward sub 呼び / `1/0.Int`）は
+     hoist せず in-place 経路（`X::Comp::BeginTime` ラップ込み）に任せる。純粋な値代入 BEGIN のみ hoist。
+  回帰テスト＝`t/begin-compile-time.t`（`t/begin-phaser-begintime.t` も回帰なし）。
+  **残る別スライス（nested-block BEGIN）**: `variables-and-packages.t` test 29-31（下記）は
+  bare block **内**の BEGIN で、この top-level 専用機構では拾えない。`[[project_begin_compile_time_timing]]`
+  の深い declaration-model 層が別途必要。
 
 ### 3.2 サブキャンペーンと choke point
 
@@ -223,8 +228,9 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
    - 対象: `S14-traits/attributes.t` の残り（`Attribute.container.VAR does Role`）
 3. **BEGIN/EVAL/lexical 配列変更の永続化**
    - 変更レイヤ: env/local coherence、block escape、BEGIN 実行時 lexical carrier
-   - 対象: `S26-documentation/12-non-breaking-space.t`、
-     `S02-names-vars/variables-and-packages.t`
+   - 対象: `S02-names-vars/variables-and-packages.t`（nested-block BEGIN, test 29-31）。
+     top-level BEGIN 版（`S26-documentation/12-non-breaking-space.t`）は DONE・whitelist 済み
+     （§3.1 参照、`run_toplevel_begin_phasers`）。残るは bare block **内**の BEGIN。
 
 コード choke point:
 

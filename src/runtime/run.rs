@@ -119,6 +119,16 @@ impl Interpreter {
                 .collect();
             body_main.splice(0..0, enter_stmts);
         }
+        // Run top-level BEGIN phasers at compile time (before the mainline), so
+        // reads textually preceding a BEGIN see its side effects. Removes the
+        // pre-run BEGINs from `body_main`; leaves non-hoistable ones (see
+        // `run_toplevel_begin_phasers`) in place. This runs *before*
+        // `reorder_phasers` so the hoisted BEGINs are gone before that pass
+        // buckets declarations — otherwise a `my $c = @a.elems` initializer
+        // could be reordered ahead of a BEGIN that populates `@a`. Hoistable
+        // BEGINs make no calls, so they do not need `preregister_top_level_subs`
+        // to have run first.
+        self.run_toplevel_begin_phasers(&mut body_main);
         crate::runtime::phasers::reorder_phasers(&mut body_main);
         self.update_raku_version_from_parser();
         self.check_eval_param_type_constraints(&body_main)?;
