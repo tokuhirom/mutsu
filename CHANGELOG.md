@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.34](https://github.com/tokuhirom/mutsu/compare/v0.2.33...v0.2.34) - 2026-07-06
+
+- fix(binding): sever a prior `:=` bind when a fresh `my $x = ...` reuses the slot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4302
+
 ## [v0.2.33](https://github.com/tokuhirom/mutsu/compare/v0.2.32...v0.2.33) - 2026-07-06
 
 - refactor(value): migrate src/vm/ to the 3b-0 Value API wall (slice b) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4301
