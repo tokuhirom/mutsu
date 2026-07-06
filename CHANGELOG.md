@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.25](https://github.com/tokuhirom/mutsu/compare/v0.2.24...v0.2.25) - 2026-07-06
+
+- feat(phaser): run top-level BEGIN blocks at compile time by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4285
+
 ## [v0.2.24](https://github.com/tokuhirom/mutsu/compare/v0.2.23...v0.2.24) - 2026-07-05
 
 - docs(analysis): rev8 — whole-VM quality re-evaluation after GC layer 3a by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4281
