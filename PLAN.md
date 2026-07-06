@@ -219,6 +219,11 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
       builtin-shadow ゲート `def_is_otf_compilable` は trait 未チェック。加えて tree-walk fallback が
       黙って落としていた `is rw` の caller writeback が OTF 化で修正された。担保 =
       `t/module-sub-otf-trait-params.t`）。本筋は `compiled_fns` の拡充。
+      ★sigilless scalar（`\x`）は検証済みで OTF 化**不可**として除外を維持: 平坦な呼び出しは
+      OTF で正しく writeback するが、`EVAL 'f($v)'` 経由だと raw エイリアスの write-through が
+      caller lexical に届かず落ちる（`is rw` を救った #4091 の compile-time caller slot に相当する
+      機構が sigilless raw alias には無い）。担保 = `t/sigilless-params.t` の「sigilless aliases are
+      writable through EVAL calls」が OTF 化で FAIL する（2026-07-06 実験で再現確認）。
 - [ ] `@_` slurpy recursive sub（別カテゴリ）。`@a[1..*]` 再帰の immutable-List bug は §4 扱い。
 - 完了済み（計測で確認）: bare multi OTF / `state` 候補・caching-proto body（#4047）/ `code_signature`
   param（#3883）/ capture param。signature alternates の `state` 共有のみ interpreter 境界として
