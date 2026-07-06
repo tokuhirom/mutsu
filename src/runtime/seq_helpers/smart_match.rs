@@ -382,7 +382,7 @@ impl Interpreter {
                 if selected.len() == 1 {
                     self.apply_single_regex_captures(&selected[0]);
                 } else {
-                    self.apply_multi_regex_captures(&selected);
+                    self.apply_multi_regex_captures(&selected, &text);
                 }
                 true
             }
@@ -450,7 +450,7 @@ impl Interpreter {
                     self.clear_match_state();
                     return false;
                 };
-                self.apply_multi_regex_captures(&selected);
+                self.apply_multi_regex_captures(&selected, &text);
                 true
             }
             // :g (global) -- find all non-overlapping matches
@@ -510,7 +510,7 @@ impl Interpreter {
                         self.execute_regex_code_blocks(&cap.code_blocks);
                     }
                 }
-                self.apply_multi_regex_captures(&selected);
+                self.apply_multi_regex_captures(&selected, &text);
                 true
             }
             // :ov (overlap) -- find longest match at each starting position
@@ -552,7 +552,7 @@ impl Interpreter {
                     }
                 }
                 let selected: Vec<_> = best_by_start.into_values().collect();
-                self.apply_multi_regex_captures(&selected);
+                self.apply_multi_regex_captures(&selected, &text);
                 true
             }
             // :ex (exhaustive) -- find ALL possible matches
@@ -596,7 +596,7 @@ impl Interpreter {
                 } else {
                     all
                 };
-                self.apply_multi_regex_captures(&selected);
+                self.apply_multi_regex_captures(&selected, &text);
                 true
             }
             // Array/List ~~ Regex: iterate elements, match each individually
