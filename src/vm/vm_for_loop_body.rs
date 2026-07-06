@@ -20,8 +20,8 @@ impl Interpreter {
         let mut completed_all = true;
         let param_name = spec
             .param_idx
-            .map(|idx| match &code.constants[idx as usize] {
-                Value::Str(s) => s.to_string(),
+            .map(|idx| match code.constants[idx as usize].view() {
+                ValueView::Str(s) => s.to_string(),
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
 
@@ -76,10 +76,10 @@ impl Interpreter {
         // read-only with writeback suppressed.
         let source_immutable_quant = container_binding.as_ref().is_some_and(|name| {
             matches!(
-                self.get_env_with_main_alias(name),
-                Some(Value::Mix(_, false))
-                    | Some(Value::Set(_, false))
-                    | Some(Value::Bag(_, false))
+                self.get_env_with_main_alias(name).as_ref().map(Value::view),
+                Some(ValueView::Mix(_, false))
+                    | Some(ValueView::Set(_, false))
+                    | Some(ValueView::Bag(_, false))
             )
         });
         if source_immutable_quant {
@@ -93,8 +93,10 @@ impl Interpreter {
         // assigned value (X::Str::Numeric on a bad string; weight 0 removes the key).
         let source_mutable_quant = container_binding.as_ref().is_some_and(|name| {
             matches!(
-                self.get_env_with_main_alias(name),
-                Some(Value::Mix(_, true)) | Some(Value::Set(_, true)) | Some(Value::Bag(_, true))
+                self.get_env_with_main_alias(name).as_ref().map(Value::view),
+                Some(ValueView::Mix(_, true))
+                    | Some(ValueView::Set(_, true))
+                    | Some(ValueView::Bag(_, true))
             )
         });
         let container_reversed = self.container_ref_reversed;
@@ -112,17 +114,19 @@ impl Interpreter {
                         .get_env_with_main_alias(source)
                         .as_ref()
                         .map(|v| v.deref_container())
+                        .as_ref()
+                        .map(Value::view)
                     {
-                        Some(Value::Hash(hash_items)) if source.starts_with('%') => {
+                        Some(ValueView::Hash(hash_items)) if source.starts_with('%') => {
                             Some(hash_items.keys().cloned().collect())
                         }
                         // A mutable QuantHash bound to a scalar: capture the weight
                         // map's key order so `.values`/`.kv` writeback lands on the
                         // same key `.values()`/`.kv` yielded (same unmodified map →
                         // identical iteration order).
-                        Some(Value::Bag(b, true)) => Some(b.keys().cloned().collect()),
-                        Some(Value::Mix(m, true)) => Some(m.keys().cloned().collect()),
-                        Some(Value::Set(s, true)) => Some(s.elements.iter().cloned().collect()),
+                        Some(ValueView::Bag(b, true)) => Some(b.keys().cloned().collect()),
+                        Some(ValueView::Mix(m, true)) => Some(m.keys().cloned().collect()),
+                        Some(ValueView::Set(s, true)) => Some(s.elements.iter().cloned().collect()),
                         _ => None,
                     }
                 })
@@ -168,8 +172,10 @@ impl Interpreter {
                     Some(name) => {
                         if let Some(val) = self.get_env_with_main_alias(name) {
                             matches!(
-                                val,
-                                Value::Mix(_, false) | Value::Set(_, false) | Value::Bag(_, false)
+                                val.view(),
+                                ValueView::Mix(_, false)
+                                    | ValueView::Set(_, false)
+                                    | ValueView::Bag(_, false)
                             )
                         } else {
                             false
@@ -215,7 +221,7 @@ impl Interpreter {
             if topic_readonly {
                 self.mark_readonly("_");
                 self.env_mut()
-                    .insert("__mutsu_deep_readonly::_".to_string(), Value::Bool(true));
+                    .insert("__mutsu_deep_readonly::_".to_string(), Value::TRUE);
             }
             // Mark named params readonly when not in rw mode.
             // Skip @-sigil and %-sigil params: they bind to a mutable
@@ -246,7 +252,7 @@ impl Interpreter {
                 self.unmark_readonly(mp_name);
                 // Clear sigilless readonly flag
                 let key = format!("__mutsu_sigilless_readonly::{}", mp_name);
-                self.env_mut().insert(key, Value::Bool(false));
+                self.env_mut().insert(key, Value::FALSE);
             }
             'body_redo: loop {
                 let mut body_result = self.run_range(code, body_start, loop_end, compiled_fns);
@@ -665,7 +671,7 @@ impl Interpreter {
         if source_mutable_quant
             && let Some(ref source) = container_binding
             && let Some(slot) = self.find_local_slot(code, source)
-            && !matches!(self.locals[slot], Value::HashEntryRef { .. })
+            && !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
             && let Some(val) = self.env().get(source).cloned()
         {
             self.locals[slot] = val;

@@ -13,10 +13,11 @@ impl Interpreter {
         key: String,
         value: &Value,
     ) -> Result<(), RuntimeError> {
-        let updated = match self.get_env_with_main_alias(source) {
-            Some(Value::Bag(bag, true)) => {
+        let source_val = self.get_env_with_main_alias(source);
+        let updated = match source_val.as_ref().map(Value::view) {
+            Some(ValueView::Bag(bag, true)) => {
                 let count = Self::bag_assignment_count(value)?;
-                let mut b = (*bag).clone();
+                let mut b = (**bag).clone();
                 // A Bag holds positive integer counts: a weight of 0 *or below*
                 // removes the element (negative counts are not representable),
                 // unlike a Mix where a negative weight is retained.
@@ -25,26 +26,26 @@ impl Interpreter {
                 } else {
                     b.counts.insert(key, count);
                 }
-                Value::Bag(crate::gc::Gc::new(b), true)
+                Value::bag_parts(crate::gc::Gc::new(b), true)
             }
-            Some(Value::Mix(mix, true)) => {
+            Some(ValueView::Mix(mix, true)) => {
                 let weight = Self::mix_assignment_weight(value)?;
-                let mut m = (*mix).clone();
+                let mut m = (**mix).clone();
                 if weight == 0.0 {
                     m.remove(&key);
                 } else {
                     m.insert(key, weight);
                 }
-                Value::Mix(crate::gc::Gc::new(m), true)
+                Value::mix_parts(crate::gc::Gc::new(m), true)
             }
-            Some(Value::Set(set, true)) => {
-                let mut s = (*set).clone();
+            Some(ValueView::Set(set, true)) => {
+                let mut s = (**set).clone();
                 if value.truthy() {
                     s.elements.insert(key);
                 } else {
                     s.elements.remove(&key);
                 }
-                Value::Set(crate::gc::Gc::new(s), true)
+                Value::set_parts(crate::gc::Gc::new(s), true)
             }
             _ => return Ok(()),
         };
@@ -154,9 +155,12 @@ impl Interpreter {
         // `my %h := %g`); deref to read the inner Hash and write back THROUGH the
         // cell so the bound source observes the value mutation (Stage 1).
         let raw_source = self.get_env_with_main_alias(source);
-        let Some(hash_items) = raw_source.as_ref().and_then(|v| match v.deref_container() {
-            Value::Hash(hash_items) => Some(hash_items),
-            _ => None,
+        let Some(hash_items) = raw_source.as_ref().and_then(|v| {
+            let inner = v.deref_container();
+            match inner.view() {
+                ValueView::Hash(hash_items) => Some(hash_items.clone()),
+                _ => None,
+            }
         }) else {
             return;
         };
@@ -168,7 +172,7 @@ impl Interpreter {
         }
         let mut updated = hash_items.as_ref().clone();
         updated.insert(key.clone(), current);
-        let updated_value = Value::Hash(Value::hash_arc(updated));
+        let updated_value = Value::hash_with_data(Value::hash_arc(updated));
         self.write_back_container_source(code, source, &raw_source, updated_value);
     }
 
@@ -227,8 +231,12 @@ impl Interpreter {
             // the inner Array and write back THROUGH the cell (Stage 1).
             let source_val = self.get_env_with_main_alias(source);
             let (items, kind) = if source.starts_with('@') {
-                match source_val.as_ref().map(|v| v.deref_container()) {
-                    Some(Value::Array(items, kind)) => (items, kind),
+                match source_val
+                    .as_ref()
+                    .map(|v| v.deref_container())
+                    .and_then(Value::into_array)
+                {
+                    Some((items, kind)) => (items, kind),
                     _ => return,
                 }
             } else {
@@ -242,13 +250,18 @@ impl Interpreter {
                     let val_name = &rw_param_names[1];
                     if let Some(key) = self.env().get(key_name).cloned()
                         && let Some(val) = self.env().get(val_name).cloned()
-                        && let Some(Value::Hash(hash_items)) =
-                            source_val.as_ref().map(|v| v.deref_container())
+                        && let Some(hash_items) = source_val.as_ref().and_then(|v| {
+                            let inner = v.deref_container();
+                            match inner.view() {
+                                ValueView::Hash(h) => Some(h.clone()),
+                                _ => None,
+                            }
+                        })
                     {
                         let mut updated = hash_items.as_ref().clone();
                         let key_str = key.to_string_value();
                         updated.insert(key_str, val);
-                        let updated_value = Value::Hash(Value::hash_arc(updated));
+                        let updated_value = Value::hash_with_data(Value::hash_arc(updated));
                         self.write_back_container_source(code, source, &source_val, updated_value);
                     }
                 } else if !kv_mode {
@@ -256,13 +269,18 @@ impl Interpreter {
                     let var_name = param_name.as_deref().unwrap_or("_");
                     if let Some(keys) = hash_keys
                         && let Some(val) = self.env().get(var_name).cloned()
-                        && let Some(Value::Hash(hash_items)) =
-                            source_val.as_ref().map(|v| v.deref_container())
+                        && let Some(hash_items) = source_val.as_ref().and_then(|v| {
+                            let inner = v.deref_container();
+                            match inner.view() {
+                                ValueView::Hash(h) => Some(h.clone()),
+                                _ => None,
+                            }
+                        })
                         && idx < keys.len()
                     {
                         let mut updated = hash_items.as_ref().clone();
                         updated.insert(keys[idx].clone(), val);
-                        let updated_value = Value::Hash(Value::hash_arc(updated));
+                        let updated_value = Value::hash_with_data(Value::hash_arc(updated));
                         self.write_back_container_source(code, source, &source_val, updated_value);
                     }
                 }
@@ -276,7 +294,7 @@ impl Interpreter {
                 {
                     let mut updated = items.to_vec();
                     updated[idx] = val;
-                    let updated_value = Value::Array(
+                    let updated_value = Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                         kind,
                     );
@@ -293,7 +311,7 @@ impl Interpreter {
                         updated[base + j] = val;
                     }
                 }
-                let updated_value = Value::Array(
+                let updated_value = Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                     kind,
                 );
@@ -315,7 +333,7 @@ impl Interpreter {
                 }
                 let mut updated = items.to_vec();
                 updated[idx] = current_val;
-                let updated_value = Value::Array(
+                let updated_value = Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                     kind,
                 );
@@ -330,8 +348,10 @@ impl Interpreter {
             // coercion can throw). Skip the generic scalar writeback here, which
             // would otherwise clobber `$b` with the bare weight value.
             if matches!(
-                self.get_env_with_main_alias(source),
-                Some(Value::Bag(_, true) | Value::Mix(_, true) | Value::Set(_, true))
+                self.get_env_with_main_alias(source)
+                    .as_ref()
+                    .map(Value::view),
+                Some(ValueView::Bag(_, true) | ValueView::Mix(_, true) | ValueView::Set(_, true))
             ) {
                 return;
             }
@@ -342,9 +362,9 @@ impl Interpreter {
                 if let Some(existing) = self.get_env_with_main_alias(source) {
                     let val_name = &rw_param_names[1];
                     if let Some(val) = self.env().get(val_name).cloned() {
-                        let writeback_val = match existing {
-                            Value::Pair(key, _) => Value::Pair(key, Box::new(val)),
-                            Value::ValuePair(key, _) => Value::ValuePair(key, Box::new(val)),
+                        let writeback_val = match existing.view() {
+                            ValueView::Pair(key, _) => Value::pair(key.clone(), val),
+                            ValueView::ValuePair(key, _) => Value::value_pair(key.clone(), val),
                             _ => return,
                         };
                         self.set_env_with_main_alias(source, writeback_val.clone());
@@ -363,14 +383,15 @@ impl Interpreter {
             // it to inspect the Pair and write back THROUGH the shared container so
             // we don't clobber `$pair` itself with a bare scalar.
             let raw_source = self.get_env_with_main_alias(source);
-            let writeback_val = match raw_source.as_ref().map(|v| v.deref_container()) {
-                Some(Value::Pair(key, _)) => Value::Pair(key, Box::new(current_val.clone())),
-                Some(Value::ValuePair(key, _)) => {
-                    Value::ValuePair(key, Box::new(current_val.clone()))
+            let inner = raw_source.as_ref().map(|v| v.deref_container());
+            let writeback_val = match inner.as_ref().map(Value::view) {
+                Some(ValueView::Pair(key, _)) => Value::pair(key.clone(), current_val.clone()),
+                Some(ValueView::ValuePair(key, _)) => {
+                    Value::value_pair(key.clone(), current_val.clone())
                 }
                 _ => current_val.clone(),
             };
-            if let Some(Value::ContainerRef(arc)) = &raw_source {
+            if let Some(ValueView::ContainerRef(arc)) = raw_source.as_ref().map(Value::view) {
                 arc.lock().unwrap().clone_from(&writeback_val);
             } else {
                 self.set_env_with_main_alias(source, writeback_val.clone());

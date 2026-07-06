@@ -35,8 +35,8 @@ impl Interpreter {
         let ll_arc = ll.clone();
         let param_name = spec
             .param_idx
-            .map(|idx| match &code.constants[idx as usize] {
-                Value::Str(s) => s.to_string(),
+            .map(|idx| match code.constants[idx as usize].view() {
+                ValueView::Str(s) => s.to_string(),
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
         let saved_topic = spec
@@ -210,8 +210,8 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let param_name = spec
             .param_idx
-            .map(|idx| match &code.constants[idx as usize] {
-                Value::Str(s) => s.to_string(),
+            .map(|idx| match code.constants[idx as usize].view() {
+                ValueView::Str(s) => s.to_string(),
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
 
@@ -252,7 +252,7 @@ impl Interpreter {
                     // The for-loop expects individual items that get chunked.
                     // We produce two items per line: index and value.
                     // Run the body once with the pair as an array.
-                    let pair = Value::array(vec![Value::Int(line_index), line_val]);
+                    let pair = Value::array(vec![Value::int(line_index), line_val]);
                     line_index += 1;
                     pair
                 } else {
@@ -260,7 +260,7 @@ impl Interpreter {
                     // This is unusual for .kv in a for loop but handle it.
                     // We'd need to run the body twice per line, once for index
                     // and once for value. For now, produce a flat pair.
-                    let pair = Value::array(vec![Value::Int(line_index), line_val]);
+                    let pair = Value::array(vec![Value::int(line_index), line_val]);
                     line_index += 1;
                     pair
                 }

@@ -4,19 +4,14 @@ impl Interpreter {
     /// If the value is a `LazyIoLines`, force it into an eager array by reading
     /// all remaining lines from the file handle. Otherwise return the value as-is.
     pub(super) fn force_if_lazy_io_lines(&mut self, val: Value) -> Result<Value, RuntimeError> {
-        if let Value::LazyIoLines {
-            ref handle,
-            kv,
-            words,
-        } = val
-        {
+        if let ValueView::LazyIoLines { handle, kv, words } = val.view() {
             let forced = loan_env!(self, force_lazy_io_lines(handle, words))?;
             if kv {
                 // Apply .kv transformation on the forced array
                 let items = crate::runtime::utils::value_to_list(&forced);
                 let mut kv_items = Vec::with_capacity(items.len() * 2);
                 for (i, v) in items.iter().enumerate() {
-                    kv_items.push(Value::Int(i as i64));
+                    kv_items.push(Value::int(i as i64));
                     kv_items.push(v.clone());
                 }
                 Ok(Value::array(kv_items))
@@ -60,13 +55,13 @@ impl Interpreter {
     /// capped Array); reads keep it lazy. Reifies only cache-backed specs, so it
     /// never runs user code or hangs. (L2)
     pub(super) fn reify_lazy_array_slot(&mut self, name: &str) -> Result<(), RuntimeError> {
-        let lazy = match self.env().get(name) {
+        let lazy = match self.env().get(name).map(Value::view) {
             // Any `@`-array-context lazy list must materialize before an element
             // mutation, not just the cache-backed infinite specs: a finite
-            // `(1..10).lazy` / `lazy gather {...}` is also a `Value::LazyList` with
+            // `(1..10).lazy` / `lazy gather {...}` is also a `LazyList` value with
             // no backing Array, so a bare elem-assign would autovivify a fresh
             // empty Array (losing the elements) instead of writing through.
-            Some(Value::LazyList(ll)) if ll.in_array_context() => Some(ll.clone()),
+            Some(ValueView::LazyList(ll)) if ll.in_array_context() => Some(ll.clone()),
             _ => None,
         };
         if let Some(ll) = lazy {
@@ -163,8 +158,11 @@ impl Interpreter {
         }
         match args {
             [] => Some(1),
-            [Value::Int(n)] => Some((*n).max(0) as usize),
-            [Value::Num(f)] => Some((*f as i64).max(0) as usize),
+            [v] => match v.view() {
+                ValueView::Int(n) => Some(n.max(0) as usize),
+                ValueView::Num(f) => Some((f as i64).max(0) as usize),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -270,7 +268,7 @@ impl Interpreter {
         self.push_gather_take_limit(None);
 
         // Initialize locals for the compiled code
-        self.locals = vec![Value::Nil; cc.locals.len()];
+        self.locals = vec![Value::NIL; cc.locals.len()];
         for (i, name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
@@ -279,7 +277,7 @@ impl Interpreter {
         self.stack = Vec::new();
 
         // Run the compiled code using the lazy list's own compiled_fns.
-        // Outer scope subs are available via the env as Value::Sub.
+        // Outer scope subs are available via the env as Sub values.
         let run_fns = fns.as_ref();
 
         let mut ip = 0;
@@ -467,7 +465,7 @@ impl Interpreter {
             let mut retained = Vec::new();
             for source in sources {
                 if let Some(slot) = self.find_local_slot(code, &source) {
-                    if !matches!(self.locals[slot], Value::HashEntryRef { .. })
+                    if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
                         && let Some(val) = self.env().get(&source).cloned()
                     {
                         self.locals[slot] = val;

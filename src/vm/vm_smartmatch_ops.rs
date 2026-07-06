@@ -74,7 +74,7 @@ impl Interpreter {
             }
         }
         rhs_run?;
-        let right = self.stack.pop().unwrap_or(Value::Nil);
+        let right = self.stack.pop().unwrap_or(Value::NIL);
         // A destructive `s///`/`tr///` that actually matched against a string
         // literal has no writable container to update, so Raku throws
         // X::Assignment::RO (e.g. `'abc' ~~ s/b/g/`). A non-matching attempt is
@@ -93,7 +93,7 @@ impl Interpreter {
         // below would clobber it. Skip the restore in that case.
         let lhs_is_topic = lhs_var.as_deref() == Some("_");
         if let Some(var_name) = lhs_var {
-            let modified_topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
+            let modified_topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
             self.env_mut()
                 .insert(var_name.clone(), modified_topic.clone());
             // Reverse write-through: if the lhs alias names a compiled local slot,
@@ -142,7 +142,7 @@ impl Interpreter {
         let out = if was_transliterate {
             if negate {
                 // !~~ tr/// — negate the truthiness of the result
-                Value::Bool(!right.truthy())
+                Value::truth(!right.truthy())
             } else {
                 right
             }
@@ -150,7 +150,7 @@ impl Interpreter {
             // s/// returns Match on success, False on failure.
             // For !~~, negate the boolean result.
             if negate {
-                Value::Bool(!right.truthy())
+                Value::truth(!right.truthy())
             } else {
                 right
             }
@@ -166,7 +166,7 @@ impl Interpreter {
             // hash LHS compiles to `ArrayVar` / `HashVar` and yields `None`. The
             // name is already sigil-less (`$foo` -> `"foo"`), matching the alias
             // root used by the raw-`_` binding.
-            if matches!(right, Value::Sub(_))
+            if matches!(right.view(), ValueView::Sub(_))
                 && let Some(v) = lhs_var
                 && !v.is_empty()
             {
@@ -177,7 +177,7 @@ impl Interpreter {
         self.stack.push(out);
         // Slice 6.3 step 2 — precise env_dirty for smartmatch. Skip the
         // O(caller-locals) re-sync only when this was a side-effect-free match:
-        //   * a plain `Value::Regex` literal (rhs_pure_regex) — excludes
+        //   * a plain `Regex` value literal (rhs_pure_regex) — excludes
         //     RegexWithAdverbs (`:pos`/`:g` carry state), named/Sub regexes, and
         //     value smartmatch, all of which can write caller state by name;
         //   * not a substitution / transliteration (those mutate the topic alias);
@@ -243,28 +243,30 @@ impl Interpreter {
     }
 
     pub(super) fn exec_scalarize_regex_match_result_op(&mut self) -> Result<(), RuntimeError> {
-        let value = self.stack.pop().unwrap_or(Value::Nil);
-        let scalarized = match value {
-            Value::Nil => Value::Int(0),
-            Value::Array(items, _) => Value::Int(items.len() as i64),
-            Value::Seq(items)
-            | Value::HyperSeq(items)
-            | Value::RaceSeq(items)
-            | Value::Slip(items) => Value::Int(items.len() as i64),
-            Value::Capture { positional, .. } => Value::Int(positional.len() as i64),
-            Value::Instance {
+        let value = self.stack.pop().unwrap_or(Value::NIL);
+        let scalarized = match value.view() {
+            ValueView::Nil => Value::int(0),
+            ValueView::Array(items, _) => Value::int(items.len() as i64),
+            ValueView::Seq(items)
+            | ValueView::HyperSeq(items)
+            | ValueView::RaceSeq(items)
+            | ValueView::Slip(items) => Value::int(items.len() as i64),
+            ValueView::Capture { positional, .. } => Value::int(positional.len() as i64),
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
             } if class_name == "Match" => {
-                if let Some(Value::Array(items, _)) = attributes.as_map().get("list") {
-                    Value::Int(items.len() as i64)
+                if let Some(ValueView::Array(items, _)) =
+                    attributes.as_map().get("list").map(Value::view)
+                {
+                    Value::int(items.len() as i64)
                 } else {
-                    Value::Int(1)
+                    Value::int(1)
                 }
             }
-            other if other.truthy() => Value::Int(1),
-            _ => Value::Int(0),
+            _ if value.truthy() => Value::int(1),
+            _ => Value::int(0),
         };
         self.stack.push(scalarized);
         Ok(())
@@ -274,7 +276,9 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         // Thread over junctions
-        if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
+        if matches!(left.view(), ValueView::Junction { .. })
+            || matches!(right.view(), ValueView::Junction { .. })
+        {
             let result = self
                 .eval_binary_with_junctions(left, right, |vm, l, r| vm.divisible_by_values(l, r))?;
             self.stack.push(result);
@@ -286,7 +290,7 @@ impl Interpreter {
     }
 
     fn divisible_by_values(&self, left: Value, right: Value) -> Result<Value, RuntimeError> {
-        Ok(Value::Bool(self.is_divisible(left, right)?))
+        Ok(Value::truth(self.is_divisible(left, right)?))
     }
 
     /// `$a %% $b` is `$a % $b == 0`. Compute the modulo with the exact-rational
@@ -309,7 +313,9 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         // Thread over junctions
-        if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
+        if matches!(left.view(), ValueView::Junction { .. })
+            || matches!(right.view(), ValueView::Junction { .. })
+        {
             let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
                 vm.not_divisible_by_values(l, r)
             })?;
@@ -322,6 +328,6 @@ impl Interpreter {
     }
 
     fn not_divisible_by_values(&self, left: Value, right: Value) -> Result<Value, RuntimeError> {
-        Ok(Value::Bool(!self.is_divisible(left, right)?))
+        Ok(Value::truth(!self.is_divisible(left, right)?))
     }
 }

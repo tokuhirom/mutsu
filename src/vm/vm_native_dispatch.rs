@@ -11,12 +11,12 @@ impl Interpreter {
             // Recursive: does any element (transitively) carry an Instance whose
             // `.gist` may need interpreter dispatch?
             fn contains_instance(value: &Value) -> bool {
-                match value {
-                    Value::Instance { .. } => true,
-                    v if v.as_list_items().is_some() => {
-                        v.as_list_items().unwrap().iter().any(contains_instance)
+                match value.view() {
+                    ValueView::Instance { .. } => true,
+                    _ if value.as_list_items().is_some() => {
+                        value.as_list_items().unwrap().iter().any(contains_instance)
                     }
-                    Value::Hash(map) => map.values().any(contains_instance),
+                    ValueView::Hash(map) => map.values().any(contains_instance),
                     _ => false,
                 }
             }
@@ -26,11 +26,11 @@ impl Interpreter {
             // builtins layer itself defers a collection whose elements may have a
             // user `method gist`, so bypassing a bare instance here only forced a
             // pure native gist (Buf/Blob/Uni) onto the interpreter for nothing.
-            match value {
-                v if v.as_list_items().is_some() => {
-                    v.as_list_items().unwrap().iter().any(contains_instance)
+            match value.view() {
+                _ if value.as_list_items().is_some() => {
+                    value.as_list_items().unwrap().iter().any(contains_instance)
                 }
-                Value::Hash(map) => map.values().any(contains_instance),
+                ValueView::Hash(map) => map.values().any(contains_instance),
                 _ => false,
             }
         }
@@ -51,7 +51,7 @@ impl Interpreter {
         // the native impl here would materialize the source eagerly — forcing the
         // whole gather body (and its trailing side effects) instead of pulling on
         // demand. Defer.
-        if let Value::LazyList(_) = target
+        if let ValueView::LazyList(_) = target.view()
             && Self::is_lazy_pipe_source(target)
             && matches!(method_name.as_str(), "map" | "grep")
         {
@@ -60,7 +60,7 @@ impl Interpreter {
         // A laziness-preserving coercion on a lazy map/grep pipeline returns the
         // pipeline unchanged (it stays pullable). Intercept before the native
         // impl, which would otherwise wrap/empty the pipeline's (empty) cache.
-        if let Value::LazyList(ll) = target
+        if let ValueView::LazyList(ll) = target.view()
             && ll.lazy_pipe.is_some()
             && Self::lazy_pipe_preserving_coercion(method_name.as_str())
         {
@@ -75,7 +75,7 @@ impl Interpreter {
             return Some(Err(err));
         }
         // Early exit for Proxy containers
-        if matches!(target, Value::Proxy { .. })
+        if matches!(target.view(), ValueView::Proxy { .. })
             && !matches!(
                 method_name.as_str(),
                 "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
@@ -103,8 +103,8 @@ impl Interpreter {
             return None;
         }
         // Instance-specific bypasses (avoid for non-Instance targets)
-        if matches!(target, Value::Instance { .. }) {
-            if let Value::Instance { class_name, .. } = target {
+        if matches!(target.view(), ValueView::Instance { .. }) {
+            if let ValueView::Instance { class_name, .. } = target.view() {
                 let cn = class_name.resolve();
                 // Supply methods
                 if cn == "Supply"
@@ -163,7 +163,7 @@ impl Interpreter {
                     return None;
                 }
             }
-        } else if matches!(target, Value::Package(name) if name == "Supply")
+        } else if matches!(target.view(), ValueView::Package(name) if name == "Supply")
             && matches!(
                 method_name.as_str(),
                 "max"
@@ -197,12 +197,12 @@ impl Interpreter {
         // Pick/roll on Package/Str
         if (method_sym == "pick" || method_sym == "roll")
             && args.len() <= 1
-            && matches!(target, Value::Package(_) | Value::Str(_))
+            && matches!(target.view(), ValueView::Package(_) | ValueView::Str(_))
         {
             return None;
         }
         // Hash-specific bypasses
-        if matches!(target, Value::Hash(_)) && args.is_empty() {
+        if matches!(target.view(), ValueView::Hash(_)) && args.is_empty() {
             let mn = method_name.as_str();
             if (mn == "raku" || mn == "perl" || mn == "keyof")
                 && self.container_type_metadata(target).is_some()
@@ -214,7 +214,7 @@ impl Interpreter {
             }
         }
         // Typed array .raku/.perl bypass
-        if matches!(target, Value::Array(..))
+        if matches!(target.view(), ValueView::Array(..))
             && args.is_empty()
             && matches!(method_name.as_str(), "raku" | "perl")
             && self
@@ -265,7 +265,7 @@ impl Interpreter {
         // For gather-based LazyList, .List and .values preserve laziness
         // by returning the LazyList itself (which can be forced on demand).
         if result.is_none()
-            && let Value::LazyList(ll) = target
+            && let ValueView::LazyList(ll) = target.view()
             && ll.coroutine.is_some()
             && matches!(method_name.as_str(), "List" | "values")
         {
@@ -274,19 +274,16 @@ impl Interpreter {
 
         // Handle .Slip/.List/.Seq on scan-based LazyList by forcing elements via Interpreter.
         if result.is_none()
-            && let Value::LazyList(ll) = target
+            && let ValueView::LazyList(ll) = target.view()
             && ll.scan_spec.is_some()
             && matches!(method_name.as_str(), "Slip" | "List" | "Seq" | "Array")
         {
             match self.force_lazy_list_vm(ll) {
                 Ok(items) => {
                     let val = match method_name.as_str() {
-                        "Slip" => Value::Slip(std::sync::Arc::new(items)),
-                        "List" => Value::Array(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                            crate::value::ArrayKind::List,
-                        ),
-                        "Seq" => Value::Seq(std::sync::Arc::new(items)),
+                        "Slip" => Value::slip(items),
+                        "List" => Value::array(items),
+                        "Seq" => Value::seq(items),
                         "Array" => Value::real_array(items),
                         _ => unreachable!(),
                     };
@@ -298,16 +295,18 @@ impl Interpreter {
 
         if method_name == "decode" {
             return result.map(|res| {
-                res.map(|value| match value {
-                    Value::Str(decoded) => Value::str(self.translate_newlines_for_decode(&decoded)),
-                    other => other,
+                res.map(|value| match value.view() {
+                    ValueView::Str(decoded) => {
+                        Value::str(self.translate_newlines_for_decode(decoded))
+                    }
+                    _ => value,
                 })
             });
         }
 
         // For Hash values with declared_type "Map", override gist/raku/perl
         // to use Map.new((...)) format instead of {...} format.
-        if let Value::Hash(map) = target {
+        if let ValueView::Hash(map) = target.view() {
             let is_map = matches!(method_name.as_str(), "gist" | "raku" | "perl")
                 && self
                     .container_type_metadata(target)
@@ -340,12 +339,12 @@ impl Interpreter {
                         .iter()
                         .map(|k| {
                             let v = &map[*k];
-                            if let Value::Bool(true) = v {
+                            if let ValueView::Bool(true) = v.view() {
                                 format!(":{}", k)
-                            } else if let Value::Bool(false) = v {
+                            } else if let ValueView::Bool(false) = v.view() {
                                 format!(":!{}", k)
                             } else {
-                                let repr = if matches!(v, Value::Nil) {
+                                let repr = if matches!(v.view(), ValueView::Nil) {
                                     "Any".to_string()
                                 } else {
                                     crate::builtins::methods_0arg::raku_value(v)
@@ -393,7 +392,10 @@ impl Interpreter {
                 return Some(result);
             }
         }
-        if args.iter().any(|arg| matches!(arg, Value::Instance { .. })) {
+        if args
+            .iter()
+            .any(|arg| matches!(arg.view(), ValueView::Instance { .. }))
+        {
             // Junction constructors wrap their arguments verbatim regardless of
             // type, so an Instance argument is safe to handle natively; every
             // other native function bails out on Instance args (they may need
@@ -407,23 +409,26 @@ impl Interpreter {
         }
         // For functions that need to iterate their arguments (e.g. flat),
         // force any LazyList arguments first so the pure builtin can process them.
-        if args.iter().any(|a| matches!(a, Value::LazyList(_))) {
+        if args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::LazyList(_)))
+        {
             let name = name_sym.resolve();
             if matches!(name.as_str(), "flat" | "eager") {
                 // For `flat`, if the single argument is lazy, preserve laziness
                 // by returning the lazy list directly (flat of a lazy list is still lazy).
                 if name.as_str() == "flat"
                     && args.len() == 1
-                    && matches!(&args[0], Value::LazyList(_))
+                    && matches!(args[0].view(), ValueView::LazyList(_))
                 {
                     return Some(Ok(args[0].clone()));
                 }
                 let mut forced_args = Vec::with_capacity(args.len());
                 for arg in args {
-                    if let Value::LazyList(ll) = arg {
+                    if let ValueView::LazyList(ll) = arg.view() {
                         match self.force_lazy_list_vm(ll) {
                             Ok(items) => {
-                                forced_args.push(Value::Seq(std::sync::Arc::new(items)));
+                                forced_args.push(Value::seq(items));
                             }
                             Err(e) => return Some(Err(e)),
                         }

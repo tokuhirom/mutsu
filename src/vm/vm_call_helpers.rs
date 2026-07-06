@@ -3,37 +3,37 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn append_slip_item(args: &mut Vec<Value>, item: &Value) {
-        match item {
-            Value::Capture { positional, named } => {
+        match item.view() {
+            ValueView::Capture { positional, named } => {
                 args.extend(positional.iter().cloned());
                 for (k, v) in named.iter() {
-                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                    args.push(Value::pair(k.clone(), v.clone()));
                 }
             }
             // Hash values inside a Slip are kept as single positional args.
             // Top-level `|%hash` flattening is handled by MakeSlip, which converts
             // a bare Hash into pairs before wrapping in a Slip. A Hash that is already
             // inside a Slip (e.g. from a Capture's positional list) should stay as-is.
-            Value::Hash(_) => args.push(item.clone()),
+            ValueView::Hash(_) => args.push(item.clone()),
             // A `(:key(val))` positional-pair slipped via `|(...)` flattens back
             // to a *named* argument in Raku (e.g. `.subst(|(:g), ...)` passes `:g`
             // as the named `:g` adverb). Mirror `append_slip_value`'s ValuePair
             // arm so the slipped pair is recognized as a named argument.
-            Value::ValuePair(key, val) => {
-                if let Value::Str(name) = key.as_ref() {
-                    args.push(Value::Pair(name.to_string(), val.clone()));
+            ValueView::ValuePair(key, val) => {
+                if let ValueView::Str(name) = key.view() {
+                    args.push(Value::pair(name.to_string(), val.clone()));
                 } else {
                     args.push(item.clone());
                 }
             }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {
                 args.extend(crate::runtime::utils::value_to_list(item));
             }
-            other => args.push(other.clone()),
+            _ => args.push(item.clone()),
         }
     }
 
@@ -42,17 +42,17 @@ impl Interpreter {
         arg: Value,
         preserve_empty_slip: bool,
     ) {
-        match arg {
-            Value::Slip(items) => {
+        match arg.view() {
+            ValueView::Slip(items) => {
                 if preserve_empty_slip && items.is_empty() {
-                    args.push(Value::Slip(items));
+                    args.push(Value::slip_arc(items.clone()));
                     return;
                 }
                 for item in items.iter() {
                     Self::append_slip_item(args, item);
                 }
             }
-            other => args.push(other),
+            _ => args.push(arg),
         }
     }
 
@@ -68,49 +68,51 @@ impl Interpreter {
     }
 
     pub(super) fn append_slip_value(args: &mut Vec<Value>, slip_val: Value) {
-        match slip_val {
-            Value::Array(elements, ..) => {
+        match slip_val.view() {
+            ValueView::Array(elements, ..) => {
                 args.extend(elements.iter().cloned());
             }
-            Value::Seq(elements) | Value::HyperSeq(elements) | Value::RaceSeq(elements) => {
+            ValueView::Seq(elements)
+            | ValueView::HyperSeq(elements)
+            | ValueView::RaceSeq(elements) => {
                 args.extend(elements.iter().cloned());
             }
-            Value::Capture { positional, named } => {
-                args.extend(*positional);
-                for (k, v) in *named {
-                    args.push(Value::Pair(k, Box::new(v)));
+            ValueView::Capture { positional, named } => {
+                args.extend(positional.iter().cloned());
+                for (k, v) in named.iter() {
+                    args.push(Value::pair(k.clone(), v.clone()));
                 }
             }
-            Value::Slip(items) => {
+            ValueView::Slip(items) => {
                 for item in items.iter() {
                     Self::append_slip_item(args, item);
                 }
             }
-            Value::Hash(map) => {
+            ValueView::Hash(map) => {
                 for (k, v) in map.iter() {
-                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                    args.push(Value::pair(k.clone(), v.clone()));
                 }
             }
             // When a Pair or ValuePair is slipped via |, it becomes a named
             // argument (regular Pair).  ValuePair is the "positional pair"
             // wrapper produced by (:key(val)), but |$pair always flattens it
             // back to a named argument in Raku.
-            Value::ValuePair(key, val) => {
-                if let Value::Str(name) = key.as_ref() {
-                    args.push(Value::Pair(name.to_string(), val));
+            ValueView::ValuePair(key, val) => {
+                if let ValueView::Str(name) = key.view() {
+                    args.push(Value::pair(name.to_string(), val.clone()));
                 } else {
-                    args.push(Value::ValuePair(key, val));
+                    args.push(Value::value_pair(key.clone(), val.clone()));
                 }
             }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {
                 args.extend(crate::runtime::utils::value_to_list(&slip_val));
             }
-            other => {
-                args.push(other);
+            _ => {
+                args.push(slip_val);
             }
         }
     }
@@ -137,21 +139,21 @@ impl Interpreter {
         // with no slotted sources leaves it empty (no stale slot from a prior call).
         self.pending_call_arg_source_slots.clear();
         let idx = arg_sources_idx?;
-        let Value::Array(items, ..) = &code.constants[idx as usize] else {
+        let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
             return None;
         };
         let mut slots: Vec<(String, u32)> = Vec::new();
         let names: Vec<Option<String>> = items
             .iter()
-            .map(|item| match item {
-                Value::Str(name) => Some(name.to_string()),
+            .map(|item| match item.view() {
+                ValueView::Str(name) => Some(name.to_string()),
                 // A slotted source is `Pair(name, Int(slot))`; extract the name here
                 // (byte-identical for name-only consumers) and record the slot.
-                Value::Pair(name, val) => {
-                    if let Value::Int(slot) = val.as_ref()
-                        && *slot >= 0
+                ValueView::Pair(name, val) => {
+                    if let ValueView::Int(slot) = val.view()
+                        && slot >= 0
                     {
-                        slots.push((name.clone(), *slot as u32));
+                        slots.push((name.clone(), slot as u32));
                     }
                     Some(name.clone())
                 }
@@ -165,9 +167,9 @@ impl Interpreter {
     }
 
     pub(super) fn unwrap_var_ref_value(value: Value) -> Value {
-        if let Value::Capture { positional, named } = &value
+        if let ValueView::Capture { positional, named } = value.view()
             && positional.is_empty()
-            && let Some(Value::Str(_)) = named.get("__mutsu_varref_name")
+            && let Some(ValueView::Str(_)) = named.get("__mutsu_varref_name").map(Value::view)
             && let Some(inner) = named.get("__mutsu_varref_value")
         {
             return inner.clone();
@@ -234,7 +236,10 @@ impl Interpreter {
         target: &Value,
         method: &str,
     ) -> usize {
-        if matches!(target, Value::Instance { .. } | Value::Mixin(..)) {
+        if matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+        ) {
             return 1;
         }
         // Use the *introspective* type name (List vs Array distinguished by

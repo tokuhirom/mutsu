@@ -10,8 +10,8 @@ impl Interpreter {
         writeback: bool,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap_or(Value::Nil);
-        let left = self.stack.pop().unwrap_or(Value::Nil);
+        let right = self.stack.pop().unwrap_or(Value::NIL);
+        let left = self.stack.pop().unwrap_or(Value::NIL);
         let name = Self::const_str(code, name_idx).to_string();
         // QuantHash (Set/Bag/Mix) operands: reuse the plain-Hash hyper logic by
         // projecting each to a `key => weight` Hash, then convert the result
@@ -36,8 +36,11 @@ impl Interpreter {
             let bare = name.trim_start_matches('&');
             let mut found = None;
             for key in [format!("&{}", bare), bare.to_string()] {
-                if let Some(v @ (Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })) =
-                    self.env().get(&key)
+                if let Some(v) = self.env().get(&key)
+                    && matches!(
+                        v.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    )
                 {
                     found = Some(v.clone());
                     break;
@@ -47,7 +50,8 @@ impl Interpreter {
         };
         // Hash operands: apply the code-ref to each value key-by-key, mirroring
         // the dwim key-set semantics of `exec_hyper_op`.
-        if matches!(&left, Value::Hash(..)) || matches!(&right, Value::Hash(..)) {
+        if matches!(left.view(), ValueView::Hash(..)) || matches!(right.view(), ValueView::Hash(..))
+        {
             let stack_before = self.stack.len();
             self.exec_hyper_func_op_hash(
                 left,
@@ -137,12 +141,13 @@ impl Interpreter {
             Vec::with_capacity(if do_writeback { result_len } else { 0 });
         for i in 0..result_len {
             let l = if left_len == 0 {
-                Value::Int(0)
+                Value::int(0)
             } else {
                 left_list[i % left_len].clone()
             };
+            let zero = Value::int(0);
             let r = if right_len == 0 {
-                &Value::Int(0)
+                &zero
             } else {
                 &right_list[i % right_len]
             };
@@ -173,16 +178,19 @@ impl Interpreter {
                 results.push(result);
             }
         }
-        let left_is_array = matches!(&left, Value::Array(_, crate::value::ArrayKind::Array));
-        let right_is_array = matches!(&right, Value::Array(_, crate::value::ArrayKind::Array));
+        let left_is_array = matches!(
+            left.view(),
+            ValueView::Array(_, crate::value::ArrayKind::Array)
+        );
+        let right_is_array = matches!(
+            right.view(),
+            ValueView::Array(_, crate::value::ArrayKind::Array)
+        );
         let wrap = |items: Vec<Value>| -> Value {
             if both_scalar && items.len() == 1 {
                 items.into_iter().next().unwrap()
             } else if !left_is_array && !right_is_array {
-                Value::Array(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                    crate::value::ArrayKind::List,
-                )
+                Value::array(items)
             } else {
                 Value::real_array(items)
             }
@@ -222,13 +230,13 @@ impl Interpreter {
         writeback: bool,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        let probe_left: Vec<Value> = match &left {
-            Value::Hash(m) => m.values().cloned().collect(),
-            other => vec![other.clone()],
+        let probe_left: Vec<Value> = match left.view() {
+            ValueView::Hash(m) => m.values().cloned().collect(),
+            _ => vec![left.clone()],
         };
-        let probe_right: Vec<Value> = match &right {
-            Value::Hash(m) => m.values().cloned().collect(),
-            other => vec![other.clone()],
+        let probe_right: Vec<Value> = match right.view() {
+            ValueView::Hash(m) => m.values().cloned().collect(),
+            _ => vec![right.clone()],
         };
         let func_writable = self.hyper_func_first_param_writable(
             name,
@@ -240,17 +248,17 @@ impl Interpreter {
         // An assignment meta-op whose left operand is not a writable hash lvalue
         // (e.g. `3 <<[&metaop]>> %a`, where the scalar would be the mutated
         // element) cannot write back and therefore dies.
-        if !(writeback && matches!(&left, Value::Hash(..)))
+        if !(writeback && matches!(left.view(), ValueView::Hash(..)))
             && Self::is_assign_metaop_ref(func_value)
         {
             return Err(RuntimeError::new(
                 "Cannot modify an immutable value".to_string(),
             ));
         }
-        let do_writeback = writeback && matches!(&left, Value::Hash(..)) && func_writable;
+        let do_writeback = writeback && matches!(left.view(), ValueView::Hash(..)) && func_writable;
         // Determine the key set and a per-key (left, right) value source.
-        let (keys, la, ra, right_scalar) = match (&left, &right) {
-            (Value::Hash(la), Value::Hash(ra)) => {
+        let (keys, la, ra, right_scalar) = match (left.view(), right.view()) {
+            (ValueView::Hash(la), ValueView::Hash(ra)) => {
                 let keys: Vec<String> = match (dwim_left, dwim_right) {
                     (false, false) => {
                         let mut ks: Vec<String> = la.keys().cloned().collect();
@@ -267,7 +275,7 @@ impl Interpreter {
                 };
                 (keys, Some(la.clone()), Some(ra.clone()), None)
             }
-            (Value::Hash(la), _) => {
+            (ValueView::Hash(la), _) => {
                 // `%hash OP scalar`: the scalar (right) must be on a dwim side
                 // to broadcast over the hash's keys; otherwise the lengths
                 // mismatch (N vs 1) and it is a non-dwimmy error.
@@ -280,7 +288,7 @@ impl Interpreter {
                 let keys: Vec<String> = la.keys().cloned().collect();
                 (keys, Some(la.clone()), None, Some(right.clone()))
             }
-            (_, Value::Hash(ra)) => {
+            (_, ValueView::Hash(ra)) => {
                 // `scalar OP %hash`: the scalar (left) must be on a dwim side.
                 if !dwim_left {
                     return Err(RuntimeError::new(
@@ -293,7 +301,7 @@ impl Interpreter {
             }
             _ => unreachable!("exec_hyper_func_op_hash called without a hash operand"),
         };
-        let identity = Value::Int(0);
+        let identity = Value::int(0);
         let mut result: std::collections::HashMap<String, Value> =
             std::collections::HashMap::with_capacity(keys.len());
         let mut mutated: std::collections::HashMap<String, Value> =
@@ -325,10 +333,10 @@ impl Interpreter {
                 result.insert(key, v);
             }
         }
-        let result_hash = Value::Hash(Value::hash_arc(result));
+        let result_hash = Value::hash_with_data(Value::hash_arc(result));
         if writeback {
             let writeback_val = if do_writeback {
-                Value::Hash(Value::hash_arc(mutated))
+                Value::hash_with_data(Value::hash_arc(mutated))
             } else {
                 left.clone()
             };
@@ -345,7 +353,7 @@ impl Interpreter {
     /// routine unconditionally mutates its first argument, so applying it to a
     /// non-lvalue is a hard error.
     fn is_assign_metaop_ref(func_value: Option<&Value>) -> bool {
-        let Some(Value::Routine { name, .. }) = func_value else {
+        let Some(ValueView::Routine { name, .. }) = func_value.map(Value::view) else {
             return false;
         };
         let Some(inner) = name
@@ -394,8 +402,8 @@ impl Interpreter {
         right_list: &[Value],
     ) -> bool {
         let probe = vec![
-            left_list.first().cloned().unwrap_or(Value::Int(0)),
-            right_list.first().cloned().unwrap_or(Value::Int(0)),
+            left_list.first().cloned().unwrap_or(Value::int(0)),
+            right_list.first().cloned().unwrap_or(Value::int(0)),
         ];
         fn writable(pd: &crate::ast::ParamDef) -> bool {
             pd.sigilless || pd.traits.iter().any(|t| t == "rw" || t == "raw")
@@ -405,7 +413,7 @@ impl Interpreter {
         // its first argument even though its synthesized signature does not
         // carry an `rw` marker. Detect it by name so the element is passed by
         // writable reference.
-        if let Some(Value::Routine { name: rname, .. }) = func_value
+        if let Some(ValueView::Routine { name: rname, .. }) = func_value.map(Value::view)
             && let Some(inner) = rname
                 .resolve()
                 .strip_prefix("infix:<")
@@ -419,9 +427,9 @@ impl Interpreter {
         {
             return true;
         }
-        let sub = match func_value {
-            Some(Value::Sub(data)) => Some(data.clone()),
-            Some(Value::WeakSub(weak)) => weak.upgrade(),
+        let sub = match func_value.map(Value::view) {
+            Some(ValueView::Sub(data)) => Some(data.clone()),
+            Some(ValueView::WeakSub(weak)) => weak.upgrade(),
             _ => None,
         };
         if let Some(data) = sub {

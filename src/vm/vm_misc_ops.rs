@@ -100,15 +100,15 @@ pub(super) fn is_parameterized_core_type(name: &str) -> bool {
 /// Single authoritative impl shared by the Interpreter's `minmax` reduction and the
 /// interpreter's `apply_reduction_op` `minmax` arm (which delegates here).
 pub(crate) fn minmax_bounds_of_value(v: &Value) -> (Value, Value) {
-    match v {
-        Value::Range(a, b)
-        | Value::RangeExcl(a, b)
-        | Value::RangeExclStart(a, b)
-        | Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b)),
-        Value::GenericRange { start, end, .. } => ((**start).clone(), (**end).clone()),
-        Value::Array(items, _) => {
+    match v.view() {
+        ValueView::Range(a, b)
+        | ValueView::RangeExcl(a, b)
+        | ValueView::RangeExclStart(a, b)
+        | ValueView::RangeExclBoth(a, b) => (Value::int(a), Value::int(b)),
+        ValueView::GenericRange { start, end, .. } => ((**start).clone(), (**end).clone()),
+        ValueView::Array(items, _) => {
             if items.is_empty() {
-                (Value::Nil, Value::Nil)
+                (Value::NIL, Value::NIL)
             } else {
                 let mut lo = items[0].clone();
                 let mut hi = items[0].clone();
@@ -124,9 +124,9 @@ pub(crate) fn minmax_bounds_of_value(v: &Value) -> (Value, Value) {
                 (lo, hi)
             }
         }
-        Value::Seq(items) => {
+        ValueView::Seq(items) => {
             if items.is_empty() {
-                (Value::Nil, Value::Nil)
+                (Value::NIL, Value::NIL)
             } else {
                 let mut lo = items[0].clone();
                 let mut hi = items[0].clone();
@@ -274,8 +274,11 @@ impl Interpreter {
         if let Some(name) = op.strip_prefix('&') {
             let callable = loan_env!(self, resolve_code_var(name));
             if matches!(
-                callable,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
+                callable.view(),
+                ValueView::Sub(_)
+                    | ValueView::WeakSub(_)
+                    | ValueView::Routine { .. }
+                    | ValueView::Instance { .. }
             ) {
                 return Some(callable);
             }
@@ -286,23 +289,32 @@ impl Interpreter {
         let infix_name = format!("infix:<{}>", op);
         let callable = loan_env!(self, resolve_code_var(&infix_name));
         if matches!(
-            callable,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
+            callable.view(),
+            ValueView::Sub(_)
+                | ValueView::WeakSub(_)
+                | ValueView::Routine { .. }
+                | ValueView::Instance { .. }
         ) {
             return Some(callable);
         }
         if let Some(callable) = self.env().get(&format!("&{}", infix_name)).cloned()
             && matches!(
-                callable,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
+                callable.view(),
+                ValueView::Sub(_)
+                    | ValueView::WeakSub(_)
+                    | ValueView::Routine { .. }
+                    | ValueView::Instance { .. }
             )
         {
             return Some(callable);
         }
         if let Some(callable) = self.env().get(&format!("&{}", op)).cloned()
             && matches!(
-                callable,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
+                callable.view(),
+                ValueView::Sub(_)
+                    | ValueView::WeakSub(_)
+                    | ValueView::Routine { .. }
+                    | ValueView::Instance { .. }
             )
         {
             return Some(callable);
@@ -366,7 +378,7 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if let Some(callable) = callable {
-            if let Value::Routine { name, .. } = callable {
+            if let ValueView::Routine { name, .. } = callable.view() {
                 return loan_env!(self, call_user_routine_direct(&name.resolve(), args));
             }
             return self.vm_call_on_value(callable.clone(), args, None);

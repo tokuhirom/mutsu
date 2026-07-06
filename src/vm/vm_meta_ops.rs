@@ -21,8 +21,8 @@ impl Interpreter {
         meta_idx: u32,
         op_idx: u32,
     ) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap_or(Value::Nil);
-        let left = self.stack.pop().unwrap_or(Value::Nil);
+        let right = self.stack.pop().unwrap_or(Value::NIL);
+        let left = self.stack.pop().unwrap_or(Value::NIL);
         let meta = Self::const_str(code, meta_idx).to_string();
         let op = Self::const_str(code, op_idx).to_string();
         let result = match meta.as_str() {
@@ -35,7 +35,7 @@ impl Interpreter {
                     let exclude_end = op == "...^";
                     loan_env!(self, eval_sequence_values(right, left, exclude_end))?
                 } else if op == "~~" {
-                    Value::Bool(self.vm_smart_match(&right, &left))
+                    Value::truth(self.vm_smart_match(&right, &left))
                 } else if matches!(op.as_str(), ".." | "..^" | "^.." | "^..^") {
                     // `a R.. b` == `b .. a`: build the range with operands
                     // reversed. Reuse the dedicated range builders (which pop
@@ -56,13 +56,13 @@ impl Interpreter {
                 }
             }
             "X" => {
-                let value_is_lazy = |v: &Value| match v {
-                    Value::LazyList(_) => true,
-                    Value::Range(_, end)
-                    | Value::RangeExcl(_, end)
-                    | Value::RangeExclStart(_, end)
-                    | Value::RangeExclBoth(_, end) => *end == i64::MAX,
-                    Value::GenericRange { end, .. } => {
+                let value_is_lazy = |v: &Value| match v.view() {
+                    ValueView::LazyList(_) => true,
+                    ValueView::Range(_, end)
+                    | ValueView::RangeExcl(_, end)
+                    | ValueView::RangeExclStart(_, end)
+                    | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
+                    ValueView::GenericRange { end, .. } => {
                         let end_f = end.to_f64();
                         end_f.is_infinite() && end_f.is_sign_positive()
                     }
@@ -91,7 +91,7 @@ impl Interpreter {
                 } else if op == "~~" {
                     for l in &left_list {
                         for r in &right_list {
-                            results.push(Value::Bool(self.vm_smart_match(l, r)));
+                            results.push(Value::truth(self.vm_smart_match(l, r)));
                         }
                     }
                 } else {
@@ -102,12 +102,12 @@ impl Interpreter {
                     }
                 }
                 if lazy_inputs {
-                    Value::LazyList(crate::gc::Gc::new(crate::value::LazyList::new_cached(
+                    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList::new_cached(
                         results,
                     )))
                 } else {
                     // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
-                    Value::Seq(std::sync::Arc::new(results))
+                    Value::seq_arc(std::sync::Arc::new(results))
                 }
             }
             "Z" => {
@@ -125,15 +125,15 @@ impl Interpreter {
                 } else if op == "=>" {
                     for i in 0..len {
                         let key = left_iter.nth(i).to_string_value();
-                        results.push(Value::Pair(key, Box::new(right_iter.nth(i))));
+                        results.push(Value::pair(key, right_iter.nth(i)));
                     }
                 } else {
                     // Check for 3-way zip reduction case ([Z+] a, b, c)
                     // where left has exactly 2 elements and the second is a list.
                     let nested_left = if left_iter.len() == 2 {
                         let second = left_iter.nth(1);
-                        match &second {
-                            Value::Array(..) | Value::Seq(_) | Value::Slip(_) => {
+                        match second.view() {
+                            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
                                 Some((left_iter.nth(0), runtime::value_to_list(&second)))
                             }
                             _ => None,
@@ -162,17 +162,17 @@ impl Interpreter {
                     }
                 }
                 if all_lazy {
-                    Value::LazyList(crate::gc::Gc::new(crate::value::LazyList::new_cached(
+                    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList::new_cached(
                         results,
                     )))
                 } else {
                     // `Z` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
-                    Value::Seq(std::sync::Arc::new(results))
+                    Value::seq_arc(std::sync::Arc::new(results))
                 }
             }
             "!" => {
                 let inner = self.eval_reduction_operator_values(&op, &left, &right)?;
-                Value::Bool(!inner.truthy())
+                Value::truth(!inner.truthy())
             }
             _ => {
                 return Err(RuntimeError::new(format!(
@@ -198,7 +198,7 @@ impl Interpreter {
         let n = count as usize;
         let mut operands: Vec<Value> = Vec::with_capacity(n);
         for _ in 0..n {
-            operands.push(self.stack.pop().unwrap_or(Value::Nil));
+            operands.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         operands.reverse();
         let meta = Self::const_str(code, meta_idx).to_string();
@@ -207,13 +207,13 @@ impl Interpreter {
 
         let result = match meta.as_str() {
             "X" => {
-                let value_is_lazy = |v: &Value| match v {
-                    Value::LazyList(_) => true,
-                    Value::Range(_, end)
-                    | Value::RangeExcl(_, end)
-                    | Value::RangeExclStart(_, end)
-                    | Value::RangeExclBoth(_, end) => *end == i64::MAX,
-                    Value::GenericRange { end, .. } => {
+                let value_is_lazy = |v: &Value| match v.view() {
+                    ValueView::LazyList(_) => true,
+                    ValueView::Range(_, end)
+                    | ValueView::RangeExcl(_, end)
+                    | ValueView::RangeExclStart(_, end)
+                    | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
+                    ValueView::GenericRange { end, .. } => {
                         let end_f = end.to_f64();
                         end_f.is_infinite() && end_f.is_sign_positive()
                     }
@@ -259,12 +259,12 @@ impl Interpreter {
                     }
                 }
                 if lazy_inputs {
-                    Value::LazyList(crate::gc::Gc::new(crate::value::LazyList::new_cached(
+                    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList::new_cached(
                         results,
                     )))
                 } else {
                     // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
-                    Value::Seq(std::sync::Arc::new(results))
+                    Value::seq_arc(std::sync::Arc::new(results))
                 }
             }
             "Z" => {
@@ -282,12 +282,12 @@ impl Interpreter {
                     results.push(self.combine_meta_tuple(&op, make_tuple, combo)?);
                 }
                 if all_lazy {
-                    Value::LazyList(crate::gc::Gc::new(crate::value::LazyList::new_cached(
+                    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList::new_cached(
                         results,
                     )))
                 } else {
                     // `Z` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
-                    Value::Seq(std::sync::Arc::new(results))
+                    Value::seq_arc(std::sync::Arc::new(results))
                 }
             }
             _ => {
@@ -313,10 +313,10 @@ impl Interpreter {
             return Ok(Value::array(combo));
         }
         let mut iter = combo.into_iter();
-        let mut acc = iter.next().unwrap_or(Value::Nil);
+        let mut acc = iter.next().unwrap_or(Value::NIL);
         for elem in iter {
             acc = if op == "~~" {
-                Value::Bool(self.vm_smart_match(&acc, &elem))
+                Value::truth(self.vm_smart_match(&acc, &elem))
             } else {
                 self.eval_reduction_operator_values(op, &acc, &elem)?
             };
@@ -354,36 +354,36 @@ enum ZipIter {
 
 impl ZipIter {
     fn from_value(val: &Value) -> Self {
-        match val {
-            Value::Range(a, b) => {
-                let count = if *b >= *a {
-                    ((*b - *a + 1) as usize).min(MAX_ZIP_EXPAND)
+        match val.view() {
+            ValueView::Range(a, b) => {
+                let count = if b >= a {
+                    ((b - a + 1) as usize).min(MAX_ZIP_EXPAND)
                 } else {
                     0
                 };
-                ZipIter::IntRange { start: *a, count }
+                ZipIter::IntRange { start: a, count }
             }
-            Value::RangeExcl(a, b) => {
-                let count = if *b > *a {
-                    ((*b - *a) as usize).min(MAX_ZIP_EXPAND)
+            ValueView::RangeExcl(a, b) => {
+                let count = if b > a {
+                    ((b - a) as usize).min(MAX_ZIP_EXPAND)
                 } else {
                     0
                 };
-                ZipIter::IntRangeExcl { start: *a, count }
+                ZipIter::IntRangeExcl { start: a, count }
             }
-            Value::RangeExclStart(a, b) => {
-                let start = *a + 1;
-                let count = if *b >= start {
-                    ((*b - start + 1) as usize).min(MAX_ZIP_EXPAND)
+            ValueView::RangeExclStart(a, b) => {
+                let start = a + 1;
+                let count = if b >= start {
+                    ((b - start + 1) as usize).min(MAX_ZIP_EXPAND)
                 } else {
                     0
                 };
                 ZipIter::IntRange { start, count }
             }
-            Value::RangeExclBoth(a, b) => {
-                let start = *a + 1;
-                let count = if *b > start {
-                    ((*b - start) as usize).min(MAX_ZIP_EXPAND)
+            ValueView::RangeExclBoth(a, b) => {
+                let start = a + 1;
+                let count = if b > start {
+                    ((b - start) as usize).min(MAX_ZIP_EXPAND)
                 } else {
                     0
                 };
@@ -391,8 +391,8 @@ impl ZipIter {
             }
             // Nil in zip context is a 1-element list (not empty), matching Raku behavior
             // where `Nil Z+ 2` yields `(2)` (Nil coerces to 0).
-            Value::Nil => ZipIter::List(vec![Value::Nil]),
-            Value::LazyList(_) => {
+            ValueView::Nil => ZipIter::List(vec![Value::NIL]),
+            ValueView::LazyList(_) => {
                 let list = runtime::value_to_list(val);
                 let len = list.len().min(MAX_ZIP_EXPAND);
                 ZipIter::Lazy(list[..len].to_vec())
@@ -401,9 +401,11 @@ impl ZipIter {
                 let list = runtime::value_to_list(val);
                 // Check for trailing Whatever (*) — extends the list by
                 // repeating the last real element.
-                if list.len() >= 2 && matches!(list.last(), Some(Value::Whatever)) {
+                if list.len() >= 2
+                    && matches!(list.last().map(Value::view), Some(ValueView::Whatever))
+                {
                     let items: Vec<Value> = list[..list.len() - 1].to_vec();
-                    let fill = items.last().cloned().unwrap_or(Value::Nil);
+                    let fill = items.last().cloned().unwrap_or(Value::NIL);
                     ZipIter::ExtendedList { items, fill }
                 } else {
                     ZipIter::List(list)
@@ -435,7 +437,7 @@ impl ZipIter {
     fn nth(&self, i: usize) -> Value {
         match self {
             ZipIter::IntRange { start, .. } | ZipIter::IntRangeExcl { start, .. } => {
-                Value::Int(*start + i as i64)
+                Value::int(*start + i as i64)
             }
             ZipIter::List(v) | ZipIter::Lazy(v) => v[i].clone(),
             ZipIter::ExtendedList { items, fill } => {

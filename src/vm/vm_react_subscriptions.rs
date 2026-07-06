@@ -54,7 +54,7 @@ impl Interpreter {
                 }
                 // Bound the wait so a stalled source cannot hang the await.
                 if std::time::Instant::now() >= *deadline {
-                    promise.keep(Value::Nil, String::new(), String::new());
+                    promise.keep(Value::NIL, String::new(), String::new());
                     return Ok(());
                 }
             }
@@ -345,7 +345,7 @@ impl Interpreter {
                     // complete the await with Nil (matching the legacy
                     // supply_promise_on_demand loop).
                     if all_done || react_subs.iter().all(|s| s.done) {
-                        promise.keep(Value::Nil, String::new(), String::new());
+                        promise.keep(Value::NIL, String::new(), String::new());
                         return Ok(());
                     }
                 }

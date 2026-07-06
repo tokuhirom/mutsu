@@ -7,10 +7,14 @@ impl Interpreter {
     /// detached rather than emptied; every alias of the cell observes the clear.
     pub(super) fn clear_aggregate_cell(cell: &crate::gc::Gc<std::sync::Mutex<Value>>) {
         let mut guard = cell.lock().unwrap();
-        match &mut *guard {
-            Value::Array(arc, _) => crate::gc::Gc::make_mut(arc).items.clear(),
-            Value::Hash(arc) => crate::gc::Gc::make_mut(arc).map.clear(),
-            other => *other = Value::Nil,
+        if (*guard)
+            .with_array_mut(|arc, _| crate::gc::Gc::make_mut(arc).items.clear())
+            .is_none()
+            && (*guard)
+                .with_hash_mut(|arc| crate::gc::Gc::make_mut(arc).map.clear())
+                .is_none()
+        {
+            *guard = Value::NIL;
         }
     }
 
@@ -119,8 +123,8 @@ impl Interpreter {
             frame_attrs.insert(
                 "line".to_string(),
                 current_line
-                    .map(|l| Value::Int(l as i64))
-                    .unwrap_or(Value::Int(0)),
+                    .map(|l| Value::int(l as i64))
+                    .unwrap_or(Value::int(0)),
             );
             frames.push(Value::make_instance(
                 Symbol::intern("Backtrace::Frame"),
@@ -172,7 +176,7 @@ impl Interpreter {
             );
             frame_attrs.insert(
                 "line".to_string(),
-                line.map(|l| Value::Int(l as i64)).unwrap_or(Value::Int(0)),
+                line.map(|l| Value::int(l as i64)).unwrap_or(Value::int(0)),
             );
             frames.push(Value::make_instance(
                 Symbol::intern("Backtrace::Frame"),
@@ -197,8 +201,8 @@ impl Interpreter {
             frame_attrs.insert(
                 "line".to_string(),
                 current_line
-                    .map(|l| Value::Int(l as i64))
-                    .unwrap_or(Value::Int(0)),
+                    .map(|l| Value::int(l as i64))
+                    .unwrap_or(Value::int(0)),
             );
             frames.push(Value::make_instance(
                 Symbol::intern("Backtrace::Frame"),
@@ -230,8 +234,8 @@ impl Interpreter {
                 "line".to_string(),
                 outermost
                     .line
-                    .map(|l| Value::Int(l as i64))
-                    .unwrap_or(Value::Int(0)),
+                    .map(|l| Value::int(l as i64))
+                    .unwrap_or(Value::int(0)),
             );
             frames.push(Value::make_instance(
                 Symbol::intern("Backtrace::Frame"),
@@ -305,7 +309,7 @@ impl Interpreter {
             let mut frame_attrs = HashMap::new();
             frame_attrs.insert("subname".to_string(), Value::str(subname));
             frame_attrs.insert("file".to_string(), Value::str(file));
-            frame_attrs.insert("line".to_string(), Value::Int(line_no));
+            frame_attrs.insert("line".to_string(), Value::int(line_no));
             frames.push(Value::make_instance(
                 Symbol::intern("Backtrace::Frame"),
                 frame_attrs,

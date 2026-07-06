@@ -15,8 +15,8 @@ impl Interpreter {
             constraint_base,
             "Array" | "Hash" | "List" | "Seq" | "Positional" | "Associative"
         );
-        match value {
-            Value::Array(items, ..) => {
+        match value.view() {
+            ValueView::Array(items, ..) => {
                 if is_container_constraint {
                     // Each element is checked as a whole against the constraint
                     items
@@ -29,7 +29,7 @@ impl Interpreter {
                         .all(|item| self.array_elements_match_constraint(constraint, item))
                 }
             }
-            Value::Seq(items) => {
+            ValueView::Seq(items) => {
                 if is_container_constraint {
                     // Each element is checked as a whole against the constraint
                     items
@@ -42,10 +42,10 @@ impl Interpreter {
                         .all(|item| self.array_elements_match_constraint(constraint, item))
                 }
             }
-            Value::Nil => true,
+            ValueView::Nil => true,
             // A type-object hole (e.g. an `Any` gap) is acceptable for a native
             // array: it is coerced to the array's default on store.
-            Value::Package(_)
+            ValueView::Package(_)
                 if crate::runtime::native_types::is_native_array_element_type(constraint) =>
             {
                 true
@@ -90,8 +90,8 @@ impl Interpreter {
             constraint_base,
             "Array" | "Hash" | "List" | "Seq" | "Positional" | "Associative"
         );
-        match value {
-            Value::Array(items, ..) => {
+        match value.view() {
+            ValueView::Array(items, ..) => {
                 for item in items.iter() {
                     if is_container_constraint {
                         if !self.type_matches_value(constraint, item) {
@@ -103,7 +103,7 @@ impl Interpreter {
                 }
                 None
             }
-            Value::Seq(items) => {
+            ValueView::Seq(items) => {
                 for item in items.iter() {
                     if is_container_constraint {
                         if !self.type_matches_value(constraint, item) {
@@ -115,7 +115,7 @@ impl Interpreter {
                 }
                 None
             }
-            Value::Nil => None,
+            ValueView::Nil => None,
             _ => {
                 if self.type_matches_value(constraint, value) {
                     None
@@ -131,14 +131,14 @@ impl Interpreter {
     fn check_range_invalid_arg(left: &Value, right: &Value) -> Option<RuntimeError> {
         fn is_invalid_endpoint(v: &Value) -> bool {
             matches!(
-                v,
-                Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. }
-                    | Value::Complex(..)
-                    | Value::Seq(_)
+                v.view(),
+                ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
+                    | ValueView::Complex(..)
+                    | ValueView::Seq(_)
             )
         }
         fn invalid_value(v: &Value) -> Option<&Value> {
@@ -161,8 +161,8 @@ impl Interpreter {
             );
             // For Seq endpoints, store the type object (Raku behavior); for others,
             // store the actual value.
-            let got_val = if matches!(v, Value::Seq(_)) {
-                Value::Package(Symbol::intern(type_name))
+            let got_val = if matches!(v.view(), ValueView::Seq(_)) {
+                Value::package(Symbol::intern(type_name))
             } else {
                 v.clone()
             };
@@ -173,29 +173,36 @@ impl Interpreter {
     }
 
     pub(super) fn scalarize_range_endpoint(value: Value) -> Value {
-        match value {
-            Value::Scalar(inner) => Self::scalarize_range_endpoint(inner.as_ref().clone()),
-            Value::Instance { class_name, .. } if class_name == "Match" => {
-                runtime::coerce_to_numeric(Value::str(value.to_string_value()))
+        let coerce = match value.view() {
+            ValueView::Scalar(inner) => {
+                return Self::scalarize_range_endpoint(inner.clone());
             }
-            Value::Array(..)
-            | Value::Slip(..)
-            | Value::LazyList(..)
-            | Value::Hash(..)
-            | Value::Set(..)
-            | Value::Bag(..)
-            | Value::Mix(..) => runtime::coerce_to_numeric(value),
+            ValueView::Instance { class_name, .. } if class_name == "Match" => {
+                return runtime::coerce_to_numeric(Value::str(value.to_string_value()));
+            }
+            ValueView::Array(..)
+            | ValueView::Slip(..)
+            | ValueView::LazyList(..)
+            | ValueView::Hash(..)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..) => true,
             // An allomorph (IntStr/RatStr/NumStr/…) as a Range endpoint coerces
             // to its numeric value, so `0..<5>` is `0..5` (not a degenerate
             // single-element range over the un-numified Mixin).
-            Value::Mixin(ref inner, ref mixins)
+            ValueView::Mixin(inner, mixins)
                 if crate::value::types::allomorph_type_name(inner, mixins).is_some() =>
             {
-                runtime::coerce_to_numeric(value)
+                true
             }
             // Seq is NOT scalarized here — it must be caught by check_range_invalid_arg
-            Value::Seq(..) => value,
-            other => other,
+            ValueView::Seq(..) => false,
+            _ => false,
+        };
+        if coerce {
+            runtime::coerce_to_numeric(value)
+        } else {
+            value
         }
     }
 
@@ -205,75 +212,53 @@ impl Interpreter {
         if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
             return Err(err);
         }
-        let result = match (&left, &right) {
-            (Value::Int(a), Value::Int(b)) => Value::Range(*a, *b),
-            (Value::Int(a), Value::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
-                Value::Range(*a, i64::MAX)
+        let result = match (left.view(), right.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => Value::range(a, b),
+            (ValueView::Int(a), ValueView::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
+                Value::range(a, i64::MAX)
             }
-            (Value::Int(a), Value::Whatever) => Value::Range(*a, i64::MAX),
-            (Value::Int(a), Value::HyperWhatever) => Value::Range(*a, i64::MAX),
+            (ValueView::Int(a), ValueView::Whatever) => Value::range(a, i64::MAX),
+            (ValueView::Int(a), ValueView::HyperWhatever) => Value::range(a, i64::MAX),
             // A `-Inf` start is NOT collapsed to the i64::MIN sentinel: such a
             // range iterates its `-Inf` start ad infinitum (`-Inf+1 == -Inf`),
             // so it must stay a GenericRange preserving the `Num` endpoint. The
             // i64 sentinel would instead count up from i64::MIN, yielding bogus
             // integers (`(-Inf..0).map` would give i64::MIN+n, not -Inf).
-            (Value::Num(a), Value::Int(_)) if a.is_infinite() && a.is_sign_negative() => {
-                Value::GenericRange {
-                    start: Arc::new(left.clone()),
-                    end: Arc::new(right.clone()),
-                    excl_start: false,
-                    excl_end: false,
-                }
+            (ValueView::Num(a), ValueView::Int(_)) if a.is_infinite() && a.is_sign_negative() => {
+                Value::generic_range(left.clone(), right.clone(), false, false)
             }
-            (Value::Str(a), Value::Whatever) => Value::GenericRange {
-                start: Arc::new(Value::Str(a.clone())),
-                end: Arc::new(Value::HyperWhatever),
-                excl_start: false,
-                excl_end: false,
-            },
-            (Value::Str(a), Value::HyperWhatever) => Value::GenericRange {
-                start: Arc::new(Value::Str(a.clone())),
-                end: Arc::new(Value::HyperWhatever),
-                excl_start: false,
-                excl_end: false,
-            },
-            (Value::Str(a), Value::Str(b)) => Value::GenericRange {
-                start: Arc::new(Value::Str(a.clone())),
-                end: Arc::new(Value::Str(b.clone())),
-                excl_start: false,
-                excl_end: false,
-            },
-            (l, r) if l.is_numeric() && r.is_numeric() => Value::GenericRange {
-                start: Arc::new(l.clone()),
-                end: Arc::new(r.clone()),
-                excl_start: false,
-                excl_end: false,
-            },
-            (Value::Str(a), r) if r.is_numeric() => Value::GenericRange {
-                start: Arc::new(Value::Str(a.clone())),
-                end: Arc::new(r.clone()),
-                excl_start: false,
-                excl_end: false,
-            },
-            (l, Value::Str(b)) if l.is_numeric() => Value::GenericRange {
-                start: Arc::new(l.clone()),
-                end: Arc::new(Value::Str(b.clone())),
-                excl_start: false,
-                excl_end: false,
-            },
+            (ValueView::Str(a), ValueView::Whatever) => Value::generic_range(
+                Value::str_arc(a.clone()),
+                Value::HYPER_WHATEVER,
+                false,
+                false,
+            ),
+            (ValueView::Str(a), ValueView::HyperWhatever) => Value::generic_range(
+                Value::str_arc(a.clone()),
+                Value::HYPER_WHATEVER,
+                false,
+                false,
+            ),
+            (ValueView::Str(a), ValueView::Str(b)) => Value::generic_range(
+                Value::str_arc(a.clone()),
+                Value::str_arc(b.clone()),
+                false,
+                false,
+            ),
+            (_, _) if left.is_numeric() && right.is_numeric() => {
+                Value::generic_range(left.clone(), right.clone(), false, false)
+            }
+            (ValueView::Str(a), _) if right.is_numeric() => {
+                Value::generic_range(Value::str_arc(a.clone()), right.clone(), false, false)
+            }
+            (_, ValueView::Str(b)) if left.is_numeric() => {
+                Value::generic_range(left.clone(), Value::str_arc(b.clone()), false, false)
+            }
             // WhateverCode endpoint: e.g. 0..*-2
-            (_, Value::Sub(_)) | (Value::Sub(_), _) => Value::GenericRange {
-                start: Arc::new(left),
-                end: Arc::new(right),
-                excl_start: false,
-                excl_end: false,
-            },
-            _ => Value::GenericRange {
-                start: Arc::new(left),
-                end: Arc::new(right),
-                excl_start: false,
-                excl_end: false,
-            },
+            (_, ValueView::Sub(_)) | (ValueView::Sub(_), _) => {
+                Value::generic_range(left.clone(), right.clone(), false, false)
+            }
+            _ => Value::generic_range(left.clone(), right.clone(), false, false),
         };
         self.stack.push(result);
         Ok(())
@@ -285,20 +270,12 @@ impl Interpreter {
         if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
             return Err(err);
         }
-        let result = match (&left, &right) {
-            (Value::Int(a), Value::Int(b)) => Value::RangeExcl(*a, *b),
-            (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
-                start: Arc::new(left.clone()),
-                end: Arc::new(right.clone()),
-                excl_start: false,
-                excl_end: true,
-            },
-            _ => Value::GenericRange {
-                start: Arc::new(left),
-                end: Arc::new(right),
-                excl_start: false,
-                excl_end: true,
-            },
+        let result = match (left.view(), right.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => Value::range_excl(a, b),
+            (_, _) if left.is_numeric() || right.is_numeric() => {
+                Value::generic_range(left.clone(), right.clone(), false, true)
+            }
+            _ => Value::generic_range(left.clone(), right.clone(), false, true),
         };
         self.stack.push(result);
         Ok(())
@@ -310,20 +287,12 @@ impl Interpreter {
         if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
             return Err(err);
         }
-        let result = match (&left, &right) {
-            (Value::Int(a), Value::Int(b)) => Value::RangeExclStart(*a, *b),
-            (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
-                start: Arc::new(left.clone()),
-                end: Arc::new(right.clone()),
-                excl_start: true,
-                excl_end: false,
-            },
-            _ => Value::GenericRange {
-                start: Arc::new(left),
-                end: Arc::new(right),
-                excl_start: true,
-                excl_end: false,
-            },
+        let result = match (left.view(), right.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => Value::range_excl_start(a, b),
+            (_, _) if left.is_numeric() || right.is_numeric() => {
+                Value::generic_range(left.clone(), right.clone(), true, false)
+            }
+            _ => Value::generic_range(left.clone(), right.clone(), true, false),
         };
         self.stack.push(result);
         Ok(())
@@ -335,20 +304,12 @@ impl Interpreter {
         if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
             return Err(err);
         }
-        let result = match (&left, &right) {
-            (Value::Int(a), Value::Int(b)) => Value::RangeExclBoth(*a, *b),
-            (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
-                start: Arc::new(left.clone()),
-                end: Arc::new(right.clone()),
-                excl_start: true,
-                excl_end: true,
-            },
-            _ => Value::GenericRange {
-                start: Arc::new(left),
-                end: Arc::new(right),
-                excl_start: true,
-                excl_end: true,
-            },
+        let result = match (left.view(), right.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => Value::range_excl_both(a, b),
+            (_, _) if left.is_numeric() || right.is_numeric() => {
+                Value::generic_range(left.clone(), right.clone(), true, true)
+            }
+            _ => Value::generic_range(left.clone(), right.clone(), true, true),
         };
         self.stack.push(result);
         Ok(())

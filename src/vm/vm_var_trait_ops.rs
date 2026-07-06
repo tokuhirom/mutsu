@@ -15,9 +15,9 @@ impl Interpreter {
         // Handle `is default(...)` as a built-in variable trait.
         if trait_name == "default" {
             let default_value = if has_arg {
-                self.stack.pop().unwrap_or(Value::Nil)
+                self.stack.pop().unwrap_or(Value::NIL)
             } else {
-                Value::Bool(true)
+                Value::TRUE
             };
             let name = name.to_string();
             self.set_var_default(&name, default_value.clone());
@@ -40,10 +40,10 @@ impl Interpreter {
                 // Nil/uninitialized slots in a defaulted container become
                 // the default).
                 if name.starts_with('@')
-                    && let Value::Array(ref items, kind) = container
+                    && let ValueView::Array(items, kind) = container.view()
                 {
                     let is_hole = |v: &Value| {
-                        matches!(v, Value::Nil) || matches!(v, Value::Package(n) if n == "Any")
+                        v.is_nil() || matches!(v.view(), ValueView::Package(n) if n == "Any")
                     };
                     let has_holes = items.iter().any(is_hole);
                     if has_holes {
@@ -57,7 +57,7 @@ impl Interpreter {
                                 }
                             })
                             .collect();
-                        let new_arr = Value::Array(
+                        let new_arr = Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(replaced)),
                             kind,
                         );
@@ -70,7 +70,10 @@ impl Interpreter {
             // If the variable is currently Nil (uninitialized scalar), set it to the default.
             if !name.starts_with('@') && !name.starts_with('%') {
                 let current = self.locals_get_by_name(code, &name);
-                if matches!(current, Some(Value::Nil) | None) {
+                if matches!(
+                    current.as_ref().map(Value::view),
+                    Some(ValueView::Nil) | None
+                ) {
                     self.locals_set_by_name(code, &name, default_value.clone());
                     self.set_env_with_main_alias(&name, default_value);
                 }
@@ -115,37 +118,39 @@ impl Interpreter {
                             .ok()
                             .or_else(|| self.get_env_with_main_alias(&trait_name))
                             .or_else(|| self.locals_get_by_name(code, &trait_name));
-                        match resolved {
-                            Some(Value::Package(sym)) => Value::Package(sym),
-                            Some(Value::Scalar(inner)) => match *inner {
-                                Value::Package(sym) => Value::Package(sym),
-                                _ => Value::Package(crate::symbol::Symbol::intern(
+                        match resolved.as_ref().map(Value::view) {
+                            Some(ValueView::Package(sym)) => Value::package(sym),
+                            Some(ValueView::Scalar(inner)) => match inner.view() {
+                                ValueView::Package(sym) => Value::package(sym),
+                                _ => Value::package(crate::symbol::Symbol::intern(
                                     if trait_name == "buf" { "Buf" } else { "Blob" },
                                 )),
                             },
-                            _ => Value::Package(crate::symbol::Symbol::intern(
+                            _ => Value::package(crate::symbol::Symbol::intern(
                                 if trait_name == "buf" { "Buf" } else { "Blob" },
                             )),
                         }
                     }
-                    _ => Value::Package(crate::symbol::Symbol::intern(&trait_name)),
+                    _ => Value::package(crate::symbol::Symbol::intern(&trait_name)),
                 };
                 // Get current value, convert to buf.
                 // The value might be an Array (from the initializer) or already
                 // a Buf/Blob Instance (if SetLocal coerced through an old Buf
                 // container in the same slot, e.g. in a loop redeclaration).
-                let current = self.locals_get_by_name(code, name).unwrap_or(Value::Nil);
-                let items = match &current {
-                    Value::Array(items, ..) => items
+                let current = self.locals_get_by_name(code, name).unwrap_or(Value::NIL);
+                let items = match current.view() {
+                    ValueView::Array(items, ..) => items
                         .iter()
-                        .map(|v| Value::Int(crate::runtime::to_int(v)))
+                        .map(|v| Value::int(crate::runtime::to_int(v)))
                         .collect(),
-                    Value::Instance { attributes, .. } => {
+                    ValueView::Instance { attributes, .. } => {
                         // Extract items from an existing Buf/Blob instance
-                        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                        if let Some(ValueView::Array(items, ..)) =
+                            attributes.as_map().get("bytes").map(Value::view)
+                        {
                             items
                                 .iter()
-                                .map(|v| Value::Int(crate::runtime::to_int(v)))
+                                .map(|v| Value::int(crate::runtime::to_int(v)))
                                 .collect()
                         } else {
                             Vec::new()
@@ -204,49 +209,51 @@ impl Interpreter {
                 // If so, construct the QuantHash from those values instead of creating
                 // an empty one. This handles `my %h is Bag = <a b b c>`.
                 let current_val = self.locals_get_by_name(code, &name_str);
-                let has_init_values = match &current_val {
-                    Some(Value::Hash(h)) => !h.is_empty(),
-                    Some(Value::Array(a, _)) => !a.is_empty(),
+                let has_init_values = match current_val.as_ref().map(Value::view) {
+                    Some(ValueView::Hash(h)) => !h.is_empty(),
+                    Some(ValueView::Array(a, _)) => !a.is_empty(),
                     // A Seq/Slip initializer (e.g. `is SetHash = %h.map: {...}`)
                     // must be coerced, not treated as "no initializer".
-                    Some(Value::Seq(s) | Value::Slip(s)) => !s.is_empty(),
-                    Some(Value::LazyList(_)) => true,
+                    Some(ValueView::Seq(s) | ValueView::Slip(s)) => !s.is_empty(),
+                    Some(ValueView::LazyList(_)) => true,
                     // Already converted to a QuantHash by type constraint coercion
-                    Some(Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) => true,
+                    Some(ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)) => {
+                        true
+                    }
                     _ => false,
                 };
                 let mut instance = if has_init_values {
                     let init_val = current_val.unwrap();
                     // If already the target QuantHash type, use it directly
                     let already_target = matches!(
-                        (&init_val, base_trait),
-                        (Value::Mix(_, _), "MixHash" | "Mix")
-                            | (Value::Bag(_, _), "BagHash" | "Bag")
-                            | (Value::Set(_, _), "SetHash" | "Set")
+                        (init_val.view(), base_trait),
+                        (ValueView::Mix(_, _), "MixHash" | "Mix")
+                            | (ValueView::Bag(_, _), "BagHash" | "Bag")
+                            | (ValueView::Set(_, _), "SetHash" | "Set")
                     );
                     if already_target {
                         // Ensure mutability flag matches the trait
-                        match init_val {
-                            Value::Mix(data, _) => {
+                        match init_val.view() {
+                            ValueView::Mix(data, _) => {
                                 let mutable = base_trait == "MixHash";
-                                Value::Mix(data, mutable)
+                                Value::mix_parts(data.clone(), mutable)
                             }
-                            Value::Bag(data, _) => {
+                            ValueView::Bag(data, _) => {
                                 let mutable = base_trait == "BagHash";
-                                Value::Bag(data, mutable)
+                                Value::bag_parts(data.clone(), mutable)
                             }
-                            Value::Set(data, _) => {
+                            ValueView::Set(data, _) => {
                                 let mutable = base_trait == "SetHash";
-                                Value::Set(data, mutable)
+                                Value::set_parts(data.clone(), mutable)
                             }
-                            other => other,
+                            _ => init_val,
                         }
                     } else {
                         // Convert initial values to the target QuantHash type
                         self.try_compiled_method_or_interpret(init_val, base_trait, vec![])?
                     }
                 } else {
-                    let type_obj = Value::Package(crate::symbol::Symbol::intern(base_trait));
+                    let type_obj = Value::package(crate::symbol::Symbol::intern(base_trait));
                     self.try_compiled_method_or_interpret(type_obj, "new", vec![])?
                 };
                 // Type check for parameterized QuantHash (e.g. Mix[Int], Set[Str])
@@ -257,10 +264,10 @@ impl Interpreter {
                         && constraint != "Any"
                         && constraint != "Mu"
                     {
-                        let keys: Vec<String> = match &instance {
-                            Value::Mix(m, _) => m.weights.keys().cloned().collect(),
-                            Value::Bag(b, _) => b.counts.keys().cloned().collect(),
-                            Value::Set(s, _) => s.elements.iter().cloned().collect(),
+                        let keys: Vec<String> = match instance.view() {
+                            ValueView::Mix(m, _) => m.weights.keys().cloned().collect(),
+                            ValueView::Bag(b, _) => b.counts.keys().cloned().collect(),
+                            ValueView::Set(s, _) => s.elements.iter().cloned().collect(),
                             _ => vec![],
                         };
                         // Try to coerce keys to the constraint type for type checking
@@ -288,29 +295,29 @@ impl Interpreter {
                         }
                         // Store typed keys in the QuantHash so .keys returns typed values
                         if !typed_keys.is_empty() {
-                            instance = match instance {
-                                Value::Mix(data, mutable) => {
+                            instance = match instance.view() {
+                                ValueView::Mix(data, mutable) => {
                                     let new_data = crate::value::MixData::with_original_keys(
                                         data.weights.clone(),
                                         typed_keys,
                                     );
-                                    Value::Mix(crate::gc::Gc::new(new_data), mutable)
+                                    Value::mix_parts(crate::gc::Gc::new(new_data), mutable)
                                 }
-                                Value::Bag(data, mutable) => {
+                                ValueView::Bag(data, mutable) => {
                                     let new_data = crate::value::BagData::with_original_keys(
                                         data.counts.clone(),
                                         typed_keys,
                                     );
-                                    Value::Bag(crate::gc::Gc::new(new_data), mutable)
+                                    Value::bag_parts(crate::gc::Gc::new(new_data), mutable)
                                 }
-                                Value::Set(data, mutable) => {
+                                ValueView::Set(data, mutable) => {
                                     let new_data = crate::value::SetData::with_original_keys(
                                         data.elements.clone(),
                                         typed_keys,
                                     );
-                                    Value::Set(crate::gc::Gc::new(new_data), mutable)
+                                    Value::set_parts(crate::gc::Gc::new(new_data), mutable)
                                 }
-                                other => other,
+                                _ => instance,
                             };
                         }
                     }
@@ -365,18 +372,18 @@ impl Interpreter {
             )));
         }
         let trait_value = if has_arg {
-            self.stack.pop().unwrap_or(Value::Nil)
+            self.stack.pop().unwrap_or(Value::NIL)
         } else {
-            Value::Bool(true)
+            Value::TRUE
         };
-        let target = self.env().get(name).cloned().unwrap_or(Value::Nil);
+        let target = self.env().get(name).cloned().unwrap_or(Value::NIL);
         // CARRIER: `.VAR` pseudo-method + `trait_mod:<is>` metaprogramming hook
         // (reflective container object + user trait handler). See ledger §C.
         let var_obj = loan_env!(
             self,
             call_method_mut_with_values(name, target, "VAR", vec![])
         )?;
-        let named_arg = Value::Pair(trait_name, Box::new(trait_value));
+        let named_arg = Value::pair(trait_name, trait_value);
         self.vm_call_function("trait_mod:<is>", vec![var_obj, named_arg])?;
         Ok(())
     }

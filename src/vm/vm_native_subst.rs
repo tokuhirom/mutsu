@@ -37,7 +37,7 @@ impl Interpreter {
         }
         // Only a plain string invocant. Other Cool types stringify in the
         // interpreter; keep the native path conservative.
-        let Value::Str(text_arc) = target else {
+        let ValueView::Str(text_arc) = target.view() else {
             return None;
         };
         let text = text_arc.to_string();
@@ -49,7 +49,7 @@ impl Interpreter {
         let mut positional: Vec<&Value> = Vec::new();
         let mut global = false;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "g" | "global" => global = value.truthy(),
                     _ => return None,
@@ -68,19 +68,19 @@ impl Interpreter {
         // Only literal string (or absent) replacements. A closure replacement
         // needs `eval_subst_replacement`'s block call; numbers/other values are
         // rare enough to defer.
-        let replacement_str = match replacement_val {
+        let replacement_str = match replacement_val.map(Value::view) {
             None => String::new(),
-            Some(Value::Str(s)) => s.to_string(),
+            Some(ValueView::Str(s)) => s.to_string(),
             _ => return None,
         };
 
-        match pattern {
+        match pattern.view() {
             // Plain (non-adverb, non-Perl5) regex literal: `.subst(/pat/, ...)`.
-            Value::Regex(pat) => {
+            ValueView::Regex(pat) => {
                 Some(self.native_subst_regex(&text, &pat.to_string(), &replacement_str, global))
             }
             // Literal string pattern: pure string replacement, never touches `$/`.
-            Value::Str(pat) => {
+            ValueView::Str(pat) => {
                 let pat = pat.as_str();
                 if pat.is_empty() {
                     // Empty-pattern semantics (match between every char) differ
@@ -99,7 +99,7 @@ impl Interpreter {
     }
 
     /// Native regex `.subst`. Mirrors the non-adverb path of `dispatch_subst`'s
-    /// `Value::Regex` branch.
+    /// `Regex` branch.
     fn native_subst_regex(
         &mut self,
         text: &str,
@@ -125,7 +125,7 @@ impl Interpreter {
             let empty = if global {
                 Value::array(Vec::new())
             } else {
-                Value::Nil
+                Value::NIL
             };
             self.env_mut().insert("/".to_string(), empty);
             return Ok(Value::str(text.to_string()));

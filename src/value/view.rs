@@ -291,6 +291,245 @@ impl Value {
         Value::Seq(Arc::new(items))
     }
 
+    /// Whatever (`*`) constant (post-box: a tag constant).
+    pub const WHATEVER: Value = Value::Whatever;
+    /// HyperWhatever (`**`) constant (post-box: a tag constant).
+    pub const HYPER_WHATEVER: Value = Value::HyperWhatever;
+
+    // Representation-independent mirrors of the remaining variant
+    // constructors, added for the 3b-0 call-site migration. Raw payload
+    // pass-throughs: no normalization (unlike e.g. `make_rat`).
+
+    /// Construct a `Str` from an existing shared string.
+    #[inline]
+    pub fn str_arc(s: Arc<String>) -> Self {
+        Value::Str(s)
+    }
+
+    /// Construct a `BigInt` from an existing shared bigint.
+    #[inline]
+    pub fn bigint_arc(n: Arc<NumBigInt>) -> Self {
+        Value::BigInt(n)
+    }
+
+    /// Construct a `Package` type object.
+    #[inline]
+    pub(crate) fn package(sym: Symbol) -> Self {
+        Value::Package(sym)
+    }
+
+    /// Construct a `Routine` stub value.
+    #[inline]
+    pub(crate) fn routine_parts(package: Symbol, name: Symbol, is_regex: bool) -> Self {
+        Value::Routine {
+            package,
+            name,
+            is_regex,
+        }
+    }
+
+    /// Construct a `Pair` with a string key.
+    #[inline]
+    pub fn pair(key: String, val: Value) -> Self {
+        Value::Pair(key, Box::new(val))
+    }
+
+    /// Construct a `ValuePair` (a pair with a non-string key).
+    #[inline]
+    pub fn value_pair(key: Value, val: Value) -> Self {
+        Value::ValuePair(Box::new(key), Box::new(val))
+    }
+
+    /// Construct a `Sub` value from its shared payload.
+    #[inline]
+    pub(crate) fn sub_value(data: crate::gc::Gc<SubData>) -> Self {
+        Value::Sub(data)
+    }
+
+    /// Construct a `WeakSub` value.
+    #[inline]
+    pub(crate) fn weak_sub(w: crate::gc::WeakGc<SubData>) -> Self {
+        Value::WeakSub(w)
+    }
+
+    /// Construct a `Scalar` (itemized) wrapper.
+    #[inline]
+    pub fn scalar(inner: Value) -> Self {
+        Value::Scalar(Box::new(inner))
+    }
+
+    /// Construct a `ContainerRef` cell value from an existing cell.
+    #[inline]
+    pub(crate) fn container_ref(cell: Gc<Mutex<Value>>) -> Self {
+        Value::ContainerRef(cell)
+    }
+
+    /// Construct an inclusive integer `Range`.
+    #[inline]
+    pub fn range(start: i64, end: i64) -> Self {
+        Value::Range(start, end)
+    }
+
+    /// Construct an end-exclusive integer range (`a ..^ b`).
+    #[inline]
+    pub fn range_excl(start: i64, end: i64) -> Self {
+        Value::RangeExcl(start, end)
+    }
+
+    /// Construct a start-exclusive integer range (`a ^.. b`).
+    #[inline]
+    pub fn range_excl_start(start: i64, end: i64) -> Self {
+        Value::RangeExclStart(start, end)
+    }
+
+    /// Construct a both-exclusive integer range (`a ^..^ b`).
+    #[inline]
+    pub fn range_excl_both(start: i64, end: i64) -> Self {
+        Value::RangeExclBoth(start, end)
+    }
+
+    /// Construct a `Rat` from an already-normalized numerator/denominator
+    /// (use `make_rat` for the normalizing constructor).
+    #[inline]
+    pub fn rat_raw(num: i64, den: i64) -> Self {
+        Value::Rat(num, den)
+    }
+
+    /// Construct a `FatRat` from an already-normalized numerator/denominator.
+    #[inline]
+    pub fn fat_rat_raw(num: i64, den: i64) -> Self {
+        Value::FatRat(num, den)
+    }
+
+    /// Construct a `Complex` from real/imaginary parts.
+    #[inline]
+    pub fn complex(re: f64, im: f64) -> Self {
+        Value::Complex(re, im)
+    }
+
+    /// Construct a `Seq` from an existing shared element vector.
+    #[inline]
+    pub fn seq_arc(items: Arc<Vec<Value>>) -> Self {
+        Value::Seq(items)
+    }
+
+    /// Construct a `HyperSeq` from an existing shared element vector.
+    #[inline]
+    pub fn hyper_seq_arc(items: Arc<Vec<Value>>) -> Self {
+        Value::HyperSeq(items)
+    }
+
+    /// Construct a `RaceSeq` from an existing shared element vector.
+    #[inline]
+    pub fn race_seq_arc(items: Arc<Vec<Value>>) -> Self {
+        Value::RaceSeq(items)
+    }
+
+    /// Construct a `Slip` from an existing shared element vector.
+    #[inline]
+    pub fn slip_arc(items: Arc<Vec<Value>>) -> Self {
+        Value::Slip(items)
+    }
+
+    /// Construct a `Hash` from an existing backing store.
+    #[inline]
+    pub(crate) fn hash_with_data(h: Gc<HashData>) -> Self {
+        Value::Hash(h)
+    }
+
+    /// Construct a `Set` from an existing backing store and mutability flag.
+    #[inline]
+    pub(crate) fn set_parts(s: Gc<SetData>, is_mut: bool) -> Self {
+        Value::Set(s, is_mut)
+    }
+
+    /// Construct a `Bag` from an existing backing store and mutability flag.
+    #[inline]
+    pub(crate) fn bag_parts(b: Gc<BagData>, is_mut: bool) -> Self {
+        Value::Bag(b, is_mut)
+    }
+
+    /// Construct a `Mix` from an existing backing store and mutability flag.
+    #[inline]
+    pub(crate) fn mix_parts(m: Gc<MixData>, is_mut: bool) -> Self {
+        Value::Mix(m, is_mut)
+    }
+
+    /// Construct an `Instance` from its parts (an existing identity: reuses
+    /// `id`; use `make_instance`/`new_with_class` to mint a fresh object).
+    #[inline]
+    pub(crate) fn instance_parts(
+        class_name: Symbol,
+        attributes: crate::gc::Gc<InstanceAttrs>,
+        id: u64,
+    ) -> Self {
+        Value::Instance {
+            class_name,
+            attributes,
+            id,
+        }
+    }
+
+    /// Construct a `LazyList` value from its shared payload.
+    #[inline]
+    pub(crate) fn lazy_list(l: crate::gc::Gc<LazyList>) -> Self {
+        Value::LazyList(l)
+    }
+
+    /// Construct a `HashEntryRef` vivification token.
+    #[inline]
+    pub(crate) fn hash_entry_ref(hash: Gc<HashData>, path: Vec<String>) -> Self {
+        Value::HashEntryRef { hash, path }
+    }
+
+    /// Construct a `Mixin` from its parts, preserving the inner value's
+    /// `Arc` identity (unlike `Value::mixin`, which re-wraps).
+    #[inline]
+    pub(crate) fn mixin_parts(inner: Arc<Value>, overrides: Arc<HashMap<String, Value>>) -> Self {
+        Value::Mixin(inner, overrides)
+    }
+
+    /// Construct an `Enum` value from its parts.
+    #[inline]
+    pub(crate) fn enum_parts(
+        enum_type: Symbol,
+        key: Symbol,
+        value: EnumValue,
+        index: usize,
+    ) -> Self {
+        Value::Enum {
+            enum_type,
+            key,
+            value,
+            index,
+        }
+    }
+
+    /// Construct a `Proxy` from its parts.
+    #[inline]
+    pub(crate) fn proxy_parts(
+        fetcher: Value,
+        storer: Value,
+        subclass: Option<(Symbol, ProxySubclassAttrs)>,
+        decontainerized: bool,
+    ) -> Self {
+        Value::Proxy {
+            fetcher: Box::new(fetcher),
+            storer: Box::new(storer),
+            subclass,
+            decontainerized,
+        }
+    }
+
+    /// Construct a `ParametricRole` type object.
+    #[inline]
+    pub(crate) fn parametric_role(base_name: Symbol, type_args: Vec<Value>) -> Self {
+        Value::ParametricRole {
+            base_name,
+            type_args,
+        }
+    }
+
     // ---- single-variant probes (no coercion) ----
     //
     // These test for exactly one representation variant. They are NOT the
@@ -351,11 +590,120 @@ impl Value {
         }
     }
 
-    // In-place payload mutation (`match &mut v { Value::Array(gc, k) => ... }`
-    // sites) gets closure-based `with_*_mut` entry points — a shape that
-    // survives any representation by unpack/run/repack. They are added
-    // together with their first migrated caller (design doc §3), not
-    // speculatively.
+    /// The proxy parts (fetcher, storer, subclass, decontainerized) if this
+    /// is exactly a `Proxy`, consuming `self`. Post NaN-boxing: unbox + move.
+    #[inline]
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn into_proxy_parts(
+        self,
+    ) -> Option<(Value, Value, Option<(Symbol, ProxySubclassAttrs)>, bool)> {
+        match self {
+            Value::Proxy {
+                fetcher,
+                storer,
+                subclass,
+                decontainerized,
+            } => Some((*fetcher, *storer, subclass, decontainerized)),
+            _ => None,
+        }
+    }
+
+    // ---- in-place payload mutation ----
+    //
+    // Closure-based `with_*_mut` entry points replace
+    // `match &mut v { Value::Array(gc, k) => ... }` sites — a shape that
+    // survives any representation by unpack/run/repack. While `Value` is the
+    // enum they compile to a plain match (zero cost). Multi-variant mutable
+    // matches become `if let`-chains over these (probe order preserved).
+
+    /// Run `f` on the array payload if this is exactly an `Array`.
+    /// Returns `None` (without calling `f`) otherwise.
+    #[inline]
+    pub(crate) fn with_array_mut<R>(
+        &mut self,
+        f: impl FnOnce(&mut Gc<ArrayData>, &mut ArrayKind) -> R,
+    ) -> Option<R> {
+        match self {
+            Value::Array(items, kind) => Some(f(items, kind)),
+            _ => None,
+        }
+    }
+
+    /// Run `f` on the hash payload if this is exactly a `Hash`.
+    /// Returns `None` (without calling `f`) otherwise.
+    #[inline]
+    pub(crate) fn with_hash_mut<R>(&mut self, f: impl FnOnce(&mut Gc<HashData>) -> R) -> Option<R> {
+        match self {
+            Value::Hash(h) => Some(f(h)),
+            _ => None,
+        }
+    }
+
+    /// Run `f` on the set payload (store + mutability flag) if this is
+    /// exactly a `Set`. Returns `None` (without calling `f`) otherwise.
+    #[inline]
+    pub(crate) fn with_set_mut<R>(
+        &mut self,
+        f: impl FnOnce(&mut Gc<SetData>, &mut bool) -> R,
+    ) -> Option<R> {
+        match self {
+            Value::Set(s, is_mut) => Some(f(s, is_mut)),
+            _ => None,
+        }
+    }
+
+    /// Run `f` on the bag payload (store + mutability flag) if this is
+    /// exactly a `Bag`. Returns `None` (without calling `f`) otherwise.
+    #[inline]
+    pub(crate) fn with_bag_mut<R>(
+        &mut self,
+        f: impl FnOnce(&mut Gc<BagData>, &mut bool) -> R,
+    ) -> Option<R> {
+        match self {
+            Value::Bag(b, is_mut) => Some(f(b, is_mut)),
+            _ => None,
+        }
+    }
+
+    /// Run `f` on the mix payload (store + mutability flag) if this is
+    /// exactly a `Mix`. Returns `None` (without calling `f`) otherwise.
+    #[inline]
+    pub(crate) fn with_mix_mut<R>(
+        &mut self,
+        f: impl FnOnce(&mut Gc<MixData>, &mut bool) -> R,
+    ) -> Option<R> {
+        match self {
+            Value::Mix(m, is_mut) => Some(f(m, is_mut)),
+            _ => None,
+        }
+    }
+
+    /// Run `f` on the sub payload if this is exactly a `Sub`.
+    /// Returns `None` (without calling `f`) otherwise.
+    #[inline]
+    pub(crate) fn with_sub_mut<R>(
+        &mut self,
+        f: impl FnOnce(&mut crate::gc::Gc<SubData>) -> R,
+    ) -> Option<R> {
+        match self {
+            Value::Sub(data) => Some(f(data)),
+            _ => None,
+        }
+    }
+
+    /// Run `f` on the hash-entry-ref payload (target hash + key path) if this
+    /// is exactly a `HashEntryRef`. Returns `None` (without calling `f`)
+    /// otherwise. Used e.g. to resync the COW hash pointer after a store.
+    #[inline]
+    pub(crate) fn with_hash_entry_ref_mut<R>(
+        &mut self,
+        f: impl FnOnce(&mut Gc<HashData>, &mut Vec<String>) -> R,
+    ) -> Option<R> {
+        match self {
+            Value::HashEntryRef { hash, path } => Some(f(hash, path)),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -26,8 +26,8 @@ impl Interpreter {
         self.pending_rw_writeback_sources.clear();
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
-            let cl = self.env().get("?LINE").and_then(|v| match v {
-                Value::Int(i) => Some(*i),
+            let cl = self.env().get("?LINE").and_then(|v| match v.view() {
+                ValueView::Int(i) => Some(i),
                 _ => None,
             });
             loan_env!(
@@ -39,7 +39,7 @@ impl Interpreter {
         let mut base = if let Some(inv) = invocant {
             inv
         } else if attributes.is_empty() {
-            Value::Package(crate::symbol::Symbol::intern(receiver_class_name))
+            Value::package(crate::symbol::Symbol::intern(receiver_class_name))
         } else {
             Value::make_instance(
                 crate::symbol::Symbol::intern(receiver_class_name),
@@ -199,7 +199,7 @@ impl Interpreter {
             // that check; the fast path stays for the common all-positional call.
             let has_named_arg = args
                 .iter()
-                .any(|a| matches!(a, Value::Pair(..) | Value::ValuePair(..)));
+                .any(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
 
             if !has_named_arg
                 && !has_missing_required
@@ -264,12 +264,12 @@ impl Interpreter {
         // Set ::?CLASS / ::?ROLE
         self.env_mut().insert(
             "?CLASS".to_string(),
-            Value::Package(crate::symbol::Symbol::intern(owner_class)),
+            Value::package(crate::symbol::Symbol::intern(owner_class)),
         );
         if let Some(role_name) = role_context {
             self.env_mut().insert(
                 "?ROLE".to_string(),
-                Value::Package(crate::symbol::Symbol::intern(&role_name)),
+                Value::package(crate::symbol::Symbol::intern(&role_name)),
             );
         } else {
             self.env_mut().remove("?ROLE");
@@ -293,18 +293,18 @@ impl Interpreter {
         // will set $_ back to self if the invocant param is named "_".
         self.env_mut().insert(
             "_".to_string(),
-            Value::Package(crate::symbol::Symbol::intern("Any")),
+            Value::package(crate::symbol::Symbol::intern("Any")),
         );
 
         // Raku: $! is scoped per routine — fresh Nil on entry
-        self.env_mut().insert("!".to_string(), Value::Nil);
+        self.env_mut().insert("!".to_string(), Value::NIL);
 
         // Assign a unique callable ID for this method invocation so that
         // non-local returns from blocks defined inside this method can target it.
         let method_callable_id = crate::value::next_instance_id();
         self.env_mut().insert(
             "__mutsu_callable_id".to_string(),
-            Value::Int(method_callable_id as i64),
+            Value::int(method_callable_id as i64),
         );
 
         // Role param bindings
@@ -419,7 +419,7 @@ impl Interpreter {
                 continue;
             }
             if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
-                if let Value::Str(source_name) = attr_val {
+                if let ValueView::Str(source_name) = attr_val.view() {
                     // A sigilless attribute is in play — enable the cell-direct
                     // routing's alias-table lookup (Phase 3 Stage 2c (ii)).
                     self.sigilless_attrs_active = true;
@@ -430,7 +430,7 @@ impl Interpreter {
                     );
                     self.env_mut().insert(
                         format!("__mutsu_sigilless_readonly::!{}", actual_attr),
-                        Value::Bool(false),
+                        Value::FALSE,
                     );
                     // Reverse alias: alias_name → !attr so writing to $x updates $!x
                     self.env_mut().insert(
@@ -439,7 +439,7 @@ impl Interpreter {
                     );
                     self.env_mut().insert(
                         format!("__mutsu_sigilless_readonly::{}", source_name),
-                        Value::Bool(false),
+                        Value::FALSE,
                     );
                     // Also set up the alias name with the current attribute value
                     if let Some(attr_value) = attributes.get(actual_attr) {
@@ -498,7 +498,7 @@ impl Interpreter {
         };
 
         // Initialize locals from env
-        self.locals = vec![Value::Nil; cc.locals.len()];
+        self.locals = vec![Value::NIL; cc.locals.len()];
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
@@ -547,7 +547,7 @@ impl Interpreter {
                     if matches_frame {
                         e.is_leave = false;
                         e.control = None;
-                        let ret_val = e.return_value.unwrap_or(Value::Nil);
+                        let ret_val = e.return_value.unwrap_or(Value::NIL);
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
                         self.stack.push(ret_val);
@@ -598,13 +598,13 @@ impl Interpreter {
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
-                self.stack.pop().unwrap_or(Value::Nil)
+                self.stack.pop().unwrap_or(Value::NIL)
             } else {
                 // Implicit return from env "_"
-                self.env().get("_").cloned().unwrap_or(Value::Nil)
+                self.env().get("_").cloned().unwrap_or(Value::NIL)
             }
         } else {
-            Value::Nil
+            Value::NIL
         };
 
         self.stack.truncate(saved_stack_depth);
@@ -666,7 +666,9 @@ impl Interpreter {
                     continue;
                 }
                 if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
-                    if let Some(Value::Str(alias_name)) = attributes.get(attr_name) {
+                    if let Some(ValueView::Str(alias_name)) =
+                        attributes.get(attr_name).map(Value::view)
+                    {
                         method_local_keys.insert(alias_name.to_string());
                         method_local_keys.insert(actual_attr.to_string());
                     }
@@ -785,24 +787,24 @@ impl Interpreter {
         // the cell holds, and writing it back would race with concurrent
         // cell-CAS / cell-direct writes from other threads (lost updates).
         final_result.map(|v| {
-            let adjusted = match (&base, &v) {
+            let adjusted = match (base.view(), v.view()) {
                 (
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name,
                         attributes: base_attrs,
                         id: base_id,
                     },
-                    Value::Instance { id: ret_id, .. },
+                    ValueView::Instance { id: ret_id, .. },
                 ) if base_id == ret_id => {
                     if attrs_adjusted {
                         Value::write_back_sharing(
                             base_attrs,
-                            *class_name,
+                            class_name,
                             attributes.clone(),
-                            *base_id,
+                            base_id,
                         )
                     } else {
-                        Value::instance_sharing_cell(base_attrs, *class_name, *base_id)
+                        Value::instance_sharing_cell(base_attrs, class_name, base_id)
                     }
                 }
                 _ => v,
@@ -843,9 +845,9 @@ impl Interpreter {
         code: &CompiledCode,
         attributes: &mut HashMap<String, Value>,
     ) -> bool {
-        let Value::Instance {
+        let ValueView::Instance {
             attributes: cell, ..
-        } = base
+        } = base.view()
         else {
             return false;
         };
@@ -860,11 +862,11 @@ impl Interpreter {
         let frame_has_container_ref = self
             .locals
             .iter()
-            .any(|v| matches!(v, Value::ContainerRef(_)))
+            .any(|v| matches!(v.view(), ValueView::ContainerRef(_)))
             || self
                 .env()
                 .overlay_iter()
-                .any(|(_, v)| matches!(v, Value::ContainerRef(_)));
+                .any(|(_, v)| matches!(v.view(), ValueView::ContainerRef(_)));
         if !frame_has_container_ref {
             return false;
         }
@@ -1085,14 +1087,14 @@ impl Interpreter {
                 param_values.push((param_name, val));
                 arg_idx += 1;
             } else if pd.map(|pd| pd.optional_marker).unwrap_or(false) {
-                param_values.push((param_name, Value::Nil));
+                param_values.push((param_name, Value::NIL));
             }
         }
 
         // Build class value for ?CLASS
-        let class_val = Value::Package(crate::symbol::Symbol::intern(owner_class));
+        let class_val = Value::package(crate::symbol::Symbol::intern(owner_class));
         let method_callable_id = crate::value::next_instance_id();
-        let any_val = Value::Package(crate::symbol::Symbol::intern("Any"));
+        let any_val = Value::package(crate::symbol::Symbol::intern("Any"));
 
         // For can_skip_merge methods with no closures, reduce env inserts.
         // Only insert ?CLASS/?ROLE (used by ::?CLASS/::?ROLE resolution and
@@ -1108,7 +1110,7 @@ impl Interpreter {
             if let Some(ref role_name) = role_context {
                 env.insert(
                     "?ROLE".to_string(),
-                    Value::Package(crate::symbol::Symbol::intern(role_name)),
+                    Value::package(crate::symbol::Symbol::intern(role_name)),
                 );
             } else {
                 env.remove("?ROLE");
@@ -1122,15 +1124,15 @@ impl Interpreter {
             env.insert("__ANON_STATE__".to_string(), base.clone());
             env.insert("?CLASS".to_string(), class_val.clone());
             env.insert("_".to_string(), any_val.clone());
-            env.insert("!".to_string(), Value::Nil);
+            env.insert("!".to_string(), Value::NIL);
             env.insert(
                 "__mutsu_callable_id".to_string(),
-                Value::Int(method_callable_id as i64),
+                Value::int(method_callable_id as i64),
             );
             if let Some(ref role_name) = role_context {
                 env.insert(
                     "?ROLE".to_string(),
-                    Value::Package(crate::symbol::Symbol::intern(role_name)),
+                    Value::package(crate::symbol::Symbol::intern(role_name)),
                 );
             } else {
                 env.remove("?ROLE");
@@ -1178,7 +1180,7 @@ impl Interpreter {
         self.mark_fast_method_params_readonly(method_def);
 
         // Populate locals directly
-        self.locals = vec![Value::Nil; cc.locals.len()];
+        self.locals = vec![Value::NIL; cc.locals.len()];
 
         for (i, local_name) in cc.locals.iter().enumerate() {
             self.locals[i] = match local_name.as_str() {
@@ -1186,13 +1188,13 @@ impl Interpreter {
                 "?CLASS" => class_val.clone(),
                 "?ROLE" => {
                     if let Some(ref role_name) = role_context {
-                        Value::Package(crate::symbol::Symbol::intern(role_name))
+                        Value::package(crate::symbol::Symbol::intern(role_name))
                     } else {
-                        Value::Nil
+                        Value::NIL
                     }
                 }
-                "!" => Value::Nil,
-                "__mutsu_callable_id" => Value::Int(method_callable_id as i64),
+                "!" => Value::NIL,
+                "__mutsu_callable_id" => Value::int(method_callable_id as i64),
                 name => {
                     // Check params first (handles $_ invocant binding too)
                     if let Some((_, val)) = param_values.iter().find(|(n, _)| *n == name) {
@@ -1207,24 +1209,24 @@ impl Interpreter {
                             .get(&qualified_key)
                             .or_else(|| attributes.get(attr_name))
                             .cloned()
-                            .unwrap_or(Value::Nil)
+                            .unwrap_or(Value::NIL)
                     }
                     // Public attribute: .attr_name
                     else if let Some(attr_name) = name.strip_prefix('.') {
-                        attributes.get(attr_name).cloned().unwrap_or(Value::Nil)
+                        attributes.get(attr_name).cloned().unwrap_or(Value::NIL)
                     }
                     // Array/hash attributes: @!name, @.name, %!name, %.name
                     else if ((name.starts_with("@!") || name.starts_with("@."))
                         || (name.starts_with("%!") || name.starts_with("%.")))
                         && name.len() > 2
                     {
-                        attributes.get(&name[2..]).cloned().unwrap_or(Value::Nil)
+                        attributes.get(&name[2..]).cloned().unwrap_or(Value::NIL)
                     }
                     // Outer env (read-only, no deep clone)
                     else if let Some(val) = self.env().get(name) {
                         val.clone()
                     } else {
-                        Value::Nil
+                        Value::NIL
                     }
                 }
             };
@@ -1282,7 +1284,7 @@ impl Interpreter {
                     if matches_frame {
                         e.is_leave = false;
                         e.control = None;
-                        let ret_val = e.return_value.unwrap_or(Value::Nil);
+                        let ret_val = e.return_value.unwrap_or(Value::NIL);
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
                         self.stack.push(ret_val);
@@ -1331,12 +1333,12 @@ impl Interpreter {
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
-                self.stack.pop().unwrap_or(Value::Nil)
+                self.stack.pop().unwrap_or(Value::NIL)
             } else {
-                Value::Nil
+                Value::NIL
             }
         } else {
-            Value::Nil
+            Value::NIL
         };
 
         self.stack.truncate(saved_stack_depth);
@@ -1462,24 +1464,24 @@ impl Interpreter {
         // Only commit the reconcile snapshot when `:=` recovery adjusted it
         // beyond the cell contents (see `call_compiled_method` exit).
         final_result.map(|v| {
-            let adjusted = match (&base, &v) {
+            let adjusted = match (base.view(), v.view()) {
                 (
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name,
                         attributes: base_attrs,
                         id: base_id,
                     },
-                    Value::Instance { id: ret_id, .. },
+                    ValueView::Instance { id: ret_id, .. },
                 ) if base_id == ret_id => {
                     if attrs_adjusted {
                         Value::write_back_sharing(
                             base_attrs,
-                            *class_name,
+                            class_name,
                             attributes.clone(),
-                            *base_id,
+                            base_id,
                         )
                     } else {
-                        Value::instance_sharing_cell(base_attrs, *class_name, *base_id)
+                        Value::instance_sharing_cell(base_attrs, class_name, base_id)
                     }
                 }
                 _ => v,
@@ -1511,16 +1513,16 @@ fn could_name_caller_local(name: &str) -> bool {
 /// compare for instances. Any case it cannot cheaply prove returns `false`, so
 /// the caller treats it as a possible change (a redundant pull at worst).
 pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
-    match (old, new) {
-        (Value::Int(a), Value::Int(b)) => a == b,
-        (Value::Num(a), Value::Num(b)) => a.to_bits() == b.to_bits(),
-        (Value::Bool(a), Value::Bool(b)) => a == b,
-        (Value::Rat(an, ad), Value::Rat(bn, bd)) => an == bn && ad == bd,
-        (Value::Package(a), Value::Package(b)) => a == b,
-        (Value::Nil, Value::Nil) => true,
-        (Value::Str(a), Value::Str(b)) => Arc::ptr_eq(a, b),
-        (Value::Array(a, _), Value::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
-        (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
+    match (old.view(), new.view()) {
+        (ValueView::Int(a), ValueView::Int(b)) => a == b,
+        (ValueView::Num(a), ValueView::Num(b)) => a.to_bits() == b.to_bits(),
+        (ValueView::Bool(a), ValueView::Bool(b)) => a == b,
+        (ValueView::Rat(an, ad), ValueView::Rat(bn, bd)) => an == bn && ad == bd,
+        (ValueView::Package(a), ValueView::Package(b)) => a == b,
+        (ValueView::Nil, ValueView::Nil) => true,
+        (ValueView::Str(a), ValueView::Str(b)) => Arc::ptr_eq(a, b),
+        (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
+        (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
         // A `ContainerRef` cell is the shared-identity primitive of the
         // single-store design: `my @a := @b` installs the *same* cell into both
         // the env entry and the local slot for both names. Without this arm the
@@ -1529,8 +1531,8 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
         // (and `merge_method_env` over-signalled env_dirty for a method that
         // returned the same cell). Same Arc => genuinely unchanged; distinct Arcs
         // stay "changed" (conservative).
-        (Value::ContainerRef(a), Value::ContainerRef(b)) => crate::gc::Gc::ptr_eq(a, b),
-        (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
+        (ValueView::ContainerRef(a), ValueView::ContainerRef(b)) => crate::gc::Gc::ptr_eq(a, b),
+        (ValueView::Instance { id: a, .. }, ValueView::Instance { id: b, .. }) => a == b,
         _ => false,
     }
 }
@@ -1627,9 +1629,9 @@ mod cheaply_unchanged_tests {
         // (same Arc) must report "unchanged" so the reverse-sync survey does not
         // count a bound container as effective stale, and `merge_method_env` does
         // not over-signal env_dirty for a method returning the same cell.
-        let cell = crate::gc::Gc::new(Mutex::new(Value::array(vec![Value::Int(1)])));
-        let a = Value::ContainerRef(cell.clone());
-        let b = Value::ContainerRef(cell);
+        let cell = crate::gc::Gc::new(Mutex::new(Value::array(vec![Value::int(1)])));
+        let a = Value::container_ref(cell.clone());
+        let b = Value::container_ref(cell);
         assert!(cheaply_unchanged(&a, &b));
     }
 
@@ -1637,11 +1639,11 @@ mod cheaply_unchanged_tests {
     fn container_ref_distinct_cells_are_changed() {
         // Distinct cells (even with equal contents) stay "changed" — the test is
         // conservative Arc identity, never deep value equality.
-        let a = Value::ContainerRef(crate::gc::Gc::new(Mutex::new(Value::array(vec![
-            Value::Int(1),
+        let a = Value::container_ref(crate::gc::Gc::new(Mutex::new(Value::array(vec![
+            Value::int(1),
         ]))));
-        let b = Value::ContainerRef(crate::gc::Gc::new(Mutex::new(Value::array(vec![
-            Value::Int(1),
+        let b = Value::container_ref(crate::gc::Gc::new(Mutex::new(Value::array(vec![
+            Value::int(1),
         ]))));
         assert!(!cheaply_unchanged(&a, &b));
     }

@@ -51,7 +51,7 @@ impl Interpreter {
         // that a sibling `whenever` just updated), clobbering the sibling's write.
         // Drop this callback's per-instance state so it reads the shared lexical
         // from the live caller env — which every sibling writes back to.
-        if let Value::Sub(data) = cb {
+        if let ValueView::Sub(data) = cb.view() {
             self.clear_closure_captured_state_for(data.id);
         }
         let topic = args.first().cloned();
@@ -150,23 +150,25 @@ impl Interpreter {
         let mut react_subs: Vec<ReactSubscription> = Vec::new();
 
         for sub_val in &subscriptions {
-            if let Value::Array(items, ..) = sub_val
+            if let ValueView::Array(items, ..) = sub_val.view()
                 && items.len() >= 2
             {
                 let source = &items[0];
                 let callback = items[1].clone();
 
-                match source {
+                match source.view() {
                     // Supply with a channel
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name,
                         attributes,
                         ..
                     } if class_name == "Supply" => {
                         // Find the supply channel
                         let supply_id = self.resolve_supply_channel_id(&(attributes).as_map());
-                        let is_lines =
-                            matches!(attributes.as_map().get("is_lines"), Some(Value::Bool(true)));
+                        let is_lines = matches!(
+                            attributes.as_map().get("is_lines").map(Value::view),
+                            Some(ValueView::Bool(true))
+                        );
                         let head_limit = Self::extract_head_limit(&(attributes).as_map());
                         if let Some(sid) = supply_id
                             && let Some(rx) = take_supply_channel(sid)
@@ -192,8 +194,8 @@ impl Interpreter {
                             });
                             continue;
                         }
-                        if let Some(Value::Int(supplier_id)) =
-                            attributes.as_map().get("supplier_id")
+                        if let Some(ValueView::Int(supplier_id)) =
+                            attributes.as_map().get("supplier_id").map(Value::view)
                         {
                             let last_callbacks = items
                                 .get(2)
@@ -204,7 +206,7 @@ impl Interpreter {
                                 .and_then(crate::runtime::Interpreter::value_array_items)
                                 .unwrap_or_default();
                             react_subs.push(ReactSubscription {
-                                supplier_id: Some(*supplier_id as u64),
+                                supplier_id: Some(supplier_id as u64),
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
                                     &(attributes).as_map(),
                                 ),
@@ -373,7 +375,7 @@ impl Interpreter {
                         }
                     }
                     // Promise source
-                    Value::Promise(shared) => {
+                    ValueView::Promise(shared) => {
                         // Create a one-shot channel for the promise
                         let (tx, rx) = mpsc::channel();
                         let shared_clone = shared.clone();
@@ -389,7 +391,7 @@ impl Interpreter {
                         });
                     }
                     // Channel source: poll values directly from the channel
-                    Value::Channel(ch) => {
+                    ValueView::Channel(ch) => {
                         let last_callbacks = items
                             .get(2)
                             .and_then(crate::runtime::Interpreter::value_array_items)

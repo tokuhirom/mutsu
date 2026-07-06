@@ -17,8 +17,11 @@ impl Interpreter {
         // For grep with non-callable arguments (Regex, Type, etc.),
         // fall back to sequential smartmatch-based grep.
         let is_callable = matches!(
-            block,
-            Value::Sub(..) | Value::WeakSub(..) | Value::Routine { .. } | Value::Mixin(..)
+            block.view(),
+            ValueView::Sub(..)
+                | ValueView::WeakSub(..)
+                | ValueView::Routine { .. }
+                | ValueView::Mixin(..)
         );
         if !is_map && !is_callable {
             return self.exec_hyper_grep_smartmatch(items, &block);
@@ -72,7 +75,7 @@ impl Interpreter {
                         match call_result {
                             Ok(val) => {
                                 if is_map_flag {
-                                    if let Value::Slip(ref s) = val {
+                                    if let ValueView::Slip(s) = val.view() {
                                         results.extend(s.iter().cloned());
                                     } else {
                                         results.push(val);

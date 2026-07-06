@@ -15,9 +15,9 @@ impl Interpreter {
 
         // Pop arg if present (it's on top of stack)
         let arg_val = if has_arg {
-            self.stack.pop().unwrap_or(Value::Nil)
+            self.stack.pop().unwrap_or(Value::NIL)
         } else {
-            Value::Nil
+            Value::NIL
         };
 
         // Determine effective negation
@@ -45,30 +45,30 @@ impl Interpreter {
         }
 
         let (target, indices) = if is_zen {
-            let target = self.stack.pop().unwrap_or(Value::Nil);
+            let target = self.stack.pop().unwrap_or(Value::NIL);
             Self::throw_if_failure(&target)?;
-            let len = match &target {
-                Value::Array(items, ..) => items.len(),
+            let len = match target.view() {
+                ValueView::Array(items, ..) => items.len(),
                 _ => 0,
             };
             let idxs: Vec<i64> = (0..len as i64).collect();
             (target, idxs)
         } else {
-            let mut idx = self.stack.pop().unwrap_or(Value::Nil);
+            let mut idx = self.stack.pop().unwrap_or(Value::NIL);
             // An *itemized* list subscript (`@a[$(7,8,9)]:exists`) is a SINGLE
             // index (its `.Int`, the element count), not a slice.
-            match &idx {
-                Value::Array(items, crate::value::ArrayKind::ItemList) => {
-                    idx = Value::Int(items.len() as i64);
+            match idx.view() {
+                ValueView::Array(items, crate::value::ArrayKind::ItemList) => {
+                    idx = Value::int(items.len() as i64);
                 }
-                Value::Scalar(inner)
-                    if inner.is_range() || matches!(inner.as_ref(), Value::Array(..)) =>
+                ValueView::Scalar(inner)
+                    if inner.is_range() || matches!(inner.view(), ValueView::Array(..)) =>
                 {
-                    idx = Value::Int(crate::runtime::utils::value_to_list(inner).len() as i64);
+                    idx = Value::int(crate::runtime::utils::value_to_list(inner).len() as i64);
                 }
                 _ => {}
             }
-            let target = self.stack.pop().unwrap_or(Value::Nil);
+            let target = self.stack.pop().unwrap_or(Value::NIL);
             Self::throw_if_failure(&target)?;
             // A nested single-dim slice (`@a[(3, (30, (5,)))]:exists`) preserves
             // its index-tree shape in the result, so it recurses rather than
@@ -90,16 +90,18 @@ impl Interpreter {
                 self.stack.push(Value::array(out));
                 return Ok(());
             }
-            if let Some(map) = match &target {
-                Value::Hash(map) => Some(map.clone()),
-                Value::Instance {
+            if let Some(map) = match target.view() {
+                ValueView::Hash(map) => Some(map.clone()),
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Stash" => match attributes.as_map().get("symbols") {
-                    Some(Value::Hash(map)) => Some(map.clone()),
-                    _ => None,
-                },
+                } if class_name == "Stash" => {
+                    match attributes.as_map().get("symbols").map(Value::view) {
+                        Some(ValueView::Hash(map)) => Some(map.clone()),
+                        _ => None,
+                    }
+                }
                 _ => None,
             } {
                 if adverb_bits == 5 {
@@ -107,8 +109,8 @@ impl Interpreter {
                         "Unsupported combination of :exists and :v adverbs".to_string(),
                     ));
                 }
-                match &idx {
-                    Value::Array(items, ..) => {
+                match idx.view() {
+                    ValueView::Array(items, ..) => {
                         // Multi-dimensional hash path (%h{a;b;c}:exists): if we can
                         // traverse through nested hashes, treat this as a single exists.
                         if items.len() > 1 {
@@ -116,12 +118,13 @@ impl Interpreter {
                             let mut traversed_nested = false;
                             let mut path_exists: Option<bool> = None;
                             for (i, key) in items.iter().enumerate() {
-                                if let Value::Hash(cur_map) = cur {
+                                if let ValueView::Hash(cur_map) = cur.view() {
                                     let key_s = key.to_string_value();
                                     if let Some(next) = cur_map.get(&key_s) {
                                         if i + 1 == items.len() {
-                                            path_exists = Some(!matches!(next, Value::Nil));
-                                        } else if matches!(next, Value::Hash(_)) {
+                                            path_exists =
+                                                Some(!matches!(next.view(), ValueView::Nil));
+                                        } else if matches!(next.view(), ValueView::Hash(_)) {
                                             traversed_nested = true;
                                             cur = next;
                                         } else if traversed_nested {
@@ -145,7 +148,7 @@ impl Interpreter {
                             }
                             if traversed_nested {
                                 let exists = path_exists.unwrap_or(false);
-                                self.stack.push(Value::Bool(exists ^ effective_negated));
+                                self.stack.push(Value::truth(exists ^ effective_negated));
                                 return Ok(());
                             }
                         }
@@ -170,7 +173,7 @@ impl Interpreter {
                             0 => Value::array(
                                 pairs
                                     .iter()
-                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .map(|(_, exists)| Value::truth(*exists ^ effective_negated))
                                     .collect(),
                             ),
                             1 => {
@@ -178,7 +181,7 @@ impl Interpreter {
                                 for (key, exists) in &pairs {
                                     if *exists {
                                         vals.push(key.clone());
-                                        vals.push(Value::Bool(*exists ^ effective_negated));
+                                        vals.push(Value::truth(*exists ^ effective_negated));
                                     }
                                 }
                                 Value::array(vals)
@@ -187,7 +190,7 @@ impl Interpreter {
                                 let mut vals = Vec::new();
                                 for (key, exists) in &pairs {
                                     vals.push(key.clone());
-                                    vals.push(Value::Bool(*exists ^ effective_negated));
+                                    vals.push(Value::truth(*exists ^ effective_negated));
                                 }
                                 Value::array(vals)
                             }
@@ -195,9 +198,9 @@ impl Interpreter {
                                 let mut vals = Vec::new();
                                 for (key, exists) in &pairs {
                                     if *exists {
-                                        vals.push(Value::ValuePair(
-                                            Box::new(key.clone()),
-                                            Box::new(Value::Bool(*exists ^ effective_negated)),
+                                        vals.push(Value::value_pair(
+                                            key.clone(),
+                                            Value::truth(*exists ^ effective_negated),
                                         ));
                                     }
                                 }
@@ -206,9 +209,9 @@ impl Interpreter {
                             4 => {
                                 let mut vals = Vec::new();
                                 for (key, exists) in &pairs {
-                                    vals.push(Value::ValuePair(
-                                        Box::new(key.clone()),
-                                        Box::new(Value::Bool(*exists ^ effective_negated)),
+                                    vals.push(Value::value_pair(
+                                        key.clone(),
+                                        Value::truth(*exists ^ effective_negated),
                                     ));
                                 }
                                 Value::array(vals)
@@ -216,23 +219,23 @@ impl Interpreter {
                             5 => Value::array(
                                 pairs
                                     .iter()
-                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .map(|(_, exists)| Value::truth(*exists ^ effective_negated))
                                     .collect(),
                             ),
-                            _ => Value::Nil,
+                            _ => Value::NIL,
                         };
                         self.stack.push(result);
                         return Ok(());
                     }
                     // Whatever (*) — all hash keys.
-                    Value::Whatever => {
+                    ValueView::Whatever => {
                         let pairs: Vec<(Value, bool)> =
                             map.keys().map(|k| (Value::str(k.clone()), true)).collect();
                         let result = match adverb_bits {
                             0 => Value::array(
                                 pairs
                                     .iter()
-                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .map(|(_, exists)| Value::truth(*exists ^ effective_negated))
                                     .collect(),
                             ),
                             1 => {
@@ -240,7 +243,7 @@ impl Interpreter {
                                 for (key, exists) in &pairs {
                                     if *exists {
                                         vals.push(key.clone());
-                                        vals.push(Value::Bool(*exists ^ effective_negated));
+                                        vals.push(Value::truth(*exists ^ effective_negated));
                                     }
                                 }
                                 Value::array(vals)
@@ -249,7 +252,7 @@ impl Interpreter {
                                 let mut vals = Vec::new();
                                 for (key, exists) in &pairs {
                                     vals.push(key.clone());
-                                    vals.push(Value::Bool(*exists ^ effective_negated));
+                                    vals.push(Value::truth(*exists ^ effective_negated));
                                 }
                                 Value::array(vals)
                             }
@@ -257,9 +260,9 @@ impl Interpreter {
                                 let mut vals = Vec::new();
                                 for (key, exists) in &pairs {
                                     if *exists {
-                                        vals.push(Value::ValuePair(
-                                            Box::new(key.clone()),
-                                            Box::new(Value::Bool(*exists ^ effective_negated)),
+                                        vals.push(Value::value_pair(
+                                            key.clone(),
+                                            Value::truth(*exists ^ effective_negated),
                                         ));
                                     }
                                 }
@@ -268,9 +271,9 @@ impl Interpreter {
                             4 => {
                                 let mut vals = Vec::new();
                                 for (key, exists) in &pairs {
-                                    vals.push(Value::ValuePair(
-                                        Box::new(key.clone()),
-                                        Box::new(Value::Bool(*exists ^ effective_negated)),
+                                    vals.push(Value::value_pair(
+                                        key.clone(),
+                                        Value::truth(*exists ^ effective_negated),
                                     ));
                                 }
                                 Value::array(vals)
@@ -278,22 +281,22 @@ impl Interpreter {
                             5 => Value::array(
                                 pairs
                                     .iter()
-                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .map(|(_, exists)| Value::truth(*exists ^ effective_negated))
                                     .collect(),
                             ),
-                            _ => Value::Nil,
+                            _ => Value::NIL,
                         };
                         self.stack.push(result);
                         return Ok(());
                     }
-                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                    ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
                         let pairs: Vec<(Value, bool)> =
                             map.keys().map(|k| (Value::str(k.clone()), true)).collect();
                         let result = match adverb_bits {
                             0 => Value::array(
                                 pairs
                                     .iter()
-                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .map(|(_, exists)| Value::truth(*exists ^ effective_negated))
                                     .collect(),
                             ),
                             1 => {
@@ -301,7 +304,7 @@ impl Interpreter {
                                 for (key, exists) in &pairs {
                                     if *exists {
                                         vals.push(key.clone());
-                                        vals.push(Value::Bool(*exists ^ effective_negated));
+                                        vals.push(Value::truth(*exists ^ effective_negated));
                                     }
                                 }
                                 Value::array(vals)
@@ -310,7 +313,7 @@ impl Interpreter {
                                 let mut vals = Vec::new();
                                 for (key, exists) in &pairs {
                                     vals.push(key.clone());
-                                    vals.push(Value::Bool(*exists ^ effective_negated));
+                                    vals.push(Value::truth(*exists ^ effective_negated));
                                 }
                                 Value::array(vals)
                             }
@@ -318,9 +321,9 @@ impl Interpreter {
                                 let mut vals = Vec::new();
                                 for (key, exists) in &pairs {
                                     if *exists {
-                                        vals.push(Value::ValuePair(
-                                            Box::new(key.clone()),
-                                            Box::new(Value::Bool(*exists ^ effective_negated)),
+                                        vals.push(Value::value_pair(
+                                            key.clone(),
+                                            Value::truth(*exists ^ effective_negated),
                                         ));
                                     }
                                 }
@@ -329,9 +332,9 @@ impl Interpreter {
                             4 => {
                                 let mut vals = Vec::new();
                                 for (key, exists) in &pairs {
-                                    vals.push(Value::ValuePair(
-                                        Box::new(key.clone()),
-                                        Box::new(Value::Bool(*exists ^ effective_negated)),
+                                    vals.push(Value::value_pair(
+                                        key.clone(),
+                                        Value::truth(*exists ^ effective_negated),
                                     ));
                                 }
                                 Value::array(vals)
@@ -339,10 +342,10 @@ impl Interpreter {
                             5 => Value::array(
                                 pairs
                                     .iter()
-                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .map(|(_, exists)| Value::truth(*exists ^ effective_negated))
                                     .collect(),
                             ),
-                            _ => Value::Nil,
+                            _ => Value::NIL,
                         };
                         self.stack.push(result);
                         return Ok(());
@@ -363,84 +366,79 @@ impl Interpreter {
                         let result_bool = exists ^ effective_negated;
                         let key = idx.clone();
                         let result = match adverb_bits {
-                            0 | 5 => Value::Bool(result_bool),
+                            0 | 5 => Value::truth(result_bool),
                             // :kv — filter by actual existence, not negated result
                             1 => {
                                 if exists {
-                                    Value::array(vec![key, Value::Bool(result_bool)])
+                                    Value::array(vec![key, Value::truth(result_bool)])
                                 } else {
                                     Value::array(Vec::new())
                                 }
                             }
-                            2 => Value::array(vec![key, Value::Bool(result_bool)]),
+                            2 => Value::array(vec![key, Value::truth(result_bool)]),
                             // :p — filter by actual existence, not negated result
                             3 => {
                                 if exists {
-                                    Value::ValuePair(
-                                        Box::new(key),
-                                        Box::new(Value::Bool(result_bool)),
-                                    )
+                                    Value::value_pair(key, Value::truth(result_bool))
                                 } else {
                                     Value::array(Vec::new())
                                 }
                             }
-                            4 => {
-                                Value::ValuePair(Box::new(key), Box::new(Value::Bool(result_bool)))
-                            }
-                            _ => Value::Bool(result_bool),
+                            4 => Value::value_pair(key, Value::truth(result_bool)),
+                            _ => Value::truth(result_bool),
                         };
                         self.stack.push(result);
                         return Ok(());
                     }
                 }
             }
-            if let Value::Set(set, _) = &target {
+            if let ValueView::Set(set, _) = target.view() {
                 let exists_for_key = |key: &Value| set.contains(&key.to_string_value());
-                let result = match &idx {
-                    Value::Array(items, ..) => Value::array(
+                let result = match idx.view() {
+                    ValueView::Array(items, ..) => Value::array(
                         items
                             .iter()
-                            .map(|k| Value::Bool(exists_for_key(k) ^ effective_negated))
+                            .map(|k| Value::truth(exists_for_key(k) ^ effective_negated))
                             .collect(),
                     ),
-                    _ => Value::Bool(exists_for_key(&idx) ^ effective_negated),
+                    _ => Value::truth(exists_for_key(&idx) ^ effective_negated),
                 };
                 self.stack.push(result);
                 return Ok(());
             }
-            if let Value::Bag(bag, _) = &target {
+            if let ValueView::Bag(bag, _) = target.view() {
                 let exists_for_key = |key: &Value| bag.contains_key(&key.to_string_value());
-                let result = match &idx {
-                    Value::Array(items, ..) => Value::array(
+                let result = match idx.view() {
+                    ValueView::Array(items, ..) => Value::array(
                         items
                             .iter()
-                            .map(|k| Value::Bool(exists_for_key(k) ^ effective_negated))
+                            .map(|k| Value::truth(exists_for_key(k) ^ effective_negated))
                             .collect(),
                     ),
-                    _ => Value::Bool(exists_for_key(&idx) ^ effective_negated),
+                    _ => Value::truth(exists_for_key(&idx) ^ effective_negated),
                 };
                 self.stack.push(result);
                 return Ok(());
             }
-            if let Value::Mix(mix, _) = &target {
+            if let ValueView::Mix(mix, _) = target.view() {
                 let exists_for_key = |key: &Value| mix.contains_key(&key.to_string_value());
-                let result = match &idx {
-                    Value::Array(items, ..) => Value::array(
+                let result = match idx.view() {
+                    ValueView::Array(items, ..) => Value::array(
                         items
                             .iter()
-                            .map(|k| Value::Bool(exists_for_key(k) ^ effective_negated))
+                            .map(|k| Value::truth(exists_for_key(k) ^ effective_negated))
                             .collect(),
                     ),
-                    _ => Value::Bool(exists_for_key(&idx) ^ effective_negated),
+                    _ => Value::truth(exists_for_key(&idx) ^ effective_negated),
                 };
                 self.stack.push(result);
                 return Ok(());
             }
-            if let Value::Instance {
+            if let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
             {
                 let is_stash = class_name == "Stash" && attributes.contains_key("symbols");
                 if !is_stash
@@ -455,21 +453,21 @@ impl Interpreter {
                     return Ok(());
                 }
             }
-            let idxs = match &idx {
-                Value::Int(i) => vec![*i],
-                Value::Array(items, ..) if crate::runtime::utils::is_shaped_array(&target) => {
+            let idxs = match idx.view() {
+                ValueView::Int(i) => vec![i],
+                ValueView::Array(items, ..) if crate::runtime::utils::is_shaped_array(&target) => {
                     // Shaped array: multi-dimensional exists (e.g. @arr[0;0]:exists)
                     let exists = Self::index_array_multidim(&target, items.as_ref(), false)
                         .ok()
-                        .is_some_and(|v| !matches!(v, Value::Nil));
-                    let result = Value::Bool(exists ^ effective_negated);
+                        .is_some_and(|v| !v.is_nil());
+                    let result = Value::truth(exists ^ effective_negated);
                     self.stack.push(result);
                     return Ok(());
                 }
-                Value::Array(items, ..) => items
+                ValueView::Array(items, ..) => items
                     .iter()
-                    .map(|v| match v {
-                        Value::Int(i) => *i,
+                    .map(|v| match v.view() {
+                        ValueView::Int(i) => i,
                         _ => {
                             let n = v.to_bigint();
                             n.try_into().unwrap_or(0)
@@ -477,62 +475,72 @@ impl Interpreter {
                     })
                     .collect(),
                 // Whatever (*) — treat as zen slice (all elements)
-                Value::Whatever => {
-                    let len = match &target {
-                        Value::Array(items, ..) => items.len(),
+                ValueView::Whatever => {
+                    let len = match target.view() {
+                        ValueView::Array(items, ..) => items.len(),
                         _ => 0,
                     };
                     (0..len as i64).collect()
                 }
-                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
-                    let len = match &target {
-                        Value::Array(items, ..) => items.len(),
+                ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                    let len = match target.view() {
+                        ValueView::Array(items, ..) => items.len(),
                         _ => 0,
                     };
                     (0..len as i64).collect()
                 }
                 _ => {
                     // For hash access, delegate to single key exists
-                    let exists = match (&target, &idx) {
-                        (Value::Hash(map), Value::Str(key)) => map.contains_key(key.as_str()),
-                        (Value::Hash(map), _) => map.contains_key(&idx.to_string_value()),
-                        (Value::Set(set, _), Value::Str(key)) => set.contains(key.as_str()),
-                        (Value::Set(set, _), other) => set.contains(&other.to_string_value()),
-                        (Value::Bag(bag, _), Value::Str(key)) => bag.contains_key(key.as_str()),
-                        (Value::Bag(bag, _), other) => bag.contains_key(&other.to_string_value()),
-                        (Value::Mix(mix, _), Value::Str(key)) => mix.contains_key(key.as_str()),
-                        (Value::Mix(mix, _), other) => mix.contains_key(&other.to_string_value()),
+                    let exists = match (target.view(), idx.view()) {
+                        (ValueView::Hash(map), ValueView::Str(key)) => {
+                            map.contains_key(key.as_str())
+                        }
+                        (ValueView::Hash(map), _) => map.contains_key(&idx.to_string_value()),
+                        (ValueView::Set(set, _), ValueView::Str(key)) => set.contains(key.as_str()),
+                        (ValueView::Set(set, _), _) => set.contains(&idx.to_string_value()),
+                        (ValueView::Bag(bag, _), ValueView::Str(key)) => {
+                            bag.contains_key(key.as_str())
+                        }
+                        (ValueView::Bag(bag, _), _) => bag.contains_key(&idx.to_string_value()),
+                        (ValueView::Mix(mix, _), ValueView::Str(key)) => {
+                            mix.contains_key(key.as_str())
+                        }
+                        (ValueView::Mix(mix, _), _) => mix.contains_key(&idx.to_string_value()),
                         (
-                            Value::Instance {
+                            ValueView::Instance {
                                 class_name,
                                 attributes,
                                 ..
                             },
-                            Value::Str(key),
+                            ValueView::Str(key),
                         ) if class_name == "Stash" => {
-                            if let Some(Value::Hash(symbols)) = attributes.as_map().get("symbols") {
+                            if let Some(ValueView::Hash(symbols)) =
+                                attributes.as_map().get("symbols").map(Value::view)
+                            {
                                 symbols.contains_key(key.as_str())
                             } else {
                                 false
                             }
                         }
                         (
-                            Value::Instance {
+                            ValueView::Instance {
                                 class_name,
                                 attributes,
                                 ..
                             },
-                            other,
+                            _,
                         ) if class_name == "Stash" => {
-                            if let Some(Value::Hash(symbols)) = attributes.as_map().get("symbols") {
-                                symbols.contains_key(&other.to_string_value())
+                            if let Some(ValueView::Hash(symbols)) =
+                                attributes.as_map().get("symbols").map(Value::view)
+                            {
+                                symbols.contains_key(&idx.to_string_value())
                             } else {
                                 false
                             }
                         }
                         _ => false,
                     };
-                    let result = Value::Bool(exists ^ effective_negated);
+                    let result = Value::truth(exists ^ effective_negated);
                     self.stack.push(result);
                     return Ok(());
                 }
@@ -543,7 +551,7 @@ impl Interpreter {
         // A lazy `@`-array (infinite source) is conceptually unbounded: any
         // non-negative index exists, without forcing the list (raku). Only the
         // plain `:exists` form (no :kv/:p adverbs) is special-cased here. (L2)
-        if let Value::LazyList(ll) = &target
+        if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
             && ll.is_genuinely_lazy()
             && matches!(adverb_bits, 0 | 5)
@@ -551,7 +559,7 @@ impl Interpreter {
         {
             let vals: Vec<Value> = indices
                 .iter()
-                .map(|&i| Value::Bool((i >= 0) ^ effective_negated))
+                .map(|&i| Value::truth((i >= 0) ^ effective_negated))
                 .collect();
             self.stack.push(if vals.len() == 1 {
                 vals.into_iter().next().unwrap()
@@ -562,20 +570,20 @@ impl Interpreter {
         }
 
         // Uni: check exists based on codepoint count
-        if let Value::Uni(u) = &target {
+        if let ValueView::Uni(u) = target.view() {
             let len = u.text.chars().count() as i64;
             if indices.len() == 1 && !is_zen {
                 let i = indices[0];
                 let exists = i >= 0 && i < len;
                 let result = exists ^ effective_negated;
-                self.stack.push(Value::Bool(result));
+                self.stack.push(Value::truth(result));
                 return Ok(());
             }
             let vals: Vec<Value> = indices
                 .iter()
                 .map(|&i| {
                     let exists = i >= 0 && i < len;
-                    Value::Bool(exists ^ effective_negated)
+                    Value::truth(exists ^ effective_negated)
                 })
                 .collect();
             self.stack.push(Value::array(vals));
@@ -586,15 +594,15 @@ impl Interpreter {
             &[Value],
             bool,
             Option<&std::collections::HashSet<usize>>,
-        ) = match &target {
-            Value::Array(items, kind) => (
+        ) = match target.view() {
+            ValueView::Array(items, kind) => (
                 items.as_slice(),
-                *kind == crate::value::ArrayKind::Shaped,
+                kind == crate::value::ArrayKind::Shaped,
                 items.initialized.as_ref(),
             ),
             _ => (&[] as &[Value], false, None),
         };
-        // An in-range slot exists unless it is a `Value::Nil` (deleted) or an
+        // An in-range slot exists unless it is a `Nil` (deleted) or an
         // autovivification gap (`Package("Any")` not in the embedded
         // `initialized` set). Mirrors the `:k`/`:p` predicate in
         // builtins_multidim_subscript so `:exists` agrees with them.
@@ -605,9 +613,9 @@ impl Interpreter {
             if i < 0 {
                 return false;
             }
-            match items.get(i as usize) {
-                None | Some(Value::Nil) => false,
-                Some(Value::Package(name)) if name == "Any" => {
+            match items.get(i as usize).map(Value::view) {
+                None | Some(ValueView::Nil) => false,
+                Some(ValueView::Package(name)) if name == "Any" => {
                     arr_initialized.is_none_or(|s| s.contains(&(i as usize)))
                 }
                 Some(_) => true,
@@ -627,30 +635,30 @@ impl Interpreter {
                 .is_some_and(|n| self.is_deleted_index(n, i));
             let exists = slot_present && !is_deleted;
             let result_bool = exists ^ effective_negated;
-            let key = Value::Int(i);
+            let key = Value::int(i);
             let result = match adverb_bits {
-                0 | 5 => Value::Bool(result_bool),
+                0 | 5 => Value::truth(result_bool),
                 // :kv — return (index, bool) if exists, else ()
                 1 => {
                     if exists {
-                        Value::array(vec![key, Value::Bool(result_bool)])
+                        Value::array(vec![key, Value::truth(result_bool)])
                     } else {
                         Value::array(Vec::new())
                     }
                 }
                 // :!kv — always return (index, bool)
-                2 => Value::array(vec![key, Value::Bool(result_bool)]),
+                2 => Value::array(vec![key, Value::truth(result_bool)]),
                 // :p — return Pair if exists, else ()
                 3 => {
                     if exists {
-                        Value::ValuePair(Box::new(key), Box::new(Value::Bool(result_bool)))
+                        Value::value_pair(key, Value::truth(result_bool))
                     } else {
                         Value::array(Vec::new())
                     }
                 }
                 // :!p — always return Pair
-                4 => Value::ValuePair(Box::new(key), Box::new(Value::Bool(result_bool))),
-                _ => Value::Bool(result_bool),
+                4 => Value::value_pair(key, Value::truth(result_bool)),
+                _ => Value::truth(result_bool),
             };
             self.stack.push(result);
             return Ok(());
@@ -673,7 +681,7 @@ impl Interpreter {
                 // Plain :exists — list of Bools
                 let vals: Vec<Value> = pairs
                     .iter()
-                    .map(|(_, e)| Value::Bool(*e ^ effective_negated))
+                    .map(|(_, e)| Value::truth(*e ^ effective_negated))
                     .collect();
                 Value::array(vals)
             }
@@ -682,8 +690,8 @@ impl Interpreter {
                 let mut vals = Vec::new();
                 for (i, exists) in &pairs {
                     if *exists {
-                        vals.push(Value::Int(*i));
-                        vals.push(Value::Bool(*exists ^ effective_negated));
+                        vals.push(Value::int(*i));
+                        vals.push(Value::truth(*exists ^ effective_negated));
                     }
                 }
                 Value::array(vals)
@@ -692,8 +700,8 @@ impl Interpreter {
                 // :!kv — no filter, interleave all (index, bool)
                 let mut vals = Vec::new();
                 for (i, exists) in &pairs {
-                    vals.push(Value::Int(*i));
-                    vals.push(Value::Bool(*exists ^ effective_negated));
+                    vals.push(Value::int(*i));
+                    vals.push(Value::truth(*exists ^ effective_negated));
                 }
                 Value::array(vals)
             }
@@ -702,9 +710,9 @@ impl Interpreter {
                 let mut vals = Vec::new();
                 for (i, exists) in &pairs {
                     if *exists {
-                        vals.push(Value::ValuePair(
-                            Box::new(Value::Int(*i)),
-                            Box::new(Value::Bool(*exists ^ effective_negated)),
+                        vals.push(Value::value_pair(
+                            Value::int(*i),
+                            Value::truth(*exists ^ effective_negated),
                         ));
                     }
                 }
@@ -714,9 +722,9 @@ impl Interpreter {
                 // :!p — no filter, return all Pairs
                 let mut vals = Vec::new();
                 for (i, exists) in &pairs {
-                    vals.push(Value::ValuePair(
-                        Box::new(Value::Int(*i)),
-                        Box::new(Value::Bool(*exists ^ effective_negated)),
+                    vals.push(Value::value_pair(
+                        Value::int(*i),
+                        Value::truth(*exists ^ effective_negated),
                     ));
                 }
                 Value::array(vals)
@@ -725,11 +733,11 @@ impl Interpreter {
                 // :!v — no filter, return all Bools
                 let vals: Vec<Value> = pairs
                     .iter()
-                    .map(|(_, e)| Value::Bool(*e ^ effective_negated))
+                    .map(|(_, e)| Value::truth(*e ^ effective_negated))
                     .collect();
                 Value::array(vals)
             }
-            _ => Value::Nil,
+            _ => Value::NIL,
         };
 
         self.stack.push(result);

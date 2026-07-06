@@ -102,7 +102,7 @@ impl Interpreter {
     ) -> Result<Option<Value>, RuntimeError> {
         Self::validate_labels(code)?;
         // Initialize local variable slots
-        self.locals = vec![Value::Nil; code.locals.len()];
+        self.locals = vec![Value::NIL; code.locals.len()];
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
@@ -356,12 +356,12 @@ impl Interpreter {
         Self::validate_labels(code)?;
         self.stack.clear();
         // Initialize local variable slots
-        self.locals.resize(code.locals.len(), Value::Nil);
+        self.locals.resize(code.locals.len(), Value::NIL);
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
             } else {
-                self.locals[i] = Value::Nil;
+                self.locals[i] = Value::NIL;
             }
         }
         self.load_state_locals(code);
@@ -462,7 +462,7 @@ impl Interpreter {
                         return false;
                     }
                     // Verify the key constant matches
-                    if let Value::Str(ref stored_key) = code.constants[*k as usize] {
+                    if let ValueView::Str(stored_key) = code.constants[*k as usize].view() {
                         stored_key.as_ref() == key.as_str()
                     } else {
                         false
@@ -653,17 +653,19 @@ impl Interpreter {
     /// Itemize a value read from a `$` scalar container so it behaves as a
     /// single element in list context. Arrays/Lists flip to their itemized
     /// `ArrayKind`; a Hash sets its `itemized` flag (mirroring `ArrayKind` — the
-    /// value stays a `Value::Hash`, so value operations never see a wrapper and
-    /// nothing leaks); a Seq is wrapped in a `Value::Scalar`. Already-itemized
+    /// value stays a `Hash` value, so value operations never see a wrapper and
+    /// nothing leaks); a Seq is wrapped in a `Scalar`. Already-itemized
     /// values and non-container scalars pass through unchanged. (Set/Bag/Mix are
     /// only itemized in the `@a = $var` path — see `ItemizeVar` — not in general
     /// `$(...)` itemization, to avoid leaking a `Scalar` wrapper into set ops.)
     pub(crate) fn itemize_value(val: Value) -> Value {
-        match val {
-            Value::Array(items, kind) if !kind.is_itemized() => Value::Array(items, kind.itemize()),
-            Value::Hash(h) => Value::Hash(Value::hash_arc_itemized(h)),
-            Value::Seq(items) => Value::Scalar(Box::new(Value::Seq(items))),
-            other => other,
+        match val.view() {
+            ValueView::Array(items, kind) if !kind.is_itemized() => {
+                Value::array_with_kind(items.clone(), kind.itemize())
+            }
+            ValueView::Hash(h) => Value::hash_with_data(Value::hash_arc_itemized(h.clone())),
+            ValueView::Seq(items) => Value::scalar(Value::seq_arc(items.clone())),
+            _ => val,
         }
     }
 
@@ -693,14 +695,14 @@ impl Interpreter {
     /// `my $foo is default(Nil) = 42; $foo = Nil` leaves `$foo` as `Nil`, not
     /// `Any` — so such vars are excluded here.
     pub(crate) fn reset_nil_untyped_scalar(&self, name: &str, val: Value) -> Value {
-        if matches!(val, Value::Nil)
+        if val.is_nil()
             && !name.starts_with('@')
             && !name.starts_with('%')
             && !name.starts_with('&')
             && !name.contains("__mutsu")
             && self.var_default(name).is_none()
         {
-            Value::Package(crate::symbol::Symbol::intern("Any"))
+            Value::package(crate::symbol::Symbol::intern("Any"))
         } else {
             val
         }
@@ -712,10 +714,10 @@ impl Interpreter {
     /// the binding needs. Every other value flattens via the existing `.list`
     /// semantics (preserving prior behavior exactly).
     pub(crate) fn deitemize_for_bind(&mut self, val: Value) -> Result<Value, RuntimeError> {
-        if let Value::Array(data, kind) = &val
+        if let ValueView::Array(data, kind) = val.view()
             && (data.value_type.is_some() || data.declared_type.is_some())
         {
-            return Ok(Value::Array(data.clone(), kind.decontainerize()));
+            return Ok(Value::array_with_kind(data.clone(), kind.decontainerize()));
         }
         self.call_method_with_values(val, "list", vec![])
     }

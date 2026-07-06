@@ -8,10 +8,10 @@ impl Interpreter {
         let ndims = ndims as usize;
         let mut dims = Vec::with_capacity(ndims);
         for _ in 0..ndims {
-            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+            dims.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         dims.reverse();
-        let target = self.stack.pop().unwrap_or(Value::Nil);
+        let target = self.stack.pop().unwrap_or(Value::NIL);
 
         // For shaped arrays, check bounds before reading
         let is_shaped = crate::runtime::utils::is_shaped_array(&target);
@@ -36,10 +36,10 @@ impl Interpreter {
         let ndims = ndims as usize;
         let mut dims = Vec::with_capacity(ndims);
         for _ in 0..ndims {
-            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+            dims.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         dims.reverse();
-        let target = self.stack.pop().unwrap_or(Value::Nil);
+        let target = self.stack.pop().unwrap_or(Value::NIL);
 
         if let Some(slot) = self.multi_dim_slot_ref(&target, &dims)? {
             self.stack.push(slot);
@@ -67,8 +67,8 @@ impl Interpreter {
         // cannot collapse to a single cell.
         for d in dims {
             if matches!(
-                Self::normalize_multidim_dim(d),
-                Value::Whatever | Value::Array(..)
+                Self::normalize_multidim_dim(d).view(),
+                ValueView::Whatever | ValueView::Array(..)
             ) {
                 return Ok(None);
             }
@@ -76,15 +76,15 @@ impl Interpreter {
 
         // Read through a `ContainerRef` / `Scalar` wrapper while keeping the
         // shared `Arc`, so in-place promotions land in the real container.
-        let mut cur = match target {
-            Value::ContainerRef(cell) => cell.lock().unwrap().clone(),
-            Value::Scalar(inner) => inner.as_ref().clone(),
-            other => other.clone(),
+        let mut cur = match target.view() {
+            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            ValueView::Scalar(inner) => inner.clone(),
+            _ => target.clone(),
         };
         // A hash-rooted multislice is intentionally not aliased: promoting a hash
         // leaf to a cell mutates the shared hash `Arc` in place, corrupting other
         // values that alias it. Fall back to a plain read for hash roots.
-        if matches!(cur, Value::Hash(..)) {
+        if matches!(cur.view(), ValueView::Hash(..)) {
             return Ok(None);
         }
 
@@ -100,8 +100,8 @@ impl Interpreter {
             // corrupt a plain read. A missing leaf therefore falls back to a plain
             // read (the assignment to it is not aliased — a limitation pending a
             // deferred array-element ref, the array analogue of `HashEntryRef`).
-            let next = match &cur {
-                Value::Array(items, ..) => {
+            let next = match cur.view() {
+                ValueView::Array(items, ..) => {
                     let Some(idx) = Self::index_to_usize(&resolved) else {
                         return Ok(None);
                     };
@@ -113,7 +113,7 @@ impl Interpreter {
                         None => return Ok(None),
                     }
                 }
-                Value::Hash(map, ..) => {
+                ValueView::Hash(map, ..) => {
                     let key = Value::hash_key_encode(&resolved);
                     if !map.contains_key(&key) {
                         return Ok(None);
@@ -129,16 +129,17 @@ impl Interpreter {
                 return Ok(Some(next));
             }
             // Descend into the intermediate level (which already exists).
-            cur = match next {
-                Value::ContainerRef(cell) => {
-                    let inner = cell.lock().unwrap().clone();
-                    match inner {
-                        Value::Array(..) | Value::Hash(..) => inner,
-                        _ => return Ok(None),
-                    }
+            cur = if let ValueView::ContainerRef(cell) = next.view() {
+                let inner = cell.lock().unwrap().clone();
+                match inner.view() {
+                    ValueView::Array(..) | ValueView::Hash(..) => {}
+                    _ => return Ok(None),
                 }
-                Value::Array(..) | Value::Hash(..) => next,
-                _ => return Ok(None),
+                inner
+            } else if matches!(next.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+                next
+            } else {
+                return Ok(None);
             };
         }
         Ok(None)
@@ -158,21 +159,21 @@ impl Interpreter {
         let dim = &dims[0];
         let rest = &dims[1..];
 
-        match dim {
-            Value::Whatever => {
+        match dim.view() {
+            ValueView::Whatever => {
                 // * iterates all elements — no bounds check needed at this level,
                 // but recurse into each element for remaining dimensions
-                if let Value::Array(items, ..) = target {
+                if let ValueView::Array(items, ..) = target.view() {
                     for item in items.iter() {
                         self.check_shaped_array_bounds(item, rest, dim_offset + 1)?;
                     }
                 }
                 Ok(())
             }
-            Value::Array(indices, ..) => {
+            ValueView::Array(indices, ..) => {
                 // Multiple indices — check each one
-                let items = match target {
-                    Value::Array(items, ..) => items,
+                let items = match target.view() {
+                    ValueView::Array(items, ..) => items,
                     _ => return Ok(()),
                 };
                 for idx in indices.iter() {
@@ -192,17 +193,17 @@ impl Interpreter {
             }
             _ => {
                 // Scalar index
-                let resolved = if let Value::Rat(n, d) = dim {
-                    Some(Value::Int(*n / *d))
-                } else if let Value::Num(f) = dim {
-                    Some(Value::Int(*f as i64))
+                let resolved = if let ValueView::Rat(n, d) = dim.view() {
+                    Some(Value::int(n / d))
+                } else if let ValueView::Num(f) = dim.view() {
+                    Some(Value::int(f as i64))
                 } else {
                     None
                 };
                 let idx = resolved.as_ref().unwrap_or(dim);
                 if let Some(i) = Self::index_to_usize(idx) {
-                    let items = match target {
-                        Value::Array(items, ..) => items,
+                    let items = match target.view() {
+                        ValueView::Array(items, ..) => items,
                         _ => return Ok(()),
                     };
                     if i >= items.len() {
@@ -238,7 +239,7 @@ impl Interpreter {
         // selected scalar is indexed by the trailing `0`, and `20[0]` is `20`
         // (raku treats a scalar as a 1-element list under subscript). Without
         // this, deeper dimensions on scalar leaves would all collapse to Nil.
-        if !matches!(target, Value::Array(..) | Value::Hash(..)) {
+        if !matches!(target.view(), ValueView::Array(..) | ValueView::Hash(..)) {
             let single = Value::array(vec![target.clone()]);
             return self.multi_dim_index_read(&single, dims);
         }
@@ -248,16 +249,16 @@ impl Interpreter {
 
         // Hash targets index by key (string), recursing into the nested value
         // for the remaining dimensions: `%h{"a";"b";"c"}`.
-        if let Value::Hash(map, ..) = target {
+        if let ValueView::Hash(map, ..) = target.view() {
             return self.multi_dim_hash_read(map, dim, rest);
         }
 
-        match dim {
-            Value::Whatever => {
+        match dim.view() {
+            ValueView::Whatever => {
                 // Iterate all elements at this level
-                let items = match target {
-                    Value::Array(items, ..) => items,
-                    _ => return Ok(Value::Nil),
+                let items = match target.view() {
+                    ValueView::Array(items, ..) => items,
+                    _ => return Ok(Value::NIL),
                 };
                 let has_more_multi = rest.iter().any(|v| {
                     matches!(
@@ -274,7 +275,7 @@ impl Interpreter {
                     let result = self.multi_dim_index_read(item, rest)?;
                     if has_more_multi {
                         // Flatten intermediate array results from deeper * or list dims
-                        if let Value::Array(inner, ..) = &result {
+                        if let ValueView::Array(inner, ..) = result.view() {
                             out.extend(inner.iter().cloned());
                         } else {
                             out.push(result);
@@ -285,11 +286,11 @@ impl Interpreter {
                 }
                 Ok(Value::array(out))
             }
-            Value::Array(indices, ..) => {
+            ValueView::Array(indices, ..) => {
                 // Multiple indices at this dimension level
-                let items = match target {
-                    Value::Array(items, ..) => items,
-                    _ => return Ok(Value::Nil),
+                let items = match target.view() {
+                    ValueView::Array(items, ..) => items,
+                    _ => return Ok(Value::NIL),
                 };
                 let has_more_multi = rest.iter().any(|v| {
                     matches!(
@@ -307,13 +308,13 @@ impl Interpreter {
                         if i < items.len() {
                             self.multi_dim_index_read(&items[i], rest)?
                         } else {
-                            self.multi_dim_index_read(&Value::Nil, rest)?
+                            self.multi_dim_index_read(&Value::NIL, rest)?
                         }
                     } else {
-                        Value::Nil
+                        Value::NIL
                     };
                     if has_more_multi {
-                        if let Value::Array(inner, ..) = &result {
+                        if let ValueView::Array(inner, ..) = result.view() {
                             out.extend(inner.iter().cloned());
                         } else {
                             out.push(result);
@@ -341,31 +342,31 @@ impl Interpreter {
                 }
                 let idx = resolved.as_ref().unwrap_or(dim);
                 if let Some(i) = Self::index_to_usize(idx) {
-                    let items = match target {
-                        Value::Array(items, ..) => items,
-                        _ => return Ok(Value::Nil),
+                    let items = match target.view() {
+                        ValueView::Array(items, ..) => items,
+                        _ => return Ok(Value::NIL),
                     };
                     if i < items.len() {
                         self.multi_dim_index_read(&items[i], rest)
                     } else {
                         // Out of bounds — return Nil for scalar index
-                        Ok(Value::Nil)
+                        Ok(Value::NIL)
                     }
                 } else {
                     // Non-numeric index (e.g., string "0")
                     let i = idx.to_string_value().parse::<usize>().ok();
                     if let Some(i) = i {
-                        let items = match target {
-                            Value::Array(items, ..) => items,
-                            _ => return Ok(Value::Nil),
+                        let items = match target.view() {
+                            ValueView::Array(items, ..) => items,
+                            _ => return Ok(Value::NIL),
                         };
                         if i < items.len() {
                             self.multi_dim_index_read(&items[i], rest)
                         } else {
-                            Ok(Value::Nil)
+                            Ok(Value::NIL)
                         }
                     } else {
-                        Ok(Value::Nil)
+                        Ok(Value::NIL)
                     }
                 }
             }
@@ -389,19 +390,19 @@ impl Interpreter {
                 match map.get(key) {
                     Some(v) => {
                         // Decontainerize a Scalar-wrapped nested value before recursing.
-                        let inner = match v {
-                            Value::Scalar(b) => (**b).clone(),
-                            other => other.clone(),
+                        let inner = match v.view() {
+                            ValueView::Scalar(b) => b.clone(),
+                            _ => v.clone(),
                         };
                         this.multi_dim_index_read(&inner, rest)
                     }
-                    None => Ok(Value::Package(crate::symbol::Symbol::intern("Any"))),
+                    None => Ok(Value::package(crate::symbol::Symbol::intern("Any"))),
                 }
             };
 
-        match dim {
+        match dim.view() {
             // `*` — all values at this level.
-            Value::Whatever => {
+            ValueView::Whatever => {
                 let has_more_multi = rest.iter().any(|v| {
                     matches!(
                         Self::normalize_multidim_dim(v).view(),
@@ -414,12 +415,12 @@ impl Interpreter {
                 });
                 let mut out = Vec::with_capacity(map.len());
                 for v in map.values() {
-                    let inner = match v {
-                        Value::Scalar(b) => (**b).clone(),
-                        other => other.clone(),
+                    let inner = match v.view() {
+                        ValueView::Scalar(b) => b.clone(),
+                        _ => v.clone(),
                     };
                     let result = self.multi_dim_index_read(&inner, rest)?;
-                    if has_more_multi && let Value::Array(items, ..) = &result {
+                    if has_more_multi && let ValueView::Array(items, ..) = result.view() {
                         out.extend(items.iter().cloned());
                     } else {
                         out.push(result);
@@ -428,7 +429,7 @@ impl Interpreter {
                 Ok(Value::array(out))
             }
             // A list of keys — slice.
-            Value::Array(keys, ..) => {
+            ValueView::Array(keys, ..) => {
                 let has_more_multi = rest.iter().any(|v| {
                     matches!(
                         Self::normalize_multidim_dim(v).view(),
@@ -442,7 +443,7 @@ impl Interpreter {
                 let mut out = Vec::with_capacity(keys.len());
                 for key in keys.iter() {
                     let result = read_key(self, &key.to_string_value(), rest)?;
-                    if has_more_multi && let Value::Array(items, ..) = &result {
+                    if has_more_multi && let ValueView::Array(items, ..) = result.view() {
                         out.extend(items.iter().cloned());
                     } else {
                         out.push(result);
@@ -461,13 +462,13 @@ impl Interpreter {
     /// `(0,1,2)` list dimension is already handled). Scalars, `Whatever`,
     /// `WhateverCode` (`Sub`), and `Array` dimensions are returned unchanged.
     pub(super) fn normalize_multidim_dim(dim: &Value) -> Value {
-        match dim {
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => Value::array(expand_range_to_list(dim)),
-            Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+        match dim.view() {
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => Value::array(expand_range_to_list(dim)),
+            ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                 Value::array(items.as_ref().clone())
             }
             _ => dim.clone(),
@@ -476,31 +477,31 @@ impl Interpreter {
 
     /// Resolve WhateverCode (e.g., *-1) or numeric coercion for a dimension index.
     fn resolve_whatever_code_index(&mut self, dim: &Value, target: &Value) -> Option<Value> {
-        if let Value::Sub(data) = dim {
-            let len = match target {
-                Value::Array(items, ..) => items.len() as i64,
+        if let ValueView::Sub(data) = dim.view() {
+            let len = match target.view() {
+                ValueView::Array(items, ..) => items.len() as i64,
                 _ => 0,
             };
             let mut sub_env = data.env.clone();
             for p in &data.params {
-                sub_env.insert(p.to_string(), Value::Int(len));
+                sub_env.insert(p.to_string(), Value::int(len));
             }
             let saved_env = std::mem::take(self.env_mut());
             *self.env_mut() = sub_env;
-            let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+            let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
             *self.env_mut() = saved_env;
             return Some(result);
         }
-        if let Value::Rat(n, d) = dim {
-            return Some(Value::Int(*n / *d));
+        if let ValueView::Rat(n, d) = dim.view() {
+            return Some(Value::int(n / d));
         }
-        if let Value::Num(f) = dim {
-            return Some(Value::Int(*f as i64));
+        if let ValueView::Num(f) = dim.view() {
+            return Some(Value::int(f as i64));
         }
-        if let Value::Str(s) = dim
+        if let ValueView::Str(s) = dim.view()
             && let Ok(i) = s.parse::<i64>()
         {
-            return Some(Value::Int(i));
+            return Some(Value::int(i));
         }
         None
     }
@@ -516,10 +517,10 @@ impl Interpreter {
         let ndims = ndims as usize;
         let mut dims = Vec::with_capacity(ndims);
         for _ in 0..ndims {
-            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+            dims.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         dims.reverse();
-        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let value = self.stack.pop().unwrap_or(Value::NIL);
 
         let var_name = Self::const_str(code, name_idx).to_string();
 
@@ -528,7 +529,7 @@ impl Interpreter {
         // it resolves each dimension against the actual nested container as it
         // descends (a flat pre-pass mis-resolves a deeper `*`/slice — it would
         // use the outermost length, not the inner container's).
-        let target_val = self.env().get(&var_name).cloned().unwrap_or(Value::Nil);
+        let target_val = self.env().get(&var_name).cloned().unwrap_or(Value::NIL);
         let resolved_dims = self.resolve_multidim_indices_for_assign(&target_val, &dims)?;
 
         // Check if the index is bound (read-only)
@@ -563,12 +564,12 @@ impl Interpreter {
         // cell is shared, so the write is visible everywhere; mutating the env
         // snapshot (the path below) would only touch a copy and silently drop the
         // write. This mirrors the simple-index assignment's ContainerRef handling.
-        let container_cell = match self.env().get(&var_name) {
-            Some(Value::ContainerRef(cell)) => Some(cell.clone()),
+        let container_cell = match self.env().get(&var_name).map(Value::view) {
+            Some(ValueView::ContainerRef(cell)) => Some(cell.clone()),
             _ => self
                 .locals_get_by_name(code, &var_name)
-                .and_then(|v| match v {
-                    Value::ContainerRef(cell) => Some(cell),
+                .and_then(|v| match v.view() {
+                    ValueView::ContainerRef(cell) => Some(cell.clone()),
                     _ => None,
                 }),
         };
@@ -581,7 +582,7 @@ impl Interpreter {
                 // Move the contents out of the guard so the assignment can
                 // borrow `&mut self` (WhateverCode resolution needs it) without
                 // also holding a borrow tied to `self` through the cell.
-                let mut contents = std::mem::replace(&mut *inner, Value::Nil);
+                let mut contents = std::mem::replace(&mut *inner, Value::NIL);
                 drop(inner);
                 self.multi_dim_assign(&mut contents, &dims, value.clone())?;
                 *cell.lock().unwrap() = contents;
@@ -594,7 +595,7 @@ impl Interpreter {
         // `&mut` into env would conflict with the `&mut self` the assignment
         // needs for WhateverCode resolution.)
         if self.env().contains_key(&var_name) {
-            let mut container = self.env().get(&var_name).cloned().unwrap_or(Value::Nil);
+            let mut container = self.env().get(&var_name).cloned().unwrap_or(Value::NIL);
             if is_shaped {
                 // For shaped arrays, use bounds-checked assignment
                 Self::assign_array_multidim(&mut container, &resolved_dims, value.clone())?;
@@ -634,13 +635,13 @@ impl Interpreter {
         ndims: u32,
     ) -> Result<(), RuntimeError> {
         let ndims = ndims as usize;
-        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let value = self.stack.pop().unwrap_or(Value::NIL);
         let mut dims = Vec::with_capacity(ndims);
         for _ in 0..ndims {
-            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+            dims.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         dims.reverse();
-        let mut target = self.stack.pop().unwrap_or(Value::Nil);
+        let mut target = self.stack.pop().unwrap_or(Value::NIL);
         let is_shaped = crate::runtime::utils::is_shaped_array(&target);
         if is_shaped {
             let resolved_dims = self.resolve_multidim_indices_for_assign(&target, &dims)?;
@@ -662,8 +663,8 @@ impl Interpreter {
     /// stores the whole list).
     fn dim_is_multi(dim: &Value) -> bool {
         matches!(
-            Self::normalize_multidim_dim(dim),
-            Value::Whatever | Value::Array(..) | Value::Sub(..)
+            Self::normalize_multidim_dim(dim).view(),
+            ValueView::Whatever | ValueView::Array(..) | ValueView::Sub(..)
         )
     }
 
@@ -679,20 +680,24 @@ impl Interpreter {
     ) -> Result<Vec<Value>, RuntimeError> {
         let dim = Self::normalize_multidim_dim(dim);
         let deref = target.with_deref(|v| v.descalarize().clone());
-        match &dim {
-            Value::Whatever => match &deref {
-                Value::Array(items, ..) => Ok((0..items.len() as i64).map(Value::Int).collect()),
-                Value::Hash(map, ..) => Ok(map.keys().map(|k| Value::str(k.to_string())).collect()),
+        match dim.view() {
+            ValueView::Whatever => match deref.view() {
+                ValueView::Array(items, ..) => {
+                    Ok((0..items.len() as i64).map(Value::int).collect())
+                }
+                ValueView::Hash(map, ..) => {
+                    Ok(map.keys().map(|k| Value::str(k.to_string())).collect())
+                }
                 _ => Ok(vec![]),
             },
-            Value::Array(items, ..) => {
-                let len = match &deref {
-                    Value::Array(arr, ..) => Value::Int(arr.len() as i64),
-                    _ => Value::Int(0),
+            ValueView::Array(items, ..) => {
+                let len = match deref.view() {
+                    ValueView::Array(arr, ..) => Value::int(arr.len() as i64),
+                    _ => Value::int(0),
                 };
                 let mut out = Vec::with_capacity(items.len());
                 for it in items.iter() {
-                    if let Value::Sub(..) = it {
+                    if let ValueView::Sub(..) = it.view() {
                         out.push(self.call_sub_value(it.clone(), vec![len.clone()], false)?);
                     } else {
                         out.push(it.clone());
@@ -700,10 +705,10 @@ impl Interpreter {
                 }
                 Ok(out)
             }
-            Value::Sub(..) => {
-                let len = match &deref {
-                    Value::Array(items, ..) => Value::Int(items.len() as i64),
-                    _ => Value::Int(0),
+            ValueView::Sub(..) => {
+                let len = match deref.view() {
+                    ValueView::Array(items, ..) => Value::int(items.len() as i64),
+                    _ => Value::int(0),
                 };
                 Ok(vec![self.call_sub_value(dim.clone(), vec![len], false)?])
             }
@@ -727,9 +732,10 @@ impl Interpreter {
         value: Value,
     ) -> Result<(), RuntimeError> {
         if dims.iter().any(Self::dim_is_multi) {
-            let values: Vec<Value> = match value {
-                Value::Array(items, ..) => items.iter().cloned().collect(),
-                other => vec![other],
+            let values: Vec<Value> = if let ValueView::Array(items, ..) = value.view() {
+                items.iter().cloned().collect()
+            } else {
+                vec![value]
             };
             let mut vi = 0usize;
             self.multi_dim_assign_slice(target, dims, &values, &mut vi)
@@ -752,7 +758,7 @@ impl Interpreter {
             let v = values
                 .get(*vi)
                 .cloned()
-                .unwrap_or_else(|| Value::Package(crate::symbol::Symbol::intern("Any")));
+                .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Any")));
             *vi += 1;
             *target = v;
             return Ok(());
@@ -760,23 +766,27 @@ impl Interpreter {
         let keys = self.resolve_assign_dim(target, &dims[0])?;
         let rest = &dims[1..];
         for key in keys {
-            if !matches!(target, Value::Hash(..))
+            if !matches!(target.view(), ValueView::Hash(..))
                 && let Some(i) = Self::index_to_usize(&key)
             {
                 Self::ensure_array_size(target, i + 1);
-                if let Value::Array(items, ..) = target {
-                    let items = crate::gc::Gc::make_mut(items);
-                    self.multi_dim_assign_slice(&mut items[i], rest, values, vi)?;
-                }
-            } else if let Value::Str(s) = &key {
+                target
+                    .with_array_mut(|items, _| {
+                        let items = crate::gc::Gc::make_mut(items);
+                        self.multi_dim_assign_slice(&mut items[i], rest, values, vi)
+                    })
+                    .transpose()?;
+            } else if let ValueView::Str(s) = key.view() {
                 Self::ensure_hash(target);
-                if let Value::Hash(map, ..) = target {
-                    let map = crate::gc::Gc::make_mut(map);
-                    let entry = map
-                        .entry(s.as_str().to_string())
-                        .or_insert_with(|| Value::Package(crate::symbol::Symbol::intern("Any")));
-                    self.multi_dim_assign_slice(entry, rest, values, vi)?;
-                }
+                target
+                    .with_hash_mut(|map| {
+                        let map = crate::gc::Gc::make_mut(map);
+                        let entry = map.entry(s.as_str().to_string()).or_insert_with(|| {
+                            Value::package(crate::symbol::Symbol::intern("Any"))
+                        });
+                        self.multi_dim_assign_slice(entry, rest, values, vi)
+                    })
+                    .transpose()?;
             }
         }
         Ok(())
@@ -798,28 +808,32 @@ impl Interpreter {
             .resolve_assign_dim(target, &dims[0])?
             .into_iter()
             .next()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let rest = &dims[1..];
         // An array index that arrives as a non-Int scalar (`"0"`, `0e0`, `0/1`)
         // is coerced to its integer when the target is (or autovivifies to) an
         // array; only a genuine hash target keeps the string as a key.
-        if !matches!(target, Value::Hash(..))
+        if !matches!(target.view(), ValueView::Hash(..))
             && let Some(i) = Self::index_to_usize(&key)
         {
             Self::ensure_array_size(target, i + 1);
-            if let Value::Array(items, ..) = target {
-                let items = crate::gc::Gc::make_mut(items);
-                self.multi_dim_assign_scalar(&mut items[i], rest, value)?;
-            }
-        } else if let Value::Str(s) = &key {
+            target
+                .with_array_mut(|items, _| {
+                    let items = crate::gc::Gc::make_mut(items);
+                    self.multi_dim_assign_scalar(&mut items[i], rest, value)
+                })
+                .transpose()?;
+        } else if let ValueView::Str(s) = key.view() {
             Self::ensure_hash(target);
-            if let Value::Hash(map, ..) = target {
-                let map = crate::gc::Gc::make_mut(map);
-                let entry = map
-                    .entry(s.as_str().to_string())
-                    .or_insert_with(|| Value::Package(crate::symbol::Symbol::intern("Any")));
-                self.multi_dim_assign_scalar(entry, rest, value)?;
-            }
+            target
+                .with_hash_mut(|map| {
+                    let map = crate::gc::Gc::make_mut(map);
+                    let entry = map
+                        .entry(s.as_str().to_string())
+                        .or_insert_with(|| Value::package(crate::symbol::Symbol::intern("Any")));
+                    self.multi_dim_assign_scalar(entry, rest, value)
+                })
+                .transpose()?;
         } else {
             return Err(RuntimeError::new("Invalid index for multi-dim assignment"));
         }
@@ -828,12 +842,8 @@ impl Interpreter {
 
     /// Ensure the target is a hash, converting from Nil/Any if necessary.
     fn ensure_hash(target: &mut Value) {
-        match target {
-            Value::Hash(..) => {}
-            Value::Nil | Value::Package(..) => {
-                *target = Value::Hash(Value::hash_arc(std::collections::HashMap::new()));
-            }
-            _ => {}
+        if matches!(target.view(), ValueView::Nil | ValueView::Package(..)) {
+            *target = Value::hash_with_data(Value::hash_arc(std::collections::HashMap::new()));
         }
     }
 
@@ -849,13 +859,13 @@ impl Interpreter {
         // navigation below) sees the real array.
         let mut current = target.with_deref(|v| v.descalarize().clone());
         for idx in indices {
-            if matches!(idx, Value::Whatever) {
+            if matches!(idx.view(), ValueView::Whatever) {
                 // * means "all existing indices" - expand to 0..len
-                let len = match &current {
-                    Value::Array(items, ..) => items.len(),
-                    Value::Hash(..) => {
+                let len = match current.view() {
+                    ValueView::Array(items, ..) => items.len(),
+                    ValueView::Hash(..) => {
                         // For hashes, * means all existing keys
-                        if let Value::Hash(map, ..) = &current {
+                        if let ValueView::Hash(map, ..) = current.view() {
                             let keys: Vec<Value> =
                                 map.keys().map(|k| Value::str(k.to_string())).collect();
                             let result = Value::real_array(keys);
@@ -866,29 +876,29 @@ impl Interpreter {
                     }
                     _ => 0,
                 };
-                let all_indices: Vec<Value> = (0..len as i64).map(Value::Int).collect();
+                let all_indices: Vec<Value> = (0..len as i64).map(Value::int).collect();
                 let result = Value::real_array(all_indices);
                 // Don't advance current - Whatever applies to all elements
                 resolved.push(result);
-            } else if let Value::Sub(..) = idx {
-                let len = match &current {
-                    Value::Array(items, ..) => Value::Int(items.len() as i64),
-                    _ => Value::Int(0),
+            } else if let ValueView::Sub(..) = idx.view() {
+                let len = match current.view() {
+                    ValueView::Array(items, ..) => Value::int(items.len() as i64),
+                    _ => Value::int(0),
                 };
                 let result = self.call_sub_value(idx.clone(), vec![len], false)?;
                 current =
                     Self::index_array_multidim(&current, std::slice::from_ref(&result), false)
-                        .unwrap_or(Value::Nil);
+                        .unwrap_or(Value::NIL);
                 resolved.push(result);
-            } else if let Value::Array(items, ..) = idx {
+            } else if let ValueView::Array(items, ..) = idx.view() {
                 // Resolve any Sub/WhateverCode elements within the array
-                let len = match &current {
-                    Value::Array(arr, ..) => Value::Int(arr.len() as i64),
-                    _ => Value::Int(0),
+                let len = match current.view() {
+                    ValueView::Array(arr, ..) => Value::int(arr.len() as i64),
+                    _ => Value::int(0),
                 };
                 let mut resolved_items = Vec::with_capacity(items.len());
                 for item in items.iter() {
-                    if let Value::Sub(..) = item {
+                    if let ValueView::Sub(..) = item.view() {
                         let result =
                             self.vm_call_sub_value(item.clone(), vec![len.clone()], false)?;
                         resolved_items.push(result);
@@ -900,7 +910,7 @@ impl Interpreter {
                 resolved.push(result);
             } else {
                 current = Self::index_array_multidim(&current, std::slice::from_ref(idx), false)
-                    .unwrap_or(Value::Nil);
+                    .unwrap_or(Value::NIL);
                 resolved.push(idx.clone());
             }
         }
@@ -909,25 +919,25 @@ impl Interpreter {
 
     /// Ensure the target is an array with at least `min_size` elements.
     fn ensure_array_size(target: &mut Value, min_size: usize) {
-        match target {
-            Value::Array(items, ..) => {
+        if target
+            .with_array_mut(|items, _| {
                 if items.len() < min_size {
                     let items = crate::gc::Gc::make_mut(items);
                     items.resize(
                         min_size,
-                        Value::Package(crate::symbol::Symbol::intern("Any")),
+                        Value::package(crate::symbol::Symbol::intern("Any")),
                     );
                 }
-            }
-            Value::Nil | Value::Package(..) => {
-                let mut items = Vec::with_capacity(min_size);
-                items.resize(
-                    min_size,
-                    Value::Package(crate::symbol::Symbol::intern("Any")),
-                );
-                *target = Value::real_array(items);
-            }
-            _ => {}
+            })
+            .is_none()
+            && matches!(target.view(), ValueView::Nil | ValueView::Package(..))
+        {
+            let mut items = Vec::with_capacity(min_size);
+            items.resize(
+                min_size,
+                Value::package(crate::symbol::Symbol::intern("Any")),
+            );
+            *target = Value::real_array(items);
         }
     }
 }

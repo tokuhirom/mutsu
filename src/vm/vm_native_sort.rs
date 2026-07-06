@@ -26,19 +26,19 @@ struct VmSortCaller<'a>(&'a mut Interpreter);
 
 impl SortCaller for VmSortCaller<'_> {
     fn call_callable(&mut self, callable: &Value, args: Vec<Value>) -> Value {
-        // Hash-sourced `Value::Pair` elements must bind positionally to the
+        // Hash-sourced `Pair` elements must bind positionally to the
         // block (so `$^a`/`$_` is the pair, not a named argument). See
         // `pair_as_positional`.
         let args: Vec<Value> = args.iter().map(pair_as_positional).collect();
         self.0
             .vm_call_on_value(callable.clone(), args, None)
-            .unwrap_or(Value::Nil)
+            .unwrap_or(Value::NIL)
     }
 
     fn call_method(&mut self, recv: Value, name: &str) -> Value {
         self.0
             .try_compiled_method_or_interpret(recv, name, vec![])
-            .unwrap_or(Value::Nil)
+            .unwrap_or(Value::NIL)
     }
 
     fn callable_arity(&self, callable: Option<&Value>) -> Result<usize, RuntimeError> {
@@ -67,16 +67,16 @@ impl Interpreter {
         // `Instance`/`Supply` keep their interpreter semantics -> fall back. The
         // arg parsing, shape dispatch, and orchestration are then the single
         // shared `sort_value_generic` (same code the interpreter runs).
-        match target {
-            Value::Array(_, ArrayKind::Array | ArrayKind::List)
-            | Value::Seq(_)
-            | Value::Slip(_)
-            | Value::Hash(_)
-            | Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {}
+        match target.view() {
+            ValueView::Array(_, ArrayKind::Array | ArrayKind::List)
+            | ValueView::Seq(_)
+            | ValueView::Slip(_)
+            | ValueView::Hash(_)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {}
             _ => return None,
         }
 

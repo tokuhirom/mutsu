@@ -20,21 +20,21 @@ impl Interpreter {
         // Flatten any Slip values in the argument list (from |capture slipping)
         let mut args = Vec::new();
         for arg in raw_args {
-            match arg {
-                Value::Slip(items) => {
+            match arg.view() {
+                ValueView::Slip(items) => {
                     for item in items.iter() {
-                        match item {
-                            Value::Capture { positional, named } => {
+                        match item.view() {
+                            ValueView::Capture { positional, named } => {
                                 args.extend(positional.iter().cloned());
                                 for (k, v) in named.iter() {
-                                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                                    args.push(Value::pair(k.clone(), v.clone()));
                                 }
                             }
-                            other => args.push(other.clone()),
+                            _ => args.push(item.clone()),
                         }
                     }
                 }
-                other => args.push(other),
+                _ => args.push(arg),
             }
         }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
@@ -196,7 +196,7 @@ impl Interpreter {
             }
         } else {
             // Legacy: slip is last on stack
-            let slip_val = raw_args.last().cloned().unwrap_or(Value::Nil);
+            let slip_val = raw_args.last().cloned().unwrap_or(Value::NIL);
             args.extend(raw_args.into_iter().take(regular_arity as usize));
             Self::append_slip_value(&mut args, slip_val);
         }

@@ -28,7 +28,7 @@ impl Interpreter {
         let caller_env = std::mem::replace(self.env_mut(), crate::env::Env::scoped_child(parent));
 
         let num_locals = cf.code.locals.len();
-        self.locals = vec![Value::Nil; num_locals];
+        self.locals = vec![Value::NIL; num_locals];
 
         // Bind parameters directly to locals slots and the overlay env.
         let mut positional_idx = 0usize;
@@ -51,10 +51,10 @@ impl Interpreter {
                 // Try matching the param name directly
                 for arg in args.iter().rev() {
                     let arg = unwrap_varref_value(arg.clone());
-                    if let Value::Pair(key, val) = arg
-                        && key == match_key
+                    if let ValueView::Pair(key, val) = arg.view()
+                        && key.as_str() == match_key
                     {
-                        found_val = Some(*val.clone());
+                        found_val = Some(val.clone());
                         break;
                     }
                 }
@@ -73,10 +73,10 @@ impl Interpreter {
                         let inner_key = sub_pd.name.strip_prefix(':').unwrap_or(&sub_pd.name);
                         for arg in args.iter().rev() {
                             let arg = unwrap_varref_value(arg.clone());
-                            if let Value::Pair(key, val) = arg
-                                && key == inner_key
+                            if let ValueView::Pair(key, val) = arg.view()
+                                && key.as_str() == inner_key
                             {
-                                found_val = Some(*val.clone());
+                                found_val = Some(val.clone());
                                 break;
                             }
                         }
@@ -95,10 +95,10 @@ impl Interpreter {
                             .trim_start_matches(|c: char| "$@%&".contains(c));
                         for arg in args.iter().rev() {
                             let arg = unwrap_varref_value(arg.clone());
-                            if let Value::Pair(key, val) = arg
-                                && key == outer_name
+                            if let ValueView::Pair(key, val) = arg.view()
+                                && key.as_str() == outer_name
                             {
-                                found_val = Some(*val.clone());
+                                found_val = Some(val.clone());
                                 break;
                             }
                         }
@@ -135,7 +135,7 @@ impl Interpreter {
                 // Positional parameter: skip Pair args (they are named)
                 while positional_idx < args.len() {
                     let unwrapped = unwrap_varref_value(args[positional_idx].clone());
-                    if !matches!(&unwrapped, Value::Pair(..)) {
+                    if !matches!(unwrapped.view(), ValueView::Pair(..)) {
                         break;
                     }
                     positional_idx += 1;
@@ -151,7 +151,7 @@ impl Interpreter {
                         "Too few positionals passed; expected {} arguments but got {}",
                         cf.param_defs.iter().filter(|p| !p.named).count(),
                         args.iter()
-                            .filter(|a| !matches!(a, Value::Pair(..)))
+                            .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
                             .count()
                     )));
                 } else {
@@ -163,7 +163,7 @@ impl Interpreter {
             // Locals are needed for GetLocal (fast path), env is needed for
             // closures that capture the variable and for GetLocal's Nil
             // fallback check (which errors on undeclared variables).
-            let bound_val = value.unwrap_or(Value::Nil);
+            let bound_val = value.unwrap_or(Value::NIL);
             if let Some(slot) = cf.code.locals.iter().position(|n| n == param_name) {
                 self.locals[slot] = bound_val.clone();
             }
@@ -201,7 +201,12 @@ impl Interpreter {
         if cf.code.locals.iter().any(|n| n == "@_") {
             let plain_args: Vec<Value> = args
                 .iter()
-                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                .filter(|a| {
+                    !matches!(
+                        unwrap_varref_value((*a).clone()).view(),
+                        ValueView::Pair(..)
+                    )
+                })
                 .map(|a| unwrap_varref_value(a.clone()))
                 .collect();
             self.env_mut()
@@ -213,7 +218,12 @@ impl Interpreter {
             let mut placeholder_pos = 0usize;
             let plain_args: Vec<Value> = args
                 .iter()
-                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                .filter(|a| {
+                    !matches!(
+                        unwrap_varref_value((*a).clone()).view(),
+                        ValueView::Pair(..)
+                    )
+                })
                 .map(|a| unwrap_varref_value(a.clone()))
                 .collect();
             for param in &cf.params {
@@ -240,7 +250,7 @@ impl Interpreter {
 
         // For any locals not yet set from params, try to initialize from env
         for (i, local_name) in cf.code.locals.iter().enumerate() {
-            if matches!(self.locals[i], Value::Nil)
+            if self.locals[i].is_nil()
                 && let Some(val) = self.env().get(local_name)
             {
                 self.locals[i] = val.clone();
@@ -300,12 +310,12 @@ impl Interpreter {
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
-                self.stack.pop().unwrap_or(Value::Nil)
+                self.stack.pop().unwrap_or(Value::NIL)
             } else {
-                Value::Nil
+                Value::NIL
             }
         } else {
-            Value::Nil
+            Value::NIL
         };
 
         self.stack.truncate(saved_stack_depth);
@@ -377,8 +387,11 @@ impl Interpreter {
     /// routine did not escape via the return slot and can be cleaned up.
     pub(super) fn return_value_escapes_routine(v: &Value) -> bool {
         matches!(
-            v,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Mixin(..)
+            v.view(),
+            ValueView::Sub(_)
+                | ValueView::WeakSub(_)
+                | ValueView::Routine { .. }
+                | ValueView::Mixin(..)
         )
     }
 }

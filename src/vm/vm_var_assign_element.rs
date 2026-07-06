@@ -31,23 +31,23 @@ impl Interpreter {
         let val_ref = &self.stack[stack_len - 2];
         // Reject complex index types (slices/ranges/junctions need the full path).
         if matches!(
-            idx_ref,
-            Value::Array(..)
-                | Value::Junction { .. }
-                | Value::GenericRange { .. }
-                | Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::Nil
-                | Value::Seq(..)
-                | Value::Slip(..)
+            idx_ref.view(),
+            ValueView::Array(..)
+                | ValueView::Junction { .. }
+                | ValueView::GenericRange { .. }
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::Nil
+                | ValueView::Seq(..)
+                | ValueView::Slip(..)
         ) {
             return None;
         }
         // Reject bind-mode markers and Nil values (need default/type handling).
-        if matches!(val_ref, Value::Pair(name, _) if name == "__mutsu_bind_index_value")
-            || matches!(val_ref, Value::Nil)
+        if matches!(val_ref.view(), ValueView::Pair(name, _) if name == "__mutsu_bind_index_value")
+            || matches!(val_ref.view(), ValueView::Nil)
         {
             return None;
         }
@@ -116,13 +116,13 @@ impl Interpreter {
         }
         // Only a plain non-negative Int index; anything else (slice, Whatever,
         // negative, lazy) needs the full index-assign path.
-        let idx = match &self.stack[stack_len - 1] {
-            Value::Int(n) if *n >= 0 => *n as usize,
+        let idx = match self.stack[stack_len - 1].view() {
+            ValueView::Int(n) if n >= 0 => n as usize,
             _ => return None,
         };
         let val_ref = &self.stack[stack_len - 2];
-        if matches!(val_ref, Value::Pair(name, _) if name == "__mutsu_bind_index_value")
-            || matches!(val_ref, Value::Nil)
+        if matches!(val_ref.view(), ValueView::Pair(name, _) if name == "__mutsu_bind_index_value")
+            || matches!(val_ref.view(), ValueView::Nil)
         {
             return None;
         }
@@ -174,7 +174,7 @@ impl Interpreter {
     /// - Variable name starts with `%` (hash sigil)
     /// - Stack top two values are a simple index (not Array/Junction/GenericRange/Nil)
     ///   and a simple value (not a bind-mode marker)
-    /// - The variable exists in the env as `Value::Hash`
+    /// - The variable exists in the env as a plain `Hash` value
     /// - No type constraints, no key constraints, no var defaults
     /// - Variable is not readonly (not bound via `:=`)
     /// - No container type metadata on the hash
@@ -204,26 +204,27 @@ impl Interpreter {
         let val_ref = &self.stack[stack_len - 2];
         // Reject complex index types that need special handling
         if matches!(
-            idx_ref,
-            Value::Array(..)
-                | Value::Junction { .. }
-                | Value::GenericRange { .. }
-                | Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::Nil
-                | Value::Seq(..)
-                | Value::Slip(..)
+            idx_ref.view(),
+            ValueView::Array(..)
+                | ValueView::Junction { .. }
+                | ValueView::GenericRange { .. }
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::Nil
+                | ValueView::Seq(..)
+                | ValueView::Slip(..)
         ) {
             return None;
         }
         // Reject bind-mode marker values
-        if matches!(val_ref, Value::Pair(name, _) if name == "__mutsu_bind_index_value") {
+        if matches!(val_ref.view(), ValueView::Pair(name, _) if name == "__mutsu_bind_index_value")
+        {
             return None;
         }
         // Reject Nil values (need default/type-object handling)
-        if matches!(val_ref, Value::Nil) {
+        if matches!(val_ref.view(), ValueView::Nil) {
             return None;
         }
         // Check that no type constraints, key constraints, or defaults exist
@@ -246,8 +247,8 @@ impl Interpreter {
         // Check that the variable exists in env as a plain Hash
         // and that it has no container type metadata
         let env = self.env();
-        match env.get(var_name) {
-            Some(Value::Hash(hash_arc)) => {
+        match env.get(var_name).map(Value::view) {
+            Some(ValueView::Hash(hash_arc)) => {
                 let strong_count = crate::gc::Gc::strong_count_of(hash_arc);
                 // Reject if the hash Arc has more than 2 refs (e.g. HashEntryRef binding)
                 // strong_count == 1: only env holds it (no local slot)
@@ -272,13 +273,13 @@ impl Interpreter {
                 // Peek at the key to check if the existing element is a bound ref
                 let peek_key = self.stack[stack_len - 1].to_string_value();
                 if let Some(existing) = hash_arc.get(&peek_key) {
-                    let is_bound = match existing {
-                        Value::HashEntryRef { .. } | Value::Scalar(..) => true,
+                    let is_bound = match existing.view() {
+                        ValueView::HashEntryRef { .. } | ValueView::Scalar(..) => true,
                         // Slice 2b: a `=`-shared (or `:=`-bound) element holds a
                         // `ContainerRef` cell; reassignment needs the slow path's
                         // replace-vs-write-through guard, not a blind insert.
-                        Value::ContainerRef(_) => true,
-                        Value::Pair(name, _) if name.starts_with("__mutsu_bound") => true,
+                        ValueView::ContainerRef(_) => true,
+                        ValueView::Pair(name, _) if name.starts_with("__mutsu_bound") => true,
                         _ => false,
                     };
                     if is_bound {
@@ -293,14 +294,16 @@ impl Interpreter {
                 // drop the local ref first so Arc::make_mut can mutate in-place
                 // instead of cloning the entire HashMap (O(n) → O(1) per insert).
                 if let Some(slot) = local_slot {
-                    self.locals[slot] = Value::Nil;
+                    self.locals[slot] = Value::NIL;
                 }
-                if let Some(Value::Hash(hash)) = self.env_mut().get_mut(var_name) {
-                    Value::hash_insert_through(
-                        &mut crate::gc::Gc::make_mut(hash).map,
-                        key.clone(),
-                        val.clone(),
-                    );
+                if let Some(entry) = self.env_mut().get_mut(var_name) {
+                    entry.with_hash_mut(|hash| {
+                        Value::hash_insert_through(
+                            &mut crate::gc::Gc::make_mut(hash).map,
+                            key.clone(),
+                            val.clone(),
+                        );
+                    });
                 }
                 // Restore the local slot to point to the (now mutated) env Arc
                 if let Some(slot) = local_slot
@@ -411,9 +414,9 @@ impl Interpreter {
         let elem_share_mark: Option<(String, String)> = if self.element_share_pending {
             self.element_share_pending = false;
             let var_name = Self::const_str(code, name_idx).to_string();
-            self.stack.last().and_then(|idx| match idx {
-                Value::Int(n) if *n >= 0 => Some((var_name, idx.to_string_value())),
-                Value::Str(_) => Some((var_name, idx.to_string_value())),
+            self.stack.last().and_then(|idx| match idx.view() {
+                ValueView::Int(n) if n >= 0 => Some((var_name, idx.to_string_value())),
+                ValueView::Str(_) => Some((var_name, idx.to_string_value())),
                 _ => None,
             })
         } else {
@@ -511,8 +514,8 @@ impl Interpreter {
         // as an Instance/Mixin, so this only fires for object subscript targets.
         if result.is_ok()
             && matches!(
-                self.env().get(&save_var_name),
-                Some(Value::Instance { .. }) | Some(Value::Mixin(..))
+                self.env().get(&save_var_name).map(Value::view),
+                Some(ValueView::Instance { .. }) | Some(ValueView::Mixin(..))
             )
             && let Some(v) = self.env().get(&save_var_name).cloned()
         {

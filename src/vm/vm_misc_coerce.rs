@@ -6,13 +6,13 @@ impl Interpreter {
         // Auto-FETCH Proxy containers
         let val = loan_env!(self, auto_fetch_proxy(&val))?;
         // Junction auto-threading for prefix:<+>
-        if let Value::Junction { kind, values } = &val {
+        if let ValueView::Junction { kind, values } = val.view() {
             let kind = kind.clone();
             let mut results = Vec::new();
             for v in values.iter() {
                 self.stack.push(v.clone());
                 self.exec_num_coerce_op()?;
-                results.push(self.stack.pop().unwrap_or(Value::Nil));
+                results.push(self.stack.pop().unwrap_or(Value::NIL));
             }
             self.stack.push(Value::junction(kind, results));
             return Ok(());
@@ -35,7 +35,7 @@ impl Interpreter {
             return Ok(());
         }
         // Type objects (Mu, Any, etc.) cannot be numerically coerced
-        if let Value::Package(name) = &val
+        if let ValueView::Package(name) = val.view()
             && matches!(name.resolve().as_str(), "Mu" | "Any")
         {
             return Err(RuntimeError::new(format!(
@@ -44,15 +44,15 @@ impl Interpreter {
             )));
         }
         if matches!(
-            &val,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            val.view(),
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
         ) {
             return Err(RuntimeError::new(
                 "Cannot resolve caller Numeric(Sub:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)",
             ));
         }
         // If the value is an Instance, try calling the Numeric method
-        if let Value::Instance { .. } = &val {
+        if let ValueView::Instance { .. } = val.view() {
             // Slice F: a user `Numeric` method can mutate a captured-outer caller
             // lexical (`my $c; method Numeric { $c++; ... }`); this op-level
             // redispatch has no surrounding CallMethod op to drain the writeback,
@@ -68,7 +68,7 @@ impl Interpreter {
         }
         // Force a lazy IO words/lines iterator so numeric coercion counts its
         // elements (e.g. `+$fh.words` / `+$fh.lines`) rather than yielding 0.
-        let val = if matches!(&val, Value::LazyIoLines { .. }) {
+        let val = if matches!(val.view(), ValueView::LazyIoLines { .. }) {
             self.force_if_lazy_io_lines(val)?
         } else {
             val
@@ -76,20 +76,20 @@ impl Interpreter {
         // Force LazyList before numeric coercion so we can count elements.
         // If the lazy list has a known element count (e.g. n! for permutations),
         // use that directly without materializing.
-        let val = if let Value::LazyList(ll) = &val {
+        let val = if let ValueView::LazyList(ll) = val.view() {
             if let Some(count) = &ll.elems_count {
                 self.stack.push(count.clone());
                 return Ok(());
             }
             let items = self.force_lazy_list_vm(ll)?;
-            Value::Seq(std::sync::Arc::new(items))
+            Value::seq(items)
         } else {
             val
         };
-        if let Value::Str(s) = &val {
+        if let ValueView::Str(s) = val.view() {
             let trimmed = s.trim();
             if trimmed.is_empty() {
-                self.stack.push(Value::Int(0));
+                self.stack.push(Value::int(0));
                 return Ok(());
             }
             if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(trimmed) {
@@ -113,7 +113,7 @@ impl Interpreter {
         let val = loan_env!(self, auto_fetch_proxy(&val))?;
         // Mu itself has no Str candidate — stringifying it is a hard
         // error (Rakudo dies with `Cannot resolve caller prefix:<~>(Mu:U)`).
-        if let Value::Package(name) = &val
+        if let ValueView::Package(name) = val.view()
             && name.resolve() == "Mu"
         {
             return Err(RuntimeError::new(format!(
@@ -124,7 +124,7 @@ impl Interpreter {
         // Any and other Cool-descended type objects stringify to the empty
         // string with a warning (Rakudo emits `Use of uninitialized value
         // of type Any in string context.`).
-        if let Value::Package(name) = &val
+        if let ValueView::Package(name) = val.view()
             && name.resolve() == "Any"
         {
             let msg = format!(
@@ -153,7 +153,7 @@ impl Interpreter {
             }
         }
         // If the value is an Instance, try calling the Stringy method, then Str
-        if let Value::Instance { .. } = &val {
+        if let ValueView::Instance { .. } = val.view() {
             // Slice F: a user `Stringy`/`Str` method can mutate a captured-outer
             // caller lexical; reconcile its writeback to the caller's slot (see
             // coerce_numeric_bridge_value).
@@ -173,7 +173,7 @@ impl Interpreter {
             }
         }
         // Force LazyList before stringification
-        if let Value::LazyList(_) = &val {
+        if let ValueView::LazyList(_) = val.view() {
             let result = self.try_compiled_method_or_interpret(val, "Str", vec![])?;
             self.stack.push(result);
             return Ok(());
@@ -192,19 +192,19 @@ impl Interpreter {
         } else {
             runtime::coerce_to_numeric(val)
         };
-        let result = match numeric {
-            Value::Int(i) => Value::RangeExcl(0, i),
-            Value::Num(_)
-            | Value::Rat(_, _)
-            | Value::FatRat(_, _)
-            | Value::BigRat(_, _)
-            | Value::BigInt(_) => Value::GenericRange {
-                start: Arc::new(Value::Int(0)),
-                end: Arc::new(numeric),
-                excl_start: false,
-                excl_end: true,
-            },
-            _ => Value::RangeExcl(0, 0),
+        let result = if let Some(i) = numeric.as_int() {
+            Value::range_excl(0, i)
+        } else if matches!(
+            numeric.view(),
+            ValueView::Num(_)
+                | ValueView::Rat(_, _)
+                | ValueView::FatRat(_, _)
+                | ValueView::BigRat(_, _)
+                | ValueView::BigInt(_)
+        ) {
+            Value::generic_range(Value::int(0), numeric, false, true)
+        } else {
+            Value::range_excl(0, 0)
         };
         self.stack.push(result);
     }
@@ -241,10 +241,11 @@ impl Interpreter {
         }
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
-            && !matches!(self.locals[slot], Value::Proxy { .. })
+            && !matches!(self.locals[slot].view(), ValueView::Proxy { .. })
         {
             // ContainerRef: increment through the shared arc (e.g. `$!attr := outer_var`).
-            if let Value::ContainerRef(ref arc) = self.locals[slot].clone() {
+            let local_val = self.locals[slot].clone();
+            if let ValueView::ContainerRef(arc) = local_val.view() {
                 if self.atomic_container_incdec(arc, name, true, false) {
                     return Ok(());
                 }
@@ -263,7 +264,7 @@ impl Interpreter {
             // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
             let mut alias_name = self.env().get(&alias_key).and_then(|v| {
-                if let Value::Str(n) = v {
+                if let ValueView::Str(n) = v.view() {
                     Some(n.to_string())
                 } else {
                     None
@@ -278,7 +279,7 @@ impl Interpreter {
                 self.update_local_if_exists(code, &current_alias, &new_val);
                 let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
                 alias_name = self.env().get(&next_key).and_then(|v| {
-                    if let Value::Str(n) = v {
+                    if let ValueView::Str(n) = v.view() {
                         Some(n.to_string())
                     } else {
                         None
@@ -294,11 +295,11 @@ impl Interpreter {
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .or_else(|| self.escaping_our_incdec_cell(code, name))
-            .unwrap_or(Value::Int(0));
+            .unwrap_or(Value::int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
         // closures over this lexical observe the change and the smart string/Int
         // increment semantics are preserved (the slot holds the same Arc).
-        if let Value::ContainerRef(ref arc) = val {
+        if let ValueView::ContainerRef(arc) = val.view() {
             if self.atomic_container_incdec(arc, name, true, false) {
                 return Ok(());
             }
@@ -357,10 +358,11 @@ impl Interpreter {
         }
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
-            && !matches!(self.locals[slot], Value::Proxy { .. })
+            && !matches!(self.locals[slot].view(), ValueView::Proxy { .. })
         {
             // ContainerRef: decrement through the shared arc (e.g. `$!attr := outer_var`).
-            if let Value::ContainerRef(ref arc) = self.locals[slot].clone() {
+            let local_val = self.locals[slot].clone();
+            if let ValueView::ContainerRef(arc) = local_val.view() {
                 if self.atomic_container_incdec(arc, name, false, false) {
                     return Ok(());
                 }
@@ -379,7 +381,7 @@ impl Interpreter {
             // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
             let alias_key = format!("__mutsu_sigilless_alias::{}", name);
             let mut alias_name = self.env().get(&alias_key).and_then(|v| {
-                if let Value::Str(n) = v {
+                if let ValueView::Str(n) = v.view() {
                     Some(n.to_string())
                 } else {
                     None
@@ -394,7 +396,7 @@ impl Interpreter {
                 self.update_local_if_exists(code, &current_alias, &new_val);
                 let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
                 alias_name = self.env().get(&next_key).and_then(|v| {
-                    if let Value::Str(n) = v {
+                    if let ValueView::Str(n) = v.view() {
                         Some(n.to_string())
                     } else {
                         None
@@ -410,11 +412,11 @@ impl Interpreter {
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .or_else(|| self.escaping_our_incdec_cell(code, name))
-            .unwrap_or(Value::Int(0));
+            .unwrap_or(Value::int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
         // closures over this lexical observe the change and the smart string/Int
         // decrement semantics are preserved (the slot holds the same Arc).
-        if let Value::ContainerRef(ref arc) = val {
+        if let ValueView::ContainerRef(arc) = val.view() {
             if self.atomic_container_incdec(arc, name, false, false) {
                 return Ok(());
             }

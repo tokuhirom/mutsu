@@ -145,7 +145,7 @@ impl Interpreter {
                             // Try with positional-only arity (excluding Pair named args)
                             let pos_arity = args
                                 .iter()
-                                .filter(|a| !matches!(a, Value::Pair(..)))
+                                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
                                 .count();
                             if pos_arity != arity {
                                 let key_pos_fp = format!(
@@ -177,7 +177,7 @@ impl Interpreter {
                                     // Try with positional-only arity (excluding Pair named args)
                                     let pos_arity = args
                                         .iter()
-                                        .filter(|a| !matches!(a, Value::Pair(..)))
+                                        .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
                                         .count();
                                     if pos_arity != arity {
                                         let key_pos = format!(

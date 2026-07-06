@@ -20,11 +20,13 @@ impl Interpreter {
         if self.array_share_context {
             self.array_share_context = false;
             if let Some(src) = array_share_source {
-                let val = self.stack.pop().unwrap_or(Value::Nil);
-                if val.with_deref(|v| matches!(v, Value::Array(..) | Value::Hash(_))) && {
-                    let name = &code.locals[idx];
-                    !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
-                } {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                if val.with_deref(|v| matches!(v.view(), ValueView::Array(..) | ValueView::Hash(_)))
+                    && {
+                        let name = &code.locals[idx];
+                        !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
+                    }
+                {
                     self.array_share_assign(code, idx, val.clone(), src)?;
                     self.stack.push(val);
                     return Ok(());
@@ -34,10 +36,10 @@ impl Interpreter {
             }
         }
         // If the current local is a Proxy, invoke STORE instead of overwriting
-        if let Value::Proxy { storer, .. } = &self.locals[idx]
-            && !matches!(storer.as_ref(), Value::Nil)
+        if let ValueView::Proxy { storer, .. } = self.locals[idx].view()
+            && !storer.is_nil()
         {
-            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let val = self.stack.pop().unwrap_or(Value::NIL);
             let proxy_val = self.locals[idx].clone();
             loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
             // A Proxy STORE wrote the referent caller lexical by name. For
@@ -50,7 +52,7 @@ impl Interpreter {
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] {
-            let mut val = self.stack.pop().unwrap_or(Value::Nil);
+            let mut val = self.stack.pop().unwrap_or(Value::NIL);
             let name = &code.locals[idx];
             // Lazy sync: if the local is not a ContainerRef but env has one
             // (from a cross-scope `:=` binding), adopt the ContainerRef and
@@ -58,18 +60,21 @@ impl Interpreter {
             // Skip for type objects and complex values.
             if !self.locals[idx].is_container_ref()
                 && !matches!(
-                    self.locals[idx],
-                    Value::Package(_)
-                        | Value::Array(..)
-                        | Value::Hash(..)
-                        | Value::Sub(..)
-                        | Value::Instance { .. }
+                    self.locals[idx].view(),
+                    ValueView::Package(_)
+                        | ValueView::Array(..)
+                        | ValueView::Hash(..)
+                        | ValueView::Sub(..)
+                        | ValueView::Instance { .. }
                 )
-                && let Some(Value::ContainerRef(arc)) = self.env().get(name).cloned()
+                && let Some(arc) = self.env().get(name).and_then(|v| match v.view() {
+                    ValueView::ContainerRef(arc) => Some(arc.clone()),
+                    _ => None,
+                })
             {
-                self.locals[idx] = Value::ContainerRef(arc);
+                self.locals[idx] = Value::container_ref(arc);
             }
-            if let Value::ContainerRef(arc) = &self.locals[idx] {
+            if let ValueView::ContainerRef(arc) = self.locals[idx].view() {
                 // Slice 2a: a `=`-array-shared scalar reassigned as a whole
                 // REPLACES the slot (raku value semantics); drop the share and
                 // fall through to the plain-replace path below.
@@ -90,20 +95,20 @@ impl Interpreter {
             if !name.starts_with('@') && !name.starts_with('%') {
                 val = Self::normalize_scalar_assignment_value(val);
             }
-            if matches!(val, Value::Nil)
-                && !matches!(self.locals[idx], Value::Nil)
+            if val.is_nil()
+                && !self.locals[idx].is_nil()
                 && let Some(def) = self.var_default(name)
             {
                 val = def.clone();
             }
             if let Some(constraint) = self.var_type_constraint_fast(name).cloned() {
-                let val = if matches!(val, Value::Nil) {
+                let val = if val.is_nil() {
                     if constraint == "Mu" {
                         val
                     } else {
                         let nominal =
                             loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                        Value::Package(Symbol::intern(&nominal))
+                        Value::package(Symbol::intern(&nominal))
                     }
                 } else if !self.type_matches_value(&constraint, &val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
@@ -111,7 +116,7 @@ impl Interpreter {
                         &constraint,
                         &val,
                     ));
-                } else if !matches!(val, Value::Nil | Value::Package(_)) {
+                } else if !matches!(val.view(), ValueView::Nil | ValueView::Package(_)) {
                     loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
                 } else {
                     val
@@ -147,7 +152,7 @@ impl Interpreter {
             return Ok(());
         }
 
-        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
+        let raw_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = &code.locals[idx];
         self.check_readonly_for_modify(name)?;
         // Bound array SLICE write-through (`@slice := @array[1,2]; @slice =
@@ -160,10 +165,12 @@ impl Interpreter {
         // must live here rather than in the fast path above.
         if name.starts_with('@')
             && matches!(
-                self.env().get(&Self::bound_array_slice_marker_key(name)),
-                Some(Value::Bool(true))
+                self.env()
+                    .get(&Self::bound_array_slice_marker_key(name))
+                    .map(Value::view),
+                Some(ValueView::Bool(true))
             )
-            && let Value::Array(items, ..) = &self.locals[idx]
+            && let ValueView::Array(items, ..) = self.locals[idx].view()
             && items.iter().any(Value::is_container_ref)
         {
             let cells: Vec<Value> = items.iter().cloned().collect();
@@ -173,8 +180,8 @@ impl Interpreter {
                 let v = rhs_vals
                     .get(i)
                     .cloned()
-                    .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
-                if let Value::ContainerRef(cell) = cell_val {
+                    .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
+                if let ValueView::ContainerRef(cell) = cell_val.view() {
                     *cell.lock().unwrap() = v.clone();
                 }
                 result.push(v);
@@ -185,16 +192,21 @@ impl Interpreter {
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
-            let mut assigned = match raw_val {
-                Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
-                    Some(Value::Bool(true)) => Value::LazyList(list),
-                    _ => Value::real_array(self.force_lazy_list_vm(&list)?),
-                },
-                other => runtime::coerce_to_array(other),
+            let mut assigned = if let ValueView::LazyList(list) = raw_val.view() {
+                match list
+                    .env
+                    .get(Self::LAZY_ASSIGN_PRESERVE_MARKER)
+                    .map(Value::view)
+                {
+                    Some(ValueView::Bool(true)) => Value::lazy_list(list.clone()),
+                    _ => Value::real_array(self.force_lazy_list_vm(list)?),
+                }
+            } else {
+                runtime::coerce_to_array(raw_val)
             };
-            let class_name = match &self.locals[idx] {
-                Value::Instance { class_name, .. } => Some(*class_name),
-                Value::Package(class_name) => Some(*class_name),
+            let class_name = match self.locals[idx].view() {
+                ValueView::Instance { class_name, .. } => Some(class_name),
+                ValueView::Package(class_name) => Some(class_name),
                 _ => None,
             };
             if let Some(class_name) = class_name {
@@ -205,10 +217,10 @@ impl Interpreter {
                 if class == "Buf" || class.starts_with("buf") || class.starts_with("Buf[") {
                     let items = runtime::value_to_list(&assigned)
                         .into_iter()
-                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .map(|v| Value::int(runtime::to_int(&v)))
                         .collect::<Vec<_>>();
                     assigned = self.try_compiled_method_or_interpret(
-                        Value::Package(class_name),
+                        Value::package(class_name),
                         "new",
                         items,
                     )?;
@@ -228,7 +240,10 @@ impl Interpreter {
                 });
             let assigned_has_own_shape = crate::runtime::utils::shaped_array_shape(&assigned)
                 .is_some()
-                || matches!(&assigned, Value::Array(_, crate::value::ArrayKind::Shaped));
+                || matches!(
+                    assigned.view(),
+                    ValueView::Array(_, crate::value::ArrayKind::Shaped)
+                );
             if let Some(shape) = &lhs_shape
                 && shape.len() == 1
                 && !assigned_has_own_shape
@@ -246,7 +261,7 @@ impl Interpreter {
                     };
                     Self::autoviv_resize(&mut shaped_items, shape[0], default)?;
                 }
-                assigned = Value::Array(
+                assigned = Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(shaped_items)),
                     crate::value::ArrayKind::Shaped,
                 );
@@ -259,7 +274,7 @@ impl Interpreter {
         } else {
             Self::normalize_scalar_assignment_value(raw_val)
         };
-        if matches!(val, Value::Nil)
+        if val.is_nil()
             && let Some(def) = self.var_default(name)
         {
             val = def.clone();
@@ -271,12 +286,12 @@ impl Interpreter {
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
-            if matches!(val, Value::Nil) {
+            if val.is_nil() {
                 if constraint != "Mu" {
                     // Assigning Nil to a typed variable resets it to the type object
                     let nominal =
                         loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                    val = Value::Package(Symbol::intern(&nominal));
+                    val = Value::package(Symbol::intern(&nominal));
                 }
             } else if !self.type_matches_value(&constraint, &val) {
                 return Err(runtime::utils::type_check_assignment_typed_error(
@@ -285,7 +300,7 @@ impl Interpreter {
                     &val,
                 ));
             }
-            if !matches!(val, Value::Nil | Value::Package(_)) {
+            if !matches!(val.view(), ValueView::Nil | ValueView::Package(_)) {
                 val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
             }
         } else {
@@ -295,9 +310,13 @@ impl Interpreter {
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        if matches!(self.env().get(&readonly_key), Some(Value::Bool(true)))
-            && !matches!(self.env().get(&alias_key), Some(Value::Str(_)))
-        {
+        if matches!(
+            self.env().get(&readonly_key).map(Value::view),
+            Some(ValueView::Bool(true))
+        ) && !matches!(
+            self.env().get(&alias_key).map(Value::view),
+            Some(ValueView::Str(_))
+        ) {
             return Err(RuntimeError::assignment_ro(None));
         }
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
@@ -338,7 +357,7 @@ impl Interpreter {
         // detaching the alias. Mirrors the statement-form `SetLocal` path and
         // the simple-local fast path above. A `=`-array-shared scalar reassigned
         // as a whole still REPLACES the slot (raku value semantics).
-        if let Value::ContainerRef(arc) = &self.locals[idx] {
+        if let ValueView::ContainerRef(arc) = self.locals[idx].view() {
             // Restrict to scalar (sigilless `\target` / `$`) names: `@`/`%` vars
             // keep their existing whole-reassignment semantics here.
             let scalar = !name.starts_with('@') && !name.starts_with('%');
@@ -353,7 +372,7 @@ impl Interpreter {
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
         if let Some(alias_name) = self.env().get(&alias_key).and_then(|v| {
-            if let Value::Str(name) = v {
+            if let ValueView::Str(name) = v.view() {
                 Some(name.to_string())
             } else {
                 None
@@ -391,7 +410,8 @@ impl Interpreter {
                 let display_key = Self::add_sigil_prefix(&key_str);
                 entries.insert(display_key, val.clone());
             }
-            self.stack.push(Value::Hash(Value::hash_arc(entries)));
+            self.stack
+                .push(Value::hash_with_data(Value::hash_arc(entries)));
             return;
         }
         if name.strip_suffix("::") == Some("OUR") {
@@ -400,7 +420,8 @@ impl Interpreter {
                 let display_key = Self::add_sigil_prefix(key);
                 entries.insert(display_key, val.clone());
             }
-            self.stack.push(Value::Hash(Value::hash_arc(entries)));
+            self.stack
+                .push(Value::hash_with_data(Value::hash_arc(entries)));
             return;
         }
         if let Some(package) = name.strip_suffix("::")
@@ -427,7 +448,8 @@ impl Interpreter {
             let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
-        self.stack.push(Value::Hash(Value::hash_arc(entries)));
+        self.stack
+            .push(Value::hash_with_data(Value::hash_arc(entries)));
     }
 
     /// Build a pseudo-stash hash for a given pseudo-package name.
@@ -443,7 +465,7 @@ impl Interpreter {
                 let display_key = Self::add_sigil_prefix(&key_str);
                 entries.insert(display_key, val.clone());
             }
-            return Value::Hash(Value::hash_arc(entries));
+            return Value::hash_with_data(Value::hash_arc(entries));
         }
         if name == "OUR" {
             let mut entries: HashMap<String, Value> = HashMap::new();
@@ -451,7 +473,7 @@ impl Interpreter {
                 let display_key = Self::add_sigil_prefix(key);
                 entries.insert(display_key, val.clone());
             }
-            return Value::Hash(Value::hash_arc(entries));
+            return Value::hash_with_data(Value::hash_arc(entries));
         }
         if name != "MY" && name != "LEXICAL" {
             return loan_env!(self, package_stash_value(name));
@@ -471,7 +493,7 @@ impl Interpreter {
             let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
-        Value::Hash(Value::hash_arc(entries))
+        Value::hash_with_data(Value::hash_arc(entries))
     }
 
     /// Add a sigil prefix to a variable name for display in pseudo-stash.
@@ -509,8 +531,8 @@ impl Interpreter {
             _ => HyperSliceAdverb::Kv,
         };
 
-        let hash = match target {
-            Value::Hash(h) => h,
+        let hash = match target.view() {
+            ValueView::Hash(h) => h.clone(),
             _ => {
                 return Err(RuntimeError::new(
                     "Cannot use {**} hyperslice on a non-Hash value".to_string(),
@@ -539,7 +561,7 @@ impl Interpreter {
 
             match adverb {
                 HyperSliceAdverb::Kv => {
-                    if let Value::Hash(inner) = value {
+                    if let ValueView::Hash(inner) = value.view() {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
                     } else {
                         result.push(Value::str(key.clone()));
@@ -547,14 +569,14 @@ impl Interpreter {
                     }
                 }
                 HyperSliceAdverb::K => {
-                    if let Value::Hash(inner) = value {
+                    if let ValueView::Hash(inner) = value.view() {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
                     } else {
                         result.push(Value::str(key.clone()));
                     }
                 }
                 HyperSliceAdverb::V => {
-                    if let Value::Hash(inner) = value {
+                    if let ValueView::Hash(inner) = value.view() {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
                     } else {
                         result.push(value.clone());
@@ -562,15 +584,15 @@ impl Interpreter {
                 }
                 HyperSliceAdverb::Tree => {
                     // Tree mode: yield key-value pairs for all entries,
-                    // including sub-hashes (as their original Value::Hash)
+                    // including sub-hashes (as their original Hash value)
                     result.push(Value::str(key.clone()));
                     result.push(value.clone());
-                    if let Value::Hash(inner) = value {
+                    if let ValueView::Hash(inner) = value.view() {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
                     }
                 }
                 HyperSliceAdverb::DeepK => {
-                    if let Value::Hash(inner) = value {
+                    if let ValueView::Hash(inner) = value.view() {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
                     } else {
                         let key_array: Vec<Value> =
@@ -579,7 +601,7 @@ impl Interpreter {
                     }
                 }
                 HyperSliceAdverb::DeepKv => {
-                    if let Value::Hash(inner) = value {
+                    if let ValueView::Hash(inner) = value.view() {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
                     } else {
                         let key_array: Vec<Value> =
@@ -597,23 +619,24 @@ impl Interpreter {
         let keys = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
 
-        let key_list = match keys {
-            Value::Array(items, ..) => items,
-            Value::Seq(items) => crate::value::Value::array_arc(Arc::new(items.to_vec()).to_vec()),
-            _ => crate::value::Value::array_arc(Arc::new(vec![keys]).to_vec()),
+        let key_list = match keys.view() {
+            ValueView::Array(items, ..) => items.clone(),
+            ValueView::Seq(items) => {
+                crate::value::Value::array_arc(Arc::new(items.to_vec()).to_vec())
+            }
+            _ => crate::value::Value::array_arc(Arc::new(vec![keys.clone()]).to_vec()),
         };
 
         let mut current = target;
         for key in key_list.iter() {
-            match current {
-                Value::Hash(ref h) => {
-                    let k = key.to_string_value();
-                    current = h.get(&k).cloned().unwrap_or(Value::Nil);
-                }
-                _ => {
-                    current = Value::Nil;
-                    break;
-                }
+            if let Some(next) = current.with_hash_mut(|h| {
+                let k = key.to_string_value();
+                h.get(&k).cloned().unwrap_or(Value::NIL)
+            }) {
+                current = next;
+            } else {
+                current = Value::NIL;
+                break;
             }
         }
 
@@ -649,7 +672,7 @@ impl Interpreter {
         }
         // Full-width signed native types don't wrap — they should throw on overflow.
         if matches!(base, "int" | "int64") {
-            if let Value::BigInt(ref n) = val {
+            if let ValueView::BigInt(n) = val.view() {
                 let bits = n.bits();
                 return Err(RuntimeError::new(format!(
                     "Cannot unbox {} bit wide bigint into native integer",
@@ -659,9 +682,9 @@ impl Interpreter {
             return Ok(val);
         }
         // Full-width unsigned native types: BigInt values that fit in u64 are valid,
-        // negative Value::Int values need wrapping (like C unsigned semantics).
+        // negative Int values need wrapping (like C unsigned semantics).
         if matches!(base, "uint" | "uint64") {
-            if let Value::BigInt(ref n) = val {
+            if let ValueView::BigInt(n) = val.view() {
                 if n.to_u64().is_some() {
                     return Ok(val);
                 }
@@ -671,22 +694,22 @@ impl Interpreter {
                     bits
                 )));
             }
-            // Value::Int with negative value needs wrapping to unsigned range
-            if let Value::Int(n) = &val
-                && *n < 0
+            // An Int with negative value needs wrapping to unsigned range
+            if let ValueView::Int(n) = val.view()
+                && n < 0
             {
-                let big_val = NumBigInt::from(*n);
+                let big_val = NumBigInt::from(n);
                 let wrapped = native_types::wrap_native_int(base, &big_val);
                 return Ok(wrapped
                     .to_i64()
-                    .map(Value::Int)
+                    .map(Value::int)
                     .unwrap_or_else(|| Value::bigint(wrapped)));
             }
             return Ok(val);
         }
-        let big_val = match &val {
-            Value::Int(n) => NumBigInt::from(*n),
-            Value::BigInt(n) => (**n).clone(),
+        let big_val = match val.view() {
+            ValueView::Int(n) => NumBigInt::from(n),
+            ValueView::BigInt(n) => (**n).clone(),
             _ => return Ok(val),
         };
         if native_types::is_in_native_range(base, &big_val) {
@@ -695,7 +718,7 @@ impl Interpreter {
         let wrapped = native_types::wrap_native_int(base, &big_val);
         Ok(wrapped
             .to_i64()
-            .map(Value::Int)
+            .map(Value::int)
             .unwrap_or_else(|| Value::bigint(wrapped)))
     }
 

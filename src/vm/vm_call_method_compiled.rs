@@ -41,7 +41,7 @@ impl Interpreter {
         outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
-        let Value::Sub(data) = code_val else {
+        let ValueView::Sub(data) = code_val.view() else {
             return Ok(None);
         };
         let [Stmt::Call { name, args }] = data.body.as_slice() else {
@@ -56,7 +56,12 @@ impl Interpreter {
         };
         let sigiled_target = format!("@{target_name}");
         if !self.shared_vars_active
-            || !matches!(self.get_shared_var(&sigiled_target), Some(Value::Array(..)))
+            || !matches!(
+                self.get_shared_var(&sigiled_target)
+                    .as_ref()
+                    .map(Value::view),
+                Some(ValueView::Array(..))
+            )
         {
             return Ok(None);
         }
@@ -102,8 +107,8 @@ impl Interpreter {
             .map(|(idx, name)| (name.as_str(), idx))
             .collect();
         let (block_cc, block_fns, captured_env, captured_bindings, writeback_bindings) =
-            match code_val {
-                Value::Sub(data) => {
+            match code_val.view() {
+                ValueView::Sub(data) => {
                     let (
                         block_cc,
                         block_fns,
@@ -134,7 +139,7 @@ impl Interpreter {
         let saved_stack = std::mem::take(&mut self.stack);
 
         // Initialize locals for the block
-        self.locals = vec![Value::Nil; block_cc.locals.len()];
+        self.locals = vec![Value::NIL; block_cc.locals.len()];
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
                 if (name.starts_with('@') || name.starts_with('%'))
@@ -187,8 +192,8 @@ impl Interpreter {
         if let Some(captured) = captured_env {
             for (slot, name) in writeback_bindings.iter() {
                 if matches!(
-                    self.get_shared_var(name),
-                    Some(Value::Array(..) | Value::Hash(..))
+                    self.get_shared_var(name).as_ref().map(Value::view),
+                    Some(ValueView::Array(..) | ValueView::Hash(..))
                 ) {
                     continue;
                 }
@@ -199,8 +204,8 @@ impl Interpreter {
                 }
                 if captured.contains_key(name)
                     && !matches!(
-                        self.get_shared_var(name),
-                        Some(Value::Array(..) | Value::Hash(..))
+                        self.get_shared_var(name).as_ref().map(Value::view),
+                        Some(ValueView::Array(..) | ValueView::Hash(..))
                     )
                 {
                     {
@@ -212,7 +217,7 @@ impl Interpreter {
         }
 
         // Get return value before restoring state
-        let ret_val = self.stack.pop().unwrap_or(Value::Nil);
+        let ret_val = self.stack.pop().unwrap_or(Value::NIL);
 
         // Restore outer state
         self.locals = saved_locals;
@@ -248,10 +253,7 @@ impl Interpreter {
             push_method_dispatch_frame(cn, method, args, invocant_for_dispatch)
         );
         let mut orig_env = crate::env::Env::new();
-        orig_env.insert(
-            "__mutsu_method_wrap_original".to_string(),
-            Value::Bool(true),
-        );
+        orig_env.insert("__mutsu_method_wrap_original".to_string(), Value::TRUE);
         let original_sub = Value::make_sub(
             crate::symbol::Symbol::intern(owner_class),
             crate::symbol::Symbol::intern(method),
@@ -274,7 +276,7 @@ impl Interpreter {
             remaining,
             args: call_args.clone(),
         };
-        let wrapper_id = if let Value::Sub(ref wd) = outermost {
+        let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {
             Some(wd.id)
         } else {
             None

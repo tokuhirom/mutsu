@@ -46,7 +46,7 @@ impl Interpreter {
 
         let num_locals = cf.code.locals.len();
         self.locals.clear();
-        self.locals.resize(num_locals, Value::Nil);
+        self.locals.resize(num_locals, Value::NIL);
 
         // Read-through to the caller (parent tier) for the initial value of a
         // local that shadows a same-named caller variable, matching the prior
@@ -91,7 +91,7 @@ impl Interpreter {
                 let param_name = &cf.param_defs[param_idx].name;
                 self.locals[*slot] = val.clone();
                 let needs_env = write_all_params
-                    || matches!(val, Value::Nil)
+                    || val.is_nil()
                     || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
                 if needs_env {
                     self.env_mut().insert(param_name.clone(), val);
@@ -159,12 +159,12 @@ impl Interpreter {
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
-                self.stack.pop().unwrap_or(Value::Nil)
+                self.stack.pop().unwrap_or(Value::NIL)
             } else {
-                Value::Nil
+                Value::NIL
             }
         } else {
-            Value::Nil
+            Value::NIL
         };
 
         self.stack.truncate(saved_stack_depth);
@@ -258,16 +258,16 @@ impl Interpreter {
     /// Return type check that handles type objects, Nil, and Failure passthrough.
     fn light_return_type_check(val: &Value, type_name: &str) -> bool {
         // Nil and Failure always pass return type checks
-        if matches!(val, Value::Nil) {
+        if val.is_nil() {
             return true;
         }
-        if let Value::Instance { class_name, .. } = val
+        if let ValueView::Instance { class_name, .. } = val.view()
             && class_name.resolve() == "Failure"
         {
             return true;
         }
         // Type objects (Package values) that match the return type pass
-        if let Value::Package(sym) = val {
+        if let ValueView::Package(sym) = val.view() {
             return sym.resolve() == type_name;
         }
         Self::fast_type_check(val, type_name)
@@ -276,11 +276,11 @@ impl Interpreter {
     /// Fast type check for common types.
     fn fast_type_check(val: &Value, type_name: &str) -> bool {
         match type_name {
-            "Int" => matches!(val, Value::Int(_) | Value::BigInt(_)),
-            "Str" => matches!(val, Value::Str(_)),
-            "Num" => matches!(val, Value::Num(_)),
-            "Bool" => matches!(val, Value::Bool(_)),
-            "Rat" => matches!(val, Value::Rat(_, _)),
+            "Int" => matches!(val.view(), ValueView::Int(_) | ValueView::BigInt(_)),
+            "Str" => matches!(val.view(), ValueView::Str(_)),
+            "Num" => matches!(val.view(), ValueView::Num(_)),
+            "Bool" => matches!(val.view(), ValueView::Bool(_)),
+            "Rat" => matches!(val.view(), ValueView::Rat(_, _)),
             "Any" | "Mu" | "Cool" => true,
             _ => {
                 let actual = runtime::value_type_name(val);

@@ -62,7 +62,10 @@ impl Interpreter {
         // list-skip builtin.
         if name == "skip"
             && clean_args.len() >= 2
-            && matches!(clean_args[0], Value::Int(..) | Value::Num(..))
+            && matches!(
+                clean_args[0].view(),
+                ValueView::Int(..) | ValueView::Num(..)
+            )
         {
             return None;
         }

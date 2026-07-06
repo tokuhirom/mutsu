@@ -244,7 +244,7 @@ impl Interpreter {
             // A boxed lexical's cell is shared with every reader; mutate it in
             // place rather than replacing the entry with a plain value (which
             // would sever the sharing). A plain entry is replaced directly.
-            if let Value::ContainerRef(arc) = slot {
+            if let ValueView::ContainerRef(arc) = slot.view() {
                 arc.lock().unwrap().clone_from(val);
             } else {
                 *slot = val.clone();
@@ -516,11 +516,11 @@ impl Interpreter {
     /// only a genuine value/type change writes through.)
     fn slot_carrier_overwritable(v: &Value) -> bool {
         !matches!(
-            v,
-            Value::HashEntryRef { .. }
-                | Value::ContainerRef(_)
-                | Value::Array(..)
-                | Value::Hash(..)
+            v.view(),
+            ValueView::HashEntryRef { .. }
+                | ValueView::ContainerRef(_)
+                | ValueView::Array(..)
+                | ValueView::Hash(..)
         )
     }
 
@@ -556,8 +556,8 @@ impl Interpreter {
         for (i, name) in code.locals.iter().enumerate() {
             if name.starts_with('!')
                 || matches!(
-                    self.locals[i],
-                    Value::HashEntryRef { .. } | Value::ContainerRef(_)
+                    self.locals[i].view(),
+                    ValueView::HashEntryRef { .. } | ValueView::ContainerRef(_)
                 )
             {
                 continue;
@@ -578,7 +578,7 @@ impl Interpreter {
                 continue;
             }
             // "Changed" must catch a *variant* change even when `PartialEq` treats
-            // the two values as equal: `Value::Mixin(Int(0), …)` compares EQUAL to
+            // the two values as equal: `Mixin(Int(0), …)` compares EQUAL to
             // `Int(0)` (Mixin PartialEq delegates to its inner value), so a
             // `$a does Role` that turns an `Int` slot into an allomorphic `Mixin`
             // would otherwise be missed. Compare the enum discriminant first, then
@@ -606,26 +606,26 @@ impl Interpreter {
     /// common EVAL case (`$x = scalar`) is a plain scalar and stays precise.
     pub(crate) fn is_writeback_safe_scalar(v: &Value) -> bool {
         matches!(
-            v,
-            Value::Int(_)
-                | Value::BigInt(_)
-                | Value::Num(_)
-                | Value::Str(_)
-                | Value::Bool(_)
-                | Value::Rat(..)
-                | Value::FatRat(..)
-                | Value::BigRat(..)
-                | Value::Complex(..)
-                | Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::Package(_)
-                | Value::Enum { .. }
-                | Value::Version { .. }
-                | Value::Uni(_)
-                | Value::Nil
-                | Value::Whatever
+            v.view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::BigRat(..)
+                | ValueView::Complex(..)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::Package(_)
+                | ValueView::Enum { .. }
+                | ValueView::Version { .. }
+                | ValueView::Uni(_)
+                | ValueView::Nil
+                | ValueView::Whatever
         )
     }
 
@@ -665,7 +665,9 @@ impl Interpreter {
             }
             // Mirror the reverse pull's invariants: never clobber a live `:=`
             // binding cell or an attribute slot managed via GetLocal/SetLocal.
-            if matches!(self.locals[i], Value::HashEntryRef { .. }) || name.starts_with('!') {
+            if matches!(self.locals[i].view(), ValueView::HashEntryRef { .. })
+                || name.starts_with('!')
+            {
                 continue;
             }
             if let Some(val) = self.env().get(name).cloned().or_else(|| {
@@ -731,8 +733,8 @@ impl Interpreter {
             // slot must keep routing through the bound cell.
             let new_is_scalar = Self::is_writeback_safe_scalar(&env_val);
             let slot_is_bind_cell = matches!(
-                &self.locals[i],
-                Value::ContainerRef(_) | Value::HashEntryRef { .. }
+                self.locals[i].view(),
+                ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. }
             );
             if Self::is_writeback_safe_scalar(&self.locals[i])
                 || (new_is_scalar && !slot_is_bind_cell)
@@ -866,7 +868,7 @@ impl Interpreter {
                     .map(|s| s as usize)
                     .filter(|&s| s < self.locals.len());
                 if let Some(slot) = baked.or_else(|| self.find_local_slot(code, &source)) {
-                    if !matches!(self.locals[slot], Value::HashEntryRef { .. })
+                    if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
                         && let Some(val) = self.env().get(&source).cloned()
                     {
                         self.locals[slot] = val;
@@ -901,7 +903,7 @@ impl Interpreter {
         let mut retained = Vec::new();
         for source in sources {
             if let Some(slot) = self.find_local_slot(code, &source) {
-                if !matches!(self.locals[slot], Value::HashEntryRef { .. })
+                if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
                     && let Some(val) = self.env().get(&source).cloned()
                 {
                     self.locals[slot] = val;
@@ -988,13 +990,13 @@ impl Interpreter {
                 continue;
             }
             if matches!(
-                cur,
-                Value::Package(_)
-                    | Value::Array(..)
-                    | Value::Hash(..)
-                    | Value::Sub(..)
-                    | Value::Instance { .. }
-                    | Value::Proxy { .. }
+                cur.view(),
+                ValueView::Package(_)
+                    | ValueView::Array(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Sub(..)
+                    | ValueView::Instance { .. }
+                    | ValueView::Proxy { .. }
             ) {
                 continue;
             }

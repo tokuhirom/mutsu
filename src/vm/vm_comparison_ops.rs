@@ -5,7 +5,7 @@ use super::*;
 /// used in numeric comparison, even inside `quietly`. Non-numeric type objects
 /// (Any, Str, etc.) only produce a suppressible warning and coerce to 0.
 fn check_type_object_in_numeric_context(v: &Value) -> Result<(), RuntimeError> {
-    if let Value::Package(name) = v {
+    if let ValueView::Package(name) = v.view() {
         let type_name = name.resolve();
         let is_numeric_type = matches!(
             type_name.as_ref(),
@@ -23,10 +23,10 @@ fn check_type_object_in_numeric_context(v: &Value) -> Result<(), RuntimeError> {
 
 /// Extract (real, imaginary) parts from a value, treating non-Complex as having im=0.
 fn complex_parts(v: &Value) -> (f64, f64) {
-    match v {
-        Value::Complex(re, im) => (*re, *im),
-        Value::Mixin(inner, _) => complex_parts(inner),
-        other => (value_to_f64(other), 0.0),
+    match v.view() {
+        ValueView::Complex(re, im) => (re, im),
+        ValueView::Mixin(inner, _) => complex_parts(inner),
+        _ => (value_to_f64(v), 0.0),
     }
 }
 
@@ -36,18 +36,18 @@ pub(super) fn value_to_f64(v: &Value) -> f64 {
 
 pub(super) fn is_rationalish(v: &Value) -> bool {
     matches!(
-        v,
-        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        v.view(),
+        ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
     )
 }
 
 /// Check if a value is NaN (for numeric comparison semantics).
 /// In Raku, Rat(0,0) and FatRat(0,0) behave like NaN.
 pub(super) fn is_nan_value(v: &Value) -> bool {
-    match v {
-        Value::Num(n) => n.is_nan(),
-        Value::Rat(0, 0) | Value::FatRat(0, 0) => true,
-        Value::BigRat(n, d) => n.is_zero() && d.is_zero(),
+    match v.view() {
+        ValueView::Num(n) => n.is_nan(),
+        ValueView::Rat(0, 0) | ValueView::FatRat(0, 0) => true,
+        ValueView::BigRat(n, d) => n.is_zero() && d.is_zero(),
         _ => false,
     }
 }
@@ -55,10 +55,10 @@ pub(super) fn is_nan_value(v: &Value) -> bool {
 /// Check if a value is Inf (positive infinity).
 /// Includes Rat(n,0)/FatRat(n,0) where n > 0.
 pub(super) fn is_pos_inf(v: &Value) -> bool {
-    match v {
-        Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
-        Value::Rat(n, 0) | Value::FatRat(n, 0) => *n > 0,
-        Value::BigRat(n, d) => !n.is_zero() && d.is_zero() && n.is_positive(),
+    match v.view() {
+        ValueView::Num(n) => n.is_infinite() && n.is_sign_positive(),
+        ValueView::Rat(n, 0) | ValueView::FatRat(n, 0) => n > 0,
+        ValueView::BigRat(n, d) => !n.is_zero() && d.is_zero() && n.is_positive(),
         _ => false,
     }
 }
@@ -66,22 +66,22 @@ pub(super) fn is_pos_inf(v: &Value) -> bool {
 /// Check if a value is -Inf (negative infinity).
 /// Includes Rat(n,0)/FatRat(n,0) where n < 0.
 pub(super) fn is_neg_inf(v: &Value) -> bool {
-    match v {
-        Value::Num(n) => n.is_infinite() && n.is_sign_negative(),
-        Value::Rat(n, 0) | Value::FatRat(n, 0) => *n < 0,
-        Value::BigRat(n, d) => !n.is_zero() && d.is_zero() && n.is_negative(),
+    match v.view() {
+        ValueView::Num(n) => n.is_infinite() && n.is_sign_negative(),
+        ValueView::Rat(n, 0) | ValueView::FatRat(n, 0) => n < 0,
+        ValueView::BigRat(n, d) => !n.is_zero() && d.is_zero() && n.is_negative(),
         _ => false,
     }
 }
 
 /// Extract range components (start, end, excl_start, excl_end) from a range value.
 fn extract_range_parts(v: &Value) -> Option<(Value, Value, bool, bool)> {
-    match v {
-        Value::Range(a, b) => Some((Value::Int(*a), Value::Int(*b), false, false)),
-        Value::RangeExcl(a, b) => Some((Value::Int(*a), Value::Int(*b), false, true)),
-        Value::RangeExclStart(a, b) => Some((Value::Int(*a), Value::Int(*b), true, false)),
-        Value::RangeExclBoth(a, b) => Some((Value::Int(*a), Value::Int(*b), true, true)),
-        Value::GenericRange {
+    match v.view() {
+        ValueView::Range(a, b) => Some((Value::int(a), Value::int(b), false, false)),
+        ValueView::RangeExcl(a, b) => Some((Value::int(a), Value::int(b), false, true)),
+        ValueView::RangeExclStart(a, b) => Some((Value::int(a), Value::int(b), true, false)),
+        ValueView::RangeExclBoth(a, b) => Some((Value::int(a), Value::int(b), true, true)),
+        ValueView::GenericRange {
             start,
             end,
             excl_start,
@@ -89,8 +89,8 @@ fn extract_range_parts(v: &Value) -> Option<(Value, Value, bool, bool)> {
         } => Some((
             start.as_ref().clone(),
             end.as_ref().clone(),
-            *excl_start,
-            *excl_end,
+            excl_start,
+            excl_end,
         )),
         _ => None,
     }
@@ -130,13 +130,13 @@ pub(super) fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
     }
 
     // Unwrap Mixin
-    let left = match left {
-        Value::Mixin(inner, _) => inner.as_ref(),
-        other => other,
+    let left = match left.view() {
+        ValueView::Mixin(inner, _) => inner.as_ref(),
+        _ => left,
     };
-    let right = match right {
-        Value::Mixin(inner, _) => inner.as_ref(),
-        other => other,
+    let right = match right.view() {
+        ValueView::Mixin(inner, _) => inner.as_ref(),
+        _ => right,
     };
 
     // Inf/-Inf handling for non-numeric types
@@ -166,12 +166,12 @@ pub(super) fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
 
 /// Get list elements from a value (Array, Seq, List, Slip, etc.)
 pub(super) fn get_list_elements(v: &Value) -> Option<&[Value]> {
-    match v {
-        Value::Array(elems, _) => Some(elems.as_slice()),
-        Value::Seq(elems) | Value::HyperSeq(elems) | Value::RaceSeq(elems) => {
+    match v.view() {
+        ValueView::Array(elems, _) => Some(elems.as_slice()),
+        ValueView::Seq(elems) | ValueView::HyperSeq(elems) | ValueView::RaceSeq(elems) => {
             Some(elems.as_slice())
         }
-        Value::Slip(elems) => Some(elems.as_slice()),
+        ValueView::Slip(elems) => Some(elems.as_slice()),
         _ => None,
     }
 }
@@ -183,12 +183,12 @@ pub(super) fn is_range_value(v: &Value) -> bool {
 
 /// Expand a range value into a list of integer values (for list-based comparison).
 pub(super) fn expand_range_to_list(v: &Value) -> Vec<Value> {
-    match v {
-        Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
-        Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
-        Value::RangeExclStart(a, b) => ((*a + 1)..=*b).map(Value::Int).collect(),
-        Value::RangeExclBoth(a, b) => ((*a + 1)..*b).map(Value::Int).collect(),
-        Value::GenericRange {
+    match v.view() {
+        ValueView::Range(a, b) => (a..=b).map(Value::int).collect(),
+        ValueView::RangeExcl(a, b) => (a..b).map(Value::int).collect(),
+        ValueView::RangeExclStart(a, b) => ((a + 1)..=b).map(Value::int).collect(),
+        ValueView::RangeExclBoth(a, b) => ((a + 1)..b).map(Value::int).collect(),
+        ValueView::GenericRange {
             start,
             end,
             excl_start,
@@ -196,9 +196,9 @@ pub(super) fn expand_range_to_list(v: &Value) -> Vec<Value> {
         } => {
             // For GenericRange with integer endpoints, expand to list
             if let (Some(s), Some(e)) = (value_to_i64(start), value_to_i64(end)) {
-                let s = if *excl_start { s + 1 } else { s };
-                let e = if *excl_end { e } else { e + 1 };
-                (s..e).map(Value::Int).collect()
+                let s = if excl_start { s + 1 } else { s };
+                let e = if excl_end { e } else { e + 1 };
+                (s..e).map(Value::int).collect()
             } else {
                 // For non-integer ranges, return as-is (shouldn't happen in practice for cmp)
                 vec![v.clone()]
@@ -210,12 +210,12 @@ pub(super) fn expand_range_to_list(v: &Value) -> Vec<Value> {
 
 /// Try to extract an i64 from a Value.
 fn value_to_i64(v: &Value) -> Option<i64> {
-    match v {
-        Value::Int(n) => Some(*n),
-        Value::Num(n) if n.fract() == 0.0 && *n >= i64::MIN as f64 && *n <= i64::MAX as f64 => {
-            Some(*n as i64)
+    match v.view() {
+        ValueView::Int(n) => Some(n),
+        ValueView::Num(n) if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 => {
+            Some(n as i64)
         }
-        Value::Rat(n, d) if *d != 0 && *n % *d == 0 => Some(*n / *d),
+        ValueView::Rat(n, d) if d != 0 && n % d == 0 => Some(n / d),
         _ => None,
     }
 }
@@ -234,18 +234,18 @@ impl Interpreter {
         left: &Value,
         right: &Value,
     ) -> Result<std::cmp::Ordering, RuntimeError> {
-        match (left, right) {
-            (Value::Str(a), Value::Str(b)) => {
+        match (left.view(), right.view()) {
+            (ValueView::Str(a), ValueView::Str(b)) => {
                 let a = Self::parse_numeric_string_for_spaceship(a)?;
                 let b = Self::parse_numeric_string_for_spaceship(b)?;
                 Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
             }
-            (Value::Str(a), _) => {
+            (ValueView::Str(a), _) => {
                 let a = Self::parse_numeric_string_for_spaceship(a)?;
                 let b = runtime::to_float_value(right).unwrap_or(0.0);
                 Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
             }
-            (_, Value::Str(b)) => {
+            (_, ValueView::Str(b)) => {
                 let a = runtime::to_float_value(left).unwrap_or(0.0);
                 let b = Self::parse_numeric_string_for_spaceship(b)?;
                 Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
@@ -261,32 +261,33 @@ impl Interpreter {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             // NaN is unordered: NaN == anything is always False
             if is_nan_value(&l) || is_nan_value(&r) {
-                return Ok(Value::Bool(false));
+                return Ok(Value::FALSE);
             }
             if let (Some(a), Some(b)) =
                 (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
                 && (is_rationalish(&l) || is_rationalish(&r))
             {
-                Ok(Value::Bool(runtime::big_rat_parts_equal(a, b)))
+                Ok(Value::truth(runtime::big_rat_parts_equal(a, b)))
             } else {
                 // Handle Int/BigInt comparison with exact precision
-                match (&l, &r) {
-                    (Value::BigInt(a), Value::Int(b)) | (Value::Int(b), Value::BigInt(a)) => {
-                        return Ok(Value::Bool(**a == num_bigint::BigInt::from(*b)));
+                match (l.view(), r.view()) {
+                    (ValueView::BigInt(a), ValueView::Int(b))
+                    | (ValueView::Int(b), ValueView::BigInt(a)) => {
+                        return Ok(Value::truth(**a == num_bigint::BigInt::from(b)));
                     }
-                    (Value::BigInt(a), Value::BigInt(b)) => {
-                        return Ok(Value::Bool(a == b));
+                    (ValueView::BigInt(a), ValueView::BigInt(b)) => {
+                        return Ok(Value::truth(a == b));
                     }
                     _ => {}
                 }
-                let needs_float = !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r))
-                    || matches!(l, Value::Nil);
+                let needs_float =
+                    !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r)) || l.is_nil();
                 if needs_float {
-                    Ok(Value::Bool(
+                    Ok(Value::truth(
                         runtime::to_float_value(&l) == runtime::to_float_value(&r),
                     ))
                 } else {
-                    Ok(Value::Bool(l == r))
+                    Ok(Value::truth(l == r))
                 }
             }
         })?;
@@ -304,22 +305,22 @@ impl Interpreter {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             // NaN is unordered: NaN == anything is always False
             if is_nan_value(&l) || is_nan_value(&r) {
-                return Ok(Value::Bool(false));
+                return Ok(Value::FALSE);
             }
             if let (Some(a), Some(b)) =
                 (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
                 && (is_rationalish(&l) || is_rationalish(&r))
             {
-                Ok(Value::Bool(runtime::big_rat_parts_equal(a, b)))
-            } else if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
-                Ok(Value::Bool(
+                Ok(Value::truth(runtime::big_rat_parts_equal(a, b)))
+            } else if l.is_nil() || r.is_nil() {
+                Ok(Value::truth(
                     runtime::to_float_value(&l) == runtime::to_float_value(&r),
                 ))
             } else {
-                Ok(Value::Bool(l == r))
+                Ok(Value::truth(l == r))
             }
         })?;
-        self.stack.push(Value::Bool(!eq_result.truthy()));
+        self.stack.push(Value::truth(!eq_result.truthy()));
         Ok(())
     }
 
@@ -336,13 +337,13 @@ impl Interpreter {
         // Cross-signed check: if the signed operand is negative, return False.
         if left_unsigned != right_unsigned {
             let signed_val = if left_unsigned { &right } else { &left };
-            let is_negative = match signed_val {
-                Value::Int(n) => *n < 0,
-                Value::BigInt(n) => n.sign() == num_bigint::Sign::Minus,
+            let is_negative = match signed_val.view() {
+                ValueView::Int(n) => n < 0,
+                ValueView::BigInt(n) => n.sign() == num_bigint::Sign::Minus,
                 _ => false,
             };
             if is_negative {
-                self.stack.push(Value::Bool(false));
+                self.stack.push(Value::FALSE);
                 return Ok(());
             }
         }
@@ -350,22 +351,22 @@ impl Interpreter {
         let eq_result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if is_nan_value(&l) || is_nan_value(&r) {
-                return Ok(Value::Bool(false));
+                return Ok(Value::FALSE);
             }
             if let (Some(a), Some(b)) =
                 (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
                 && (is_rationalish(&l) || is_rationalish(&r))
             {
-                Ok(Value::Bool(runtime::big_rat_parts_equal(a, b)))
-            } else if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
-                Ok(Value::Bool(
+                Ok(Value::truth(runtime::big_rat_parts_equal(a, b)))
+            } else if l.is_nil() || r.is_nil() {
+                Ok(Value::truth(
                     runtime::to_float_value(&l) == runtime::to_float_value(&r),
                 ))
             } else {
-                Ok(Value::Bool(l == r))
+                Ok(Value::truth(l == r))
             }
         })?;
-        self.stack.push(Value::Bool(!eq_result.truthy()));
+        self.stack.push(Value::truth(!eq_result.truthy()));
         Ok(())
     }
 
@@ -373,17 +374,17 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         // Fast path: Int < Int
-        if let Value::Int(a) = &left
-            && let Value::Int(b) = &right
+        if let ValueView::Int(a) = left.view()
+            && let ValueView::Int(b) = right.view()
         {
-            self.stack.push(Value::Bool(a < b));
+            self.stack.push(Value::truth(a < b));
             return Ok(());
         }
         // Fast path: Num < Num
-        if let Value::Num(a) = &left
-            && let Value::Num(b) = &right
+        if let ValueView::Num(a) = left.view()
+            && let ValueView::Num(b) = right.view()
         {
-            self.stack.push(Value::Bool(a < b));
+            self.stack.push(Value::truth(a < b));
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
@@ -441,10 +442,10 @@ impl Interpreter {
         let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
         let tolerance = loan_env!(self, get_dynamic_var("*TOLERANCE"))
             .ok()
-            .and_then(|v| match v {
-                Value::Num(n) => Some(n),
-                Value::Rat(n, d) => Some(n as f64 / d as f64),
-                Value::Int(n) => Some(n as f64),
+            .and_then(|v| match v.view() {
+                ValueView::Num(n) => Some(n),
+                ValueView::Rat(n, d) => Some(n as f64 / d as f64),
+                ValueView::Int(n) => Some(n as f64),
                 _ => None,
             })
             .unwrap_or(1e-15);
@@ -470,7 +471,7 @@ impl Interpreter {
             diff / max_abs <= tolerance
         };
         let result = approx_f64(lr, rr) && approx_f64(li, ri);
-        self.stack.push(Value::Bool(result));
+        self.stack.push(Value::truth(result));
         Ok(())
     }
 }

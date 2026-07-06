@@ -67,7 +67,7 @@ impl Interpreter {
         attrs.insert("got".to_string(), value.clone());
         attrs.insert(
             "expected".to_string(),
-            Value::Package(crate::symbol::Symbol::intern(&format!(
+            Value::package(crate::symbol::Symbol::intern(&format!(
                 "Associative[{}]",
                 constraint
             ))),
@@ -96,8 +96,8 @@ impl Interpreter {
             // Check: if the current value is already a QuantHash, it's an `is` trait.
             let current = self.env().get(name).cloned();
             let is_quanthash_container = matches!(
-                current,
-                Some(Value::Bag(_, _) | Value::Mix(_, _) | Value::Set(_, _))
+                current.as_ref().map(Value::view),
+                Some(ValueView::Bag(_, _) | ValueView::Mix(_, _) | ValueView::Set(_, _))
             );
             if is_quanthash_container {
                 return self.try_compiled_method_or_interpret(value, trait_name, vec![]);
@@ -105,8 +105,8 @@ impl Interpreter {
         }
         if self.check_readonly_for_modify(name).is_err()
             && matches!(
-                value,
-                Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)
+                value.view(),
+                ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
             )
         {
             return Ok(value);
@@ -118,15 +118,15 @@ impl Interpreter {
         // QuantHash type rather than collapsing to a plain Hash.
         if self.quanthash_bind_params.iter().any(|n| n == name) {
             if matches!(
-                value,
-                Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)
+                value.view(),
+                ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
             ) {
                 return Ok(value);
             }
-            let trait_name = match self.env().get(name) {
-                Some(Value::Set(_, _)) => Some("SetHash"),
-                Some(Value::Bag(_, _)) => Some("BagHash"),
-                Some(Value::Mix(_, _)) => Some("MixHash"),
+            let trait_name = match self.env().get(name).map(Value::view) {
+                Some(ValueView::Set(_, _)) => Some("SetHash"),
+                Some(ValueView::Bag(_, _)) => Some("BagHash"),
+                Some(ValueView::Mix(_, _)) => Some("MixHash"),
                 _ => None,
             };
             if let Some(tn) = trait_name {
@@ -138,8 +138,8 @@ impl Interpreter {
         {
             let result = runtime::utils::coerce_value_to_quanthash(&value);
             // SetHash should be mutable
-            if let Value::Set(items, _) = result {
-                return Ok(Value::Set(items, true));
+            if let ValueView::Set(items, _) = result.view() {
+                return Ok(Value::set_parts(items.clone(), true));
             }
             return Ok(result);
         }
@@ -147,8 +147,8 @@ impl Interpreter {
         // raises "Odd number of elements" when appropriate. Hash values from
         // scalar containers (`$h`) are NOT pre-flattened, so they appear as
         // opaque items (triggering the odd-number check when expected).
-        let hash_val = match value {
-            Value::Array(ref items, _) => {
+        let hash_val = match value.view() {
+            ValueView::Array(items, _) => {
                 // `build_hash_from_items` flattens a bare `%h` element into its
                 // pairs (`%m = %h, a => 42` and the single-element `%m = (%h,)`),
                 // while a hash sourced from a `$` scalar carries
@@ -156,24 +156,23 @@ impl Interpreter {
                 // "Odd number") — matching Raku.
                 runtime::utils::build_hash_from_items(items.iter().cloned().collect())?
             }
-            Value::Seq(ref items) | Value::Slip(ref items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 runtime::utils::build_hash_from_items(items.iter().cloned().collect())?
             }
             // A single bare scalar assigned to a hash is a one-element (odd)
             // initializer: `my %h = 1` is X::Hash::Store::OddNumber. Hashes,
             // pairs, sets, instances, Nil, etc. keep their existing coercion.
-            ref scalar
-                if matches!(
-                    scalar.clone().into_descalarized(),
-                    Value::Int(_)
-                        | Value::BigInt(_)
-                        | Value::Num(_)
-                        | Value::Str(_)
-                        | Value::Bool(_)
-                        | Value::Rat(..)
-                        | Value::FatRat(..)
-                        | Value::BigRat(..)
-                ) =>
+            _ if matches!(
+                value.clone().into_descalarized().view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+                    | ValueView::BigRat(..)
+            ) =>
             {
                 runtime::utils::build_hash_from_items(vec![value])?
             }
@@ -183,7 +182,7 @@ impl Interpreter {
         // `ContainerRef` cells when assigning to a new hash variable:
         // assignment creates new containers, so the copy snapshots values
         // instead of sharing cells.
-        if let Value::Hash(ref items) = hash_val
+        if let ValueView::Hash(items) = hash_val.view()
             && (Self::hash_has_sentinels(items) || items.values().any(Value::is_container_ref))
         {
             return Ok(self.resolve_hash_for_iteration(items));
@@ -200,13 +199,15 @@ impl Interpreter {
         name: &str,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        match &value {
+        match value.view() {
             // Associative types are preserved as-is
-            Value::Hash(_) | Value::Pair(..) | Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
-                Ok(value)
-            }
+            ValueView::Hash(_)
+            | ValueView::Pair(..)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..) => Ok(value),
             // Instance objects: check if they do Associative
-            Value::Instance { class_name, .. } => {
+            ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
                 let does_associative = matches!(
                     cn.as_str(),
@@ -228,15 +229,15 @@ impl Interpreter {
                     // Call .Map on non-Associative to coerce.
                     // Skip native methods so user-defined .Map is called.
                     let mapped = self.call_method_all_with_fallback(&value, "Map", &[], true)?;
-                    let mapped_val = mapped.into_iter().next().unwrap_or(Value::Nil);
+                    let mapped_val = mapped.into_iter().next().unwrap_or(Value::NIL);
                     // Check that .Map returned an Associative
                     let is_assoc = matches!(
-                        &mapped_val,
-                        Value::Hash(_)
-                            | Value::Pair(..)
-                            | Value::Set(..)
-                            | Value::Bag(..)
-                            | Value::Mix(..)
+                        mapped_val.view(),
+                        ValueView::Hash(_)
+                            | ValueView::Pair(..)
+                            | ValueView::Set(..)
+                            | ValueView::Bag(..)
+                            | ValueView::Mix(..)
                     );
                     if !is_assoc {
                         let got_type = crate::runtime::utils::value_type_name(&mapped_val);
@@ -244,7 +245,7 @@ impl Interpreter {
                         attrs.insert("got".to_string(), mapped_val);
                         attrs.insert(
                             "expected".to_string(),
-                            Value::Package(crate::symbol::Symbol::intern("Associative")),
+                            Value::package(crate::symbol::Symbol::intern("Associative")),
                         );
                         attrs.insert(
                             "message".to_string(),
@@ -274,7 +275,7 @@ impl Interpreter {
                 }
             }
             // Non-Associative values: coerce to Map
-            Value::Array(items, _) => {
+            ValueView::Array(items, _) => {
                 let hash = runtime::utils::build_hash_from_items(items.iter().cloned().collect())?;
                 let info = crate::runtime::ContainerTypeInfo {
                     value_type: String::new(),
@@ -283,7 +284,7 @@ impl Interpreter {
                 };
                 Ok(self.tag_container_metadata(hash, info))
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 let hash = runtime::utils::build_hash_from_items(items.iter().cloned().collect())?;
                 let info = crate::runtime::ContainerTypeInfo {
                     value_type: String::new(),
@@ -308,12 +309,12 @@ impl Interpreter {
     }
 
     pub(super) fn mix_assignment_weight(value: &Value) -> Result<f64, RuntimeError> {
-        match value {
-            Value::Int(i) => Ok(*i as f64),
-            Value::Num(n) => Ok(*n),
-            Value::Rat(n, d) if *d != 0 => Ok(*n as f64 / *d as f64),
-            Value::Bool(flag) => Ok(if *flag { 1.0 } else { 0.0 }),
-            Value::Str(s) => {
+        match value.view() {
+            ValueView::Int(i) => Ok(i as f64),
+            ValueView::Num(n) => Ok(n),
+            ValueView::Rat(n, d) if d != 0 => Ok(n as f64 / d as f64),
+            ValueView::Bool(flag) => Ok(if flag { 1.0 } else { 0.0 }),
+            ValueView::Str(s) => {
                 // Try to parse as numeric; throw X::Str::Numeric on failure
                 if let Ok(n) = s.parse::<f64>() {
                     Ok(n)
@@ -339,15 +340,15 @@ impl Interpreter {
     /// X::Str::Numeric rather than being silently treated as truthy (1).
     pub(super) fn bag_assignment_count(value: &Value) -> Result<num_bigint::BigInt, RuntimeError> {
         use num_bigint::BigInt;
-        match value {
-            Value::Int(i) => Ok(BigInt::from(*i)),
+        match value.view() {
+            ValueView::Int(i) => Ok(BigInt::from(i)),
             // Weights can exceed i64::MAX (e.g. `%h<k> = 10**19`), so a BigInt
             // weight is preserved verbatim rather than truncated to a native int.
-            Value::BigInt(n) => Ok((**n).clone()),
-            Value::Num(n) => Ok(BigInt::from(*n as i64)),
-            Value::Rat(n, d) if *d != 0 => Ok(BigInt::from(*n / *d)),
-            Value::Bool(flag) => Ok(BigInt::from(i64::from(*flag))),
-            Value::Str(s) => {
+            ValueView::BigInt(n) => Ok((**n).clone()),
+            ValueView::Num(n) => Ok(BigInt::from(n as i64)),
+            ValueView::Rat(n, d) if d != 0 => Ok(BigInt::from(n / d)),
+            ValueView::Bool(flag) => Ok(BigInt::from(i64::from(flag))),
+            ValueView::Str(s) => {
                 if let Ok(n) = s.parse::<BigInt>() {
                     Ok(n)
                 } else if let Ok(n) = s.parse::<f64>() {
@@ -376,44 +377,44 @@ impl Interpreter {
         &mut self,
         val: &Value,
     ) -> Result<Vec<Value>, RuntimeError> {
-        Ok(match val {
-            Value::Array(v, ..) => v.as_ref().clone().items,
-            Value::Seq(v) | Value::Slip(v) => v.iter().cloned().collect(),
-            Value::Range(a, b) => {
-                let end = (*b).min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
-                if end < *a {
+        Ok(match val.view() {
+            ValueView::Array(v, ..) => v.as_ref().clone().items,
+            ValueView::Seq(v) | ValueView::Slip(v) => v.iter().cloned().collect(),
+            ValueView::Range(a, b) => {
+                let end = b.min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end < a {
                     Vec::new()
                 } else {
-                    (*a..=end).map(Value::Int).collect()
+                    (a..=end).map(Value::int).collect()
                 }
             }
-            Value::RangeExcl(a, b) => {
-                let end = (*b).min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
-                if end <= *a {
+            ValueView::RangeExcl(a, b) => {
+                let end = b.min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end <= a {
                     Vec::new()
                 } else {
-                    (*a..end).map(Value::Int).collect()
+                    (a..end).map(Value::int).collect()
                 }
             }
-            Value::RangeExclStart(a, b) => {
+            ValueView::RangeExclStart(a, b) => {
                 let start = a.saturating_add(1);
-                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end = b.min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
                 if end < start {
                     Vec::new()
                 } else {
-                    (start..=end).map(Value::Int).collect()
+                    (start..=end).map(Value::int).collect()
                 }
             }
-            Value::RangeExclBoth(a, b) => {
+            ValueView::RangeExclBoth(a, b) => {
                 let start = a.saturating_add(1);
-                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end = b.min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
                 if end <= start {
                     Vec::new()
                 } else {
-                    (start..end).map(Value::Int).collect()
+                    (start..end).map(Value::int).collect()
                 }
             }
-            Value::LazyList(list) => self.force_lazy_list_vm(list)?,
+            ValueView::LazyList(list) => self.force_lazy_list_vm(list)?,
             _ => vec![val.clone()],
         })
     }
@@ -433,34 +434,34 @@ impl Interpreter {
             // is not a Scalar container of its own: it aliases the container, so
             // `@a = $bound` flattens (ItemizeVar) and `$bound.VAR.^name` reflects
             // the container type (List/Array/Hash/Set/Bag/Mix) rather than Scalar.
-            let is_container = match &val {
-                Value::Array(_, k) => !k.is_itemized(),
-                Value::Seq(_)
-                | Value::Slip(_)
-                | Value::LazyList(_)
-                | Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::Hash(_)
-                | Value::Set(..)
-                | Value::Bag(..)
-                | Value::Mix(..) => true,
+            let is_container = match val.view() {
+                ValueView::Array(_, k) => !k.is_itemized(),
+                ValueView::Seq(_)
+                | ValueView::Slip(_)
+                | ValueView::LazyList(_)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::Hash(_)
+                | ValueView::Set(..)
+                | ValueView::Bag(..)
+                | ValueView::Mix(..) => true,
                 // A `:=` bind to a whole-container `@`/`%` variable holds a
                 // shared cell whose inner value is the container.
-                Value::ContainerRef(cell) => matches!(
-                    &*cell.lock().unwrap(),
-                    Value::Array(..)
-                        | Value::Hash(_)
-                        | Value::Set(..)
-                        | Value::Bag(..)
-                        | Value::Mix(..)
+                ValueView::ContainerRef(cell) => matches!(
+                    cell.lock().unwrap().view(),
+                    ValueView::Array(..)
+                        | ValueView::Hash(_)
+                        | ValueView::Set(..)
+                        | ValueView::Bag(..)
+                        | ValueView::Mix(..)
                 ),
                 _ => false,
             };
             if is_container {
                 let key = format!("__mutsu_bound_decont::{}", name);
-                self.env_mut().insert(key, Value::Bool(true));
+                self.env_mut().insert(key, Value::TRUE);
                 self.bound_decont_active = true;
                 return;
             }
@@ -504,14 +505,14 @@ impl Interpreter {
         let name = code.locals[idx].clone();
         // Build (or reuse) the shared cell: reuse an existing cell carried by the
         // value or already held by the source variable, else wrap the snapshot.
-        let cell = match &val {
-            Value::ContainerRef(arc) => arc.clone(),
-            _ => match self.env().get(&resolved_source) {
-                Some(Value::ContainerRef(arc)) => arc.clone(),
+        let cell = match val.view() {
+            ValueView::ContainerRef(arc) => arc.clone(),
+            _ => match self.env().get(&resolved_source).map(Value::view) {
+                Some(ValueView::ContainerRef(arc)) => arc.clone(),
                 _ => crate::gc::Gc::new(std::sync::Mutex::new(val.clone())),
             },
         };
-        let container = Value::ContainerRef(cell);
+        let container = Value::container_ref(cell);
         // Promote the SOURCE container variable to the same cell so its own
         // `.push` / whole-reassign (`@z = (...)`) mutate through and stay visible
         // via the scalar.
@@ -541,7 +542,7 @@ impl Interpreter {
         self.update_bound_decont_marker(&name, false, &val);
         // Mark the scalar so a later whole reassignment replaces the slot.
         self.env_mut()
-            .insert(format!("__mutsu_array_share::{}", name), Value::Bool(true));
+            .insert(format!("__mutsu_array_share::{}", name), Value::TRUE);
         self.array_share_active = true;
         self.set_env_with_main_alias(&name, container.clone());
         self.flush_local_to_env(code, idx);

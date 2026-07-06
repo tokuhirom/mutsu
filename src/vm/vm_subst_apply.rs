@@ -385,7 +385,7 @@ impl Interpreter {
                         // Save $_ before evaluating the code block, as
                         // eval_block_value may clobber the topic variable.
                         let saved_topic = self.env().get("_").cloned();
-                        let val = loan_env!(self, eval_block_value(&stmts)).unwrap_or(Value::Nil);
+                        let val = loan_env!(self, eval_block_value(&stmts)).unwrap_or(Value::NIL);
                         // Restore $_ so the substitution can find the target
                         if let Some(topic) = saved_topic {
                             self.env_mut().insert("_".to_string(), topic);
@@ -407,7 +407,7 @@ impl Interpreter {
                     && let Some(close) = template[i + 2..].find('}')
                 {
                     let name = &template[i + 2..i + 2 + close];
-                    let value = self.env().get(name).cloned().unwrap_or(Value::Nil);
+                    let value = self.env().get(name).cloned().unwrap_or(Value::NIL);
                     out.push_str(&value.to_string_value());
                     i += 2 + close + 1;
                     continue;
@@ -426,7 +426,7 @@ impl Interpreter {
                 let parsed = crate::parse_dispatch::parse_source(expr_src);
                 if let Ok((stmts, _)) = parsed {
                     let saved_topic = self.env().get("_").cloned();
-                    let val = loan_env!(self, eval_block_value(&stmts)).unwrap_or(Value::Nil);
+                    let val = loan_env!(self, eval_block_value(&stmts)).unwrap_or(Value::NIL);
                     if let Some(topic) = saved_topic {
                         self.env_mut().insert("_".to_string(), topic);
                     }
@@ -446,16 +446,16 @@ impl Interpreter {
                         && let Some(close) = after_name.find(']')
                     {
                         let idx_str = &after_name[1..close];
-                        let value = self.env().get(name).cloned().unwrap_or(Value::Nil);
+                        let value = self.env().get(name).cloned().unwrap_or(Value::NIL);
                         if let Ok(idx) = idx_str.parse::<i64>() {
-                            match &value {
-                                Value::Array(arr, _) => {
+                            match value.view() {
+                                ValueView::Array(arr, _) => {
                                     let idx = if idx < 0 {
                                         (arr.len() as i64 + idx) as usize
                                     } else {
                                         idx as usize
                                     };
-                                    let elem = arr.get(idx).cloned().unwrap_or(Value::Nil);
+                                    let elem = arr.get(idx).cloned().unwrap_or(Value::NIL);
                                     out.push_str(&elem.to_string_value());
                                 }
                                 _ => {
@@ -468,7 +468,7 @@ impl Interpreter {
                         i += 1 + name_len + close + 1;
                         continue;
                     }
-                    let value = self.env().get(name).cloned().unwrap_or(Value::Nil);
+                    let value = self.env().get(name).cloned().unwrap_or(Value::NIL);
                     out.push_str(&value.to_string_value());
                     i += 1 + name_len;
                     continue;
@@ -484,13 +484,13 @@ impl Interpreter {
                         && let Some(close) = after_name.find(']')
                     {
                         let arr_name = format!("@{}", name);
-                        let value = self.env().get(&arr_name).cloned().unwrap_or(Value::Nil);
+                        let value = self.env().get(&arr_name).cloned().unwrap_or(Value::NIL);
                         out.push_str(&value.to_string_value());
                         i += 1 + name_len + close + 1;
                         continue;
                     }
                     let arr_name = format!("@{}", name);
-                    let value = self.env().get(&arr_name).cloned().unwrap_or(Value::Nil);
+                    let value = self.env().get(&arr_name).cloned().unwrap_or(Value::NIL);
                     out.push_str(&value.to_string_value());
                     i += 1 + name_len;
                     continue;

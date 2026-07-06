@@ -22,7 +22,7 @@ struct VmFirstMatcher<'a>(&'a mut Interpreter);
 
 impl FirstMatcher for VmFirstMatcher<'_> {
     fn item_matches(&mut self, pattern: &Value, item: &Value) -> Result<bool, RuntimeError> {
-        if matches!(pattern, Value::Sub(_)) {
+        if matches!(pattern.view(), ValueView::Sub(_)) {
             let call_item = pair_as_positional(item);
             Ok(self
                 .0
@@ -63,7 +63,7 @@ impl Interpreter {
 
         // Plain list-like targets plus `Hash` (`.first` iterates its pairs);
         // `Supply`/`Instance`/… keep their own semantics -> fall back.
-        if !Self::is_plain_eager_list(target) && !matches!(target, Value::Hash(_)) {
+        if !Self::is_plain_eager_list(target) && !matches!(target.view(), ValueView::Hash(_)) {
             return None;
         }
 
@@ -71,11 +71,11 @@ impl Interpreter {
         // adverb (`:k`/`:v`/`:end`/…) handled only by the interpreter.
         let mut func: Option<Value> = None;
         for arg in args {
-            match arg {
-                Value::Pair(..) => return None,
+            match arg.view() {
+                ValueView::Pair(..) => return None,
                 // `Bool` matcher must raise X::Match::Bool -> let the interpreter
                 // produce the typed exception.
-                Value::Bool(_) => return None,
+                ValueView::Bool(_) => return None,
                 _ if func.is_none() => func = Some(arg.clone()),
                 _ => return None,
             }
@@ -85,7 +85,7 @@ impl Interpreter {
         let mut matcher = VmFirstMatcher(self);
         match find_first_match_generic(&mut matcher, func.as_ref(), &items, false) {
             Ok(Some((_, value))) => Some(Ok(value)),
-            Ok(None) => Some(Ok(Value::Nil)),
+            Ok(None) => Some(Ok(Value::NIL)),
             Err(e) => Some(Err(e)),
         }
     }
@@ -103,8 +103,8 @@ impl Interpreter {
         // no adverbs / `Bool` matcher (those keep interpreter semantics).
         let mut func: Option<Value> = None;
         for arg in args {
-            match arg {
-                Value::Pair(..) | Value::Bool(_) => return None,
+            match arg.view() {
+                ValueView::Pair(..) | ValueView::Bool(_) => return None,
                 _ if func.is_none() => func = Some(arg.clone()),
                 _ => return None,
             }
@@ -113,7 +113,7 @@ impl Interpreter {
         // No matcher: `.first` is just the first element.
         let Some(func) = func else {
             return match self.force_lazy_list_vm_n(list, 1) {
-                Ok(items) => Some(Ok(items.into_iter().next().unwrap_or(Value::Nil))),
+                Ok(items) => Some(Ok(items.into_iter().next().unwrap_or(Value::NIL))),
                 Err(e) => Some(Err(e)),
             };
         };
@@ -142,7 +142,7 @@ impl Interpreter {
             // Fewer items than requested => the gather body finished (finite
             // source) without a match.
             if items.len() <= idx {
-                return Some(Ok(Value::Nil));
+                return Some(Ok(Value::NIL));
             }
             let item = items[idx].clone();
             let matched = {

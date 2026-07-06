@@ -14,15 +14,15 @@ impl Interpreter {
         let left = left.descalarize().clone();
         let right = right.descalarize().clone();
         if let (
-            Value::Junction {
+            ValueView::Junction {
                 kind: left_kind,
                 values: _,
             },
-            Value::Junction {
+            ValueView::Junction {
                 kind: right_kind,
                 values: right_values,
             },
-        ) = (&left, &right)
+        ) = (left.view(), right.view())
             && Self::thread_right_first(left_kind, right_kind)
         {
             let results: Result<Vec<Value>, RuntimeError> = right_values
@@ -32,21 +32,21 @@ impl Interpreter {
                 .collect();
             return Ok(Value::junction(right_kind.clone(), results?));
         }
-        if let Value::Junction { kind, values } = left {
+        if let ValueView::Junction { kind, values } = left.view() {
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
                 .cloned()
                 .map(|v| self.eval_binary_with_junctions(v, right.clone(), f))
                 .collect();
-            return Ok(Value::junction(kind, results?));
+            return Ok(Value::junction(kind.clone(), results?));
         }
-        if let Value::Junction { kind, values } = right {
+        if let ValueView::Junction { kind, values } = right.view() {
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
                 .cloned()
                 .map(|v| self.eval_binary_with_junctions(left.clone(), v, f))
                 .collect();
-            return Ok(Value::junction(kind, results?));
+            return Ok(Value::junction(kind.clone(), results?));
         }
         // Force LazyList values before arithmetic/comparison operations
         let left = self.force_lazy_if_needed(left)?;
@@ -83,35 +83,35 @@ impl Interpreter {
             let match_result =
                 self.eval_smartmatch_with_junctions_ex(left, right, false, rhs_is_match_regex)?;
             let bool_val = match_result.truthy();
-            return Ok(Value::Bool(!bool_val));
+            return Ok(Value::truth(!bool_val));
         }
         // When RHS is the Junction type object, don't auto-thread LHS.
         // $junction ~~ Junction should return True (a Junction isa Junction).
         // Also applies to Mu (the supertype of Junction).
-        if matches!(&right, Value::Package(name) if matches!(name.resolve().as_str(), "Junction" | "Mu"))
-            && matches!(&left, Value::Junction { .. })
+        if matches!(right.view(), ValueView::Package(name) if matches!(name.resolve().as_str(), "Junction" | "Mu"))
+            && matches!(left.view(), ValueView::Junction { .. })
         {
             return self.smart_match_op(left, right, rhs_is_match_regex);
         }
         // Helper: check if a value is a regex (for junction collapse decisions)
         let is_regex_value = |v: &Value| {
             matches!(
-                v,
-                Value::Regex(_)
-                    | Value::RegexWithAdverbs { .. }
-                    | Value::Routine { is_regex: true, .. }
+                v.view(),
+                ValueView::Regex(_)
+                    | ValueView::RegexWithAdverbs { .. }
+                    | ValueView::Routine { is_regex: true, .. }
             )
         };
         if let (
-            Value::Junction {
+            ValueView::Junction {
                 kind: left_kind,
                 values: _,
             },
-            Value::Junction {
+            ValueView::Junction {
                 kind: right_kind,
                 values: right_values,
             },
-        ) = (&left, &right)
+        ) = (left.view(), right.view())
             && Self::thread_right_first(left_kind, right_kind)
         {
             let results: Result<Vec<Value>, RuntimeError> = right_values
@@ -128,9 +128,9 @@ impl Interpreter {
                 .collect();
             // Smartmatch collapses junctions to Bool
             let junction = Value::junction(right_kind.clone(), results?);
-            return Ok(Value::Bool(junction.truthy()));
+            return Ok(Value::truth(junction.truthy()));
         }
-        if let Value::Junction { kind, values } = left {
+        if let ValueView::Junction { kind, values } = left.view() {
             // When RHS is a non-junction regex and LHS is a junction,
             // return the Junction of Match/Nil results without collapsing.
             // For all other cases, collapse to Bool.
@@ -147,13 +147,13 @@ impl Interpreter {
                     )
                 })
                 .collect();
-            let junction = Value::junction(kind, results?);
+            let junction = Value::junction(kind.clone(), results?);
             if keep_junction {
                 return Ok(junction);
             }
-            return Ok(Value::Bool(junction.truthy()));
+            return Ok(Value::truth(junction.truthy()));
         }
-        if let Value::Junction { kind, values } = right {
+        if let ValueView::Junction { kind, values } = right.view() {
             // Evaluate junction elements with short-circuit semantics:
             // All: if any element is False, stop early (don't evaluate remaining).
             // Any: if any element is True, stop early.
@@ -168,15 +168,15 @@ impl Interpreter {
                 )?;
                 let is_truthy = r.truthy();
                 results.push(r);
-                match &kind {
+                match kind {
                     crate::value::JunctionKind::All if !is_truthy => break, // short-circuit: All fails fast
                     crate::value::JunctionKind::Any if is_truthy => break, // short-circuit: Any succeeds fast
                     _ => {}
                 }
             }
             // Smartmatch collapses junctions to Bool
-            let junction = Value::junction(kind, results);
-            return Ok(Value::Bool(junction.truthy()));
+            let junction = Value::junction(kind.clone(), results);
+            return Ok(Value::truth(junction.truthy()));
         }
         self.smart_match_op(left, right, rhs_is_match_regex)
     }
@@ -196,10 +196,10 @@ impl Interpreter {
         // to `vm_smart_match`, whose `pure_smart_match((_, Whatever)) => true`
         // arm returns True.
         let is_regex = matches!(
-            &right,
-            Value::Regex(_)
-                | Value::RegexWithAdverbs { .. }
-                | Value::Routine { is_regex: true, .. }
+            right.view(),
+            ValueView::Regex(_)
+                | ValueView::RegexWithAdverbs { .. }
+                | ValueView::Routine { is_regex: true, .. }
         );
         let matched = self.vm_smart_match(&left, &right);
         // Check for pending regex security error (set by regex parse/match)
@@ -213,23 +213,23 @@ impl Interpreter {
         if is_regex {
             // When $/ is a Junction (from :nth with junction argument),
             // the ~~ operator collapses the result to a Bool.
-            let slash = self.env().get("/").cloned().unwrap_or(Value::Nil);
-            if matches!(&slash, Value::Junction { .. }) {
-                Ok(Value::Bool(matched))
+            let slash = self.env().get("/").cloned().unwrap_or(Value::NIL);
+            if matches!(slash.view(), ValueView::Junction { .. }) {
+                Ok(Value::truth(matched))
             } else if matched {
                 // For regex smartmatch, return the Match object (from $/) or Nil
                 Ok(slash)
-            } else if rhs_is_match_regex && matches!(&slash, Value::Nil) {
+            } else if rhs_is_match_regex && slash.is_nil() {
                 // Failed m// (non-global) returns False, not Nil.
                 // But m:g// returns an empty list from $/, so we check that
                 // $/ is Nil before returning False.
-                Ok(Value::Bool(false))
+                Ok(Value::FALSE)
             } else {
                 // Failed bare // returns Nil; m:g// returns $/ (empty list)
                 Ok(slash)
             }
         } else {
-            Ok(Value::Bool(matched))
+            Ok(Value::truth(matched))
         }
     }
 
@@ -241,19 +241,19 @@ impl Interpreter {
     /// elements (assignment copies, stringification, `say`, `gist`) see the
     /// live value instead of the cell.
     pub(super) fn resolve_bound_array_elements(&self, val: Value) -> Value {
-        if let Value::Array(ref items, kind) = val {
+        if let ValueView::Array(items, kind) = val.view() {
             let needs_resolve = items.iter().any(Value::is_container_ref);
             if !needs_resolve {
                 return val;
             }
             let resolved: Vec<Value> = items
                 .iter()
-                .map(|v| match v {
-                    Value::ContainerRef(cell) => cell.lock().unwrap().clone(),
-                    other => other.clone(),
+                .map(|v| match v.view() {
+                    ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+                    _ => v.clone(),
                 })
                 .collect();
-            Value::Array(
+            Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(resolved)),
                 kind,
             )
@@ -334,31 +334,31 @@ impl Interpreter {
         }
         // Generate more elements
         while items.len() < needed {
-            let last = items.last().cloned().unwrap_or(Value::Int(0));
+            let last = items.last().cloned().unwrap_or(Value::int(0));
             let next = match spec {
                 crate::value::SequenceSpec::Arithmetic { step, all_int } => {
                     if *all_int {
-                        if let Value::Int(n) = last {
-                            Value::Int(n + step)
+                        if let ValueView::Int(n) = last.view() {
+                            Value::int(n + step)
                         } else {
                             let n = last.to_f64();
-                            Value::Num(n + *step as f64)
+                            Value::num(n + *step as f64)
                         }
                     } else {
                         let n = last.to_f64();
-                        Value::Num(n + *step as f64)
+                        Value::num(n + *step as f64)
                     }
                 }
                 crate::value::SequenceSpec::GeometricRat { num, den } => {
-                    if let Value::Int(n) = last {
+                    if let ValueView::Int(n) = last.view() {
                         // `n * num` can overflow i64 for a growing geometric
                         // sequence (`1, 2, 4 ... *`). Raku's Int is arbitrary
                         // precision, so promote to BigInt on overflow instead of
                         // panicking.
                         match n.checked_mul(*num) {
-                            Some(result) if result % den == 0 => Value::Int(result / den),
+                            Some(result) if result % den == 0 => Value::int(result / den),
                             Some(result) => match result.checked_mul(*num) {
-                                Some(rn) => Value::Rat(rn, *den),
+                                Some(rn) => Value::rat_raw(rn, *den),
                                 None => {
                                     use num_bigint::BigInt;
                                     crate::value::make_big_rat_arith(
@@ -381,7 +381,7 @@ impl Interpreter {
                                 }
                             }
                         }
-                    } else if let Value::BigInt(n) = last {
+                    } else if let ValueView::BigInt(n) = last.view() {
                         // Continue an already-promoted geometric sequence in exact
                         // BigInt arithmetic (raku keeps `1, 2, 4 ... *` exact past
                         // i64), rather than dropping to lossy f64.
@@ -395,12 +395,12 @@ impl Interpreter {
                         }
                     } else {
                         let n = last.to_f64();
-                        Value::Num(n * (*num as f64) / (*den as f64))
+                        Value::num(n * (*num as f64) / (*den as f64))
                     }
                 }
                 crate::value::SequenceSpec::Geometric { ratio } => {
                     let n = last.to_f64();
-                    Value::Num(n * ratio)
+                    Value::num(n * ratio)
                 }
                 crate::value::SequenceSpec::RollPool(pool) => {
                     let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize

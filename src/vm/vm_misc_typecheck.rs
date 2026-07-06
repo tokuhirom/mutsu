@@ -42,7 +42,7 @@ impl Interpreter {
             ));
         }
         if var_name.is_some_and(|name| name.starts_with('@'))
-            && matches!(&value, Value::Array(..) | Value::Seq(_))
+            && matches!(value.view(), ValueView::Array(..) | ValueView::Seq(_))
         {
             if !self.array_elements_match_constraint(constraint, &value) {
                 return Err(self.typed_array_element_error(
@@ -79,7 +79,7 @@ impl Interpreter {
                     | "Pair"
             )
         };
-        if let Value::Array(..) = &value
+        if let ValueView::Array(..) = value.view()
             && !is_container_constraint
             // Element-level matching is for `@`-sigil typed arrays (`my Int @a`),
             // whose constraint is the ELEMENT type. A `$`-scalar holding an array
@@ -103,22 +103,22 @@ impl Interpreter {
         // Integer ranges always contain Int elements.
         {
             let is_finite_int_range = matches!(
-                &value,
-                Value::Range(a, b) | Value::RangeExcl(a, b) |
-                Value::RangeExclStart(a, b) | Value::RangeExclBoth(a, b)
-                if *b != i64::MAX && *a != i64::MIN
+                value.view(),
+                ValueView::Range(a, b) | ValueView::RangeExcl(a, b) |
+                ValueView::RangeExclStart(a, b) | ValueView::RangeExclBoth(a, b)
+                if b != i64::MAX && a != i64::MIN
             );
             let is_finite_generic_range = matches!(
-                &value,
-                Value::GenericRange { end, .. }
-                if !matches!(end.as_ref(), Value::Num(n) if n.is_infinite())
-                    && !matches!(end.as_ref(), Value::Whatever | Value::HyperWhatever)
+                value.view(),
+                ValueView::GenericRange { end, .. }
+                if !matches!(end.as_ref().view(), ValueView::Num(n) if n.is_infinite())
+                    && !matches!(end.as_ref().view(), ValueView::Whatever | ValueView::HyperWhatever)
             );
             let range_ok = if is_finite_int_range {
-                loan_env!(self, type_matches_value(constraint, &Value::Int(0)))
+                loan_env!(self, type_matches_value(constraint, &Value::int(0)))
             } else if is_finite_generic_range {
-                match &value {
-                    Value::GenericRange { start, end, .. } => {
+                match value.view() {
+                    ValueView::GenericRange { start, end, .. } => {
                         self.type_matches_value(constraint, start)
                             && self.type_matches_value(constraint, end)
                     }
@@ -132,7 +132,7 @@ impl Interpreter {
             }
             // Infinite ranges and non-matching types fall through to normal check
         }
-        if matches!(value, Value::Nil) && self.is_definite_constraint(constraint) {
+        if value.is_nil() && self.is_definite_constraint(constraint) {
             // A subset (named or anon-from-`where`) whose base is `:D` does not
             // require an initializer — only an explicit `:D` smiley on the declared
             // type does. Only raise MissingInitializer when one is truly required;
@@ -148,7 +148,7 @@ impl Interpreter {
         // Native integer type check: validate value is an integer in range.
         // Native types cannot hold Nil/type objects — reject them.
         if crate::runtime::native_types::is_native_int_type(base_constraint) {
-            if matches!(value, Value::Nil) {
+            if value.is_nil() {
                 return Err(RuntimeError::new(format!(
                     "Cannot unbox a type object (Nil) to {}.",
                     base_constraint
@@ -159,7 +159,7 @@ impl Interpreter {
         }
         // Native num/str types cannot hold type objects — reject Nil and Package values.
         if matches!(base_constraint, "num" | "num32" | "num64" | "str") {
-            if matches!(value, Value::Nil | Value::Package(_)) {
+            if matches!(value.view(), ValueView::Nil | ValueView::Package(_)) {
                 return Err(RuntimeError::new(format!(
                     "Cannot unbox a type object to {}.",
                     base_constraint
@@ -168,7 +168,7 @@ impl Interpreter {
             return Ok(());
         }
         if runtime::is_known_type_constraint(base_constraint) {
-            if !matches!(value, Value::Nil) && !self.type_matches_value(constraint, &value) {
+            if !value.is_nil() && !self.type_matches_value(constraint, &value) {
                 // A subset `where { … or fail "msg" }` that failed by throwing
                 // surfaces its own exception (custom message) rather than the
                 // generic type-check error.
@@ -176,15 +176,15 @@ impl Interpreter {
                     return Err(*fail);
                 }
                 if base_constraint == "Int"
-                    && matches!(value, Value::Num(f) if f.is_nan() || f.is_infinite())
+                    && matches!(value.view(), ValueView::Num(f) if f.is_nan() || f.is_infinite())
                 {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("value".to_string(), value.clone());
                     attrs.insert(
                         "vartype".to_string(),
-                        Value::Package(Symbol::intern(base_constraint)),
+                        Value::package(Symbol::intern(base_constraint)),
                     );
-                    let desc = if matches!(value, Value::Num(f) if f.is_nan()) {
+                    let desc = if matches!(value.view(), ValueView::Num(f) if f.is_nan()) {
                         "Cannot convert NaN to Int"
                     } else {
                         "Cannot assign a literal of type Num (Inf) to a variable of type Int"
@@ -270,12 +270,12 @@ impl Interpreter {
                 let mut group_attrs = std::collections::HashMap::new();
                 group_attrs.insert("sorrows".to_string(), Value::array(vec![sorrow]));
                 group_attrs.insert("worries".to_string(), Value::array(vec![]));
-                group_attrs.insert("panic".to_string(), Value::Nil);
+                group_attrs.insert("panic".to_string(), Value::NIL);
                 group_attrs.insert("message".to_string(), Value::str(group_msg));
                 return Err(RuntimeError::typed("X::Comp::Group", group_attrs));
             }
         }
-        if !matches!(value, Value::Nil)
+        if !value.is_nil()
             && !self.type_matches_value(constraint, &value)
             && !self.is_container_subclass(constraint)
         {
@@ -293,7 +293,7 @@ impl Interpreter {
                 constraint, &value, var_name,
             ));
         }
-        if !matches!(value, Value::Nil) {
+        if !value.is_nil() {
             let coerced = loan_env!(
                 self,
                 try_coerce_value_for_constraint(constraint, value.clone())
@@ -304,7 +304,7 @@ impl Interpreter {
     }
 
     pub(super) fn exec_indirect_type_lookup_op(&mut self) {
-        let name_val = self.stack.pop().unwrap_or(Value::Nil);
+        let name_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = name_val.to_string_value();
         self.stack
             .push(loan_env!(self, resolve_indirect_type_name(&name)));

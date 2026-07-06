@@ -12,8 +12,8 @@ impl Interpreter {
         let module = Self::const_str(code, name_idx);
         let tags: Vec<String> = tags_idx
             .and_then(|idx| code.constants.get(idx as usize))
-            .and_then(|v| match v {
-                Value::Array(items, ..) => Some(
+            .and_then(|v| match v.view() {
+                ValueView::Array(items, ..) => Some(
                     items
                         .iter()
                         .map(|v| v.to_string_value())
@@ -50,8 +50,8 @@ impl Interpreter {
         let module = Self::const_str(code, name_idx);
         let tags = tags_idx
             .and_then(|idx| code.constants.get(idx as usize))
-            .and_then(|v| match v {
-                Value::Array(items, ..) => Some(
+            .and_then(|v| match v.view() {
+                ValueView::Array(items, ..) => Some(
                     items
                         .iter()
                         .map(|v| v.to_string_value())
@@ -137,7 +137,7 @@ impl Interpreter {
         &mut self,
         _code: &CompiledCode,
     ) -> Result<(), RuntimeError> {
-        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let value = self.stack.pop().unwrap_or(Value::NIL);
         let path = value.to_string_value();
         if path.is_empty() {
             return Err(RuntimeError::new(
@@ -147,7 +147,7 @@ impl Interpreter {
         // An `inst#PREFIX` spec selects a CompUnit::Repository::Installation as
         // the current `$*REPO`, chained in front of whatever was there before.
         if let Some(prefix) = path.strip_prefix("inst#") {
-            let prev = self.env().get("*REPO").cloned().unwrap_or(Value::Nil);
+            let prev = self.env().get("*REPO").cloned().unwrap_or(Value::NIL);
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("prefix".to_string(), Value::str(prefix.to_string()));
             attrs.insert("next-repo".to_string(), prev);
@@ -168,8 +168,8 @@ impl Interpreter {
         let name = Self::const_str(code, name_idx).to_string();
         let tags = tags_idx
             .and_then(|idx| code.constants.get(idx as usize))
-            .and_then(|v| match v {
-                Value::Array(items, ..) => Some(
+            .and_then(|v| match v.view() {
+                ValueView::Array(items, ..) => Some(
                     items
                         .iter()
                         .map(|v| v.to_string_value())

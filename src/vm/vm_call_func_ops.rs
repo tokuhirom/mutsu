@@ -16,7 +16,7 @@ impl Interpreter {
     /// because it's an anonymous block passed as `&foo`, or because it's a
     /// different sub with the same parameter name.
     pub(super) fn env_callable_is_lexical_override(val: &Value, name: &str) -> bool {
-        if let Value::Sub(sub) = val {
+        if let ValueView::Sub(sub) = val.view() {
             let stored = sub.name.resolve();
             // Anonymous block or mismatched name => lexical override.
             stored.is_empty() || stored != name
@@ -89,7 +89,7 @@ impl Interpreter {
         let candidate = code
             .and_then(|c| self.locals_get_by_name(c, &ampname))
             .or_else(|| self.env().get(&ampname).cloned());
-        candidate.filter(|v| matches!(v, Value::Sub(_) | Value::WeakSub(_)))
+        candidate.filter(|v| matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_)))
     }
 
     /// Resolve a lexical `&infix:<op>` override (a `&infix:<op>` parameter or a
@@ -104,7 +104,12 @@ impl Interpreter {
         let candidate = self
             .locals_get_by_name(code, &ampname)
             .or_else(|| self.env().get(&ampname).cloned());
-        candidate.filter(|v| matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Mixin(..)))
+        candidate.filter(|v| {
+            matches!(
+                v.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Mixin(..)
+            )
+        })
     }
 
     pub(super) fn exec_call_func_op(
@@ -166,7 +171,7 @@ impl Interpreter {
                         let stack_args = &self.stack[self.stack.len() - arity_usize..];
                         let has_junction = stack_args
                             .iter()
-                            .any(|v| matches!(v, Value::Junction { .. }));
+                            .any(|v| matches!(v.view(), ValueView::Junction { .. }));
                         // Slice 2d: array/hash into a plain `$` param must share the
                         // caller's container -> fall through to the slow path.
                         let share_into_scalar =
@@ -510,16 +515,15 @@ impl Interpreter {
                 .get(&format!("&{}", name))
                 .cloned()
                 .and_then(|callable| {
-                    if let Value::Mixin(_, ref mixins) = callable {
-                        let has_call_me = mixins.keys().any(|key| {
+                    let has_call_me = if let ValueView::Mixin(_, mixins) = callable.view() {
+                        mixins.keys().any(|key| {
                             key.strip_prefix("__mutsu_role__")
                                 .is_some_and(|rn| self.role_has_method(rn, "CALL-ME"))
-                        });
-                        if has_call_me {
-                            return Some(callable);
-                        }
-                    }
-                    None
+                        })
+                    } else {
+                        false
+                    };
+                    if has_call_me { Some(callable) } else { None }
                 });
         // Junction auto-threading for function call arguments:
         // If any positional arg is a Junction and the function parameter doesn't accept
@@ -560,7 +564,7 @@ impl Interpreter {
         // the closure frame at the live caller env (scoped_child) so dynamic
         // vars (`my $*ERR` in the caller) stay visible, and first-class
         // instance cells make mutating methods on caller-held instances visible
-        // across frames. The override value is always a `Value::Sub`
+        // across frames. The override value is always a `Sub` value
         // (`env_callable_is_lexical_override`), so this never reaches the
         // interpreter terminal.
         if let Some(callable) = lexical_override {
@@ -609,7 +613,7 @@ impl Interpreter {
             && let Some(slot) = self.find_local_slot(code, &target)
             // Mirror the reverse pull's invariant: never clobber a live
             // `HashEntryRef` binding slot with a plain env copy.
-            && !matches!(self.locals[slot], Value::HashEntryRef { .. })
+            && !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
             && let Some(val) = self.env().get(&target).cloned()
         {
             self.locals[slot] = val;
@@ -663,7 +667,7 @@ impl Interpreter {
             }
         } else {
             // Legacy behavior: slip is last on stack (compiled last)
-            let slip_val = raw_args.last().cloned().unwrap_or(Value::Nil);
+            let slip_val = raw_args.last().cloned().unwrap_or(Value::NIL);
             args.extend(raw_args.into_iter().take(regular_arity as usize));
             Self::append_slip_value(&mut args, slip_val);
         }
@@ -826,22 +830,23 @@ impl Interpreter {
         })?;
 
         // Resolve slot refs to their underlying values before dispatch
-        let target = match &target {
-            Value::HashEntryRef { .. } => target.hash_entry_read(),
-            _ => target,
+        let target = if matches!(target.view(), ValueView::HashEntryRef { .. }) {
+            target.hash_entry_read()
+        } else {
+            target
         };
 
         // Upgrade WeakSub (e.g., &?BLOCK) to strong Sub before dispatch
-        let target = if let Value::WeakSub(ref weak) = target {
+        let target = if let ValueView::WeakSub(weak) = target.view() {
             match weak.upgrade() {
-                Some(strong) => Value::Sub(strong),
-                None => Value::Nil,
+                Some(strong) => Value::sub_value(strong),
+                None => Value::NIL,
             }
         } else {
             target
         };
 
-        let sub_is_rw = if let Value::Sub(ref data) = target {
+        let sub_is_rw = if let ValueView::Sub(data) = target.view() {
             data.is_rw
         } else {
             false
@@ -892,16 +897,18 @@ impl Interpreter {
         // Fallback for fast-path method dispatch (skip_env_setup=true):
         // &!attr is not set in env, so read directly from self's instance
         // attributes when available.
-        if matches!(target, Value::Nil)
+        if target.is_nil()
             && let Some(attr_name) = name.strip_prefix('!').filter(|n| !n.is_empty())
-            && let Some(Value::Instance { attributes, .. }) =
-                self.get_env_with_main_alias("self").as_ref()
+            && let Some(ValueView::Instance { attributes, .. }) = self
+                .get_env_with_main_alias("self")
+                .as_ref()
+                .map(Value::view)
             && let Some(attr_val) = attributes.as_map().get(attr_name)
         {
             target = attr_val.clone();
         }
-        let result = if !matches!(target, Value::Nil) {
-            let sub_is_rw = if let Value::Sub(ref data) = target {
+        let result = if !target.is_nil() {
+            let sub_is_rw = if let ValueView::Sub(data) = target.view() {
                 data.is_rw
             } else {
                 false
@@ -1560,8 +1567,8 @@ impl Interpreter {
         if positional.len() != orig_args.len()
             || orig_args.iter().any(|a| {
                 matches!(
-                    crate::runtime::types::unwrap_varref_value(a.clone()),
-                    Value::Pair(..) | Value::ValuePair(..)
+                    crate::runtime::types::unwrap_varref_value(a.clone()).view(),
+                    ValueView::Pair(..) | ValueView::ValuePair(..)
                 )
             })
         {

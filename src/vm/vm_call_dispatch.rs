@@ -13,8 +13,8 @@ impl Interpreter {
                 .unwrap_or_default();
             let line = cl
                 .or_else(|| {
-                    self.env().get("?LINE").and_then(|v| match v {
-                        Value::Int(i) => Some(*i),
+                    self.env().get("?LINE").and_then(|v| match v.view() {
+                        ValueView::Int(i) => Some(i),
                         _ => None,
                     })
                 })

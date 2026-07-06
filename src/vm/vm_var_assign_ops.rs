@@ -4,17 +4,17 @@ use std::collections::HashMap;
 
 impl Interpreter {
     /// Return the default fill value for a native type constraint.
-    /// For `int`/`uint` variants returns `Value::Int(0)`,
-    /// for `num` variants returns `Value::Num(0.0)`,
+    /// For `int`/`uint` variants returns `Value::int(0)`,
+    /// for `num` variants returns `Value::num(0.0)`,
     /// for `str` returns `Value::str("")`,
-    /// otherwise returns `Value::Package("Any")`.
+    /// otherwise returns `Value::package("Any")`.
     pub(crate) fn native_fill_for_constraint(constraint: Option<&str>) -> Value {
         match constraint {
             Some(
                 "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
                 | "uint32" | "uint64" | "byte" | "atomicint",
-            ) => Value::Int(0),
-            Some("num" | "num32" | "num64") => Value::Num(0.0),
+            ) => Value::int(0),
+            Some("num" | "num32" | "num64") => Value::num(0.0),
             Some("str") => Value::str(String::new()),
             // A boxed typed array (e.g. `my Int @a`) fills empty slots with the
             // element type's type object, so holes gist as `(Int)` and roundtrip
@@ -26,12 +26,12 @@ impl Interpreter {
                     .trim_end_matches(":D")
                     .trim_end_matches(":U");
                 if base.is_empty() || base == "Any" || base == "Mu" || base.contains('[') {
-                    Value::Package(Symbol::intern("Any"))
+                    Value::package(Symbol::intern("Any"))
                 } else {
-                    Value::Package(Symbol::intern(base))
+                    Value::package(Symbol::intern(base))
                 }
             }
-            None => Value::Package(Symbol::intern("Any")),
+            None => Value::package(Symbol::intern("Any")),
         }
     }
 
@@ -73,8 +73,8 @@ impl Interpreter {
         val: &Value,
         range_slice: &Option<(Vec<usize>, Vec<Value>)>,
     ) -> Result<bool, RuntimeError> {
-        match attr_value {
-            Value::Array(items, kind) if !matches!(idx, Value::Str(_)) => {
+        match attr_value.view() {
+            ValueView::Array(items, kind) if !matches!(idx.view(), ValueView::Str(_)) => {
                 let mut updated = (**items).clone();
                 if let Some((slice_indices, vals)) = range_slice {
                     if let Some(max_idx) = slice_indices.last().copied()
@@ -83,49 +83,49 @@ impl Interpreter {
                         Self::autoviv_resize(
                             &mut updated,
                             max_idx + 1,
-                            Value::Package(Symbol::intern("Any")),
+                            Value::package(Symbol::intern("Any")),
                         )?;
                     }
                     for (offset, i) in slice_indices.iter().enumerate() {
-                        updated[*i] = vals.get(offset).cloned().unwrap_or(Value::Nil);
+                        updated[*i] = vals.get(offset).cloned().unwrap_or(Value::NIL);
                     }
                 } else if let Some(i) = Self::index_to_usize(idx) {
                     Self::autoviv_resize(
                         &mut updated,
                         i + 1,
-                        Value::Package(Symbol::intern("Any")),
+                        Value::package(Symbol::intern("Any")),
                     )?;
                     updated[i] = val.clone();
                 } else {
                     return Ok(false);
                 }
-                *attr_value = Value::Array(crate::gc::Gc::new(updated), *kind);
+                *attr_value = Value::array_with_kind(crate::gc::Gc::new(updated), kind);
                 Ok(true)
             }
-            Value::Hash(hash) if matches!(idx, Value::Str(_)) => {
+            ValueView::Hash(hash) if matches!(idx.view(), ValueView::Str(_)) => {
                 let mut updated = (**hash).clone();
                 updated.insert(idx.to_string_value(), val.clone());
-                *attr_value = Value::Hash(Value::hash_arc(updated));
+                *attr_value = Value::hash_with_data(Value::hash_arc(updated));
                 Ok(true)
             }
-            Value::Nil if !matches!(idx, Value::Str(_)) => {
+            ValueView::Nil if !matches!(idx.view(), ValueView::Str(_)) => {
                 let mut updated = Vec::new();
                 if let Some((slice_indices, vals)) = range_slice {
                     if let Some(max_idx) = slice_indices.last().copied() {
                         Self::autoviv_resize(
                             &mut updated,
                             max_idx + 1,
-                            Value::Package(Symbol::intern("Any")),
+                            Value::package(Symbol::intern("Any")),
                         )?;
                     }
                     for (offset, i) in slice_indices.iter().enumerate() {
-                        updated[*i] = vals.get(offset).cloned().unwrap_or(Value::Nil);
+                        updated[*i] = vals.get(offset).cloned().unwrap_or(Value::NIL);
                     }
                 } else if let Some(i) = Self::index_to_usize(idx) {
                     Self::autoviv_resize(
                         &mut updated,
                         i + 1,
-                        Value::Package(Symbol::intern("Any")),
+                        Value::package(Symbol::intern("Any")),
                     )?;
                     updated[i] = val.clone();
                 } else {
@@ -134,10 +134,10 @@ impl Interpreter {
                 *attr_value = Value::real_array(updated);
                 Ok(true)
             }
-            Value::Nil if matches!(idx, Value::Str(_)) => {
+            ValueView::Nil if matches!(idx.view(), ValueView::Str(_)) => {
                 let mut updated = std::collections::HashMap::new();
                 updated.insert(idx.to_string_value(), val.clone());
-                *attr_value = Value::Hash(Value::hash_arc(updated));
+                *attr_value = Value::hash_with_data(Value::hash_arc(updated));
                 Ok(true)
             }
             _ => Ok(false),
@@ -150,32 +150,32 @@ impl Interpreter {
     /// shape. Returns `(val, None)` for a plain (non-bind) value, so callers can
     /// treat the non-bind path unchanged.
     pub(crate) fn unwrap_bind_index_value(val: Value) -> (Value, Option<String>) {
-        if let Value::Pair(name, payload) = &val
+        if let ValueView::Pair(name, payload) = val.view()
             && name == "__mutsu_bind_index_value"
         {
-            if let Value::Array(items, ..) = payload.as_ref() {
-                let value = items.first().cloned().unwrap_or(Value::Nil);
-                let source = match items.get(1) {
-                    Some(Value::Array(srcs, ..)) => match srcs.first() {
-                        Some(Value::Str(s)) if !s.is_empty() => Some((**s).clone()),
+            if let ValueView::Array(items, ..) = payload.view() {
+                let value = items.first().cloned().unwrap_or(Value::NIL);
+                let source = match items.get(1).map(Value::view) {
+                    Some(ValueView::Array(srcs, ..)) => match srcs.first().map(Value::view) {
+                        Some(ValueView::Str(s)) if !s.is_empty() => Some((**s).clone()),
                         _ => None,
                     },
                     _ => None,
                 };
                 return (value, source);
             }
-            return ((**payload).clone(), None);
+            return (payload.clone(), None);
         }
         (val, None)
     }
 
     pub(crate) fn varref_target(value: &Value) -> Option<(String, Option<usize>)> {
-        if let Value::Capture { positional, named } = value
+        if let ValueView::Capture { positional, named } = value.view()
             && positional.is_empty()
-            && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+            && let Some(ValueView::Str(name)) = named.get("__mutsu_varref_name").map(Value::view)
         {
-            let source_index = match named.get("__mutsu_varref_index") {
-                Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+            let source_index = match named.get("__mutsu_varref_index").map(Value::view) {
+                Some(ValueView::Int(i)) if i >= 0 => Some(i as usize),
                 _ => None,
             };
             return Some((name.to_string(), source_index));
@@ -192,7 +192,7 @@ impl Interpreter {
         named.insert("__mutsu_varref_name".to_string(), Value::str(name));
         named.insert("__mutsu_varref_value".to_string(), value);
         if let Some(i) = source_index {
-            named.insert("__mutsu_varref_index".to_string(), Value::Int(i as i64));
+            named.insert("__mutsu_varref_index".to_string(), Value::int(i as i64));
         }
         Value::capture(Vec::new(), named)
     }
@@ -207,20 +207,36 @@ impl Interpreter {
         if let Some(sep_pos) = source_name.find("\x00idx\x00") {
             let var_name = &source_name[..sep_pos];
             let idx_str = &source_name[sep_pos + 5..];
+            // `value` is consumed by exactly one of the branches below; the
+            // `Option` shuffle lets the array closure take it while keeping it
+            // available for the hash fallthrough when the target is not an array.
+            let mut value = Some(value);
             if let Ok(i) = idx_str.parse::<usize>() {
                 let Some(container) = self.env_mut().get_mut(var_name) else {
                     return Err(RuntimeError::assignment_ro(None));
                 };
-                if let Value::Array(items, ..) = container {
+                if let Some(res) = container.with_array_mut(|items, _| {
                     let arr = crate::gc::Gc::make_mut(items);
-                    Self::autoviv_resize(arr, i + 1, Value::Package(Symbol::intern("Any")))?;
-                    arr[i] = value;
+                    Self::autoviv_resize(arr, i + 1, Value::package(Symbol::intern("Any")))?;
+                    arr[i] = value.take().unwrap_or(Value::NIL);
+                    Ok(())
+                }) {
+                    res?;
                     return Ok(());
                 }
             }
-            if let Some(Value::Hash(hash)) = self.env_mut().get_mut(source_name) {
-                let h = crate::gc::Gc::make_mut(hash);
-                h.insert(idx_str.to_string(), value);
+            let value = value.take().unwrap_or(Value::NIL);
+            if self
+                .env_mut()
+                .get_mut(source_name)
+                .and_then(|v| {
+                    v.with_hash_mut(|hash| {
+                        let h = crate::gc::Gc::make_mut(hash);
+                        h.insert(idx_str.to_string(), value);
+                    })
+                })
+                .is_some()
+            {
                 return Ok(());
             }
             return Err(RuntimeError::assignment_ro(None));
@@ -229,12 +245,15 @@ impl Interpreter {
             let Some(container) = self.env_mut().get_mut(source_name) else {
                 return Err(RuntimeError::assignment_ro(None));
             };
-            let Value::Array(items, ..) = container else {
+            let Some(res) = container.with_array_mut(|items, _| {
+                let arr = crate::gc::Gc::make_mut(items);
+                Self::autoviv_resize(arr, i + 1, Value::package(Symbol::intern("Any")))?;
+                arr[i] = value;
+                Ok(())
+            }) else {
                 return Err(RuntimeError::assignment_ro(None));
             };
-            let arr = crate::gc::Gc::make_mut(items);
-            Self::autoviv_resize(arr, i + 1, Value::Package(Symbol::intern("Any")))?;
-            arr[i] = value;
+            res?;
             return Ok(());
         }
         self.env_mut().insert(source_name.to_string(), value);
@@ -246,42 +265,42 @@ impl Interpreter {
         idx: Value,
         target: Option<&Value>,
     ) -> Value {
-        let len = match target {
-            Some(Value::Array(items, ..)) => items.len() as i64,
+        let len = match target.map(Value::view) {
+            Some(ValueView::Array(items, ..)) => items.len() as i64,
             // A `:=`-bound array is held in a `ContainerRef` cell; descend it so
             // a from-end index (`@a[*-1]`) resolves the real length instead of 0
             // (which would yield a negative effective index and X::OutOfRange).
-            Some(Value::ContainerRef(cell)) => match &*cell.lock().unwrap() {
-                Value::Array(items, ..) => items.len() as i64,
+            Some(ValueView::ContainerRef(cell)) => match cell.lock().unwrap().view() {
+                ValueView::Array(items, ..) => items.len() as i64,
                 _ => 0,
             },
             _ => 0,
         };
         // Bare Whatever (*) in array subscript means all indices: 0, 1, ..., len-1
-        if matches!(idx, Value::Whatever) {
-            let indices: Vec<Value> = (0..len).map(Value::Int).collect();
-            return Value::Array(
+        if matches!(idx.view(), ValueView::Whatever) {
+            let indices: Vec<Value> = (0..len).map(Value::int).collect();
+            return Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(indices)),
                 crate::value::ArrayKind::List,
             );
         }
-        if let Value::Sub(ref data) = idx {
+        if let ValueView::Sub(data) = idx.view() {
             let mut sub_env = data.env.clone();
             // Pass length for ALL WhateverCode parameters (e.g. *-4 .. *-2 has 2 params)
             for p in &data.params {
-                sub_env.insert(p.to_string(), Value::Int(len));
+                sub_env.insert(p.to_string(), Value::int(len));
             }
             let saved_env = std::mem::take(self.env_mut());
             *self.env_mut() = sub_env;
-            let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+            let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
             *self.env_mut() = saved_env;
             return result;
         }
         // Resolve Array of WhateverCode indices: @a[*-3, *-2, *-1]
-        if let Value::Array(ref items, kind) = idx {
+        if let ValueView::Array(items, kind) = idx.view() {
             let mut needs_resolve = false;
             for item in items.iter() {
-                if matches!(item, Value::Sub(_)) {
+                if matches!(item.view(), ValueView::Sub(_)) {
                     needs_resolve = true;
                     break;
                 }
@@ -289,22 +308,22 @@ impl Interpreter {
             if needs_resolve {
                 let mut resolved = Vec::with_capacity(items.len());
                 for item in items.iter() {
-                    if let Value::Sub(data) = item {
+                    if let ValueView::Sub(data) = item.view() {
                         let mut sub_env = data.env.clone();
                         for p in &data.params {
-                            sub_env.insert(p.to_string(), Value::Int(len));
+                            sub_env.insert(p.to_string(), Value::int(len));
                         }
                         let saved_env = std::mem::take(self.env_mut());
                         *self.env_mut() = sub_env;
                         let result =
-                            loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+                            loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                         *self.env_mut() = saved_env;
                         resolved.push(result);
                     } else {
                         resolved.push(item.clone());
                     }
                 }
-                return Value::Array(
+                return Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(resolved)),
                     kind,
                 );
@@ -333,10 +352,10 @@ impl Interpreter {
     /// reference, matching Raku's container semantics for `%h = :b(%h)`.
     pub(super) fn fixup_circular_hash_refs(new_val: &mut Value, old_ptr: &Option<usize>) {
         let Some(old_ptr) = old_ptr else { return };
-        if let Value::Hash(new_arc) = new_val {
+        new_val.with_hash_mut(|new_arc| {
             // Check if any values in the hash reference the old Arc.
             let has_old_ref = new_arc.values().any(|v| {
-                if let Value::Hash(inner_arc) = v {
+                if let ValueView::Hash(inner_arc) = v.view() {
                     crate::gc::Gc::as_ptr(inner_arc) as usize == *old_ptr
                 } else {
                     false
@@ -350,12 +369,12 @@ impl Interpreter {
             let mut new_map = HashMap::new();
             let mut circular_keys = Vec::new();
             for (k, v) in new_arc.iter() {
-                if let Value::Hash(inner_arc) = v
+                if let ValueView::Hash(inner_arc) = v.view()
                     && crate::gc::Gc::as_ptr(inner_arc) as usize == *old_ptr
                 {
                     circular_keys.push(k.clone());
                     // Placeholder - will be replaced below
-                    new_map.insert(k.clone(), Value::Nil);
+                    new_map.insert(k.clone(), Value::NIL);
                     continue;
                 }
                 new_map.insert(k.clone(), v.clone());
@@ -371,10 +390,10 @@ impl Interpreter {
             let data = unsafe { crate::value::gc_contents_mut(&result_arc) };
             for key in &circular_keys {
                 data.map
-                    .insert(key.clone(), Value::Hash(result_arc.clone()));
+                    .insert(key.clone(), Value::hash_with_data(result_arc.clone()));
             }
             *new_arc = result_arc;
-        }
+        });
     }
 
     /// Check if a value contains a reference to the given array Arc pointer,
@@ -386,9 +405,9 @@ impl Interpreter {
         old_ptr: usize,
         seen_hashes: &mut Vec<usize>,
     ) -> bool {
-        match v {
-            Value::Array(inner_arc, _) => crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr,
-            Value::Hash(map) => {
+        match v.view() {
+            ValueView::Array(inner_arc, _) => crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr,
+            ValueView::Hash(map) => {
                 let hash_ptr = crate::gc::Gc::as_ptr(map) as usize;
                 if seen_hashes.contains(&hash_ptr) {
                     return false;
@@ -416,64 +435,59 @@ impl Interpreter {
         kind: ArrayKind,
         seen_hashes: &mut Vec<usize>,
     ) {
-        match v {
-            Value::Array(inner_arc, _) if crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr => {
-                *v = Value::Array(new_array.clone(), kind);
+        if matches!(
+            v.view(),
+            ValueView::Array(inner_arc, _) if crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr
+        ) {
+            *v = Value::array_with_kind(new_array.clone(), kind);
+            return;
+        }
+        v.with_hash_mut(|map| {
+            let hash_ptr = crate::gc::Gc::as_ptr(map) as usize;
+            if seen_hashes.contains(&hash_ptr) {
+                return;
             }
-            Value::Hash(map) => {
-                let hash_ptr = crate::gc::Gc::as_ptr(map) as usize;
-                if seen_hashes.contains(&hash_ptr) {
-                    return;
+            seen_hashes.push(hash_ptr);
+            // Check if any values in this hash contain the old array ref
+            let needs_fixup = map
+                .values()
+                .any(|hv| Self::value_contains_array_ref(hv, old_ptr, &mut seen_hashes.clone()));
+            if needs_fixup {
+                // Clone the map, but track self-referencing hash keys so we
+                // can preserve the circular hash structure in the new Arc.
+                let mut new_map = HashMap::new();
+                let mut self_ref_keys = Vec::new();
+                for (k, hv) in map.iter() {
+                    if let ValueView::Hash(inner_arc) = hv.view()
+                        && crate::gc::Gc::as_ptr(inner_arc) as usize == hash_ptr
+                    {
+                        self_ref_keys.push(k.clone());
+                        new_map.insert(k.clone(), Value::NIL);
+                    } else {
+                        new_map.insert(k.clone(), hv.clone());
+                    }
                 }
-                seen_hashes.push(hash_ptr);
-                // Check if any values in this hash contain the old array ref
-                let needs_fixup = map.values().any(|hv| {
-                    Self::value_contains_array_ref(hv, old_ptr, &mut seen_hashes.clone())
-                });
-                if needs_fixup {
-                    // Clone the map, but track self-referencing hash keys so we
-                    // can preserve the circular hash structure in the new Arc.
-                    let mut new_map = HashMap::new();
-                    let mut self_ref_keys = Vec::new();
-                    for (k, hv) in map.iter() {
-                        if let Value::Hash(inner_arc) = hv
-                            && crate::gc::Gc::as_ptr(inner_arc) as usize == hash_ptr
-                        {
-                            self_ref_keys.push(k.clone());
-                            new_map.insert(k.clone(), Value::Nil);
-                        } else {
-                            new_map.insert(k.clone(), hv.clone());
-                        }
-                    }
-                    let new_hash_arc = Value::hash_arc(new_map);
-                    let new_hash_ptr = crate::gc::Gc::as_ptr(&new_hash_arc) as usize;
-                    // Mark the new hash as seen so recursive calls don't
-                    // re-enter it via self-referencing values.
-                    seen_hashes.push(new_hash_ptr);
-                    // SAFETY: new_hash_arc was just created here; the
-                    // self-reference insert and the in-place recursive fixup must
-                    // alias it. See `arc_contents_mut`.
-                    let data = unsafe { crate::value::gc_contents_mut(&new_hash_arc) };
-                    for key in &self_ref_keys {
-                        data.map
-                            .insert(key.clone(), Value::Hash(new_hash_arc.clone()));
-                    }
-                    for hv in data.map.values_mut() {
-                        Self::replace_array_refs_in_value(
-                            hv,
-                            old_ptr,
-                            new_array,
-                            kind,
-                            seen_hashes,
-                        );
-                    }
-                    seen_hashes.pop();
-                    *map = new_hash_arc;
+                let new_hash_arc = Value::hash_arc(new_map);
+                let new_hash_ptr = crate::gc::Gc::as_ptr(&new_hash_arc) as usize;
+                // Mark the new hash as seen so recursive calls don't
+                // re-enter it via self-referencing values.
+                seen_hashes.push(new_hash_ptr);
+                // SAFETY: new_hash_arc was just created here; the
+                // self-reference insert and the in-place recursive fixup must
+                // alias it. See `arc_contents_mut`.
+                let data = unsafe { crate::value::gc_contents_mut(&new_hash_arc) };
+                for key in &self_ref_keys {
+                    data.map
+                        .insert(key.clone(), Value::hash_with_data(new_hash_arc.clone()));
+                }
+                for hv in data.map.values_mut() {
+                    Self::replace_array_refs_in_value(hv, old_ptr, new_array, kind, seen_hashes);
                 }
                 seen_hashes.pop();
+                *map = new_hash_arc;
             }
-            _ => {}
-        }
+            seen_hashes.pop();
+        });
     }
 
     /// Fix up circular references in array assignment.
@@ -482,7 +496,7 @@ impl Interpreter {
     /// Also handles cross-type cycles like `@b = %h, @b` where `%h` contains `@b`.
     pub(super) fn fixup_circular_array_refs(new_val: &mut Value, old_ptr: &Option<usize>) {
         let Some(old_ptr) = old_ptr else { return };
-        if let Value::Array(new_arc, kind) = new_val {
+        new_val.with_array_mut(|new_arc, kind| {
             let mut seen_hashes = Vec::new();
             let has_old_ref = new_arc
                 .iter()
@@ -495,12 +509,12 @@ impl Interpreter {
             let mut circular_indices = Vec::new();
             let mut hash_fixup_indices = Vec::new();
             for (i, v) in new_arc.iter().enumerate() {
-                if let Value::Array(inner_arc, _) = v
+                if let ValueView::Array(inner_arc, _) = v.view()
                     && crate::gc::Gc::as_ptr(inner_arc) as usize == *old_ptr
                 {
                     circular_indices.push(i);
-                    new_items.push(Value::Nil); // placeholder
-                } else if matches!(v, Value::Hash(_)) {
+                    new_items.push(Value::NIL); // placeholder
+                } else if matches!(v.view(), ValueView::Hash(_)) {
                     let mut seen = Vec::new();
                     if Self::value_contains_array_ref(v, *old_ptr, &mut seen) {
                         hash_fixup_indices.push(i);
@@ -516,7 +530,7 @@ impl Interpreter {
             // it. See `arc_contents_mut`.
             let data = unsafe { crate::value::gc_contents_mut(&result_arc) };
             for idx in &circular_indices {
-                data.items[*idx] = Value::Array(result_arc.clone(), *kind);
+                data.items[*idx] = Value::array_with_kind(result_arc.clone(), *kind);
             }
             for idx in &hash_fixup_indices {
                 let mut seen = Vec::new();
@@ -529,7 +543,7 @@ impl Interpreter {
                 );
             }
             *new_arc = result_arc;
-        }
+        });
     }
 
     /// Container identity (§3, splice.t): copy `new_gc`'s array contents into the
@@ -537,7 +551,7 @@ impl Interpreter {
     /// by-value holder of `old_gc` shares (an `@a` captured into a list `(0, @a)` /
     /// a `\param`) — and redirect any self-reference that (after circular-ref
     /// fixup) pointed at the about-to-be-dropped `new_gc` back to `old_gc`. Returns
-    /// the `Value::Array` that should be stored in the slot (backed by `old_gc`).
+    /// the `Array` value that should be stored in the slot (backed by `old_gc`).
     pub(super) fn array_inplace_reassign(
         old_gc: &crate::gc::Gc<crate::value::ArrayData>,
         new_gc: &crate::gc::Gc<crate::value::ArrayData>,
@@ -554,7 +568,7 @@ impl Interpreter {
         unsafe {
             *crate::value::gc_contents_mut(old_gc) = new_data;
         }
-        Value::Array(old_gc.clone(), kind)
+        Value::array_with_kind(old_gc.clone(), kind)
     }
 
     /// Ensure a `@`/`%`-var value-assignment owns a DISTINCT container, matching
@@ -568,18 +582,18 @@ impl Interpreter {
     /// container reassignment writes in place (§3): the in-place write would reach
     /// the aliased source.
     pub(super) fn detach_shared_container(val: Value) -> Value {
-        match val {
-            Value::Array(gc, kind) if gc.strong_count() > 1 => {
-                Value::Array(crate::gc::Gc::new((*gc).clone()), kind)
+        match val.view() {
+            ValueView::Array(gc, kind) if gc.strong_count() > 1 => {
+                Value::array_with_kind(crate::gc::Gc::new((**gc).clone()), kind)
             }
-            Value::Hash(gc) if gc.strong_count() > 1 => {
-                Value::Hash(crate::gc::Gc::new((*gc).clone()))
+            ValueView::Hash(gc) if gc.strong_count() > 1 => {
+                Value::hash_with_data(crate::gc::Gc::new((**gc).clone()))
             }
-            other => other,
+            _ => val,
         }
     }
 
-    /// The `Value::Hash` analogue of [`array_inplace_reassign`]. Redirects any
+    /// The `Hash` analogue of [`array_inplace_reassign`]. Redirects any
     /// self-referencing hash value that pointed at `new_gc` back to `old_gc`.
     pub(super) fn hash_inplace_reassign(
         old_gc: &crate::gc::Gc<crate::value::HashData>,
@@ -588,16 +602,16 @@ impl Interpreter {
         let new_ptr = crate::gc::Gc::as_ptr(new_gc) as usize;
         let mut new_data = (**new_gc).clone();
         for v in new_data.map.values_mut() {
-            if let Value::Hash(inner) = v
+            if let ValueView::Hash(inner) = v.view()
                 && crate::gc::Gc::as_ptr(inner) as usize == new_ptr
             {
-                *v = Value::Hash(old_gc.clone());
+                *v = Value::hash_with_data(old_gc.clone());
             }
         }
         // SAFETY: as above — single audited aliased in-place write.
         unsafe {
             *crate::value::gc_contents_mut(old_gc) = new_data;
         }
-        Value::Hash(old_gc.clone())
+        Value::hash_with_data(old_gc.clone())
     }
 }

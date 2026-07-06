@@ -1,16 +1,15 @@
 use super::*;
-use std::sync::Arc;
 
 impl Interpreter {
     /// Wrap a value in item (scalar) context if it's a List/Array,
     /// following Raku's rule that hash slot access returns values in item context.
     /// A List stored in a hash slot becomes an ItemList when accessed.
     fn itemize_hash_value(v: Value) -> Value {
-        match v {
-            Value::Array(items, crate::value::ArrayKind::List) => {
-                Value::Array(items, crate::value::ArrayKind::ItemList)
-            }
-            other => other,
+        if matches!(v.view(), ValueView::Array(_, crate::value::ArrayKind::List)) {
+            let (items, _) = v.into_array().unwrap();
+            Value::array_with_kind(items, crate::value::ArrayKind::ItemList)
+        } else {
+            v
         }
     }
 
@@ -40,7 +39,7 @@ impl Interpreter {
                 effective_index
             )),
         );
-        attrs.insert("got".to_string(), Value::Int(effective_index));
+        attrs.insert("got".to_string(), Value::int(effective_index));
         attrs.insert("range".to_string(), Value::str_from("0..^Inf"));
         let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
         let mut failure_attrs = std::collections::HashMap::new();
@@ -61,7 +60,7 @@ impl Interpreter {
             )),
         );
         attrs.insert("what".to_string(), Value::str_from("Index"));
-        attrs.insert("got".to_string(), Value::Int(index));
+        attrs.insert("got".to_string(), Value::int(index));
         attrs.insert("range".to_string(), Value::str_from("0..0"));
         let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
         let mut failure_attrs = std::collections::HashMap::new();
@@ -78,10 +77,10 @@ impl Interpreter {
         let target = self.stack.pop().unwrap();
 
         // Resolve slot refs and Scalar containers to their underlying value for type dispatch.
-        let resolved = match &target {
-            Value::HashEntryRef { .. } => target.hash_entry_read(),
-            Value::Scalar(inner) => inner.as_ref().clone(),
-            other => other.clone(),
+        let resolved = match target.view() {
+            ValueView::HashEntryRef { .. } => target.hash_entry_read(),
+            ValueView::Scalar(inner) => inner.clone(),
+            _ => target.clone(),
         };
 
         // Junction autothreading: when indexing a hash with a junction key,
@@ -89,8 +88,8 @@ impl Interpreter {
         // *object hash* (typed keys, §3.3): there a Junction is a genuine key
         // object (e.g. a `classify` result keyed by Junctions), so it is looked up
         // by its `.WHICH`/encoding via the normal path below, not autothreaded.
-        if let Value::Junction { kind, values } = &index
-            && matches!(&resolved, Value::Hash(arc) if !arc.has_typed_keys())
+        if let ValueView::Junction { kind, values } = index.view()
+            && matches!(resolved.view(), ValueView::Hash(arc) if !arc.has_typed_keys())
         {
             let kind = kind.clone();
             let junction_values = values.clone();
@@ -100,26 +99,23 @@ impl Interpreter {
                 if let Some(slot_ref) = resolved.hash_autovivify_cell(&key) {
                     results.push(slot_ref);
                 } else {
-                    results.push(Value::Nil);
+                    results.push(Value::NIL);
                 }
             }
-            self.stack.push(Value::Junction {
-                kind,
-                values: Arc::new(results),
-            });
+            self.stack.push(Value::junction(kind, results));
             return Ok(());
         }
 
-        match &resolved {
-            Value::Hash(_) => {
+        match resolved.view() {
+            ValueView::Hash(_) => {
                 let key = Value::hash_key_encode(&index);
                 if let Some(slot_ref) = resolved.hash_autovivify_cell(&key) {
                     self.stack.push(slot_ref);
                 } else {
-                    self.stack.push(Value::Nil);
+                    self.stack.push(Value::NIL);
                 }
             }
-            Value::Array(..) => {
+            ValueView::Array(..) => {
                 // Positional autovivify: promote the element to a shared
                 // `ContainerRef` cell (scalar leaf) or descend through the
                 // shared inner Arc (container leaf).
@@ -127,7 +123,7 @@ impl Interpreter {
                     if let Some(slot_ref) = resolved.array_slot_ref(idx, false) {
                         self.stack.push(slot_ref);
                     } else {
-                        self.stack.push(Value::Nil);
+                        self.stack.push(Value::NIL);
                     }
                 } else {
                     // Fallback for non-integer index
@@ -138,14 +134,14 @@ impl Interpreter {
             }
             // If the target is Nil/Any (not yet vivified) inside a HashEntryRef,
             // create an empty hash and then auto-vivify the key.
-            _ if matches!(&target, Value::HashEntryRef { .. }) => {
+            _ if matches!(target.view(), ValueView::HashEntryRef { .. }) => {
                 let key = Value::hash_key_encode(&index);
                 let new_hash = Value::hash(std::collections::HashMap::new());
                 target.hash_entry_write(new_hash.clone());
                 if let Some(slot_ref) = new_hash.hash_autovivify_cell(&key) {
                     self.stack.push(slot_ref);
                 } else {
-                    self.stack.push(Value::Nil);
+                    self.stack.push(Value::NIL);
                 }
             }
             _ => {
@@ -162,9 +158,9 @@ impl Interpreter {
     /// positions. Returns `None` for a single-index value (handled by the
     /// existing `index_to_usize` path instead) or an unconvertible index.
     fn slice_bind_indices(index: &Value) -> Option<Vec<usize>> {
-        let items: &[Value] = match index {
-            Value::Array(items, _) => items,
-            Value::Seq(items) | Value::Slip(items) => items,
+        let items: &[Value] = match index.view() {
+            ValueView::Array(items, _) => items,
+            ValueView::Seq(items) | ValueView::Slip(items) => items,
             _ => return None,
         };
         items.iter().map(Self::index_to_usize).collect()
@@ -180,14 +176,14 @@ impl Interpreter {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
 
-        let resolved = match &target {
-            Value::HashEntryRef { .. } => target.hash_entry_read(),
-            Value::Scalar(inner) => inner.as_ref().clone(),
-            other => other.clone(),
+        let resolved = match target.view() {
+            ValueView::HashEntryRef { .. } => target.hash_entry_read(),
+            ValueView::Scalar(inner) => inner.clone(),
+            _ => target.clone(),
         };
 
-        match &resolved {
-            Value::Hash(_) => {
+        match resolved.view() {
+            ValueView::Hash(_) => {
                 let key = Value::hash_key_encode(&index);
                 // Phase 2 Stage 1: promote an existing scalar leaf to a shared
                 // `ContainerRef` cell so deep `%h<a><b>` binds survive COW; an
@@ -197,17 +193,17 @@ impl Interpreter {
                 if let Some(slot_ref) = resolved.hash_slot_ref(&key, terminal) {
                     self.stack.push(slot_ref);
                 } else {
-                    self.stack.push(Value::Nil);
+                    self.stack.push(Value::NIL);
                 }
             }
             // Terminal bind index into an Array leaf: promote the element to a
             // shared `ContainerRef` cell (container-valued leaves included).
-            Value::Array(..) if terminal => {
+            ValueView::Array(..) if terminal => {
                 if let Some(idx) = Self::index_to_usize(&index) {
                     if let Some(slot_ref) = resolved.array_slot_ref(idx, true) {
                         self.stack.push(slot_ref);
                     } else {
-                        self.stack.push(Value::Nil);
+                        self.stack.push(Value::NIL);
                     }
                 } else if let Some(indices) = Self::slice_bind_indices(&index) {
                     // Bound array SLICE (`@slice := @array[1,2]`): promote each
@@ -219,11 +215,11 @@ impl Interpreter {
                     // extra RHS values (raku's bound-slice semantics).
                     let cells = indices
                         .into_iter()
-                        .map(|idx| resolved.array_slot_ref(idx, true).unwrap_or(Value::Nil))
+                        .map(|idx| resolved.array_slot_ref(idx, true).unwrap_or(Value::NIL))
                         .collect();
                     self.stack.push(Value::array(cells));
                 } else {
-                    self.stack.push(resolved);
+                    self.stack.push(resolved.clone());
                     self.stack.push(index);
                     return self.exec_index_autovivify_op();
                 }
@@ -232,21 +228,23 @@ impl Interpreter {
             // descend via the non-lazy autoviv op so nested binding like
             // `$struct[1]<key><subkey>[1]` works (it promotes the element to a
             // shared `ContainerRef` cell).
-            Value::Array(..) => {
-                self.stack.push(resolved);
+            ValueView::Array(..) => {
+                self.stack.push(resolved.clone());
                 self.stack.push(index);
                 return self.exec_index_autovivify_op();
             }
             // When the target is a HashEntryRef pointing to a non-existent key
             // (resolved to Any/Nil), in lazy mode extend its `path` by one key so
             // the deferred bind autovivifies the full path on write.
-            _ if matches!(&target, Value::HashEntryRef { .. }) => {
+            _ if matches!(target.view(), ValueView::HashEntryRef { .. }) => {
                 let key = Value::hash_key_encode(&index);
-                let Value::HashEntryRef { hash, mut path } = target else {
+                let ValueView::HashEntryRef { hash, path } = target.view() else {
                     unreachable!()
                 };
+                let hash = hash.clone();
+                let mut path = path.clone();
                 path.push(key);
-                self.stack.push(Value::HashEntryRef { hash, path });
+                self.stack.push(Value::hash_entry_ref(hash, path));
             }
             _ => {
                 // Fallback to normal autovivify for non-hash targets
@@ -270,14 +268,14 @@ impl Interpreter {
             let result = self.tag_container_metadata(result, meta);
             return result;
         }
-        match source {
+        match source.view() {
             // A positional slice of any positional array — `[1,2,3]`, the List
             // `(1,2,3)`, an itemized `$(1,2,3)`/`$[1,2,3]`, or a lazy array —
             // decontainerizes to a `List` in Raku, NOT a `Seq`
             // (`(1,2,3)[1,2].WHAT` is `List`). Only a genuine `Seq` source (or
             // other non-array iterable) slices to a `Seq`.
-            Value::Array(..) => Value::array(items),
-            _ => Value::Seq(Arc::new(items)),
+            ValueView::Array(..) => Value::array(items),
+            _ => Value::seq(items),
         }
     }
 
@@ -295,22 +293,22 @@ impl Interpreter {
         // `@a[my $ = ^2]`) is a SINGLE index, not a slice: itemization makes it
         // one item, which numifies to its element count (`$(7,8,9).Int == 3`).
         // (A bare `@a[7,8,9]` / `@a[^2]` is still a slice.)
-        if let Value::Scalar(inner) = &index
-            && (inner.is_range() || matches!(inner.as_ref(), Value::Array(..)))
+        if let ValueView::Scalar(inner) = index.view()
+            && (inner.is_range() || matches!(inner.view(), ValueView::Array(..)))
         {
             let n = crate::runtime::utils::value_to_list(inner).len() as i64;
-            index = Value::Int(n);
-        } else if let Value::Array(items, crate::value::ArrayKind::ItemList) = &index {
-            index = Value::Int(items.len() as i64);
+            index = Value::int(n);
+        } else if let ValueView::Array(items, crate::value::ArrayKind::ItemList) = index.view() {
+            index = Value::int(items.len() as i64);
         }
         let mut target = self.stack.pop().unwrap();
-        if let Value::Junction { kind, values } = &target {
+        if let ValueView::Junction { kind, values } = target.view() {
             let mut results = Vec::with_capacity(values.len());
             for value in values.iter() {
                 self.stack.push(value.clone());
                 self.stack.push(index.clone());
                 self.exec_index_op_with_positional(is_positional)?;
-                results.push(self.stack.pop().unwrap_or(Value::Nil));
+                results.push(self.stack.pop().unwrap_or(Value::NIL));
             }
             self.stack.push(Value::junction(kind.clone(), results));
             return Ok(());
@@ -323,13 +321,13 @@ impl Interpreter {
         let target_is_object_hash = {
             let mut probe = &target;
             let inner;
-            if let Value::ContainerRef(cell) = probe {
+            if let ValueView::ContainerRef(cell) = probe.view() {
                 inner = cell.lock().unwrap().clone();
                 probe = &inner;
             }
-            matches!(probe.descalarize(), Value::Hash(arc) if arc.has_typed_keys())
+            matches!(probe.descalarize().view(), ValueView::Hash(arc) if arc.has_typed_keys())
         };
-        if let Value::Junction { kind, values } = &index
+        if let ValueView::Junction { kind, values } = index.view()
             && !target_is_object_hash
         {
             let mut results = Vec::with_capacity(values.len());
@@ -337,13 +335,13 @@ impl Interpreter {
                 self.stack.push(target.clone());
                 self.stack.push(value.clone());
                 self.exec_index_op_with_positional(is_positional)?;
-                results.push(self.stack.pop().unwrap_or(Value::Nil));
+                results.push(self.stack.pop().unwrap_or(Value::NIL));
             }
             self.stack.push(Value::junction(kind.clone(), results));
             return Ok(());
         }
         // If target is a HashEntryRef, resolve it to the actual value and re-index.
-        if let Value::HashEntryRef { .. } = &target {
+        if let ValueView::HashEntryRef { .. } = target.view() {
             let resolved = target.hash_entry_read();
             // If the resolved value is a Hash, push it as the target for indexing.
             // This supports chained autovivification (e.g. %h<a><b><c>).
@@ -353,15 +351,15 @@ impl Interpreter {
         }
         // Unwrap Scalar containers so subscript access works through itemized
         // values (e.g. `$hash.item<key>` or `from-json(…)<key>`).
-        if let Value::Scalar(inner) = &target {
-            self.stack.push(inner.as_ref().clone());
+        if let ValueView::Scalar(inner) = target.view() {
+            self.stack.push(inner.clone());
             self.stack.push(index);
             return self.exec_index_op_with_positional(is_positional);
         }
         // Decontainerize a `:=`-bound container cell so a read through a bound
         // element (`$x<k>` where `$x<k>` resolves to a `ContainerRef`) sees the
         // shared, held container rather than the cell wrapper.
-        if let Value::ContainerRef(cell) = &target {
+        if let ValueView::ContainerRef(cell) = target.view() {
             let inner = cell.lock().unwrap().clone();
             self.stack.push(inner);
             self.stack.push(index);
@@ -376,8 +374,11 @@ impl Interpreter {
         // CallMethod op, so drain the captured-outer writeback (`my $i; method Int
         // { $i++; ... }`) into the caller's slot via `current_code` +
         // `reconcile_caller_after_internal_dispatch` (retain-on-miss).
-        if let Value::Instance { class_name, .. } = &index
-            && matches!(&target, Value::Array(..) | Value::Seq(_) | Value::Slip(_))
+        if let ValueView::Instance { class_name, .. } = index.view()
+            && matches!(
+                target.view(),
+                ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
+            )
             && self.has_user_method(&class_name.resolve().to_string(), "Int")
         {
             let caller_code = self.current_code;
@@ -388,29 +389,25 @@ impl Interpreter {
             }
         }
         // If target is a Failure, propagate it (// will catch it as undefined)
-        if matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") {
+        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+        {
             self.stack.push(target);
             return Ok(());
         }
-        if let Value::LazyIoLines {
-            ref handle,
-            kv,
-            words,
-        } = target
-        {
+        if let ValueView::LazyIoLines { handle, kv, words } = target.view() {
             // Determine the maximum index requested so we only read the
             // minimum number of lines from the handle, leaving the rest
             // available for subsequent reads.
-            let needed = match &index {
-                Value::Int(i) if *i >= 0 => Some((*i as usize).saturating_add(1)),
+            let needed = match index.view() {
+                ValueView::Int(i) if i >= 0 => Some((i as usize).saturating_add(1)),
                 // Array index like [1,2] — find max element
-                Value::Array(items, _) => {
+                ValueView::Array(items, _) => {
                     let mut max_idx: Option<usize> = None;
                     let mut has_negative = false;
                     for item in items.iter() {
-                        match item {
-                            Value::Int(i) if *i >= 0 => {
-                                let u = *i as usize;
+                        match item.view() {
+                            ValueView::Int(i) if i >= 0 => {
+                                let u = i as usize;
                                 max_idx = Some(max_idx.map_or(u, |m: usize| m.max(u)));
                             }
                             _ => {
@@ -433,7 +430,7 @@ impl Interpreter {
                         let items = crate::runtime::utils::value_to_list(&forced);
                         let mut kv_items = Vec::with_capacity(items.len() * 2);
                         for (i, v) in items.iter().enumerate() {
-                            kv_items.push(Value::Int(i as i64));
+                            kv_items.push(Value::int(i as i64));
                             kv_items.push(v.clone());
                         }
                         Value::array(kv_items)
@@ -444,13 +441,13 @@ impl Interpreter {
                 None => self.force_if_lazy_io_lines(target)?,
             };
         }
-        if let Value::LazyList(ref ll) = target {
+        if let ValueView::LazyList(ll) = target.view() {
             let forced = if ll.scan_spec.is_some() {
                 // Scan-based lazy list: compute only as many elements as needed
-                let needed = match &index {
-                    Value::Int(i) if *i >= 0 => Some((*i as usize).saturating_add(1)),
-                    Value::Range(_, end) if *end >= 0 => Some((*end as usize).saturating_add(1)),
-                    Value::RangeExcl(_, end) if *end > 0 => Some(*end as usize),
+                let needed = match index.view() {
+                    ValueView::Int(i) if i >= 0 => Some((i as usize).saturating_add(1)),
+                    ValueView::Range(_, end) if end >= 0 => Some((end as usize).saturating_add(1)),
+                    ValueView::RangeExcl(_, end) if end > 0 => Some(end as usize),
                     _ => None,
                 };
                 match needed {
@@ -466,15 +463,15 @@ impl Interpreter {
                 // Gather-based lazy list / lazy map-grep pipeline / infinite
                 // arithmetic-or-closure sequence: force only as many elements as
                 // needed via bounded incremental pull.
-                match &index {
-                    Value::Int(i) if *i >= 0 => {
-                        self.force_lazy_list_vm_n(ll, (*i as usize).saturating_add(1))?
+                match index.view() {
+                    ValueView::Int(i) if i >= 0 => {
+                        self.force_lazy_list_vm_n(ll, (i as usize).saturating_add(1))?
                     }
-                    Value::Range(_, end) if *end >= 0 => {
-                        self.force_lazy_list_vm_n(ll, (*end as usize).saturating_add(1))?
+                    ValueView::Range(_, end) if end >= 0 => {
+                        self.force_lazy_list_vm_n(ll, (end as usize).saturating_add(1))?
                     }
-                    Value::RangeExcl(_, end) if *end > 0 => {
-                        self.force_lazy_list_vm_n(ll, *end as usize)?
+                    ValueView::RangeExcl(_, end) if end > 0 => {
+                        self.force_lazy_list_vm_n(ll, end as usize)?
                     }
                     // A list of non-negative integer indices (`$s[2, 3]`): force
                     // only up to the largest index + 1, keeping the tail lazy so
@@ -482,17 +479,17 @@ impl Interpreter {
                     // handle whose `.nl-in` is reset between slice reads).
                     _ if index.as_list_items().is_some_and(|items| {
                         !items.is_empty()
-                            && items.iter().all(|v| matches!(v, Value::Int(i) if *i >= 0))
+                            && items
+                                .iter()
+                                .all(|v| matches!(v.view(), ValueView::Int(i) if i >= 0))
                     }) =>
                     {
                         let max = index
                             .as_list_items()
                             .unwrap()
                             .iter()
-                            .filter_map(|v| match v {
-                                Value::Int(i) => Some(*i as usize),
-                                _ => None,
-                            })
+                            .filter_map(Value::as_int)
+                            .map(|i| i as usize)
                             .max()
                             .unwrap_or(0);
                         self.force_lazy_list_vm_n(ll, max.saturating_add(1))?
@@ -505,31 +502,31 @@ impl Interpreter {
             target = Value::array(forced);
         }
         // Normalize Seq/Slip target to List for uniform handling
-        if let Value::Seq(items) = target {
+        if let ValueView::Seq(items) = target.view() {
             // Subscript on a consumed Seq throws X::Seq::Consumed.
             // Subscript on any Seq marks it as cached (can be used again).
-            if crate::value::seq_is_consumed(&items) {
+            if crate::value::seq_is_consumed(items) {
                 return Err(crate::value::seq_consumed_error());
             }
-            crate::value::seq_mark_cached(&items);
-            target = Value::Array(
+            crate::value::seq_mark_cached(items);
+            target = Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
             );
-        } else if let Value::Slip(items) = target {
-            target = Value::Array(
+        } else if let ValueView::Slip(items) = target.view() {
+            target = Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
             );
         }
         // Normalize index: convert Seq/LazyList indices to Array for
         // uniform handling in the match below.
-        let is_lazy_index = matches!(&index, Value::LazyList(..));
-        let index = if let Value::LazyList(ref ll) = index {
+        let is_lazy_index = matches!(index.view(), ValueView::LazyList(..));
+        let index = if let ValueView::LazyList(ll) = index.view() {
             let items = self.force_lazy_list_vm(ll)?;
             Value::array(items)
-        } else if let Value::Seq(items) = index {
-            Value::Array(
+        } else if let ValueView::Seq(items) = index.view() {
+            Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
             )
@@ -539,16 +536,16 @@ impl Interpreter {
         // Itemized arrays ($[...]) used as indices should be numified (for
         // positional access) or stringified (for associative access) rather
         // than treated as slices.
-        let index = if let Value::Array(ref items, kind) = index
+        let index = if let ValueView::Array(items, kind) = index.view()
             && kind.is_itemized()
         {
             if is_positional {
                 // Numify: elems count
-                Value::Int(items.len() as i64)
+                Value::int(items.len() as i64)
             } else {
                 // Stringify: space-separated
                 let parts: Vec<String> = items.iter().map(|v| v.to_str_context()).collect();
-                Value::Str(std::sync::Arc::new(parts.join(" ")))
+                Value::str_arc(std::sync::Arc::new(parts.join(" ")))
             }
         } else {
             index
@@ -558,21 +555,24 @@ impl Interpreter {
         // A Range used as a hash subscript is a multi-key slice: `%h{"b".."c"}`
         // selects the keys "b","c". (For arrays a Range is a positional slice and
         // is handled elsewhere, so only expand it for Hash targets here.)
-        let index = if matches!(&target, Value::Hash(_)) && index.is_range() {
+        let index = if matches!(target.view(), ValueView::Hash(_)) && index.is_range() {
             Value::array(crate::runtime::utils::value_to_list(&index))
         } else {
             index
         };
-        if let Value::Hash(ref items) = target {
-            let hash_val = Value::Hash(items.clone());
+        if let ValueView::Hash(items) = target.view() {
+            let hash_val = Value::hash_with_data(items.clone());
             if let Some(key_type) = self.hash_key_type(&hash_val)
-                && !matches!(index, Value::Whatever | Value::Nil | Value::Sub(..))
+                && !matches!(
+                    index.view(),
+                    ValueView::Whatever | ValueView::Nil | ValueView::Sub(..)
+                )
             {
                 // `Any`/`Mu` key types accept every object (including a Junction
                 // key, which `type_matches_value` would otherwise autothread and
                 // reject). Skip the per-key check for them.
                 let key_unconstrained = matches!(key_type.as_str(), "Any" | "Mu");
-                if let Value::Array(ref keys, ..) = index {
+                if let ValueView::Array(keys, ..) = index.view() {
                     for k in keys.iter() {
                         if !key_unconstrained && !self.type_matches_value(&key_type, k) {
                             return Err(RuntimeError::new(format!(
@@ -589,17 +589,13 @@ impl Interpreter {
                             .map(|k| {
                                 let which = crate::runtime::utils::value_which_key(k);
                                 let v = self.resolve_hash_entry(items, &which);
-                                let v = if matches!(v, Value::Nil) {
+                                let v = if v.is_nil() {
                                     let encoded = Value::hash_key_encode(k);
                                     self.resolve_hash_entry(items, &encoded)
                                 } else {
                                     v
                                 };
-                                if matches!(v, Value::Nil) {
-                                    default.clone()
-                                } else {
-                                    v
-                                }
+                                if v.is_nil() { default.clone() } else { v }
                             })
                             .collect(),
                     );
@@ -617,13 +613,13 @@ impl Interpreter {
                 let which = crate::runtime::utils::value_which_key(&index);
                 let v = self.resolve_hash_entry(items, &which);
                 // Fall back to hash_key_encode format (for hashes built from lists)
-                let v = if matches!(v, Value::Nil) {
+                let v = if v.is_nil() {
                     let encoded = Value::hash_key_encode(&index);
                     self.resolve_hash_entry(items, &encoded)
                 } else {
                     v
                 };
-                let result = if matches!(v, Value::Nil) {
+                let result = if v.is_nil() {
                     self.typed_container_default(&hash_val)
                 } else {
                     v
@@ -632,30 +628,30 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        let result = match (target, index) {
+        let result = match (target.view(), index.view()) {
             // Any subscript (positional or associative) on Nil yields Nil again,
             // so chained access such as `Nil[0][2]` or `Nil<a><b>` keeps
             // returning Nil rather than an out-of-range Failure.
-            (Value::Nil, _) => Value::Nil,
+            (ValueView::Nil, _) => Value::NIL,
             // Whatever (*) index on Array: @a[*] returns all elements as a List
-            (Value::Array(items, _is_arr), Value::Whatever) => {
-                Value::Array(items, crate::value::ArrayKind::List)
+            (ValueView::Array(items, _is_arr), ValueView::Whatever) => {
+                Value::array_with_kind(items.clone(), crate::value::ArrayKind::List)
             }
             // HyperWhatever (**) hammer index on Array: @a[**] recursively
             // descends through nested arrays and returns every leaf element as a
             // flat List (e.g. `[0,[1,[2,3]]][**]` == `(0,1,2,3)`).
-            (Value::Array(items, _is_arr), Value::HyperWhatever) => {
+            (ValueView::Array(items, _is_arr), ValueView::HyperWhatever) => {
                 let mut leaves = Vec::new();
                 Self::hyperwhatever_hammer_collect(&items.items, &mut leaves);
                 Value::array(leaves)
             }
-            (Value::Array(items, is_arr), Value::Int(i)) => {
+            (ValueView::Array(items, is_arr), ValueView::Int(i)) => {
                 if i < 0 {
                     // Return a Failure wrapping X::OutOfRange — `//` treats it as
                     // undefined but any further use (e.g. subscripting) will throw.
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("what".to_string(), Value::str_from("Index"));
-                    attrs.insert("got".to_string(), Value::Int(i));
+                    attrs.insert("got".to_string(), Value::int(i));
                     attrs.insert("range".to_string(), Value::str_from("0..^Inf"));
                     attrs.insert(
                         "message".to_string(),
@@ -676,12 +672,12 @@ impl Interpreter {
                         items.len().saturating_sub(1)
                     )));
                 } else {
-                    let default =
-                        self.typed_container_default(&Value::Array(items.clone(), is_arr));
-                    self.resolve_array_entry(&items, is_arr, i as usize, default)
+                    let default = self
+                        .typed_container_default(&Value::array_with_kind(items.clone(), is_arr));
+                    self.resolve_array_entry(items, is_arr, i as usize, default)
                 }
             }
-            (target @ Value::Array(..), Value::Array(indices, ..)) => {
+            (ValueView::Array(..), ValueView::Array(indices, ..)) => {
                 // A comma-list index (`@a[0,1]`) is a positional slice, EXCEPT on
                 // a MULTI-dimensional shaped array where it is partial-dimension
                 // access (`@a[0;1]` true multidim uses MultiDimIndex, a separate
@@ -695,22 +691,22 @@ impl Interpreter {
                     // An array-valued subscript is ALWAYS a slice, so a single
                     // element (`@a[@b]`, `@a[(1,)]`) still yields a 1-list, not a
                     // scalar (raku: `@a[(1,)]` is `(20,)`, not `20`).
-                    let Value::Array(items, kind) = &target else {
+                    let ValueView::Array(items, kind) = target.view() else {
                         unreachable!()
                     };
                     let mut out = Vec::with_capacity(indices.len());
                     let len = items.len() as i64;
                     for idx in indices.iter() {
                         // Resolve WhateverCode indices (e.g. *-1, *-3)
-                        let resolved_idx = if let Value::Sub(data) = idx {
+                        let resolved_idx = if let ValueView::Sub(data) = idx.view() {
                             let mut sub_env = data.env.clone();
                             for p in &data.params {
-                                sub_env.insert(p.to_string(), Value::Int(len));
+                                sub_env.insert(p.to_string(), Value::int(len));
                             }
                             let saved_env = std::mem::take(self.env_mut());
                             *self.env_mut() = sub_env;
                             let result =
-                                loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+                                loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                             *self.env_mut() = saved_env;
                             Some(result)
                         } else {
@@ -722,19 +718,19 @@ impl Interpreter {
                         // so the nested slice gets the lazy stop-at-boundary
                         // semantics via the top-level `is_lazy_index` normalization.
                         if matches!(
-                            effective_idx,
-                            Value::Array(..)
-                                | Value::Seq(..)
-                                | Value::Slip(..)
-                                | Value::LazyList(..)
+                            effective_idx.view(),
+                            ValueView::Array(..)
+                                | ValueView::Seq(..)
+                                | ValueView::Slip(..)
+                                | ValueView::LazyList(..)
                         ) {
                             self.stack.push(target.clone());
                             self.stack.push(effective_idx.clone());
                             self.exec_index_op_with_positional(is_positional)?;
-                            out.push(self.stack.pop().unwrap_or(Value::Nil));
+                            out.push(self.stack.pop().unwrap_or(Value::NIL));
                         // Range index in a multi-index context produces a sublist
                         } else if let Some(range_items) =
-                            Self::resolve_range_index_slice(effective_idx, items, *kind, len, self)
+                            Self::resolve_range_index_slice(effective_idx, items, kind, len, self)
                         {
                             out.push(Value::array(range_items));
                         } else if let Some(i) = Self::index_to_usize(effective_idx) {
@@ -743,7 +739,7 @@ impl Interpreter {
                                 break;
                             }
                             let def = self.typed_container_default(&target);
-                            out.push(self.resolve_array_entry(items, *kind, i, def));
+                            out.push(self.resolve_array_entry(items, kind, i, def));
                         } else if !is_lazy_index {
                             out.push(self.typed_container_default(&target));
                         }
@@ -753,82 +749,86 @@ impl Interpreter {
                     let strict_oob = indices.len() > 1;
                     let indexed =
                         Self::index_array_multidim(&target, indices.as_ref(), strict_oob)?;
-                    if matches!(indexed, Value::Nil) {
+                    if indexed.is_nil() {
                         self.typed_container_default(&target)
                     } else {
                         indexed
                     }
                 }
             }
-            (Value::Array(items, kind), Value::Range(a, b)) => {
+            (ValueView::Array(items, kind), ValueView::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = if Self::range_end_is_unbounded(b) {
                     items.len().saturating_sub(1)
                 } else {
                     b.max(-1) as usize
                 };
-                let source = Value::Array(items.clone(), kind);
+                let source = Value::array_with_kind(items.clone(), kind);
                 let default = self.typed_container_default(&source);
                 let mut slice = Vec::new();
                 for i in start..=end {
-                    slice.push(self.resolve_array_entry(&items, kind, i, default.clone()));
+                    slice.push(self.resolve_array_entry(items, kind, i, default.clone()));
                 }
                 self.slice_result_value(&source, slice)
             }
-            (Value::Array(items, kind), Value::RangeExcl(a, b)) => {
+            (ValueView::Array(items, kind), ValueView::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = if Self::range_end_is_unbounded(b) {
                     items.len()
                 } else {
                     b.max(0) as usize
                 };
-                let source = Value::Array(items.clone(), kind);
+                let source = Value::array_with_kind(items.clone(), kind);
                 if start >= end_excl {
                     self.slice_result_value(&source, Vec::new())
                 } else {
                     let default = self.typed_container_default(&source);
                     let mut slice = Vec::with_capacity(end_excl - start);
                     for i in start..end_excl {
-                        slice.push(self.resolve_array_entry(&items, kind, i, default.clone()));
+                        slice.push(self.resolve_array_entry(items, kind, i, default.clone()));
                     }
                     self.slice_result_value(&source, slice)
                 }
             }
-            (Value::Array(items, is_arr), Value::Num(n)) => {
-                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+            (ValueView::Array(items, is_arr), ValueView::Num(n)) => {
+                let default =
+                    self.typed_container_default(&Value::array_with_kind(items.clone(), is_arr));
                 if n < 0.0 {
                     default
                 } else {
-                    self.resolve_array_entry(&items, is_arr, n as usize, default)
+                    self.resolve_array_entry(items, is_arr, n as usize, default)
                 }
             }
-            (Value::Array(items, is_arr), Value::Rat(n, d)) if d != 0 => {
-                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+            (ValueView::Array(items, is_arr), ValueView::Rat(n, d)) if d != 0 => {
+                let default =
+                    self.typed_container_default(&Value::array_with_kind(items.clone(), is_arr));
                 let i = (n as f64 / d as f64) as usize;
-                self.resolve_array_entry(&items, is_arr, i, default)
+                self.resolve_array_entry(items, is_arr, i, default)
             }
-            (Value::Array(items, is_arr), Value::FatRat(n, d)) if d != 0 => {
-                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+            (ValueView::Array(items, is_arr), ValueView::FatRat(n, d)) if d != 0 => {
+                let default =
+                    self.typed_container_default(&Value::array_with_kind(items.clone(), is_arr));
                 let i = (n as f64 / d as f64) as usize;
-                self.resolve_array_entry(&items, is_arr, i, default)
+                self.resolve_array_entry(items, is_arr, i, default)
             }
-            (Value::Array(items, is_arr), Value::BigRat(n, d)) if !d.is_zero() => {
-                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
-                let idx = runtime::to_float_value(&Value::BigRat(n, d)).unwrap_or(0.0);
+            (ValueView::Array(items, is_arr), ValueView::BigRat(_, d)) if !d.is_zero() => {
+                let default =
+                    self.typed_container_default(&Value::array_with_kind(items.clone(), is_arr));
+                let idx = runtime::to_float_value(&index).unwrap_or(0.0);
                 if idx < 0.0 {
                     default
                 } else {
-                    self.resolve_array_entry(&items, is_arr, idx as usize, default)
+                    self.resolve_array_entry(items, is_arr, idx as usize, default)
                 }
             }
-            (Value::Seq(items), Value::Int(i)) => {
+            (ValueView::Seq(items), ValueView::Int(i)) => {
                 if i < 0 {
-                    Value::Nil
+                    Value::NIL
                 } else {
-                    items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                    items.get(i as usize).cloned().unwrap_or(Value::NIL)
                 }
             }
-            (Value::Seq(items), Value::Range(a, b)) => {
+            (ValueView::Seq(items), ValueView::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
                 let slice = if start >= items.len() {
@@ -837,9 +837,9 @@ impl Interpreter {
                     let end = end.min(items.len().saturating_sub(1));
                     items[start..=end].to_vec()
                 };
-                Value::Seq(Arc::new(slice))
+                Value::seq(slice)
             }
-            (Value::Seq(items), Value::RangeExcl(a, b)) => {
+            (ValueView::Seq(items), ValueView::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = b.max(0) as usize;
                 let slice = if start >= items.len() {
@@ -852,92 +852,88 @@ impl Interpreter {
                         items[start..end_excl].to_vec()
                     }
                 };
-                Value::Seq(Arc::new(slice))
+                Value::seq(slice)
             }
             // WhateverCode index on Seq: (1,2,3).Seq[*-1]
-            (Value::Seq(items), Value::Sub(ref data)) => {
+            (ValueView::Seq(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
                 let mut sub_env = data.env.clone();
                 for p in &data.params {
-                    sub_env.insert(p.to_string(), Value::Int(len));
+                    sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                 *self.env_mut() = saved_env;
-                let i = match &idx {
-                    Value::Int(i) => Some(*i),
-                    Value::Num(n) => Some(*n as i64),
+                let i = match idx.view() {
+                    ValueView::Int(i) => Some(i),
+                    ValueView::Num(n) => Some(n as i64),
                     _ => None,
                 };
                 match i {
-                    Some(i) if i >= 0 => items.get(i as usize).cloned().unwrap_or(Value::Nil),
+                    Some(i) if i >= 0 => items.get(i as usize).cloned().unwrap_or(Value::NIL),
                     Some(i) if i < 0 => Self::make_out_of_range_failure(i),
-                    _ => Value::Nil,
+                    _ => Value::NIL,
                 }
             }
             // Positional indexing on Hash: Hash is not Positional, so treat as
             // single-item list. $hash[0] returns the hash itself, $hash[n>0] returns Nil.
-            (hash @ Value::Hash(_), Value::Int(i)) if is_positional => {
+            (ValueView::Hash(_), ValueView::Int(i)) if is_positional => {
                 if i == 0 {
-                    hash
+                    target.clone()
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             }
-            (hash @ Value::Hash(_), Value::Num(n)) if is_positional => {
+            (ValueView::Hash(_), ValueView::Num(n)) if is_positional => {
                 if n == 0.0 {
-                    hash
+                    target.clone()
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             }
-            (Value::Hash(items), Value::Whatever) => {
+            (ValueView::Hash(items), ValueView::Whatever) => {
                 Value::array(items.values().cloned().collect())
             }
-            (Value::Hash(items), Value::Num(f)) if f.is_infinite() && f > 0.0 => {
+            (ValueView::Hash(items), ValueView::Num(f)) if f.is_infinite() && f > 0.0 => {
                 Value::array(items.values().cloned().collect())
             }
-            (Value::Hash(items), Value::Nil) => Value::Hash(items),
-            (Value::Hash(items), Value::Array(keys, ..)) => {
-                let default = self.typed_container_default(&Value::Hash(items.clone()));
+            (ValueView::Hash(items), ValueView::Nil) => Value::hash_with_data(items.clone()),
+            (ValueView::Hash(items), ValueView::Array(keys, ..)) => {
+                let default = self.typed_container_default(&Value::hash_with_data(items.clone()));
                 Value::array(
                     keys.iter()
                         .map(|k| {
-                            let v = self.resolve_hash_entry(&items, &k.to_string_value());
-                            if matches!(v, Value::Nil) {
-                                default.clone()
-                            } else {
-                                v
-                            }
+                            let v = self.resolve_hash_entry(items, &k.to_string_value());
+                            if v.is_nil() { default.clone() } else { v }
                         })
                         .collect(),
                 )
             }
-            (Value::Hash(items), Value::Str(key)) => {
-                let v = self.resolve_hash_entry(&items, &key);
-                if matches!(v, Value::Nil) {
+            (ValueView::Hash(items), ValueView::Str(key)) => {
+                let v = self.resolve_hash_entry(items, key);
+                if v.is_nil() {
                     if self.hash_autovivify {
-                        Value::Hash(items)
-                            .hash_autovivify(&key)
-                            .unwrap_or(Value::Nil)
+                        Value::hash_with_data(items.clone())
+                            .hash_autovivify(key)
+                            .unwrap_or(Value::NIL)
                     } else {
-                        self.typed_container_default(&Value::Hash(items))
+                        self.typed_container_default(&Value::hash_with_data(items.clone()))
                     }
                 } else {
                     Self::itemize_hash_value(v)
                 }
             }
-            (Value::Hash(items), Value::Int(key)) => {
+            (ValueView::Hash(items), ValueView::Int(key)) => {
                 let key_str = key.to_string();
-                let v = self.resolve_hash_entry(&items, &key_str);
-                if matches!(v, Value::Nil) {
+                let v = self.resolve_hash_entry(items, &key_str);
+                if v.is_nil() {
                     if self.hash_autovivify {
-                        Value::Hash(items)
+                        Value::hash_with_data(items.clone())
                             .hash_autovivify(&key_str)
-                            .unwrap_or(Value::Nil)
+                            .unwrap_or(Value::NIL)
                     } else {
-                        self.typed_container_default(&Value::Hash(items))
+                        self.typed_container_default(&Value::hash_with_data(items.clone()))
                     }
                 } else {
                     Self::itemize_hash_value(v)
@@ -945,138 +941,136 @@ impl Interpreter {
             }
             // WhateverCode positional index on Hash: {}[*-1]
             // Treat hash as a list of pairs with elems = hash.len()
-            (Value::Hash(items), Value::Sub(ref data)) => {
+            (ValueView::Hash(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
                 let mut sub_env = data.env.clone();
                 for p in &data.params {
-                    sub_env.insert(p.to_string(), Value::Int(len));
+                    sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                 *self.env_mut() = saved_env;
-                match &idx {
-                    Value::Int(i) if *i < 0 => Self::make_out_of_range_failure(*i),
-                    Value::Int(i) => {
+                match idx.view() {
+                    ValueView::Int(i) if i < 0 => Self::make_out_of_range_failure(i),
+                    ValueView::Int(i) => {
                         let pairs: Vec<Value> = items
                             .iter()
-                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                            .map(|(k, v)| Value::pair(k.clone(), v.clone()))
                             .collect();
-                        pairs.get(*i as usize).cloned().unwrap_or(Value::Nil)
+                        pairs.get(i as usize).cloned().unwrap_or(Value::NIL)
                     }
-                    _ => Value::Nil,
+                    _ => Value::NIL,
                 }
             }
-            (Value::Hash(items), key) => {
-                let key_str = key.to_string_value();
-                let v = self.resolve_hash_entry(&items, &key_str);
-                if matches!(v, Value::Nil) {
+            (ValueView::Hash(items), _) => {
+                let key_str = index.to_string_value();
+                let v = self.resolve_hash_entry(items, &key_str);
+                if v.is_nil() {
                     if self.hash_autovivify {
-                        Value::Hash(items)
+                        Value::hash_with_data(items.clone())
                             .hash_autovivify(&key_str)
-                            .unwrap_or(Value::Nil)
+                            .unwrap_or(Value::NIL)
                     } else {
-                        self.typed_container_default(&Value::Hash(items))
+                        self.typed_container_default(&Value::hash_with_data(items.clone()))
                     }
                 } else {
                     v
                 }
             }
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
-                    ref attributes,
+                    attributes,
                     ..
                 },
-                Value::Array(keys, ..),
+                ValueView::Array(keys, ..),
             ) if class_name == "Match" => {
-                if let Some(Value::Hash(named)) = attributes.as_map().get("named") {
+                if let Some(ValueView::Hash(named)) =
+                    attributes.as_map().get("named").map(Value::view)
+                {
                     Value::array(
                         keys.iter()
                             .map(|k| {
                                 let key_str = k.to_string_value();
-                                named.get(key_str.as_str()).cloned().unwrap_or(Value::Nil)
+                                named.get(key_str.as_str()).cloned().unwrap_or(Value::NIL)
                             })
                             .collect(),
                     )
                 } else {
-                    Value::array(vec![Value::Nil; keys.len()])
+                    Value::array(vec![Value::NIL; keys.len()])
                 }
             }
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 },
-                Value::Str(key),
+                ValueView::Str(key),
             ) if class_name == "Match" => {
-                if let Some(Value::Hash(named)) = attributes.as_map().get("named") {
-                    named.get(key.as_str()).cloned().unwrap_or(Value::Nil)
+                if let Some(ValueView::Hash(named)) =
+                    attributes.as_map().get("named").map(Value::view)
+                {
+                    named.get(key.as_str()).cloned().unwrap_or(Value::NIL)
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             }
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 },
-                Value::Int(i),
+                ValueView::Int(i),
             ) if class_name == "Match" => {
                 if i < 0 {
-                    Value::Nil
-                } else if let Some(Value::Array(items, ..)) = attributes.as_map().get("list") {
-                    items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                    Value::NIL
+                } else if let Some(ValueView::Array(items, ..)) =
+                    attributes.as_map().get("list").map(Value::view)
+                {
+                    items.get(i as usize).cloned().unwrap_or(Value::NIL)
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             }
             // Instance with __baggy_data__: delegate subscript to the inner Bag/Set
-            (Value::Instance { ref attributes, .. }, ref idx)
+            (ValueView::Instance { attributes, .. }, _)
                 if attributes.contains_key("__baggy_data__") =>
             {
                 let inner = attributes.as_map().get("__baggy_data__").unwrap().clone();
-                let idx_clone = idx.clone();
+                let idx_clone = index.clone();
                 // Re-enter the index logic with the inner bag/set value
                 self.stack.push(inner);
                 self.stack.push(idx_clone);
                 return self.exec_index_op_with_positional(is_positional);
             }
-            (instance @ Value::Instance { .. }, Value::Str(key)) => {
-                let default = self.typed_container_default(&instance);
+            (ValueView::Instance { .. }, ValueView::Str(key)) => {
+                let default = self.typed_container_default(&target);
                 let result = self
                     .try_compiled_method_or_interpret(
-                        instance,
+                        target.clone(),
                         "AT-KEY",
-                        vec![Value::Str(key.clone())],
+                        vec![Value::str_arc(key.clone())],
                     )
-                    .unwrap_or(Value::Nil);
-                if matches!(result, Value::Nil) {
-                    default
-                } else {
-                    result
-                }
+                    .unwrap_or(Value::NIL);
+                if result.is_nil() { default } else { result }
             }
-            (instance @ Value::Instance { .. }, Value::Int(i)) => {
-                let default = self.typed_container_default(&instance);
-                let fallback = instance.clone();
+            (ValueView::Instance { .. }, ValueView::Int(i)) => {
+                let default = self.typed_container_default(&target);
+                let fallback = target.clone();
                 let result = self
-                    .try_compiled_method_or_interpret(instance, "AT-POS", vec![Value::Int(i)])
+                    .try_compiled_method_or_interpret(target.clone(), "AT-POS", vec![Value::int(i)])
                     .or_else(|_| {
                         self.try_compiled_method_or_interpret(
                             fallback,
                             "AT-KEY",
-                            vec![Value::Int(i)],
+                            vec![Value::int(i)],
                         )
                     })
-                    .unwrap_or(Value::Nil);
-                if matches!(result, Value::Nil) {
-                    default
-                } else {
-                    result
-                }
+                    .unwrap_or(Value::NIL);
+                if result.is_nil() { default } else { result }
             }
             // Buf/Blob slice by a Range: `$buf[0..7]` / `$buf[2..^5]`. The bytes
             // live in the instance's `bytes` array; a single-Int index is served
@@ -1084,20 +1078,22 @@ impl Interpreter {
             // otherwise fall through to Nil. Return the list of bytes in range
             // (Raku yields a List of the byte values).
             (
-                Value::Instance {
-                    ref class_name,
-                    ref attributes,
+                ValueView::Instance {
+                    class_name,
+                    attributes,
                     ..
                 },
-                idx @ (Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)),
+                ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..),
             ) if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
+                if let Some(ValueView::Array(bytes, ..)) =
+                    attributes.as_map().get("bytes").map(Value::view)
+                {
                     let len = bytes.len() as i64;
-                    let (start, end_incl) = match idx {
-                        Value::Range(a, b) => (
+                    let (start, end_incl) = match index.view() {
+                        ValueView::Range(a, b) => (
                             a,
                             if Self::range_end_is_unbounded(b) {
                                 len - 1
@@ -1105,7 +1101,7 @@ impl Interpreter {
                                 b
                             },
                         ),
-                        Value::RangeExcl(a, b) => (
+                        ValueView::RangeExcl(a, b) => (
                             a,
                             if Self::range_end_is_unbounded(b) {
                                 len - 1
@@ -1113,7 +1109,7 @@ impl Interpreter {
                                 b - 1
                             },
                         ),
-                        Value::RangeExclStart(a, b) => (
+                        ValueView::RangeExclStart(a, b) => (
                             a + 1,
                             if Self::range_end_is_unbounded(b) {
                                 len - 1
@@ -1121,7 +1117,7 @@ impl Interpreter {
                                 b
                             },
                         ),
-                        Value::RangeExclBoth(a, b) => (
+                        ValueView::RangeExclBoth(a, b) => (
                             a + 1,
                             if Self::range_end_is_unbounded(b) {
                                 len - 1
@@ -1142,150 +1138,151 @@ impl Interpreter {
                     }
                     Value::array(slice)
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             }
-            (instance @ Value::Instance { .. }, Value::Array(keys, ..)) => {
+            (ValueView::Instance { .. }, ValueView::Array(keys, ..)) => {
                 let mut results = Vec::with_capacity(keys.len());
-                for k in keys.iter().cloned() {
-                    let value = match k {
-                        Value::Int(_)
-                        | Value::Num(_)
-                        | Value::Range(_, _)
-                        | Value::RangeExcl(_, _)
-                        | Value::Whatever
-                        | Value::Sub(_)
-                        | Value::WeakSub(_) => self
+                for k in keys.iter() {
+                    let value = match k.view() {
+                        ValueView::Int(_)
+                        | ValueView::Num(_)
+                        | ValueView::Range(_, _)
+                        | ValueView::RangeExcl(_, _)
+                        | ValueView::Whatever
+                        | ValueView::Sub(_)
+                        | ValueView::WeakSub(_) => self
                             .try_compiled_method_or_interpret(
-                                instance.clone(),
+                                target.clone(),
                                 "AT-POS",
                                 vec![k.clone()],
                             )
                             .or_else(|_| {
                                 self.try_compiled_method_or_interpret(
-                                    instance.clone(),
+                                    target.clone(),
                                     "AT-KEY",
-                                    vec![k],
+                                    vec![k.clone()],
                                 )
                             })
-                            .unwrap_or(Value::Nil),
+                            .unwrap_or(Value::NIL),
                         _ => self
-                            .try_compiled_method_or_interpret(instance.clone(), "AT-KEY", vec![k])
-                            .unwrap_or(Value::Nil),
+                            .try_compiled_method_or_interpret(
+                                target.clone(),
+                                "AT-KEY",
+                                vec![k.clone()],
+                            )
+                            .unwrap_or(Value::NIL),
                     };
                     results.push(value);
                 }
                 Value::array(results)
             }
-            (instance @ Value::Mixin(..), Value::Str(key)) => {
-                let default = self.typed_container_default(&instance);
+            (ValueView::Mixin(..), ValueView::Str(key)) => {
+                let default = self.typed_container_default(&target);
                 let result = self
                     .try_compiled_method_or_interpret(
-                        instance,
+                        target.clone(),
                         "AT-KEY",
-                        vec![Value::Str(key.clone())],
+                        vec![Value::str_arc(key.clone())],
                     )
-                    .unwrap_or(Value::Nil);
-                if matches!(result, Value::Nil) {
-                    default
-                } else {
-                    result
-                }
+                    .unwrap_or(Value::NIL);
+                if result.is_nil() { default } else { result }
             }
-            (instance @ Value::Mixin(..), Value::Int(i)) => {
-                if let Value::Mixin(_, mixins) = &instance
+            (ValueView::Mixin(..), ValueView::Int(i)) => {
+                if let ValueView::Mixin(_, mixins) = target.view()
                     && let Some(attr_key) = self.delegated_mixin_attr_key(mixins, "AT-POS")
                     && let Some(attr_value) = mixins.get(&attr_key).cloned()
                 {
                     self.stack.push(attr_value);
-                    self.stack.push(Value::Int(i));
+                    self.stack.push(Value::int(i));
                     self.exec_index_op()?;
-                    let result = self.stack.pop().unwrap_or(Value::Nil);
-                    if !matches!(result, Value::Nil) {
+                    let result = self.stack.pop().unwrap_or(Value::NIL);
+                    if !result.is_nil() {
                         result
                     } else {
-                        self.typed_container_default(&instance)
+                        self.typed_container_default(&target)
                     }
                 } else {
-                    let default = self.typed_container_default(&instance);
-                    let fallback = instance.clone();
+                    let default = self.typed_container_default(&target);
+                    let fallback = target.clone();
                     let result = self
-                        .try_compiled_method_or_interpret(instance, "AT-POS", vec![Value::Int(i)])
+                        .try_compiled_method_or_interpret(
+                            target.clone(),
+                            "AT-POS",
+                            vec![Value::int(i)],
+                        )
                         .or_else(|_| {
                             self.try_compiled_method_or_interpret(
                                 fallback,
                                 "AT-KEY",
-                                vec![Value::Int(i)],
+                                vec![Value::int(i)],
                             )
                         })
-                        .unwrap_or(Value::Nil);
-                    if matches!(result, Value::Nil) {
-                        default
-                    } else {
-                        result
-                    }
+                        .unwrap_or(Value::NIL);
+                    if result.is_nil() { default } else { result }
                 }
             }
-            (instance @ Value::Mixin(..), Value::Array(keys, ..)) => {
+            (ValueView::Mixin(..), ValueView::Array(keys, ..)) => {
                 let mut results = Vec::with_capacity(keys.len());
-                let delegated_attr: Option<Value> = if let Value::Mixin(_, mixins) = &instance {
-                    self.delegated_mixin_attr_key(mixins, "AT-POS")
-                        .and_then(|attr_key| mixins.get(&attr_key).cloned())
-                } else {
-                    None
-                };
-                for k in keys.iter().cloned() {
-                    let value = match (&delegated_attr, &k) {
+                let delegated_attr: Option<Value> =
+                    if let ValueView::Mixin(_, mixins) = target.view() {
+                        self.delegated_mixin_attr_key(mixins, "AT-POS")
+                            .and_then(|attr_key| mixins.get(&attr_key).cloned())
+                    } else {
+                        None
+                    };
+                for k in keys.iter() {
+                    let value = match (&delegated_attr, k.view()) {
                         (
                             Some(attr_value),
-                            Value::Int(_)
-                            | Value::Num(_)
-                            | Value::Range(_, _)
-                            | Value::RangeExcl(_, _)
-                            | Value::Whatever
-                            | Value::Sub(_)
-                            | Value::WeakSub(_),
+                            ValueView::Int(_)
+                            | ValueView::Num(_)
+                            | ValueView::Range(_, _)
+                            | ValueView::RangeExcl(_, _)
+                            | ValueView::Whatever
+                            | ValueView::Sub(_)
+                            | ValueView::WeakSub(_),
                         ) => {
                             self.stack.push(attr_value.clone());
                             self.stack.push(k.clone());
                             self.exec_index_op()?;
-                            self.stack.pop().unwrap_or(Value::Nil)
+                            self.stack.pop().unwrap_or(Value::NIL)
                         }
-                        _ => match k {
-                            Value::Int(_)
-                            | Value::Num(_)
-                            | Value::Range(_, _)
-                            | Value::RangeExcl(_, _)
-                            | Value::Whatever
-                            | Value::Sub(_)
-                            | Value::WeakSub(_) => self
+                        _ => match k.view() {
+                            ValueView::Int(_)
+                            | ValueView::Num(_)
+                            | ValueView::Range(_, _)
+                            | ValueView::RangeExcl(_, _)
+                            | ValueView::Whatever
+                            | ValueView::Sub(_)
+                            | ValueView::WeakSub(_) => self
                                 .try_compiled_method_or_interpret(
-                                    instance.clone(),
+                                    target.clone(),
                                     "AT-POS",
                                     vec![k.clone()],
                                 )
                                 .or_else(|_| {
                                     self.try_compiled_method_or_interpret(
-                                        instance.clone(),
+                                        target.clone(),
                                         "AT-KEY",
-                                        vec![k],
+                                        vec![k.clone()],
                                     )
                                 })
-                                .unwrap_or(Value::Nil),
+                                .unwrap_or(Value::NIL),
                             _ => self
                                 .try_compiled_method_or_interpret(
-                                    instance.clone(),
+                                    target.clone(),
                                     "AT-KEY",
-                                    vec![k],
+                                    vec![k.clone()],
                                 )
-                                .unwrap_or(Value::Nil),
+                                .unwrap_or(Value::NIL),
                         },
                     };
                     results.push(value);
                 }
                 Value::array(results)
             }
-            (Value::Str(_), Value::Str(_)) => {
+            (ValueView::Str(_), ValueView::Str(_)) => {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert(
                     "message".to_string(),
@@ -1296,72 +1293,74 @@ impl Interpreter {
                 failure_attrs.insert("exception".to_string(), ex);
                 Value::make_instance(Symbol::intern("Failure"), failure_attrs)
             }
-            (Value::Set(s, _), Value::Array(keys, ..)) => Value::array(
+            (ValueView::Set(s, _), ValueView::Array(keys, ..)) => Value::array(
                 keys.iter()
-                    .map(|k| Value::Bool(s.contains(&k.to_string_value())))
+                    .map(|k| Value::truth(s.contains(&k.to_string_value())))
                     .collect(),
             ),
-            (Value::Set(s, _), Value::Str(key)) => Value::Bool(s.contains(key.as_str())),
-            (Value::Set(s, _), idx) => Value::Bool(s.contains(&idx.to_string_value())),
-            (Value::Bag(b, _), Value::Array(keys, ..)) => Value::array(
+            (ValueView::Set(s, _), ValueView::Str(key)) => Value::truth(s.contains(key.as_str())),
+            (ValueView::Set(s, _), _) => Value::truth(s.contains(&index.to_string_value())),
+            (ValueView::Bag(b, _), ValueView::Array(keys, ..)) => Value::array(
                 keys.iter()
                     .map(|k| {
                         Value::from_bigint(b.get(&k.to_string_value()).cloned().unwrap_or_default())
                     })
                     .collect(),
             ),
-            (Value::Bag(b, _), Value::Str(key)) => {
+            (ValueView::Bag(b, _), ValueView::Str(key)) => {
                 Value::from_bigint(b.get(key.as_str()).cloned().unwrap_or_default())
             }
-            (Value::Bag(b, _), idx) => {
-                Value::from_bigint(b.get(&idx.to_string_value()).cloned().unwrap_or_default())
+            (ValueView::Bag(b, _), _) => {
+                Value::from_bigint(b.get(&index.to_string_value()).cloned().unwrap_or_default())
             }
-            (Value::Mix(m, _), Value::Array(keys, ..)) => Value::array(
+            (ValueView::Mix(m, _), ValueView::Array(keys, ..)) => Value::array(
                 keys.iter()
                     .map(|k| {
                         Self::mix_weight_as_value(*m.get(&k.to_string_value()).unwrap_or(&0.0))
                     })
                     .collect(),
             ),
-            (Value::Mix(m, _), Value::Str(key)) => {
+            (ValueView::Mix(m, _), ValueView::Str(key)) => {
                 Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
             }
-            (Value::Mix(m, _), idx) => {
-                Self::mix_weight_as_value(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
+            (ValueView::Mix(m, _), _) => {
+                Self::mix_weight_as_value(*m.get(&index.to_string_value()).unwrap_or(&0.0))
             }
             // Range indexing (supports infinite ranges)
-            (ref range, Value::Int(i)) if range.is_range() => {
+            (_, ValueView::Int(i)) if target.is_range() => {
+                let range = &target;
                 if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
                     if i < 0 {
-                        Value::Nil
+                        Value::NIL
                     } else {
                         let actual_end = if excl_end { end - 1 } else { end };
                         let val = start + i;
                         if start > actual_end || val > actual_end {
-                            Value::Nil
+                            Value::NIL
                         } else {
-                            Value::Int(val)
+                            Value::int(val)
                         }
                     }
                 } else {
                     let items = crate::runtime::utils::value_to_list(range);
                     if i < 0 {
-                        Value::Nil
+                        Value::NIL
                     } else {
-                        items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        items.get(i as usize).cloned().unwrap_or(Value::NIL)
                     }
                 }
             }
             // WhateverCode index on Range: (1..8)[*-1]
-            (ref range, Value::Sub(ref data)) if range.is_range() => {
+            (_, ValueView::Sub(data)) if target.is_range() => {
+                let range = &target;
                 let len = crate::runtime::Interpreter::range_elems_f64(range) as i64;
                 let mut sub_env = data.env.clone();
                 for p in &data.params {
-                    sub_env.insert(p.to_string(), Value::Int(len));
+                    sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                 *self.env_mut() = saved_env;
                 // A block returning a Range or a list of indices (e.g. `{0,1}`)
                 // slices the range's materialized elements.
@@ -1381,9 +1380,9 @@ impl Interpreter {
                         .collect();
                     Value::array(result)
                 } else {
-                    let i = match &idx {
-                        Value::Int(i) => Some(*i),
-                        Value::Num(n) => Some(*n as i64),
+                    let i = match idx.view() {
+                        ValueView::Int(i) => Some(i),
+                        ValueView::Num(n) => Some(n as i64),
                         _ => None,
                     };
                     match i {
@@ -1392,40 +1391,41 @@ impl Interpreter {
                                 let actual_end = if excl_end { end - 1 } else { end };
                                 let val = start + i;
                                 if val > actual_end {
-                                    Value::Nil
+                                    Value::NIL
                                 } else {
-                                    Value::Int(val)
+                                    Value::int(val)
                                 }
                             } else {
                                 let items = crate::runtime::utils::value_to_list(range);
-                                items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                                items.get(i as usize).cloned().unwrap_or(Value::NIL)
                             }
                         }
                         Some(i) if i < 0 => Self::make_out_of_range_failure(i),
-                        _ => Value::Nil,
+                        _ => Value::NIL,
                     }
                 }
             }
-            (ref range, Value::RangeExcl(a, b)) if range.is_range() => {
+            (_, ValueView::RangeExcl(a, b)) if target.is_range() => {
+                let range = &target;
                 if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
                     let actual_end = if excl_end { end - 1 } else { end };
                     let mut result = Vec::new();
                     for i in a..b {
                         if i < 0 {
-                            result.push(Value::Nil);
+                            result.push(Value::NIL);
                             continue;
                         }
                         let val = match start.checked_add(i) {
                             Some(v) => v,
                             None => {
-                                result.push(Value::Nil);
+                                result.push(Value::NIL);
                                 continue;
                             }
                         };
                         if start > actual_end || val > actual_end {
-                            result.push(Value::Nil);
+                            result.push(Value::NIL);
                         } else {
-                            result.push(Value::Int(val));
+                            result.push(Value::int(val));
                         }
                     }
                     Value::array(result)
@@ -1438,15 +1438,16 @@ impl Interpreter {
                     let mut result = Vec::new();
                     for i in a..b {
                         if i < 0 {
-                            result.push(Value::Nil);
+                            result.push(Value::NIL);
                         } else {
-                            result.push(items.get(i as usize).cloned().unwrap_or(Value::Nil));
+                            result.push(items.get(i as usize).cloned().unwrap_or(Value::NIL));
                         }
                     }
                     Value::array(result)
                 }
             }
-            (ref range, Value::Range(a, b)) if range.is_range() => {
+            (_, ValueView::Range(a, b)) if target.is_range() => {
+                let range = &target;
                 if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
                     let actual_end = if excl_end { end - 1 } else { end };
                     let mut result = Vec::new();
@@ -1455,7 +1456,7 @@ impl Interpreter {
                         if val > actual_end {
                             break;
                         }
-                        result.push(Value::Int(val));
+                        result.push(Value::int(val));
                     }
                     Value::array(result)
                 } else {
@@ -1470,28 +1471,29 @@ impl Interpreter {
                     }
                 }
             }
-            (ref range, Value::Array(indices, ..)) if range.is_range() => {
+            (_, ValueView::Array(indices, ..)) if target.is_range() => {
+                let range = &target;
                 if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
                     let actual_end = if excl_end { end - 1 } else { end };
                     let mut result: Vec<Value> = Vec::with_capacity(indices.len());
                     for idx in indices.iter() {
-                        match idx {
-                            Value::Int(i) if *i >= 0 => {
+                        match idx.view() {
+                            ValueView::Int(i) if i >= 0 => {
                                 let val = start + i;
                                 if start > actual_end || val > actual_end {
-                                    result.push(Value::Nil);
+                                    result.push(Value::NIL);
                                 } else {
-                                    result.push(Value::Int(val));
+                                    result.push(Value::int(val));
                                 }
                             }
-                            Value::Array(..) | Value::Seq(..) | Value::Slip(..) => {
+                            ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..) => {
                                 // Nested list index: recurse
                                 self.stack.push(range.clone());
                                 self.stack.push(idx.clone());
                                 self.exec_index_op_with_positional(is_positional)?;
-                                result.push(self.stack.pop().unwrap_or(Value::Nil));
+                                result.push(self.stack.pop().unwrap_or(Value::NIL));
                             }
-                            _ => result.push(Value::Nil),
+                            _ => result.push(Value::NIL),
                         }
                     }
                     Value::array(result)
@@ -1499,56 +1501,43 @@ impl Interpreter {
                     let items = crate::runtime::utils::value_to_list(range);
                     let mut result: Vec<Value> = Vec::with_capacity(indices.len());
                     for idx in indices.iter() {
-                        match idx {
-                            Value::Int(i) if *i >= 0 => {
-                                result.push(items.get(*i as usize).cloned().unwrap_or(Value::Nil));
+                        match idx.view() {
+                            ValueView::Int(i) if i >= 0 => {
+                                result.push(items.get(i as usize).cloned().unwrap_or(Value::NIL));
                             }
-                            Value::Array(..) | Value::Seq(..) | Value::Slip(..) => {
+                            ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..) => {
                                 // Nested list index: recurse
                                 self.stack.push(range.clone());
                                 self.stack.push(idx.clone());
                                 self.exec_index_op_with_positional(is_positional)?;
-                                result.push(self.stack.pop().unwrap_or(Value::Nil));
+                                result.push(self.stack.pop().unwrap_or(Value::NIL));
                             }
-                            _ => result.push(Value::Nil),
+                            _ => result.push(Value::NIL),
                         }
                     }
                     Value::array(result)
                 }
             }
             // GenericRange index on Range target: ("a".."z")[0..^Inf], (^3)[0..*]
-            (
-                ref range,
-                Value::GenericRange {
-                    ref start,
-                    ref end,
-                    excl_start,
-                    excl_end,
-                },
-            ) if range.is_range() => {
+            (_, ValueView::GenericRange { .. }) if target.is_range() => {
                 // Convert range target to array, then re-index
-                let items = crate::runtime::utils::value_to_list(range);
+                let items = crate::runtime::utils::value_to_list(&target);
                 let target_arr = Value::array(items);
                 self.stack.push(target_arr);
-                self.stack.push(Value::GenericRange {
-                    start: start.clone(),
-                    end: end.clone(),
-                    excl_start,
-                    excl_end,
-                });
+                self.stack.push(index.clone());
                 return self.exec_index_op_with_positional(is_positional);
             }
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
-            (Value::Array(ref items, ..), Value::Sub(ref data)) => {
+            (ValueView::Array(items, ..), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
                 let mut sub_env = data.env.clone();
                 // Pass array length for ALL WhateverCode parameters (e.g. *-4 .. *-2 has 2 params)
                 for p in &data.params {
-                    sub_env.insert(p.to_string(), Value::Int(len));
+                    sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                 *self.env_mut() = saved_env;
                 // If the block returned a Range or a list of indices (e.g. `{0,1}`
                 // returns the List `(0,1)`), use every element as a slice index.
@@ -1567,12 +1556,12 @@ impl Interpreter {
                         .collect();
                     Value::array(result)
                 } else {
-                    let i = match &idx {
-                        Value::Int(i) => Some(*i),
-                        Value::Num(n) => Some(*n as i64),
-                        Value::Rat(n, d) => {
-                            if *d != 0 {
-                                Some((*n as f64 / *d as f64).floor() as i64)
+                    let i = match idx.view() {
+                        ValueView::Int(i) => Some(i),
+                        ValueView::Num(n) => Some(n as i64),
+                        ValueView::Rat(n, d) => {
+                            if d != 0 {
+                                Some((n as f64 / d as f64).floor() as i64)
                             } else {
                                 None
                             }
@@ -1580,24 +1569,26 @@ impl Interpreter {
                         _ => None,
                     };
                     match i {
-                        Some(i) if i >= 0 => items.get(i as usize).cloned().unwrap_or(Value::Nil),
+                        Some(i) if i >= 0 => items.get(i as usize).cloned().unwrap_or(Value::NIL),
                         Some(i) if i < 0 => Self::make_out_of_range_failure(i),
-                        _ => Value::Nil,
+                        _ => Value::NIL,
                     }
                 }
             }
             // WhateverCode index on Instance (e.g. Buf): $buf[*-1]
             (
-                Value::Instance {
-                    ref class_name,
-                    ref attributes,
+                ValueView::Instance {
+                    class_name,
+                    attributes,
                     ..
                 },
-                Value::Sub(ref data),
+                ValueView::Sub(data),
             ) => {
                 // Get element count from the instance
                 let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
-                    if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
+                    if let Some(ValueView::Array(bytes, ..)) =
+                        attributes.as_map().get("bytes").map(Value::view)
+                    {
                         bytes.len() as i64
                     } else {
                         0
@@ -1607,18 +1598,18 @@ impl Interpreter {
                 };
                 let mut sub_env = data.env.clone();
                 for p in &data.params {
-                    sub_env.insert(p.to_string(), Value::Int(len));
+                    sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                 *self.env_mut() = saved_env;
-                let i = match &idx {
-                    Value::Int(i) => Some(*i),
-                    Value::Num(n) => Some(*n as i64),
-                    Value::Rat(n, d) => {
-                        if *d != 0 {
-                            Some((*n as f64 / *d as f64).floor() as i64)
+                let i = match idx.view() {
+                    ValueView::Int(i) => Some(i),
+                    ValueView::Num(n) => Some(n as i64),
+                    ValueView::Rat(n, d) => {
+                        if d != 0 {
+                            Some((n as f64 / d as f64).floor() as i64)
                         } else {
                             None
                         }
@@ -1627,47 +1618,49 @@ impl Interpreter {
                 };
                 match i {
                     Some(i) if i >= 0 => {
-                        if let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
-                            bytes.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        if let Some(ValueView::Array(bytes, ..)) =
+                            attributes.as_map().get("bytes").map(Value::view)
+                        {
+                            bytes.get(i as usize).cloned().unwrap_or(Value::NIL)
                         } else {
-                            Value::Nil
+                            Value::NIL
                         }
                     }
-                    _ => Value::Nil,
+                    _ => Value::NIL,
                 }
             }
             // GenericRange with WhateverCode endpoint: @a[0..*-2]
             (
-                Value::Array(ref items, ..),
-                Value::GenericRange {
-                    ref start,
-                    ref end,
+                ValueView::Array(items, ..),
+                ValueView::GenericRange {
+                    start,
+                    end,
                     excl_start,
                     excl_end,
                 },
             ) => {
                 let len = items.len() as i64;
                 let mut resolve_endpoint = |val: &Value| -> i64 {
-                    match val {
-                        Value::Int(i) => *i,
-                        Value::Whatever => len,
-                        Value::Sub(data) => {
+                    match val.view() {
+                        ValueView::Int(i) => i,
+                        ValueView::Whatever => len,
+                        ValueView::Sub(data) => {
                             let mut sub_env = data.env.clone();
                             for p in &data.params {
-                                sub_env.insert(p.to_string(), Value::Int(len));
+                                sub_env.insert(p.to_string(), Value::int(len));
                             }
                             let saved_env = std::mem::take(self.env_mut());
                             *self.env_mut() = sub_env;
                             let result =
-                                loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+                                loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                             *self.env_mut() = saved_env;
-                            match result {
-                                Value::Int(i) => i,
+                            match result.view() {
+                                ValueView::Int(i) => i,
                                 _ => 0,
                             }
                         }
-                        _ => match val {
-                            Value::Num(f) => *f as i64,
+                        _ => match val.view() {
+                            ValueView::Num(f) => f as i64,
                             _ => 0,
                         },
                     }
@@ -1685,57 +1678,57 @@ impl Interpreter {
                 Value::array(slice)
             }
             // Uni/NFC/NFD/NFKC/NFKD indexing: returns integer codepoint values
-            (Value::Uni(u), Value::Int(i)) => {
+            (ValueView::Uni(u), ValueView::Int(i)) => {
                 let chars: Vec<char> = u.text.chars().collect();
                 if i < 0 || (i as usize) >= chars.len() {
-                    Value::Nil
+                    Value::NIL
                 } else {
-                    Value::Int(chars[i as usize] as i64)
+                    Value::int(chars[i as usize] as i64)
                 }
             }
-            (Value::Uni(u), Value::Sub(ref data)) => {
+            (ValueView::Uni(u), ValueView::Sub(data)) => {
                 let chars: Vec<char> = u.text.chars().collect();
                 let len = chars.len() as i64;
                 let mut sub_env = data.env.clone();
                 for p in &data.params {
-                    sub_env.insert(p.to_string(), Value::Int(len));
+                    sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                 *self.env_mut() = saved_env;
-                let i = match &idx {
-                    Value::Int(i) => Some(*i),
-                    Value::Num(n) => Some(*n as i64),
+                let i = match idx.view() {
+                    ValueView::Int(i) => Some(i),
+                    ValueView::Num(n) => Some(n as i64),
                     _ => None,
                 };
                 match i {
                     Some(i) if i >= 0 && (i as usize) < chars.len() => {
-                        Value::Int(chars[i as usize] as i64)
+                        Value::int(chars[i as usize] as i64)
                     }
-                    _ => Value::Nil,
+                    _ => Value::NIL,
                 }
             }
-            (Value::Uni(u), Value::Array(indices, ..)) => {
+            (ValueView::Uni(u), ValueView::Array(indices, ..)) => {
                 let chars: Vec<char> = u.text.chars().collect();
                 Value::array(
                     indices
                         .iter()
                         .map(|idx| {
-                            if let Value::Int(i) = idx {
-                                if *i >= 0 && (*i as usize) < chars.len() {
-                                    Value::Int(chars[*i as usize] as i64)
+                            if let ValueView::Int(i) = idx.view() {
+                                if i >= 0 && (i as usize) < chars.len() {
+                                    Value::int(chars[i as usize] as i64)
                                 } else {
-                                    Value::Nil
+                                    Value::NIL
                                 }
                             } else {
-                                Value::Nil
+                                Value::NIL
                             }
                         })
                         .collect(),
                 )
             }
-            (Value::Uni(u), Value::Range(a, b)) => {
+            (ValueView::Uni(u), ValueView::Range(a, b)) => {
                 let chars: Vec<char> = u.text.chars().collect();
                 let start = a.max(0) as usize;
                 let end = if Self::range_end_is_unbounded(b) {
@@ -1747,11 +1740,11 @@ impl Interpreter {
                     .iter()
                     .take(end.min(chars.len().saturating_sub(1)) + 1)
                     .skip(start)
-                    .map(|c| Value::Int(*c as i64))
+                    .map(|c| Value::int(*c as i64))
                     .collect();
                 Value::array(slice)
             }
-            (Value::Uni(u), Value::RangeExcl(a, b)) => {
+            (ValueView::Uni(u), ValueView::RangeExcl(a, b)) => {
                 let chars: Vec<char> = u.text.chars().collect();
                 let start = a.max(0) as usize;
                 let end_excl = if Self::range_end_is_unbounded(b) {
@@ -1763,27 +1756,27 @@ impl Interpreter {
                     .iter()
                     .take(end_excl.min(chars.len()))
                     .skip(start)
-                    .map(|c| Value::Int(*c as i64))
+                    .map(|c| Value::int(*c as i64))
                     .collect();
                 Value::array(slice)
             }
             // Capture indexing: $capture<key> (named) or $capture[idx] (positional)
             (
-                Value::Capture {
+                ValueView::Capture {
                     positional: _,
                     named,
                 },
-                Value::Str(key),
-            ) => named.get(key.as_str()).cloned().unwrap_or(Value::Nil),
-            (Value::Capture { positional, .. }, Value::Int(i)) => {
+                ValueView::Str(key),
+            ) => named.get(key.as_str()).cloned().unwrap_or(Value::NIL),
+            (ValueView::Capture { positional, .. }, ValueView::Int(i)) => {
                 if i < 0 {
-                    Value::Nil
+                    Value::NIL
                 } else {
-                    positional.get(i as usize).cloned().unwrap_or(Value::Nil)
+                    positional.get(i as usize).cloned().unwrap_or(Value::NIL)
                 }
             }
             // Mu type object does not support postcircumfix { }
-            (Value::Package(name), _) if name.resolve() == "Mu" => {
+            (ValueView::Package(name), _) if name.resolve() == "Mu" => {
                 return Err(RuntimeError::typed(
                     "X::Multi::NoMatch",
                     [(
@@ -1795,27 +1788,24 @@ impl Interpreter {
                 ));
             }
             // Role parameterization: e.g. R1[C1] → ParametricRole
-            (Value::Package(name), idx) if self.is_role(&name.resolve()) => {
-                let type_args = match idx {
-                    Value::Array(items, ..) => items.to_vec(),
-                    other => vec![other],
+            (ValueView::Package(name), _) if self.is_role(&name.resolve()) => {
+                let type_args = match index.view() {
+                    ValueView::Array(items, ..) => items.to_vec(),
+                    _ => vec![index.clone()],
                 };
-                Value::ParametricRole {
-                    base_name: name,
-                    type_args,
-                }
+                Value::parametric_role(name, type_args)
             }
             // Non-positional subscript (`<key>` / `{key}`) of the bare Any type
             // object returns Any per Raku spec (S09/autovivification): reading a
             // missing key does not autovivify and the result must be indistinct
             // from Any so that `%h<missing><b> === Any` holds.
-            (Value::Package(name), _) if !is_positional && name.resolve() == "Any" => {
-                Value::Package(Symbol::intern("Any"))
+            (ValueView::Package(name), _) if !is_positional && name.resolve() == "Any" => {
+                Value::package(Symbol::intern("Any"))
             }
             // Parameterizing a user-declared class / package / module that is NOT
             // parametric throws X::NotParametric. Roles (handled above), built-in
             // container types, and subclasses of them DO accept `[T]`.
-            (Value::Package(name), _) if self.is_non_parametric_type(&name.resolve()) => {
+            (ValueView::Package(name), _) if self.is_non_parametric_type(&name.resolve()) => {
                 let nm = name.resolve();
                 return Err(RuntimeError::typed(
                     "X::NotParametric",
@@ -1824,113 +1814,118 @@ impl Interpreter {
                             "message".to_string(),
                             Value::str(format!("{} cannot be parameterized", nm)),
                         ),
-                        ("type".to_string(), Value::Package(name)),
+                        ("type".to_string(), Value::package(name)),
                     ]
                     .into_iter()
                     .collect(),
                 ));
             }
             // Type parameterization: e.g. Array[Int] or Hash[Int,Str]
-            (Value::Package(name), idx) => {
-                let type_args = match idx {
-                    Value::Array(items, ..) => items.as_ref().clone(),
-                    other => crate::value::ArrayData::new(vec![other]),
+            (ValueView::Package(name), _) => {
+                let type_args = match index.view() {
+                    ValueView::Array(items, ..) => items.as_ref().clone(),
+                    _ => crate::value::ArrayData::new(vec![index.clone()]),
                 };
                 let args = type_args
                     .into_iter()
-                    .map(|v| match v {
-                        Value::Package(name) => name.resolve(),
-                        other => {
-                            let s = other.to_string_value();
+                    .map(|v| match v.view() {
+                        ValueView::Package(name) => name.resolve(),
+                        _ => {
+                            let s = v.to_string_value();
                             s.trim_start_matches('(').trim_end_matches(')').to_string()
                         }
                     })
                     .collect::<Vec<_>>()
                     .join(",");
-                Value::Package(Symbol::intern(&format!("{}[{}]", name, args)))
+                Value::package(Symbol::intern(&format!("{}[{}]", name, args)))
             }
             // Pair subscript: $pair<key> returns value if key matches, Nil otherwise
-            (Value::Pair(key, value), Value::Str(idx)) => {
+            (ValueView::Pair(key, value), ValueView::Str(idx)) => {
                 if key.as_str() == idx.as_str() {
-                    *value
+                    value.clone()
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             }
-            (Value::ValuePair(key, value), Value::Str(idx)) => {
+            (ValueView::ValuePair(key, value), ValueView::Str(idx)) => {
                 if key.to_string_value() == **idx {
-                    *value
+                    value.clone()
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             }
             // Array + Str: when positional, coerce numeric string to Int for
             // positional indexing; when associative, always fail (Array does not
             // support associative indexing).
-            (Value::Array(items, is_arr), Value::Str(ref s)) if is_positional => {
+            (ValueView::Array(items, is_arr), ValueView::Str(s)) if is_positional => {
                 if let Ok(i) = s.trim().parse::<i64>() {
                     if i < 0 {
                         Self::make_out_of_range_failure(i)
                     } else {
-                        let default =
-                            self.typed_container_default(&Value::Array(items.clone(), is_arr));
-                        self.resolve_array_entry(&items, is_arr, i as usize, default)
+                        let default = self.typed_container_default(&Value::array_with_kind(
+                            items.clone(),
+                            is_arr,
+                        ));
+                        self.resolve_array_entry(items, is_arr, i as usize, default)
                     }
                 } else {
                     Self::make_assoc_indexing_failure("Array")
                 }
             }
-            (Value::Array(..), Value::Str(_)) => {
+            (ValueView::Array(..), ValueView::Str(_)) => {
                 return Err(RuntimeError::new(
                     "Type Array does not support associative indexing.".to_string(),
                 ));
             }
             // Associative indexing on non-hash types returns a Failure
-            (ref target, Value::Str(_))
+            (_, ValueView::Str(_))
                 if matches!(
-                    target,
-                    Value::Int(_)
-                        | Value::BigInt(_)
-                        | Value::Num(_)
-                        | Value::Rat(..)
-                        | Value::Bool(_)
+                    target.view(),
+                    ValueView::Int(_)
+                        | ValueView::BigInt(_)
+                        | ValueView::Num(_)
+                        | ValueView::Rat(..)
+                        | ValueView::Bool(_)
                 ) =>
             {
-                let type_name = crate::value::types::what_type_name(target);
+                let type_name = crate::value::types::what_type_name(&target);
                 Self::make_assoc_indexing_failure(&type_name)
             }
             // Scalar value with integer index: treat as single-element list
-            (ref val, Value::Int(0))
-                if !matches!(val, Value::Array(..) | Value::Hash(_) | Value::Nil) =>
+            (_, ValueView::Int(0))
+                if !matches!(
+                    target.view(),
+                    ValueView::Array(..) | ValueView::Hash(_) | ValueView::Nil
+                ) =>
             {
-                val.clone()
+                target.clone()
             }
-            (ref val, Value::Int(i))
-                if !matches!(val, Value::Array(..) | Value::Hash(_)) && i > 0 =>
+            (_, ValueView::Int(i))
+                if !matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_)) && i > 0 =>
             {
                 Self::make_scalar_index_out_of_range_failure(i)
             }
             // Scalar value with WhateverCode index: treat as single-element list
-            (ref val, Value::Sub(ref data))
+            (_, ValueView::Sub(data))
                 if !matches!(
-                    val,
-                    Value::Array(..) | Value::Hash(_) | Value::Instance { .. }
+                    target.view(),
+                    ValueView::Array(..) | ValueView::Hash(_) | ValueView::Instance { .. }
                 ) =>
             {
                 let mut sub_env = data.env.clone();
                 for p in &data.params {
-                    sub_env.insert(p.to_string(), Value::Int(1)); // elems = 1
+                    sub_env.insert(p.to_string(), Value::int(1)); // elems = 1
                 }
                 let saved_env = std::mem::take(self.env_mut());
                 *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::Nil);
+                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                 *self.env_mut() = saved_env;
-                let i = match &idx {
-                    Value::Int(i) => Some(*i),
-                    Value::Num(n) => Some(*n as i64),
-                    Value::Rat(n, d) => {
-                        if *d != 0 {
-                            Some((*n as f64 / *d as f64).floor() as i64)
+                let i = match idx.view() {
+                    ValueView::Int(i) => Some(i),
+                    ValueView::Num(n) => Some(n as i64),
+                    ValueView::Rat(n, d) => {
+                        if d != 0 {
+                            Some((n as f64 / d as f64).floor() as i64)
                         } else {
                             None
                         }
@@ -1938,42 +1933,47 @@ impl Interpreter {
                     _ => None,
                 };
                 match i {
-                    Some(0) => val.clone(),
-                    _ => Value::Nil,
+                    Some(0) => target.clone(),
+                    _ => Value::NIL,
                 }
             }
             // Scalar value with Range index: treat as single-element list.
             // If the range start >= 1, it's out of range (0..0).
-            (ref val, ref range_idx)
+            (_, _)
                 if !matches!(
-                    val,
-                    Value::Array(..) | Value::Hash(_) | Value::Nil | Value::Instance { .. }
+                    target.view(),
+                    ValueView::Array(..)
+                        | ValueView::Hash(_)
+                        | ValueView::Nil
+                        | ValueView::Instance { .. }
                 ) && matches!(
-                    range_idx,
-                    Value::Range(..)
-                        | Value::RangeExcl(..)
-                        | Value::RangeExclStart(..)
-                        | Value::RangeExclBoth(..)
-                        | Value::GenericRange { .. }
+                    index.view(),
+                    ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. }
                 ) =>
             {
                 // Extract the start of the range
-                let start = match range_idx {
-                    Value::Range(a, _) | Value::RangeExcl(a, _) | Value::RangeExclBoth(a, _) => *a,
-                    Value::RangeExclStart(a, _) => *a + 1,
-                    Value::GenericRange { start, .. } => start.to_f64() as i64,
+                let start = match index.view() {
+                    ValueView::Range(a, _)
+                    | ValueView::RangeExcl(a, _)
+                    | ValueView::RangeExclBoth(a, _) => a,
+                    ValueView::RangeExclStart(a, _) => a + 1,
+                    ValueView::GenericRange { start, .. } => start.to_f64() as i64,
                     _ => 0,
                 };
                 if start >= 1 {
                     return Err(RuntimeError::out_of_range(
                         "Index",
-                        Value::Int(start),
+                        Value::int(start),
                         "0..0",
                     ));
                 }
-                val.clone()
+                target.clone()
             }
-            _ => Value::Nil,
+            _ => Value::NIL,
         };
         self.stack.push(result);
         Ok(())
@@ -1982,12 +1982,12 @@ impl Interpreter {
 
 /// Extract (start, end, excl_start, excl_end) from a Range value.
 fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
-    match v {
-        Value::Range(a, b) => Some((*a, *b, false, false)),
-        Value::RangeExcl(a, b) => Some((*a, *b, false, true)),
-        Value::RangeExclStart(a, b) => Some((*a + 1, *b, true, false)),
-        Value::RangeExclBoth(a, b) => Some((*a + 1, *b, true, true)),
-        Value::GenericRange {
+    match v.view() {
+        ValueView::Range(a, b) => Some((a, b, false, false)),
+        ValueView::RangeExcl(a, b) => Some((a, b, false, true)),
+        ValueView::RangeExclStart(a, b) => Some((a + 1, b, true, false)),
+        ValueView::RangeExclBoth(a, b) => Some((a + 1, b, true, true)),
+        ValueView::GenericRange {
             start,
             end,
             excl_start,
@@ -2005,8 +2005,8 @@ fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
             if !start.to_f64().is_finite() || !end.to_f64().is_finite() {
                 return None;
             }
-            let s = if *excl_start { s + 1 } else { s };
-            Some((s, e, *excl_start, *excl_end))
+            let s = if excl_start { s + 1 } else { s };
+            Some((s, e, excl_start, excl_end))
         }
         _ => None,
     }
@@ -2019,11 +2019,11 @@ impl Interpreter {
     /// list of leaves.
     pub(super) fn hyperwhatever_hammer_collect(items: &[Value], out: &mut Vec<Value>) {
         for item in items {
-            match item {
-                Value::Array(data, _) => {
+            match item.view() {
+                ValueView::Array(data, _) => {
                     Self::hyperwhatever_hammer_collect(&data.items, out);
                 }
-                other => out.push(other.clone()),
+                _ => out.push(item.clone()),
             }
         }
     }
@@ -2038,27 +2038,27 @@ impl Interpreter {
         _len: i64,
         vm: &mut Interpreter,
     ) -> Option<Vec<Value>> {
-        let (start, end, excl_end) = match idx {
-            Value::Range(a, b) => (*a, *b, false),
-            Value::RangeExcl(a, b) => (*a, *b, true),
-            Value::RangeExclStart(a, b) => (a + 1, *b, false),
-            Value::RangeExclBoth(a, b) => (a + 1, *b, true),
-            Value::GenericRange {
+        let (start, end, excl_end) = match idx.view() {
+            ValueView::Range(a, b) => (a, b, false),
+            ValueView::RangeExcl(a, b) => (a, b, true),
+            ValueView::RangeExclStart(a, b) => (a + 1, b, false),
+            ValueView::RangeExclBoth(a, b) => (a + 1, b, true),
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
                 excl_end,
             } => {
-                let s = start.to_f64() as i64 + if *excl_start { 1 } else { 0 };
+                let s = start.to_f64() as i64 + if excl_start { 1 } else { 0 };
                 let e = end.to_f64() as i64;
-                (s, e, *excl_end)
+                (s, e, excl_end)
             }
             _ => return None,
         };
         let actual_end = if excl_end { end } else { end + 1 };
         let start = start.max(0) as usize;
         let actual_end = (actual_end.max(0) as usize).min(items.len());
-        let default = vm.typed_container_default(&Value::Array(
+        let default = vm.typed_container_default(&Value::array_with_kind(
             crate::value::Value::array_arc(items.clone().to_vec()),
             kind,
         ));

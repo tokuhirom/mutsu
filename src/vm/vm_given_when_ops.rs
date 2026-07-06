@@ -15,11 +15,13 @@ impl Interpreter {
         // bound parameter's final value rather than `$_` (Raku binds `@p` to the
         // topic but leaves `$_` undefined). `is copy` is not recorded here, so it
         // copies and does not write back.
-        let pointy_param: Option<String> =
-            pointy_param_idx.map(|idx| match &code.constants[idx as usize] {
-                Value::Str(s) => s.to_string(),
-                other => other.to_string_value(),
-            });
+        let pointy_param: Option<String> = pointy_param_idx.map(|idx| {
+            let constant = &code.constants[idx as usize];
+            match constant.view() {
+                ValueView::Str(s) => s.to_string(),
+                _ => constant.to_string_value(),
+            }
+        });
         let body_start = *ip + 1;
         let end = body_end as usize;
         let stack_base = self.stack.len();
@@ -109,7 +111,7 @@ impl Interpreter {
                 // after the writeback above, which already read `@p`'s final value.
                 if p.starts_with('@') || p.starts_with('%') {
                     this.env_mut().remove(p.as_str());
-                    this.update_local_if_exists(code, p, &Value::Nil);
+                    this.update_local_if_exists(code, p, &Value::NIL);
                 }
             }
             this.topic_source_var = saved_topic_source.clone();
@@ -144,7 +146,7 @@ impl Interpreter {
             }
         }
         if self.stack.len() > stack_base {
-            let last = self.stack.pop().unwrap_or(Value::Nil);
+            let last = self.stack.pop().unwrap_or(Value::NIL);
             self.stack.truncate(stack_base);
             self.stack.push(last);
         }
@@ -161,7 +163,7 @@ impl Interpreter {
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        let topic = self.stack.pop().unwrap_or(Value::Nil);
+        let topic = self.stack.pop().unwrap_or(Value::NIL);
         let body_start = *ip + 1;
         let end = body_end as usize;
 
@@ -170,13 +172,13 @@ impl Interpreter {
         self.env_mut().insert("_".to_string(), topic);
         loan_env!(self, set_when_matched(false));
 
-        let mut last = Value::Nil;
+        let mut last = Value::NIL;
         let stack_base = self.stack.len();
         let body_result = self.run_range(code, body_start, end, compiled_fns);
         match body_result {
             Ok(()) => {
                 if self.stack.len() > stack_base {
-                    last = self.stack.pop().unwrap_or(Value::Nil);
+                    last = self.stack.pop().unwrap_or(Value::NIL);
                 }
                 self.stack.truncate(stack_base);
             }
@@ -223,13 +225,13 @@ impl Interpreter {
         let end = body_end as usize;
 
         // Num(Inf) represents Whatever (*) which always matches in `when *`
-        let matches = if matches!(&cond_val, Value::Num(v) if v.is_infinite() && v.is_sign_positive())
+        let matches = if matches!(cond_val.view(), ValueView::Num(v) if v.is_infinite() && v.is_sign_positive())
         {
             true
         } else {
-            let topic = self.env().get("_").cloned().unwrap_or(Value::Nil);
-            match cond_val {
-                Value::Sub(_) | Value::Routine { .. } => {
+            let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
+            match cond_val.view() {
+                ValueView::Sub(_) | ValueView::Routine { .. } => {
                     let (_params, param_defs) = self.callable_signature(&cond_val);
                     if !param_defs.is_empty() {
                         let mut positional_required = 0usize;
@@ -290,7 +292,7 @@ impl Interpreter {
             }
             if !did_proceed {
                 loan_env!(self, set_when_matched(true));
-                let last = self.stack.last().cloned().unwrap_or(Value::Nil);
+                let last = self.stack.last().cloned().unwrap_or(Value::NIL);
                 let mut sig = RuntimeError::succeed_signal();
                 sig.return_value = Some(last);
                 sig.set_container_name(self.container_ref_var.take());
@@ -319,7 +321,7 @@ impl Interpreter {
             Err(e) => return Err(e),
         }
         loan_env!(self, set_when_matched(true));
-        let last = self.stack.last().cloned().unwrap_or(Value::Nil);
+        let last = self.stack.last().cloned().unwrap_or(Value::NIL);
         let mut sig = RuntimeError::succeed_signal();
         sig.return_value = Some(last);
         sig.set_container_name(self.container_ref_var.take());

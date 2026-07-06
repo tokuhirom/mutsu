@@ -18,8 +18,8 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let param_name = spec
             .param_idx
-            .map(|idx| match &code.constants[idx as usize] {
-                Value::Str(s) => s.to_string(),
+            .map(|idx| match code.constants[idx as usize].view() {
+                ValueView::Str(s) => s.to_string(),
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
         let saved_topic = spec
@@ -78,7 +78,7 @@ impl Interpreter {
         // Use <= for inclusive ranges instead of end_val + 1 to avoid overflow
         // when end_val is i64::MAX
         'for_loop: while if inclusive { i <= end_val } else { i < end_val } {
-            let item = Value::Int(i);
+            let item = Value::int(i);
             self.topic_source_var = None;
 
             if !use_local_only && param_name.is_none() {

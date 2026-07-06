@@ -42,12 +42,13 @@ impl Interpreter {
                 // path): read the captured scalar live from env by name.
                 _ => {
                     let name = Self::const_str(code, name_idx);
-                    self.get_env_with_main_alias(name).unwrap_or(Value::Nil)
+                    self.get_env_with_main_alias(name).unwrap_or(Value::NIL)
                 }
             }
         };
-        let val = if let Value::LazyThunk(ref thunk_data) = val {
-            self.force_lazy_thunk(thunk_data)?
+        let val = if let ValueView::LazyThunk(thunk_data) = val.view() {
+            let thunk_data = thunk_data.clone();
+            self.force_lazy_thunk(&thunk_data)?
         } else {
             val
         };
@@ -130,16 +131,19 @@ impl Interpreter {
         // Skip for type objects and complex values that should not be replaced.
         if !self.locals[idx].is_container_ref()
             && !matches!(
-                self.locals[idx],
-                Value::Package(_)
-                    | Value::Array(..)
-                    | Value::Hash(..)
-                    | Value::Sub(..)
-                    | Value::Instance { .. }
+                self.locals[idx].view(),
+                ValueView::Package(_)
+                    | ValueView::Array(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Sub(..)
+                    | ValueView::Instance { .. }
             )
-            && let Some(Value::ContainerRef(arc)) = self.env().get(&name).cloned()
+            && let Some(arc) = self.env().get(&name).and_then(|v| match v.view() {
+                ValueView::ContainerRef(arc) => Some(arc.clone()),
+                _ => None,
+            })
         {
-            self.locals[idx] = Value::ContainerRef(arc);
+            self.locals[idx] = Value::container_ref(arc);
         }
         // Phase 3 Stage 2 (scalar slice): scalar instance attributes read straight
         // from `self`'s shared cell, so a mutation made in a nested method frame
@@ -157,13 +161,14 @@ impl Interpreter {
         // Resolve a deferred bind token to its current value (Any if the path
         // doesn't exist). The raw local slot is unchanged, so a later write still
         // materializes it; `=:=` reads the raw slot via GetLocalRaw.
-        if let Value::HashEntryRef { .. } = &val {
+        if let ValueView::HashEntryRef { .. } = val.view() {
             self.stack.push(val.hash_entry_read());
             return Ok(());
         }
         // Force lazy thunks transparently on access
-        if let Value::LazyThunk(ref thunk_data) = val {
-            let forced = self.force_lazy_thunk(thunk_data)?;
+        if let ValueView::LazyThunk(thunk_data) = val.view() {
+            let thunk_data = thunk_data.clone();
+            let forced = self.force_lazy_thunk(&thunk_data)?;
             self.stack.push(forced);
             return Ok(());
         }
@@ -176,7 +181,7 @@ impl Interpreter {
             return Ok(());
         }
         // Fast path: non-Nil values are always valid — skip env lookup
-        if matches!(val, Value::Nil) {
+        if val.is_nil() {
             if let Some(shared_val) = self.get_shared_var(&name) {
                 self.stack.push(shared_val);
                 return Ok(());
@@ -200,12 +205,12 @@ impl Interpreter {
             }
             if let Some(constraint) = self.var_type_constraint_fast(&name).cloned() {
                 let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                // Nil type constraint: the type object for Nil is Value::Nil itself,
-                // not Value::Package("Nil").
+                // Nil type constraint: the type object for Nil is the Nil value
+                // itself, not a "Nil" Package type object.
                 if nominal == "Nil" {
-                    self.stack.push(Value::Nil);
+                    self.stack.push(Value::NIL);
                 } else {
-                    self.stack.push(Value::Package(Symbol::intern(&nominal)));
+                    self.stack.push(Value::package(Symbol::intern(&nominal)));
                 }
                 return Ok(());
             }
@@ -240,13 +245,13 @@ impl Interpreter {
             return;
         }
         if matches!(
-            self.locals[idx],
-            Value::Package(_)
-                | Value::Array(..)
-                | Value::Hash(..)
-                | Value::Sub(..)
-                | Value::Instance { .. }
-                | Value::Proxy { .. }
+            self.locals[idx].view(),
+            ValueView::Package(_)
+                | ValueView::Array(..)
+                | ValueView::Hash(..)
+                | ValueView::Sub(..)
+                | ValueView::Instance { .. }
+                | ValueView::Proxy { .. }
         ) {
             return;
         }
@@ -277,7 +282,10 @@ impl Interpreter {
         if self.locals[idx].is_container_ref() {
             return;
         }
-        if !matches!(self.locals[idx], Value::Array(..) | Value::Hash(..)) {
+        if !matches!(
+            self.locals[idx].view(),
+            ValueView::Array(..) | ValueView::Hash(..)
+        ) {
             return;
         }
         let name = code.locals[idx].clone();

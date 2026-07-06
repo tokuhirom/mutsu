@@ -5,16 +5,16 @@ use crate::symbol::Symbol;
 impl Interpreter {
     /// Get the current source line number from the interpreter env.
     pub(super) fn current_source_line(&self) -> Option<u32> {
-        self.env().get("?LINE").and_then(|v| match v {
-            Value::Int(n) => Some(*n as u32),
+        self.env().get("?LINE").and_then(|v| match v.view() {
+            ValueView::Int(n) => Some(n as u32),
             _ => None,
         })
     }
 
     /// Get the current source file from the interpreter env.
     pub(super) fn current_source_file(&self) -> Option<String> {
-        self.env().get("?FILE").and_then(|v| match v {
-            Value::Str(s) => Some(s.to_string()),
+        self.env().get("?FILE").and_then(|v| match v.view() {
+            ValueView::Str(s) => Some(s.to_string()),
             _ => None,
         })
     }
@@ -27,10 +27,7 @@ impl Interpreter {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
             let mut env = self.env().clone();
-            env.insert(
-                "__mutsu_lazylist_from_gather".to_string(),
-                Value::Bool(true),
-            );
+            env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
             // Compile the gather body to bytecode for Interpreter-native forcing
             let compiler = Compiler::new();
             let (compiled_code, compiled_fns) = compiler.compile(body);
@@ -56,7 +53,7 @@ impl Interpreter {
                 walk_pending: None,
                 cat_pull: None,
             };
-            let val = Value::LazyList(crate::gc::Gc::new(list));
+            let val = Value::lazy_list(crate::gc::Gc::new(list));
             self.stack.push(val);
             Ok(())
         } else {
@@ -98,7 +95,7 @@ impl Interpreter {
                 .and_then(|cc| cc.source_line)
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
-            let val = Value::Sub(crate::gc::Gc::new(crate::value::SubData {
+            let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(""),
                 params,
@@ -173,7 +170,7 @@ impl Interpreter {
                 .and_then(|cc| cc.source_line)
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
-            let val = Value::Sub(crate::gc::Gc::new(crate::value::SubData {
+            let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(""),
                 params: params.clone(),
@@ -236,14 +233,17 @@ impl Interpreter {
             if code.captured_mutated_locals.contains(sym) {
                 continue;
             }
-            if !matches!(env.get_sym(*sym), Some(Value::ContainerRef(_))) {
+            if !matches!(
+                env.get_sym(*sym).map(Value::view),
+                Some(ValueView::ContainerRef(_))
+            ) {
                 continue;
             }
             // Deep-deref: the per-iteration binding can nest (`$in`'s own cell
             // wrapping the element cell, plus prior iterations' wrappers).
             let mut v = env.get_sym(*sym).cloned().unwrap();
             let mut guard = 0;
-            while let Value::ContainerRef(_) = v {
+            while let ValueView::ContainerRef(_) = v.view() {
                 v = v.into_deref();
                 guard += 1;
                 if guard > 64 {
@@ -412,7 +412,7 @@ impl Interpreter {
                 {
                     val.clone()
                 } else {
-                    self.env().get_sym(*sym).cloned().unwrap_or(Value::Nil)
+                    self.env().get_sym(*sym).cloned().unwrap_or(Value::NIL)
                 };
                 // Freeze ONLY a shared `ContainerRef` cell into the upvalue array:
                 // reading it always tracks the creator's container, so it is
@@ -529,13 +529,13 @@ impl Interpreter {
             // Only box plain scalar containers. Reference types share already;
             // type objects / proxies must not be hidden behind a ContainerRef.
             if matches!(
-                cur,
-                Value::Package(_)
-                    | Value::Array(..)
-                    | Value::Hash(..)
-                    | Value::Sub(..)
-                    | Value::Instance { .. }
-                    | Value::Proxy { .. }
+                cur.view(),
+                ValueView::Package(_)
+                    | ValueView::Array(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Sub(..)
+                    | ValueView::Instance { .. }
+                    | ValueView::Proxy { .. }
             ) {
                 continue;
             }

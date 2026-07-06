@@ -83,19 +83,22 @@ impl Interpreter {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
-        let raw_popped = self.stack.pop().unwrap_or(Value::Nil);
+        let raw_popped = self.stack.pop().unwrap_or(Value::NIL);
         // Check if we're trying to write to a private instance attribute (!attr)
         // when self is a type object (not an instance). Raku says this should die.
         let local_name = &code.locals[idx];
         if local_name.starts_with('!')
             && local_name.len() > 1
             && let Some(self_val) = self.get_env_with_main_alias("self")
-            && !matches!(self_val, Value::Instance { .. } | Value::Mixin(..))
+            && !matches!(
+                self_val.view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..)
+            )
         {
             // self is a type object - determine class name for error message
-            let class_name = match &self_val {
-                Value::Package(sym) => sym.to_string(),
-                other => crate::value::what_type_name(other),
+            let class_name = match self_val.view() {
+                ValueView::Package(sym) => sym.to_string(),
+                _ => crate::value::what_type_name(&self_val),
             };
             return Err(RuntimeError::new(format!(
                 "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
@@ -129,7 +132,8 @@ impl Interpreter {
         let array_share_source = self.array_share_source.take();
         if array_share
             && let Some(src) = array_share_source
-            && raw_popped.with_deref(|v| matches!(v, Value::Array(..) | Value::Hash(_)))
+            && raw_popped
+                .with_deref(|v| matches!(v.view(), ValueView::Array(..) | ValueView::Hash(_)))
         {
             let name = &code.locals[idx];
             if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
@@ -180,8 +184,11 @@ impl Interpreter {
             // Replace stale ContainerRef in env with Nil so a new `my $var`
             // doesn't inherit a binding from an earlier scope. Keep the key
             // so saved frame propagation can still find it.
-            if matches!(self.env().get(name), Some(Value::ContainerRef(_))) {
-                self.env_mut().insert(name.to_string(), Value::Nil);
+            if matches!(
+                self.env().get(name).map(Value::view),
+                Some(ValueView::ContainerRef(_))
+            ) {
+                self.env_mut().insert(name.to_string(), Value::NIL);
             }
             // Per-iteration freshness for box-on-capture (lever C Slice 2): if a
             // previous iteration's closure boxed this loop-body `my` into a
@@ -189,8 +196,8 @@ impl Interpreter {
             // *fresh binding* — clear the stale cell so the assignment below
             // writes a new plain value instead of writing *through* the old Arc
             // (which would corrupt the prior iteration's captured closure).
-            if matches!(self.locals[idx], Value::ContainerRef(_)) {
-                self.locals[idx] = Value::Nil;
+            if matches!(self.locals[idx].view(), ValueView::ContainerRef(_)) {
+                self.locals[idx] = Value::NIL;
             }
             // Clear a stale bound-array-slice marker (§4 BLOCKERS.md test 15)
             // left over from an earlier same-named variable — a fresh
@@ -216,12 +223,15 @@ impl Interpreter {
             if !is_rebind
                 && !self.locals[idx].is_container_ref()
                 && !is_vardecl
-                && let Some(Value::ContainerRef(arc)) = self.env().get(name).cloned()
+                && let Some(arc) = self.env().get(name).and_then(|v| match v.view() {
+                    ValueView::ContainerRef(arc) => Some(arc.clone()),
+                    _ => None,
+                })
             {
-                self.locals[idx] = Value::ContainerRef(arc);
+                self.locals[idx] = Value::container_ref(arc);
             }
             // Write through ContainerRef: update inner value without breaking sharing
-            if !is_rebind && let Value::ContainerRef(arc) = &self.locals[idx] {
+            if !is_rebind && let ValueView::ContainerRef(arc) = self.locals[idx].view() {
                 // Slice 2a: a `=`-array-shared scalar (`$n = @z`) reassigned as a
                 // whole (`$n = 5`, `$n = @other` via a fresh share) REPLACES the
                 // slot — raku value semantics — instead of writing through the
@@ -242,8 +252,8 @@ impl Interpreter {
                 }
             }
             // If the current value is a Proxy, invoke STORE instead of overwriting
-            if let Value::Proxy { storer, .. } = &self.locals[idx]
-                && !matches!(storer.as_ref(), Value::Nil)
+            if let ValueView::Proxy { storer, .. } = self.locals[idx].view()
+                && !storer.is_nil()
             {
                 let proxy_val = self.locals[idx].clone();
                 loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
@@ -261,20 +271,20 @@ impl Interpreter {
             // shared `ContainerRef` cell so the bound var and the hash entry
             // alias bidirectionally (phantom-entry; replaces the old plain-value
             // materialization that lost the alias).
-            if !is_rebind && matches!(self.locals[idx], Value::HashEntryRef { .. }) {
+            if !is_rebind && matches!(self.locals[idx].view(), ValueView::HashEntryRef { .. }) {
                 self.materialize_bound_slot_to_cell(code, idx, val);
                 return Ok(());
             }
             if !name.starts_with('@') && !name.starts_with('%') {
                 val = Self::normalize_scalar_assignment_value(val);
             }
-            if matches!(val, Value::Nil)
+            if val.is_nil()
                 && let Some(def) = self.var_default(name)
             {
                 val = def.clone();
             }
             if let Some(constraint) = self.var_type_constraint_fast(name).cloned() {
-                if matches!(val, Value::Nil) && self.is_definite_constraint(&constraint) {
+                if val.is_nil() && self.is_definite_constraint(&constraint) {
                     if has_explicit_initializer {
                         return Err(runtime::utils::type_check_assignment_typed_error(
                             name,
@@ -292,14 +302,14 @@ impl Interpreter {
                         )));
                     }
                 }
-                if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, &val) {
+                if !val.is_nil() && !self.type_matches_value(&constraint, &val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         name,
                         &constraint,
                         &val,
                     ));
                 }
-                let val = if !matches!(val, Value::Nil) {
+                let val = if !val.is_nil() {
                     loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
                 } else {
                     val
@@ -322,7 +332,7 @@ impl Interpreter {
             }
             // Track lazy-thunk readonly: mark when storing a LazyThunk,
             // unmark when overwriting a LazyThunk with a non-LazyThunk (rebinding).
-            if matches!(self.locals[idx], Value::LazyThunk(..)) {
+            if matches!(self.locals[idx].view(), ValueView::LazyThunk(..)) {
                 self.mark_readonly(name);
             }
             if self.fatal_mode
@@ -344,7 +354,7 @@ impl Interpreter {
                 let prefix = "__mutsu_sigilless_alias::";
                 for (k, v) in self.env().iter() {
                     if let Some(_var_name) = k.strip_prefix_str(prefix)
-                        && let Value::Str(target) = v
+                        && let ValueView::Str(target) = v.view()
                         && target.as_str() == name
                     {
                         aliases_to_remove.push(*k);
@@ -369,7 +379,10 @@ impl Interpreter {
             // the source is an env variable like `$_`).
             {
                 let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-                if let Some(Value::Str(target)) = self.env().get(&alias_key).cloned() {
+                if let Some(target) = self.env().get(&alias_key).and_then(|v| match v.view() {
+                    ValueView::Str(s) => Some(s.clone()),
+                    _ => None,
+                }) {
                     let is_co_local = code.locals.iter().any(|n| n == target.as_str());
                     if !is_co_local {
                         {
@@ -404,20 +417,22 @@ impl Interpreter {
             && !is_rebind
             && name.starts_with('@')
             && matches!(
-                self.env().get(&Self::bound_array_slice_marker_key(name)),
-                Some(Value::Bool(true))
+                self.env()
+                    .get(&Self::bound_array_slice_marker_key(name))
+                    .map(Value::view),
+                Some(ValueView::Bool(true))
             )
-            && let Value::Array(items, ..) = &self.locals[idx]
+            && let ValueView::Array(items, ..) = self.locals[idx].view()
             && items.iter().any(Value::is_container_ref)
         {
             let cells: Vec<Value> = items.iter().cloned().collect();
             let rhs_vals = self.assignment_rhs_values(&raw_popped)?;
             for (i, cell_val) in cells.iter().enumerate() {
-                if let Value::ContainerRef(cell) = cell_val {
+                if let ValueView::ContainerRef(cell) = cell_val.view() {
                     let v = rhs_vals
                         .get(i)
                         .cloned()
-                        .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
+                        .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
                     *cell.lock().unwrap() = v;
                 }
             }
@@ -425,7 +440,7 @@ impl Interpreter {
         }
         // Capture the old hash Arc before assignment for circular reference fixup.
         let old_hash_arc = if name.starts_with('%') {
-            if let Value::Hash(arc) = &self.locals[idx] {
+            if let ValueView::Hash(arc) = self.locals[idx].view() {
                 Some(crate::gc::Gc::as_ptr(arc) as usize)
             } else {
                 None
@@ -435,7 +450,7 @@ impl Interpreter {
         };
         // Capture the old array Arc before assignment for circular reference fixup.
         let old_array_arc = if name.starts_with('@') {
-            if let Value::Array(arc, _) = &self.locals[idx] {
+            if let ValueView::Array(arc, _) = self.locals[idx].view() {
                 Some(crate::gc::Gc::as_ptr(arc) as usize)
             } else {
                 None
@@ -464,7 +479,7 @@ impl Interpreter {
         let inplace_old_array: Option<crate::gc::Gc<crate::value::ArrayData>> =
             if name.starts_with('@') && !is_bind && !is_rebind && !is_vardecl && !is_anon_container
             {
-                if let Value::Array(gc, _) = &self.locals[idx] {
+                if let ValueView::Array(gc, _) = self.locals[idx].view() {
                     Some(gc.clone())
                 } else {
                     None
@@ -475,7 +490,7 @@ impl Interpreter {
         let inplace_old_hash: Option<crate::gc::Gc<crate::value::HashData>> =
             if name.starts_with('%') && !is_bind && !is_rebind && !is_vardecl && !is_anon_container
             {
-                if let Value::Hash(gc) = &self.locals[idx] {
+                if let ValueView::Hash(gc) = self.locals[idx].view() {
                     Some(gc.clone())
                 } else {
                     None
@@ -487,27 +502,27 @@ impl Interpreter {
             if has_explicit_initializer
                 && !is_constant
                 && !is_bind
-                && matches!(raw_popped, Value::Nil)
+                && raw_popped.is_nil()
                 && let Some(constraint) = loan_env!(self, var_type_constraint(name))
             {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
                     &constraint,
-                    &Value::Nil,
+                    &Value::NIL,
                 ));
             }
             // Prevent re-initialization of immutable containers (Mix, Set, Bag)
             if !is_vardecl
                 && !is_bind
                 && matches!(
-                    &self.locals[idx],
-                    Value::Mix(_, false) | Value::Set(_, false) | Value::Bag(_, false)
+                    self.locals[idx].view(),
+                    ValueView::Mix(_, false) | ValueView::Set(_, false) | ValueView::Bag(_, false)
                 )
             {
-                let type_name = match &self.locals[idx] {
-                    Value::Mix(..) => "Mix",
-                    Value::Set(..) => "Set",
-                    Value::Bag(..) => "Bag",
+                let type_name = match self.locals[idx].view() {
+                    ValueView::Mix(..) => "Mix",
+                    ValueView::Set(..) => "Set",
+                    ValueView::Bag(..) => "Bag",
                     _ => unreachable!(),
                 };
                 return Err(RuntimeError::assignment_ro_typename(
@@ -534,13 +549,13 @@ impl Interpreter {
             if has_explicit_initializer
                 && !is_constant
                 && !is_bind
-                && matches!(raw_popped, Value::Nil)
+                && raw_popped.is_nil()
                 && let Some(constraint) = loan_env!(self, var_type_constraint(name))
             {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
                     &constraint,
-                    &Value::Nil,
+                    &Value::NIL,
                 ));
             }
             // Native typed arrays cannot store lazy sequences — check before
@@ -549,9 +564,9 @@ impl Interpreter {
             if let Some(constraint) = loan_env!(self, var_type_constraint(name))
                 && crate::runtime::native_types::is_native_array_element_type(&constraint)
             {
-                let is_lazy_value = match &raw_popped {
-                    Value::Array(_, kind) => kind.is_lazy(),
-                    Value::LazyList(_) | Value::LazyIoLines { .. } => true,
+                let is_lazy_value = match raw_popped.view() {
+                    ValueView::Array(_, kind) => kind.is_lazy(),
+                    ValueView::LazyList(_) | ValueView::LazyIoLines { .. } => true,
                     _ => false,
                 };
                 if is_lazy_value {
@@ -604,29 +619,33 @@ impl Interpreter {
                 // Explicit Arrays ([1,2,3]) are preserved.
                 // Instance objects that do Positional are kept as-is.
                 // Non-Positional objects have .cache called for coercion.
-                match raw_popped {
-                    Value::Array(items, kind) if kind.is_real_array() => Value::Array(items, kind),
-                    Value::Array(items, _) => Value::Array(items, crate::value::ArrayKind::List),
-                    Value::Seq(items) => Value::Array(
+                match raw_popped.view() {
+                    ValueView::Array(items, kind) if kind.is_real_array() => {
+                        Value::array_with_kind(items.clone(), kind)
+                    }
+                    ValueView::Array(items, _) => {
+                        Value::array_with_kind(items.clone(), crate::value::ArrayKind::List)
+                    }
+                    ValueView::Seq(items) => Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
                         crate::value::ArrayKind::List,
                     ),
-                    Value::LazyList(list) => {
-                        let items = self.force_lazy_list_vm(&list)?;
-                        Value::Array(
+                    ValueView::LazyList(list) => {
+                        let items = self.force_lazy_list_vm(list)?;
+                        Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                             crate::value::ArrayKind::List,
                         )
                     }
-                    Value::LazyIoLines { .. } => {
-                        let forced = self.force_if_lazy_io_lines(raw_popped)?;
+                    ValueView::LazyIoLines { .. } => {
+                        let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
                         let items = runtime::value_to_list(&forced);
-                        Value::Array(
+                        Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                             crate::value::ArrayKind::List,
                         )
                     }
-                    Value::Instance { ref class_name, .. } => {
+                    ValueView::Instance { class_name, .. } => {
                         // Check if Instance does Positional — if so, keep as-is.
                         let cn = class_name.resolve();
                         let does_positional = matches!(
@@ -646,7 +665,7 @@ impl Interpreter {
                             .class_composed_roles(&cn)
                             .is_some_and(|roles| roles.iter().any(|r| r == "Positional"));
                         if does_positional {
-                            raw_popped
+                            raw_popped.clone()
                         } else {
                             // Call .cache on non-Positional to coerce.
                             // Skip native methods so user-defined .cache is called.
@@ -656,15 +675,15 @@ impl Interpreter {
                                 &[],
                                 true,
                             )?;
-                            let cached_val = cached.into_iter().next().unwrap_or(Value::Nil);
+                            let cached_val = cached.into_iter().next().unwrap_or(Value::NIL);
                             // Check that .cache returned a Positional
                             let is_pos = matches!(
-                                &cached_val,
-                                Value::Array(..)
-                                    | Value::Seq(_)
-                                    | Value::Slip(_)
-                                    | Value::LazyList(_)
-                                    | Value::LazyIoLines { .. }
+                                cached_val.view(),
+                                ValueView::Array(..)
+                                    | ValueView::Seq(_)
+                                    | ValueView::Slip(_)
+                                    | ValueView::LazyList(_)
+                                    | ValueView::LazyIoLines { .. }
                             );
                             if !is_pos {
                                 let got_type = crate::runtime::utils::value_type_name(&cached_val);
@@ -672,7 +691,7 @@ impl Interpreter {
                                 attrs.insert("got".to_string(), cached_val);
                                 attrs.insert(
                                     "expected".to_string(),
-                                    Value::Package(crate::symbol::Symbol::intern("Positional")),
+                                    Value::package(crate::symbol::Symbol::intern("Positional")),
                                 );
                                 attrs.insert(
                                     "message".to_string(),
@@ -693,25 +712,28 @@ impl Interpreter {
                                 return Err(err);
                             }
                             // Coerce cached result to List
-                            match cached_val {
-                                Value::Array(items, _) => {
-                                    Value::Array(items, crate::value::ArrayKind::List)
-                                }
-                                Value::Seq(items) => Value::Array(
+                            match cached_val.view() {
+                                ValueView::Array(items, _) => Value::array_with_kind(
+                                    items.clone(),
+                                    crate::value::ArrayKind::List,
+                                ),
+                                ValueView::Seq(items) => Value::array_with_kind(
                                     crate::gc::Gc::new(crate::value::ArrayData::new(
                                         items.to_vec(),
                                     )),
                                     crate::value::ArrayKind::List,
                                 ),
-                                other => Value::Array(
-                                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
+                                _ => Value::array_with_kind(
+                                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![
+                                        cached_val.clone(),
+                                    ])),
                                     crate::value::ArrayKind::List,
                                 ),
                             }
                         }
                     }
-                    other => Value::Array(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![other])),
+                    _ => Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![raw_popped.clone()])),
                         crate::value::ArrayKind::List,
                     ),
                 }
@@ -724,23 +746,23 @@ impl Interpreter {
                 // decont it first so the Positional check inspects the actual
                 // bound value, not the cell wrapper.
                 let decontained_popped = raw_popped.deref_container();
-                let is_positional = match &decontained_popped {
-                    Value::Array(..)
-                    | Value::LazyList(_)
-                    | Value::LazyIoLines { .. }
-                    | Value::Seq(_)
-                    | Value::Slip(_)
-                    | Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. }
-                    | Value::Uni { .. }
-                    | Value::Nil => true,
+                let is_positional = match decontained_popped.view() {
+                    ValueView::Array(..)
+                    | ValueView::LazyList(_)
+                    | ValueView::LazyIoLines { .. }
+                    | ValueView::Seq(_)
+                    | ValueView::Slip(_)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
+                    | ValueView::Uni { .. }
+                    | ValueView::Nil => true,
                     // Instance objects are Positional only if they implement
                     // the Positional role (or Array subclass etc.), but not
                     // Failure or arbitrary classes.
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name,
                         attributes,
                         ..
@@ -772,7 +794,7 @@ impl Interpreter {
                     attrs.insert("got".to_string(), raw_popped.clone());
                     attrs.insert(
                         "expected".to_string(),
-                        Value::Package(crate::symbol::Symbol::intern("Positional")),
+                        Value::package(crate::symbol::Symbol::intern("Positional")),
                     );
                     attrs.insert("symbol".to_string(), Value::str(name.clone()));
                     attrs.insert(
@@ -793,7 +815,7 @@ impl Interpreter {
                     err.exception = Some(Box::new(ex));
                     return Err(err);
                 }
-                match raw_popped {
+                match raw_popped.view() {
                     // `:=` binds the container itself rather than copying values
                     // into a fresh Array, so — unlike plain `=` assignment, which
                     // must stay conservative about mutation support (see
@@ -806,44 +828,50 @@ impl Interpreter {
                     // 1/3) — so `coroutine.is_some()` is checked too. Tag it as
                     // living in `@` array context so gist/`.WHAT` render
                     // `[...]`/`Array` rather than `(...)`/`Seq`.
-                    Value::LazyList(ref list)
+                    ValueView::LazyList(list)
                         if list.coroutine.is_some() || list.is_genuinely_lazy() =>
                     {
-                        Value::LazyList(crate::gc::Gc::new(list.with_array_context()))
+                        Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
                     }
-                    Value::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
-                    Value::LazyIoLines { .. } => {
-                        let forced = self.force_if_lazy_io_lines(raw_popped)?;
+                    ValueView::LazyList(list) => Value::real_array(self.force_lazy_list_vm(list)?),
+                    ValueView::LazyIoLines { .. } => {
+                        let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
                         Value::real_array(runtime::value_to_list(&forced))
                     }
-                    other => other,
+                    _ => raw_popped.clone(),
                 }
             } else {
-                match raw_popped {
-                    Value::LazyList(list) => {
-                        match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
+                match raw_popped.view() {
+                    ValueView::LazyList(list) => {
+                        match list
+                            .env
+                            .get(Self::LAZY_ASSIGN_PRESERVE_MARKER)
+                            .map(Value::view)
+                        {
                             // Preserved into an `@` array: keep it lazy but tag
                             // array context so gist/`.WHAT` render `[...]`/`Array`.
-                            Some(Value::Bool(true)) => {
-                                Value::LazyList(crate::gc::Gc::new(list.with_array_context()))
+                            Some(ValueView::Bool(true)) => {
+                                Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
                             }
-                            _ => Value::real_array(self.force_lazy_list_vm(&list)?),
+                            _ => Value::real_array(self.force_lazy_list_vm(list)?),
                         }
                     }
-                    Value::LazyIoLines { .. } => {
-                        let forced = self.force_if_lazy_io_lines(raw_popped)?;
+                    ValueView::LazyIoLines { .. } => {
+                        let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
                         runtime::coerce_to_array(forced)
                     }
                     // An infinite integer range (`1..*`) stays a reify LazyList
                     // instead of being capped to a 100k `ArrayKind::Lazy` Array. (L2)
-                    other if runtime::utils::infinite_int_range_to_lazy_array(&other).is_some() => {
-                        runtime::utils::infinite_int_range_to_lazy_array(&other).unwrap()
+                    _ if runtime::utils::infinite_int_range_to_lazy_array(&raw_popped)
+                        .is_some() =>
+                    {
+                        runtime::utils::infinite_int_range_to_lazy_array(&raw_popped).unwrap()
                     }
-                    other => {
+                    _ => {
                         // Resolve bound-element sentinels before coercing to
                         // array.  Assignment (not binding) creates new
                         // containers, so bound refs must be snapshotted.
-                        let other = self.resolve_bound_array_elements(other);
+                        let other = self.resolve_bound_array_elements(raw_popped.clone());
                         runtime::coerce_to_array(other)
                     }
                 }
@@ -859,17 +887,20 @@ impl Interpreter {
             // fixed-arity write-through treatment.
             if is_bind
                 && name.starts_with('@')
-                && let Value::Array(items, ..) = &assigned
+                && let ValueView::Array(items, ..) = assigned.view()
                 && items.iter().any(Value::is_container_ref)
             {
                 self.env_mut()
-                    .insert(Self::bound_array_slice_marker_key(name), Value::Bool(true));
+                    .insert(Self::bound_array_slice_marker_key(name), Value::TRUE);
             }
             // Preserve shaped array property on re-assignment, but only if the
             // new value is NOT already a shaped array (e.g. from Array.new(:shape(...)))
             let assigned_has_own_shape = crate::runtime::utils::shaped_array_shape(&assigned)
                 .is_some()
-                || matches!(&assigned, Value::Array(_, crate::value::ArrayKind::Shaped));
+                || matches!(
+                    assigned.view(),
+                    ValueView::Array(_, crate::value::ArrayKind::Shaped)
+                );
             let lhs_shape = crate::runtime::utils::shaped_array_shape(&self.locals[idx]);
             if let Some(shape) = &lhs_shape
                 && shape.len() == 1
@@ -888,7 +919,7 @@ impl Interpreter {
                     };
                     Self::autoviv_resize(&mut shaped_items, shape[0], default)?;
                 }
-                assigned = Value::Array(
+                assigned = Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(shaped_items)),
                     crate::value::ArrayKind::Shaped,
                 );
@@ -902,7 +933,7 @@ impl Interpreter {
                 && (has_explicit_initializer || !is_vardecl)
                 && lhs_shape.is_none()
                 && assigned_has_own_shape
-                && let Value::Array(items, _) = &assigned
+                && let ValueView::Array(items, _) = assigned.view()
             {
                 // The LHS is a plain (non-shaped) `@` array but the RHS is a
                 // shaped array. Raku `=` copies element VALUES and drops
@@ -920,11 +951,11 @@ impl Interpreter {
                 } else {
                     items.clone()
                 };
-                assigned = Value::Array(items, crate::value::ArrayKind::Array);
+                assigned = Value::array_with_kind(items, crate::value::ArrayKind::Array);
             }
-            let class_name = match &self.locals[idx] {
-                Value::Instance { class_name, .. } => Some(*class_name),
-                Value::Package(class_name) => Some(*class_name),
+            let class_name = match self.locals[idx].view() {
+                ValueView::Instance { class_name, .. } => Some(class_name),
+                ValueView::Package(class_name) => Some(class_name),
                 _ => None,
             };
             // When the old local slot holds a Buf/Blob (e.g. from a
@@ -942,10 +973,10 @@ impl Interpreter {
                 if class == "Buf" || class.starts_with("buf") || class.starts_with("Buf[") {
                     let items = runtime::value_to_list(&assigned)
                         .into_iter()
-                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .map(|v| Value::int(runtime::to_int(&v)))
                         .collect::<Vec<_>>();
                     assigned = self.try_compiled_method_or_interpret(
-                        Value::Package(class_name),
+                        Value::package(class_name),
                         "new",
                         items,
                     )?;
@@ -955,8 +986,8 @@ impl Interpreter {
         } else {
             Self::normalize_scalar_assignment_value(raw_popped)
         };
-        if matches!(val, Value::Nil)
-            && !matches!(self.locals[idx], Value::Nil)
+        if val.is_nil()
+            && !self.locals[idx].is_nil()
             && let Some(def) = self.var_default(name)
         {
             val = def.clone();
@@ -965,17 +996,17 @@ impl Interpreter {
         // with the default value (Raku container semantics).
         if name.starts_with('@')
             && let Some(def) = self.var_default(name).cloned()
-            && let Value::Array(ref items, kind) = val
+            && let ValueView::Array(items, kind) = val.view()
         {
             let is_hole =
-                |v: &Value| matches!(v, Value::Nil) || matches!(v, Value::Package(n) if n == "Any");
+                |v: &Value| v.is_nil() || matches!(v.view(), ValueView::Package(n) if n == "Any");
             let has_holes = items.iter().any(is_hole);
             if has_holes {
                 let replaced: Vec<Value> = items
                     .iter()
                     .map(|v| if is_hole(v) { def.clone() } else { v.clone() })
                     .collect();
-                val = Value::Array(
+                val = Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(replaced)),
                     kind,
                 );
@@ -990,7 +1021,7 @@ impl Interpreter {
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
-            if matches!(val, Value::Nil) && self.is_definite_constraint(&constraint) {
+            if val.is_nil() && self.is_definite_constraint(&constraint) {
                 if has_explicit_initializer {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         name,
@@ -1008,14 +1039,14 @@ impl Interpreter {
                     )));
                 }
             }
-            if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, &val) {
+            if !val.is_nil() && !self.type_matches_value(&constraint, &val) {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
                     &constraint,
                     &val,
                 ));
             }
-            if !matches!(val, Value::Nil) {
+            if !val.is_nil() {
                 val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
             }
             // Wrap native integer values on assignment (overflow wrapping)
@@ -1033,8 +1064,14 @@ impl Interpreter {
         // declaration (my $x = ...).  A `my` decl creates a fresh variable
         // that shadows the sigilless one, so it must not be blocked.
         if !is_vardecl
-            && matches!(self.env().get(&readonly_key), Some(Value::Bool(true)))
-            && !matches!(self.env().get(&alias_key), Some(Value::Str(_)))
+            && matches!(
+                self.env().get(&readonly_key).map(Value::view),
+                Some(ValueView::Bool(true))
+            )
+            && !matches!(
+                self.env().get(&alias_key).map(Value::view),
+                Some(ValueView::Str(_))
+            )
         {
             return Err(RuntimeError::assignment_ro(None));
         }
@@ -1052,7 +1089,7 @@ impl Interpreter {
             let prefix = "__mutsu_sigilless_alias::";
             for (k, v) in self.env().iter() {
                 if let Some(_var_name) = k.strip_prefix_str(prefix)
-                    && let Value::Str(target) = v
+                    && let ValueView::Str(target) = v.view()
                     && target.as_str() == name
                 {
                     aliases_to_remove.push(*k);
@@ -1066,7 +1103,7 @@ impl Interpreter {
             let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
             self.env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source.clone()));
-            self.env_mut().insert(readonly_key, Value::Bool(false));
+            self.env_mut().insert(readonly_key, Value::FALSE);
             // Create a shared ContainerRef for cross-scope binding (source in
             // outer call frame) OR same-scope rebinding (`:=` on existing vars).
             // ContainerRef ensures bidirectional container sharing: writing to
@@ -1086,15 +1123,20 @@ impl Interpreter {
             // function-wide `code.locals`, which a `my @n` in a *sibling* block
             // would spuriously satisfy via `source_in_same_scope`).
             let source_resolves_to_container = matches!(
-                self.env().get(&resolved_source),
-                Some(Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_))
+                self.env().get(&resolved_source).map(Value::view),
+                Some(ValueView::Array(..) | ValueView::Hash(..) | ValueView::ContainerRef(_))
             );
             let scalar_source: Option<String> = if source_resolves_to_container {
                 None
             } else {
                 resolved_source
                     .strip_prefix(['@', '%'])
-                    .filter(|bare| matches!(self.env().get(bare), Some(Value::ContainerRef(_))))
+                    .filter(|bare| {
+                        matches!(
+                            self.env().get(bare).map(Value::view),
+                            Some(ValueView::ContainerRef(_))
+                        )
+                    })
                     .map(str::to_string)
             };
             let effective_source = scalar_source
@@ -1120,8 +1162,8 @@ impl Interpreter {
             // the index-assign path; the cell IS the alias so no
             // `local_bind_pairs` entry is recorded.)
             let val_is_container = matches!(
-                val,
-                Value::Array(..) | Value::Hash(..) | Value::ContainerRef(_)
+                val.view(),
+                ValueView::Array(..) | ValueView::Hash(..) | ValueView::ContainerRef(_)
             );
             if val_is_container
                 && (source_in_same_scope || source_in_outer_frame || scalar_source.is_some())
@@ -1130,10 +1172,10 @@ impl Interpreter {
                 // Reuse the source's existing cell if it already has one (so a
                 // third alias `my @c := @b` joins the same cell); otherwise wrap
                 // the bound value in a fresh cell.
-                let cell = match &val {
-                    Value::ContainerRef(arc) => arc.clone(),
-                    _ => match self.env().get(&effective_source) {
-                        Some(Value::ContainerRef(arc)) => arc.clone(),
+                let cell = match val.view() {
+                    ValueView::ContainerRef(arc) => arc.clone(),
+                    _ => match self.env().get(&effective_source).map(Value::view) {
+                        Some(ValueView::ContainerRef(arc)) => arc.clone(),
                         _ => crate::gc::Gc::new(std::sync::Mutex::new(val.clone())),
                     },
                 };
@@ -1165,7 +1207,7 @@ impl Interpreter {
                         self.vm_set_var_type_constraint(name, None);
                     }
                 }
-                let container = Value::ContainerRef(cell);
+                let container = Value::container_ref(cell);
                 self.locals[idx] = container.clone();
                 if let Some(source_idx) = code.locals.iter().rposition(|n| n == &effective_source) {
                     self.locals[source_idx] = container.clone();
@@ -1203,12 +1245,12 @@ impl Interpreter {
             // Only use ContainerRef for same-scope rebind when the value is a
             // simple scalar (not a type object, array, hash, etc.)
             let val_is_simple_scalar = !matches!(
-                val,
-                Value::Package(_)
-                    | Value::Array(..)
-                    | Value::Hash(..)
-                    | Value::Sub(..)
-                    | Value::Instance { .. }
+                val.view(),
+                ValueView::Package(_)
+                    | ValueView::Array(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Sub(..)
+                    | ValueView::Instance { .. }
             );
             if (source_in_outer_frame
                 || (is_rebind && source_in_same_scope && val_is_simple_scalar))
@@ -1216,8 +1258,8 @@ impl Interpreter {
                 && !name.starts_with('%')
                 && !name.starts_with('&')
             {
-                let container = if let Value::ContainerRef(ref arc) = val {
-                    Value::ContainerRef(arc.clone())
+                let container = if let ValueView::ContainerRef(arc) = val.view() {
+                    Value::container_ref(arc.clone())
                 } else {
                     val.clone().into_container_ref()
                 };
@@ -1248,8 +1290,13 @@ impl Interpreter {
                 // Propagate ContainerRef to aliased attribute locals (e.g., when
                 // binding sigilless `$x`, also update `!x` so attribute writeback picks it up).
                 let alias_key_for_target = format!("__mutsu_sigilless_alias::{}", name);
-                if let Some(Value::Str(alias_target)) =
-                    self.env().get(&alias_key_for_target).cloned()
+                if let Some(alias_target) =
+                    self.env()
+                        .get(&alias_key_for_target)
+                        .and_then(|v| match v.view() {
+                            ValueView::Str(s) => Some(s.clone()),
+                            _ => None,
+                        })
                     && let Some(alias_idx) =
                         code.locals.iter().rposition(|n| n == alias_target.as_str())
                 {
@@ -1277,21 +1324,24 @@ impl Interpreter {
             && !is_rebind
             && !self.locals[idx].is_container_ref()
             && !matches!(
-                self.locals[idx],
-                Value::Package(_)
-                    | Value::Array(..)
-                    | Value::Hash(..)
-                    | Value::Sub(..)
-                    | Value::Instance { .. }
+                self.locals[idx].view(),
+                ValueView::Package(_)
+                    | ValueView::Array(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Sub(..)
+                    | ValueView::Instance { .. }
             )
-            && let Some(Value::ContainerRef(arc)) = self.env().get(name).cloned()
+            && let Some(arc) = self.env().get(name).and_then(|v| match v.view() {
+                ValueView::ContainerRef(arc) => Some(arc.clone()),
+                _ => None,
+            })
         {
-            self.locals[idx] = Value::ContainerRef(arc);
+            self.locals[idx] = Value::container_ref(arc);
         }
         // Write through ContainerRef in slow path: update inner value
         if !is_bind
             && !is_rebind
-            && let Value::ContainerRef(arc) = &self.locals[idx]
+            && let ValueView::ContainerRef(arc) = self.locals[idx].view()
         {
             // Slice 2a: a `=`-array-shared scalar reassigned as a whole REPLACES
             // the slot (raku value semantics); drop the share and fall through to
@@ -1319,8 +1369,8 @@ impl Interpreter {
             }
         }
         // If the current value is a Proxy, invoke STORE instead of overwriting
-        if let Value::Proxy { storer, .. } = &self.locals[idx]
-            && !matches!(storer.as_ref(), Value::Nil)
+        if let ValueView::Proxy { storer, .. } = self.locals[idx].view()
+            && !storer.is_nil()
         {
             let proxy_val = self.locals[idx].clone();
             loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
@@ -1333,7 +1383,10 @@ impl Interpreter {
         // First write through a missing-key `:=` bind: materialize the path into
         // a shared `ContainerRef` cell (phantom-entry; see
         // `materialize_bound_slot_to_cell`).
-        if !is_bind && !is_rebind && matches!(self.locals[idx], Value::HashEntryRef { .. }) {
+        if !is_bind
+            && !is_rebind
+            && matches!(self.locals[idx].view(), ValueView::HashEntryRef { .. })
+        {
             self.materialize_bound_slot_to_cell(code, idx, val);
             return Ok(());
         }
@@ -1364,7 +1417,7 @@ impl Interpreter {
             // untyped variable never reports a typed element/key constraint.
             let cleared = crate::runtime::Interpreter::clear_hash_type_metadata(std::mem::replace(
                 &mut self.locals[idx],
-                Value::Nil,
+                Value::NIL,
             ));
             self.locals[idx] = cleared;
         }
@@ -1427,7 +1480,7 @@ impl Interpreter {
                     None
                 },
             };
-            let stored = std::mem::replace(&mut self.locals[idx], Value::Nil);
+            let stored = std::mem::replace(&mut self.locals[idx], Value::NIL);
             self.locals[idx] = self.tag_container_metadata(stored, info);
         }
         // Container identity (§3, splice.t): copy the final container's contents
@@ -1437,13 +1490,13 @@ impl Interpreter {
         // keep the original pointer. Skip when the pointer is already the same
         // (e.g. a self-referential `@a = @a`), which needs no copy.
         if let Some(old_gc) = &inplace_old_array
-            && let Value::Array(new_gc, kind) = &self.locals[idx]
+            && let ValueView::Array(new_gc, kind) = self.locals[idx].view()
             && !crate::gc::Gc::ptr_eq(old_gc, new_gc)
         {
-            let (new_gc, kind) = (new_gc.clone(), *kind);
+            let (new_gc, kind) = (new_gc.clone(), kind);
             self.locals[idx] = Self::array_inplace_reassign(old_gc, &new_gc, kind);
         } else if let Some(old_gc) = &inplace_old_hash
-            && let Value::Hash(new_gc) = &self.locals[idx]
+            && let ValueView::Hash(new_gc) = self.locals[idx].view()
             && !crate::gc::Gc::ptr_eq(old_gc, new_gc)
         {
             let new_gc = new_gc.clone();
@@ -1459,13 +1512,13 @@ impl Interpreter {
             // detach from any shared backing `Gc`. (A reassignment whose slot
             // already holds an array/hash goes through the in-place branches above
             // and keeps its identity.)
-            let cur = std::mem::replace(&mut self.locals[idx], Value::Nil);
+            let cur = std::mem::replace(&mut self.locals[idx], Value::NIL);
             self.locals[idx] = Self::detach_shared_container(cur);
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();
         // Mark variable as readonly when storing a LazyThunk
-        if matches!(val, Value::LazyThunk(..)) {
+        if matches!(val.view(), ValueView::LazyThunk(..)) {
             self.mark_readonly(name);
         }
         if (is_bind || is_constant) && name.starts_with('@') {
@@ -1484,7 +1537,7 @@ impl Interpreter {
             }
         }
         let mut alias_name = self.env().get(&alias_key).and_then(|v| {
-            if let Value::Str(name) = v {
+            if let ValueView::Str(name) = v.view() {
                 Some(name.to_string())
             } else {
                 None
@@ -1507,7 +1560,7 @@ impl Interpreter {
                 .push(current_alias.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
             alias_name = self.env().get(&next_key).and_then(|v| {
-                if let Value::Str(name) = v {
+                if let ValueView::Str(name) = v.view() {
                     Some(name.to_string())
                 } else {
                     None
@@ -1634,7 +1687,7 @@ impl Interpreter {
             } else if name.starts_with('%') {
                 Value::hash(std::collections::HashMap::new())
             } else {
-                Value::Package(crate::symbol::Symbol::intern("Any"))
+                Value::package(crate::symbol::Symbol::intern("Any"))
             };
             self.env_mut().insert(name.to_string(), default);
         }

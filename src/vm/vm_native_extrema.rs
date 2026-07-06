@@ -53,18 +53,20 @@ impl Interpreter {
         let mut by: Option<Value> = None;
         let mut adverb: Option<String> = None;
         for arg in args {
-            match arg {
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } if by.is_none() => {
+            match arg.view() {
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    if by.is_none() =>
+                {
                     by = Some(arg.clone());
                 }
-                Value::Pair(name, val) if name == "by" => by = Some((**val).clone()),
-                Value::ValuePair(key, val) if matches!(key.as_ref(), Value::Str(n) if n.as_str() == "by") =>
+                ValueView::Pair(name, val) if name == "by" => by = Some(val.clone()),
+                ValueView::ValuePair(key, val) if matches!(key.view(), ValueView::Str(n) if n.as_str() == "by") =>
                 {
-                    by = Some((**val).clone());
+                    by = Some(val.clone());
                 }
-                Value::Pair(name, val)
+                ValueView::Pair(name, val)
                     if matches!(name.as_str(), "k" | "v" | "kv" | "p")
-                        && matches!(val.as_ref(), Value::Bool(true)) =>
+                        && matches!(val.view(), ValueView::Bool(true)) =>
                 {
                     adverb = Some(name.clone());
                 }
@@ -112,14 +114,16 @@ impl Interpreter {
         // `.minmax` takes only an optional `:by` callable (no `:k`/etc. adverbs).
         let mut by: Option<Value> = None;
         for arg in args {
-            match arg {
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } if by.is_none() => {
+            match arg.view() {
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    if by.is_none() =>
+                {
                     by = Some(arg.clone());
                 }
-                Value::Pair(name, val) if name == "by" => by = Some((**val).clone()),
-                Value::ValuePair(key, val) if matches!(key.as_ref(), Value::Str(n) if n.as_str() == "by") =>
+                ValueView::Pair(name, val) if name == "by" => by = Some(val.clone()),
+                ValueView::ValuePair(key, val) if matches!(key.view(), ValueView::Str(n) if n.as_str() == "by") =>
                 {
-                    by = Some((**val).clone());
+                    by = Some(val.clone());
                 }
                 _ => return None,
             }

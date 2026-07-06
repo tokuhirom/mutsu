@@ -40,26 +40,26 @@ impl Interpreter {
         // Handle lazy-scan short-circuit reduction compiled from ArrayLiteral.
         // The operator has prefix "_sc_" and the operand is an array of thunks.
         if let Some(sc_op) = base_op.strip_prefix("_sc_") {
-            let list_value = self.stack.pop().unwrap_or(Value::Nil);
+            let list_value = self.stack.pop().unwrap_or(Value::NIL);
             let thunks: Vec<Value> = runtime::value_to_list(&list_value);
             return self.exec_scan_shortcircuit_reduction(sc_op, negate, scan, thunks);
         }
-        let list_value = self.stack.pop().unwrap_or(Value::Nil);
+        let list_value = self.stack.pop().unwrap_or(Value::NIL);
         let input_is_lazy = crate::builtins::methods_0arg::is_value_lazy(&list_value);
         // For scan (triangle reduce) on infinite/lazy inputs, handle lazily
         // to avoid materializing the entire infinite range.
         if scan && input_is_lazy {
             return self.exec_lazy_scan_reduction(&base_op, negate, &list_value);
         }
-        let mut list = if let Value::LazyList(ref ll) = list_value {
+        let mut list = if let ValueView::LazyList(ll) = list_value.view() {
             self.force_lazy_list_vm(ll)?
         } else {
             runtime::value_to_list(&list_value)
         };
-        if list.iter().any(|v| matches!(v, Value::Slip(_))) {
+        if list.iter().any(|v| matches!(v.view(), ValueView::Slip(_))) {
             let mut flattened = Vec::new();
             for item in list {
-                if let Value::Slip(items) = item {
+                if let ValueView::Slip(items) = item.view() {
                     flattened.extend(items.iter().cloned());
                 } else {
                     flattened.push(item);
@@ -71,17 +71,19 @@ impl Interpreter {
         // value, flatten that one value into reduction elements.
         if list.len() == 1 {
             let only = list.remove(0);
-            list = match only {
-                Value::Array(items, kind) if !kind.is_itemized() => items.iter().cloned().collect(),
-                Value::Seq(items) => items.iter().cloned().collect(),
-                Value::LazyList(ll) => {
-                    if let Ok(items) = self.force_lazy_list_vm(&ll) {
+            list = match only.view() {
+                ValueView::Array(items, kind) if !kind.is_itemized() => {
+                    items.iter().cloned().collect()
+                }
+                ValueView::Seq(items) => items.iter().cloned().collect(),
+                ValueView::LazyList(ll) => {
+                    if let Ok(items) = self.force_lazy_list_vm(ll) {
                         items
                     } else {
-                        vec![Value::LazyList(ll)]
+                        vec![only.clone()]
                     }
                 }
-                other => vec![other],
+                _ => vec![only],
             };
         }
         // The `R` (reverse) metaop on a reduction reverses the entire fold:
@@ -107,7 +109,7 @@ impl Interpreter {
                     prefix.push(item);
                     out.push(Value::array(prefix.clone()));
                 }
-                self.stack.push(Value::Seq(std::sync::Arc::new(out)));
+                self.stack.push(Value::seq_arc(std::sync::Arc::new(out)));
             } else {
                 self.stack.push(Value::array(list));
             }
@@ -129,23 +131,25 @@ impl Interpreter {
 
         if scan {
             if list.is_empty() {
-                self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
+                self.stack
+                    .push(Value::seq_arc(std::sync::Arc::new(Vec::new())));
                 return Ok(());
             }
             if list.len() == 1 {
                 let is_chain = runtime::is_chain_comparison_op(&base_op);
                 let val = if is_chain {
-                    Value::Bool(true)
+                    Value::TRUE
                 } else {
                     list[0].clone()
                 };
-                self.stack.push(Value::Seq(std::sync::Arc::new(vec![val])));
+                self.stack
+                    .push(Value::seq_arc(std::sync::Arc::new(vec![val])));
                 return Ok(());
             }
             let out = match assoc {
                 ReductionAssoc::Right => {
                     let mut out = Vec::new();
-                    let mut acc = list.last().cloned().unwrap_or(Value::Nil);
+                    let mut acc = list.last().cloned().unwrap_or(Value::NIL);
                     out.push(acc.clone());
                     let mut right_edge = list.len().saturating_sub(1);
                     while right_edge >= step {
@@ -154,7 +158,7 @@ impl Interpreter {
                         call_args.push(acc);
                         let v =
                             self.reduction_step_with_args(&base_op, callable.as_ref(), call_args)?;
-                        acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                        acc = if negate { Value::truth(!v.truthy()) } else { v };
                         out.push(acc.clone());
                         right_edge = start;
                     }
@@ -168,7 +172,7 @@ impl Interpreter {
                         // Chain comparison scan: first element is always True
                         // (vacuously true), then each subsequent element is the
                         // AND of all pairwise comparisons so far.
-                        out.push(Value::Bool(true));
+                        out.push(Value::TRUE);
                         let mut all_true = true;
                         for i in 0..list.len() - 1 {
                             if all_true {
@@ -180,7 +184,7 @@ impl Interpreter {
                                 let truthy = if negate { !v.truthy() } else { v.truthy() };
                                 all_true = truthy;
                             }
-                            out.push(Value::Bool(all_true));
+                            out.push(Value::truth(all_true));
                         }
                     } else if is_xor {
                         // [\^^] and [\xor] scan: each element is the xor-reduce
@@ -197,7 +201,7 @@ impl Interpreter {
                                 }
                             }
                             let result = if multiple {
-                                Value::Nil
+                                Value::NIL
                             } else if let Some(ref v) = found {
                                 v.clone()
                             } else {
@@ -214,9 +218,9 @@ impl Interpreter {
                         //   step 1 = [Z~](<a b c>)       = ("abc",)
                         //   step 2 = [Z~](<a b c>,<1 2 3>) = ("a1","b2","c3")
                         let is_multi_list_zx = callable.is_none()
-                            && list
-                                .iter()
-                                .any(|v| matches!(v, Value::Array(_, _) | Value::Seq(_)))
+                            && list.iter().any(|v| {
+                                matches!(v.view(), ValueView::Array(_, _) | ValueView::Seq(_))
+                            })
                             && ((base_op.starts_with('Z') && base_op.len() > 1)
                                 || (base_op.starts_with('X') && base_op.len() > 1));
                         if is_multi_list_zx {
@@ -228,7 +232,7 @@ impl Interpreter {
                                     let inner_op = &base_op[1..];
                                     let items = runtime::value_to_list(&list[0]);
                                     if items.is_empty() {
-                                        Value::Seq(std::sync::Arc::new(vec![]))
+                                        Value::seq_arc(std::sync::Arc::new(vec![]))
                                     } else {
                                         let mut acc0 = items[0].clone();
                                         for item in items.iter().skip(1) {
@@ -236,7 +240,7 @@ impl Interpreter {
                                                 inner_op, &acc0, item,
                                             )?;
                                         }
-                                        Value::Seq(std::sync::Arc::new(vec![acc0]))
+                                        Value::seq_arc(std::sync::Arc::new(vec![acc0]))
                                     }
                                 } else {
                                     // Apply the Z/X op to all prefix elements
@@ -248,7 +252,7 @@ impl Interpreter {
                                     }
                                     acc0
                                 };
-                                let result = if negate { Value::Bool(!v.truthy()) } else { v };
+                                let result = if negate { Value::truth(!v.truthy()) } else { v };
                                 out.push(result);
                             }
                         } else {
@@ -262,19 +266,16 @@ impl Interpreter {
                                 let zx_prefix = (base_op.starts_with('Z') && base_op.len() > 1)
                                     || (base_op.starts_with('X') && base_op.len() > 1);
                                 if zx_prefix {
-                                    acc = Value::Seq(std::sync::Arc::new(vec![acc]));
+                                    acc = Value::seq_arc(std::sync::Arc::new(vec![acc]));
                                 } else if base_op == "minmax" {
                                     // [minmax](x) = x..x for scalars,
                                     // or min(x)..max(x) for array/list x.
                                     let (lo, hi) = minmax_bounds_of_value(&acc);
-                                    acc = match (&lo, &hi) {
-                                        (Value::Int(l), Value::Int(h)) => Value::Range(*l, *h),
-                                        _ => Value::GenericRange {
-                                            start: std::sync::Arc::new(lo),
-                                            end: std::sync::Arc::new(hi),
-                                            excl_start: false,
-                                            excl_end: false,
-                                        },
+                                    acc = match (lo.view(), hi.view()) {
+                                        (ValueView::Int(l), ValueView::Int(h)) => {
+                                            Value::range(l, h)
+                                        }
+                                        _ => Value::generic_range(lo, hi, false, false),
                                     };
                                 }
                             }
@@ -288,7 +289,7 @@ impl Interpreter {
                                     callable.as_ref(),
                                     call_args,
                                 )?;
-                                acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                                acc = if negate { Value::truth(!v.truthy()) } else { v };
                                 out.push(acc.clone());
                                 idx += step;
                             }
@@ -297,7 +298,7 @@ impl Interpreter {
                     out
                 }
             };
-            self.stack.push(Value::Seq(std::sync::Arc::new(out)));
+            self.stack.push(Value::seq_arc(std::sync::Arc::new(out)));
             return Ok(());
         }
         // [^^] and [xor] are list-associative: they check that exactly one element
@@ -312,7 +313,7 @@ impl Interpreter {
             }
             let mut found: Option<Value> = None;
             let mut multiple = false;
-            let mut last = Value::Nil;
+            let mut last = Value::NIL;
             for item in &list {
                 last = item.clone();
                 if item.truthy() {
@@ -324,7 +325,7 @@ impl Interpreter {
                 }
             }
             let result = if multiple {
-                Value::Nil
+                Value::NIL
             } else if let Some(v) = found {
                 v
             } else {
@@ -341,9 +342,9 @@ impl Interpreter {
         ) && list.len() > 2
         {
             let set_level = |v: &Value| -> u8 {
-                match v {
-                    Value::Mix(_, _) => 2,
-                    Value::Bag(_, _) => 1,
+                match v.view() {
+                    ValueView::Mix(_, _) => 2,
+                    ValueView::Bag(_, _) => 1,
                     _ => 0,
                 }
             };
@@ -391,7 +392,7 @@ impl Interpreter {
                         break;
                     }
                 }
-                self.stack.push(Value::Bool(result));
+                self.stack.push(Value::truth(result));
             } else {
                 if base_op == "o" {
                     let mut acc = list[0].clone();
@@ -414,7 +415,7 @@ impl Interpreter {
                     )
                 {
                     // Validate: non-numeric strings must throw X::Str::Numeric
-                    if let Value::Str(ref s) = list[0]
+                    if let ValueView::Str(s) = list[0].view()
                         && crate::runtime::str_numeric::parse_raku_str_to_numeric(s).is_none()
                     {
                         return Err(RuntimeError::str_numeric(
@@ -431,14 +432,14 @@ impl Interpreter {
                     // `**`/`%` it would wrongly compute `0 - 5`, `1 / 5`, etc.
                     // Numify via the additive identity so `[+] "2"` is Int 2,
                     // `[-] 5` is 5, and `[/] 5` is 5 (matching Rakudo).
-                    let v = self.reduction_step_with_args("+", None, vec![Value::Int(0), elem])?;
-                    let result = if negate { Value::Bool(!v.truthy()) } else { v };
+                    let v = self.reduction_step_with_args("+", None, vec![Value::int(0), elem])?;
+                    let result = if negate { Value::truth(!v.truthy()) } else { v };
                     self.stack.push(result);
                     return Ok(());
                 }
                 let acc = match assoc {
                     ReductionAssoc::Right => {
-                        let mut acc = list.last().cloned().unwrap_or(Value::Nil);
+                        let mut acc = list.last().cloned().unwrap_or(Value::NIL);
                         let mut right_edge = list.len().saturating_sub(1);
                         while right_edge >= step {
                             let start = right_edge - step;
@@ -449,7 +450,7 @@ impl Interpreter {
                                 callable.as_ref(),
                                 call_args,
                             )?;
-                            acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                            acc = if negate { Value::truth(!v.truthy()) } else { v };
                             right_edge = start;
                         }
                         acc
@@ -465,7 +466,7 @@ impl Interpreter {
                                 callable.as_ref(),
                                 call_args,
                             )?;
-                            acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                            acc = if negate { Value::truth(!v.truthy()) } else { v };
                             idx += step;
                         }
                         acc

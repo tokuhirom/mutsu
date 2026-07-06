@@ -164,17 +164,17 @@ impl Interpreter {
     /// must keep the fast path. A variable arg reaches the binder as a
     /// `__mutsu_varref_*` capture, so peek inside without cloning.
     pub(super) fn arg_is_container_value(arg: &Value) -> bool {
-        let Value::Capture { positional, named } = arg else {
+        let ValueView::Capture { positional, named } = arg.view() else {
             return false;
         };
         positional.is_empty()
             && matches!(
-                named.get("__mutsu_varref_name"),
-                Some(Value::Str(name)) if name.starts_with('@') || name.starts_with('%')
+                named.get("__mutsu_varref_name").map(Value::view),
+                Some(ValueView::Str(name)) if name.starts_with('@') || name.starts_with('%')
             )
             && matches!(
-                named.get("__mutsu_varref_value"),
-                Some(Value::Array(..)) | Some(Value::Hash(..))
+                named.get("__mutsu_varref_value").map(Value::view),
+                Some(ValueView::Array(..)) | Some(ValueView::Hash(..))
             )
     }
 
@@ -223,8 +223,9 @@ impl Interpreter {
             // container value needs the source name from `arg_sources`. Either
             // way the binder promotes the bound value to a shared cell.
             let varref_container = Self::arg_is_container_value(arg);
-            let plain_container_with_source = matches!(arg, Value::Array(..) | Value::Hash(..))
-                && src.is_some_and(|n| n.starts_with('@') || n.starts_with('%'));
+            let plain_container_with_source =
+                matches!(arg.view(), ValueView::Array(..) | ValueView::Hash(..))
+                    && src.is_some_and(|n| n.starts_with('@') || n.starts_with('%'));
             if varref_container || plain_container_with_source {
                 return true;
             }
@@ -265,10 +266,10 @@ impl Interpreter {
         };
         args.iter().enumerate().any(|(i, arg)| {
             let unwrapped = unwrap_varref_value(arg.clone());
-            let Value::Pair(key, val) = &unwrapped else {
+            let ValueView::Pair(key, val) = unwrapped.view() else {
                 return false;
             };
-            if !matches!(**val, Value::Array(..) | Value::Hash(..)) {
+            if !matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..)) {
                 return false;
             }
             let has_container_source = sources

@@ -23,9 +23,9 @@ pub(super) struct CStyleLoopSpec {
 
 impl Interpreter {
     pub(super) fn collect_loop_value(coll: &mut Vec<Value>, value: Value) {
-        match value {
-            Value::Slip(items) => coll.extend(items.iter().cloned()),
-            other => coll.push(other),
+        match value.view() {
+            ValueView::Slip(items) => coll.extend(items.iter().cloned()),
+            _ => coll.push(value),
         }
     }
 
@@ -50,7 +50,7 @@ impl Interpreter {
         if let Some(bytes) = crate::runtime::Interpreter::buf_as_byte_items(&deref) {
             return Some(bytes);
         }
-        if let Value::Array(items, ArrayKind::List) = &deref
+        if let ValueView::Array(items, ArrayKind::List) = deref.view()
             && items.len() == 1
         {
             let elem = items[0].deref_container();
@@ -211,7 +211,7 @@ impl Interpreter {
             self.env_mut().remove(name);
             for (idx, slot_name) in code.locals.iter().enumerate() {
                 if slot_name == name && idx < self.locals.len() {
-                    self.locals[idx] = saved_locals.get(idx).cloned().unwrap_or(Value::Nil);
+                    self.locals[idx] = saved_locals.get(idx).cloned().unwrap_or(Value::NIL);
                 }
             }
         }

@@ -21,11 +21,11 @@ impl Interpreter {
         let mut positional_idx = 0usize;
         for (i, arg) in args.iter().enumerate() {
             // Skip named args (pairs where key matches a named param)
-            if let Value::Pair(_, _) = arg {
+            if let ValueView::Pair(_, _) = arg.view() {
                 // Check if this is a named argument
                 let is_named = data.param_defs.iter().any(|pd| {
                     pd.named
-                        && if let Value::Pair(key, _) = arg {
+                        && if let ValueView::Pair(key, _) = arg.view() {
                             pd.name.trim_start_matches('$').trim_start_matches(':') == key.as_str()
                         } else {
                             false
@@ -36,7 +36,7 @@ impl Interpreter {
                 }
             }
 
-            if let Value::Junction { .. } = arg {
+            if let ValueView::Junction { .. } = arg.view() {
                 // Check if the corresponding param accepts Junction
                 if let Some(pd) = positional_params.get(positional_idx) {
                     let constraint = pd.type_constraint.as_deref().unwrap_or(
@@ -67,7 +67,7 @@ impl Interpreter {
         None
     }
 
-    /// Call a compiled closure (Value::Sub with compiled_code).
+    /// Call a compiled closure (a `Sub` value with compiled_code).
     pub(super) fn call_compiled_closure(
         &mut self,
         data: &crate::value::SubData,
@@ -118,17 +118,17 @@ impl Interpreter {
             let mut named = data.assumed_named.clone();
             let mut incoming_positional = Vec::new();
             for arg in &args {
-                if let Value::Pair(key, boxed) = arg {
-                    named.insert(key.clone(), *boxed.clone());
+                if let ValueView::Pair(key, boxed) = arg.view() {
+                    named.insert(key.clone(), boxed.clone());
                 } else {
                     incoming_positional.push(arg.clone());
                 }
             }
             let mut incoming_idx = 0usize;
             for assumed in &data.assumed_positional {
-                let is_placeholder = matches!(assumed, Value::Whatever)
-                    || matches!(assumed, Value::Num(f) if f.is_infinite())
-                    || matches!(assumed, Value::Rat(_, 0));
+                let is_placeholder = matches!(assumed.view(), ValueView::Whatever)
+                    || matches!(assumed.view(), ValueView::Num(f) if f.is_infinite())
+                    || matches!(assumed.view(), ValueView::Rat(_, 0));
                 if is_placeholder {
                     if incoming_idx < incoming_positional.len() {
                         positional.push(incoming_positional[incoming_idx].clone());
@@ -140,7 +140,7 @@ impl Interpreter {
             }
             positional.extend(incoming_positional.into_iter().skip(incoming_idx));
             for (key, value) in named {
-                positional.push(Value::Pair(key, Box::new(value)));
+                positional.push(Value::pair(key, value));
             }
             args = positional;
         }
@@ -153,7 +153,7 @@ impl Interpreter {
         // auto-threading when the param has no type constraint.
         if let Some(junction_idx) =
             self.find_junction_autothread_arg_with_pointy(data, &args, cc.is_pointy_block)
-            && let Value::Junction { kind, values } = &args[junction_idx]
+            && let ValueView::Junction { kind, values } = args[junction_idx].view()
         {
             let kind = kind.clone();
             let values = values.clone();
@@ -180,7 +180,7 @@ impl Interpreter {
         {
             let method_pkg = data.package.resolve();
             let invocant = args.first();
-            if let Some(Value::Instance { class_name, .. }) = invocant {
+            if let Some(ValueView::Instance { class_name, .. }) = invocant.map(Value::view) {
                 let class = class_name.resolve();
                 // Only check free-standing methods (not defined in a class, or defined
                 // in a different class than the invocant).
@@ -231,7 +231,7 @@ impl Interpreter {
         // currently holds (e.g. a later loop iteration's slot re-injection) — the
         // don't-overwrite default would otherwise hide this closure's own cell.
         for (k, v) in data.env.iter() {
-            if matches!(v, Value::ContainerRef(_)) {
+            if matches!(v.view(), ValueView::ContainerRef(_)) {
                 self.env_mut().insert_sym(*k, v.clone());
             } else {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
@@ -268,7 +268,10 @@ impl Interpreter {
                 // Skip box-on-capture cells: a ContainerRef-captured lexical is a
                 // shared container, not per-instance frozen state, so the stale
                 // closure_captured_state value must not clobber the live Arc.
-                if matches!(data.env.get_sym(*k), Some(Value::ContainerRef(_))) {
+                if matches!(
+                    data.env.get_sym(*k).map(Value::view),
+                    Some(ValueView::ContainerRef(_))
+                ) {
                     return None;
                 }
                 self.get_closure_captured_state(data.id, *k)
@@ -306,9 +309,9 @@ impl Interpreter {
         });
         self.env_mut().insert(
             "&?BLOCK".to_string(),
-            Value::WeakSub(crate::gc::Gc::downgrade(&block_arc)),
+            Value::weak_sub(crate::gc::Gc::downgrade(&block_arc)),
         );
-        self.push_block(Value::Sub(block_arc));
+        self.push_block(Value::sub_value(block_arc));
 
         // Push routine info for leave/return/when targeting.
         // For pointy blocks, we push a special marker name so that
@@ -342,7 +345,7 @@ impl Interpreter {
         }
         self.env_mut().insert(
             "__mutsu_callable_id".to_string(),
-            Value::Int(data.id as i64),
+            Value::int(data.id as i64),
         );
 
         if data.empty_sig && !args.is_empty() {
@@ -385,7 +388,10 @@ impl Interpreter {
         {
             // Named params with placeholders: handled by bind_function_args_values
         } else if !uses_positional && !args.is_empty() {
-            if let Some(first) = args.iter().find(|v| !matches!(v, Value::Pair(_, _))) {
+            if let Some(first) = args
+                .iter()
+                .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
+            {
                 self.env_mut().insert("_".to_string(), first.clone());
             }
         } else if data.params.is_empty() && args.is_empty() && data.name.is_empty() {
@@ -409,8 +415,8 @@ impl Interpreter {
             pd.name.starts_with('^') || pd.name.starts_with("@^") || pd.name.starts_with("%^")
         });
         let is_whatever_code = matches!(
-            data.env.get("__mutsu_callable_type"),
-            Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+            data.env.get("__mutsu_callable_type").map(Value::view),
+            Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
         );
         if cc.is_routine
             && !has_placeholder_param
@@ -419,13 +425,13 @@ impl Interpreter {
         {
             self.env_mut().insert(
                 "_".to_string(),
-                Value::Package(crate::symbol::Symbol::intern("Any")),
+                Value::package(crate::symbol::Symbol::intern("Any")),
             );
         }
 
         // Raku: $! is scoped per routine — fresh Nil on entry
         if !data.name.resolve().is_empty() {
-            self.env_mut().insert("!".to_string(), Value::Nil);
+            self.env_mut().insert("!".to_string(), Value::NIL);
         }
 
         // Explicit topic override (native `.map` over Pair-shaped elements). The
@@ -462,7 +468,7 @@ impl Interpreter {
             }
         }
 
-        self.locals = vec![Value::Nil; cc.locals.len()];
+        self.locals = vec![Value::NIL; cc.locals.len()];
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
@@ -529,7 +535,7 @@ impl Interpreter {
                     if matches_frame {
                         e.is_leave = false;
                         e.control = None;
-                        let ret_val = e.return_value.unwrap_or(Value::Nil);
+                        let ret_val = e.return_value.unwrap_or(Value::NIL);
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
                         self.stack.push(ret_val);
@@ -546,7 +552,7 @@ impl Interpreter {
                 Err(e) if e.is_succeed() => {
                     // `when`/`default` succeed signals are caught at the
                     // enclosing block boundary (sub, method, or pointy block).
-                    let ret_val = e.return_value.unwrap_or(Value::Nil);
+                    let ret_val = e.return_value.unwrap_or(Value::NIL);
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
@@ -567,9 +573,10 @@ impl Interpreter {
                             || data.env.contains_key("__mutsu_callable_id");
                         if has_target {
                             if e.return_target_callable_id().is_none()
-                                && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
+                                && let Some(ValueView::Int(id)) =
+                                    data.env.get("__mutsu_callable_id").map(Value::view)
                             {
-                                e.set_return_target_callable_id(Some(*id as u64));
+                                e.set_return_target_callable_id(Some(id as u64));
                             }
                             loan_env!(self, restore_let_saves(let_mark));
                             handled_let_saves = true;
@@ -628,12 +635,12 @@ impl Interpreter {
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
-                self.stack.pop().unwrap_or(Value::Nil)
+                self.stack.pop().unwrap_or(Value::NIL)
             } else {
-                Value::Nil
+                Value::NIL
             }
         } else {
-            Value::Nil
+            Value::NIL
         };
 
         self.stack.truncate(saved_stack_depth);
@@ -915,10 +922,14 @@ impl Interpreter {
             // StateVarInit in the declaring scope).
             for k in &cc.free_var_syms {
                 let meta_key = format!("__mutsu_state_key::{}", k);
-                if let Some(Value::Str(state_key)) = self.env().get(&meta_key).cloned()
+                let state_key = self.env().get(&meta_key).and_then(|v| match v.view() {
+                    ValueView::Str(s) => Some(s.to_string()),
+                    _ => None,
+                });
+                if let Some(state_key) = state_key
                     && let Some(val) = self.env().get_sym(*k).cloned()
                 {
-                    loan_env!(self, set_state_var(state_key.to_string(), val));
+                    loan_env!(self, set_state_var(state_key, val));
                 }
             }
         }
@@ -952,10 +963,13 @@ impl Interpreter {
             self.update_end_phaser_envs_for_keys(&captured_names, &current);
         }
 
-        let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {
-            Value::Str(s) => Some(s.to_string()),
-            _ => None,
-        });
+        let return_spec = data
+            .env
+            .get("__mutsu_return_type")
+            .and_then(|v| match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            });
         let effective_return_spec = return_spec
             .as_deref()
             .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));

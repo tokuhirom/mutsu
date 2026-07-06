@@ -16,18 +16,16 @@ impl Interpreter {
     pub(crate) fn multi_arg_type_keys(args: &[Value]) -> Option<Vec<crate::symbol::Symbol>> {
         let mut keys = Vec::with_capacity(args.len());
         for a in args {
-            let key = match a {
-                Value::Instance { class_name, .. } => *class_name,
-                Value::Junction { .. }
-                | Value::Mixin(..)
-                | Value::Scalar(_)
-                | Value::ContainerRef(_)
-                | Value::Pair(..)
-                | Value::ValuePair(..)
-                | Value::Capture { .. } => return None,
-                other => {
-                    crate::symbol::Symbol::intern(crate::runtime::utils::value_type_name(other))
-                }
+            let key = match a.view() {
+                ValueView::Instance { class_name, .. } => class_name,
+                ValueView::Junction { .. }
+                | ValueView::Mixin(..)
+                | ValueView::Scalar(_)
+                | ValueView::ContainerRef(_)
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
+                | ValueView::Capture { .. } => return None,
+                _ => crate::symbol::Symbol::intern(crate::runtime::utils::value_type_name(a)),
             };
             keys.push(key);
         }
@@ -228,23 +226,23 @@ impl Interpreter {
         args: Vec<Value>,
         can_skip_merge: Option<bool>,
     ) -> Result<Value, RuntimeError> {
-        let target_id = match &target {
-            Value::Instance { id, .. } => Some(*id),
+        let target_id = match target.view() {
+            ValueView::Instance { id, .. } => Some(id),
             _ => None,
         };
-        let attrs_cell = match &target {
-            Value::Instance { attributes, .. } => Some(attributes.clone()),
+        let attrs_cell = match target.view() {
+            ValueView::Instance { attributes, .. } => Some(attributes.clone()),
             _ => None,
         };
-        let attributes = match &target {
-            Value::Instance { attributes, .. } => attributes.to_map(),
+        let attributes = match target.view() {
+            ValueView::Instance { attributes, .. } => attributes.to_map(),
             _ => std::collections::HashMap::new(),
         };
         let empty_fns = HashMap::new();
         let method_result = if let Some(csm) = can_skip_merge {
             // Fast path: move target directly as base (avoid extra clone).
             let invocant_for_dispatch = if attributes.is_empty() {
-                Value::Package(crate::symbol::Symbol::intern(cn))
+                Value::package(crate::symbol::Symbol::intern(cn))
             } else {
                 target.clone()
             };
@@ -271,7 +269,7 @@ impl Interpreter {
             result
         } else {
             let invocant_for_dispatch = if attributes.is_empty() {
-                Value::Package(crate::symbol::Symbol::intern(cn))
+                Value::package(crate::symbol::Symbol::intern(cn))
             } else {
                 target.clone()
             };
@@ -306,7 +304,7 @@ impl Interpreter {
                 cell.commit_attrs(new_attrs.clone());
             }
             if !self.in_lvalue_assignment
-                && let Value::Proxy { ref fetcher, .. } = result
+                && let ValueView::Proxy { fetcher, .. } = result.view()
             {
                 // Without a `:=` adjustment the triple's map is the stale entry
                 // snapshot (the lazy reconcile skips the cell clone) —

@@ -46,19 +46,19 @@ impl Interpreter {
             // `array[int]` must reject/convert non-int values just like a
             // declared one).
             if crate::runtime::native_types::is_native_array_element_type(&info.value_type)
-                && let Value::Array(items, kind) = &val
+                && let ValueView::Array(items, kind) = val.view()
             {
                 let coerced = self.coerce_typed_array_elements(
                     name,
                     &info.value_type,
                     items,
-                    *kind,
+                    kind,
                     &|_| None,
                     false,
                 )?;
-                val = Value::Array(
+                val = Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(coerced)),
-                    *kind,
+                    kind,
                 );
             }
             val = self.tag_container_metadata(val, info);
@@ -67,33 +67,24 @@ impl Interpreter {
     }
 
     pub(super) fn normalize_scalar_assignment_value(val: Value) -> Value {
-        let is_nilish = |v: &Value| match v {
-            Value::Nil => true,
-            Value::Package(sym) => sym.resolve() == "Any",
+        let is_nilish = |v: &Value| match v.view() {
+            ValueView::Nil => true,
+            ValueView::Package(sym) => sym.resolve() == "Any",
             _ => false,
         };
-        match val {
-            Value::Array(items, kind) if items.len() == 1 => {
-                if items.first().is_some_and(is_nilish) {
-                    Value::Nil
-                } else {
-                    Value::Array(items, kind)
-                }
-            }
-            Value::Seq(items) if items.len() == 1 && items.first().is_some_and(is_nilish) => {
-                Value::Nil
-            }
-            Value::Slip(items) if items.len() == 1 && items.first().is_some_and(is_nilish) => {
-                Value::Nil
-            }
-            other => other,
-        }
+        let single_nilish = match val.view() {
+            ValueView::Array(items, _) => items.len() == 1 && items.first().is_some_and(is_nilish),
+            ValueView::Seq(items) => items.len() == 1 && items.first().is_some_and(is_nilish),
+            ValueView::Slip(items) => items.len() == 1 && items.first().is_some_and(is_nilish),
+            _ => false,
+        };
+        if single_nilish { Value::NIL } else { val }
     }
 
     pub(crate) fn extract_varref_binding(raw_val: Value) -> (Value, Option<String>) {
-        if let Value::Capture { positional, named } = &raw_val
+        if let ValueView::Capture { positional, named } = raw_val.view()
             && positional.is_empty()
-            && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+            && let Some(ValueView::Str(name)) = named.get("__mutsu_varref_name").map(Value::view)
             && let Some(inner) = named.get("__mutsu_varref_value")
         {
             return (inner.clone(), Some(name.to_string()));
@@ -106,7 +97,7 @@ impl Interpreter {
         let mut seen = std::collections::HashSet::new();
         while seen.insert(resolved.clone()) {
             let key = format!("__mutsu_sigilless_alias::{}", resolved);
-            let Some(Value::Str(next)) = self.env().get(&key) else {
+            let Some(ValueView::Str(next)) = self.env().get(&key).map(Value::view) else {
                 break;
             };
             resolved = next.to_string();
@@ -122,12 +113,12 @@ impl Interpreter {
         match target_type {
             "Int" => {
                 if let Ok(n) = key.parse::<i64>() {
-                    return Value::Int(n);
+                    return Value::int(n);
                 }
             }
             "Num" => {
                 if let Ok(n) = key.parse::<f64>() {
-                    return Value::Num(n);
+                    return Value::num(n);
                 }
             }
             "Numeric" | "Real" | "Cool" | "Any" | "Mu" => {
@@ -158,7 +149,7 @@ impl Interpreter {
         };
         if var_name.starts_with('@')
             && let Some(constraint) = loan_env!(self, var_type_constraint(var_name))
-            && let Value::Array(items, kind) = value
+            && let ValueView::Array(items, kind) = value.view()
         {
             // Native typed arrays cannot store lazy sequences
             if kind.is_lazy()
@@ -185,24 +176,24 @@ impl Interpreter {
             let coerced_items = self.coerce_typed_array_elements(
                 var_name,
                 &constraint,
-                &items,
+                items,
                 kind,
                 &coercion_target,
                 explicit_initializer,
             )?;
-            return Ok(Value::Array(
+            return Ok(Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(coerced_items)),
                 kind,
             ));
         }
 
         if var_name.starts_with('%')
-            && let Value::Hash(map) = value
+            && let ValueView::Hash(map) = value.view()
         {
             // Preserve original keys from the source hash before coercion
             // (coercion creates a new Arc, losing the registration).
             let saved_original_keys =
-                runtime::utils::hash_original_keys_snapshot(&Value::Hash(map.clone()));
+                runtime::utils::hash_original_keys_snapshot(&Value::hash_with_data(map.clone()));
             let value_constraint = loan_env!(self, var_type_constraint(var_name));
             let key_constraint = loan_env!(self, var_hash_key_constraint(var_name));
             let mut coerced_map = std::collections::HashMap::with_capacity(map.len());
@@ -229,7 +220,7 @@ impl Interpreter {
                     key.clone()
                 };
                 let coerced_val = if let Some(constraint) = &value_constraint {
-                    if matches!(val, Value::Nil) {
+                    if val.is_nil() {
                         if let Some(default) = self.var_default(var_name) {
                             default.clone()
                         } else if explicit_initializer && self.is_definite_constraint(constraint) {
@@ -312,11 +303,11 @@ impl Interpreter {
             }
             // A type-object hole (e.g. an `Any` gap from `@a[1] = x`) assigned to a
             // native array becomes that array's default (`0`/`0e0`/`""`).
-            if native_constraint && matches!(item, Value::Package(_)) {
+            if native_constraint && matches!(item.view(), ValueView::Package(_)) {
                 coerced_items.push(Self::native_fill_for_constraint(Some(constraint)));
                 continue;
             }
-            if matches!(item, Value::Nil) {
+            if item.is_nil() {
                 if let Some(default) = self.var_default(var_name) {
                     coerced_items.push(default.clone());
                 } else if explicit_initializer && self.is_definite_constraint(constraint) {
@@ -330,19 +321,19 @@ impl Interpreter {
             }
             // For shaped arrays, sub-arrays are structural — recurse into them
             if kind == crate::value::ArrayKind::Shaped
-                && let Value::Array(sub_items, sub_kind) = item
+                && let ValueView::Array(sub_items, sub_kind) = item.view()
             {
                 let sub_coerced = self.coerce_typed_array_elements(
                     var_name,
                     constraint,
                     sub_items,
-                    *sub_kind,
+                    sub_kind,
                     coercion_target,
                     explicit_initializer,
                 )?;
-                coerced_items.push(Value::Array(
+                coerced_items.push(Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(sub_coerced)),
-                    *sub_kind,
+                    sub_kind,
                 ));
                 continue;
             }
@@ -354,15 +345,15 @@ impl Interpreter {
             let coerced = if self.type_matches_value(&target_type, item) {
                 item.clone()
             } else if target_type == "Array" {
-                match item {
-                    Value::Array(items, kind) if !kind.is_real_array() => {
-                        Value::Array(items.clone(), crate::value::ArrayKind::Array)
+                match item.view() {
+                    ValueView::Array(items, kind) if !kind.is_real_array() => {
+                        Value::array_with_kind(items.clone(), crate::value::ArrayKind::Array)
                     }
-                    Value::Scalar(inner) => match inner.as_ref() {
-                        Value::Array(items, kind) if !kind.is_real_array() => {
-                            Value::Array(items.clone(), crate::value::ArrayKind::Array)
+                    ValueView::Scalar(inner) => match inner.view() {
+                        ValueView::Array(items, kind) if !kind.is_real_array() => {
+                            Value::array_with_kind(items.clone(), crate::value::ArrayKind::Array)
                         }
-                        Value::Array(..) => inner.as_ref().clone(),
+                        ValueView::Array(..) => inner.clone(),
                         _ if is_coercion => loan_env!(
                             self,
                             try_coerce_value_for_constraint("Array()", item.clone())
@@ -402,45 +393,45 @@ impl Interpreter {
         idx: &Value,
         array_len: usize,
     ) -> Option<Value> {
-        if let Value::GenericRange {
+        if let ValueView::GenericRange {
             start,
             end,
             excl_start,
             excl_end,
-        } = idx
+        } = idx.view()
         {
             let len = array_len as i64;
             let resolve_endpoint = |vm: &mut Self, val: &Value| -> i64 {
-                match val {
-                    Value::Int(i) => *i,
-                    Value::Sub(data) => {
+                match val.view() {
+                    ValueView::Int(i) => i,
+                    ValueView::Sub(data) => {
                         let mut sub_env = data.env.clone();
                         for p in &data.params {
-                            sub_env.insert(p.to_string(), Value::Int(len));
+                            sub_env.insert(p.to_string(), Value::int(len));
                         }
                         let saved_env = std::mem::take(vm.env_mut());
                         *vm.env_mut() = sub_env;
-                        let result = vm.eval_block_value(&data.body).unwrap_or(Value::Nil);
+                        let result = vm.eval_block_value(&data.body).unwrap_or(Value::NIL);
                         *vm.env_mut() = saved_env;
-                        match result {
-                            Value::Int(i) => i,
+                        match result.view() {
+                            ValueView::Int(i) => i,
                             _ => 0,
                         }
                     }
-                    Value::Num(f) => *f as i64,
+                    ValueView::Num(f) => f as i64,
                     _ => 0,
                 }
             };
             let s = resolve_endpoint(self, start);
             let e = resolve_endpoint(self, end);
-            let resolved = if *excl_start && *excl_end {
-                Value::RangeExclBoth(s, e)
-            } else if *excl_start {
-                Value::RangeExclStart(s, e)
-            } else if *excl_end {
-                Value::RangeExcl(s, e)
+            let resolved = if excl_start && excl_end {
+                Value::range_excl_both(s, e)
+            } else if excl_start {
+                Value::range_excl_start(s, e)
+            } else if excl_end {
+                Value::range_excl(s, e)
             } else {
-                Value::Range(s, e)
+                Value::range(s, e)
             };
             Some(resolved)
         } else {
@@ -449,10 +440,10 @@ impl Interpreter {
     }
 
     pub(crate) fn slice_indices_from_index(idx: &Value) -> Option<Vec<usize>> {
-        match idx {
-            Value::Range(a, b) => {
-                let start = (*a).max(0);
-                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+        match idx.view() {
+            ValueView::Range(a, b) => {
+                let start = a.max(0);
+                let end = b.min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
                 if end < start {
                     return Some(Vec::new());
                 }
@@ -462,9 +453,9 @@ impl Interpreter {
                         .collect(),
                 )
             }
-            Value::RangeExcl(a, b) => {
-                let start = (*a).max(0);
-                let end_excl = (*b)
+            ValueView::RangeExcl(a, b) => {
+                let start = a.max(0);
+                let end_excl = b
                     .max(0)
                     .min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
                 if start >= end_excl {
@@ -476,9 +467,9 @@ impl Interpreter {
                         .collect(),
                 )
             }
-            Value::RangeExclStart(a, b) => {
+            ValueView::RangeExclStart(a, b) => {
                 let start = a.saturating_add(1).max(0);
-                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end = b.min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
                 if end < start {
                     return Some(Vec::new());
                 }
@@ -488,9 +479,9 @@ impl Interpreter {
                         .collect(),
                 )
             }
-            Value::RangeExclBoth(a, b) => {
+            ValueView::RangeExclBoth(a, b) => {
                 let start = a.saturating_add(1).max(0);
-                let end_excl = (*b)
+                let end_excl = b
                     .max(0)
                     .min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
                 if start >= end_excl {
@@ -516,7 +507,7 @@ impl Interpreter {
                 effective_index
             )),
         );
-        attrs.insert("got".to_string(), Value::Int(effective_index));
+        attrs.insert("got".to_string(), Value::int(effective_index));
         attrs.insert("range".to_string(), Value::str_from("0..^Inf"));
         RuntimeError::typed("X::OutOfRange", attrs)
     }
@@ -542,7 +533,7 @@ impl Interpreter {
             }
             // Buf/Blob instances with "bytes" attribute: call .Str which throws X::Buf::AsStr
             // Blob type objects (no "bytes" attr, e.g. $*DISTRO.signature) stringify to ""
-            if let Value::Instance { attributes, .. } = &v
+            if let ValueView::Instance { attributes, .. } = v.view()
                 && Self::is_buf_value(&v)
                 && attributes.contains_key("bytes")
             {
@@ -552,7 +543,7 @@ impl Interpreter {
             }
             // For non-Buf instances, try .Stringy() for string context (Raku spec:
             // string interpolation calls .Str which delegates to .Stringy).
-            if let Value::Instance { .. } = &v {
+            if let ValueView::Instance { .. } = v.view() {
                 if let Ok(str_result) =
                     self.try_compiled_method_or_interpret(v.clone(), "Stringy", Vec::new())
                 {
@@ -570,12 +561,12 @@ impl Interpreter {
                 result.push_str(&crate::runtime::utils::coerce_to_str(&v));
                 continue;
             }
-            // A type object (`Value::Package`) whose class defines a user
+            // A type object (a `Package` value) whose class defines a user
             // `.Stringy`/`.Str` must dispatch it too: `class A { method Str {"foo"} }`
             // then `"$x"` / `"{A}"` renders "foo" (mirrors `coerce_stringy_operand`
             // used by infix `~`). Plain type objects fall through to the default
             // (empty) stringification.
-            if let Value::Package(name) = &v {
+            if let ValueView::Package(name) = v.view() {
                 let cn = name.resolve().to_string();
                 if self.has_user_method(&cn, "Stringy") {
                     let r =
@@ -606,7 +597,7 @@ impl Interpreter {
         // Route user-defined `.succ` through the Interpreter's unified compiled-first
         // dispatch (same entry point `.Str` interpolation already uses) instead
         // of a raw interpreter tree-walk — one method-dispatch path, not two.
-        if let Value::Instance { .. } = val
+        if let ValueView::Instance { .. } = val.view()
             && let Ok(result) =
                 self.try_compiled_method_or_interpret(val.clone(), "succ", Vec::new())
         {
@@ -635,7 +626,7 @@ impl Interpreter {
             {
                 return Ok(());
             }
-            if !matches!(new_val, Value::Nil) && !self.type_matches_value(&constraint, new_val) {
+            if !new_val.is_nil() && !self.type_matches_value(&constraint, new_val) {
                 let display = if name.starts_with('$') {
                     name.to_string()
                 } else {
@@ -669,7 +660,7 @@ impl Interpreter {
         post: bool,
     ) -> bool {
         let mut guard = arc.lock().unwrap();
-        if matches!(&*guard, Value::Instance { .. }) {
+        if matches!(guard.view(), ValueView::Instance { .. }) {
             return false;
         }
         let old = self.normalize_incdec_source_with_type(name, guard.clone());
@@ -689,7 +680,7 @@ impl Interpreter {
         // Route user-defined `.pred` through the Interpreter's unified compiled-first
         // dispatch (see increment_value_smart) instead of a raw interpreter
         // tree-walk — one method-dispatch path, not two.
-        if let Value::Instance { .. } = val
+        if let ValueView::Instance { .. } = val.view()
             && let Ok(result) =
                 self.try_compiled_method_or_interpret(val.clone(), "pred", Vec::new())
         {
@@ -712,7 +703,7 @@ impl Interpreter {
     ) {
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         let mut alias_name = self.env().get(&alias_key).and_then(|v| {
-            if let Value::Str(n) = v {
+            if let ValueView::Str(n) = v.view() {
                 Some(n.to_string())
             } else {
                 None
@@ -734,7 +725,7 @@ impl Interpreter {
                 .push(current_alias.clone());
             let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
             alias_name = self.env().get(&next_key).and_then(|v| {
-                if let Value::Str(n) = v {
+                if let ValueView::Str(n) = v.view() {
                     Some(n.to_string())
                 } else {
                     None

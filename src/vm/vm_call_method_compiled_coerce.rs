@@ -18,24 +18,24 @@ impl Interpreter {
     /// and fall through to the interpreter's richer handling.
     fn coerce_receiver_native_eligible(target: &Value) -> bool {
         matches!(
-            target,
-            Value::Array(..)
-                | Value::Seq(_)
-                | Value::Slip(_)
-                | Value::Hash(_)
-                | Value::Set(..)
-                | Value::Bag(..)
-                | Value::Mix(..)
-                | Value::Pair(..)
-                | Value::ValuePair(..)
-                | Value::Str(_)
-                | Value::Int(_)
-                | Value::BigInt(_)
-                | Value::Num(_)
-                | Value::Rat(..)
-                | Value::FatRat(..)
-                | Value::Complex(..)
-                | Value::Bool(_)
+            target.view(),
+            ValueView::Array(..)
+                | ValueView::Seq(_)
+                | ValueView::Slip(_)
+                | ValueView::Hash(_)
+                | ValueView::Set(..)
+                | ValueView::Bag(..)
+                | ValueView::Mix(..)
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
+                | ValueView::Str(_)
+                | ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::Complex(..)
+                | ValueView::Bool(_)
         ) || target.is_range()
     }
 
@@ -47,7 +47,7 @@ impl Interpreter {
     /// interpreter's `dispatch_method_by_name_2` uses, so the result is
     /// behavior-invariant. The `*Hash` variants flip the mutable flag exactly as
     /// the interpreter does. `.MixHash` embeds its type metadata directly in the
-    /// `Value::Mix` Arc (container metadata has travelled in the value since #2952),
+    /// `Mix` value's Arc (container metadata has travelled in the value since #2952),
     /// so it is a pure value op like the others.
     ///
     /// Returns `None` (fall through to the interpreter) for `Instance`/`Package`/
@@ -69,19 +69,19 @@ impl Interpreter {
         let target = target.clone();
         let result = match method {
             "Set" => crate::builtins::quanthash_coerce::to_set(target, "Set"),
-            "SetHash" => {
-                crate::builtins::quanthash_coerce::to_set(target, "SetHash").map(|r| match r {
-                    Value::Set(items, _) => Value::Set(items, true),
-                    other => other,
-                })
-            }
+            "SetHash" => crate::builtins::quanthash_coerce::to_set(target, "SetHash").map(|r| {
+                match r.view() {
+                    ValueView::Set(items, _) => Value::set_parts(items.clone(), true),
+                    _ => r,
+                }
+            }),
             "Bag" => crate::builtins::quanthash_coerce::to_bag(target, "Bag"),
-            "BagHash" => {
-                crate::builtins::quanthash_coerce::to_bag(target, "BagHash").map(|r| match r {
-                    Value::Bag(items, _) => Value::Bag(items, true),
-                    other => other,
-                })
-            }
+            "BagHash" => crate::builtins::quanthash_coerce::to_bag(target, "BagHash").map(|r| {
+                match r.view() {
+                    ValueView::Bag(items, _) => Value::bag_parts(items.clone(), true),
+                    _ => r,
+                }
+            }),
             "Mix" => crate::builtins::quanthash_coerce::to_mix(target, "Mix"),
             "MixHash" => crate::builtins::quanthash_coerce::to_mixhash(target),
             _ => unreachable!(),
@@ -94,7 +94,7 @@ impl Interpreter {
     /// [`coerce_receiver_native_eligible`](Self::coerce_receiver_native_eligible)),
     /// sharing the single `builtins::map_hash_coerce` impl the interpreter also
     /// uses. `.Map` decontainerizes and embeds the `Map` declared-type *in* the
-    /// `Value::Hash` Arc (container metadata travels in the value since #2952 — no
+    /// `Hash` value's Arc (container metadata travels in the value since #2952 — no
     /// interpreter-owned side table), so both are pure value ops. A scalar (`42.Hash`)
     /// raises `X::Hash::Store::OddNumber` via the same `to_hash`, identical to the
     /// interpreter. Instance (Match / `__baggy_data__`) and Package (type object,
@@ -123,7 +123,7 @@ impl Interpreter {
     /// value via the single shared `make_io_path_instance` (which inherits `$*SPEC`
     /// / `$*CWD` from env — a normal native env read, identical to the
     /// interpreter's `dispatch_method_by_name` `.IO` arm). An `IO::Path`(-subclass)
-    /// *type object* (`Value::Package`) returns itself (`IO::Path === IO::Path.IO`).
+    /// *type object* (a `Package` value) returns itself (`IO::Path === IO::Path.IO`).
     ///
     /// Returns `None` (fall through to the interpreter) for `Instance` receivers
     /// (which may have a user `.IO` or be IO::Path/IO::Handle), non-IO `Package`
@@ -138,10 +138,10 @@ impl Interpreter {
         if method != "IO" || !args.is_empty() {
             return None;
         }
-        match target {
+        match target.view() {
             // `.IO` on an IO::Path (sub)class type object returns the type object
             // itself, so `IO::Path::Unix === IO::Path::Unix.IO`.
-            Value::Package(name) => {
+            ValueView::Package(name) => {
                 let n = name.resolve();
                 if n == "IO::Path" || n.starts_with("IO::Path::") {
                     Some(Ok(target.clone()))
@@ -150,14 +150,14 @@ impl Interpreter {
                 }
             }
             // Plain stringifiable scalars coerce their string value to an IO::Path.
-            Value::Str(_)
-            | Value::Int(_)
-            | Value::BigInt(_)
-            | Value::Num(_)
-            | Value::Rat(..)
-            | Value::FatRat(..)
-            | Value::Complex(..)
-            | Value::Bool(_) => {
+            ValueView::Str(_)
+            | ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Rat(..)
+            | ValueView::FatRat(..)
+            | ValueView::Complex(..)
+            | ValueView::Bool(_) => {
                 let s = target.to_string_value();
                 if s.contains('\0') {
                     return Some(Err(RuntimeError::new(
@@ -181,7 +181,7 @@ impl Interpreter {
             return None;
         }
         // Already an Iterator instance: identity (interpreter's early return).
-        if let Value::Instance { class_name, .. } = target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name == "Iterator"
         {
             return Some(target.clone());
@@ -189,8 +189,8 @@ impl Interpreter {
         // Seq: consumed-state + `squish` env mutation are interpreter-owned.
         // HyperSeq/RaceSeq: single-iterator consumed-state is interpreter-owned too.
         if matches!(
-            target,
-            Value::Seq(_) | Value::HyperSeq(_) | Value::RaceSeq(_)
+            target.view(),
+            ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_)
         ) {
             return None;
         }
@@ -223,11 +223,11 @@ impl Interpreter {
         ) {
             return None;
         }
-        let Value::Instance {
+        let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = target
+        } = target.view()
         else {
             return None;
         };
@@ -246,11 +246,11 @@ impl Interpreter {
         // guard before the writeback below write-locks the same cell.
         let (items, start_index) = {
             let map = attributes.as_map();
-            let Some(Value::Array(items, ..)) = map.get("items") else {
+            let Some(ValueView::Array(items, ..)) = map.get("items").map(Value::view) else {
                 return None;
             };
-            let start_index = match map.get("index") {
-                Some(Value::Int(i)) if *i >= 0 => *i as usize,
+            let start_index = match map.get("index").map(Value::view) {
+                Some(ValueView::Int(i)) if i >= 0 => i as usize,
                 _ => 0,
             };
             (items.clone(), start_index)
@@ -274,19 +274,19 @@ impl Interpreter {
             "skip-one" => {
                 if index < len {
                     index += 1;
-                    Value::Bool(true)
+                    Value::TRUE
                 } else {
-                    Value::Bool(false)
+                    Value::FALSE
                 }
             }
             "skip-at-least" => {
                 let want = args.first().map(crate::runtime::to_int).unwrap_or(0).max(0) as usize;
                 if len.saturating_sub(index) >= want {
                     index += want;
-                    Value::Bool(true)
+                    Value::TRUE
                 } else {
                     index = len;
-                    Value::Bool(false)
+                    Value::FALSE
                 }
             }
             "skip-at-least-pull-one" => {
@@ -313,7 +313,7 @@ impl Interpreter {
         if index != start_index {
             // Write through the shared cell in place: every alias of this
             // iterator instance (caller var, locals) sees the advance directly.
-            attributes.insert("index".to_string(), Value::Int(index as i64));
+            attributes.insert("index".to_string(), Value::int(index as i64));
         }
         Some(Ok(ret))
     }
