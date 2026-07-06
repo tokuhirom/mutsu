@@ -2057,7 +2057,10 @@ impl CompiledCode {
             // is dynamic-scope — resolved against the live call stack — so it is
             // deliberately NOT captured.)
             if let OpCode::GetOuterVar { name_idx, .. } = op
-                && let Some(name) = self.constants.get(*name_idx as usize).and_then(|v| v.as_str())
+                && let Some(name) = self
+                    .constants
+                    .get(*name_idx as usize)
+                    .and_then(|v| v.as_str())
             {
                 if !outer_ref_names.iter().any(|n| n == name) {
                     outer_ref_names.push(name.to_string());
