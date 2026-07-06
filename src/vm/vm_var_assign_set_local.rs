@@ -162,6 +162,21 @@ impl Interpreter {
             // in a called sub).
             let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
             self.env_mut().remove(&readonly_key);
+            // A fresh `my $x = ...` declaration (plain `=`, not `:=`) drops the
+            // FORWARD sigilless `:=` alias (`alias::x = Y`) a PRIOR same-name
+            // binding left, so `$x = v` no longer propagates to `Y`. Without
+            // this, `my $a = h; $a := h` inside a loop leaks the NEXT iteration's
+            // `my $a = ...` back into the loop variable `h` (the loop var is a
+            // sigilless alias target). Only the FORWARD alias is dropped: reverse
+            // aliases (`alias::Z = x`, another lexical bound TO `$x`) and
+            // `local_bind_pairs` are preserved because a same-scope
+            // redeclaration (`my $x = 2; my $y := $x; my $x = 3`) is the SAME
+            // variable in raku, so `$y` must still track `$x`. `:=` (re)binds run
+            // their own alias bookkeeping and are excluded.
+            if !is_bind && !scalar_bind {
+                let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+                self.env_mut().remove(&alias_key);
+            }
             // Clear any readonly-parameter flag inherited from a caller/outer
             // scope. `readonly_vars` is keyed by bare name and is NOT cleared on
             // function entry, so a caller's readonly param (`sub f(Str $x){...}`)
