@@ -1715,8 +1715,14 @@ impl Interpreter {
     ///   - `EVAL`/`EVALFILE` with a `CALLER::` context, `subtest`, `CATCH`/
     ///     `CONTROL` handlers, phasers, `start` (all couple to the interpreter's
     ///     caller / test / dispatch context — Test::Util's `throws-like-any`),
-    ///   - `is rw`/`is raw`/sigilless params whose alias writeback to the caller
+    ///   - a sigilless *scalar* (`\x`) param whose alias writeback to the caller
     ///     must survive across an `EVAL` boundary (t/sigilless-params).
+    ///
+    /// `is rw`/`is raw`/`is copy`/`is readonly`/`is required` params are NOW
+    /// allowed (§2 multi-dispatch VM-ization): the compiled binding already
+    /// honored them for builtin shadows, and the rw/raw caller writeback carries
+    /// a compile-time caller slot (#4091). Only `is encoded(...)` (NativeCall)
+    /// stays excluded.
     ///
     /// Defaults ARE allowed (name-cache-safe: no same-named builtin to mis-bind,
     /// and a single candidate always resolves to this def). Bodies and
@@ -1756,8 +1762,20 @@ impl Interpreter {
                 // non-capture sub-signature stay excluded (caller-alias writeback
                 // across an EVAL boundary — see the doc comment above).
                 let is_capture = pd.slurpy && pd.sigilless;
-                (is_capture || (!pd.sigilless && pd.sub_signature.is_none()))
-                    && pd.traits.is_empty()
+                // Standard binding-time param traits (`is copy`/`is rw`/`is raw`/
+                // `is readonly`/`is required`) are OTF-safe: the compiled binding
+                // path already honors them for builtin-shadow subs (the non-module
+                // gate `def_is_otf_compilable` never checked `traits`), and the
+                // rw/raw caller writeback carries a compile-time caller slot (#4091)
+                // that refreshes the caller variable identically to the interpreter,
+                // including across an EVAL call boundary. Only a NativeCall
+                // marshalling trait (`is encoded('utf8')`) stays excluded here
+                // (interpreter-coupled string marshalling).
+                let traits_otf_safe = pd
+                    .traits
+                    .iter()
+                    .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"));
+                (is_capture || (!pd.sigilless && pd.sub_signature.is_none())) && traits_otf_safe
             })
             && !Self::function_body_declares_state(&def.body)
             && !Self::module_otf_body_needs_interpreter(&def.body)
