@@ -1,6 +1,6 @@
 [package]
 name = "mutsu"
-version = "0.2.27"
+version = "0.2.28"
 edition = "2024"
 rust-version = "1.92.0"
 
