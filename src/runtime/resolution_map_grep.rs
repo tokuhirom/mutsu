@@ -71,13 +71,54 @@ impl Interpreter {
                     || pd.shape_constraints.is_some()
             });
             if requires_full_binding {
+                // `map` batches the source by the block's `.count` (the number of
+                // positional parameters it will bind): a multi-positional block
+                // such as `-> \a, \b { }` consumes a chunk of that many elements
+                // per call. A slurpy parameter makes `.count` infinite, so the
+                // batch falls back to the required-positional arity (min 1). The
+                // previous code always passed a single element here, so sigilless
+                // / typed / defaulted multi-param blocks were mis-called with one
+                // argument (`Too few positionals passed`).
+                let assumed = data.assumed_positional.len();
+                let positional: Vec<&crate::ast::ParamDef> = data
+                    .param_defs
+                    .iter()
+                    .filter(|pd| !pd.named && !pd.is_invocant)
+                    .collect();
+                let batch = if positional.is_empty() {
+                    data.params.len().saturating_sub(assumed).max(1)
+                } else if positional
+                    .iter()
+                    .any(|pd| pd.slurpy || pd.is_capture_subsignature())
+                {
+                    positional
+                        .iter()
+                        .filter(|pd| {
+                            !pd.slurpy
+                                && !pd.optional_marker
+                                && pd.default.is_none()
+                                && !pd.is_capture_subsignature()
+                        })
+                        .count()
+                        .saturating_sub(assumed)
+                        .max(1)
+                } else {
+                    positional.len().saturating_sub(assumed).max(1)
+                };
                 let mut result = Vec::new();
-                for item in list_items {
-                    let value = self.call_sub_value(Value::Sub(data.clone()), vec![item], false)?;
+                let mut i = 0usize;
+                while i < list_items.len() {
+                    let end = (i + batch).min(list_items.len());
+                    let chunk: Vec<Value> = list_items[i..end].to_vec();
+                    // A short final chunk of a required-arity block raises
+                    // "Too few positionals" (matching raku); an optional trailing
+                    // parameter binds the missing slot to its default / `Any`.
+                    let value = self.call_sub_value(Value::Sub(data.clone()), chunk, false)?;
                     match value {
                         Value::Slip(elems) => result.extend(elems.iter().cloned()),
                         v => result.push(v),
                     }
+                    i = end;
                 }
                 return Ok(Value::array(result));
             }
