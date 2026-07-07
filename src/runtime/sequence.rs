@@ -3,9 +3,9 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     fn normalize_sequence_arg(value: &Value) -> Value {
-        match value {
-            Value::Capture { positional, .. } => Value::array((**positional).clone()),
-            other => other.clone(),
+        match value.view() {
+            ValueView::Capture { positional, .. } => Value::array(positional.clone()),
+            _ => value.clone(),
         }
     }
 
@@ -56,7 +56,7 @@ impl Interpreter {
         if result.len() >= min_arity {
             return result.iter().map(Self::normalize_sequence_arg).collect();
         }
-        let mut args = vec![Value::Nil; min_arity - result.len()];
+        let mut args = vec![Value::NIL; min_arity - result.len()];
         args.extend(result.iter().map(Self::normalize_sequence_arg));
         args
     }
@@ -155,7 +155,7 @@ impl Interpreter {
         suppress_generator_error: bool,
     ) -> Result<Option<Value>, RuntimeError> {
         let genfn = generator;
-        let val = if let Value::Sub(data) = genfn {
+        let val = if let ValueView::Sub(data) = genfn.view() {
             if self.sequence_has_registered_routine(&data.package.resolve(), &data.name.resolve()) {
                 let args = match self
                     .sequence_routine_param_mode(&data.package.resolve(), &data.name.resolve())
@@ -197,7 +197,7 @@ impl Interpreter {
                         || pd.double_slurpy
                 });
                 if needs_full_binding {
-                    match self.call_sub_value(Value::Sub(data.clone()), args, false) {
+                    match self.call_sub_value(Value::sub_value(data.clone()), args, false) {
                         Ok(v) => v,
                         Err(_e) if suppress_generator_error => return Ok(None),
                         Err(e) => return Err(e),
@@ -236,12 +236,12 @@ impl Interpreter {
                         if param.starts_with('%') {
                             let mut map = std::collections::HashMap::new();
                             for item in args.iter().skip(i) {
-                                if let Value::Pair(k, v) = item {
-                                    map.insert(k.clone(), (**v).clone());
+                                if let ValueView::Pair(k, v) = item.view() {
+                                    map.insert(k.clone(), v.clone());
                                 }
                             }
                             self.env
-                                .insert(param.clone(), Value::Hash(Value::hash_arc(map)));
+                                .insert(param.clone(), Value::hash_with_data(Value::hash_arc(map)));
                             break;
                         }
                         if let Some(arg) = args.get(i) {
@@ -292,9 +292,9 @@ impl Interpreter {
                     }
                 }
             }
-        } else if let Value::Routine { name: rname, .. } = genfn {
-            let package = match genfn {
-                Value::Routine { package, .. } => package,
+        } else if let ValueView::Routine { name: rname, .. } = genfn.view() {
+            let package = match genfn.view() {
+                ValueView::Routine { package, .. } => package,
                 _ => unreachable!(),
             };
             let args = match self.sequence_routine_param_mode(&package.resolve(), &rname.resolve())
@@ -323,7 +323,7 @@ impl Interpreter {
         right: Value,
         exclusive: bool,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Array(items, ..) = &right
+        if let ValueView::Array(items, ..) = right.view()
             && items.len() > 1
         {
             // Parenthesized chained syntax `(a ... b, c, d ... e, f, g ... h)`
@@ -332,16 +332,16 @@ impl Interpreter {
             // segment seeds as:
             //   prev-endpoint + accumulated scalars + next-seq-start.
             let seq_bounds = |value: &Value| -> Option<(Value, Value)> {
-                match value {
-                    Value::Array(inner, ..) if !inner.is_empty() => {
+                match value.view() {
+                    ValueView::Array(inner, ..) if !inner.is_empty() => {
                         Some((inner[0].clone(), inner[inner.len() - 1].clone()))
                     }
-                    Value::LazyList(ll) => ll
+                    ValueView::LazyList(ll) => ll
                         .cache
                         .lock()
                         .ok()
                         .and_then(|c| c.as_ref().and_then(|v| v.first().cloned()))
-                        .map(|start| (start, Value::Whatever)),
+                        .map(|start| (start, Value::WHATEVER)),
                     _ => None,
                 }
             };
@@ -394,7 +394,7 @@ impl Interpreter {
         let mut seeds: Vec<Value> = Vec::new();
         let mut generator: Option<Value> = None;
         for v in &seeds_raw {
-            if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
+            if matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. }) {
                 generator = Some(v.clone());
             } else {
                 seeds.push(v.clone());
@@ -413,10 +413,10 @@ impl Interpreter {
             Closure(Value),
             Regex(String),
         }
-        let (endpoint, endpoint_kind, extra_rhs) = match &right {
-            Value::Num(f) if f.is_infinite() => (None, None, vec![]),
-            Value::Whatever => (None, None, vec![]),
-            Value::Junction { kind: _, values } => {
+        let (endpoint, endpoint_kind, extra_rhs) = match right.view() {
+            ValueView::Num(f) if f.is_infinite() => (None, None, vec![]),
+            ValueView::Whatever => (None, None, vec![]),
+            ValueView::Junction { kind: _, values } => {
                 // Junction endpoint: match against any of the junction values
                 // Use the smallest/largest value as the effective endpoint for overshoot detection
                 let _vals: Vec<Value> = values.iter().cloned().collect();
@@ -426,21 +426,21 @@ impl Interpreter {
                     vec![],
                 )
             }
-            Value::Array(items, ..) => {
+            ValueView::Array(items, ..) => {
                 if items.is_empty() {
                     return Err(Self::sequence_empty_endpoint_error());
                 }
                 let first = &items[0];
                 let rest: Vec<Value> = items[1..].to_vec();
-                match first {
-                    Value::Num(f) if f.is_infinite() => (None, None, rest),
-                    Value::Whatever => (None, None, rest),
-                    Value::Sub(_) => (
+                match first.view() {
+                    ValueView::Num(f) if f.is_infinite() => (None, None, rest),
+                    ValueView::Whatever => (None, None, rest),
+                    ValueView::Sub(_) => (
                         Some(first.clone()),
                         Some(EndpointKind::Closure(first.clone())),
                         rest,
                     ),
-                    Value::Regex(pat) => (
+                    ValueView::Regex(pat) => (
                         Some(first.clone()),
                         Some(EndpointKind::Regex(pat.to_string())),
                         rest,
@@ -453,11 +453,11 @@ impl Interpreter {
                 }
             }
             // Range as endpoint: expand to list, first element is endpoint, rest are extras
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {
                 let items = super::utils::value_to_list(&right);
                 if items.is_empty() {
                     return Err(Self::sequence_empty_endpoint_error());
@@ -466,19 +466,19 @@ impl Interpreter {
                 let rest: Vec<Value> = items[1..].to_vec();
                 (Some(first.clone()), Some(EndpointKind::Value(first)), rest)
             }
-            Value::Sub(_) => (
+            ValueView::Sub(_) => (
                 Some(right.clone()),
                 Some(EndpointKind::Closure(right.clone())),
                 vec![],
             ),
-            Value::Regex(pat) => (
+            ValueView::Regex(pat) => (
                 Some(right.clone()),
                 Some(EndpointKind::Regex(pat.to_string())),
                 vec![],
             ),
-            other => (
-                Some(other.clone()),
-                Some(EndpointKind::Value(other.clone())),
+            _ => (
+                Some(right.clone()),
+                Some(EndpointKind::Value(right.clone())),
                 vec![],
             ),
         };
@@ -539,10 +539,10 @@ impl Interpreter {
                 }
             } else {
                 // String constant sequences: check if all seeds are equal strings
-                let all_str = seeds.iter().all(|v| matches!(v, Value::Str(_)));
+                let all_str = seeds.iter().all(|v| matches!(v.view(), ValueView::Str(_)));
                 if all_str && seeds.len() >= 2 {
                     let all_same = seeds.windows(2).all(|w| {
-                        if let (Value::Str(a), Value::Str(b)) = (&w[0], &w[1]) {
+                        if let (ValueView::Str(a), ValueView::Str(b)) = (w[0].view(), w[1].view()) {
                             a == b
                         } else {
                             false
@@ -553,12 +553,14 @@ impl Interpreter {
                     } else {
                         // Check direction from last two strings
                         let last_two = &seeds[seeds.len() - 2..];
-                        if let (Value::Str(a), Value::Str(b)) = (&last_two[0], &last_two[1]) {
+                        if let (ValueView::Str(a), ValueView::Str(b)) =
+                            (last_two[0].view(), last_two[1].view())
+                        {
                             let mut step = if b < a { -1.0 } else { 1.0 };
                             // With two string seeds and an explicit string endpoint,
                             // prefer a direction that can actually reach the endpoint.
                             if seeds.len() == 2
-                                && let Some(Value::Str(ep)) = endpoint.as_ref()
+                                && let Some(ValueView::Str(ep)) = endpoint.as_ref().map(Value::view)
                             {
                                 let toward_endpoint = if b < ep {
                                     1.0
@@ -593,7 +595,8 @@ impl Interpreter {
                     } else {
                         SeqMode::Arithmetic(-1.0)
                     }
-                } else if let (Value::Str(s), Value::Str(e)) = (&seeds[0], ep) {
+                } else if let (ValueView::Str(s), ValueView::Str(e)) = (seeds[0].view(), ep.view())
+                {
                     // String direction: compare codepoints
                     if e >= s {
                         SeqMode::Arithmetic(1.0)
@@ -726,7 +729,7 @@ impl Interpreter {
         // For closure/regex endpoints, check if any seed already satisfies the predicate
         if !seeds.is_empty() {
             if let Some(EndpointKind::Closure(ref closure_val)) = endpoint_kind
-                && let Value::Sub(data) = closure_val
+                && let ValueView::Sub(data) = closure_val.view()
             {
                 // Determine arity from params
                 let arity = if !data.params.is_empty() {
@@ -744,7 +747,7 @@ impl Interpreter {
                     // Collect the appropriate number of previous values up to position i+1
                     let args: Vec<Value> = if i + 1 < arity {
                         // Not enough values yet - pad with Nil
-                        let mut args = vec![Value::Nil; arity - (i + 1)];
+                        let mut args = vec![Value::NIL; arity - (i + 1)];
                         args.extend(seeds[..=i].iter().cloned());
                         args
                     } else {
@@ -849,11 +852,13 @@ impl Interpreter {
                         .all(|w| w[0].abs() > 1e-15 && ((w[1] / w[0]) - ratio_f).abs() < 1e-12)
             };
             if all_geometric && seeds.len() > 1 {
-                let has_rational_seed = seeds.iter().any(|v| matches!(v, Value::Rat(_, _)));
+                let has_rational_seed = seeds
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Rat(_, _)));
                 if has_rational_seed {
                     for s in seeds.iter_mut().skip(1) {
-                        if let Value::Int(i) = s {
-                            *s = make_rat(*i, 1);
+                        if let Some(i) = s.as_int() {
+                            *s = make_rat(i, 1);
                         }
                     }
                 }
@@ -868,15 +873,16 @@ impl Interpreter {
             && seeds.len() > 1
         {
             for s in seeds.iter_mut().skip(1) {
-                if let Value::Int(i) = s {
-                    *s = Value::Num(*i as f64);
+                if let Some(i) = s.as_int() {
+                    *s = Value::num(i as f64);
                 }
             }
         }
 
         // After seed re-derivation, check if any seed matches a type endpoint
         if !seeds.is_empty()
-            && let Some(EndpointKind::Value(Value::Package(ref type_name))) = endpoint_kind
+            && let Some(EndpointKind::Value(ref ep_val)) = endpoint_kind
+            && let ValueView::Package(type_name) = ep_val.view()
         {
             for (i, s) in seeds.iter().enumerate() {
                 if Self::seq_type_matches(s, &type_name.resolve()) {
@@ -895,36 +901,37 @@ impl Interpreter {
             (_, Some(_)) => 10000,
             (_, None) => 32,
         };
-        let is_string_seq = !seeds.is_empty() && matches!(seeds.last(), Some(Value::Str(_)));
+        let is_string_seq =
+            !seeds.is_empty() && matches!(seeds.last().map(Value::view), Some(ValueView::Str(_)));
 
         // Detect single-char codepoint mode: when all seeds and endpoint are single-char strings,
         // use codepoint increment/decrement instead of alphabetic .succ/.pred.
         let use_codepoint = is_string_seq
             && seeds
                 .iter()
-                .all(|v| matches!(v, Value::Str(s) if s.chars().count() == 1))
-            && match &endpoint {
-                Some(Value::Str(s)) => s.chars().count() == 1,
+                .all(|v| matches!(v.view(), ValueView::Str(s) if s.chars().count() == 1))
+            && match endpoint.as_ref().map(Value::view) {
+                Some(ValueView::Str(s)) => s.chars().count() == 1,
                 None => true,
                 _ => false,
             };
         let digit_string_radix = if is_string_seq
-            && let Some(Value::Str(ep)) = endpoint.as_ref()
-            && let Some(seed_len) = seeds.iter().find_map(|v| match v {
-                Value::Str(s) => Some(s.len()),
+            && let Some(ValueView::Str(ep)) = endpoint.as_ref().map(Value::view)
+            && let Some(seed_len) = seeds.iter().find_map(|v| match v.view() {
+                ValueView::Str(s) => Some(s.len()),
                 _ => None,
             })
             && seed_len > 1
-            && seeds.iter().all(|v| matches!(v, Value::Str(s) if s.len() == seed_len && s.chars().all(|c| c.is_ascii_digit())))
+            && seeds.iter().all(|v| matches!(v.view(), ValueView::Str(s) if s.len() == seed_len && s.chars().all(|c| c.is_ascii_digit())))
             && ep.len() == seed_len
             && ep.chars().all(|c| c.is_ascii_digit())
-            && (seeds.iter().any(|v| matches!(v, Value::Str(s) if s.starts_with('0')))
+            && (seeds.iter().any(|v| matches!(v.view(), ValueView::Str(s) if s.starts_with('0')))
                 || ep.starts_with('0'))
         {
             let max_digit = seeds
                 .iter()
-                .filter_map(|v| match v {
-                    Value::Str(s) => Some(s.as_str()),
+                .filter_map(|v| match v.view() {
+                    ValueView::Str(s) => Some(s.as_str()),
                     _ => None,
                 })
                 .chain(std::iter::once(ep.as_str()))
@@ -937,10 +944,10 @@ impl Interpreter {
             None
         };
         let uniform_string_alphabet = if is_string_seq
-            && let Some(Value::Str(ep)) = endpoint.as_ref()
+            && let Some(ValueView::Str(ep)) = endpoint.as_ref().map(Value::view)
             && seeds.len() == 1
             && matches!(mode, SeqMode::Arithmetic(step) if step != 0.0)
-            && let Value::Str(seed) = &seeds[0]
+            && let ValueView::Str(seed) = seeds[0].view()
         {
             let seed_chars: Vec<char> = seed.chars().collect();
             let ep_chars: Vec<char> = ep.chars().collect();
@@ -966,7 +973,7 @@ impl Interpreter {
             crate::opcode::CompiledCode,
             std::collections::HashMap<String, crate::opcode::CompiledFunction>,
         )> = if let SeqMode::Closure = &mode {
-            if let Some(Value::Sub(data)) = generator.as_ref() {
+            if let Some(ValueView::Sub(data)) = generator.as_ref().map(Value::view) {
                 if !self
                     .sequence_has_registered_routine(&data.package.resolve(), &data.name.resolve())
                     && !data.body.is_empty()
@@ -1007,7 +1014,7 @@ impl Interpreter {
         // side-effects (e.g. `++$i`) persist across iterations instead of being reset
         // from the immutable `data.env` each time.
         let mut generator_closure_env: Option<crate::env::Env> =
-            if let Some(Value::Sub(data)) = generator.as_ref() {
+            if let Some(ValueView::Sub(data)) = generator.as_ref().map(Value::view) {
                 Some(data.env.clone())
             } else {
                 None
@@ -1045,7 +1052,7 @@ impl Interpreter {
                         } else if use_codepoint {
                             // Single-char: use codepoint increment/decrement
                             let last = result.last().unwrap();
-                            if let Value::Str(s) = last {
+                            if let ValueView::Str(s) = last.view() {
                                 let ch = s.chars().next().unwrap_or('\0');
                                 let delta = if *step > 0.0 { 1i32 } else { -1i32 };
                                 if let Some(next_ch) =
@@ -1061,7 +1068,7 @@ impl Interpreter {
                         } else if *step < 0.0 {
                             // String predecessor sequence: use .pred
                             let last = result.last().unwrap();
-                            if let Value::Str(s) = last {
+                            if let ValueView::Str(s) = last.view() {
                                 if let Some(alpha) = uniform_string_alphabet.as_ref() {
                                     let mut idxs: Vec<usize> =
                                         Vec::with_capacity(s.chars().count());
@@ -1107,7 +1114,7 @@ impl Interpreter {
                         } else {
                             // String succession sequence: use .succ
                             let last = result.last().unwrap();
-                            if let Value::Str(s) = last {
+                            if let ValueView::Str(s) = last.view() {
                                 if let Some(alpha) = uniform_string_alphabet.as_ref() {
                                     let mut idxs: Vec<usize> =
                                         Vec::with_capacity(s.chars().count());
@@ -1154,7 +1161,7 @@ impl Interpreter {
                     } else {
                         let last = result.last().unwrap();
                         // For non-numeric values (e.g. custom objects), try .succ/.pred
-                        if matches!(last, Value::Instance { .. }) {
+                        if matches!(last.view(), ValueView::Instance { .. }) {
                             let method = if *step >= 0.0 { "succ" } else { "pred" };
                             let saved = self.env.clone();
                             let saved_vb = self.var_bindings.clone();
@@ -1184,9 +1191,9 @@ impl Interpreter {
             };
 
             // Flatten Slip into individual items for processing
-            let items_to_add: Vec<Value> = match next {
-                Value::Slip(ref items) => items.iter().cloned().collect(),
-                ref other => vec![other.clone()],
+            let items_to_add: Vec<Value> = match next.view() {
+                ValueView::Slip(items) => items.iter().cloned().collect(),
+                _ => vec![next.clone()],
             };
 
             if endpoint_kind.is_none() {
@@ -1203,7 +1210,7 @@ impl Interpreter {
                 if let Some(ref epk) = endpoint_kind {
                     match epk {
                         EndpointKind::Closure(closure_val) => {
-                            if let Value::Sub(data) = closure_val {
+                            if let ValueView::Sub(data) = closure_val.view() {
                                 let arity = if !data.params.is_empty() {
                                     data.params.len()
                                 } else {
@@ -1226,7 +1233,7 @@ impl Interpreter {
                                 let args: Vec<Value> = if result_len == 0 {
                                     vec![item.clone(); arity]
                                 } else if result_len < arity - 1 {
-                                    let mut args = vec![Value::Nil; arity - result_len - 1];
+                                    let mut args = vec![Value::NIL; arity - result_len - 1];
                                     args.extend(result.iter().cloned());
                                     args.push(item.clone());
                                     args
@@ -1277,7 +1284,7 @@ impl Interpreter {
                             }
                         }
                         EndpointKind::Value(ep) => {
-                            if let Value::Package(type_name) = ep
+                            if let ValueView::Package(type_name) = ep.view()
                                 && Self::seq_type_matches(&item, &type_name.resolve())
                             {
                                 if !exclusive {
@@ -1294,7 +1301,8 @@ impl Interpreter {
                                 continue;
                             }
                             // Check if we went past the endpoint (string comparison)
-                            if let (Value::Str(ns), Value::Str(es)) = (&item, ep)
+                            if let (ValueView::Str(ns), ValueView::Str(es)) =
+                                (item.view(), ep.view())
                                 && let SeqMode::Arithmetic(step) = &mode
                             {
                                 if *step > 0.0 && ns > es {
@@ -1387,7 +1395,7 @@ impl Interpreter {
             // Build a SequenceSpec so the lazy list can generate more elements on demand
             let seq_spec = match &mode {
                 SeqMode::Arithmetic(step) => {
-                    let all_int = result.iter().all(|v| matches!(v, Value::Int(_)));
+                    let all_int = result.iter().all(|v| matches!(v.view(), ValueView::Int(_)));
                     if all_int && *step == (*step as i64) as f64 {
                         Some(crate::value::SequenceSpec::Arithmetic {
                             step: *step as i64,
@@ -1410,7 +1418,7 @@ impl Interpreter {
                 SeqMode::Closure => None,
             };
             if let Some(spec) = seq_spec {
-                Ok(Value::LazyList(crate::gc::Gc::new(
+                Ok(Value::lazy_list(crate::gc::Gc::new(
                     crate::value::LazyList::new_sequence(result, spec),
                 )))
             } else if matches!(mode, SeqMode::Closure)
@@ -1427,11 +1435,11 @@ impl Interpreter {
                         .map(|(c, f)| (std::sync::Arc::new(c), std::sync::Arc::new(f))),
                     finished: false,
                 };
-                Ok(Value::LazyList(crate::gc::Gc::new(
+                Ok(Value::lazy_list(crate::gc::Gc::new(
                     crate::value::LazyList::new_closure_sequence(result, state),
                 )))
             } else {
-                Ok(Value::LazyList(crate::gc::Gc::new(
+                Ok(Value::lazy_list(crate::gc::Gc::new(
                     crate::value::LazyList::new_cached(result),
                 )))
             }
@@ -1451,7 +1459,7 @@ impl Interpreter {
         if args.len() < 3 {
             // Not a chained sequence
             let left = args[0].clone();
-            let right = args.last().cloned().unwrap_or(Value::Nil);
+            let right = args.last().cloned().unwrap_or(Value::NIL);
             return self.eval_sequence(left, right, exclude_end);
         }
 
@@ -1459,21 +1467,21 @@ impl Interpreter {
         // args = [seed1, seed2, ..., endpoint].
         let has_list_waypoint = args[1..args.len() - 1].iter().any(|v| {
             matches!(
-                v,
-                Value::Array(..)
-                    | Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. }
-                    | Value::Seq(_)
-                    | Value::Slip(_)
-                    | Value::LazyList(_)
+                v.view(),
+                ValueView::Array(..)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
+                    | ValueView::Seq(_)
+                    | ValueView::Slip(_)
+                    | ValueView::LazyList(_)
             )
         });
         if !has_list_waypoint && args.len() > 3 {
             let left = Value::array(args[..args.len() - 1].to_vec());
-            let right = args.last().cloned().unwrap_or(Value::Nil);
+            let right = args.last().cloned().unwrap_or(Value::NIL);
             return self.eval_sequence(left, right, exclude_end);
         }
 
@@ -1494,8 +1502,8 @@ impl Interpreter {
                 (waypoint.clone(), vec![])
             } else {
                 // Waypoint: if it's a list, first element is endpoint, whole list is next seed
-                match waypoint {
-                    Value::Array(items, ..) if !items.is_empty() => {
+                match waypoint.view() {
+                    ValueView::Array(items, ..) if !items.is_empty() => {
                         let ep = items[0].clone();
                         (ep, items.to_vec())
                     }
@@ -1513,9 +1521,9 @@ impl Interpreter {
             let seg_result = self.eval_sequence(left, endpoint, seg_exclude_end)?;
 
             // Collect results, avoiding duplicates at segment boundaries
-            let items: Option<Vec<Value>> = match &seg_result {
-                Value::Array(items, ..) => Some(items.as_ref().clone().items),
-                Value::LazyList(ll) => ll.cache.lock().unwrap().clone(),
+            let items: Option<Vec<Value>> = match seg_result.view() {
+                ValueView::Array(items, ..) => Some(items.as_ref().clone().items),
+                ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone(),
                 _ => None,
             };
             if let Some(items) = items {

@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::runtime::{ContainerTypeInfo, Interpreter};
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 impl Interpreter {
     /// True for the six QuantHash type names this module constructs natively.
@@ -82,7 +82,7 @@ impl Interpreter {
                                 has_non_str: &mut bool,
                                 item: &Value| {
                     let str_key = item.to_string_value();
-                    if !matches!(item, Value::Str(_)) {
+                    if !matches!(item.view(), ValueView::Str(_)) {
                         *has_non_str = true;
                         original_keys
                             .entry(str_key.clone())
@@ -93,7 +93,10 @@ impl Interpreter {
                 if args.len() == 1 {
                     let arg = &args[0];
                     // QuantHash types are always single elements
-                    if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
+                    if matches!(
+                        arg.view(),
+                        ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
+                    ) {
                         add_item(&mut elems, &mut original_keys, &mut has_non_str_keys, arg);
                     } else {
                         for item in Self::value_to_list(arg) {
@@ -115,7 +118,10 @@ impl Interpreter {
                     // Collect the items that will actually be added, for type checking
                     let items_to_check: Vec<Value> = if args.len() == 1 {
                         let arg = &args[0];
-                        if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
+                        if matches!(
+                            arg.view(),
+                            ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
+                        ) {
                             vec![arg.clone()]
                         } else {
                             Self::value_to_list(arg)
@@ -124,9 +130,9 @@ impl Interpreter {
                         args.clone()
                     };
                     for item in &items_to_check {
-                        let check_val = match item {
-                            Value::Pair(_, v) => v.as_ref(),
-                            other => other,
+                        let check_val = match item.view() {
+                            ValueView::Pair(_, v) => v,
+                            _ => item,
                         };
                         if !self.type_matches_value(constraint, check_val) {
                             let got_type = crate::value::what_type_name(check_val);
@@ -141,7 +147,7 @@ impl Interpreter {
                             attrs.insert("got".to_string(), check_val.clone());
                             attrs.insert(
                                 "expected".to_string(),
-                                Value::Package(Symbol::intern(constraint)),
+                                Value::package(Symbol::intern(constraint)),
                             );
                             let ex = Value::make_instance(
                                 Symbol::intern("X::TypeCheck::Binding"),
@@ -200,7 +206,7 @@ impl Interpreter {
                                 has_non_str: &mut bool,
                                 item: &Value| {
                     let str_key = item.to_string_value();
-                    if !matches!(item, Value::Str(_)) {
+                    if !matches!(item.view(), ValueView::Str(_)) {
                         *has_non_str = true;
                         original_keys
                             .entry(str_key.clone())
@@ -210,16 +216,16 @@ impl Interpreter {
                 };
                 // Check for lazy/infinite arguments
                 let is_lazy_arg = |v: &Value| -> bool {
-                    match v {
-                        Value::LazyList(_) => true,
-                        Value::Array(_, kind) if kind.is_lazy() => true,
-                        Value::Range(_, end)
-                        | Value::RangeExcl(_, end)
-                        | Value::RangeExclStart(_, end)
-                        | Value::RangeExclBoth(_, end) => *end == i64::MAX,
-                        Value::GenericRange { end, .. } => match end.as_ref() {
-                            Value::HyperWhatever => true,
-                            Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
+                    match v.view() {
+                        ValueView::LazyList(_) => true,
+                        ValueView::Array(_, kind) if kind.is_lazy() => true,
+                        ValueView::Range(_, end)
+                        | ValueView::RangeExcl(_, end)
+                        | ValueView::RangeExclStart(_, end)
+                        | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
+                        ValueView::GenericRange { end, .. } => match end.as_ref().view() {
+                            ValueView::HyperWhatever => true,
+                            ValueView::Num(n) => n.is_infinite() && n.is_sign_positive(),
                             _ => {
                                 let n = end.to_f64();
                                 n.is_infinite() && n.is_sign_positive()
@@ -240,7 +246,10 @@ impl Interpreter {
                 if args.len() == 1 {
                     let arg = &args[0];
                     // QuantHash types are always single elements
-                    if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
+                    if matches!(
+                        arg.view(),
+                        ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
+                    ) {
                         add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
                     } else {
                         for item in Self::value_to_list(arg) {
@@ -266,7 +275,10 @@ impl Interpreter {
                 {
                     let items_to_check: Vec<Value> = if args.len() == 1 {
                         let arg = &args[0];
-                        if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
+                        if matches!(
+                            arg.view(),
+                            ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
+                        ) {
                             vec![arg.clone()]
                         } else {
                             Self::value_to_list(arg)
@@ -288,7 +300,7 @@ impl Interpreter {
                             attrs.insert("got".to_string(), item.clone());
                             attrs.insert(
                                 "expected".to_string(),
-                                Value::Package(Symbol::intern(constraint)),
+                                Value::package(Symbol::intern(constraint)),
                             );
                             let ex = Value::make_instance(
                                 Symbol::intern("X::TypeCheck::Binding"),
@@ -343,7 +355,7 @@ impl Interpreter {
                                 has_non_str: &mut bool,
                                 item: &Value| {
                     let str_key = item.to_string_value();
-                    if !matches!(item, Value::Str(_)) {
+                    if !matches!(item.view(), ValueView::Str(_)) {
                         *has_non_str = true;
                         original_keys
                             .entry(str_key.clone())
@@ -360,7 +372,10 @@ impl Interpreter {
                 if args.len() == 1 {
                     let arg = &args[0];
                     // Single arg: QuantHash types are single elements, others flatten
-                    if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
+                    if matches!(
+                        arg.view(),
+                        ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
+                    ) {
                         add_item(&mut weights, &mut original_keys, &mut has_non_str_keys, arg);
                     } else {
                         for item in Self::value_to_list(arg) {
@@ -387,7 +402,10 @@ impl Interpreter {
                 {
                     let items_to_check: Vec<Value> = if args.len() == 1 {
                         let arg = &args[0];
-                        if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
+                        if matches!(
+                            arg.view(),
+                            ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
+                        ) {
                             vec![arg.clone()]
                         } else {
                             Self::value_to_list(arg)
@@ -409,7 +427,7 @@ impl Interpreter {
                             attrs.insert("got".to_string(), item.clone());
                             attrs.insert(
                                 "expected".to_string(),
-                                Value::Package(Symbol::intern(constraint)),
+                                Value::package(Symbol::intern(constraint)),
                             );
                             let ex = Value::make_instance(
                                 Symbol::intern("X::TypeCheck::Binding"),

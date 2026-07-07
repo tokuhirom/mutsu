@@ -22,7 +22,7 @@ pub(super) fn multidim_index(target: &Value, indices: &[Value]) -> Value {
     // Whatever (*) means "all elements of this dimension"
     if matches!(head.view(), ValueView::Whatever) {
         let ValueView::Array(items, ..) = target.view() else {
-            return Value::Nil;
+            return Value::NIL;
         };
         let mut out = Vec::with_capacity(items.len());
         for item in items.iter() {
@@ -31,7 +31,7 @@ pub(super) fn multidim_index(target: &Value, indices: &[Value]) -> Value {
         return Value::array(out);
     }
     // List/Array as index means "multiple indices in this dimension"
-    if let Value::Array(idx_items, ..) = head {
+    if let ValueView::Array(idx_items, ..) = head.view() {
         let mut out = Vec::with_capacity(idx_items.len());
         for idx in idx_items.iter() {
             let mut sub_indices = vec![idx.clone()];
@@ -41,50 +41,49 @@ pub(super) fn multidim_index(target: &Value, indices: &[Value]) -> Value {
         return Value::array(out);
     }
     // Hash multi-dim indexing: %h{key1;key2;...}
-    if let Value::Hash(map, ..) = target {
+    if let ValueView::Hash(map) = target.view() {
         let key = head.to_string_value();
         return match map.get(&key) {
             Some(val) => multidim_index(val, &indices[1..]),
-            None => Value::Nil,
+            None => Value::NIL,
         };
     }
-    let Value::Array(items, ..) = target else {
-        return Value::Nil;
+    let ValueView::Array(items, ..) = target.view() else {
+        return Value::NIL;
     };
-    let i = match head {
-        Value::Int(n) => {
-            let n = *n;
+    let i = match head.view() {
+        ValueView::Int(n) => {
             if n < 0 {
                 let len = items.len() as i64;
                 if -n > len {
-                    return Value::Nil;
+                    return Value::NIL;
                 }
                 (len + n) as usize
             } else {
                 n as usize
             }
         }
-        Value::Str(s) => s.parse::<usize>().unwrap_or(0),
-        Value::Num(f) => *f as usize,
-        Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
-        Value::FatRat(n, d) => (*n as f64 / *d as f64) as usize,
-        Value::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
-        _ => return Value::Nil,
+        ValueView::Str(s) => s.parse::<usize>().unwrap_or(0),
+        ValueView::Num(f) => f as usize,
+        ValueView::Rat(n, d) => (n as f64 / d as f64) as usize,
+        ValueView::FatRat(n, d) => (n as f64 / d as f64) as usize,
+        ValueView::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
+        _ => return Value::NIL,
     };
     if i >= items.len() {
-        return Value::Nil;
+        return Value::NIL;
     }
     multidim_index(&items[i], &indices[1..])
 }
 
 /// Delete element from a multi-dimensional array, returning the deleted value.
 pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
-    let default = || Value::Package(crate::symbol::Symbol::intern("Any"));
+    let default = || Value::package(crate::symbol::Symbol::intern("Any"));
     // A file-scoped `@a`/`%h` shared across frames (or a nested cell-promoted
     // element) is a `ContainerRef` cell: mutate the inner container in place
     // through the lock so every alias (env entry + caller local slot, which
     // share the same `Arc`) observes the delete.
-    if let Value::ContainerRef(cell) = target {
+    if let ValueView::ContainerRef(cell) = target.view() {
         let mut inner = cell.lock().unwrap();
         return multidim_delete(&mut inner, indices);
     }
@@ -95,26 +94,27 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
     }
     let head = &indices[0];
     // Whatever (*) means "all elements of this dimension"
-    if matches!(head, Value::Whatever) {
-        let Value::Array(items, ..) = target else {
-            return default();
-        };
-        let items = crate::gc::Gc::make_mut(items);
-        let mut out = Vec::with_capacity(items.len());
-        for item in items.iter_mut() {
-            out.push(multidim_delete(item, &indices[1..]));
-        }
-        // Truncate trailing Any values
-        while items
-            .last()
-            .is_some_and(|v| matches!(v, Value::Package(s) if s == "Any"))
-        {
-            items.pop();
-        }
-        return Value::array(out);
+    if matches!(head.view(), ValueView::Whatever) {
+        return target
+            .with_array_mut(|items, _kind| {
+                let items = crate::gc::Gc::make_mut(items);
+                let mut out = Vec::with_capacity(items.len());
+                for item in items.iter_mut() {
+                    out.push(multidim_delete(item, &indices[1..]));
+                }
+                // Truncate trailing Any values
+                while items
+                    .last()
+                    .is_some_and(|v| matches!(v.view(), ValueView::Package(s) if s == "Any"))
+                {
+                    items.pop();
+                }
+                Value::array(out)
+            })
+            .unwrap_or_else(default);
     }
     // List/Array as index means "multiple indices in this dimension"
-    if let Value::Array(idx_items, ..) = head {
+    if let ValueView::Array(idx_items, ..) = head.view() {
         let idx_list: Vec<Value> = idx_items.as_ref().clone().items;
         let mut out = Vec::with_capacity(idx_list.len());
         for idx in &idx_list {
@@ -125,63 +125,69 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
         return Value::array(out);
     }
     // Hash multi-dim indexing: %h{key1;key2;...}
-    if let Value::Hash(map) = target {
+    if matches!(target.view(), ValueView::Hash(..)) {
         let key = head.to_string_value();
-        if indices.len() == 1 {
-            let map_mut = crate::gc::Gc::make_mut(map);
-            return map_mut.remove(&key).unwrap_or_else(default);
-        }
-        let map_mut = crate::gc::Gc::make_mut(map);
-        return match map_mut.get_mut(&key) {
-            Some(inner) => multidim_delete(inner, &indices[1..]),
-            None => default(),
-        };
-    }
-    let Value::Array(items, ..) = target else {
-        return default();
-    };
-    let i = match head {
-        Value::Int(n) => {
-            let n = *n;
-            if n < 0 {
-                let len = items.len() as i64;
-                if -n > len {
-                    return default();
+        return target
+            .with_hash_mut(|map| {
+                if indices.len() == 1 {
+                    let map_mut = crate::gc::Gc::make_mut(map);
+                    return map_mut.remove(&key).unwrap_or_else(default);
                 }
-                (len + n) as usize
-            } else {
-                n as usize
+                let map_mut = crate::gc::Gc::make_mut(map);
+                match map_mut.get_mut(&key) {
+                    Some(inner) => multidim_delete(inner, &indices[1..]),
+                    None => default(),
+                }
+            })
+            .unwrap();
+    }
+    target
+        .with_array_mut(|items_gc, _kind| {
+            let i = match head.view() {
+                ValueView::Int(n) => {
+                    if n < 0 {
+                        let len = items_gc.len() as i64;
+                        if -n > len {
+                            return default();
+                        }
+                        (len + n) as usize
+                    } else {
+                        n as usize
+                    }
+                }
+                ValueView::Str(s) => s.parse::<usize>().unwrap_or(0),
+                ValueView::Num(f) => f as usize,
+                _ => return default(),
+            };
+            let items = crate::gc::Gc::make_mut(items_gc);
+            if i >= items.len() {
+                return default();
             }
-        }
-        Value::Str(s) => s.parse::<usize>().unwrap_or(0),
-        Value::Num(f) => *f as usize,
-        _ => return default(),
-    };
-    let items = crate::gc::Gc::make_mut(items);
-    if i >= items.len() {
-        return default();
-    }
-    if indices.len() == 1 {
-        let old = items[i].clone();
-        items[i] = default();
-        // Truncate trailing Any values
-        while items
-            .last()
-            .is_some_and(|v| matches!(v, Value::Package(s) if s == "Any"))
-        {
-            items.pop();
-        }
-        old
-    } else {
-        multidim_delete(&mut items[i], &indices[1..])
-    }
+            if indices.len() == 1 {
+                let old = items[i].clone();
+                items[i] = default();
+                // Truncate trailing Any values
+                while items
+                    .last()
+                    .is_some_and(|v| matches!(v.view(), ValueView::Package(s) if s == "Any"))
+                {
+                    items.pop();
+                }
+                old
+            } else {
+                multidim_delete(&mut items[i], &indices[1..])
+            }
+        })
+        .unwrap_or_else(default)
 }
 
 /// Convert an Array value to a List (changes ArrayKind).
 pub(super) fn array_to_list(value: Value) -> Value {
-    match value {
-        Value::Array(items, _) => Value::Array(items, ArrayKind::List),
-        other => other,
+    if matches!(value.view(), ValueView::Array(..)) {
+        let (items, _) = value.into_array().unwrap();
+        Value::array_with_kind(items, ArrayKind::List)
+    } else {
+        value
     }
 }
 
@@ -190,7 +196,7 @@ pub(super) fn make_key_tuple(indices: &[Value]) -> Value {
     if indices.len() == 1 {
         return indices[0].clone();
     }
-    Value::Array(
+    Value::array_with_kind(
         crate::gc::Gc::new(crate::value::ArrayData::new(indices.to_vec())),
         ArrayKind::List,
     )
@@ -204,7 +210,7 @@ pub(super) fn multidim_collect_leaves(
     prefix: &[i64],
     out: &mut Vec<(Vec<i64>, Value)>,
 ) {
-    if let Value::ContainerRef(_) | Value::Scalar(_) = target {
+    if let ValueView::ContainerRef(_) | ValueView::Scalar(_) = target.view() {
         return target.with_deref(|inner| {
             let inner = inner.descalarize();
             multidim_collect_leaves(inner, indices, prefix, out)
@@ -217,8 +223,8 @@ pub(super) fn multidim_collect_leaves(
     let head = &indices[0];
     let rest = &indices[1..];
 
-    if matches!(head, Value::Whatever) {
-        if let Value::Array(items, ..) = target {
+    if matches!(head.view(), ValueView::Whatever) {
+        if let ValueView::Array(items, ..) = target.view() {
             for (i, item) in items.iter().enumerate() {
                 let mut p = prefix.to_vec();
                 p.push(i as i64);
@@ -227,10 +233,10 @@ pub(super) fn multidim_collect_leaves(
         }
         return;
     }
-    if let Value::Array(idx_items, ..) = head {
+    if let ValueView::Array(idx_items, ..) = head.view() {
         for idx in idx_items.iter() {
-            let i = match idx {
-                Value::Int(n) => *n,
+            let i = match idx.view() {
+                ValueView::Int(n) => n,
                 _ => idx.to_string_value().parse::<i64>().unwrap_or(0),
             };
             let mut p = prefix.to_vec();
@@ -240,8 +246,8 @@ pub(super) fn multidim_collect_leaves(
         }
         return;
     }
-    let i = match head {
-        Value::Int(n) => *n,
+    let i = match head.view() {
+        ValueView::Int(n) => n,
         _ => head.to_string_value().parse::<i64>().unwrap_or(0),
     };
     let mut p = prefix.to_vec();
@@ -252,7 +258,7 @@ pub(super) fn multidim_collect_leaves(
 
 /// Check if any index in the list is a Whatever or an Array (multi-index).
 pub(super) fn has_multi_indices(indices: &[Value]) -> bool {
-    indices
-        .iter()
-        .any(|v| matches!(v, Value::Whatever) || matches!(v, Value::Array(..)))
+    indices.iter().any(|v| {
+        matches!(v.view(), ValueView::Whatever) || matches!(v.view(), ValueView::Array(..))
+    })
 }

@@ -17,12 +17,12 @@ pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
 /// topic/argument of a matcher or comparator block.
 ///
 /// mutsu uses the `Value` variant to distinguish a call-site named argument
-/// (`Value::Pair`, excluded from positional arity everywhere in dispatch) from a
-/// positional pair *value* (`Value::ValuePair`). Iterating a Hash yields
-/// `Value::Pair` elements, so passing such an element straight to a block (e.g.
+/// (`Pair`, excluded from positional arity everywhere in dispatch) from a
+/// positional pair *value* (`ValuePair`). Iterating a Hash yields
+/// `Pair` elements, so passing such an element straight to a block (e.g.
 /// `%h.first({ .value > 1 })` / `%h.sort({ ... })`) would bind it as a *named*
 /// argument, leaving the block with zero positionals ("expected N got 0"). Map
-/// `Value::Pair` to `Value::ValuePair` so the element binds as `$_`/`$^a`.
+/// `Pair` to `ValuePair` so the element binds as `$_`/`$^a`.
 pub(crate) fn pair_as_positional(val: &Value) -> Value {
     match val.view() {
         ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),

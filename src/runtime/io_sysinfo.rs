@@ -217,7 +217,7 @@ impl Interpreter {
             }
         };
 
-        // Parse version string into Value::Version
+        // Parse version string into a Version value
         let version = Self::parse_version_string(&version_str);
 
         let path_sep = if cfg!(windows) {

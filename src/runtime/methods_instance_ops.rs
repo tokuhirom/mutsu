@@ -44,7 +44,7 @@ impl Interpreter {
                 let base = match sigil.as_str() {
                     "@" => Value::array(Vec::new()),
                     "%" => Value::hash(std::collections::HashMap::new()),
-                    _ => Value::Nil,
+                    _ => Value::NIL,
                 };
                 return self.call_method_with_values(base, method, args);
             }

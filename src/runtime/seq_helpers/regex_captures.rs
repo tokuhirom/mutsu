@@ -93,7 +93,7 @@ impl Interpreter {
             .copied()
             .collect();
         for key in numeric_keys {
-            self.env.insert_sym(key, Value::Nil);
+            self.env.insert_sym(key, Value::NIL);
         }
 
         for (i, slot) in captures.positional_slots.iter().enumerate() {

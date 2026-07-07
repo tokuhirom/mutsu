@@ -39,22 +39,22 @@ impl Interpreter {
     }
 
     pub(super) fn capture_to_call_args(value: &Value) -> Vec<Value> {
-        match value {
-            Value::Capture { positional, named } => {
-                let mut args = (**positional).clone();
+        match value.view() {
+            ValueView::Capture { positional, named } => {
+                let mut args = positional.to_vec();
                 for (k, v) in named.iter() {
-                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                    args.push(Value::pair(k.clone(), v.clone()));
                 }
                 args
             }
-            other => vec![other.clone()],
+            _ => vec![value.clone()],
         }
     }
 
     pub(super) fn varref_parts(value: &Value) -> Option<(String, Value)> {
-        if let Value::Capture { positional, named } = value
+        if let ValueView::Capture { positional, named } = value.view()
             && positional.is_empty()
-            && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+            && let Some(ValueView::Str(name)) = named.get("__mutsu_varref_name").map(Value::view)
             && let Some(inner) = named.get("__mutsu_varref_value")
         {
             return Some((name.to_string(), inner.clone()));
@@ -63,11 +63,15 @@ impl Interpreter {
     }
 
     pub(super) fn var_target_from_meta_value(value: &Value) -> Option<String> {
-        match value {
-            Value::Mixin(inner, _) => Self::var_target_from_meta_value(inner),
-            Value::Instance { attributes, .. } => {
-                match attributes.as_map().get("__mutsu_var_target") {
-                    Some(Value::Str(name)) => Some(name.to_string()),
+        match value.view() {
+            ValueView::Mixin(inner, _) => Self::var_target_from_meta_value(inner),
+            ValueView::Instance { attributes, .. } => {
+                match attributes
+                    .as_map()
+                    .get("__mutsu_var_target")
+                    .map(Value::view)
+                {
+                    Some(ValueView::Str(name)) => Some(name.to_string()),
                     _ => None,
                 }
             }
@@ -80,32 +84,34 @@ impl Interpreter {
         candidate: &Value,
         args: &[Value],
     ) -> bool {
-        match candidate {
-            Value::Sub(data) => {
+        match candidate.view() {
+            ValueView::Sub(data) => {
                 if data.empty_sig && !args.is_empty() {
                     return false;
                 }
                 if data.param_defs.is_empty() && !data.params.is_empty() {
                     if args.iter().any(|arg| {
                         matches!(
-                            arg,
-                            Value::Pair(key, _) if key != "__mutsu_test_callsite_line"
+                            arg.view(),
+                            ValueView::Pair(key, _) if key != "__mutsu_test_callsite_line"
                         )
                     }) {
                         return false;
                     }
                     let positional = args
                         .iter()
-                        .filter(|arg| !matches!(arg, Value::Pair(_, _) | Value::ValuePair(_, _)))
+                        .filter(|arg| {
+                            !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                        })
                         .count();
                     return positional == data.params.len();
                 }
                 self.method_args_match(args, &data.param_defs)
             }
-            Value::WeakSub(weak) => weak
+            ValueView::WeakSub(weak) => weak
                 .upgrade()
                 .is_some_and(|strong| self.method_args_match(args, &strong.param_defs)),
-            Value::Routine { name, .. } => self
+            ValueView::Routine { name, .. } => self
                 .resolve_function_with_types(&name.resolve(), args)
                 .is_some(),
             _ => false,
@@ -134,7 +140,7 @@ impl Interpreter {
                     // Store the multi index for doc comment lookup
                     env.insert(
                         "__mutsu_multi_index".to_string(),
-                        Value::Int(multi_idx as i64),
+                        Value::int(multi_idx as i64),
                     );
                     out.push(Value::make_sub(
                         def.package,
@@ -267,10 +273,13 @@ impl Interpreter {
                         defs
                     }
                 });
-        let return_type = data.env.get("__mutsu_return_type").and_then(|v| match v {
-            Value::Str(s) => Some(s.to_string()),
-            _ => None,
-        });
+        let return_type = data
+            .env
+            .get("__mutsu_return_type")
+            .and_then(|v| match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            });
         let info = param_defs_to_sig_info(&param_defs, return_type);
         // Build the owner sub key for parameter doc comment lookup.
         // Must match the key format used by collect_doc_comments:
@@ -317,8 +326,8 @@ impl Interpreter {
 
     pub(super) fn signature_count_value(info: &crate::value::signature::SigInfo) -> Value {
         match Self::signature_positional_count(info) {
-            Some(count) => Value::Int(count),
-            None => Value::Num(f64::INFINITY),
+            Some(count) => Value::int(count),
+            None => Value::num(f64::INFINITY),
         }
     }
 
@@ -328,7 +337,7 @@ impl Interpreter {
             .map(Self::signature_required_positional_count)
             .min()
             .unwrap_or(0);
-        Value::Int(arity)
+        Value::int(arity)
     }
 
     pub(super) fn candidate_count_value(infos: &[crate::value::signature::SigInfo]) -> Value {
@@ -340,9 +349,9 @@ impl Interpreter {
                         max_count = count;
                     }
                 }
-                None => return Value::Num(f64::INFINITY),
+                None => return Value::num(f64::INFINITY),
             }
         }
-        Value::Int(max_count)
+        Value::int(max_count)
     }
 }

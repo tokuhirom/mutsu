@@ -1,5 +1,5 @@
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, next_instance_id};
+use crate::value::{RuntimeError, Value, ValueView, next_instance_id};
 
 use super::{CustomTypeData, Interpreter};
 
@@ -34,9 +34,9 @@ impl Interpreter {
         let mut is_mixin = false;
 
         for arg in args.iter().skip(1) {
-            match arg {
-                Value::Str(s) => repr = s.to_string(),
-                Value::Pair(k, v) if k == "mixin" => {
+            match arg.view() {
+                ValueView::Str(s) => repr = s.to_string(),
+                ValueView::Pair(k, v) if k == "mixin" => {
                     is_mixin = v.truthy();
                 }
                 _ => {}
@@ -70,8 +70,8 @@ impl Interpreter {
             .cloned()
             .ok_or_else(|| RuntimeError::new("configure_type_checking requires a type argument"))?;
 
-        let id = match &type_val {
-            Value::CustomType(c) => c.id,
+        let id = match type_val.view() {
+            ValueView::CustomType(c) => c.id,
             _ => {
                 return Err(RuntimeError::new(
                     "configure_type_checking: first argument must be a custom type",
@@ -81,8 +81,8 @@ impl Interpreter {
 
         // Second arg is the type check cache (array of types)
         let cache = if let Some(cache_val) = args.get(1) {
-            match cache_val {
-                Value::Array(items, _) => Some(items.to_vec()),
+            match cache_val.view() {
+                ValueView::Array(items, _) => Some(items.to_vec()),
                 _ => None,
             }
         } else {
@@ -93,7 +93,7 @@ impl Interpreter {
         let mut call_accepts = false;
 
         for arg in args.iter().skip(2) {
-            if let Value::Pair(k, v) = arg {
+            if let ValueView::Pair(k, v) = arg.view() {
                 match k.as_str() {
                     "authoritative" => authoritative = v.truthy(),
                     "call_accepts" => call_accepts = v.truthy(),
@@ -118,8 +118,8 @@ impl Interpreter {
             .cloned()
             .ok_or_else(|| RuntimeError::new("compose_type requires a type argument"))?;
 
-        let id = match &type_val {
-            Value::CustomType(c) => c.id,
+        let id = match type_val.view() {
+            ValueView::CustomType(c) => c.id,
             _ => {
                 return Err(RuntimeError::new(
                     "compose_type: first argument must be a custom type",
@@ -143,8 +143,8 @@ impl Interpreter {
         let obj = &args[0];
         let target_type = &args[1];
 
-        match (obj, target_type) {
-            (Value::CustomTypeInstance(d), Value::CustomType(c)) => {
+        match (obj.view(), target_type.view()) {
+            (ValueView::CustomTypeInstance(d), ValueView::CustomType(c)) => {
                 // Store the new HOW in the rebless map so .HOW returns the new type
                 self.rebless_map.insert(d.id, (*c.how).clone());
                 Ok(obj.clone())
@@ -164,7 +164,7 @@ impl Interpreter {
 
         // Use the general smartmatch type checking
         let result = self.smart_match(obj, type_check);
-        Ok(Value::Bool(result))
+        Ok(Value::truth(result))
     }
 
     /// Call a user HOW method (`type_check` / `accepts_type` / `find_method`)
@@ -240,7 +240,7 @@ impl Interpreter {
                 if let Ok(result) = self.call_how_method_recording_writeback(
                     rhs_how.clone(),
                     "accepts_type",
-                    vec![Value::Nil, lhs.clone()],
+                    vec![Value::NIL, lhs.clone()],
                 ) {
                     return result.truthy();
                 }
@@ -251,7 +251,7 @@ impl Interpreter {
                 if lhs == cached_type {
                     return true;
                 }
-                if let Value::Package(type_name) = cached_type
+                if let ValueView::Package(type_name) = cached_type.view()
                     && lhs.isa_check(&type_name.resolve())
                 {
                     return true;
@@ -268,7 +268,7 @@ impl Interpreter {
         let _ = self.call_how_method_recording_writeback(
             rhs_how.clone(),
             "find_method",
-            vec![Value::Nil, Value::str_from("ACCEPTS")],
+            vec![Value::NIL, Value::str_from("ACCEPTS")],
         );
         false
     }

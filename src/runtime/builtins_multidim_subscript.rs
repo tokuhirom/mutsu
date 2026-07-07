@@ -70,7 +70,7 @@ impl Interpreter {
             .as_map()
             .get(&attr_key)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let old_array_arc = match current.view() {
             ValueView::Array(arc, ..) => Some(arc.clone()),
             _ => None,
@@ -427,15 +427,15 @@ impl Interpreter {
                     .cloned()
                     .or_else(|| {
                         self.container_type_metadata(&target)
-                            .map(|info| Value::Package(Symbol::intern(&info.value_type)))
+                            .map(|info| Value::package(Symbol::intern(&info.value_type)))
                     })
                     .or_else(|| {
                         var_name
                             .as_ref()
                             .and_then(|name| self.var_type_constraint(name))
-                            .map(|t| Value::Package(Symbol::intern(&t)))
+                            .map(|t| Value::package(Symbol::intern(&t)))
                     })
-                    .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
+                    .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
                 // Object hashes (`my %h{Int}`) store `.WHICH`-encoded keys, so
                 // the subscript value must be encoded the same way to find the
                 // entry; the *displayed* key is the original typed subscript.
@@ -456,33 +456,35 @@ impl Interpreter {
                     rows.push((key, value, exists));
                 }
             }
-            _ => return Ok(Value::Nil),
+            _ => return Ok(Value::NIL),
         }
 
         // Hash `:delete` companion (arrays handled in the positional path above).
         if delete_after
             && let Some(var_name) = var_name.as_ref()
-            && let Some(Value::Hash(map)) = self.env.get_mut(var_name)
+            && let Some(entry) = self.env.get_mut(var_name)
         {
-            let h = crate::gc::Gc::make_mut(map);
-            for idx in &indices {
-                h.remove(&idx.to_string_value());
-            }
+            entry.with_hash_mut(|map| {
+                let h = crate::gc::Gc::make_mut(map);
+                for idx in &indices {
+                    h.remove(&idx.to_string_value());
+                }
+            });
         }
 
         if !is_multi {
             let Some((key, value, exists)) = rows.into_iter().next() else {
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             };
             if !keep_missing && !exists {
                 return Ok(Value::array(Vec::new()));
             }
             return Ok(match kind {
                 "kv" => Value::array(vec![key, value]),
-                "p" => Value::ValuePair(Box::new(key), Box::new(value)),
+                "p" => Value::value_pair(key, value),
                 "k" => key,
                 "v" => value,
-                _ => Value::Nil,
+                _ => Value::NIL,
             });
         }
 
@@ -496,7 +498,7 @@ impl Interpreter {
                     out.push(key);
                     out.push(value);
                 }
-                "p" => out.push(Value::ValuePair(Box::new(key), Box::new(value))),
+                "p" => out.push(Value::value_pair(key, value)),
                 "k" => out.push(key),
                 "v" => out.push(value),
                 _ => {}
@@ -541,7 +543,7 @@ impl Interpreter {
                     out.push(key);
                     out.push(value);
                 }
-                "p" => out.push(Value::ValuePair(Box::new(key), Box::new(value))),
+                "p" => out.push(Value::value_pair(key, value)),
                 "k" => out.push(key),
                 "v" => out.push(value),
                 _ => {}
@@ -554,12 +556,12 @@ impl Interpreter {
     /// an index element), return its direct elements for recursion; else `None`
     /// (it is a scalar leaf index).
     pub(crate) fn nested_index_elements(idx: &Value) -> Option<Vec<Value>> {
-        match idx {
-            Value::Array(items, kind) if !kind.is_itemized() => Some(items.to_vec()),
-            Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+        match idx.view() {
+            ValueView::Array(items, kind) if !kind.is_itemized() => Some(items.to_vec()),
+            ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                 Some(items.to_vec())
             }
-            r if r.is_range() => Some(crate::runtime::utils::value_to_list(r)),
+            _ if idx.is_range() => Some(crate::runtime::utils::value_to_list(idx)),
             _ => None,
         }
     }
@@ -573,19 +575,20 @@ impl Interpreter {
         missing_value: &Value,
         idx: &Value,
     ) -> (Value, Value, bool) {
-        let i = match idx {
-            Value::Int(i) => *i,
-            Value::Num(f) => *f as i64,
+        let i = match idx.view() {
+            ValueView::Int(i) => i,
+            ValueView::Num(f) => f as i64,
             _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
         };
-        let key = Value::Int(i);
+        let key = Value::int(i);
         if i < 0 || i as usize >= items.len() {
             return (key, missing_value.clone(), false);
         }
         let ui = i as usize;
         let exists = match bound_map {
             Some(set) => {
-                set.contains(&ui) || !matches!(&items[ui], Value::Package(name) if name == "Any")
+                set.contains(&ui)
+                    || !matches!(items[ui].view(), ValueView::Package(name) if name == "Any")
             }
             None => true,
         };
@@ -600,9 +603,9 @@ impl Interpreter {
                 Self::collect_slice_leaf_indices(&sub, out);
                 continue;
             }
-            let i = match idx {
-                Value::Int(i) => *i,
-                Value::Num(f) => *f as i64,
+            let i = match idx.view() {
+                ValueView::Int(i) => i,
+                ValueView::Num(f) => f as i64,
                 _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
             };
             out.push(i);

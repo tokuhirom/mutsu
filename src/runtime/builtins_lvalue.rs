@@ -4,9 +4,12 @@ use crate::value::ArrayKind;
 impl Interpreter {
     pub(super) fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {
         match arg {
-            Some(Value::Array(items, _)) => items.to_vec(),
-            Some(Value::Nil) | None => Vec::new(),
-            Some(other) => vec![other.clone()],
+            Some(v) => match v.view() {
+                ValueView::Array(items, _) => items.to_vec(),
+                ValueView::Nil => Vec::new(),
+                _ => vec![v.clone()],
+            },
+            None => Vec::new(),
         }
     }
 
@@ -18,19 +21,16 @@ impl Interpreter {
         if !is_rw || self.in_lvalue_assignment {
             return Ok(result);
         }
-        if let Value::Proxy {
-            fetcher,
-            decontainerized,
-            ..
-        } = result.clone()
+        if let Some((fetcher, _storer, _subclass, decontainerized)) =
+            result.clone().into_proxy_parts()
         {
             if decontainerized {
                 return Ok(result);
             }
-            if matches!(fetcher.as_ref(), Value::Nil) {
-                return Ok(Value::Nil);
+            if fetcher.is_nil() {
+                return Ok(Value::NIL);
             }
-            return self.call_sub_value(*fetcher, vec![result], true);
+            return self.call_sub_value(fetcher, vec![result], true);
         }
         Ok(result)
     }
@@ -38,11 +38,11 @@ impl Interpreter {
     /// Auto-FETCH a Proxy value. If the value is a Proxy, call its FETCH callback.
     /// Used when a Proxy-bound variable is read in value context.
     pub(crate) fn auto_fetch_proxy(&mut self, value: &Value) -> Result<Value, RuntimeError> {
-        if let Value::Proxy { fetcher, .. } = value {
-            if matches!(fetcher.as_ref(), Value::Nil) {
-                return Ok(Value::Nil);
+        if let ValueView::Proxy { fetcher, .. } = value.view() {
+            if fetcher.is_nil() {
+                return Ok(Value::NIL);
             }
-            return self.call_sub_value(*fetcher.clone(), vec![value.clone()], true);
+            return self.call_sub_value(fetcher.clone(), vec![value.clone()], true);
         }
         Ok(value.clone())
     }
@@ -80,9 +80,7 @@ impl Interpreter {
         proxy: Value,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        let Value::Proxy {
-            fetcher, storer, ..
-        } = proxy.clone()
+        let Some((fetcher, storer, _subclass, _decontainerized)) = proxy.clone().into_proxy_parts()
         else {
             return Err(RuntimeError::new(
                 "X::Assignment::RO: target is not assignable",
@@ -100,10 +98,10 @@ impl Interpreter {
                 .collect(),
         );
         let store_result =
-            self.call_sub_value(*storer.clone(), vec![proxy.clone(), value.clone()], true);
+            self.call_sub_value(storer.clone(), vec![proxy.clone(), value.clone()], true);
         if let Err(err) = store_result {
             if err.message.contains("Too many positionals") {
-                self.call_sub_value(*storer.clone(), vec![value.clone()], true)?;
+                self.call_sub_value(storer.clone(), vec![value.clone()], true)?;
             } else {
                 return Err(err);
             }
@@ -127,14 +125,14 @@ impl Interpreter {
         // This is needed because mutsu closures capture environments by value
         // (copy-on-write), so two closures from the same scope diverge on mutation.
         self.sync_proxy_closure_envs(&fetcher, &storer);
-        if matches!(fetcher.as_ref(), Value::Nil) {
-            return Ok(Value::Nil);
+        if fetcher.is_nil() {
+            return Ok(Value::NIL);
         }
-        let fetched = self.call_sub_value(*fetcher.clone(), vec![proxy.clone()], true);
+        let fetched = self.call_sub_value(fetcher.clone(), vec![proxy.clone()], true);
         match fetched {
             Ok(value) => Ok(value),
             Err(err) if err.message.contains("Too many positionals") => {
-                let value = self.call_sub_value(*fetcher, Vec::new(), true)?;
+                let value = self.call_sub_value(fetcher, Vec::new(), true)?;
                 Ok(value)
             }
             Err(err) => Err(err),
@@ -146,12 +144,12 @@ impl Interpreter {
     /// so both closures see the same state for shared variables.
     fn sync_proxy_closure_envs(&mut self, fetcher: &Value, storer: &Value) {
         let (Some(fetch_data), Some(store_data)) = (
-            match fetcher {
-                Value::Sub(d) => Some(d),
+            match fetcher.view() {
+                ValueView::Sub(d) => Some(d),
                 _ => None,
             },
-            match storer {
-                Value::Sub(d) => Some(d),
+            match storer.view() {
+                ValueView::Sub(d) => Some(d),
                 _ => None,
             },
         ) else {
@@ -254,7 +252,7 @@ impl Interpreter {
         if name == "local" {
             self.env
                 .insert("ARGV".to_string(), Value::array(vec![value.clone()]));
-            self.env.insert("/".to_string(), Value::Nil);
+            self.env.insert("/".to_string(), Value::NIL);
             return Ok(value);
         }
 
@@ -370,9 +368,7 @@ impl Interpreter {
             self.in_lvalue_assignment = was_lvalue;
             let result = result?;
 
-            if def.is_rw
-                && let Value::Proxy { .. } = result
-            {
+            if def.is_rw && matches!(result.view(), ValueView::Proxy { .. }) {
                 return self.assign_proxy_lvalue(result, value);
             }
             return Err(RuntimeError::new(format!(
@@ -397,11 +393,12 @@ impl Interpreter {
         call_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        match callable {
-            Value::Routine { name, .. } => {
+        match callable.view() {
+            ValueView::Routine { name, .. } => {
                 self.assign_named_sub_lvalue_with_values(&name.resolve(), call_args, value)
             }
-            Value::Sub(data) => {
+            ValueView::Sub(data) => {
+                let data = data.clone();
                 if let Some(target_expr) = Self::rw_sub_target_expr(&data.body) {
                     let allow_target_assign =
                         data.is_rw || Self::is_explicit_return_rw_target(&target_expr);
@@ -417,18 +414,20 @@ impl Interpreter {
                 }
                 let was_lvalue = self.in_lvalue_assignment;
                 self.in_lvalue_assignment = true;
-                let result = self.call_sub_value(Value::Sub(data), call_args, true);
+                let result = self.call_sub_value(Value::sub_value(data), call_args, true);
                 self.in_lvalue_assignment = was_lvalue;
                 let result = result?;
-                if let Value::Proxy { .. } = result {
+                if matches!(result.view(), ValueView::Proxy { .. }) {
                     return self.assign_proxy_lvalue(result, value);
                 }
                 Err(RuntimeError::assignment_ro(Some("sub is not rw")))
             }
-            Value::WeakSub(weak) => match weak.upgrade() {
-                Some(strong) => {
-                    self.assign_callable_lvalue_with_values(Value::Sub(strong), call_args, value)
-                }
+            ValueView::WeakSub(weak) => match weak.upgrade() {
+                Some(strong) => self.assign_callable_lvalue_with_values(
+                    Value::sub_value(strong),
+                    call_args,
+                    value,
+                ),
                 None => Err(RuntimeError::new("Callable has been freed")),
             },
             _ => Err(RuntimeError::assignment_ro(Some(
@@ -490,8 +489,8 @@ impl Interpreter {
         }
         let target_name = args[0].to_string_value();
         let marker_key = format!("__mutsu_bound_array_len::{target_name}");
-        let Some(limit) = self.env.get(&marker_key).and_then(|v| match v {
-            Value::Int(i) if *i >= 0 => usize::try_from(*i).ok(),
+        let Some(limit) = self.env.get(&marker_key).and_then(|v| match v.view() {
+            ValueView::Int(i) if i >= 0 => usize::try_from(i).ok(),
             _ => None,
         }) else {
             return Ok(args[1].clone());
@@ -515,14 +514,14 @@ impl Interpreter {
         }
         let target_name = args[0].to_string_value();
         if !target_name.starts_with('@') {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         // For gather-based LazyLists with coroutine support, skip recording
         // the length since it's unknown (the list is lazy / possibly infinite).
-        if let Some(Value::LazyList(ll)) = self.env.get(&target_name)
+        if let Some(ValueView::LazyList(ll)) = self.env.get(&target_name).map(Value::view)
             && ll.coroutine.is_some()
         {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         let bound_len = self
             .env
@@ -531,9 +530,9 @@ impl Interpreter {
             .unwrap_or(0);
         self.env.insert(
             format!("__mutsu_bound_array_len::{target_name}"),
-            Value::Int(bound_len),
+            Value::int(bound_len),
         );
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     pub(super) fn builtin_record_shaped_array_dims(
@@ -547,7 +546,7 @@ impl Interpreter {
         }
         let target_name = args[0].to_string_value();
         if !target_name.starts_with('@') {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         let key = format!("__mutsu_shaped_array_dims::{target_name}");
         let dims = self
@@ -556,14 +555,14 @@ impl Interpreter {
             .and_then(Self::infer_array_shape)
             .filter(|shape| shape.len() > 1);
         if let Some(shape) = dims {
-            let dims_val = Value::Array(
-                crate::gc::Gc::new(shape.into_iter().map(|n| Value::Int(n as i64)).collect()),
+            let dims_val = Value::array_with_kind(
+                crate::gc::Gc::new(shape.into_iter().map(|n| Value::int(n as i64)).collect()),
                 ArrayKind::List,
             );
             self.env.insert(key, dims_val);
         } else {
             self.env.remove(&key);
         }
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 }

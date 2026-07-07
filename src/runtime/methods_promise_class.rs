@@ -97,10 +97,10 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
-            let value = args.first().cloned().unwrap_or(Value::Bool(true));
+            let value = args.first().cloned().unwrap_or(Value::TRUE);
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
             promise.keep(value, String::new(), String::new());
-            return Some(Ok(Value::Promise(promise)));
+            return Some(Ok(Value::promise(promise)));
         }
         None
     }
@@ -118,7 +118,7 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::str_from("Died"));
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
             promise.break_with(reason_val, String::new(), String::new());
-            return Some(Ok(Value::Promise(promise)));
+            return Some(Ok(Value::promise(promise)));
         }
         None
     }
@@ -131,21 +131,21 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-            let ret = Value::Promise(promise.clone());
+            let ret = Value::promise(promise.clone());
             let promises = match self.collect_promise_combinator_inputs("allof", args) {
                 Ok(p) => p,
                 Err(e) => return Some(Err(e)),
             };
             super::native_methods::register_promise_combinator_sources(&promise, promises.clone());
             if promises.is_empty() {
-                promise.keep(Value::Bool(true), String::new(), String::new());
+                promise.keep(Value::TRUE, String::new(), String::new());
                 return Some(Ok(ret));
             }
             std::thread::spawn(move || {
                 for p in &promises {
                     p.wait();
                 }
-                promise.keep(Value::Bool(true), String::new(), String::new());
+                promise.keep(Value::TRUE, String::new(), String::new());
             });
             return Some(Ok(ret));
         }
@@ -160,13 +160,13 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-            let ret = Value::Promise(promise.clone());
+            let ret = Value::promise(promise.clone());
             let promises = match self.collect_promise_combinator_inputs("anyof", args) {
                 Ok(p) => p,
                 Err(e) => return Some(Err(e)),
             };
             if promises.is_empty() {
-                promise.keep(Value::Bool(true), String::new(), String::new());
+                promise.keep(Value::TRUE, String::new(), String::new());
                 return Some(Ok(ret));
             }
             std::thread::spawn(move || {
@@ -174,7 +174,7 @@ impl Interpreter {
                 loop {
                     for p in &promises {
                         if p.status() != "Planned" {
-                            promise.keep(Value::Bool(true), String::new(), String::new());
+                            promise.keep(Value::TRUE, String::new(), String::new());
                             return;
                         }
                     }

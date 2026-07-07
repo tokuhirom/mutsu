@@ -15,7 +15,10 @@ impl Interpreter {
         // mutation such as .value = ... on pairs.
         if let Some(var_name) = target_var {
             let deep_key = format!("__mutsu_deep_readonly::{}", var_name);
-            if matches!(self.env.get(&deep_key), Some(Value::Bool(true))) {
+            if matches!(
+                self.env.get(&deep_key).map(Value::view),
+                Some(ValueView::Bool(true))
+            ) {
                 let repr = value.to_string_value();
                 return Err(RuntimeError::assignment_ro_typename(
                     &crate::value::what_type_name(&value),
@@ -28,17 +31,20 @@ impl Interpreter {
         // Raku (`'.'.IO.SPEC = ...` / `'.'.IO.CWD = ...`).
         if method_args.is_empty()
             && matches!(method, "SPEC" | "CWD")
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "IO::Path")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Path")
         {
             let cur = self
                 .call_method_with_values(target.clone(), method, vec![])
-                .unwrap_or(Value::Nil);
+                .unwrap_or(Value::NIL);
             let typename = crate::value::what_type_name(&cur);
             let repr = cur.to_string_value();
             return Err(RuntimeError::assignment_ro_typename(&typename, &repr));
         }
         // Handle AT-POS lvalue assignment: @arr.AT-POS(idx...) = v  =>  ASSIGN-POS(idx..., v)
-        if method == "AT-POS" && !method_args.is_empty() && matches!(&target, Value::Array(..)) {
+        if method == "AT-POS"
+            && !method_args.is_empty()
+            && matches!(target.view(), ValueView::Array(..))
+        {
             let mut assign_args = method_args.clone();
             assign_args.push(value.clone());
             self.call_method_with_values(target, "ASSIGN-POS", assign_args)?;
@@ -46,12 +52,12 @@ impl Interpreter {
         }
         // Handle AT-KEY assignment on Hash: h.AT-KEY("k") = v  =>  ASSIGN-KEY("k", v)
         if method == "AT-KEY" && method_args.len() == 1 {
-            let inner = match &target {
-                Value::Scalar(inner) => inner.as_ref(),
-                other => other,
+            let inner = match target.view() {
+                ValueView::Scalar(inner) => inner,
+                _ => &target,
             };
-            if matches!(inner, Value::Hash(_) | Value::Nil)
-                || matches!(inner, Value::Package(n) if matches!(n.resolve().as_str(), "Any" | "Mu"))
+            if matches!(inner.view(), ValueView::Hash(_) | ValueView::Nil)
+                || matches!(inner.view(), ValueView::Package(n) if matches!(n.resolve().as_str(), "Any" | "Mu"))
             {
                 let old_meta = self.container_type_metadata(inner).clone();
                 // Enforce the declared element type, so
@@ -63,7 +69,7 @@ impl Interpreter {
                     .or_else(|| target_var.and_then(|v| self.var_type_constraint(v)));
                 if let Some(vt) = value_type.as_deref()
                     && !matches!(vt, "Any" | "Mu" | "")
-                    && !matches!(&value, Value::Nil)
+                    && !value.is_nil()
                     && !self.type_matches_value(vt, &value)
                 {
                     return Err(crate::runtime::utils::type_check_element_typed_error(
@@ -73,12 +79,12 @@ impl Interpreter {
                     ));
                 }
                 let key = method_args[0].to_string_value();
-                let mut hash = match inner {
-                    Value::Hash(map) => map.map.clone(),
+                let mut hash = match inner.view() {
+                    ValueView::Hash(map) => map.map.clone(),
                     _ => std::collections::HashMap::new(),
                 };
                 hash.insert(key, value.clone());
-                let mut new_hash = Value::Hash(Value::hash_arc(hash));
+                let mut new_hash = Value::hash_with_data(Value::hash_arc(hash));
                 // Propagate container type metadata to avoid stale pointer reuse
                 let meta = old_meta.unwrap_or(ContainerTypeInfo {
                     value_type: "Any".to_string(),
@@ -92,7 +98,7 @@ impl Interpreter {
                 return Ok(value);
             }
         }
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && (class_name == "Date" || class_name == "DateTime")
         {
             return Err(RuntimeError::new(format!(
@@ -102,7 +108,7 @@ impl Interpreter {
         }
         // Handle .first rw write-back: @a.first(matcher).++ etc.
         if method == "first"
-            && let Value::Array(ref items, ref kind) = target
+            && let ValueView::Array(items, kind) = target.view()
         {
             // Re-run .first to find the matching index
             let func = method_args.first().cloned();
@@ -112,9 +118,9 @@ impl Interpreter {
                 let mut updated = items.to_vec();
                 if idx < updated.len() {
                     updated[idx] = value.clone();
-                    let replacement = Value::Array(
+                    let replacement = Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                        *kind,
+                        kind,
                     );
                     if let Some(var_name) = target_var {
                         self.env.insert(var_name.to_string(), replacement);
@@ -126,15 +132,15 @@ impl Interpreter {
         // Handle .head/.tail rw write-back: `@a.head = v` / `@a.tail = v`.
         if matches!(method, "head" | "tail")
             && method_args.is_empty()
-            && let Value::Array(ref items, ref kind) = target
+            && let ValueView::Array(items, kind) = target.view()
             && !items.is_empty()
         {
             let idx = if method == "head" { 0 } else { items.len() - 1 };
             let mut updated = items.to_vec();
             updated[idx] = value.clone();
-            let replacement = Value::Array(
+            let replacement = Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                *kind,
+                kind,
             );
             if let Some(var_name) = target_var {
                 self.env.insert(var_name.to_string(), replacement);
@@ -143,9 +149,9 @@ impl Interpreter {
         }
         // Handle class-level attribute assignment (our $.x / my $.x)
         {
-            let class_name_for_lookup = match &target {
-                Value::Package(name) => Some(name.resolve()),
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+            let class_name_for_lookup = match target.view() {
+                ValueView::Package(name) => Some(name.resolve()),
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 _ => None,
             };
             if let Some(cn) = class_name_for_lookup
@@ -158,12 +164,12 @@ impl Interpreter {
         // Failure.handled = value: set the handled state via global registry
         if method == "handled"
             && method_args.is_empty()
-            && let Value::Instance { class_name, id, .. } = &target
+            && let ValueView::Instance { class_name, id, .. } = target.view()
             && class_name.resolve() == "Failure"
         {
             let handled = value.truthy();
-            crate::value::set_failure_handled(*id, handled);
-            return Ok(Value::Bool(handled));
+            crate::value::set_failure_handled(id, handled);
+            return Ok(Value::truth(handled));
         }
         if method == "substr-rw" {
             return self.assign_substr_rw(target_var, target, method_args, value);
@@ -172,7 +178,7 @@ impl Interpreter {
             return self.assign_subbuf_rw(target_var, target, method_args, value);
         }
         if method == "out-buffer"
-            && let Value::Instance { class_name, .. } = &target
+            && let ValueView::Instance { class_name, .. } = target.view()
             && class_name == "IO::Handle"
             && method_args.is_empty()
         {
@@ -181,22 +187,23 @@ impl Interpreter {
         }
         // nl-in setter for IO::Socket::INET and IO::Handle
         if method == "nl-in"
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
             && (class_name == "IO::Socket::INET" || class_name == "IO::Handle")
-            && let Some(Value::Int(handle_id)) = attributes.as_map().get("handle")
+            && let Some(ValueView::Int(handle_id)) =
+                attributes.as_map().get("handle").map(Value::view)
         {
-            let id = *handle_id as usize;
-            let new_seps = match &value {
-                Value::Str(s) => vec![s.as_bytes().to_vec()],
-                Value::Array(items, ..) => items
+            let id = handle_id as usize;
+            let new_seps = match value.view() {
+                ValueView::Str(s) => vec![s.as_bytes().to_vec()],
+                ValueView::Array(items, ..) => items
                     .iter()
                     .map(|v| v.to_string_value().into_bytes())
                     .collect(),
-                other => vec![other.to_string_value().into_bytes()],
+                _ => vec![value.to_string_value().into_bytes()],
             };
             if let Some(state) = self.io_handles_mut().map.get_mut(&id) {
                 state.line_separators = new_seps;
@@ -208,11 +215,11 @@ impl Interpreter {
         // through the shared cell so the user IO read path (`.lines`/`.get`) and
         // output path see it. See `try_user_io_handle_method`.
         if matches!(method, "nl-in" | "nl-out" | "encoding")
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
             && attributes.as_map().get("handle").is_none()
             && self
                 .class_mro(&class_name.resolve())
@@ -225,15 +232,16 @@ impl Interpreter {
         }
         // nl-out setter for IO::Handle
         if method == "nl-out"
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
             && class_name == "IO::Handle"
-            && let Some(Value::Int(handle_id)) = attributes.as_map().get("handle")
+            && let Some(ValueView::Int(handle_id)) =
+                attributes.as_map().get("handle").map(Value::view)
         {
-            let id = *handle_id as usize;
+            let id = handle_id as usize;
             let new_nl_out = value.to_string_value();
             if let Some(state) = self.io_handles_mut().map.get_mut(&id) {
                 state.nl_out = new_nl_out;
@@ -242,41 +250,43 @@ impl Interpreter {
         }
         // chomp setter for IO::Handle
         if method == "chomp"
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 id: inst_id,
-            } = &target
+            } = target.view()
             && class_name == "IO::Handle"
-            && let Some(Value::Int(handle_id)) = attributes.as_map().get("handle")
+            && let Some(ValueView::Int(handle_id)) =
+                attributes.as_map().get("handle").map(Value::view)
         {
-            let hid = *handle_id as usize;
+            let hid = handle_id as usize;
             let new_chomp = value.truthy();
             if let Some(state) = self.io_handles_mut().map.get_mut(&hid) {
                 state.line_chomp = new_chomp;
             }
             // Also update instance attribute so .open can inherit it
             let mut new_attrs = attributes.to_map();
-            new_attrs.insert("chomp".to_string(), Value::Bool(new_chomp));
-            let tid = *inst_id;
+            new_attrs.insert("chomp".to_string(), Value::truth(new_chomp));
+            let tid = inst_id;
             attributes.commit_attrs(new_attrs);
             if let Some(var_name) = target_var {
                 self.env.insert(
                     var_name.to_string(),
-                    Value::instance_sharing_cell(attributes, *class_name, tid),
+                    Value::instance_sharing_cell(attributes, class_name, tid),
                 );
             }
             return Ok(value);
         }
         if method == "value"
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
             && class_name == "Pair"
-            && let Some(Value::Str(key)) = attributes.as_map().get("key")
-            && let Some(Value::Hash(source_hash)) = attributes.as_map().get("__mutsu_hash_ref")
+            && let Some(ValueView::Str(key)) = attributes.as_map().get("key").map(Value::view)
+            && let Some(ValueView::Hash(source_hash)) =
+                attributes.as_map().get("__mutsu_hash_ref").map(Value::view)
         {
             let mut updated = (**source_hash).clone();
             updated.insert(key.to_string(), value.clone());
@@ -285,10 +295,12 @@ impl Interpreter {
             return Ok(value);
         }
         if method == "value" {
-            let pair_data = match &target {
-                Value::Pair(key, current_value) => Some((key.clone(), current_value.clone())),
-                Value::ValuePair(key, current_value) => {
-                    Some((key.to_string_value(), current_value.clone()))
+            let pair_data = match target.view() {
+                ValueView::Pair(key, current_value) => {
+                    Some((key.clone(), Box::new(current_value.clone())))
+                }
+                ValueView::ValuePair(key, current_value) => {
+                    Some((key.to_string_value(), Box::new(current_value.clone())))
                 }
                 _ => None,
             };
@@ -298,13 +310,13 @@ impl Interpreter {
                 // updates the cell in place, so `$pair.value = X` writes through to
                 // `$var` (S02:1704). The type constraint, if any, is enforced by
                 // the cell itself on assignment.
-                if let Value::ContainerRef(cell) = current_value.as_ref() {
+                if let ValueView::ContainerRef(cell) = current_value.as_ref().view() {
                     // Enforce a typed container's `of`-type constraint, so
                     // `Pair.new("foo", my Int $).value = "bar"` raises
                     // X::TypeCheck::Assignment (S02-types/pair.t).
                     if let Some(constraint) = crate::value::lookup_container_constraint(cell)
                         && !matches!(constraint.as_str(), "Any" | "Mu")
-                        && !matches!(&value, Value::Nil)
+                        && !value.is_nil()
                         && !self.type_matches_value(&constraint, &value)
                     {
                         return Err(RuntimeError::typecheck_assignment(
@@ -325,8 +337,12 @@ impl Interpreter {
                 // through to the read-only Bool guard below.
                 if let Some(source) = self.topic_source_var.clone()
                     && matches!(
-                        self.env.get(&source),
-                        Some(Value::Bag(_, true) | Value::Mix(_, true) | Value::Set(_, true))
+                        self.env.get(&source).map(Value::view),
+                        Some(
+                            ValueView::Bag(_, true)
+                                | ValueView::Mix(_, true)
+                                | ValueView::Set(_, true)
+                        )
                     )
                 {
                     // The current bytecode isn't threaded into this builtin path,
@@ -347,7 +363,8 @@ impl Interpreter {
                 )> = None;
 
                 if let Some(var_name) = target_var
-                    && let Some(Value::Hash(candidate)) = self.env.get(var_name)
+                    && let Some(ValueView::Hash(candidate)) =
+                        self.env.get(var_name).map(Value::view)
                     && candidate.contains_key(&key)
                 {
                     selected_hash = Some(candidate.clone());
@@ -355,15 +372,16 @@ impl Interpreter {
                 if selected_hash.is_none()
                     && let Ok(i) = key.parse::<usize>()
                     && let Some(var_name) = target_var
-                    && let Some(Value::Array(candidate, kind)) = self.env.get(var_name)
+                    && let Some(ValueView::Array(candidate, kind)) =
+                        self.env.get(var_name).map(Value::view)
                     && candidate.get(i) == Some(current_value.as_ref())
                 {
-                    selected_array = Some((candidate.clone(), *kind));
+                    selected_array = Some((candidate.clone(), kind));
                 }
 
                 if selected_hash.is_none() {
-                    let mut candidates = self.env.values().filter_map(|bound| match bound {
-                        Value::Hash(map)
+                    let mut candidates = self.env.values().filter_map(|bound| match bound.view() {
+                        ValueView::Hash(map)
                             if map
                                 .get(&key)
                                 .is_some_and(|existing| existing == current_value.as_ref()) =>
@@ -381,9 +399,11 @@ impl Interpreter {
                 if selected_array.is_none()
                     && let Ok(i) = key.parse::<usize>()
                 {
-                    let mut candidates = self.env.values().filter_map(|bound| match bound {
-                        Value::Array(arr, kind) if arr.get(i) == Some(current_value.as_ref()) => {
-                            Some((arr.clone(), *kind))
+                    let mut candidates = self.env.values().filter_map(|bound| match bound.view() {
+                        ValueView::Array(arr, kind)
+                            if arr.get(i) == Some(current_value.as_ref()) =>
+                        {
+                            Some((arr.clone(), kind))
                         }
                         _ => None,
                     });
@@ -409,7 +429,8 @@ impl Interpreter {
                         updated[i] = value.clone();
                         // Preserve the source array's kind (Array/Shaped/…) so the
                         // writeback does not demote it to a List.
-                        let replacement = Value::Array(crate::gc::Gc::new(updated), source_kind);
+                        let replacement =
+                            Value::array_with_kind(crate::gc::Gc::new(updated), source_kind);
                         self.overwrite_array_bindings_by_identity(&source_array, replacement);
                         return Ok(value);
                     }
@@ -418,9 +439,10 @@ impl Interpreter {
                 // If the pair value is Bool and the pair is NOT directly backed
                 // by a user-visible hash variable, the Bool is immutable.
                 // This handles Set.pairs[0].value = 0 which should die.
-                if matches!(current_value.as_ref(), Value::Bool(_)) {
-                    let has_backing_hash = target_var
-                        .is_some_and(|vn| matches!(self.env.get(vn), Some(Value::Hash(_))));
+                if matches!(current_value.as_ref().view(), ValueView::Bool(_)) {
+                    let has_backing_hash = target_var.is_some_and(|vn| {
+                        matches!(self.env.get(vn).map(Value::view), Some(ValueView::Hash(_)))
+                    });
                     if !has_backing_hash {
                         let type_name = crate::value::what_type_name(current_value.as_ref());
                         return Err(RuntimeError::assignment_ro_typename(
@@ -443,10 +465,10 @@ impl Interpreter {
                         .env
                         .iter()
                         .filter_map(|(name, val)| {
-                            let matches = match val {
-                                Value::Pair(k, v) => k == &key && v.as_ref() == &old_value,
-                                Value::ValuePair(k, v) => {
-                                    k.to_string_value() == key && v.as_ref() == &old_value
+                            let matches = match val.view() {
+                                ValueView::Pair(k, v) => k == &key && v == &old_value,
+                                ValueView::ValuePair(k, v) => {
+                                    k.to_string_value() == key && v == &old_value
                                 }
                                 _ => false,
                             };
@@ -457,10 +479,12 @@ impl Interpreter {
                     if !vars_to_update.is_empty() {
                         for var_name in &vars_to_update {
                             let current = self.env.get_sym(*var_name).cloned();
-                            let new_pair = match current {
-                                Some(Value::Pair(k, _)) => Value::Pair(k, Box::new(value.clone())),
-                                Some(Value::ValuePair(k, _)) => {
-                                    Value::ValuePair(k, Box::new(value.clone()))
+                            let new_pair = match current.as_ref().map(Value::view) {
+                                Some(ValueView::Pair(k, _)) => {
+                                    Value::pair(k.clone(), value.clone())
+                                }
+                                Some(ValueView::ValuePair(k, _)) => {
+                                    Value::value_pair(k.clone(), value.clone())
                                 }
                                 _ => continue,
                             };
@@ -468,10 +492,10 @@ impl Interpreter {
                         }
                         return Ok(value);
                     } else if let Some(var_name) = target_var {
-                        let new_pair = match &target {
-                            Value::Pair(k, _) => Value::Pair(k.clone(), Box::new(value.clone())),
-                            Value::ValuePair(k, _) => {
-                                Value::ValuePair(k.clone(), Box::new(value.clone()))
+                        let new_pair = match target.view() {
+                            ValueView::Pair(k, _) => Value::pair(k.clone(), value.clone()),
+                            ValueView::ValuePair(k, _) => {
+                                Value::value_pair(k.clone(), value.clone())
                             }
                             _ => unreachable!(),
                         };
@@ -483,17 +507,20 @@ impl Interpreter {
         }
 
         // Handle assignment to Proxy subclass attributes (e.g., $a.VAR.history = ())
-        if let Value::Proxy {
-            subclass: Some((_, ref subclass_attrs)),
+        if let ValueView::Proxy {
+            subclass: Some((_, subclass_attrs)),
             ..
-        } = target
+        } = target.view()
         {
             let attrs = subclass_attrs.clone();
             if attrs.lock().unwrap().contains_key(method) {
                 // Coerce to array if the existing attribute is an array
                 let new_val = {
                     let guard = attrs.lock().unwrap();
-                    if matches!(guard.get(method), Some(Value::Array(..))) {
+                    if matches!(
+                        guard.get(method).map(Value::view),
+                        Some(ValueView::Array(..))
+                    ) {
                         crate::runtime::coerce_to_array(value.clone())
                     } else {
                         value.clone()
@@ -507,11 +534,11 @@ impl Interpreter {
         // Handle private attribute assignment via trust: $a!A::foo = value
         // The method name is "!Owner::attr" when the `!` modifier was used.
         if let Some(private_rest) = method.strip_prefix('!')
-            && let Value::Instance {
-                ref class_name,
-                ref attributes,
+            && let ValueView::Instance {
+                class_name,
+                attributes,
                 id: target_id,
-            } = target
+            } = target.view()
         {
             let caller_class = self
                 .method_class_stack
@@ -544,7 +571,7 @@ impl Interpreter {
             }
             let mut updated = attributes.to_map();
             updated.insert(attr_name, value.clone());
-            let cn = *class_name;
+            let cn = class_name;
             attributes.commit_attrs(updated);
             if let Some(var_name) = target_var {
                 self.env.insert(
@@ -559,11 +586,11 @@ impl Interpreter {
         // Must be before call_method_mut_with_values which can't handle qualified names.
         if method.contains("::")
             && !method.starts_with('!')
-            && let Value::Instance {
-                ref class_name,
-                ref attributes,
+            && let ValueView::Instance {
+                class_name,
+                attributes,
                 id: target_id,
-            } = target
+            } = target.view()
             && let Some((qualifier, actual_method)) = method.split_once("::")
         {
             // First try explicit method resolution
@@ -589,12 +616,12 @@ impl Interpreter {
                     };
                     // When Nil is assigned to an attribute with `is default(...)`,
                     // restore the default value instead of setting Nil.
-                    if matches!(assigned_value, Value::Nil)
+                    if assigned_value.is_nil()
                         && let Some(def) = self.class_attribute_default(qualifier, &attr_name)
                     {
                         assigned_value = def;
                     }
-                    let cn = *class_name;
+                    let cn = class_name;
                     self.store_qualified_attr(
                         &mut updated,
                         &cn.resolve(),
@@ -618,13 +645,7 @@ impl Interpreter {
                     && let Some(idx_val) = method_args.get(pos).cloned()
                 {
                     return self.assign_rw_indexed_attr(
-                        attributes,
-                        *class_name,
-                        target_id,
-                        target_var,
-                        &attr,
-                        idx_val,
-                        is_pos,
+                        attributes, class_name, target_id, target_var, &attr, idx_val, is_pos,
                         value,
                     );
                 }
@@ -660,12 +681,12 @@ impl Interpreter {
                     };
                     // When Nil is assigned to an attribute with `is default(...)`,
                     // restore the default value instead of setting Nil.
-                    if matches!(assigned_value, Value::Nil)
+                    if assigned_value.is_nil()
                         && let Some(def) = self.class_attribute_default(qualifier, actual_method)
                     {
                         assigned_value = def;
                     }
-                    let cn = *class_name;
+                    let cn = class_name;
                     self.store_qualified_attr(
                         &mut updated,
                         &cn.resolve(),
@@ -709,8 +730,8 @@ impl Interpreter {
 
         // Handle Mixin-wrapped instances (e.g. from role punning) by updating
         // the mixin attribute entry directly.
-        if let Value::Mixin(ref inner, ref mixins) = target
-            && let Value::Instance { class_name, .. } = inner.as_ref()
+        if let ValueView::Mixin(inner, mixins) = target.view()
+            && let ValueView::Instance { class_name, .. } = inner.as_ref().view()
         {
             let mixin_attr_key = format!("__mutsu_attr__{}", method);
             // Check if the role attribute is public and rw before allowing assignment
@@ -736,7 +757,7 @@ impl Interpreter {
                     if let Some(var_name) = target_var {
                         self.env.insert(
                             var_name.to_string(),
-                            Value::Mixin(inner.clone(), std::sync::Arc::new(updated_mixins)),
+                            Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins)),
                         );
                     }
                     return Ok(value);
@@ -750,23 +771,25 @@ impl Interpreter {
                 if let Some(var_name) = target_var {
                     self.env.insert(
                         var_name.to_string(),
-                        Value::Mixin(inner.clone(), std::sync::Arc::new(updated_mixins)),
+                        Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins)),
                     );
                 }
                 return Ok(value);
             }
         }
 
-        let Value::Instance {
-            class_name,
-            attributes,
-            id: target_id,
-        } = target
-        else {
-            return Err(RuntimeError::new(format!(
-                "X::Assignment::RO: cannot assign through .{} on non-instance",
-                method
-            )));
+        let (class_name, attributes, target_id) = match target.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                id,
+            } => (class_name, attributes.clone(), id),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "X::Assignment::RO: cannot assign through .{} on non-instance",
+                    method
+                )));
+            }
         };
 
         let method_def = if let Some(def) =
@@ -798,12 +821,12 @@ impl Interpreter {
                 // not to the container itself, so skip the container-level check.
                 // Skip the check when Nil is assigned and the attribute has `is default(...)`
                 // because Nil will be replaced by the default value.
-                let nil_has_default = matches!(value, Value::Nil)
+                let nil_has_default = value.is_nil()
                     && self
                         .class_attribute_default(&class_name.resolve(), method)
                         .is_some();
                 // Nil assigned to a typed attribute restores the type object default
-                let nil_restores_type = matches!(value, Value::Nil) && !nil_has_default;
+                let nil_restores_type = value.is_nil() && !nil_has_default;
                 if attr_sigil == '$'
                     && !nil_has_default
                     && !nil_restores_type
@@ -822,7 +845,7 @@ impl Interpreter {
                 if attr_sigil == '@'
                     && let Some(type_constraint) =
                         self.get_attr_type_constraint(&class_name.resolve(), method)
-                    && let Value::Array(items, ..) = &value
+                    && let ValueView::Array(items, ..) = value.view()
                 {
                     for item in items.iter() {
                         if !self.type_matches_value(&type_constraint, item) {
@@ -850,12 +873,12 @@ impl Interpreter {
                     // its elements are checked against the value type only.
                     let (value_type, _) =
                         crate::runtime::types::split_object_hash_constraint(&type_constraint);
-                    let hash_vals: Vec<Value> = match &value {
-                        Value::Hash(h) => h.values().cloned().collect(),
+                    let hash_vals: Vec<Value> = match value.view() {
+                        ValueView::Hash(h) => h.values().cloned().collect(),
                         _ => Vec::new(),
                     };
                     for v in &hash_vals {
-                        if !matches!(v, Value::Nil) && !self.type_matches_value(value_type, v) {
+                        if !v.is_nil() && !self.type_matches_value(value_type, v) {
                             return Err(RuntimeError::new(format!(
                                 "Type check failed for an element of %{}; expected {} but got {}",
                                 method,
@@ -883,18 +906,18 @@ impl Interpreter {
                     Self::normalize_rw_accessor_assignment(updated.get(&attr_key).cloned(), value);
                 // When Nil is assigned to an attribute with `is default(...)`,
                 // restore the default value instead of setting Nil.
-                if matches!(assigned_value, Value::Nil)
+                if assigned_value.is_nil()
                     && let Some(def) = self.class_attribute_default(&class_name.resolve(), method)
                 {
                     assigned_value = def;
                 }
                 // When Nil is assigned to a typed attribute without `is default`,
                 // restore the type object (e.g., Nil -> Int for `has Int $.a`).
-                if matches!(assigned_value, Value::Nil)
+                if assigned_value.is_nil()
                     && attr_sigil == '$'
                     && let Some(tc) = self.get_attr_type_constraint(&class_name.resolve(), method)
                 {
-                    assigned_value = Value::Package(crate::symbol::Symbol::intern(&tc));
+                    assigned_value = Value::package(crate::symbol::Symbol::intern(&tc));
                 }
                 // Embed the attribute's declared element type into the stored
                 // container so it survives later reads (`$o.h.of`, `.push` type
@@ -902,7 +925,10 @@ impl Interpreter {
                 // an assignment to a typed `%`/`@` attribute would drop the type
                 // (the old side table re-derived it on every read).
                 if matches!(attr_sigil, '@' | '%')
-                    && matches!(assigned_value, Value::Hash(_) | Value::Array(..))
+                    && matches!(
+                        assigned_value.view(),
+                        ValueView::Hash(_) | ValueView::Array(..)
+                    )
                     && let Some(tc) = self.get_attr_type_constraint(&class_name.resolve(), method)
                     && !matches!(tc.as_str(), "Mu" | "Any")
                 {
@@ -983,11 +1009,11 @@ impl Interpreter {
                 .as_map()
                 .get(attr_key)
                 .cloned()
-                .unwrap_or(Value::Nil);
-            if delegate != Value::Nil {
-                let sigil = match &delegate {
-                    Value::Array(..) => "@",
-                    Value::Hash(_) => "%",
+                .unwrap_or(Value::NIL);
+            if delegate != Value::NIL {
+                let sigil = match delegate.view() {
+                    ValueView::Array(..) => "@",
+                    ValueView::Hash(_) => "%",
                     _ => "$",
                 };
                 let temp_var = format!("{}__mutsu_delegation_tmp__", sigil);
@@ -999,7 +1025,7 @@ impl Interpreter {
                     method_args,
                     value,
                 )?;
-                let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
+                let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::NIL);
                 self.env.remove(&temp_var);
                 let mut updated = attributes.to_map();
                 updated.insert(attr_key.to_string(), updated_delegate);
@@ -1022,11 +1048,7 @@ impl Interpreter {
             let mut updated = attributes.to_map();
             let current = if method_args.is_empty() {
                 self.call_method_with_values(
-                    Value::Instance {
-                        class_name,
-                        attributes: attributes.clone(),
-                        id: target_id,
-                    },
+                    Value::instance_parts(class_name, attributes.clone(), target_id),
                     method,
                     Vec::new(),
                 )
@@ -1041,7 +1063,7 @@ impl Interpreter {
             };
             // When Nil is assigned to an attribute with `is default(...)`,
             // restore the default value instead of setting Nil.
-            if matches!(assigned_value, Value::Nil)
+            if assigned_value.is_nil()
                 && let Some(def) = self.class_attribute_default(&class_name.resolve(), &attr_name)
             {
                 assigned_value = def;
@@ -1084,8 +1106,8 @@ impl Interpreter {
                 .as_map()
                 .get(attr_key)
                 .cloned()
-                .unwrap_or(Value::Nil);
-            if delegate != Value::Nil {
+                .unwrap_or(Value::NIL);
+            if delegate != Value::NIL {
                 // Temporarily bind the delegate to an env variable for update tracking
                 let temp_var = "__mutsu_delegation_tmp__".to_string();
                 self.env.insert(temp_var.clone(), delegate.clone());
@@ -1098,7 +1120,7 @@ impl Interpreter {
                     value,
                 )?;
                 // Read back the potentially-updated delegate
-                let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
+                let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::NIL);
                 self.env.remove(&temp_var);
                 // Write the updated delegate back into the frontend's live cell.
                 let mut updated = attributes.to_map();
@@ -1127,7 +1149,7 @@ impl Interpreter {
         );
         self.in_lvalue_assignment = was_lvalue;
         let (method_result, updated_attrs) = method_result?;
-        if let Value::Proxy { storer, .. } = &method_result {
+        if let ValueView::Proxy { storer, .. } = method_result.view() {
             return self.proxy_store(
                 storer,
                 target_var,

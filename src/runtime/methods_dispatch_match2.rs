@@ -70,7 +70,7 @@ impl Interpreter {
             "new-from-pairs" => {
                 // Bag.new-from-pairs(...) / BagHash.new-from-pairs(...)
                 // Takes pairs as arguments and uses pair values as counts.
-                if let Value::Package(name) = &target {
+                if let ValueView::Package(name) = target.view() {
                     let cn = name.resolve();
                     if matches!(cn.as_str(), "Bag" | "BagHash") {
                         // Check for lazy inputs
@@ -82,11 +82,11 @@ impl Interpreter {
                         // Collect all items, flattening arrays
                         let mut all_items = Vec::new();
                         for arg in &args {
-                            match arg {
-                                Value::Array(items, ..) => {
+                            match arg.view() {
+                                ValueView::Array(items, ..) => {
                                     all_items.extend(items.iter().cloned());
                                 }
-                                other => all_items.push(other.clone()),
+                                _ => all_items.push(arg.clone()),
                             }
                         }
                         // Convert items to a temporary array and use dispatch_to_bag
@@ -96,9 +96,9 @@ impl Interpreter {
                             Err(e) => return Some(Err(e)),
                         };
                         if cn == "BagHash"
-                            && let Value::Bag(items, _) = result
+                            && let ValueView::Bag(items, _) = result.view()
                         {
-                            return Some(Ok(Value::Bag(items, true)));
+                            return Some(Ok(Value::bag_parts(items.clone(), true)));
                         }
                         return Some(Ok(result));
                     }
@@ -108,7 +108,7 @@ impl Interpreter {
             "Mix" if args.is_empty() => Some(self.dispatch_to_mix_with_what(target, method)),
             "MixHash" if args.is_empty() => {
                 // `.MixHash` is `.Mix` plus the mutable flag and embedded `MixHash`
-                // type metadata; the metadata lives in the `Value::Mix` Arc, so the
+                // type metadata; the metadata lives in the `Mix` Arc, so the
                 // whole coercion is a pure value op shared with the VM native path.
                 Some(crate::builtins::quanthash_coerce::to_mixhash(target))
             }
@@ -116,11 +116,11 @@ impl Interpreter {
                 self.dispatch_setty_baggy_mixy(&target, method)
             }
             "Map" | "Hash" if args.is_empty() => {
-                if matches!(&target, Value::Package(_)) {
-                    return Some(Ok(Value::Package(Symbol::intern(method))));
+                if matches!(target.view(), ValueView::Package(_)) {
+                    return Some(Ok(Value::package(Symbol::intern(method))));
                 }
                 // `.Map` / `.Hash` are pure value coercions (the `Map`
-                // declared-type is embedded in the resulting `Value::Hash` Arc,
+                // declared-type is embedded in the resulting `Hash` Arc,
                 // not an interpreter-owned side table). Single impl shared with
                 // the VM native path.
                 if method == "Map" {
@@ -128,7 +128,7 @@ impl Interpreter {
                 }
                 Some(crate::builtins::map_hash_coerce::to_hash(target, true))
             }
-            "hash" if args.is_empty() && !matches!(&target, Value::Instance { .. }) => {
+            "hash" if args.is_empty() && !matches!(target.view(), ValueView::Instance { .. }) => {
                 Some(self.dispatch_to_hash(target))
             }
             "any" | "all" | "one" | "none" if args.is_empty() => {
@@ -144,19 +144,19 @@ impl Interpreter {
             "slice" => {
                 // Seq.slice(@indices) — return elements at the given indices as a Seq.
                 // Seq.slice() with no args returns an empty Seq.
-                let items = if let Value::Seq(ref arc) = target {
+                let items = if let ValueView::Seq(arc) = target.view() {
                     arc.as_ref().clone()
                 } else {
                     crate::runtime::utils::value_to_list(&target)
                 };
                 if args.is_empty() {
-                    Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))))
+                    Some(Ok(Value::seq_arc(std::sync::Arc::new(Vec::new()))))
                 } else {
                     let mut result = Vec::with_capacity(args.len());
                     for arg in &args {
-                        let idx = match arg {
-                            Value::Int(i) => Some(*i as usize),
-                            Value::Num(n) => Some(*n as usize),
+                        let idx = match arg.view() {
+                            ValueView::Int(i) => Some(i as usize),
+                            ValueView::Num(n) => Some(n as usize),
                             _ => None,
                         };
                         if let Some(i) = idx
@@ -165,7 +165,7 @@ impl Interpreter {
                             result.push(items[i].clone());
                         }
                     }
-                    Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+                    Some(Ok(Value::seq_arc(std::sync::Arc::new(result))))
                 }
             }
             "iterator" if args.is_empty() => Some(self.dispatch_iterator_method(target)),
@@ -179,29 +179,29 @@ impl Interpreter {
                     let items = Self::value_to_list(&mapped);
                     let mut flat_items = Vec::new();
                     for item in items {
-                        match item {
-                            Value::Array(sub_items, _) => {
+                        match item.view() {
+                            ValueView::Array(sub_items, _) => {
                                 flat_items.extend(sub_items.iter().cloned());
                             }
-                            Value::Seq(sub_items) => {
+                            ValueView::Seq(sub_items) => {
                                 flat_items.extend(sub_items.iter().cloned());
                             }
-                            other => flat_items.push(other),
+                            _ => flat_items.push(item.clone()),
                         }
                     }
-                    Value::Seq(std::sync::Arc::new(flat_items))
+                    Value::seq_arc(std::sync::Arc::new(flat_items))
                 }))
             }
             "duckmap" => {
-                let block = args.first().cloned().unwrap_or(Value::Nil);
+                let block = args.first().cloned().unwrap_or(Value::NIL);
                 Some(self.duckmap_iterate(&block, &target))
             }
             "deepmap" => {
-                let block = args.first().cloned().unwrap_or(Value::Nil);
+                let block = args.first().cloned().unwrap_or(Value::NIL);
                 Some(self.deepmap_iterate(&block, &target))
             }
             "nodemap" => {
-                let block = args.first().cloned().unwrap_or(Value::Nil);
+                let block = args.first().cloned().unwrap_or(Value::NIL);
                 Some(self.nodemap_iterate(&block, &target))
             }
             "max" | "min" => Some(self.dispatch_min_max_method(target, method, args)),
@@ -211,7 +211,7 @@ impl Interpreter {
             "pop" => Some(self.dispatch_pop_method(target, args)),
             "sort" => Some(self.dispatch_sort_method(target, args)),
             "unique" => {
-                if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+                if !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
                 {
                     Some(self.dispatch_unique(target, &args))
                 } else {
@@ -219,7 +219,7 @@ impl Interpreter {
                 }
             }
             "repeated" => {
-                if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+                if !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
                 {
                     Some(self.dispatch_repeated(target, &args))
                 } else {
@@ -227,7 +227,7 @@ impl Interpreter {
                 }
             }
             "squish" => {
-                if let Value::Instance { class_name, .. } = &target
+                if let ValueView::Instance { class_name, .. } = target.view()
                     && class_name == "Supply"
                 {
                     Some(self.dispatch_supply_transform(target, "squish", &args))
@@ -239,7 +239,7 @@ impl Interpreter {
             "snip" => self.dispatch_snip_method(target, method, args),
             "head" | "flat" | "batch" | "throttle" | "comb" | "words" | "wait" | "zip"
             | "zip-latest" | "stable" => {
-                if let Value::Instance { class_name, .. } = &target
+                if let ValueView::Instance { class_name, .. } = target.view()
                     && class_name == "Supply"
                 {
                     Some(self.dispatch_supply_transform(target, method, &args))
@@ -247,7 +247,7 @@ impl Interpreter {
                     None
                 }
             }
-            "set" | "primary" | "secondary" | "tertiary" | "quaternary" | "gist" if matches!(&target, Value::Instance { class_name, .. } if class_name == "Collation") => {
+            "set" | "primary" | "secondary" | "tertiary" | "quaternary" | "gist" if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Collation") => {
                 Some(self.dispatch_collation_method(target, method, &args))
             }
             "collate" if args.is_empty() => Some(self.dispatch_collate(target)),
@@ -259,7 +259,7 @@ impl Interpreter {
                 Some(Ok(target))
             }
             "rotor" => {
-                if let Value::Instance { class_name, .. } = &target
+                if let ValueView::Instance { class_name, .. } = target.view()
                     && class_name == "Supply"
                 {
                     Some(self.dispatch_supply_transform(target, "rotor", &args))
@@ -273,11 +273,12 @@ impl Interpreter {
 
     /// Dispatch the "iterator" method.
     fn dispatch_iterator_method(&mut self, target: Value) -> Result<Value, RuntimeError> {
-        if matches!(&target, Value::Instance { class_name, .. } if class_name == "Iterator") {
+        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Iterator")
+        {
             return Ok(target);
         }
         // Check consumed state for Seq: throw X::Seq::Consumed if not cached
-        if let Value::Seq(items) = &target {
+        if let ValueView::Seq(items) = target.view() {
             if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
                 return Err(crate::value::seq_consumed_error());
             }
@@ -286,7 +287,7 @@ impl Interpreter {
                 crate::value::seq_consume(items).ok();
             }
         }
-        if let Value::Seq(items) = &target {
+        if let ValueView::Seq(items) = target.view() {
             let seq_id = std::sync::Arc::as_ptr(items) as usize;
             if let Some(meta) = self.squish_iterator_meta.remove(&seq_id) {
                 for key in meta.revert_remove {
@@ -297,14 +298,14 @@ impl Interpreter {
                 }
                 let mut attrs = HashMap::new();
                 attrs.insert("squish_source".to_string(), Value::array(meta.source_items));
-                attrs.insert("squish_as".to_string(), meta.as_func.unwrap_or(Value::Nil));
+                attrs.insert("squish_as".to_string(), meta.as_func.unwrap_or(Value::NIL));
                 attrs.insert(
                     "squish_with".to_string(),
-                    meta.with_func.unwrap_or(Value::Nil),
+                    meta.with_func.unwrap_or(Value::NIL),
                 );
-                attrs.insert("squish_scan_index".to_string(), Value::Int(0));
-                attrs.insert("squish_prev_key".to_string(), Value::Nil);
-                attrs.insert("squish_initialized".to_string(), Value::Bool(false));
+                attrs.insert("squish_scan_index".to_string(), Value::int(0));
+                attrs.insert("squish_prev_key".to_string(), Value::NIL);
+                attrs.insert("squish_initialized".to_string(), Value::FALSE);
                 return Ok(Value::make_instance(Symbol::intern("Iterator"), attrs));
             }
         }
@@ -319,7 +320,7 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name == "Supply"
         {
             return Some(self.dispatch_supply_transform(target, "produce", &args));
@@ -329,17 +330,17 @@ impl Interpreter {
             None => return Some(Err(RuntimeError::new("produce expects a callable"))),
         };
         if !matches!(
-            target,
-            Value::Array(_, _)
-                | Value::Seq(_)
-                | Value::Slip(_)
-                | Value::LazyList(_)
-                | Value::Range(_, _)
-                | Value::RangeExcl(_, _)
-                | Value::RangeExclStart(_, _)
-                | Value::RangeExclBoth(_, _)
-                | Value::GenericRange { .. }
-                | Value::Hash(_)
+            target.view(),
+            ValueView::Array(_, _)
+                | ValueView::Seq(_)
+                | ValueView::Slip(_)
+                | ValueView::LazyList(_)
+                | ValueView::Range(_, _)
+                | ValueView::RangeExcl(_, _)
+                | ValueView::RangeExclStart(_, _)
+                | ValueView::RangeExclBoth(_, _)
+                | ValueView::GenericRange { .. }
+                | ValueView::Hash(_)
         ) {
             return Some(Ok(target));
         }
@@ -356,11 +357,11 @@ impl Interpreter {
             .first()
             .cloned()
             .ok_or_else(|| RuntimeError::new("reduce expects a callable"))?;
-        if let Value::Instance {
-            ref class_name,
-            ref attributes,
+        if let ValueView::Instance {
+            class_name,
+            attributes,
             ..
-        } = target
+        } = target.view()
             && class_name == "Supply"
         {
             let attrs_clone = attributes.to_map();
@@ -376,17 +377,17 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        if let Value::Instance {
-            ref class_name,
-            ref attributes,
+        if let ValueView::Instance {
+            class_name,
+            attributes,
             ..
-        } = target
+        } = target.view()
             && class_name == "Supply"
         {
             return Some(self.dispatch_supply_elems(&(attributes).as_map(), &args));
         }
         // .elems on a Seq caches it (makes it available for multiple calls)
-        if let Value::Seq(items) = &target {
+        if let ValueView::Seq(items) = target.view() {
             crate::value::seq_mark_cached(items);
         }
         Some(self.call_function("elems", vec![target]))
@@ -398,11 +399,11 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Instance {
-            ref class_name,
-            ref attributes,
+        if let ValueView::Instance {
+            class_name,
+            attributes,
             ..
-        } = target
+        } = target.view()
             && class_name == "Supply"
         {
             return self.dispatch_supply_map(&(attributes).as_map(), &args);
@@ -410,14 +411,14 @@ impl Interpreter {
         // Validate that the map argument is callable (X::Cannot::Map)
         if let Some(func) = args.first() {
             let is_callable = matches!(
-                func,
-                Value::Sub(_)
-                    | Value::Routine { .. }
-                    | Value::WeakSub(_)
-                    | Value::Regex(_)
-                    | Value::RegexWithAdverbs { .. }
-            ) || (matches!(func, Value::Instance { class_name, .. } if class_name.resolve() == "WhateverCode" || class_name.resolve() == "HyperWhateverCode"))
-                || matches!(func, Value::Whatever);
+                func.view(),
+                ValueView::Sub(_)
+                    | ValueView::Routine { .. }
+                    | ValueView::WeakSub(_)
+                    | ValueView::Regex(_)
+                    | ValueView::RegexWithAdverbs(_)
+            ) || (matches!(func.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "WhateverCode" || class_name.resolve() == "HyperWhateverCode"))
+                || matches!(func.view(), ValueView::Whatever);
             if !is_callable {
                 let mut attrs = HashMap::new();
                 attrs.insert(
@@ -452,8 +453,8 @@ impl Interpreter {
         let items = if crate::runtime::utils::is_shaped_array(&target) {
             crate::runtime::utils::shaped_array_leaves(&target)
         } else {
-            match &target {
-                Value::Array(items, kind) if kind.is_itemized() => items.to_vec(),
+            match target.view() {
+                ValueView::Array(items, kind) if kind.is_itemized() => items.to_vec(),
                 // A Blob/Buf maps over its bytes (matches raku iteration).
                 _ => {
                     Self::buf_as_byte_items(&target).unwrap_or_else(|| Self::value_to_list(&target))
@@ -468,16 +469,16 @@ impl Interpreter {
         // out-of-dynamic-scope set. To get that right without making every map
         // lazy (which perturbs list shape/context in many call sites), only
         // defer evaluation when the callback body actually contains a `return`.
-        if let Some(Value::Sub(sub_data)) = args.first()
+        if let Some(ValueView::Sub(sub_data)) = args.first().map(Value::view)
             && Self::body_contains_return(&sub_data.body)
         {
             return Ok(self.create_lazy_map_list(items, sub_data));
         }
         let result = self.eval_map_over_items(args.first().cloned(), items)?;
         // .map() returns a Seq per Raku spec
-        Ok(match result {
-            Value::Array(items, _) => Value::Seq(std::sync::Arc::new(items.to_vec())),
-            other => other,
+        Ok(match result.view() {
+            ValueView::Array(items, _) => Value::seq_arc(std::sync::Arc::new(items.to_vec())),
+            _ => result.clone(),
         })
     }
 
@@ -496,20 +497,17 @@ impl Interpreter {
         let mut env = self.env.clone();
         env.insert(
             "__mutsu_lazy_map_items".to_string(),
-            Value::Array(
+            Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                 crate::value::ArrayKind::List,
             ),
         );
         env.insert(
             "__mutsu_lazy_map_func".to_string(),
-            Value::Sub(callback.clone()),
+            Value::sub_value(callback.clone()),
         );
         // Mark as gather-based so the VM auto-forces it for chained methods.
-        env.insert(
-            "__mutsu_lazylist_from_gather".to_string(),
-            Value::Bool(true),
-        );
+        env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
 
         let list = crate::value::LazyList {
             body: Vec::new(),
@@ -526,7 +524,7 @@ impl Interpreter {
             walk_pending: None,
             cat_pull: None,
         };
-        Value::LazyList(crate::gc::Gc::new(list))
+        Value::lazy_list(crate::gc::Gc::new(list))
     }
 
     /// Dispatch "min" and "max" methods.
@@ -536,7 +534,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name == "Supply"
         {
             return self.dispatch_supply_running_extrema(target, method, &args);
@@ -546,8 +544,10 @@ impl Interpreter {
         // analytically rather than materialising (which can't handle `n..Inf`).
         // Only the bare-adverb form (no `:by` comparator) is special-cased.
         let has_by = args.iter().any(|a| {
-            matches!(a, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
-                || matches!(a, Value::Pair(n, _) if n == "by")
+            matches!(
+                a.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+            ) || matches!(a.view(), ValueView::Pair(n, _) if n == "by")
         });
         if Self::value_is_rangey(&target) && !has_by {
             let (adverb, _) = Self::extract_extrema_adverbs(&args);
@@ -560,29 +560,29 @@ impl Interpreter {
             let key = if want_max {
                 // Last element's index = elems - 1 (Inf stays Inf).
                 let elems = self.call_method_with_values(target.clone(), "elems", vec![])?;
-                match elems {
-                    Value::Int(n) => Value::Int(n - 1),
-                    other if matches!(&other, Value::Num(f) if f.is_infinite()) => other,
-                    _ => Value::Num(f64::INFINITY),
+                match elems.view() {
+                    ValueView::Int(n) => Value::int(n - 1),
+                    ValueView::Num(f) if f.is_infinite() => elems.clone(),
+                    _ => Value::num(f64::INFINITY),
                 }
             } else {
-                Value::Int(0)
+                Value::int(0)
             };
             return Ok(match adverb.as_str() {
                 "k" => key,
                 "v" => value,
                 "kv" => Value::array(vec![key, value]),
-                "p" => Value::ValuePair(Box::new(key), Box::new(value)),
+                "p" => Value::value_pair(key, value),
                 _ => value,
             });
         }
         let mut call_args = vec![target.clone()];
         if let Some(first) = args.first() {
             if matches!(
-                first,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                first.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             ) {
-                call_args.push(Value::Pair("by".to_string(), Box::new(first.clone())));
+                call_args.push(Value::pair("by".to_string(), first.clone()));
             } else {
                 call_args.extend(args.clone());
             }
@@ -597,7 +597,7 @@ impl Interpreter {
     /// Dispatch the "pop" method.
     fn dispatch_pop_method(
         &mut self,
-        target: Value,
+        mut target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if !args.is_empty() {
@@ -606,18 +606,22 @@ impl Interpreter {
                 args.len() + 1
             )));
         }
-        match target {
-            Value::Array(_, kind) if kind.is_lazy() => Err(RuntimeError::cannot_lazy("pop")),
-            Value::Array(mut items, ..) => {
-                let items_mut = crate::gc::Gc::make_mut(&mut items);
-                Ok(if items_mut.is_empty() {
-                    make_empty_array_failure("pop")
-                } else {
-                    items_mut.pop().unwrap_or(Value::Nil)
-                })
-            }
-            _ => Ok(make_empty_array_failure("pop")),
+        if let ValueView::Array(_, kind) = target.view()
+            && kind.is_lazy()
+        {
+            return Err(RuntimeError::cannot_lazy("pop"));
         }
+        if let Some(result) = target.with_array_mut(|items, _| {
+            let items_mut = crate::gc::Gc::make_mut(items);
+            if items_mut.is_empty() {
+                make_empty_array_failure("pop")
+            } else {
+                items_mut.pop().unwrap_or(Value::NIL)
+            }
+        }) {
+            return Ok(result);
+        }
+        Ok(make_empty_array_failure("pop"))
     }
 
     /// Dispatch the "sort" method.
@@ -626,15 +630,15 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name == "Supply"
         {
             return self.dispatch_supply_transform(target, "sort", &args);
         }
-        if let Value::Package(name) = &target
+        if let ValueView::Package(name) = target.view()
             && name == "Supply"
         {
-            return Ok(Value::Seq(std::sync::Arc::new(vec![target])));
+            return Ok(Value::seq_arc(std::sync::Arc::new(vec![target])));
         }
         let mut caller = crate::runtime::methods_collection_ops::sort::InterpCaller(self);
         crate::runtime::methods_collection_ops::sort::sort_value_generic(&mut caller, target, &args)
@@ -647,7 +651,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name == "Supply"
         {
             if !args.is_empty() {
@@ -659,10 +663,10 @@ impl Interpreter {
         let mut call_args = vec![target.clone()];
         if let Some(first) = args.first() {
             if matches!(
-                first,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                first.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             ) {
-                call_args.push(Value::Pair("by".to_string(), Box::new(first.clone())));
+                call_args.push(Value::pair("by".to_string(), first.clone()));
             } else {
                 call_args.extend(args.clone());
             }
@@ -677,7 +681,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name == "Supply"
         {
             return Some(self.dispatch_supply_transform(target, method, &args));

@@ -262,11 +262,7 @@ impl Interpreter {
                         Ok(())
                     })?;
                 }
-                return Ok(Value::LazyIoLines {
-                    handle: Box::new(handle),
-                    kv: false,
-                    words: true,
-                });
+                return Ok(Value::lazy_io_lines(handle, false, true));
             }
             let mut words = Vec::new();
             'outer: while let Some(word) = self.read_word_from_handle_value(&handle)? {
@@ -280,7 +276,7 @@ impl Interpreter {
             if close_after {
                 self.close_handle_value(&handle)?;
             }
-            return Ok(Value::Seq(std::sync::Arc::new(words)));
+            return Ok(Value::seq_arc(std::sync::Arc::new(words)));
         }
         // Non-handle argument: delegate to string-splitting words (native function)
         if !args.is_empty()

@@ -7,9 +7,11 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         fn as_items(value: &Value) -> Option<Vec<Value>> {
-            match value {
-                Value::Array(items, ..) => Some(items.iter().cloned().collect()),
-                Value::Seq(items) | Value::Slip(items) => Some(items.iter().cloned().collect()),
+            match value.view() {
+                ValueView::Array(items, ..) => Some(items.iter().cloned().collect()),
+                ValueView::Seq(items) | ValueView::Slip(items) => {
+                    Some(items.iter().cloned().collect())
+                }
                 _ => None,
             }
         }
@@ -75,36 +77,40 @@ impl Interpreter {
                 let entry = buckets
                     .entry(key)
                     .or_insert_with(|| Value::real_array(Vec::new()));
-                match entry {
-                    Value::Array(values, ..) => {
-                        crate::gc::Gc::make_mut(values).push(item);
-                        Ok(())
-                    }
-                    Value::Hash(_) => Err(mixed_level_error(name)),
-                    _ => {
-                        *entry = Value::real_array(vec![item]);
-                        Ok(())
-                    }
+                let is_array = matches!(entry.view(), ValueView::Array(..));
+                let is_hash = matches!(entry.view(), ValueView::Hash(_));
+                if is_array {
+                    entry.with_array_mut(|values, _| crate::gc::Gc::make_mut(values).push(item));
+                    Ok(())
+                } else if is_hash {
+                    Err(mixed_level_error(name))
+                } else {
+                    *entry = Value::real_array(vec![item]);
+                    Ok(())
                 }
             } else {
                 let entry = buckets
                     .entry(key)
                     .or_insert_with(|| Value::hash(HashMap::new()));
-                match entry {
-                    Value::Hash(map) => {
-                        let map = crate::gc::Gc::make_mut(map);
-                        insert_nested_bucket(map, &path[1..], item, name)
-                    }
-                    Value::Array(..) => Err(mixed_level_error(name)),
-                    _ => {
-                        *entry = Value::hash(HashMap::new());
-                        if let Value::Hash(map) = entry {
+                let is_hash = matches!(entry.view(), ValueView::Hash(_));
+                let is_array = matches!(entry.view(), ValueView::Array(..));
+                if is_hash {
+                    entry
+                        .with_hash_mut(|map| {
                             let map = crate::gc::Gc::make_mut(map);
                             insert_nested_bucket(map, &path[1..], item, name)
-                        } else {
-                            Ok(())
-                        }
-                    }
+                        })
+                        .unwrap()
+                } else if is_array {
+                    Err(mixed_level_error(name))
+                } else {
+                    *entry = Value::hash(HashMap::new());
+                    entry
+                        .with_hash_mut(|map| {
+                            let map = crate::gc::Gc::make_mut(map);
+                            insert_nested_bucket(map, &path[1..], item, name)
+                        })
+                        .unwrap_or(Ok(()))
                 }
             }
         }
@@ -119,11 +125,11 @@ impl Interpreter {
         let mut positional: Vec<Value> = Vec::new();
         for (i, arg) in args.iter().enumerate() {
             let fetched_arg = self.auto_fetch_proxy(arg)?;
-            match &fetched_arg {
-                Value::Pair(key, value) if key == "as" => {
+            match fetched_arg.view() {
+                ValueView::Pair(key, value) if key == "as" => {
                     as_mapper = Some(self.auto_fetch_proxy(value)?)
                 }
-                Value::Pair(key, value) if key == "into" => {
+                ValueView::Pair(key, value) if key == "into" => {
                     // Look up the variable name from arg_sources metadata
                     // The compiler encodes FatArrow args as "key=varname"
                     if let Some(ref sources) = arg_sources
@@ -136,14 +142,14 @@ impl Interpreter {
                     if into_varname.is_none() {
                         into_varname = self.find_var_by_identity(value);
                     }
-                    into_target_raw = Some(*value.clone());
+                    into_target_raw = Some(value.clone());
                     into_target = Some(self.auto_fetch_proxy(value)?);
                 }
                 _ => {
                     if mapper.is_none() {
-                        mapper = Some(fetched_arg);
+                        mapper = Some(fetched_arg.clone());
                     } else {
-                        positional.push(fetched_arg);
+                        positional.push(fetched_arg.clone());
                     }
                 }
             }
@@ -154,7 +160,7 @@ impl Interpreter {
 
         // Check for lazy lists — classify/categorize cannot operate on lazy lists
         for arg in &positional {
-            let is_lazy = matches!(arg, Value::LazyList(_));
+            let is_lazy = matches!(arg.view(), ValueView::LazyList(_));
             if is_lazy {
                 let mut attrs = HashMap::new();
                 attrs.insert(
@@ -179,27 +185,33 @@ impl Interpreter {
         // Flatten list/array arguments into individual items and force lazy inputs.
         let mut items = Vec::new();
         for arg in &positional {
-            match arg {
-                Value::Array(values, ..) => items.extend(values.iter().cloned()),
-                Value::Seq(values) | Value::Slip(values) => items.extend(values.iter().cloned()),
-                Value::LazyList(ll) => items.extend(self.force_lazy_list_bridge(ll)?),
-                v if v.is_range() => items.extend(crate::runtime::utils::value_to_list(v)),
-                other => items.push(other.clone()),
+            match arg.view() {
+                ValueView::Array(values, ..) => items.extend(values.iter().cloned()),
+                ValueView::Seq(values) | ValueView::Slip(values) => {
+                    items.extend(values.iter().cloned())
+                }
+                ValueView::LazyList(ll) => items.extend(self.force_lazy_list_bridge(ll)?),
+                _ if arg.is_range() => items.extend(crate::runtime::utils::value_to_list(arg)),
+                _ => items.push(arg.clone()),
             }
         }
 
-        let mut buckets: HashMap<String, Value> = match into_target.as_ref() {
-            Some(Value::Hash(map)) => map.as_ref().map.clone(),
+        let mut buckets: HashMap<String, Value> = match into_target.as_ref().map(Value::view) {
+            Some(ValueView::Hash(map)) => map.as_ref().map.clone(),
             _ => HashMap::new(),
         };
-        let mut bag_counts: Option<HashMap<String, i64>> = match into_target.as_ref() {
-            Some(Value::Bag(b, _)) => Some(crate::runtime::utils::bag_counts_as_i64(&b.counts)),
+        let mut bag_counts: Option<HashMap<String, i64>> = match into_target
+            .as_ref()
+            .map(Value::view)
+        {
+            Some(ValueView::Bag(b, _)) => Some(crate::runtime::utils::bag_counts_as_i64(&b.counts)),
             _ => None,
         };
-        let mut mix_counts: Option<HashMap<String, f64>> = match into_target.as_ref() {
-            Some(Value::Mix(m, _)) => Some(m.weights.clone()),
-            _ => None,
-        };
+        let mut mix_counts: Option<HashMap<String, f64>> =
+            match into_target.as_ref().map(Value::view) {
+                Some(ValueView::Mix(m, _)) => Some(m.weights.clone()),
+                _ => None,
+            };
 
         // Track classification level depth across all items for mixed-level detection
         let mut expected_level: Option<usize> = None;
@@ -214,27 +226,28 @@ impl Interpreter {
         let mut object_keys: HashMap<String, Value> = HashMap::new();
 
         for item in &items {
-            let mapped = match &mapper {
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+            let mapped = match mapper.view() {
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
                     self.call_sub_value(mapper.clone(), vec![item.clone()], true)?
                 }
-                Value::Hash(map) => map
+                ValueView::Hash(map) => map
                     .get(&item.to_string_value())
                     .cloned()
-                    .unwrap_or(Value::Nil),
-                Value::Array(values, ..) => {
+                    .unwrap_or(Value::NIL),
+                ValueView::Array(values, ..) => {
                     let idx = crate::runtime::to_int(item);
                     if idx < 0 {
-                        Value::Nil
+                        Value::NIL
                     } else {
-                        values.get(idx as usize).cloned().unwrap_or(Value::Nil)
+                        values.get(idx as usize).cloned().unwrap_or(Value::NIL)
                     }
                 }
-                _ => Value::Nil,
+                _ => Value::NIL,
             };
-            let mapped = match mapped {
-                Value::LazyList(ll) => Value::array(self.force_lazy_list_bridge(&ll)?),
-                other => other,
+            let mapped = if let ValueView::LazyList(ll) = mapped.view() {
+                Value::array(self.force_lazy_list_bridge(ll)?)
+            } else {
+                mapped
             };
 
             let mapped_item = if let Some(as_fn) = &as_mapper {
@@ -307,7 +320,7 @@ impl Interpreter {
                     expected_level = Some(path.len());
                 }
                 if let Some(first) = path.first()
-                    && !matches!(first, Value::Str(_))
+                    && !matches!(first.view(), ValueView::Str(_))
                 {
                     object_keys
                         .entry(first.to_string_value())
@@ -321,7 +334,7 @@ impl Interpreter {
         {
             let has_proxy = into_target_raw
                 .as_ref()
-                .is_some_and(|value| matches!(value, Value::Proxy { .. }));
+                .is_some_and(|value| matches!(value.view(), ValueView::Proxy { .. }));
             let has_varname = into_varname.is_some();
             if has_proxy || has_varname {
                 let mut updated: Option<Value> = None;
@@ -363,7 +376,7 @@ impl Interpreter {
         ))
     }
 
-    /// Wrap classify's bucket map in a `Value::Hash`, marking it an *object hash*
+    /// Wrap classify's bucket map in a `Hash`, marking it an *object hash*
     /// (typed keys) when any classifier key was non-`Str` (e.g. a Junction). An
     /// object hash makes `$result{ $key }` a by-key lookup rather than junction
     /// autothreading, and `.keys` yield the real key objects.
@@ -371,21 +384,21 @@ impl Interpreter {
     /// single (non-flattening) array — Raku stores each bucket as `$[...]`, so
     /// `my @a = %c<k>` yields one element and `for %c<k> {}` runs once. Recurses
     /// into nested categorize buckets (multi-level paths become nested hashes).
-    fn itemize_bucket_value(v: Value) -> Value {
-        match v {
-            Value::Array(items, kind) => Value::Array(items, kind.itemize()),
-            Value::Hash(mut arc) => {
-                let data = crate::gc::Gc::make_mut(&mut arc);
-                let keys: Vec<String> = data.map.keys().cloned().collect();
-                for k in keys {
-                    if let Some(val) = data.map.remove(&k) {
-                        data.map.insert(k, Self::itemize_bucket_value(val));
-                    }
-                }
-                Value::Hash(arc)
-            }
-            other => other,
+    fn itemize_bucket_value(mut v: Value) -> Value {
+        if matches!(v.view(), ValueView::Array(..)) {
+            let (items, kind) = v.into_array().unwrap();
+            return Value::array_with_kind(items, kind.itemize());
         }
+        v.with_hash_mut(|arc| {
+            let data = crate::gc::Gc::make_mut(arc);
+            let keys: Vec<String> = data.map.keys().cloned().collect();
+            for k in keys {
+                if let Some(val) = data.map.remove(&k) {
+                    data.map.insert(k, Self::itemize_bucket_value(val));
+                }
+            }
+        });
+        v
     }
 
     fn classify_finish_hash(
@@ -397,7 +410,7 @@ impl Interpreter {
             .into_iter()
             .map(|(k, v)| (k, Self::itemize_bucket_value(v)))
             .collect();
-        let hash = Value::hash(buckets);
+        let mut hash = Value::hash(buckets);
         // The standalone `.classify`/`.categorize` always return a fresh
         // `Hash[Any,Mu]` in Raku: the value type is `Any` (each bucket is an
         // itemized array) and the key type is the most general `Mu` (keys can be
@@ -405,15 +418,14 @@ impl Interpreter {
         // (`classify-list`, `:into(%h)`) instead keeps the invocant's own type
         // (a plain `Hash`, `BagHash`, ...), so only tag when standalone.
         if standalone {
-            if let Value::Hash(mut arc) = hash {
-                let data = crate::gc::Gc::make_mut(&mut arc);
+            hash.with_hash_mut(|arc| {
+                let data = crate::gc::Gc::make_mut(arc);
                 data.value_type = Some("Any".to_string());
                 data.key_type = Some("Mu".to_string());
                 if !object_keys.is_empty() {
                     data.original_keys = Some(object_keys);
                 }
-                return Value::Hash(arc);
-            }
+            });
             return hash;
         }
         // Classifying into an existing plain hash: preserve the object-hash
@@ -421,12 +433,11 @@ impl Interpreter {
         if object_keys.is_empty() {
             return hash;
         }
-        if let Value::Hash(mut arc) = hash {
-            let data = crate::gc::Gc::make_mut(&mut arc);
+        hash.with_hash_mut(|arc| {
+            let data = crate::gc::Gc::make_mut(arc);
             data.key_type = Some("Any".to_string());
             data.original_keys = Some(object_keys);
-            return Value::Hash(arc);
-        }
+        });
         hash
     }
 }

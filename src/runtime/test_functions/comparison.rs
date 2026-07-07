@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn test_fn_cmp_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -7,16 +8,16 @@ impl Interpreter {
         // would otherwise be filtered out by positional_value which treats all Pairs as named args.
         let mut positionals = Vec::new();
         for arg in args {
-            if let Value::Pair(key, _) = arg
+            if let ValueView::Pair(key, _) = arg.view()
                 && (key == "__mutsu_test_callsite_line" || key == "todo")
             {
                 continue;
             }
             positionals.push(arg.clone());
         }
-        let left = positionals.first().cloned().unwrap_or(Value::Nil);
-        let op_val = positionals.get(1).cloned().unwrap_or(Value::Nil);
-        let right = positionals.get(2).cloned().unwrap_or(Value::Nil);
+        let left = positionals.first().cloned().unwrap_or(Value::NIL);
+        let op_val = positionals.get(1).cloned().unwrap_or(Value::NIL);
+        let right = positionals.get(2).cloned().unwrap_or(Value::NIL);
         let desc = positionals
             .get(3)
             .map(|v| v.to_string_value())
@@ -25,8 +26,8 @@ impl Interpreter {
         // Clone values before they might be consumed by callable operator
         let left_diag = left.clone();
         let right_diag = right.clone();
-        let op_diag = match &op_val {
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+        let op_diag = match op_val.view() {
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
                 format!("'{}'", crate::value::what_type_name(&op_val))
             }
             _ => {
@@ -40,10 +41,10 @@ impl Interpreter {
         };
         // When either operand is a Junction, thread the comparison through it.
         // cmp-ok checks the boolean truthiness of the resulting junction.
-        let has_junction =
-            matches!(&left, Value::Junction { .. }) || matches!(&right, Value::Junction { .. });
-        let ok = match &op_val {
-            Value::Str(op)
+        let has_junction = matches!(left.view(), ValueView::Junction { .. })
+            || matches!(right.view(), ValueView::Junction { .. });
+        let ok = match op_val.view() {
+            ValueView::Str(op)
                 if has_junction
                     && matches!(
                         op.as_str(),
@@ -66,7 +67,7 @@ impl Interpreter {
                 let result = Self::cmp_ok_junction_thread(&left, &right, op);
                 result.truthy()
             }
-            Value::Str(op) => match op.as_str() {
+            ValueView::Str(op) => match op.as_str() {
                 "~~" => self.smart_match(&left, &right),
                 "!~~" => !self.smart_match(&left, &right),
                 "eq" => left.to_string_value() == right.to_string_value(),
@@ -85,12 +86,12 @@ impl Interpreter {
                 "!===" => !crate::runtime::utils::values_identical(&left, &right),
                 "eqv" => {
                     // Check if either side is a consumed Seq (throws X::Seq::Consumed)
-                    if let Value::Seq(items) = &left
+                    if let ValueView::Seq(items) = left.view()
                         && crate::value::seq_is_consumed(items)
                     {
                         return Err(crate::value::seq_consumed_error());
                     }
-                    if let Value::Seq(items) = &right
+                    if let ValueView::Seq(items) = right.view()
                         && crate::value::seq_is_consumed(items)
                     {
                         return Err(crate::value::seq_consumed_error());
@@ -100,12 +101,12 @@ impl Interpreter {
                 "=:=" => crate::runtime::utils::values_identical(&left, &right),
                 "=~=" | "\u{2245}" => {
                     // =~= / ≅ approximately equal
-                    let (lr, li) = match &left {
-                        Value::Complex(r, i) => (*r, *i),
+                    let (lr, li) = match left.view() {
+                        ValueView::Complex(r, i) => (r, i),
                         _ => (super::super::to_float_value(&left).unwrap_or(0.0), 0.0),
                     };
-                    let (rr, ri) = match &right {
-                        Value::Complex(r, i) => (*r, *i),
+                    let (rr, ri) = match right.view() {
+                        ValueView::Complex(r, i) => (r, i),
                         _ => (super::super::to_float_value(&right).unwrap_or(0.0), 0.0),
                     };
                     let tol = 1e-15;
@@ -142,19 +143,19 @@ impl Interpreter {
             self.output_sink_mut().stderr_output.push_str(&diag);
             eprint!("{}", diag);
         }
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     /// Thread a comparison operator through junctions for cmp-ok.
     fn cmp_ok_junction_thread(left: &Value, right: &Value, op: &str) -> Value {
-        if let Value::Junction { kind, values } = left {
+        if let ValueView::Junction { kind, values } = left.view() {
             let results: Vec<Value> = values
                 .iter()
                 .map(|v| Self::cmp_ok_junction_thread(v, right, op))
                 .collect();
             return Value::junction(kind.clone(), results);
         }
-        if let Value::Junction { kind, values } = right {
+        if let ValueView::Junction { kind, values } = right.view() {
             let results: Vec<Value> = values
                 .iter()
                 .map(|v| Self::cmp_ok_junction_thread(left, v, op))
@@ -179,7 +180,7 @@ impl Interpreter {
             "eqv" => Self::cmp_eqv_bool(left, right),
             _ => false,
         };
-        Value::Bool(ok)
+        Value::truth(ok)
     }
 
     pub(crate) fn test_fn_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -189,12 +190,12 @@ impl Interpreter {
             Some(v) => self.stringify_value(v.clone())?,
             None => String::new(),
         };
-        let ok = match Self::positional_value(args, 1) {
-            Some(Value::Regex(pat)) => self.regex_is_match(pat, &text),
+        let ok = match Self::positional_value(args, 1).map(Value::view) {
+            Some(ValueView::Regex(pat)) => self.regex_is_match(pat, &text),
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_unlike(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -204,12 +205,12 @@ impl Interpreter {
             Some(v) => self.stringify_value(v.clone())?,
             None => String::new(),
         };
-        let ok = match Self::positional_value(args, 1) {
-            Some(Value::Regex(pat)) => !self.regex_is_match(pat, &text),
+        let ok = match Self::positional_value(args, 1).map(Value::view) {
+            Some(ValueView::Regex(pat)) => !self.regex_is_match(pat, &text),
             _ => true,
         };
         self.test_ok(ok, &desc, todo)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_is_deeply(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -221,7 +222,8 @@ impl Interpreter {
             (Some(left), Some(right)) => {
                 // If either side is a Junction, thread eqv through the junction
                 // and check the boolean of the result (Raku semantics).
-                if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. })
+                if matches!(left.view(), ValueView::Junction { .. })
+                    || matches!(right.view(), ValueView::Junction { .. })
                 {
                     Self::eqv_with_junctions(left, right).truthy()
                 } else {
@@ -241,7 +243,7 @@ impl Interpreter {
                 expected_raku, got_raku
             ));
         }
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_is_deeply_junction(
@@ -263,7 +265,7 @@ impl Interpreter {
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     /// Extract (left, right, desc) for is-deeply from raw args.
@@ -272,7 +274,7 @@ impl Interpreter {
     fn extract_is_deeply_args(args: &[Value]) -> (Option<&Value>, Option<&Value>, String) {
         let mut positionals = Vec::new();
         for arg in args {
-            if let Value::Pair(key, _) = arg
+            if let ValueView::Pair(key, _) = arg.view()
                 && (key == "__mutsu_test_callsite_line" || key == "todo")
             {
                 continue;
@@ -293,23 +295,23 @@ impl Interpreter {
     /// by contents (matching what `words($fh)`/`lines($fh)` conceptually yield).
     /// Non-lazy values pass through unchanged.
     fn force_lazy_io_to_seq(&mut self, v: Value) -> Value {
-        if let Value::LazyIoLines { handle, words, .. } = &v
-            && let Ok(forced) = self.force_lazy_io_lines(handle, *words)
+        if let ValueView::LazyIoLines { handle, words, .. } = v.view()
+            && let Ok(forced) = self.force_lazy_io_lines(handle, words)
         {
             let items = crate::runtime::utils::value_to_list(&forced);
-            return Value::Seq(std::sync::Arc::new(items));
+            return Value::seq(items);
         }
         v
     }
 
     fn seq_to_list(&mut self, v: &Value) -> Value {
-        match v {
-            Value::Seq(items) => Value::Array(
+        match v.view() {
+            ValueView::Seq(items) => Value::array_with_kind(
                 crate::value::Value::array_arc(items.clone().to_vec()),
                 ArrayKind::List,
             ),
-            Value::LazyList(list) => match self.force_lazy_list(list) {
-                Ok(items) => Value::Array(
+            ValueView::LazyList(list) => match self.force_lazy_list(list) {
+                Ok(items) => Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     ArrayKind::List,
                 ),
@@ -317,11 +319,11 @@ impl Interpreter {
             },
             // A lazy IO words/lines iterator must be drained before comparison so
             // it compares as its contents rather than the opaque "(...)".
-            Value::LazyIoLines { handle, words, .. } => {
-                match self.force_lazy_io_lines(handle, *words) {
+            ValueView::LazyIoLines { handle, words, .. } => {
+                match self.force_lazy_io_lines(handle, words) {
                     Ok(forced) => {
                         let items = crate::runtime::utils::value_to_list(&forced);
-                        Value::Array(
+                        Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                             ArrayKind::List,
                         )
@@ -343,20 +345,20 @@ impl Interpreter {
     }
 
     pub(crate) fn junction_sort_key(v: &Value) -> String {
-        match v {
-            Value::Array(items, _) => {
+        match v.view() {
+            ValueView::Array(items, _) => {
                 let parts: Vec<String> = items.iter().map(Self::junction_sort_key).collect();
                 format!("[{}]", parts.join(","))
             }
-            Value::Junction { .. } => {
-                Self::junction_sort_key(&Self::junction_guts_value(v).unwrap_or(Value::Nil))
+            ValueView::Junction { .. } => {
+                Self::junction_sort_key(&Self::junction_guts_value(v).unwrap_or(Value::NIL))
             }
             _ => v.to_string_value(),
         }
     }
 
     pub(crate) fn junction_guts_value(v: &Value) -> Option<Value> {
-        let Value::Junction { kind, values } = v else {
+        let ValueView::Junction { kind, values } = v.view() else {
             return None;
         };
         // Normalize recursively so nested junction structures compare order-independently.
@@ -375,41 +377,41 @@ impl Interpreter {
     /// returning a Value (possibly a Junction of Bools).
     /// Used by `is` which compares stringified values.
     pub(crate) fn eq_with_junctions(left: &Value, right: &Value) -> Value {
-        if let Value::Junction { kind, values } = left {
+        if let ValueView::Junction { kind, values } = left.view() {
             let results: Vec<Value> = values
                 .iter()
                 .map(|v| Self::eq_with_junctions(v, right))
                 .collect();
             return Value::junction(kind.clone(), results);
         }
-        if let Value::Junction { kind, values } = right {
+        if let ValueView::Junction { kind, values } = right.view() {
             let results: Vec<Value> = values
                 .iter()
                 .map(|v| Self::eq_with_junctions(left, v))
                 .collect();
             return Value::junction(kind.clone(), results);
         }
-        Value::Bool(left.to_string_value() == right.to_string_value())
+        Value::truth(left.to_string_value() == right.to_string_value())
     }
 
     /// Perform `eqv` comparison that threads through Junctions,
     /// returning a Value (possibly a Junction of Bools).
     pub(crate) fn eqv_with_junctions(left: &Value, right: &Value) -> Value {
-        if let Value::Junction { kind, values } = left {
+        if let ValueView::Junction { kind, values } = left.view() {
             let results: Vec<Value> = values
                 .iter()
                 .map(|v| Self::eqv_with_junctions(v, right))
                 .collect();
             return Value::junction(kind.clone(), results);
         }
-        if let Value::Junction { kind, values } = right {
+        if let ValueView::Junction { kind, values } = right.view() {
             let results: Vec<Value> = values
                 .iter()
                 .map(|v| Self::eqv_with_junctions(left, v))
                 .collect();
             return Value::junction(kind.clone(), results);
         }
-        Value::Bool(left.eqv(right))
+        Value::truth(left.eqv(right))
     }
 
     pub(crate) fn test_fn_is_approx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -421,15 +423,15 @@ impl Interpreter {
         // If the third positional arg is a native numeric type (not a Str),
         // treat it as abs-tol.
         let third_pos = Self::positional_value(args, 2);
-        let third_is_numeric = third_pos.as_ref().is_some_and(|v| {
+        let third_is_numeric = third_pos.map(Value::view).is_some_and(|v| {
             matches!(
                 v,
-                Value::Int(_)
-                    | Value::Num(_)
-                    | Value::Rat(_, _)
-                    | Value::FatRat(_, _)
-                    | Value::BigRat(_, _)
-                    | Value::BigInt(_)
+                ValueView::Int(_)
+                    | ValueView::Num(_)
+                    | ValueView::Rat(_, _)
+                    | ValueView::FatRat(_, _)
+                    | ValueView::BigRat(_, _)
+                    | ValueView::BigInt(_)
             )
         });
         let (positional_abs_tol, desc) = if third_is_numeric {
@@ -449,7 +451,7 @@ impl Interpreter {
             if let Some(v) = super::super::to_float_value(value) {
                 return Some(v);
             }
-            if matches!(value, Value::Instance { .. }) {
+            if matches!(value.view(), ValueView::Instance { .. }) {
                 let coerced = self
                     .call_method_with_values(value.clone(), "Numeric", vec![])
                     .or_else(|_| self.call_method_with_values(value.clone(), "Bridge", vec![]))
@@ -496,28 +498,28 @@ impl Interpreter {
         };
 
         // Unwrap Mixin wrappers (e.g. from angle-bracket literals like <1+3i>)
-        let got_inner = match got {
-            Value::Mixin(inner, _) => inner.as_ref(),
-            other => other,
+        let got_inner = match got.view() {
+            ValueView::Mixin(inner, _) => inner.as_ref(),
+            _ => got,
         };
-        let expected_inner = match expected {
-            Value::Mixin(inner, _) => inner.as_ref(),
-            other => other,
+        let expected_inner = match expected.view() {
+            ValueView::Mixin(inner, _) => inner.as_ref(),
+            _ => expected,
         };
-        let ok = match (got_inner, expected_inner) {
-            (Value::Complex(gr, gi), Value::Complex(er, ei)) => {
-                approx_eq(*gr, *er) && approx_eq(*gi, *ei)
+        let ok = match (got_inner.view(), expected_inner.view()) {
+            (ValueView::Complex(gr, gi), ValueView::Complex(er, ei)) => {
+                approx_eq(gr, er) && approx_eq(gi, ei)
             }
-            (Value::Complex(gr, gi), _) => {
+            (ValueView::Complex(gr, gi), _) => {
                 if let Some(e) = expected_f {
-                    approx_eq(*gr, e) && approx_eq(*gi, 0.0)
+                    approx_eq(gr, e) && approx_eq(gi, 0.0)
                 } else {
                     false
                 }
             }
-            (_, Value::Complex(er, ei)) => {
+            (_, ValueView::Complex(er, ei)) => {
                 if let Some(g) = coerce_float(got) {
-                    approx_eq(g, *er) && approx_eq(0.0, *ei)
+                    approx_eq(g, er) && approx_eq(0.0, ei)
                 } else {
                     false
                 }
@@ -528,17 +530,17 @@ impl Interpreter {
             },
         };
         self.test_ok(ok, &desc, todo)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_is_eqv(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let got = Self::positional_value(args, 0)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let got = self.force_lazy_io_to_seq(got);
         let expected = Self::positional_value(args, 1)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let expected = self.force_lazy_io_to_seq(expected);
         let desc = Self::positional_string(args, 2);
         let ok = got.eqv(&expected);
@@ -551,6 +553,6 @@ impl Interpreter {
                 expected_raku, got_raku
             ));
         }
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 }

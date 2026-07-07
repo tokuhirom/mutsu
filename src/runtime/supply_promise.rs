@@ -19,9 +19,9 @@ impl Interpreter {
         let emitter = Value::make_instance(Symbol::intern("Supplier"), {
             let mut a = HashMap::new();
             a.insert("emitted".to_string(), Value::array(Vec::new()));
-            a.insert("done".to_string(), Value::Bool(false));
+            a.insert("done".to_string(), Value::FALSE);
             if let Some(sid) = emitter_supplier_id {
-                a.insert("supplier_id".to_string(), Value::Int(sid as i64));
+                a.insert("supplier_id".to_string(), Value::int(sid as i64));
             }
             a
         });
@@ -42,8 +42,8 @@ impl Interpreter {
             let (_, emitted, _) = self.run_on_demand_body(on_demand_cb.clone(), None);
             Ok(emitted)
         } else {
-            Ok(match attributes.get("values") {
-                Some(Value::Array(items, ..)) => items.to_vec(),
+            Ok(match attributes.get("values").map(Value::view) {
+                Some(ValueView::Array(items, ..)) => items.to_vec(),
                 _ => Vec::new(),
             })
         }
@@ -64,7 +64,7 @@ impl Interpreter {
         let on_demand_cb = match attributes.get("on_demand_callback") {
             Some(cb) => cb.clone(),
             None => {
-                promise.keep(Value::Nil, String::new(), String::new());
+                promise.keep(Value::NIL, String::new(), String::new());
                 return Ok(());
             }
         };
@@ -103,10 +103,13 @@ impl Interpreter {
         let mut subscriptions = Vec::new();
         let mut plain_values = Vec::new();
         for item in emitted {
-            if let Value::Array(ref arr, ..) = item
-                && arr.len() == 4
-                && matches!(&arr[0], Value::Instance { class_name, .. } if class_name == "Supply")
-            {
+            let is_supply_sub = if let ValueView::Array(arr, ..) = item.view() {
+                arr.len() == 4
+                    && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+            } else {
+                false
+            };
+            if is_supply_sub {
                 subscriptions.push(item);
             } else {
                 plain_values.push(item);
@@ -115,7 +118,7 @@ impl Interpreter {
 
         if subscriptions.is_empty() {
             // No async subscriptions, just use plain emitted values
-            let result = plain_values.last().cloned().unwrap_or(Value::Nil);
+            let result = plain_values.last().cloned().unwrap_or(Value::NIL);
             promise.keep(result, String::new(), String::new());
             return Ok(());
         }
@@ -130,7 +133,7 @@ impl Interpreter {
         let mut react_subs: Vec<crate::runtime::subtest::ReactSubscription> = Vec::new();
         let mut static_last_value: Option<Value> = None;
         for sub_val in &subscriptions {
-            if let Value::Array(items, ..) = sub_val
+            if let ValueView::Array(items, ..) = sub_val.view()
                 && items.len() >= 2
             {
                 let source = items[0].clone();
@@ -143,10 +146,10 @@ impl Interpreter {
                     .get(3)
                     .and_then(Self::value_array_items)
                     .unwrap_or_default();
-                if let Value::Instance {
+                if let ValueView::Instance {
                     attributes: inner_attrs,
                     ..
-                } = &source
+                } = source.view()
                 {
                     // Try to get channel via supply_id (or parent_supply_id for lines)
                     let inner_map = inner_attrs.as_map();
@@ -154,8 +157,8 @@ impl Interpreter {
                         .get("parent_supply_id")
                         .or_else(|| inner_map.get("supply_id"))
                         .and_then(|v| {
-                            if let Value::Int(id) = v {
-                                Some(*id as u64)
+                            if let ValueView::Int(id) = v.view() {
+                                Some(id as u64)
                             } else {
                                 None
                             }
@@ -170,7 +173,7 @@ impl Interpreter {
                         continue;
                     }
                     // No live channel: a static/finite source. Replay it now.
-                    let mut lv = static_last_value.take().unwrap_or(Value::Nil);
+                    let mut lv = static_last_value.take().unwrap_or(Value::NIL);
                     self.replay_static_whenever_promise(
                         &source, &callback, &last_cbs, &quit_cbs, &mut lv,
                     )?;
@@ -187,7 +190,7 @@ impl Interpreter {
             // static sources (or any plain synchronously-emitted value).
             let result = static_last_value
                 .or_else(|| plain_values.last().cloned())
-                .unwrap_or(Value::Nil);
+                .unwrap_or(Value::NIL);
             promise.keep(result, String::new(), String::new());
             return Ok(());
         }
@@ -200,7 +203,7 @@ impl Interpreter {
         // subscriptions.
         let seed = static_last_value
             .or_else(|| plain_values.last().cloned())
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         self.drive_react_subscriptions(
             react_subs,
             crate::runtime::subtest::SupplyDrivePolicy::Promise {
@@ -244,11 +247,13 @@ impl Interpreter {
         quit_cbs: &[Value],
         last_value: &mut Value,
     ) -> Result<(), RuntimeError> {
-        let values = match source {
-            Value::Instance { attributes, .. } => match attributes.as_map().get("values") {
-                Some(Value::Array(items, ..)) => items.to_vec(),
-                _ => Vec::new(),
-            },
+        let values = match source.view() {
+            ValueView::Instance { attributes, .. } => {
+                match attributes.as_map().get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => items.to_vec(),
+                    _ => Vec::new(),
+                }
+            }
             _ => Vec::new(),
         };
 
@@ -279,15 +284,20 @@ impl Interpreter {
         // gather surfaces as a quit.
         let mut quit_reason: Option<Value> = None;
         'replay: for v in values {
-            let items: Vec<Value> = match &v {
-                Value::LazyList(ll) => match self.force_lazy_list(ll) {
+            let lazy = if let ValueView::LazyList(ll) = v.view() {
+                Some(ll.clone())
+            } else {
+                None
+            };
+            let items: Vec<Value> = match lazy {
+                Some(ll) => match self.force_lazy_list(&ll) {
                     Ok(items) => items,
                     Err(err) => {
                         quit_reason = Some(err_to_value(&err));
                         break 'replay;
                     }
                 },
-                _ => vec![v],
+                None => vec![v],
             };
             for item in items {
                 if let Err(err) = run_capture(self, callback.clone(), vec![item], last_value) {

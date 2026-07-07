@@ -11,7 +11,7 @@
 //! `Pointer`. Aggregates (`CStruct`/`CArray`/`CUnion`), callbacks, and typed
 //! pointers are follow-up work.
 
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// A C type a native parameter or return value can take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,23 +229,23 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
         match spec.ret {
             CType::Void => {
                 cif.call::<()>(code, &ffi_args);
-                Value::Nil
+                Value::NIL
             }
-            CType::I8 => Value::Int(cif.call::<i8>(code, &ffi_args) as i64),
-            CType::I16 => Value::Int(cif.call::<i16>(code, &ffi_args) as i64),
-            CType::I32 => Value::Int(cif.call::<i32>(code, &ffi_args) as i64),
-            CType::I64 => Value::Int(cif.call::<i64>(code, &ffi_args)),
-            CType::U8 => Value::Int(cif.call::<u8>(code, &ffi_args) as i64),
-            CType::U16 => Value::Int(cif.call::<u16>(code, &ffi_args) as i64),
-            CType::U32 => Value::Int(cif.call::<u32>(code, &ffi_args) as i64),
-            CType::U64 => Value::Int(cif.call::<u64>(code, &ffi_args) as i64),
-            CType::F32 => Value::Num(cif.call::<f32>(code, &ffi_args) as f64),
-            CType::F64 => Value::Num(cif.call::<f64>(code, &ffi_args)),
+            CType::I8 => Value::int(cif.call::<i8>(code, &ffi_args) as i64),
+            CType::I16 => Value::int(cif.call::<i16>(code, &ffi_args) as i64),
+            CType::I32 => Value::int(cif.call::<i32>(code, &ffi_args) as i64),
+            CType::I64 => Value::int(cif.call::<i64>(code, &ffi_args)),
+            CType::U8 => Value::int(cif.call::<u8>(code, &ffi_args) as i64),
+            CType::U16 => Value::int(cif.call::<u16>(code, &ffi_args) as i64),
+            CType::U32 => Value::int(cif.call::<u32>(code, &ffi_args) as i64),
+            CType::U64 => Value::int(cif.call::<u64>(code, &ffi_args) as i64),
+            CType::F32 => Value::num(cif.call::<f32>(code, &ffi_args) as f64),
+            CType::F64 => Value::num(cif.call::<f64>(code, &ffi_args)),
             CType::Pointer => make_pointer_value(cif.call::<usize>(code, &ffi_args)),
             CType::Str => {
                 let ptr = cif.call::<*const std::ffi::c_char>(code, &ffi_args);
                 if ptr.is_null() {
-                    Value::Nil
+                    Value::NIL
                 } else {
                     let cstr = std::ffi::CStr::from_ptr(ptr);
                     Value::str(cstr.to_string_lossy().into_owned())
@@ -255,7 +255,7 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     };
 
     // Write `is rw Pointer` out-slots back into the caller's Pointer objects.
-    // The `Value::Instance` shares its attribute cell with the caller's
+    // The `Instance` shares its attribute cell with the caller's
     // variable, so the new address becomes visible there.
     for idx in writebacks {
         if let ArgOwner::OutPtr { slot, .. } = &owners[idx] {
@@ -273,7 +273,7 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
 #[cfg(feature = "libffi")]
 fn make_pointer_value(addr: usize) -> Value {
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("address".to_string(), Value::Int(addr as i64));
+    attrs.insert("address".to_string(), Value::int(addr as i64));
     Value::make_instance(crate::symbol::Symbol::intern("Pointer"), attrs)
 }
 
@@ -283,17 +283,19 @@ fn make_pointer_value(addr: usize) -> Value {
 /// wrapped).
 #[cfg(feature = "libffi")]
 fn pointer_address(v: &Value) -> usize {
-    match v {
-        Value::Int(i) => *i as usize,
-        Value::Instance { attributes, .. } => match attributes.as_map().get("address") {
-            Some(Value::Int(i)) => *i as usize,
-            _ => 0,
-        },
-        Value::Scalar(inner) => pointer_address(inner),
-        Value::ContainerRef(cell) => cell.lock().ok().map(|g| pointer_address(&g)).unwrap_or(0),
+    match v.view() {
+        ValueView::Int(i) => i as usize,
+        ValueView::Instance { attributes, .. } => {
+            match attributes.as_map().get("address").map(Value::view) {
+                Some(ValueView::Int(i)) => i as usize,
+                _ => 0,
+            }
+        }
+        ValueView::Scalar(inner) => pointer_address(inner),
+        ValueView::ContainerRef(cell) => cell.lock().ok().map(|g| pointer_address(&g)).unwrap_or(0),
         // An `is rw` argument arrives as a varref Capture carrying the bound
         // variable's current value.
-        Value::Capture { named, .. } => match named.get("__mutsu_varref_value") {
+        ValueView::Capture { named, .. } => match named.get("__mutsu_varref_value") {
             Some(inner) => pointer_address(inner),
             None => 0,
         },
@@ -307,17 +309,17 @@ fn pointer_address(v: &Value) -> usize {
 /// caller's object.
 #[cfg(feature = "libffi")]
 fn write_pointer_address(v: &Value, addr: usize) {
-    match v {
-        Value::Instance { attributes, .. } => {
-            attributes.insert("address".to_string(), Value::Int(addr as i64));
+    match v.view() {
+        ValueView::Instance { attributes, .. } => {
+            attributes.insert("address".to_string(), Value::int(addr as i64));
         }
-        Value::Scalar(inner) => write_pointer_address(inner, addr),
-        Value::ContainerRef(cell) => {
+        ValueView::Scalar(inner) => write_pointer_address(inner, addr),
+        ValueView::ContainerRef(cell) => {
             if let Ok(g) = cell.lock() {
                 write_pointer_address(&g, addr);
             }
         }
-        Value::Capture { named, .. } => {
+        ValueView::Capture { named, .. } => {
             if let Some(inner) = named.get("__mutsu_varref_value") {
                 write_pointer_address(inner, addr);
             }
@@ -394,14 +396,14 @@ impl ArgOwner {
 /// so a `Pointer`/int held in a variable would be passed as 0.
 #[cfg(feature = "libffi")]
 fn resolve_arg(v: &Value) -> Value {
-    match v {
-        Value::Scalar(inner) => resolve_arg(inner),
-        Value::ContainerRef(cell) => cell.lock().map(|g| resolve_arg(&g)).unwrap_or(Value::Nil),
-        Value::Capture { named, .. } => match named.get("__mutsu_varref_value") {
+    match v.view() {
+        ValueView::Scalar(inner) => resolve_arg(inner),
+        ValueView::ContainerRef(cell) => cell.lock().map(|g| resolve_arg(&g)).unwrap_or(Value::NIL),
+        ValueView::Capture { named, .. } => match named.get("__mutsu_varref_value") {
             Some(inner) => resolve_arg(inner),
             None => v.clone(),
         },
-        other => other.clone(),
+        _ => v.clone(),
     }
 }
 

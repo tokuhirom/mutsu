@@ -42,7 +42,7 @@ impl Interpreter {
         }
     }
 
-    /// Dispatch methods on Value::Routine (multi-dispatch handles).
+    /// Dispatch methods on Routine (multi-dispatch handles).
     /// Returns Some(result) if handled, None to fall through.
     pub(super) fn dispatch_routine_method(
         &mut self,
@@ -332,7 +332,7 @@ impl Interpreter {
         None
     }
 
-    /// Dispatch methods on Value::Sub.
+    /// Dispatch methods on Sub.
     /// Returns Some(result) if handled, None to fall through.
     pub(super) fn dispatch_sub_method(
         &mut self,
@@ -829,8 +829,8 @@ impl Interpreter {
             }
             // Return a WrapHandle instance
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("sub-id".to_string(), Value::Int(sub_id as i64));
-            attrs.insert("handle-id".to_string(), Value::Int(handle_id as i64));
+            attrs.insert("sub-id".to_string(), Value::int(sub_id as i64));
+            attrs.insert("handle-id".to_string(), Value::int(handle_id as i64));
             // Store a reference to the wrapped sub for .restore()
             attrs.insert("wrapped-sub".to_string(), target.clone());
             return Some(Ok(Value::make_instance(
@@ -863,7 +863,7 @@ impl Interpreter {
                 }
                 // Invalidate light-call caches so the sub re-resolves (see wrap).
                 self.fn_resolve_gen += 1;
-                return Some(Ok(Value::Bool(true)));
+                return Some(Ok(Value::TRUE));
             }
             // Extract handle-id from the WrapHandle argument
             let handle = &args[0];
@@ -887,7 +887,7 @@ impl Interpreter {
                 }
                 // Invalidate light-call caches so the sub re-resolves (see wrap).
                 self.fn_resolve_gen += 1;
-                return Some(Ok(Value::Bool(true)));
+                return Some(Ok(Value::TRUE));
             }
             return Some(Err(RuntimeError::new(
                 "Cannot unwrap a sub that has not been wrapped",
@@ -921,17 +921,19 @@ impl Interpreter {
                     | "unwrap"
                     | "callwith"
             );
-            return Some(Ok(Value::Bool(can)));
+            return Some(Ok(Value::truth(can)));
         }
         None
     }
 
     /// Extract wrap handle ID from a WrapHandle instance.
     fn extract_wrap_handle_id(&self, handle: &Value) -> Option<u64> {
-        match handle {
-            Value::Instance { attributes, .. } => {
-                if let Some(Value::Int(id)) = attributes.as_map().get("handle-id") {
-                    Some(*id as u64)
+        match handle.view() {
+            ValueView::Instance { attributes, .. } => {
+                if let Some(ValueView::Int(id)) =
+                    attributes.as_map().get("handle-id").map(Value::view)
+                {
+                    Some(id as u64)
                 } else {
                     None
                 }

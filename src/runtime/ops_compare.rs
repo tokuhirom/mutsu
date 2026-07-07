@@ -3,7 +3,7 @@ use super::*;
 impl Interpreter {
     pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         match val.view() {
-            ValueView::Array(items, kind) if kind.is_itemized() => vec![val.clone()],
+            ValueView::Array(_, kind) if kind.is_itemized() => vec![val.clone()],
             ValueView::Array(items, ..) => items.to_vec(),
             ValueView::Seq(items) => items.to_vec(),
             ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),

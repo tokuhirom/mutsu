@@ -412,7 +412,7 @@ impl Interpreter {
                     attrs.insert("child-typename".to_string(), Value::str(name.to_string()));
                     attrs.insert(
                         "parent".to_string(),
-                        Value::Package(crate::symbol::Symbol::intern(
+                        Value::package(crate::symbol::Symbol::intern(
                             resolved_parent_name.as_str(),
                         )),
                     );
@@ -470,7 +470,7 @@ impl Interpreter {
                 attrs.insert("target-name".to_string(), Value::str(name.to_string()));
                 attrs.insert(
                     "composer".to_string(),
-                    Value::Package(crate::symbol::Symbol::intern(resolved_parent)),
+                    Value::package(crate::symbol::Symbol::intern(resolved_parent)),
                 );
                 attrs.insert("message".to_string(), Value::str(msg.clone()));
                 let ex = Value::make_instance(
@@ -725,9 +725,9 @@ impl Interpreter {
                                 .map(|arg| {
                                     role_param_values
                                         .get(&arg)
-                                        .map(|v| match v {
-                                            Value::Package(name) => name.resolve(),
-                                            other => other
+                                        .map(|v| match v.view() {
+                                            ValueView::Package(name) => name.resolve(),
+                                            _ => v
                                                 .to_string_value()
                                                 .trim_start_matches('(')
                                                 .trim_end_matches(')')
@@ -1096,7 +1096,7 @@ impl Interpreter {
         let saved_env = self.env.clone();
         self.set_current_package(name.to_string());
         self.env
-            .insert("?CLASS".to_string(), Value::Package(Symbol::intern(name)));
+            .insert("?CLASS".to_string(), Value::package(Symbol::intern(name)));
         // Flatten SyntheticBlock (from `has ($a, $b)` list form) so inner
         // HasDecl statements are processed at the top level.
         let mut flattened_body: Vec<&Stmt> = body
@@ -1206,7 +1206,7 @@ impl Interpreter {
                         let initial_value = if let Some(expr) = default {
                             self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                         } else {
-                            Value::Nil
+                            Value::NIL
                         };
                         class_def
                             .class_level_attrs
@@ -1257,7 +1257,7 @@ impl Interpreter {
                                     .split_once('{')
                                     .map(|(value_tc, _)| value_tc)
                                     .unwrap_or(tc.as_str());
-                                let type_ok = if matches!(val, Value::Nil) {
+                                let type_ok = if val.is_nil() {
                                     // Nil is only valid for untyped or Nil-accepting attributes
                                     tc == "Any" || tc == "Mu" || tc.contains("Nil")
                                 } else {
@@ -1274,12 +1274,12 @@ impl Interpreter {
                                     );
                                     attrs.insert(
                                         "expected".to_string(),
-                                        Value::Package(crate::symbol::Symbol::intern(tc)),
+                                        Value::package(crate::symbol::Symbol::intern(tc)),
                                     );
                                     attrs.insert(
                                         "got".to_string(),
-                                        if matches!(val, Value::Nil) {
-                                            Value::Nil
+                                        if val.is_nil() {
+                                            Value::NIL
                                         } else {
                                             val.clone()
                                         },
@@ -1565,7 +1565,7 @@ impl Interpreter {
                                 );
                                 trait_env.insert(
                                     "__mutsu_lookup_candidate_idx".to_string(),
-                                    Value::Int(0),
+                                    Value::int(0),
                                 );
                                 let sub_val = Value::make_sub(
                                     Symbol::intern(name),
@@ -1593,9 +1593,9 @@ impl Interpreter {
                                     let _ = self.call_function("trait_mod:<is>", args);
                                 } else {
                                     let named_val = if let Some(arg_val) = trait_arg_val {
-                                        Value::Pair(trait_name.clone(), Box::new(arg_val))
+                                        Value::pair(trait_name.clone(), arg_val)
                                     } else {
-                                        Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)))
+                                        Value::pair(trait_name.clone(), Value::TRUE)
                                     };
                                     args.push(named_val);
                                     let _ = self.call_function("trait_mod:<is>", args);
@@ -2027,7 +2027,7 @@ impl Interpreter {
                         .class_subs
                         .entry(name.to_string())
                         .or_default()
-                        .insert(fq, Value::Bool(true));
+                        .insert(fq, Value::TRUE);
                 }
             }
             self.registry_mut()

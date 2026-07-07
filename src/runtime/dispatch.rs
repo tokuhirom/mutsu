@@ -111,8 +111,8 @@ impl Interpreter {
             Some(defs) => defs,
             None => return Ok(None),
         };
-        let subject = match self.env.get("_") {
-            Some(Value::Str(s)) => Some(s.to_string()),
+        let subject = match self.env.get("_").map(Value::view) {
+            Some(ValueView::Str(s)) => Some(s.to_string()),
             _ => None,
         };
         // Collect all matching candidates with their declarative prefix match lengths
@@ -177,36 +177,45 @@ impl Interpreter {
         // Apply <sym> instantiation for proto token :sym<> variants
         let instantiate_sym = |pat: &str| -> String { Self::instantiate_token_pattern(def, pat) };
         let rendered = match result {
-            Ok(Value::Regex(pat)) => {
-                let pat = instantiate_sym(&pat);
-                self.instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&pat))
-                    .map(Some)
-            }
-            Ok(Value::Str(s)) => {
-                let s = instantiate_sym(&s);
-                self.instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&s))
-                    .map(Some)
-            }
-            Ok(Value::Nil) => Ok(None),
-            Ok(other) => Ok(Some(other.to_string_value())),
-            Err(e) if e.return_value.is_some() => match e.return_value.unwrap() {
-                Value::Regex(pat) => {
-                    let pat = instantiate_sym(&pat);
+            Ok(v) => {
+                if let ValueView::Regex(pat) = v.view() {
+                    let pat = instantiate_sym(pat);
                     self.instantiate_named_regex_arg_calls(
                         &self.interpolate_bound_regex_scalars(&pat),
                     )
                     .map(Some)
-                }
-                Value::Str(s) => {
-                    let s = instantiate_sym(&s);
+                } else if let ValueView::Str(s) = v.view() {
+                    let s = instantiate_sym(s);
                     self.instantiate_named_regex_arg_calls(
                         &self.interpolate_bound_regex_scalars(&s),
                     )
                     .map(Some)
+                } else if v.is_nil() {
+                    Ok(None)
+                } else {
+                    Ok(Some(v.to_string_value()))
                 }
-                Value::Nil => Ok(None),
-                other => Ok(Some(other.to_string_value())),
-            },
+            }
+            Err(e) if e.return_value.is_some() => {
+                let rv = e.return_value.unwrap();
+                if let ValueView::Regex(pat) = rv.view() {
+                    let pat = instantiate_sym(pat);
+                    self.instantiate_named_regex_arg_calls(
+                        &self.interpolate_bound_regex_scalars(&pat),
+                    )
+                    .map(Some)
+                } else if let ValueView::Str(s) = rv.view() {
+                    let s = instantiate_sym(s);
+                    self.instantiate_named_regex_arg_calls(
+                        &self.interpolate_bound_regex_scalars(&s),
+                    )
+                    .map(Some)
+                } else if rv.is_nil() {
+                    Ok(None)
+                } else {
+                    Ok(Some(rv.to_string_value()))
+                }
+            }
             Err(e) => Err(e),
         };
         let mut restored_env = saved_env;

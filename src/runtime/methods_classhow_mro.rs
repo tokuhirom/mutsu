@@ -81,7 +81,7 @@ impl Interpreter {
             } else {
                 // This is a class
                 if seen.insert(entry.clone()) {
-                    result.push(Value::Package(Symbol::intern(entry)));
+                    result.push(Value::package(Symbol::intern(entry)));
                     // Insert composed roles for this class
                     let composed = self
                         .registry()

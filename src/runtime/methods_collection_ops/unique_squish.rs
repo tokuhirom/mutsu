@@ -9,13 +9,13 @@ impl Interpreter {
         let mut as_func: Option<Value> = None;
         let mut with_func: Option<Value> = None;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 if key == "as" && value.truthy() {
-                    as_func = Some(value.as_ref().clone());
+                    as_func = Some(value.clone());
                     continue;
                 }
                 if key == "with" && value.truthy() {
-                    with_func = Some(value.as_ref().clone());
+                    with_func = Some(value.clone());
                     continue;
                 }
             }
@@ -23,16 +23,19 @@ impl Interpreter {
 
         let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
+        } else if let ValueView::LazyList(ll) = target.view() {
+            self.force_lazy_list_bridge(ll)?
+        } else if matches!(
+            target.view(),
+            ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+        ) {
+            Self::value_to_list(&target)
         } else {
-            match target {
-                Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
-                v @ (Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. }) => Self::value_to_list(&v),
-                other => vec![other],
-            }
+            vec![target]
         };
         let mut seen_keys: Vec<Value> = Vec::new();
         let mut unique_items: Vec<Value> = Vec::new();
@@ -49,22 +52,22 @@ impl Interpreter {
                     self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
                         .truthy()
                 } else if let (
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name: seen_class,
                         id: seen_id,
                         ..
                     },
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name: key_class,
                         id: key_id,
                         ..
                     },
-                ) = (seen, &key)
+                ) = (seen.view(), key.view())
                 {
                     // Some instances still use placeholder id=0; treat those as
                     // distinct for unique's default identity semantics.
-                    if *seen_id == 0
-                        && *key_id == 0
+                    if seen_id == 0
+                        && key_id == 0
                         && seen_class == key_class
                         && seen_class.resolve() != "Stash"
                         && seen_class.resolve() != "Supply"
@@ -88,7 +91,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Seq(std::sync::Arc::new(unique_items)))
+        Ok(Value::seq(unique_items))
     }
 
     pub(in crate::runtime) fn dispatch_repeated(
@@ -99,13 +102,13 @@ impl Interpreter {
         let mut as_func: Option<Value> = None;
         let mut with_func: Option<Value> = None;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 if key == "as" && value.truthy() {
-                    as_func = Some(value.as_ref().clone());
+                    as_func = Some(value.clone());
                     continue;
                 }
                 if key == "with" && value.truthy() {
-                    with_func = Some(value.as_ref().clone());
+                    with_func = Some(value.clone());
                     continue;
                 }
             }
@@ -113,16 +116,19 @@ impl Interpreter {
 
         let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
+        } else if let ValueView::LazyList(ll) = target.view() {
+            self.force_lazy_list_bridge(ll)?
+        } else if matches!(
+            target.view(),
+            ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+        ) {
+            Self::value_to_list(&target)
         } else {
-            match target {
-                Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
-                v @ (Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. }) => Self::value_to_list(&v),
-                other => vec![other],
-            }
+            vec![target]
         };
         let mut seen_keys: Vec<Value> = Vec::new();
         let mut repeated_items: Vec<Value> = Vec::new();
@@ -139,20 +145,20 @@ impl Interpreter {
                     self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
                         .truthy()
                 } else if let (
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name: seen_class,
                         id: seen_id,
                         ..
                     },
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name: key_class,
                         id: key_id,
                         ..
                     },
-                ) = (seen, &key)
+                ) = (seen.view(), key.view())
                 {
-                    if *seen_id == 0
-                        && *key_id == 0
+                    if seen_id == 0
+                        && key_id == 0
                         && seen_class == key_class
                         && seen_class.resolve() != "Stash"
                         && seen_class.resolve() != "Supply"
@@ -177,7 +183,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Seq(std::sync::Arc::new(repeated_items)))
+        Ok(Value::seq(repeated_items))
     }
 
     pub(crate) fn dispatch_squish(
@@ -188,13 +194,13 @@ impl Interpreter {
         let mut as_func: Option<Value> = None;
         let mut with_func: Option<Value> = None;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 if key == "as" && value.truthy() {
-                    as_func = Some(value.as_ref().clone());
+                    as_func = Some(value.clone());
                     continue;
                 }
                 if key == "with" && value.truthy() {
-                    with_func = Some(value.as_ref().clone());
+                    with_func = Some(value.clone());
                     continue;
                 }
             }
@@ -203,12 +209,12 @@ impl Interpreter {
         if as_func.is_none()
             && with_func.is_none()
             && matches!(
-                target,
-                Value::Range(_, _)
-                    | Value::RangeExcl(_, _)
-                    | Value::RangeExclStart(_, _)
-                    | Value::RangeExclBoth(_, _)
-                    | Value::GenericRange { .. }
+                target.view(),
+                ValueView::Range(_, _)
+                    | ValueView::RangeExcl(_, _)
+                    | ValueView::RangeExclStart(_, _)
+                    | ValueView::RangeExclBoth(_, _)
+                    | ValueView::GenericRange { .. }
             )
         {
             return Ok(target);
@@ -216,21 +222,24 @@ impl Interpreter {
 
         let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
+        } else if let ValueView::LazyList(ll) = target.view() {
+            self.force_lazy_list_bridge(ll)?
+        } else if matches!(
+            target.view(),
+            ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+        ) {
+            Self::value_to_list(&target)
         } else {
-            match target {
-                Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
-                v @ (Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. }) => Self::value_to_list(&v),
-                other => vec![other],
-            }
+            vec![target]
         };
         let source_items = items.clone();
 
         if items.is_empty() {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::seq(Vec::new()));
         }
 
         let env_before_callbacks = if as_func.is_some() || with_func.is_some() {
@@ -268,9 +277,9 @@ impl Interpreter {
             prev_key = key;
         }
 
-        let result = Value::Seq(std::sync::Arc::new(squished_items));
+        let result = Value::seq(squished_items);
         if (as_func.is_some() || with_func.is_some())
-            && let Value::Seq(items) = &result
+            && let ValueView::Seq(items) = result.view()
         {
             let mut revert_values = HashMap::new();
             let mut revert_remove = Vec::new();
