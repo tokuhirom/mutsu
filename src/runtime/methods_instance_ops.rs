@@ -496,6 +496,41 @@ impl Interpreter {
             {
                 return result;
             }
+            // CompUnit::Repository base methods shared by every repository kind
+            // (FileSystem / Installation / ...). `repo-chain` walks the
+            // `next-repo` links starting at self; mutsu's repositories are not
+            // chained (each `$*REPO` is a standalone repo), so the chain is just
+            // `(self,)` unless a `next-repo` attribute has been set. Without this,
+            // `$*REPO.repo-chain` (zef's `list-installed`) died with
+            // "No such method 'repo-chain'".
+            if class_name.resolve().starts_with("CompUnit::Repository") {
+                match method {
+                    "repo-chain" => {
+                        let mut chain = vec![target.clone()];
+                        let mut cursor = attributes.as_map().get("next-repo").cloned();
+                        while let Some(next) = cursor {
+                            if !next.truthy() {
+                                break;
+                            }
+                            if let ValueView::Instance { attributes, .. } = next.view() {
+                                cursor = attributes.as_map().get("next-repo").cloned();
+                            } else {
+                                cursor = None;
+                            }
+                            chain.push(next);
+                        }
+                        return Ok(Value::array(chain));
+                    }
+                    "next-repo" => {
+                        return Ok(attributes
+                            .as_map()
+                            .get("next-repo")
+                            .cloned()
+                            .unwrap_or(Value::NIL));
+                    }
+                    _ => {}
+                }
+            }
             if class_name == "CompUnit::Repository::Installation"
                 && let Some(result) = self.dispatch_cur_installation_method(
                     &(attributes).as_map(),
